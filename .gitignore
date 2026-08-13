@@ -4,6 +4,6 @@
 *.com
 *.obj
 *.bin
-BIN\*
+BIN/**
 *.img
 *.txt
