@@ -1,0 +1,11 @@
+@ECHO OFF
+CHOICE /C:AB Pick one 
+IF ERRORLEVEL 2 GOTO PICKB
+IF ERRORLEVEL 1 GOTO PICKA
+:PICKA
+ECHO you chose A (errorlevel 1)
+GOTO END
+:PICKB
+ECHO you chose B (errorlevel 2)
+:END
+ECHO CHTEST done

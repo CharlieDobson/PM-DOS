@@ -1,0 +1,44 @@
+REM PM-DOS CONFIG.SYS
+REM
+REM Everything a real DOS understands is recognised here and does
+REM nothing, so a CONFIG.SYS carried over from a real install boots
+REM without complaint.  A release build should print NOTHING for
+REM this whole file - that silence is the test.
+
+BUFFERS=30,8
+FILES=40
+FCBS=4,0
+LASTDRIVE=E
+STACKS=9,256
+DOS=HIGH,UMB
+SWITCHES=/F
+NUMLOCK=OFF
+DEVICE=C:\DOS\HIMEM.SYS
+DEVICEHIGH=C:\DOS\ANSI.SYS
+INSTALL=C:\DOS\SHARE.EXE
+
+REM Multi-config blocks are skipped rather than rejected.
+[menu]
+MENUITEM=NORMAL,Normal boot
+MENUDEFAULT=NORMAL,5
+[NORMAL]
+INCLUDE=BASE
+
+REM PM-DOS's own.  LFN is acted on at once: OFF makes the 71xxh API
+REM answer "unsupported" and the classic calls match strict 8.3, the
+REM escape hatch for a program that cannot cope with long names.  ON
+REM is the default, so this line only documents it.
+LFN=ON
+
+REM DPMI=ON|OFF is the protected-mode interface.  ON is the default;
+REM OFF makes INT 2Fh AX=1687h answer "no host", so a program that can
+REM run either way falls back to real mode instead of failing.  This
+REM line documents the default the same way LFN= above does.
+DPMI=ON
+
+REM NULLTRAP=ON|OFF is the null-pointer guard: four debug registers
+REM watching the first sixteen bytes of memory for writes, so that a
+REM 32-bit program dereferencing a null pointer stops instead of
+REM quietly rewriting interrupt vectors 0 to 3.  ON is the default.
+REM OFF is for the program that writes low memory on purpose.
+NULLTRAP=ON
