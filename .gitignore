@@ -1,0 +1,8 @@
+*.bat
+*.cmd
+*.exe
+*.com
+*.obj
+*.bin
+BIN\
+*.img
