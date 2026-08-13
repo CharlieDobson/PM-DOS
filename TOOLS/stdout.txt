@@ -1,8 +1,0 @@
-DOSBox version 0.74
-Copyright 2002-2010 DOSBox Team, published under GNU GPL.
----
-CONFIG:Loading primary settings from config file C:\Users\Charlie\AppData\Local\Temp\claude\c--Users-Charlie-source-repos\d7922d56-fe0a-49ae-89cf-9f6e4908967b\scratchpad\t.conf
-MIDI:Opened device:win32
-Mounted FAT volume is FAT12 with 2847 clusters
-SHELL:Redirect output to c:\out.txt
-SHELL:Redirect output to c:\dir.txt
