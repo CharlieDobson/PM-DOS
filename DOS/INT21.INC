@@ -64,7 +64,9 @@ XN_OWN          EQU     8               ; dd - and its owner id
 XN_DTA          EQU     12              ; dd - and its DTA
 XN_SAVE         EQU     16              ; dd - its parked slot, 0 = none
 XN_INDOS        EQU     20              ; dd - and the InDOS depth it was at
-XN_LEN          EQU     24
+XN_ESP0         EQU     24              ; dd - and the ring-0 stack it makes
+                                        ;      its DOS calls on
+XN_LEN          EQU     28
 
 ;=====================================================================
 ; int21_entry - every DOS call lands here through the IDT gate.
@@ -4095,6 +4097,22 @@ f4B_noenv:
         mov     [edi+XN_INDOS],eax      ; and its InDOS depth - see below
         mov     dword ptr [edi+XN_SAVE],0
 
+        ; THE RING-0 STACK HAS TO DESCEND WITH THE NESTING, and until it
+        ; did, every child overwrote the frame its parent was waiting
+        ; in.  Programs used to run at ring 0 and the kernel ran their
+        ; DOS calls on their own stacks, so a parent's frame lived in
+        ; the parent's slot and a child could not reach it.  At ring 3
+        ; every program's DOS calls run on ONE kernel stack, and a child
+        ; starting at the top of it writes its first INT 21h frame
+        ; exactly where its parent's 4Bh frame is sitting.
+        ;
+        ; The parent's frame base is EBP and the frame is above it, so
+        ; the child gets EBP and works downwards.  The parent's own
+        ; level goes in the record for 4Ch to put back.
+        mov     eax,[r3_esp0]
+        mov     [edi+XN_ESP0],eax
+        mov     [r3_esp0],ebp
+
         ; Park the occupant, if there is one.  At depth 0 the caller is
         ; the shell, which lives in its own slot and is not disturbed.
         cmp     dword ptr [exec_depth],0
@@ -4727,6 +4745,8 @@ f4C_noparked:
         mov     eax,[edi+XN_INDOS]      ; the depth its own 4Bh was at, so
         mov     byte ptr ds:[DOS_INDOS],al      ; that i21_r0's decrement
                                         ; lands where it should
+        mov     eax,[edi+XN_ESP0]       ; and the ring-0 stack level it was
+        mov     [r3_esp0],eax           ; making its DOS calls on
         call    term_vectors
         mov     byte ptr [crit_busy],0  ; an abort has finished unwinding
         mov     byte ptr ds:[DOS_ERRFLG],0

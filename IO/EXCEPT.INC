@@ -67,6 +67,21 @@ exc_common:
         ;
         ; EAX is saved around it because it belongs to the faulting code
         ; and v86_fault's pushad has not run yet.
+        ;
+        ; THE FOUR ARE KEPT FIRST, because for one caller this is not a
+        ; fault at all.  pm3_fault emulates CLI, STI, IN and OUT for
+        ; ring-3 code and then RESUMES it - and an IRETD to a lower
+        ; privilege level nulls any data selector whose DPL is below the
+        ; level being returned to, which is all four of these once they
+        ; hold the kernel's.  Ring-3 code resumed that way faults on its
+        ; next memory reference, with a #GP and an error code of zero
+        ; that names nothing.  They are stored through SS because DS
+        ; cannot be trusted here: a fault out of V86 arrives with all
+        ; four already null, which is the reason this block exists.
+        mov     word ptr ss:[exc_sds],ds
+        mov     word ptr ss:[exc_ses],es
+        mov     word ptr ss:[exc_sfs],fs
+        mov     word ptr ss:[exc_sgs],gs
         push    eax
         mov     ax,SEL_DATA32
         mov     ds,ax
@@ -186,6 +201,15 @@ exc_clearnest:
 
 exc_hook        dd      0
 exc_nested      dd      0
+
+; The segment registers the faulting code was holding, kept by
+; exc_common and put back by pm3_fault when it resumes ring-3 code.
+; Not a stack, because a fault taken inside this handler is fatal
+; anyway and there is never a second set to keep.
+exc_sds         dw      0
+exc_ses         dw      0
+exc_sfs         dw      0
+exc_sgs         dw      0
 
 ;=====================================================================
 ; irq_common - dispatch to a handler, then acknowledge the PIC.

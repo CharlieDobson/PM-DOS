@@ -183,6 +183,12 @@ shell_restart:
         ; way any other one does: at ring 3, in its own slot, with the
         ; PSP offset on its stack so that a RET lands on the INT 20h
         ; there and brings us back to this label.
+        ;
+        ; It is the one program that starts with the whole of the
+        ; ring-0 stack in front of it, because nothing is waiting
+        ; underneath it - that is what makes it the shell.  Every other
+        ; program inherits a level from the 4Bh that started it.
+        mov     dword ptr ds:[r3_esp0],R3_KSTACK
         mov     eax,dword ptr ds:[exec_entry]
         jmp     r3_start
 

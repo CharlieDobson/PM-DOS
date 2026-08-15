@@ -1026,8 +1026,27 @@ pm3_outw_d:
         inc     ecx
 
 ;--- step over what was emulated and resume the client ---------------
+; THE SEGMENT REGISTERS GO BACK FIRST, and they have to: exc_common
+; replaced all four with the kernel's in order to be able to run at
+; all, and the IRETD below is an inter-privilege return, which NULLS
+; every data selector whose DPL is below the level being returned to.
+; Ring-3 code resumed with a null DS faults on its next memory
+; reference - a #GP with error code zero, pointing at an instruction
+; that is perfectly correct.
+;
+; It cost a ^C.  COMMAND's break handler executes STI on its way home,
+; which is emulated here, and the first thing it touched afterwards
+; brought the interpreter down.  Every ring-3 fault before that had
+; been a real one, which does not come back this way.
+;
+; DS is loaded LAST because these are read through it; SS is the
+; kernel's either way, which is why the reads are SS-relative.
 pm3_done:
         add     [ebp+P3_EIP],ecx
+        mov     es,word ptr ss:[exc_ses]
+        mov     fs,word ptr ss:[exc_sfs]
+        mov     gs,word ptr ss:[exc_sgs]
+        mov     ds,word ptr ss:[exc_sds]
         popad
         add     esp,8                   ; the vector and the error code
         iretd

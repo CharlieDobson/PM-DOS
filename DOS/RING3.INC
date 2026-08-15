@@ -164,13 +164,19 @@ r3_start:
         mov     ebx,[r3_base]
         mov     dword ptr [ebx+eax],SLOT_PSP
 
-        ; A fresh program is not inside anybody's handler, so the
-        ; ring-0 stack it will make its DOS calls on is the top of the
-        ; native one.  Anything left over from a handler the previous
-        ; program abandoned is discarded here, which is the other
-        ; reason this is not simply "carry on".
+        ; A fresh program is not inside anybody's handler, so anything
+        ; left over from one the previous program abandoned goes here.
+        ;
+        ; [r3_esp0] IS NOT RESET, and that is the whole of what a child
+        ; program has to inherit: it names the level of the one ring-0
+        ; stack that every ring-3 program's DOS calls run on, and 4Bh
+        ; has already moved it BELOW the frame its caller is waiting in.
+        ; Resetting it here to the top of the stack is what a first
+        ; version did, and it put the child's first INT 21h frame
+        ; exactly on top of its parent's 4Bh - so 4Ch returned the
+        ; parent to a frame full of the child's DOS call, and the shell
+        ; resumed in the middle of its own message table.
         mov     dword ptr [r3_calldep],0
-        mov     dword ptr [r3_esp0],R3_KSTACK
         mov     dword ptr [r3_active],1
 
         xor     eax,eax
@@ -201,6 +207,30 @@ r3_start:
 ;=====================================================================
 r3_enter:
         cli
+
+        ; AND NT MUST BE CLEAR IN THE FLAGS WE ARE STANDING IN, which
+        ; has nothing to do with the flags being pushed.  With NT set,
+        ; IRETD is not a return at all - it is a TASK SWITCH, and it
+        ; follows the back-link at the front of the TSS, finds the zero
+        ; left there, and raises exception 0Ah with error code 0.
+        ;
+        ; This is the second time this project has met that instruction
+        ; wearing the other hat.  The first was the IRETD that should
+        ; have entered V86 mode, on the VDM's first evening; v86_run
+        ; clears NT for exactly this reason and has ever since.  The bit
+        ; is never set on purpose - it arrives from whatever the BIOS
+        ; left in FLAGS before the switch to protected mode - and it
+        ; survives all the way to here because nothing in between has
+        ; any reason to touch it.
+        ;
+        ; It cost one boot: the first entry to ring 3 faulted, and the
+        ; recovery worked so well that the SECOND one succeeded, because
+        ; taking an interrupt gate is itself what clears NT.  A bug that
+        ; fixes itself after one failure is a bug that gets shipped.
+        pushfd
+        and     dword ptr [esp],NOT EFL_NT
+        popfd
+
         push    eax
         mov     eax,[r3_esp0]
         mov     dword ptr ds:[TSS_BASE + TSS_ESP0],eax
