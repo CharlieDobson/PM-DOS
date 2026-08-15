@@ -100,14 +100,41 @@ int21_entry:
         ; handler both run with their caller's INT 21h still open.
         inc     byte ptr ds:[DOS_INDOS]
 
-        ; A caller whose CS is not the kernel's is a protected-mode
-        ; DPMI client, and its pointers are selector:offset.
+        ; WHOSE CALL IS THIS?  Three kinds of caller reach this label
+        ; and the CS says which.  The kernel's own is already flat and
+        ; needs nothing.  A native program is ring-3 code in a segment
+        ; based at its slot, so its pointers are offsets from that
+        ; base.  Anything else at ring 3 is a DPMI client, whose
+        ; pointers are selector:offset.
         cmp     word ptr [ebp+F_CS],SEL_CODE32
         je      i21_flat
+        cmp     word ptr [ebp+F_CS],SEL_PROG_CS
+        je      i21_native
+
         cmp     byte ptr [ebp+F_EAX+1],4Ch      ; a client ending IS the DOS
         je      i21_dpmiexit                    ; box ending, and it unwinds
         call    dpmi_xlat                       ; rather than returns
         jc      i21_badsel
+        jmp     short i21_flat
+
+;--- a native program -------------------------------------------------
+; Its stack pointer is remembered because it is the only place the
+; kernel can learn it: a handler this program has hooked runs on that
+; stack, below whatever it was using when it called in, exactly as DOS
+; has always run one.  The CPU pushed it on the way here.
+i21_native:
+        mov     eax,[ebp+F_ESP3]
+        mov     [r3_lastesp],eax
+
+        ; The trampoline at PSP+54h, which is how a handler that has
+        ; finished gets back.  Recognised by the address it calls from,
+        ; because the registers are the handler's answer by now and a
+        ; function number in AX would have destroyed it.
+        cmp     dword ptr [ebp+F_EIP],R3RET_EIP
+        je      r3_ret
+
+        call    r3_xlat
+        jc      i21_badptr
 i21_flat:
         movzx   eax,byte ptr [ebp+F_EAX+1]      ; AH = function
         cmp     eax,71h                         ; long-file-name API
@@ -125,7 +152,19 @@ i21_flat:
 i21_return:
         cmp     word ptr [ebp+F_CS],SEL_CODE32
         je      i21_r0
+        cmp     word ptr [ebp+F_CS],SEL_PROG_CS
+        je      i21_r3native
         call    dpmi_unxlat             ; the client's own registers back
+        jmp     short i21_r0
+
+;--- back into a native program.  The offsets it passed are put back,
+;--- and the ring-0 stack pointer is restored to whatever depth the
+;--- program is at: the top of the native stack normally, and the
+;--- interrupted level's frame while one of its handlers is running.
+i21_r3native:
+        call    r3_unxlat
+        mov     eax,[r3_esp0]
+        mov     dword ptr ds:[TSS_BASE + TSS_ESP0],eax
 i21_r0:
         ; The matching decrement goes HERE rather than at i21_return,
         ; because the bad-selector path skips straight to this label
@@ -141,6 +180,15 @@ i21_badsel:
         mov     word ptr [ebp+F_EAX],ERR_BADDRIVE
         or      dword ptr [ebp+F_FLAGS],FL_CF
         jmp     short i21_r0
+
+;--- a native program passed an offset that is not inside its own slot.
+;--- The call has not happened and nothing is half done, so it is
+;--- refused rather than being made a fault: a program that gets an
+;--- error back can say which call failed, where a dead program cannot.
+i21_badptr:
+        mov     word ptr [ebp+F_EAX],ERR_ACCESS
+        or      dword ptr [ebp+F_FLAGS],FL_CF
+        jmp     short i21_r3native
 
 i21_dpmiexit:
         mov     al,byte ptr [ebp+F_EAX]
@@ -766,22 +814,44 @@ fn25:
 ; build_psp and 4Ch are the other caller, and it matters that both go
 ; through the same two routines - a PSP that saved a vector read a
 ; different way from the way 25h writes it would restore rubbish.
+;
+; THERE ARE TWO KINDS OF HANDLER ADDRESS NOW and no tag is needed to
+; tell them apart, because the two ranges cannot overlap: a native
+; program's handler is an offset in its own slot, so it is below the
+; slot size, and every kernel address is above 1MB.  A value that
+; could be an offset is one; anything else is a kernel address being
+; put back.  That one rule serves 25h, 35h, the PSP save, the PSP
+; restore and the kernel's own installation, which is the point - a
+; vector that went in one way and came out another is how a restored
+; handler ends up pointing at nothing.
 ;---------------------------------------------------------------------
 get_vec:
-        movzx   eax,al
+        push    ecx
+        movzx   ecx,al
+        mov     eax,[r3vec+ecx*4]       ; the program's own, if it has one
+        or      eax,eax
+        jnz     gv_out
+        mov     eax,ecx
         shl     eax,3
         add     eax,IDT_BASE
-        push    ecx
         movzx   ecx,word ptr [eax+6]    ; offset 31:16
         shl     ecx,16
         movzx   eax,word ptr [eax]      ; offset 15:0
         or      eax,ecx
+gv_out:
         pop     ecx
         ret
 
 set_vec:
         push    eax
-        call    dword ptr ds:[IOS_SETVEC]
+        cmp     edi,[r3_size]           ; a slot offset - the program's own
+        jb      sv_r3
+        call    r3_unhook               ; a kernel address: whatever the
+        call    dword ptr ds:[IOS_SETVEC]       ; program had is gone
+        pop     eax
+        ret
+sv_r3:
+        call    r3_hook
         pop     eax
         ret
 
@@ -1065,8 +1135,43 @@ gdt_out:
 ;=====================================================================
 fn2F:
         mov     eax,[dta_ptr]
+        call    i21_toprog              ; back into the caller's own terms
         mov     [ebp+F_EBX],eax
         jmp     i21_ok
+
+;---------------------------------------------------------------------
+; i21_toprog - EAX = a flat address the kernel holds.  If the caller is
+;              a native ring-3 program, hand back the offset it knows
+;              that address by instead.
+;
+; The three calls that ANSWER with an address rather than being given
+; one all need this: 2Fh the DTA, 51h and 62h the PSP.  The pointer
+; translation on the way in is a table, because which register holds a
+; pointer differs per function; on the way out there is no table to
+; consult, because a function that answers with an address says so in
+; its own definition.
+;
+; NOT everything that answers with an address goes through here, and
+; the two that do not are deliberate.  34h hands out the address of the
+; InDOS flag, which lives in the BIOS data area for the benefit of
+; real-mode TSRs and is not in any program's slot; 52h hands out the
+; list of lists.  Both are honest about being unreachable, in the one
+; way that matters - a program that follows either lands in its own
+; guard page and is told so - and the alternative is inventing a copy
+; inside the slot for a caller that has no business with either.
+;---------------------------------------------------------------------
+i21_toprog:
+        cmp     word ptr [ebp+F_CS],SEL_PROG_CS
+        jne     itp_out
+        push    eax
+        call    r3_off
+        jnc     itp_ok
+        pop     eax
+        ret
+itp_ok:
+        add     esp,4
+itp_out:
+        ret
 
 ;=====================================================================
 ; 30h - get version -> AL = major, AH = minor: 6.22
@@ -3395,10 +3500,30 @@ f47_bad:
 ;=====================================================================
 ; 48h - allocate EBX bytes -> EAX = address
 ;       (flat deviation: bytes, not paragraphs)
+;
+; WHICH HEAP DEPENDS ON WHO IS ASKING, and it has to.  The kernel
+; allocates out of the arena above 2MB, which is where the arena has
+; always been; a native program cannot see that memory at all now, so
+; an address out of it would be a pointer that faults the first time it
+; is used - worse than a refusal, because the program would carry it
+; around until the damage was somewhere else.  A program's memory comes
+; out of its own slot, between the end of its BSS and its stack.
+;
+; That is what DOS did with a .COM, which owned its segment and
+; allocated from inside it.  It also parks correctly: EXEC copies the
+; whole slot away when a program nests, so a program's heap travels
+; with it and needs neither an owner nor a sweep.
 ;=====================================================================
 fn48:
         mov     ebx,[ebp+F_EBX]
+        cmp     word ptr [ebp+F_CS],SEL_PROG_CS
+        je      f48_slot
         call    arena_alloc
+        jc      f48_nomem
+        mov     [ebp+F_EAX],eax
+        jmp     i21_ok
+f48_slot:
+        call    r3h_alloc
         jc      f48_nomem
         mov     [ebp+F_EAX],eax
         jmp     i21_ok
@@ -3412,7 +3537,13 @@ f48_nomem:
 ;=====================================================================
 fn49:
         mov     edx,[ebp+F_EDX]
+        cmp     word ptr [ebp+F_CS],SEL_PROG_CS
+        je      f49_slot
         call    arena_free
+        jc      f49_bad
+        jmp     i21_ok
+f49_slot:
+        call    r3h_free
         jc      f49_bad
         jmp     i21_ok
 f49_bad:
@@ -3433,10 +3564,26 @@ f49_bad:
 fn4A:
         mov     edx,[ebp+F_EDX]
         mov     ebx,[ebp+F_EBX]
+        cmp     word ptr [ebp+F_CS],SEL_PROG_CS
+        je      f4A_prog
         cmp     edx,[cur_psp]
         je      f4A_slot
         call    arena_resize
         jc      f4A_no
+        jmp     i21_ok
+
+;--- from a program, in its own terms: its PSP is at a known offset and
+;--- everything else is a block out of its slot heap.
+f4A_prog:
+        cmp     edx,SLOT_PSP
+        je      f4A_whole
+        call    r3h_resize
+        jc      f4A_no
+        jmp     i21_ok
+f4A_whole:
+        mov     eax,[r3_size]
+        cmp     ebx,eax
+        ja      f4A_no
         jmp     i21_ok
 
 f4A_slot:
@@ -3466,12 +3613,21 @@ f4A_no:
 ;=====================================================================
 fn50:
         mov     eax,[ebp+F_EBX]
+        cmp     word ptr [ebp+F_CS],SEL_PROG_CS
+        jne     f50_flat
+        call    r3_flat                 ; the caller means an offset
+        jc      f50_bad
+f50_flat:
         mov     [cur_psp],eax
         jmp     i21_ok
+f50_bad:
+        mov     ax,ERR_ACCESS
+        jmp     i21_fail
 
 fn51:
 fn62:
         mov     eax,[cur_psp]
+        call    i21_toprog
         mov     [ebp+F_EBX],eax
         jmp     i21_ok
 
@@ -3882,7 +4038,8 @@ fn4B:
         or      ebx,ebx
         jz      f4B_notail
         mov     esi,[ebx+4]
-        or      esi,esi
+        call    f4B_inner               ; the block is the caller's, and so
+        or      esi,esi                 ; is everything it points at
         jz      f4B_notail
         movzx   ecx,byte ptr [esi]
         cmp     ecx,7Eh
@@ -3895,6 +4052,23 @@ f4B_tlen:
         rep     movsb
         mov     byte ptr [edi],0Dh
 f4B_notail:
+
+        ; AND THE ENVIRONMENT, INTO A KERNEL BUFFER, for the same
+        ; reason and with a second one on top: a child cannot reach the
+        ; block its parent points at even while that parent is intact,
+        ; because it is in another slot.  So the environment is COPIED
+        ; into the child rather than pointed at - which is exactly what
+        ; the VDM already does for a 16-bit guest, and exactly why.
+        mov     dword ptr [exec_envlen],0
+        mov     ebx,[ebp+F_EBX]
+        or      ebx,ebx
+        jz      f4B_noenv
+        mov     esi,[ebx]               ; parameter block +0
+        call    f4B_inner
+        or      esi,esi
+        jz      f4B_noenv
+        call    exec_cpenv
+f4B_noenv:
 
         ; Which kind of program is it?  Ask the file.  EK_NOFILE joins
         ; the D32 path deliberately - see exec_kind.
@@ -3942,14 +4116,14 @@ f4B_nosave:
         ; the child would saw through the branch we are sitting on.
         ; Everything needed from here on is in kernel memory.
         mov     esp,KSTACK_TOP
-        mov     dword ptr [exec_psp],PROG_PSP
-        mov     dword ptr [exec_lo],PROG_BASE
-        mov     dword ptr [exec_hi],PROG_TOP
+        mov     eax,1                   ; the transient slot, whatever the
+        call    r3_useslot              ; depth: nesting parks, not relocates
         mov     edx,OFFSET exec_path
         call    exec_load
         jc      f4B_loadfail            ; AX holds the code
         mov     esi,OFFSET exec_tail
         call    build_psp
+        call    exec_setenv
 
         inc     dword ptr [exec_depth]
         mov     eax,[next_own]          ; a fresh identity: handles and
@@ -3965,17 +4139,8 @@ f4B_nosave:
         ; depth back before leaving through the front door.
         mov     byte ptr ds:[DOS_INDOS],0
 
-        mov     esp,PROG_TOP
-        push    PROG_PSP                ; RET -> PSP -> INT 20h
-        mov     ebx,PROG_PSP
-        mov     edx,ebx
-        xor     eax,eax
-        xor     ecx,ecx
-        xor     esi,esi
-        xor     edi,edi
-        xor     ebp,ebp
-        sti
-        jmp     dword ptr [exec_entry]
+        mov     eax,[exec_entry]
+        jmp     r3_start                ; and away, at ring 3
 
 ;--- the load failed with the slot already half overwritten ----------
 ; Put the occupant back before answering, or a failed EXEC would take
@@ -3983,6 +4148,8 @@ f4B_nosave:
 f4B_loadfail:
         movzx   eax,ax
         mov     [exec_err],eax
+        mov     eax,[exec_depth]        ; the caller's slot back under its
+        call    r3_useslot              ; feet before it is resumed
         mov     edi,[exec_depth]
         imul    edi,XN_LEN
         add     edi,OFFSET exec_stk
@@ -4026,14 +4193,16 @@ f4B_deep:
 ; cannot reach the shell's.
 ;---------------------------------------------------------------------
 f4B_vdm:
-        mov     edx,OFFSET exec_path
-        mov     esi,OFFSET exec_tail
         xor     edi,edi
         mov     ebx,[ebp+F_EBX]
         or      ebx,ebx
         jz      f4B_vgo
-        mov     edi,[ebx]                       ; parameter block +0
+        mov     esi,[ebx]                       ; parameter block +0
+        call    f4B_inner                       ; in the caller's terms, and
+        mov     edi,esi                         ; the caller may be at ring 3
 f4B_vgo:
+        mov     edx,OFFSET exec_path
+        mov     esi,OFFSET exec_tail
         call    vdm_exec
         jc      f4B_vfail
         mov     al,byte ptr ds:[vdm_exit]       ; 4Dh answers with it
@@ -4098,6 +4267,92 @@ ek_out:
         ret
 
 ;---------------------------------------------------------------------
+; f4B_inner - ESI = a pointer read OUT OF the EXEC parameter block.
+;             Make it flat if the caller was a native program.
+;
+; The block itself was translated on the way in, by the same table as
+; every other pointer argument; what is inside it was not, because a
+; table keyed on a register cannot say anything about memory.  So the
+; two pointers the block holds - the environment and the command tail -
+; are converted here, one call each, at the point they are read.
+;
+; ESI comes back zero if it was zero or if it is not an address the
+; caller could have meant, which both callers already treat as "not
+; supplied".
+;---------------------------------------------------------------------
+f4B_inner:
+        cmp     word ptr [ebp+F_CS],SEL_PROG_CS
+        jne     fbi_out
+        or      esi,esi
+        jz      fbi_out
+        push    eax
+        mov     eax,esi
+        call    r3_flat
+        jc      fbi_none
+        mov     esi,eax
+        pop     eax
+        ret
+fbi_none:
+        xor     esi,esi
+        pop     eax
+fbi_out:
+        ret
+
+;---------------------------------------------------------------------
+; exec_cpenv - ESI -> an environment, flat.  Take a copy into kernel
+;              memory now, while the caller is still there to have one.
+;
+; The block is a run of ASCIIZ strings ended by an empty one.  A
+; truncated copy would be worse than none, so a run that will not fit
+; is refused whole: a program with half an environment finds a PATH
+; that names three directories out of four and fails somewhere else.
+;---------------------------------------------------------------------
+exec_cpenv:
+        pushad
+        mov     edi,OFFSET exec_env
+        xor     ecx,ecx                 ; bytes copied
+ece_str:
+        cmp     ecx,SLOT_ENVMAX - 2
+        jae     ece_toobig
+        mov     al,[esi]
+        mov     [edi],al
+        inc     esi
+        inc     edi
+        inc     ecx
+        or      al,al
+        jnz     ece_str
+        cmp     byte ptr [esi],0        ; an empty string ends the block
+        jne     ece_str
+        mov     byte ptr [edi],0
+        inc     ecx
+        mov     [exec_envlen],ecx
+        popad
+        ret
+ece_toobig:
+        mov     dword ptr [exec_envlen],0
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; exec_setenv - put the copy into the child's slot, behind its PSP, and
+;               point PSP_ENV at it.  Called after build_psp, which has
+;               just zeroed the field.
+;---------------------------------------------------------------------
+exec_setenv:
+        pushad
+        mov     ecx,[exec_envlen]
+        jecxz   ese_out
+        mov     edi,[r3_base]
+        add     edi,SLOT_ENV
+        mov     esi,OFFSET exec_env
+        rep     movsb
+        mov     edi,[exec_psp]
+        mov     dword ptr [edi+PSP_ENV],SLOT_ENV
+ese_out:
+        popad
+        ret
+
+;---------------------------------------------------------------------
 ; exec_cpz - copy the ASCIIZ at ESI to EDI, at most ECX characters,
 ;            always terminated.
 ;---------------------------------------------------------------------
@@ -4119,8 +4374,9 @@ ecz_end:
 ;---------------------------------------------------------------------
 ; exec_load - load a D32 executable.
 ;
-;   EDX -> ASCIIZ path;  [exec_psp]/[exec_lo]/[exec_hi] = target slot.
-;   On success: image + zeroed BSS in place, [exec_entry] set, CF clear.
+;   EDX -> ASCIIZ path;  the slot is whichever r3_useslot last chose.
+;   On success: image + zeroed BSS in place, the slot heap laid out
+;   behind them, [exec_entry] set to the entry OFFSET, CF clear.
 ;   On failure: CF set, AX = ERR_NOFILE / ERR_EXEFMT / ERR_NOMEM.
 ;
 ; Also used directly by DOSMAIN to start the shell.
@@ -4158,29 +4414,47 @@ exec_load:
         jc      xl_nofile
         mov     dword ptr [clusbuf_clus],-1     ; buffer no longer file cache
 
+        ; EVERY FIELD IN THE HEADER IS A SLOT OFFSET NOW, and the base
+        ; is checked against the one offset every D32 program is linked
+        ; for rather than against "the slot this is going into".  It is
+        ; the same test it always was and it now means something
+        ; better: a file either has this kernel's idea of a program's
+        ; layout or it is not one of this kernel's programs.  Which
+        ; slot it lands in stopped being the file's business when the
+        ; segment base became the thing that decides.
         cmp     dword ptr [clus_buf+D32H_MAGIC],D32_MAGIC
         jne     xl_badfmt
-        mov     eax,dword ptr [clus_buf+D32H_BASE]
-        cmp     eax,[exec_lo]
-        jne     xl_badfmt               ; built for the other slot (or junk)
-        mov     [exec_cursor],eax
+        cmp     dword ptr [clus_buf+D32H_BASE],SLOT_IMAGE
+        jne     xl_badfmt
+        mov     eax,[r3_base]
+        add     eax,SLOT_IMAGE
+        mov     [exec_cursor],eax       ; flat: the kernel does the blit
 
         mov     ebx,dword ptr [clus_buf+D32H_ENTRY]
-        cmp     ebx,eax
+        cmp     ebx,SLOT_IMAGE
         jb      xl_badfmt
-        mov     ecx,eax
-        add     ecx,[exec_left]
+        mov     ecx,SLOT_IMAGE
+        add     ecx,[exec_left]         ; the offset just past the image
         cmp     ebx,ecx
         jae     xl_badfmt
-        mov     [exec_entry],ebx
+        mov     [exec_entry],ebx        ; stays an offset: it is a ring-3 EIP
 
-        ; image + bss must fit under the slot ceiling (minus some stack)
+        ; image + bss + the stack the header asks for must fit in the
+        ; slot.  D32H_STACK was informational for eight releases and is
+        ; load-bearing now: it is what divides the space above the BSS
+        ; between the heap 48h allocates from and the stack.
         mov     ebx,ecx
         add     ebx,dword ptr [clus_buf+D32H_BSS]
         mov     [exec_bssend],ebx
-        add     ebx,1000h               ; at least 4K of stack headroom
+        mov     eax,dword ptr [clus_buf+D32H_STACK]
+        cmp     eax,1000h               ; never less than 4K, whatever it says
+        jae     xl_stkok
+        mov     eax,1000h
+xl_stkok:
+        mov     [exec_stack],eax
+        add     ebx,eax
         jc      xl_nomem
-        cmp     ebx,[exec_hi]
+        cmp     ebx,[r3_size]
         ja      xl_nomem
 
 ;--- stream the file, cluster by cluster ------------------------------
@@ -4212,13 +4486,22 @@ xl_n_ok:
         jmp     short xl_blit
 
 xl_loaded:
-        ; zero the BSS
+        ; zero the BSS.  The cursor is flat and the end is an offset,
+        ; so one of them has to move; the offset does, because the
+        ; kernel is the only thing here that can hold both.
         mov     edi,[exec_cursor]
-        mov     ecx,[exec_bssend]
+        mov     ecx,[r3_base]
+        add     ecx,[exec_bssend]
         sub     ecx,edi
-        jbe     xl_done
+        jbe     xl_heap
         xor     eax,eax
         rep     stosb
+xl_heap:
+        ; and lay out what is left: the heap 48h hands out, between the
+        ; BSS and the stack reservation at the top of the slot.
+        mov     eax,[exec_bssend]
+        mov     ebx,[exec_stack]
+        call    r3h_init
 xl_done:
         clc
         ret
@@ -4254,7 +4537,9 @@ xl_nomem:
 ;---------------------------------------------------------------------
 build_psp:
         pushad
-        mov     edi,[exec_psp]
+        mov     edi,[r3_base]
+        add     edi,SLOT_PSP
+        mov     [exec_psp],edi
         push    edi
         xor     eax,eax
         mov     ecx,PSP_SIZE / 4
@@ -4262,13 +4547,18 @@ build_psp:
         pop     edi
 
         mov     word ptr [edi+PSP_INT20],20CDh
-        mov     eax,[exec_hi]
-        mov     [edi+PSP_MEMTOP],eax
+        mov     eax,[r3_size]           ; the first byte past the slot, in
+        mov     [edi+PSP_MEMTOP],eax    ; the terms the program uses
 
         ; INT 21h / RET at PSP+50h: the flat reading of DOS's far-call
         ; thunk, for a program that calls the API through its PSP.
         mov     word ptr [edi+PSP_DOSCALL],21CDh
         mov     byte ptr [edi+PSP_DOSCALL+2],0C3h
+
+        ; ...and the bare INT 21h at PSP+54h that a handler's IRET
+        ; comes back through.  Two bytes and no function number: see
+        ; the note beside PSP_R3RET, and r3_thunk.
+        mov     word ptr [edi+PSP_R3RET],21CDh
 
         mov     al,22h                  ; the vectors, as they stand now
         call    get_vec
@@ -4280,8 +4570,23 @@ build_psp:
         call    get_vec
         mov     [edi+PSP_CRITERR],eax
 
-        mov     eax,[cur_psp]           ; who started us (itself, for the
-        mov     [edi+PSP_PARENT],eax    ; shell - it has no parent)
+        ; Who started us.  DOS's idiom is that a program whose parent
+        ; field names its own PSP has no parent, and the shell is that
+        ; program; a child's parent lives in another slot and there is
+        ; no address in this one that names it, so the honest answer is
+        ; zero rather than a number pointing at nothing.  Either way
+        ; the test everybody makes - "is my parent me?" - still works.
+        ; The slot decides, not [cur_psp]: a NESTED program is loaded
+        ; into its parent's slot and shares its PSP address, so
+        ; comparing the two would tell a program three levels deep that
+        ; it was the interpreter.  Only the interpreter runs in the
+        ; shell slot, and that is the whole test.
+        mov     eax,SLOT_PSP
+        cmp     edi,SHELL_PSP
+        je      bp_noparent
+        xor     eax,eax
+bp_noparent:
+        mov     [edi+PSP_PARENT],eax
 
         lea     eax,[edi+PSP_TAIL]      ; the default DTA
         mov     [dta_ptr],eax
@@ -4372,6 +4677,14 @@ f4C_next:
         mov     eax,[cur_own]
         call    arena_freeown
 
+        ; A HANDLER OF THIS PROGRAM'S MAY BE WHAT CALLED 4Ch, and if so
+        ; it is not going back.  COMMAND's INT 23h handler does exactly
+        ; this when a ^C arrives with a child running: it terminates the
+        ; child from inside the handler rather than returning from it.
+        ; The frame r3_thunk parked for the IRET that will now never
+        ; happen goes with everything else this unwind discards.
+        call    r3_abandon
+
         cmp     dword ptr [exec_depth],0
         je      f4C_shell
 
@@ -4383,9 +4696,16 @@ f4C_next:
         add     edi,OFFSET exec_stk
 
         ; Onto the kernel stack first.  Un-parking the waiting program
-        ; writes over this whole slot, including the stack this call is
-        ; running on.
+        ; rewrites the whole slot, and nothing inside it may be
+        ; depended on across that.  The dying program's own stack is in
+        ; there - which is the half that used to matter, when the
+        ; kernel ran a program's DOS calls on the program's stack.  It
+        ; does not any more, and this stays anyway: a routine that
+        ; overwrites half a megabyte should not be standing on any of
+        ; it.
         mov     esp,KSTACK_TOP
+        mov     eax,[exec_depth]        ; the waiting program's slot, and
+        call    r3_useslot              ; its descriptors, back
         mov     esi,[edi+XN_SAVE]
         or      esi,esi
         jz      f4C_noparked            ; depth 1: the shell's own slot
@@ -5893,6 +6213,8 @@ fnF1:
         je      fF1_drv
         cmp     al,7
         je      fF1_null
+        cmp     al,8
+        je      fF1_mcb
         jmp     i21_unsup
 fF1_ver:
         mov     word ptr [ebp+F_EBX],PMDOS_MAJOR * 256 + PMDOS_MINOR
@@ -5989,6 +6311,104 @@ fF1_mem:
         mov     [ebp+F_EBX],eax
         jmp     i21_ok
 
+;--- AL=8: a memory arena, one block at a time.  DL = which arena
+;--- (0 = the kernel's, above 2MB; 1 = the conventional one a DOS box
+;--- lives in), EBX = which block counting from zero, EDI -> a 16-byte
+;--- record.  CF when EBX is past the end, so a caller walks until it
+;--- is told to stop and cannot loop for ever on a damaged chain.
+;---
+;--- THIS EXISTS BECAUSE MEM CAN NO LONGER READ EITHER ARENA.  It
+;--- walked the headers itself - the kernel's from the pointer 52h
+;--- hands out, and the conventional chain where it lies below 1MB -
+;--- which is exactly what MEM did under real DOS, and worked here for
+;--- the same reason: the program and the kernel shared an address
+;--- space.  They do not now.  The fix is the one v0.19 arrived at when
+;--- MEM stopped being an internal command: a report that has to reach
+;--- inside the kernel is a report proving the kernel has no way to
+;--- ask.  It had no way to ask.  Now it has.
+;---
+;--- THE RECORD IS NOT EITHER HEADER, and that is deliberate.  The two
+;--- chains have different shapes - sixteen flat bytes with an owner id
+;--- up here, a byte signature and a paragraph count down there - and
+;--- handing out both raw would put that difference in every caller.
+;--- One shape, and the kernel does the translating.
+fF1_mcb:
+        mov     ecx,[ebp+F_EBX]         ; which block
+        cmp     byte ptr [ebp+F_EDX],0
+        jne     fF1_mlow
+
+;--- the kernel's arena ----------------------------------------------
+        mov     ebx,ARENA_BASE
+fF1_mwalk:
+        cmp     ebx,[arena_top]
+        jae     fF1_mend
+        jecxz   fF1_mgot
+        cmp     dword ptr [ebx+MCB_SIG],SIG_END
+        je      fF1_mend                ; the terminator ends the walk, and
+        dec     ecx                     ; is itself the last block reported
+        mov     eax,[ebx+MCB_SIZE]
+        add     eax,MCB_LEN
+        add     ebx,eax
+        jmp     short fF1_mwalk
+fF1_mgot:
+        mov     eax,[ebx+MCB_SIG]
+        mov     dword ptr [f8_rec+F8_SIG],eax
+        mov     eax,[ebx+MCB_SIZE]
+        mov     dword ptr [f8_rec+F8_SIZE],eax
+        mov     eax,[ebx+MCB_OWNER]
+        mov     dword ptr [f8_rec+F8_OWNER],eax
+        mov     dword ptr [f8_rec+F8_ADDR],ebx
+        jmp     short fF1_mout
+
+;--- and the one below 1MB, in the same terms -------------------------
+fF1_mlow:
+        mov     ebx,V86_TPA
+fF1_lwalk:
+        cmp     ebx,V86_TPA_TOP
+        jae     fF1_mend
+        movzx   eax,byte ptr [ebx+RMCB_SIG]
+        cmp     al,'M'
+        je      fF1_lone
+        cmp     al,'Z'
+        jne     fF1_mend                ; not a header: the chain is over
+fF1_lone:
+        jecxz   fF1_lgot
+        cmp     al,'Z'
+        je      fF1_mend                ; 'Z' is the last one there is
+        dec     ecx
+        movzx   eax,word ptr [ebx+RMCB_LEN]
+        shl     eax,4
+        add     ebx,eax
+        add     ebx,RMCB_SIZE
+        jmp     short fF1_lwalk
+fF1_lgot:
+        ; DOWN THERE THE SIGNATURE SAYS WHERE THE CHAIN ENDS AND THE
+        ; OWNER SAYS WHETHER THE BLOCK IS FREE; up here the signature
+        ; says both.  So the record is filled from the owner, and 'Z'
+        ; has already done its other job by stopping the walk.
+        mov     edx,SIG_USED
+        cmp     word ptr [ebx+RMCB_OWN],0
+        jne     fF1_lsig
+        mov     edx,SIG_FREE
+fF1_lsig:
+        mov     dword ptr [f8_rec+F8_SIG],edx
+        movzx   eax,word ptr [ebx+RMCB_LEN]
+        shl     eax,4
+        mov     dword ptr [f8_rec+F8_SIZE],eax
+        movzx   eax,word ptr [ebx+RMCB_OWN]
+        mov     dword ptr [f8_rec+F8_OWNER],eax
+        mov     dword ptr [f8_rec+F8_ADDR],ebx
+
+fF1_mout:
+        mov     edi,[ebp+F_EDI]
+        mov     esi,OFFSET f8_rec
+        mov     ecx,F8_LEN / 4
+        rep     movsd
+        jmp     i21_ok
+fF1_mend:
+        mov     ax,ERR_NOFILE           ; "there is no such one"
+        jmp     i21_fail
+
 ;--- AL=5: an INT 24h handler is leaving without returning.
 ;---
 ;--- The kernel locks INT 24h against itself while a handler runs, so
@@ -6003,6 +6423,25 @@ fF1_mem:
 fF1_crit:
         mov     byte ptr [crit_busy],0
         mov     byte ptr ds:[DOS_ERRFLG],0
+
+        ; AND THE HANDLER ITSELF IS NOT COMING BACK.  This call already
+        ; meant "I am leaving by a route of my own" - it exists because
+        ; COMMAND longjmps home from its critical-error handler and its
+        ; ^C handler rather than IRETing, and the kernel's error-mode
+        ; lock would otherwise be carried away with it.  A ring-3
+        ; handler leaving that way strands one more thing: the frame
+        ; r3_thunk parked for the IRET that is never going to happen,
+        ; and the ring-0 stack pointer aimed just below it.  Both go
+        ; back to the top here.
+        call    r3_abandon
+
+        ; The InDOS count is set to ONE and not to zero, and the one is
+        ; this very call: i21_r0 is about to decrement it on the way
+        ; out, so zero here would leave it at 0FFh - a kernel that
+        ; believes it is 255 calls deep, which every TSR in the world
+        ; would then refuse to pop up over.  Everything the abandoned
+        ; handler was inside of is gone; this call is all that is left.
+        mov     byte ptr ds:[DOS_INDOS],1
         jmp     i21_ok
 
 ;--- AL=6: describe logical drive DL (0 = A:) into the 12-byte record
@@ -6508,10 +6947,9 @@ clusbuf_clus dd -1
 std_ch      db  0                       ; one-byte bounce for std_in/out
 
 ; EXEC state
-exec_psp    dd  0
-exec_lo     dd  0                       ; slot image base
-exec_hi     dd  0                       ; slot ceiling = initial ESP
-exec_entry  dd  0
+exec_psp    dd  0                       ; the child's PSP, flat
+exec_stack  dd  0                       ; the stack its header asked for
+exec_entry  dd  0                       ; its entry point, as a slot offset
 exec_cursor dd  0
 exec_left   dd  0
 exec_clus   dd  0
@@ -6526,6 +6964,9 @@ exec_err    dd  0                       ; error code across a stack switch
 ; overwritten - so reading them later would read the new program.
 exec_path   db  EXEC_PATH_MAX dup(0)
 exec_tail   db  132 dup(0)
+exec_envlen dd  0                       ; and the environment, which has the
+exec_env    db  SLOT_ENVMAX dup(0)      ; same problem twice over - see
+                                        ; exec_cpenv
 exec_sig    dd  0,0                     ; the eight bytes that say whose
                                         ; kind of executable this is: the
                                         ; 16-bit jump, and the magic behind it
@@ -6535,5 +6976,6 @@ exec_sig    dd  0,0                     ; the eight bytes that say whose
 exec_stk    db  EXEC_MAX * XN_LEN dup(0)
 
 f73_rec     db  F73_SIZE dup(0)         ; 7303h's answer, built whole
+f8_rec      db  F8_LEN dup(0)           ; and F1h/08's, likewise
 
 sft_tbl     db  MAX_HANDLES * SFT_LEN dup(0)

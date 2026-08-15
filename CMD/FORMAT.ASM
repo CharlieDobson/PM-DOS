@@ -36,7 +36,7 @@ _FMT    SEGMENT USE32 PUBLIC 'CODE'
 ;=====================================================================
 ; D32 header - the sector and chunk buffers live in the BSS
 ;=====================================================================
-        D32_HEAD PROG_BASE,<OFFSET fm_entry>,<512 + 16384 + 16384>,4096
+        D32_HEAD SLOT_IMAGE,<OFFSET fm_entry>,<512 + 16384 + 16384>,4096
 
 ;=====================================================================
 fm_entry:
@@ -61,7 +61,7 @@ fm_entry:
         int     21h
 
 ;--- the command tail: FORMAT d: [/Q] --------------------------------
-        mov     esi,PROG_PSP + PSP_TAIL
+        mov     esi,SLOT_PSP + PSP_TAIL
         movzx   ecx,byte ptr [esi]
         inc     esi
 fm_skipb:

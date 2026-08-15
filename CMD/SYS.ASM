@@ -37,7 +37,7 @@ _SYS    SEGMENT USE32 PUBLIC 'CODE'
 ;=====================================================================
 ; D32 header - the sector and copy buffers live in the BSS
 ;=====================================================================
-        D32_HEAD PROG_BASE,<OFFSET sy_entry>,<1024 + (S2_SECTORS * 512) + COPYBUF_SIZE>,4096
+        D32_HEAD SLOT_IMAGE,<OFFSET sy_entry>,<1024 + (S2_SECTORS * 512) + COPYBUF_SIZE>,4096
 
 ;=====================================================================
 sy_entry:
@@ -51,7 +51,7 @@ sy_entry:
         mov     [copy_buf],eax          ; 16K: file copies
 
 ;--- the target drive from the tail ----------------------------------
-        mov     esi,PROG_PSP + PSP_TAIL
+        mov     esi,SLOT_PSP + PSP_TAIL
         movzx   ecx,byte ptr [esi]
         inc     esi
 sy_skipb:

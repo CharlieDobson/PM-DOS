@@ -193,61 +193,64 @@ drv_bad:
         call    bad
 
 ;=====================================================================
-; The device chain, from the CON pointer, BOUNDED for the same reason.
+; The device chain, walked from its HEAD and BOUNDED.
 ;
-; A tool that lists drivers walks this, and an unterminated chain hangs
-; it exactly the way an unterminated arena hangs a memory mapper.  One
-; entry is a short chain but it is a REAL one, and the test that
-; matters is that it ends.
+; The head is the NUL header inside the list of lists at +22h, not the
+; CON pointer - that is where DOS anchored the chain and where every
+; device walker starts.  Each name is printed as it is passed, so the
+; output is the driver list a tool like MSD would show, and a wrong
+; NEXT pointer shows up as garbage rather than as a silent miscount.
+;
+; An unterminated chain hangs a walker exactly the way an unterminated
+; arena hangs a memory mapper, so the count is capped and reported.
 ;=====================================================================
 devchain:
         mov     dx,OFFSET t_dev
         call    puts
-        mov     es,[lol_seg]
-        mov     bx,[lol_off]
-        mov     ax,es:[bx+0Ch]          ; CON: offset...
-        mov     dx,es:[bx+0Eh]          ; ...and segment
+        mov     ax,[lol_seg]            ; the head is IN the structure,
+        mov     dx,[lol_off]            ; at BX+22h
+        add     dx,22h
+        mov     [d_seg],ax
+        mov     [d_off],dx
+        xor     cx,cx
 
-        ; The name of the first header, which should be readable text
-        mov     es,dx
-        mov     bx,ax
-        cmp     ax,0FFFFh
-        je      d_none
-        push    ax
-        push    dx
-        mov     cx,8
+d_next:
+        mov     es,[d_seg]
+        mov     bx,[d_off]
+        inc     cx
+        cmp     cx,DEV_MAX
+        jae     d_runaway
+        push    cx
+
+        mov     cx,8                    ; the name, as the walker sees it
 d_name:
         mov     dl,es:[bx+0Ah]
         call    putc
         inc     bx
         loop    d_name
-        pop     dx
-        pop     ax
-
         mov     dl,' '
         call    putc
-        xor     cx,cx
-d_next:
-        cmp     ax,0FFFFh
-        je      d_end
-        mov     es,dx
-        mov     bx,ax
-        inc     cx
-        cmp     cx,DEV_MAX
-        jae     d_runaway
+        pop     cx
+
+        mov     bx,[d_off]
         mov     ax,es:[bx]              ; the next header, offset first
         mov     dx,es:[bx+2]
+        cmp     ax,0FFFFh
+        je      d_end
+        mov     [d_off],ax
+        mov     [d_seg],dx
         jmp     short d_next
+
 d_end:
         mov     ax,cx
         call    put4
         mov     dx,OFFSET msg_devs
         call    puts
+        cmp     cx,4                    ; NUL, CON, AUX, PRN
+        jne     d_bad
         call    good
         jmp     cpu_test
-d_none:
-        mov     dx,OFFSET msg_nodev
-        call    puts
+d_bad:
         call    bad
         jmp     cpu_test
 d_runaway:
@@ -819,7 +822,7 @@ t_call      db  '  52h list of lists at $'
 t_mcb       db  '  first MCB at [BX-2] is $'
 t_walk      db  '  the arena walks: $'
 t_drives    db  '  block devices / LASTDRIVE $'
-t_dev       db  '  device chain from CON: $'
+t_dev       db  '  device chain: $'
 t_alloc     db  '  1Bh media byte at $'
 t_geom      db  '  1Bh geometry $'
 t_ctry      db  '  38h country separators $'
@@ -841,6 +844,8 @@ fails       db  0
 lol_seg     dw  0
 lol_off     dw  0
 mcb_first   dw  0
+d_seg       dw  0
+d_off       dw  0
 
 ; The 1Bh/63h answers are stashed through CS because DS is what those
 ; calls move - reading them back through DS would read the structure

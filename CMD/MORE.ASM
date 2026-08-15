@@ -29,12 +29,12 @@ _MORE   SEGMENT USE32 PUBLIC 'CODE'
 ;=====================================================================
 ; D32 header - the file is the memory image
 ;=====================================================================
-        D32_HEAD PROG_BASE,<OFFSET mo_entry>,<0>,4096
+        D32_HEAD SLOT_IMAGE,<OFFSET mo_entry>,<0>,4096
 
 ;=====================================================================
 mo_entry:
 ;--- an optional filename from the PSP tail --------------------------
-        mov     esi,PROG_PSP + PSP_TAIL
+        mov     esi,SLOT_PSP + PSP_TAIL
         movzx   ecx,byte ptr [esi]
         inc     esi
 mo_skipb:

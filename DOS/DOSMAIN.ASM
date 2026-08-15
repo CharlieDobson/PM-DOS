@@ -51,12 +51,21 @@ ENDIF
         call    dpmi_init               ; and the protected-mode interface
         call    sft_init
 
-        ; Tell PMIO where to go when a RING-0 fault has been reported.
-        ; Everything a native 32-bit program does is at ring 0, so this
-        ; is the difference between a crashed program and a dead
-        ; machine - see dos_fault.
+        ; Tell PMIO where to go when a ring-0 fault has been reported.
+        ; THAT NOW MEANS THE KERNEL'S OWN BUG AND NOTHING ELSE: native
+        ; programs moved to ring 3 in this release, so their faults
+        ; arrive at pm3_fault with the machine still intact, and this
+        ; hook is left for the case it was always really about - a
+        ; fault in PM-DOS itself.  It still unwinds rather than halting,
+        ; because a development machine that comes back to a prompt is
+        ; worth more than one that does not.
         mov     edi,OFFSET dos_fault
         call    dword ptr ds:[IOS_EXCHOOK]
+
+        ; And where to go when RING-3 code faults: a DPMI client or a
+        ; native program, which pm3_dispatch tells apart.
+        mov     edi,OFFSET pm3_dispatch
+        call    dword ptr ds:[IOS_PM3HOOK]
 
 ;=====================================================================
 ; The DOS vectors, BEFORE the first sector is read.  Mounting the boot
@@ -150,9 +159,8 @@ shell_restart:
         mov     byte ptr ds:[DOS_ERRFLG],0
 
         mov     dword ptr ds:[cur_psp],SHELL_PSP
-        mov     dword ptr ds:[exec_psp],SHELL_PSP
-        mov     dword ptr ds:[exec_lo],SHELL_BASE
-        mov     dword ptr ds:[exec_hi],SHELL_TOP
+        xor     eax,eax                 ; depth zero: the interpreter's own
+        call    r3_useslot              ; slot, and its two descriptors
         mov     edx,OFFSET shell_name
         call    exec_load
         jc      no_shell
@@ -171,17 +179,12 @@ shell_restart:
         mov     dword ptr ds:[next_own],2
         mov     dword ptr ds:[alloc_strat],0    ; and a fresh 58h strategy
 
-        mov     esp,SHELL_TOP
-        push    SHELL_PSP               ; RET -> PSP -> INT 20h -> back here
-        mov     ebx,SHELL_PSP
-        mov     edx,ebx
-        xor     eax,eax
-        xor     ecx,ecx
-        xor     esi,esi
-        xor     edi,edi
-        xor     ebp,ebp
-        sti
-        jmp     dword ptr ds:[exec_entry]
+        ; The interpreter is a program like any other and starts the
+        ; way any other one does: at ring 3, in its own slot, with the
+        ; PSP offset on its stack so that a RET lands on the INT 20h
+        ; there and brings us back to this label.
+        mov     eax,dword ptr ds:[exec_entry]
+        jmp     r3_start
 
 no_shell:
         mov     esi,OFFSET msgNoShell
@@ -248,6 +251,13 @@ dos_fault:
         xor     eax,eax
         lldt    ax                      ; a client's LDT is not a thing now
 
+        ; ...and no handler of the program's is running either, which
+        ; is the same kind of fact one level up: r3_thunk parks a frame
+        ; for the IRET that ends a ring-3 handler, and a fault takes
+        ; that IRET away.  The ring-0 stack pointer goes back to the
+        ; top with it.
+        call    r3_abandon
+
         ; THE GUARD MAY HAVE BEEN STOOD DOWN WHEN THE FAULT ARRIVED.
         ; v86_run, the real-mode thunk and ivt_set all disarm it and
         ; re-arm on the way out, and a fault takes the way out away -
@@ -296,6 +306,9 @@ df_cook:
                                         ; and ends its calls at vdm_loop
         INCLUDE DPMI.INC                ; and after both: the DPMI host
                                         ; borrows the DOS box's own V86 loop
+        INCLUDE RING3.INC               ; last: it sorts ring-3 faults into
+                                        ; the DPMI host's and its own, and
+                                        ; borrows the bridge's pointer table
 
 ;=====================================================================
 ; Data

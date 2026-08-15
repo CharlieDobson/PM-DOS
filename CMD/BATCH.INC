@@ -55,7 +55,7 @@ BF_LEN          EQU     BF_CMD + 4
 ; EXIT because there is nothing underneath us to go back to.
 ;=====================================================================
 cmd_startup:
-        mov     esi,SHELL_PSP + PSP_TAIL
+        mov     esi,SLOT_PSP + PSP_TAIL
         movzx   ecx,byte ptr [esi]
         inc     esi
 cs_lp:

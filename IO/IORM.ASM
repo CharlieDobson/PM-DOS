@@ -801,6 +801,15 @@ gdt_start:
         ; the TABLE it points at is what gets filled in, per client.
         dw      (DPMI_LDT_LIMIT AND 0FFFFh), (DPMI_LDT AND 0FFFFh)
         db      ((DPMI_LDT SHR 16) AND 0FFh), 82h, ((DPMI_LDT_LIMIT SHR 16) AND 0Fh), ((DPMI_LDT SHR 24) AND 0FFh)
+
+        ; 0038 - SEL_PROG_CS and 0040 - SEL_PROG_DS: the running native
+        ; program's code and data, DPL 3, based at its slot with a limit
+        ; of its size.  They start EMPTY and not present, because until
+        ; a program has been loaded there is no slot to describe and a
+        ; plausible-looking descriptor over somebody else's memory is
+        ; the wrong kind of default.  r3_setdesc fills them in.
+        dq      0
+        dq      0
 gdt_end:
 
 gdtr:

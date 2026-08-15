@@ -34,14 +34,14 @@ _CHOICE SEGMENT USE32 PUBLIC 'CODE'
 ;=====================================================================
 ; D32 header - the file is the memory image
 ;=====================================================================
-        D32_HEAD PROG_BASE,<OFFSET ch_entry>,<0>,4096
+        D32_HEAD SLOT_IMAGE,<OFFSET ch_entry>,<0>,4096
 
 ;=====================================================================
 ; Entry
 ;=====================================================================
 ch_entry:
 ;--- copy the PSP command tail out to a string we can walk -----------
-        mov     esi,PROG_PSP + PSP_TAIL
+        mov     esi,SLOT_PSP + PSP_TAIL
         movzx   ecx,byte ptr [esi]
         inc     esi
         mov     edi,OFFSET tail

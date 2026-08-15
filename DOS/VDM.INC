@@ -1038,16 +1038,17 @@ vdm_lolinit:
         mov     [edi+GLOL_BUFFERS],eax
         mov     [edi+GLOL_CDS],eax
         mov     [edi+GLOL_FCB],eax
-        mov     [edi+GLOL_NULNEXT],eax          ; a chain of exactly one
 
-        ; CLOCK$ and CON point at the NUL header, which is not a lie
-        ; about what they are so much as a refusal to invent two more
-        ; driver headers: what a program follows these for is the
-        ; device chain, and this is its head.
+        ; CON points at the real CON header now.  CLOCK$ says FFFF:FFFF
+        ; with the rest of what is not here: PM-DOS deliberately has no
+        ; clock driver - see dev_tab - and pointing this at some other
+        ; device's header would be the exact half-truth that comment
+        ; refuses.  Nothing walks the chain from here anyway; walkers
+        ; start at NUL, which is what the +22h header is for.
+        mov     dword ptr [edi+GLOL_CLOCK],0FFFFFFFFh
         movzx   eax,word ptr ds:[vdm_lolseg]
         shl     eax,16
-        mov     ax,GLOL_NUL
-        mov     [edi+GLOL_CLOCK],eax
+        mov     ax,GLOL_CON
         mov     [edi+GLOL_CON],eax
 
         mov     word ptr [edi+GLOL_MAXSEC],512
@@ -1056,9 +1057,6 @@ vdm_lolinit:
         mov     byte ptr [edi+GLOL_LASTDRV],MAX_DRIVES
         mov     byte ptr [edi+GLOL_NJOIN],0
 
-        mov     word ptr [edi+GLOL_NULATTR],DEV_ATTR_NUL
-        mov     word ptr [edi+GLOL_NULSTRAT],GLOL_RETF
-        mov     word ptr [edi+GLOL_NULINTR],GLOL_RETF
         mov     byte ptr [edi+GLOL_RETF],0CBh   ; RETF
 
         ; The odds and ends the other pointer-answering calls hand
@@ -1067,16 +1065,57 @@ vdm_lolinit:
         ; bytes" is the whole of what it has to say.
         mov     byte ptr [edi+GLOL_MEDIA],0
         mov     word ptr [edi+GLOL_DBCS],0
-        mov     esi,OFFSET vdm_nulname
-        lea     edx,[edi+GLOL_NULNAME]
+
+        ; And the device chain, built from a table so that four headers
+        ; cannot drift apart.  NUL is first because the list of lists
+        ; anchors there and because DEVICE= will insert behind it.
+        mov     esi,OFFSET vdm_devlist
+vli_dev:
+        movzx   edx,word ptr [esi]              ; where this header goes
+        cmp     dx,0FFFFh
+        je      vli_devdone
+        add     edx,edi
+
+        movzx   eax,word ptr [esi+2]            ; and where the next one is
+        cmp     ax,0FFFFh
+        je      vli_devlast
+        movzx   ecx,word ptr ds:[vdm_lolseg]
+        shl     ecx,16
+        or      eax,ecx                         ; a far pointer to it
+        jmp     short vli_devnext
+vli_devlast:
+        mov     eax,0FFFFFFFFh                  ; the chain ends here
+vli_devnext:
+        mov     [edx+DEVH_NEXT],eax
+
+        mov     ax,[esi+4]
+        mov     [edx+DEVH_ATTR],ax
+
+        ; Both driver entries are FAR CALL targets and both point at
+        ; the same RETF.  PM-DOS's devices are 32-bit code inside the
+        ; kernel, not real-mode drivers taking request packets, so
+        ; there is nothing here to call - and a return that does
+        ; nothing is the only honest thing to put at an address that
+        ; has to exist.  Walkers READ these; nothing calls them.
+        mov     word ptr [edx+DEVH_STRAT],GLOL_RETF
+        mov     word ptr [edx+DEVH_INTR],GLOL_RETF
+
+        push    esi
+        add     esi,6                           ; the eight-byte name
+        lea     ebx,[edx+DEVH_NAME]
         mov     ecx,8
 vli_name:
         mov     al,[esi]
-        mov     [edx],al
+        mov     [ebx],al
         inc     esi
-        inc     edx
+        inc     ebx
         dec     ecx
         jnz     vli_name
+        pop     esi
+
+        add     esi,VDMDEV_LEN
+        jmp     short vli_dev
+vli_devdone:
 
         movzx   eax,word ptr ds:[vdm_lolseg]    ; and it is the system's
         dec     eax
@@ -1086,7 +1125,31 @@ vli_none:
         popad
         ret
 
-vdm_nulname     db  'NUL     '
+; The chain, in DOS's own order: NUL, CON, AUX, PRN.  Each row is
+; where the header goes, where the NEXT one is, the attribute word,
+; and the eight-byte name.  FFFFh in the second column means the chain
+; ends; FFFFh in the first ends the table.
+;
+; This is the order MS-DOS used and it is worth keeping even though
+; nothing depends on it yet: software that expects NUL first and CON
+; second is software that was written against DOS, and matching it
+; costs nothing.
+VDMDEV_LEN      EQU     14              ; two words, attributes, eight bytes
+
+vdm_devlist:
+        dw  GLOL_HNUL, GLOL_HCON
+        dw  DEV_ATTR_NUL
+        db  'NUL     '
+        dw  GLOL_HCON, GLOL_HAUX
+        dw  DEV_ATTR_CON
+        db  'CON     '
+        dw  GLOL_HAUX, GLOL_HPRN
+        dw  DEV_ATTR_AUX
+        db  'AUX     '
+        dw  GLOL_HPRN, 0FFFFh
+        dw  DEV_ATTR_PRN
+        db  'PRN     '
+        dw  0FFFFh
 
 ;=====================================================================
 ; vdm_push - put the running program's identity on the nesting stack.
@@ -2430,6 +2493,7 @@ vdm_subptr:
         db  73h,  03h,  P_DX+P_DI       ; free space, the FAT32 form
         db  0F1h, 03h,  P_DX            ; the interpreter's own path
         db  0F1h, 06h,  P_DI            ; the volume table
+        db  0F1h, 08h,  P_DI            ; and one block of the arena
                                         ; F0h converts nothing at all: its
                                         ; DX is a row and a column
         db  0

@@ -29,7 +29,7 @@ _SORT   SEGMENT USE32 PUBLIC 'CODE'
 ;=====================================================================
 ; D32 header - text and pointer arrays live in the BSS
 ;=====================================================================
-        D32_HEAD PROG_BASE,<OFFSET so_entry>,<TEXT_MAX + (LINES_MAX * 4)>,4096
+        D32_HEAD SLOT_IMAGE,<OFFSET so_entry>,<TEXT_MAX + (LINES_MAX * 4)>,4096
 
 ;=====================================================================
 so_entry:
@@ -39,7 +39,7 @@ so_entry:
         mov     [ptr_base],eax
 
 ;--- the PSP tail: /R, /+n, an optional input filename ---------------
-        mov     esi,PROG_PSP + PSP_TAIL
+        mov     esi,SLOT_PSP + PSP_TAIL
         movzx   ecx,byte ptr [esi]
         inc     esi
 so_arg:

@@ -142,15 +142,54 @@ ARENA_BASE      EQU     PG_TOP                  ; start of the DOS memory arena
 
 ;---------------------------------------------------------------------
 ; Program slots.  One shell, one transient program - DOS with the
-; serial numbers filed off.  Image bases are 4K-aligned because wlink
-; silently rounds "option offset=" up to a 4K multiple.
+; serial numbers filed off.
+;
+; A SLOT IS A SEGMENT NOW.  Native programs run at ring 3 out of a code
+; and a data descriptor based at the slot they were loaded into, with a
+; limit of its size, so a program can address its own slot and nothing
+; else in the machine - not the kernel, not the interrupt vector table,
+; not the arena, not the other slot.  Every address a program uses is
+; therefore an OFFSET from the base of its slot, and the offsets below
+; are the same for both slots, which is what lets one linked image run
+; in either.  See RING3.INC.
+;
+; THE FIRST PAGE OF EVERY SLOT IS NOT PRESENT.  That is the null-
+; pointer guard the roadmap wanted and v0.31 could not build: page zero
+; of the machine is load-bearing (the IVT, the BIOS data area, InDOS,
+; the real-mode frame) and cannot be unmapped, but page zero OF A
+; PROGRAM is nothing at all, and a slot is arranged so that offset zero
+; lands on it.  A store through a null pointer is now a page fault at a
+; known address rather than four debug registers hoping to catch the
+; first sixteen bytes of it - and unlike DR7, an emulator implements it.
+;
+; The environment lives behind the PSP because a program can no longer
+; reach the one its parent holds: EXEC copies it in, exactly as the VDM
+; already copies one below 1MB for a 16-bit guest, and for the same
+; reason.
+;
+; Image bases are 4K-aligned because wlink silently rounds
+; "option offset=" up to a 4K multiple.
 ;---------------------------------------------------------------------
-SHELL_PSP       EQU     00140000h
-SHELL_BASE      EQU     00141000h               ; D32 header lands here
-SHELL_TOP       EQU     00180000h               ; initial ESP for the shell
-PROG_PSP        EQU     00180000h
-PROG_BASE       EQU     00181000h
-PROG_TOP        EQU     00200000h               ; initial ESP for programs
+SLOT_GUARD      EQU     00000000h               ; 4K, deliberately absent
+SLOT_PSP        EQU     00001000h               ; the PSP, 100h bytes
+SLOT_ENV        EQU     00001100h               ; and the environment behind it
+SLOT_ENVMAX     EQU     00000F00h               ; up to the image
+SLOT_IMAGE      EQU     00002000h               ; D32 header lands here - and
+                                                ; every D32 program is linked
+                                                ; for this one offset now
+
+SHELL_SLOT      EQU     00140000h               ; the interpreter's slot
+SHELL_SIZE      EQU     00040000h               ; 256K
+PROG_SLOT       EQU     00180000h               ; and the transient program's
+PROG_SIZE       EQU     00080000h               ; 512K
+
+; The flat addresses the kernel itself uses to reach into them.  The
+; kernel is still flat and based at zero, so it adds what a program
+; never has to know about.
+SHELL_PSP       EQU     SHELL_SLOT + SLOT_PSP
+SHELL_TOP       EQU     SHELL_SLOT + SHELL_SIZE ; initial ESP for the shell
+PROG_PSP        EQU     PROG_SLOT + SLOT_PSP
+PROG_TOP        EQU     PROG_SLOT + PROG_SIZE   ; initial ESP for programs
 
 ;---------------------------------------------------------------------
 ; D32 executable header - 32 bytes at the front of the file.  The file
@@ -172,10 +211,16 @@ PROG_TOP        EQU     00200000h               ; initial ESP for programs
 ; kernel and its executables are one build, and a stale COMMAND.COM
 ; that would have been loaded and run is better refused.
 ;---------------------------------------------------------------------
+; THE BASE AND THE ENTRY POINT ARE SLOT OFFSETS as of the ring-3
+; release, not absolute addresses: a program is linked for offset
+; SLOT_IMAGE and the segment base decides which slot that turns out to
+; be, so the same image runs as the shell or as a transient program.
+; The base field is kept, and checked, because a file whose idea of the
+; layout differs from the kernel's is not one of ours.
 D32_MAGIC       EQU     1A323344h               ; 'D','3','2',1Ah
 D32H_JMP        EQU     0                       ; db 0EBh,1Eh + 2 pad - the stub
 D32H_MAGIC      EQU     4                       ; dd - must be D32_MAGIC
-D32H_BASE       EQU     8                       ; dd - load address
+D32H_BASE       EQU     8                       ; dd - load offset: SLOT_IMAGE
 D32H_ENTRY      EQU     12                      ; dd - entry point (absolute)
 D32H_BSS        EQU     16                      ; dd - bytes to zero after image
 D32H_STACK      EQU     20                      ; dd - stack wanted (informational)
@@ -244,8 +289,44 @@ PSP_CRITERR     EQU     12h                     ; dd - saved INT 24h
 PSP_PARENT      EQU     16h                     ; dd - the PSP that EXEC'd us
 PSP_ENV         EQU     2Ch                     ; dd - environment, 0 = none
 PSP_DOSCALL     EQU     50h                     ; INT 21h / RET thunk
+PSP_R3RET       EQU     54h                     ; where a ring-3 handler's IRET
+                                                ; comes back to - see below
 PSP_TAIL        EQU     80h                     ; command tail: len, text, 0Dh
 PSP_SIZE        EQU     100h
+
+;---------------------------------------------------------------------
+; The five bytes at PSP+54h, and why a program's PSP has to hold them.
+;
+; A program's INT 23h and INT 24h handlers now live at ring 3, and an
+; interrupt gate cannot reach them: control never goes OUTWARD through
+; one, so the kernel cannot `int 24h` its way into a program the way it
+; could when programs ran in its own segment.  It has to arrive the
+; only way ring 3 is ever reached - by building a frame and IRETDing -
+; and then it needs a way BACK, because the specification for every one
+; of these handlers is that it ends in an IRET and nothing else.
+;
+; So the return address pushed for that IRET points here, at an INT 21h
+; the kernel recognises by the vector it arrives on.  Trap out, trap
+; back, exactly as a DPMI real-mode callback does it, and for the same
+; reason: an interrupt is the one instruction that means "the kernel is
+; wanted" from any privilege level.
+;
+; It is in the PSP because the PSP is the one piece of a program's
+; address space the KERNEL lays out, and because CS and DS have the
+; same base here - so bytes written as data are reachable as code.
+;
+; THE TWO BYTES ARE A BARE INT 21h AND CARRY NO FUNCTION NUMBER, and
+; that is the whole trick.  An INT 24h handler answers in AL and an
+; INT 23h handler may answer in nothing at all: by the time control
+; reaches here the registers belong to the HANDLER, and a trampoline
+; that loaded a function number into AX would destroy the answer it
+; exists to bring back.  So the kernel recognises this call by the EIP
+; it arrives from, which is a constant it laid out itself.  DPMI's
+; real-mode callback return is the same idiom, arrived at the same way.
+;---------------------------------------------------------------------
+R3RET_LEN       EQU     2                       ; db 0CDh,21h
+R3RET_EIP       EQU     SLOT_PSP + PSP_R3RET + R3RET_LEN
+
 
 IDT_BASE        EQU     00210000h
 IDT_LIMIT       EQU     07FFh                   ; 256 * 8 - 1
@@ -297,6 +378,14 @@ TSS_IOMAP       EQU     66h                     ; word: offset of the bitmap
 ;---------------------------------------------------------------------
 DPMI_KSTACK     EQU     00218000h               ; ring-0 ESP for ring-3 entries
 DPMI_LDT        EQU     00218000h               ; the client's descriptor table
+
+; And the same thing for a NATIVE ring-3 program, which needs its own
+; rather than sharing: the shell is a ring-3 program that stays running
+; while a DOS box and a DPMI client inside it come and go, so the two
+; stacks are live at the same time.  It sits above the LDT (2K of the
+; 32K between DPMI_LDT and the page directory) and grows down.
+R3_KSTACK       EQU     0021C000h               ; ring-0 ESP while a native
+                                                ; program is running
 DPMI_LDT_ENT    EQU     256                     ; descriptors in it
 DPMI_LDT_LIMIT  EQU     DPMI_LDT_ENT * 8 - 1
 
@@ -510,11 +599,6 @@ GLOL_NBLOCK     EQU     22h             ; db - +20 block devices, filled per cal
 GLOL_LASTDRV    EQU     23h             ; db - +21 LASTDRIVE
 GLOL_NUL        EQU     24h             ; +22 the NUL driver header, and with
                                         ; it the head of the device chain
-GLOL_NULNEXT    EQU     24h             ; dd - FFFF:FFFF, so the walk stops
-GLOL_NULATTR    EQU     28h             ; dw - character device, and it is NUL
-GLOL_NULSTRAT   EQU     2Ah             ; dw - offset of the strategy entry
-GLOL_NULINTR    EQU     2Ch             ; dw - offset of the interrupt entry
-GLOL_NULNAME    EQU     2Eh             ; 8 bytes - 'NUL     '
 GLOL_NJOIN      EQU     36h             ; db - +34 JOIN'ed drives, none
 GLOL_RETF       EQU     37h             ; db - a far return, which is what both
                                         ; driver entries above point at: they
@@ -536,10 +620,57 @@ GLOL_DBCS       EQU     3Ah             ; dw - 63h hands back DS:SI pointing
                                         ; single zero word IS the table: no
                                         ; ranges, which is the truth for
                                         ; every codepage PM-DOS has
-GLOL_SIZE       EQU     3Ch
-GLOL_PARAS      EQU     4               ; paragraphs to hold all of it
 
-DEV_ATTR_NUL    EQU     8004h           ; character device, and the NUL bit
+;---------------------------------------------------------------------
+; THE DEVICE CHAIN, and it is a real one now.
+;
+; It shipped as a single synthetic NUL header - enough for a walker to
+; start and stop, and a fiction about what the machine has.  PM-DOS
+; has had four kinds of character device since v0.30 (dev_tab), so it
+; can afford the truth: one header each, chained in the order DOS
+; chained them, ending where DOS ends it.
+;
+; NUL IS THE HEAD AND THAT IS NOT ARBITRARY.  The list of lists points
+; at it, every device walker starts from it, and DOS itself put NUL
+; first so that a loaded driver could be inserted immediately after
+; without moving the anchor.  That is the hook DEVICE= will need.
+;
+; The units are NOT separate headers.  LPT1-3 are one PRN driver with
+; three of them and COM1-4 one AUX driver with four, exactly as
+; dev_tab already says, because that is what a unit number is for.
+; CLOCK$ has no header for the reason dev_tab gives: half a clock
+; would be a lie, and 2Ah-2Dh are the whole of the truth.
+;---------------------------------------------------------------------
+DEVH_NEXT       EQU     00h             ; dd - FFFF:FFFF ends the chain
+DEVH_ATTR       EQU     04h             ; dw
+DEVH_STRAT      EQU     06h             ; dw - offset of the strategy entry
+DEVH_INTR       EQU     08h             ; dw - offset of the interrupt entry
+DEVH_NAME       EQU     0Ah             ; 8 bytes, blank padded
+DEVH_LEN        EQU     12h
+
+; GLOL_H* are the HEADERS.  GLOL_CON above is the list of lists' own
+; pointer AT the console header and is a different thing at a
+; different offset - hence the H, which is not decoration.
+GLOL_HNUL       EQU     GLOL_NUL        ; the head, already inside the LoL
+GLOL_HCON       EQU     3Ch
+GLOL_HAUX       EQU     4Eh
+GLOL_HPRN       EQU     60h
+GLOL_SIZE       EQU     72h
+GLOL_PARAS      EQU     8               ; paragraphs to hold all of it
+
+; Attribute words.  Bit 15 says character device and the rest say what
+; kind of one.
+;
+; CON DELIBERATELY DOES NOT SET BIT 4.  That bit means "this console
+; accepts INT 29h", the fast write DOS uses to put a character on the
+; screen without going through the device at all - and PM-DOS reflects
+; INT 29h to an IRET, which SWALLOWS the character.  Claiming the bit
+; would make well-behaved software choose the one path where its
+; output disappears.  It goes back the day INT 29h writes a character.
+DEV_ATTR_NUL    EQU     8004h           ; character, and the bit bucket
+DEV_ATTR_CON    EQU     8003h           ; character, is stdin, is stdout
+DEV_ATTR_AUX    EQU     8000h           ; character, and nothing special
+DEV_ATTR_PRN    EQU     8000h
 
 ; These offsets are a published layout, not an internal one - they are
 ; what a DOS program compiled in 1989 expects to find - so a later edit
@@ -548,7 +679,7 @@ DEV_ATTR_NUL    EQU     8004h           ; character device, and the NUL bit
 ; device header is 18 bytes and the JOIN count follows it; the RETF the
 ; two driver entries point at follows that; and the whole thing has to
 ; fit in the block vdm_lolinit asks lm_alloc for.
-IF GLOL_NJOIN NE GLOL_NUL + 12h
+IF GLOL_NJOIN NE GLOL_NUL + DEVH_LEN
         .ERR    <GLOL: the NUL device header is not 18 bytes>
 ENDIF
 IF GLOL_RETF NE GLOL_NJOIN + 1
@@ -557,7 +688,16 @@ ENDIF
 IF GLOL_MEDIA NE GLOL_RETF + 1
         .ERR    <GLOL: the media byte does not follow the list of lists>
 ENDIF
-IF GLOL_SIZE NE GLOL_DBCS + 2
+IF GLOL_HCON NE GLOL_DBCS + 2
+        .ERR    <GLOL: the device chain does not follow the DBCS table>
+ENDIF
+IF GLOL_HAUX NE GLOL_HCON + DEVH_LEN
+        .ERR    <GLOL: the CON header is not 18 bytes>
+ENDIF
+IF GLOL_HPRN NE GLOL_HAUX + DEVH_LEN
+        .ERR    <GLOL: the AUX header is not 18 bytes>
+ENDIF
+IF GLOL_SIZE NE GLOL_HPRN + DEVH_LEN
         .ERR    <GLOL: GLOL_SIZE does not cover the whole structure>
 ENDIF
 IF GLOL_SIZE GT GLOL_PARAS * 10h
@@ -633,6 +773,25 @@ EXE_HDRLEN      EQU     1Ch                     ; what we read to decide
 
 EXE_MZ          EQU     5A4Dh                   ; 'M','Z' as a little-endian word
 EXE_ZM          EQU     4D5Ah
+
+;---------------------------------------------------------------------
+; 21h/F1h AL=8 - one block of one memory arena, in a shape that does
+; not depend on which arena it came out of.
+;
+; Both chains are walked by index rather than by following pointers,
+; because the caller can no longer follow one: a program's whole view
+; of memory is its own slot now.  A walker asks for block 0, then 1,
+; and stops when it is told there is no such block.
+;---------------------------------------------------------------------
+F8_SIG          EQU     0               ; dd - 'M' used, 'Z' free, 'E' end
+F8_SIZE         EQU     4               ; dd - payload bytes
+F8_OWNER        EQU     8               ; dd - owner id, or PSP segment in
+                                        ;      the conventional arena
+F8_ADDR         EQU     12              ; dd - where the block is, flat
+F8_LEN          EQU     16
+
+F8_ARENA        EQU     0               ; DL: the kernel's, above 2MB
+F8_CONV         EQU     1               ; DL: the one a DOS box lives in
 
 ;---------------------------------------------------------------------
 ; How a V86 DOS call's pointer arguments have to be translated.  The
@@ -859,7 +1018,17 @@ SEL_CODE16      EQU     0018h                   ; base IO_BASE, limit 64K
 SEL_DATA16      EQU     0020h                   ; base 0, limit 64K
 SEL_TSS         EQU     0028h                   ; the one task, for V86
 SEL_LDT         EQU     0030h                   ; the DPMI client's own table
-GDT_ENTRIES     EQU     7
+
+; The running program's own two, and the RPL is part of the number: a
+; native program is ring-3 code and these selectors are never loaded by
+; anything else.  Their base and limit describe whichever slot is
+; running and are rewritten by EXEC - one pair, because one program
+; runs at a time.  Index 7 and 8, so SEL_PROG_CS is 0038h + RPL 3.
+SEL_PROG_CS     EQU     003Bh
+SEL_PROG_DS     EQU     0043h
+GDT_IDX_PROGCS  EQU     7
+GDT_IDX_PROGDS  EQU     8
+GDT_ENTRIES     EQU     9
 
 GDT_OFF         EQU     0C00h                   ; offset within the RM stub
 GDT_BASE        EQU     IO_BASE + GDT_OFF
@@ -1394,7 +1563,7 @@ SHELLTAIL_MAX   EQU     130             ; length byte + 126 + CR + slack
 ; has a call of its own; these two agree.
 ;---------------------------------------------------------------------
 PMDOS_MAJOR     EQU     0
-PMDOS_MINOR     EQU     32
+PMDOS_MINOR     EQU     33
 
 DOSVER_MAJOR    EQU     6
 DOSVER_MINOR    EQU     22

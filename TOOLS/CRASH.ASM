@@ -11,17 +11,26 @@
 ; the fault is reported and then unwound to a fresh command prompt.
 ; This is what proves it: it crashes, and the prompt comes back.
 ;
-;   CRASH          a page fault - a write to unmapped memory
+; AND THEN THE PREMISE CHANGED.  Native programs run at ring 3 in a
+; segment that describes their own slot now, so none of these faults
+; can reach anything outside this program any more - which is what the
+; new /K tests, and what turns every other case here from "the machine
+; survived" into "the machine was never in danger".
+;
+;   CRASH          a general protection fault - a write outside the
+;                  slot, which used to be a page fault at F0000000
 ;   CRASH /D       divide by zero
 ;   CRASH /I       an invalid opcode
 ;   CRASH /N       a write through a null pointer
+;   CRASH /K       a READ of the kernel, which is the one that stopped
+;                  being possible
 ;   CRASH /A       crash twice in a row, to show the second one is
 ;                  caught as well as the first
 ;
 ; Nothing here is subtle on purpose.  The value of the test is not the
 ; kind of fault, it is that the shell is still there afterwards.
 ;
-; Linked with:  wlink form raw bin option offset=0x181000
+; Linked with:  wlink form raw bin option offset=0x2000
 ;=====================================================================
         .386
         INCLUDE PMDOS.INC
@@ -33,7 +42,7 @@ _CR     SEGMENT USE32 PUBLIC 'CODE'
 ;=====================================================================
 ; D32 header
 ;=====================================================================
-        D32_HEAD PROG_BASE,<OFFSET cr_entry>,<0>,4096
+        D32_HEAD SLOT_IMAGE,<OFFSET cr_entry>,<0>,4096
 
 cr_entry:
         mov     edx,OFFSET msg_hi
@@ -41,8 +50,8 @@ cr_entry:
 
         ; The command tail lives at PSP+80h: a length byte, then the
         ; text.  All that is wanted from it is a letter after a slash.
-        mov     esi,PROG_PSP + 81h
-        movzx   ecx,byte ptr ds:[PROG_PSP + 80h]
+        mov     esi,SLOT_PSP + 81h
+        movzx   ecx,byte ptr ds:[SLOT_PSP + 80h]
         xor     bl,bl                   ; BL = the switch letter, if any
 cr_tail:
         or      ecx,ecx
@@ -66,20 +75,39 @@ cr_go:
         je      cr_again
         cmp     bl,'n'
         je      cr_null
+        cmp     bl,'k'
+        je      cr_kernel
 
-;--- a write to unmapped memory: #PF, and CR2 says where -------------
-; This is what the plain "CRASH" does because a NULL pointer, which was
-; the first thing tried here, did not fault at all: linear zero is the
-; real-mode interrupt vector table, it is mapped, and a D32 program is
-; at ring 0 - so a null write quietly scribbled on the IVT and carried
-; on.  v0.31 fixed that; see /N below.
-;
-; PG_MAXTAB page tables cover the first 256MB, so anything above that
-; has no mapping at all.
+;--- a write miles outside the slot ----------------------------------
+; This used to be a PAGE fault: a D32 program was flat and could name
+; every address the page tables described, so the way to find one that
+; was not there was to go above the 256MB they cover.  It is a GENERAL
+; PROTECTION fault now, and from a much shorter distance - a program's
+; segment stops at the end of its slot, so F0000000h is refused by the
+; segment limit long before any page table is consulted.
         mov     edx,OFFSET msg_page
         call    puts
         mov     eax,0F0000000h
         mov     dword ptr [eax],0DEADBEEFh
+        jmp     cr_survived
+
+;--- and the one that is the whole point of the release ---------------
+; A READ, not a write, and of the kernel rather than of nothing: the
+; first byte of PMDOS.SYS.  Until this release that read SUCCEEDED - a
+; native program shared the kernel's address space and its ring, so it
+; could read the kernel, write the kernel, and scribble on the arena on
+; its way past.  There is now no offset in this program's segment that
+; names any of it, and this is what proves it: the fault happens at the
+; instruction that tries, and the offset it names is one this program
+; is entitled to hold and not entitled to use.
+cr_kernel:
+        mov     edx,OFFSET msg_kern
+        call    puts
+        mov     eax,DOS_BASE
+        mov     eax,dword ptr [eax]
+        call    puthex32                ; if this prints, containment failed
+        mov     edx,OFFSET msg_crlf
+        call    puts
         jmp     cr_survived
 
 ;--- divide by zero: #DE ---------------------------------------------
@@ -99,27 +127,28 @@ cr_bad:
         db      0Fh, 0Bh                ; UD2
         jmp     cr_survived
 
-;--- through a null pointer: #DB, from the debug registers ------------
-; The bug this exists to catch is the commonest one there is, and
-; before v0.31 it was also the quietest: linear 0 is mapped, this code
-; is at ring 0, and the write landed on interrupt vectors 0 to 3 and
-; came back with the carry flag clear.  The program went on to fail
-; somewhere else entirely, minutes later.
+;--- through a null pointer: #PF, at last -----------------------------
+; THIS IS THE THIRD ANSWER THIS TEST HAS HAD, and the three are a
+; history of the guard.  Before v0.31 the write did not fault at all:
+; linear zero is the real-mode interrupt vector table, it is mapped,
+; and a ring-0 program could write it - so a null store scribbled on
+; vectors 0 to 3, returned with the carry clear, and the program failed
+; somewhere else entirely, minutes later.  v0.31 caught it with four
+; debug registers, because page zero of the MACHINE holds the IVT, the
+; BIOS data area, InDOS and the real-mode frame and could not be taken
+; away; that reported exception 01, watched only the first sixteen
+; bytes, saw only writes, and could not be exercised on an emulator at
+; all.
 ;
-; It is NOT a page fault even now, and the reason is worth knowing:
-; page zero also holds the BIOS data area, InDOS and the real-mode
-; thunk's register frame, so the kernel cannot unmap it.  Four debug
-; registers watch the first sixteen bytes instead - IO\NULLTRAP.INC
-; has the argument.
-;
-; So the reported vector is 01 rather than 0E, and there is no CR2,
-; which is why the handler prints a line naming what it was.
+; A program's address zero is its own page now, and it is not there.
+; So this is exception 0E with CR2 pointing at the foot of the slot -
+; whatever the width of the access, whatever the offset within the
+; page, read or write - and every emulator implements it.  The debug
+; registers stay armed for the KERNEL's own null pointers, which is the
+; job they are now the right size for.
 cr_null:
-        ; Say whether the guard is even armed before tripping it, so a
-        ; survival can be read.  An emulator that does not implement
-        ; debug registers reports "armed" here and then does not fault,
-        ; which is a fact about the emulator; "not armed" would be a
-        ; fact about PM-DOS.
+        ; The guard's state is still worth printing, because it is
+        ; still guarding something - just not this program.
         mov     ax,0F107h
         int     21h
         push    ebx
@@ -194,7 +223,9 @@ ph_out:
 
 msg_hi      db  13,10,'CRASH - a 32-bit program about to fault on purpose.',13,10
             db  'The prompt should come back; the machine should not stop.',13,10,'$'
-msg_page    db  '  writing to unmapped memory at F0000000...',13,10,'$'
+msg_page    db  '  writing outside the slot, at F0000000...',13,10,'$'
+msg_kern    db  '  reading the kernel at DOS_BASE - it should not be there.',13,10
+            db  '  what came back: $'
 msg_div     db  '  dividing by zero...',13,10,'$'
 msg_ud      db  '  executing an invalid opcode...',13,10,'$'
 msg_null    db  '  writing through a null pointer...',13,10,'$'

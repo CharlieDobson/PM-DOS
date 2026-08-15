@@ -29,7 +29,7 @@ _DRV    SEGMENT USE32 PUBLIC 'CODE'
 ;=====================================================================
 ; D32 header
 ;=====================================================================
-        D32_HEAD PROG_BASE,<OFFSET drv_entry>,<0>,4096
+        D32_HEAD SLOT_IMAGE,<OFFSET drv_entry>,<0>,4096
 
 drv_entry:
 ;--- our own critical-error handler, before anything touches a disk --

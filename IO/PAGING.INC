@@ -62,6 +62,22 @@ pgi_tab:
         add     eax,1000h
         loop    pgi_tab
 
+;--- the guard page at the foot of each program slot -----------------
+; THE NULL-POINTER GUARD THE ROADMAP WANTED, and it is two cleared
+; bits.  A native program runs at ring 3 out of a segment based at its
+; slot, so ITS address zero is this page and nothing else in the
+; machine is - unlike the machine's page zero, which holds the IVT, the
+; BIOS data area, InDOS at 4F7h and the real-mode frame at 500h, and
+; which NULLTRAP.INC argues at length cannot be taken away.
+;
+; Both slots get one because both hold a program: the interpreter is
+; not a special case, it is the program that happens to be running when
+; no other one is.
+        mov     eax,SHELL_SLOT + SLOT_GUARD
+        call    pg_absent
+        mov     eax,PROG_SLOT + SLOT_GUARD
+        call    pg_absent
+
 ;--- A20 starts OFF, which is how a PC starts ------------------------
 ; The gate is a switch software throws deliberately; a DOS box that
 ; came up with it already open would hide every bug in every program
@@ -80,6 +96,29 @@ pgi_tab:
 pgi_flush:                                      ; the manual asks for it and
                                                 ; the 386 means it
         popad
+        ret
+
+;=====================================================================
+; pg_absent - EAX = a linear address.  Take the page containing it out
+;             of the map, for good.
+;
+; Called before CR3 is loaded, so there is no TLB to flush: the two
+; pages this is used on are decided at build time and never come back.
+; The identity map means the entry to clear is simply the address
+; itself, shifted - table (addr / 4MB), entry (addr / 4K) within it,
+; which for one flat table array is one index.
+;=====================================================================
+pg_absent:
+        push    eax
+        push    edi
+        shr     eax,12
+        cmp     eax,PG_MAXTAB * 1024            ; past what we map at all?
+        jae     pga_nothing                     ; then it is already absent
+        mov     edi,PG_TABS
+        mov     dword ptr [edi+eax*4],0
+pga_nothing:
+        pop     edi
+        pop     eax
         ret
 
 ;=====================================================================

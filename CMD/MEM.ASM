@@ -15,31 +15,26 @@
 ;
 ; What it asks:
 ;   21h/F1h AL=4    extended memory size, as the BIOS reported it
-;   21h/52h         the kernel information block, whose dword BELOW
-;                   the returned pointer is the first arena header -
-;                   the one field real DOS also put there, and the
-;                   reason MEM and DEBUG could walk MCBs at all
+;   21h/F1h AL=8    one block of one arena, by index
 ;
-; The block walk itself reads kernel-side headers directly, which is
-; exactly what MEM always did and the reason 52h exists at all.
+; IT USED TO READ THE HEADERS ITSELF, from the pointer 21h/52h hands
+; out, which is exactly what MEM did under real DOS and worked here for
+; the same reason: the program and the kernel shared one address space.
+; They stopped sharing it when native programs moved to ring 3, and the
+; fix is the argument this program was written to make in the first
+; place - a report that has to reach inside the kernel is a report
+; proving the kernel has no way to ask.  Now it asks.
 ;
-; Linked with:  wlink form raw bin option offset=0x181000
+; Linked with:  wlink form raw bin option offset=0x2000
 ;=====================================================================
         .386
         INCLUDE PMDOS.INC
 
-;--- the arena header, as ARENA.INC lays it out ----------------------
-MCB_SIG         EQU     0
-MCB_SIZE        EQU     4
-MCB_OWNER       EQU     8
-MCB_LEN         EQU     16
+;--- what a block's signature means, as ARENA.INC lays it out --------
+MCB_LEN         EQU     16              ; the header, which is overhead
 SIG_USED        EQU     'M'
 SIG_FREE        EQU     'Z'
 SIG_END         EQU     'E'
-
-;--- the 52h block ---------------------------------------------------
-DL_MCB          EQU     -4              ; dd - first arena header
-DL_ARENATOP     EQU     8               ; dd - -> top of the arena
 
 BLOCKS_MAX      EQU     2000            ; refuse to loop forever on a
                                         ; corrupted chain
@@ -51,11 +46,11 @@ _MEM    SEGMENT USE32 PUBLIC 'CODE'
 ;=====================================================================
 ; D32 header
 ;=====================================================================
-        D32_HEAD PROG_BASE,<OFFSET mem_entry>,<0>,4096
+        D32_HEAD SLOT_IMAGE,<OFFSET mem_entry>,<0>,4096
 
 ;=====================================================================
 mem_entry:
-        mov     esi,PROG_PSP + PSP_TAIL
+        mov     esi,SLOT_PSP + PSP_TAIL
         movzx   ecx,byte ptr [esi]
         inc     esi
 me_arg:
@@ -232,28 +227,19 @@ survey:
         mov     [x_memkb],eax
 sv_noxms:
 
-        mov     ah,52h                  ; the arena's first header
-        int     21h
-        jc      sv_nolol
-        mov     eax,[ebx+DL_MCB]
-        mov     [a_first],eax
-sv_nolol:
-
-        mov     esi,[a_first]
-        or      esi,esi
-        jz      sv_out
-        mov     ecx,BLOCKS_MAX
+        xor     ebx,ebx                 ; block zero of the kernel's arena
 sv_lp:
-        mov     eax,[esi+MCB_SIG]
+        mov     dl,F8_ARENA
+        call    get_block
+        jc      sv_out
+        mov     eax,dword ptr [blk+F8_SIG]
         cmp     eax,SIG_END
         je      sv_out
         cmp     eax,SIG_USED
         je      sv_used
-        cmp     eax,SIG_FREE
-        jne     sv_out                  ; not a header at all: stop here
 
         inc     dword ptr [n_free]
-        mov     eax,[esi+MCB_SIZE]
+        mov     eax,dword ptr [blk+F8_SIZE]
         add     [a_free],eax
         cmp     eax,[a_largest]
         jbe     sv_next
@@ -261,37 +247,32 @@ sv_lp:
         jmp     short sv_next
 sv_used:
         inc     dword ptr [n_used]
-        mov     eax,[esi+MCB_SIZE]
+        mov     eax,dword ptr [blk+F8_SIZE]
         add     [a_used],eax
 sv_next:
         ; the header is overhead, and belongs in "used" either way
         add     dword ptr [a_used],MCB_LEN
-        add     esi,[esi+MCB_SIZE]
-        add     esi,MCB_LEN
-        dec     ecx
-        jnz     sv_lp
+        inc     ebx
+        cmp     ebx,BLOCKS_MAX
+        jb      sv_lp
 sv_out:
         mov     eax,[a_used]
         add     eax,[a_free]
         mov     [a_total],eax
 
 ;--- and the conventional arena the DOS box runs in -------------------
-; A separate chain in a separate place with a separate header format:
-; sixteen bytes, 'M' or 'Z', length in paragraphs.  MEM is a 32-bit
-; flat program so it can simply read it where it lies - no thunk, no
-; V86, no segment arithmetic beyond a shift.
-        mov     esi,V86_TPA
-        mov     ecx,BLOCKS_MAX
+; A separate chain in a separate place with a separate header format -
+; sixteen bytes, 'M' or 'Z', a length in paragraphs - which MEM used to
+; read where it lay, being a flat 32-bit program with the run of the
+; machine.  It is not one any more; both walks go through the same call
+; and the kernel is what knows the difference between the two shapes.
+        xor     ebx,ebx
 cv_lp:
-        mov     dl,[esi+RMCB_SIG]       ; kept, because 'Z' is what ends
-        cmp     dl,'M'                  ; the walk and ESI has moved on
-        je      cv_ok                   ; by the time we test it
-        cmp     dl,'Z'
-        jne     cv_out                  ; a broken chain: report what we saw
-cv_ok:
-        movzx   eax,word ptr [esi+RMCB_LEN]
-        shl     eax,4
-        cmp     word ptr [esi+RMCB_OWN],0
+        mov     dl,F8_CONV
+        call    get_block
+        jc      cv_out
+        mov     eax,dword ptr [blk+F8_SIZE]
+        cmp     dword ptr [blk+F8_OWNER],0
         je      cv_free
         add     [c_used],eax
         jmp     short cv_next
@@ -302,18 +283,35 @@ cv_free:
         mov     [c_largest],eax
 cv_next:
         add     dword ptr [c_used],RMCB_SIZE    ; the header, as above
-        cmp     dl,'Z'
-        je      cv_out
-        add     esi,eax
-        add     esi,RMCB_SIZE
-        cmp     esi,V86_TPA_TOP
-        jae     cv_out
-        dec     ecx
-        jnz     cv_lp
+        inc     ebx
+        cmp     ebx,BLOCKS_MAX
+        jb      cv_lp
 cv_out:
         mov     eax,[c_used]
         add     eax,[c_free]
         mov     [c_total],eax
+        ret
+
+;---------------------------------------------------------------------
+; get_block - EBX = which block, DL = which arena.  Fills [blk].
+;             CF when there is no such block.
+;
+; 21h/F1h AL=8, which exists because a program cannot read either arena
+; for itself now that it runs at ring 3 in a segment of its own.  The
+; walk is by INDEX rather than by following the chain, so a damaged
+; chain stops the kernel's walk rather than spinning this one.
+;---------------------------------------------------------------------
+get_block:
+        push    eax
+        push    ebx
+        push    edi
+        movzx   edx,dl
+        mov     edi,OFFSET blk
+        mov     ax,0F108h
+        int     21h
+        pop     edi
+        pop     ebx
+        pop     eax
         ret
 
 ;=====================================================================
@@ -331,53 +329,51 @@ list_blocks:
         mov     edx,OFFSET msg_bhead2
         call    print
 
-        mov     esi,[a_first]
-        or      esi,esi
-        jz      lb_out
-        mov     ecx,BLOCKS_MAX
+        xor     ebx,ebx
 lb_lp:
-        mov     eax,[esi+MCB_SIG]
+        mov     dl,F8_ARENA
+        call    get_block
+        jc      lb_out
+        mov     eax,dword ptr [blk+F8_SIG]
         cmp     eax,SIG_END
         je      lb_out
         cmp     eax,SIG_USED
         je      lb_used
-        cmp     eax,SIG_FREE
-        jne     lb_out                  ; not a header: the chain ends here
-        push    ecx
+
+        push    ebx
         call    lb_common
         mov     edx,OFFSET msg_noowner  ; a free block has no owner
         call    print
         mov     edx,OFFSET msg_isfree
         call    print
-        pop     ecx
+        pop     ebx
         jmp     short lb_next
 lb_used:
         cmp     byte ptr [free_only],0
         jne     lb_next                 ; /F asked for the free ones only
-        push    ecx
+        push    ebx
         call    lb_common
-        mov     eax,[esi+MCB_OWNER]
+        mov     eax,dword ptr [blk+F8_OWNER]
         mov     ebx,6
         call    pdec_cw
         mov     edx,OFFSET msg_used
         call    print
-        pop     ecx
+        pop     ebx
 lb_next:
-        add     esi,[esi+MCB_SIZE]
-        add     esi,MCB_LEN
-        dec     ecx
-        jnz     lb_lp
+        inc     ebx
+        cmp     ebx,BLOCKS_MAX
+        jb      lb_lp
 lb_out:
         ret
 
 ; lb_common - the address and size columns, which both rows share.
 lb_common:
-        mov     eax,esi
+        mov     eax,dword ptr [blk+F8_ADDR]
         add     eax,MCB_LEN             ; the payload, which is what the
         call    puthex32                ; program was actually handed
         mov     edx,OFFSET msg_2sp
         call    print
-        mov     eax,[esi+MCB_SIZE]
+        mov     eax,dword ptr [blk+F8_SIZE]
         mov     ebx,15
         call    pdec_cw
         mov     edx,OFFSET msg_2sp
@@ -501,7 +497,7 @@ want_list   db  0
 free_only   db  0
             db  0,0
 x_memkb     dd  0
-a_first     dd  0
+blk         db  F8_LEN dup(0)       ; one block, as F1h AL=8 answers
 a_total     dd  0
 a_used      dd  0
 a_free      dd  0

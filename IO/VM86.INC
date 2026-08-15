@@ -1051,23 +1051,47 @@ pm3_outw:
         ret
 
 ;---------------------------------------------------------------------
-; pm3_base - AX = an LDT selector -> EBX = the base it describes.
+; pm3_base - AX = a ring-3 selector -> EBX = the base it describes.
 ;            CF if it is not one, or is not present.
 ;
-; PMIO reads the client's descriptor table directly rather than asking
-; the DOS side: the table is at a fixed address (PMDOS.INC) and this
-; runs inside a fault handler, which is no place for a call chain.
+; PMIO reads the descriptor table directly rather than asking the DOS
+; side: both tables are at fixed addresses (PMDOS.INC) and this runs
+; inside a fault handler, which is no place for a call chain.
+;
+; TWO TABLES, because there are two kinds of ring-3 code.  A DPMI
+; client's selectors are its own, in the LDT; a native program's are
+; SEL_PROG_CS and SEL_PROG_DS in the GDT.  Everything below the lookup
+; is identical, which is the point - a native program's CLI, STI, IN
+; and OUT are emulated by the same six cases and for the same reason,
+; so the only thing that had to be taught anything new was the arrow
+; from a selector to a base.
 ;---------------------------------------------------------------------
 pm3_base:
         push    edi
-        test    al,4                            ; must be an LDT selector
-        jz      pm3_bbad
+        test    al,4                            ; LDT or GDT?
+        jz      pm3_bgdt
         movzx   edi,ax
         shr     edi,3
         cmp     edi,DPMI_LDT_ENT
         jae     pm3_bbad
         shl     edi,3
         add     edi,DPMI_LDT
+        jmp     short pm3_bread
+
+;--- the GDT, and ONLY the program's two entries in it.  A ring-3 fault
+;--- carrying any other GDT selector is not something to look up: it is
+;--- the kernel's own selectors turning up where ring-3 code should
+;--- never have had them.
+pm3_bgdt:
+        movzx   edi,ax
+        and     edi,NOT 7
+        cmp     edi,GDT_IDX_PROGCS * 8
+        je      pm3_bok
+        cmp     edi,GDT_IDX_PROGDS * 8
+        jne     pm3_bbad
+pm3_bok:
+        add     edi,GDT_BASE
+pm3_bread:
         test    byte ptr [edi+5],80h            ; present?
         jz      pm3_bbad
         movzx   ebx,byte ptr [edi+7]

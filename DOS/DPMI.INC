@@ -144,10 +144,10 @@ di_vdone:
         mov     edi,OFFSET dpmi_int31
         call    dword ptr ds:[IOS_SETVEC]
 
-        ; What PMIO is to call when a ring-3 client faults on something
-        ; it cannot emulate.
-        mov     edi,OFFSET dpmi_fault
-        call    dword ptr ds:[IOS_PM3HOOK]
+        ; (What PMIO is to call when ring-3 code faults on something it
+        ; cannot emulate is registered by DOSMAIN, not here: there are
+        ; two kinds of ring-3 code now and the DPMI host is only one of
+        ; them.  See pm3_dispatch.)
         popad
         ret
 
