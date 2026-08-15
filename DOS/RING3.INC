@@ -860,10 +860,37 @@ r3r_stray:
 ; still running.  Called from 21h/F1h AL=5, which COMMAND already
 ; issues as its first act on the way home for exactly this kind of
 ; reason.
+;
+; THE RING-0 STACK LEVEL IS RESTORED, NOT RESET, and the difference is
+; a whole class of bug.  The first version put it back to the top on
+; the reasoning that the program is starting again from its main loop -
+; true for the interpreter with nothing running under it, and wrong the
+; moment anything is.  Consider the commonest use of this call there
+; is: a disk fails under a CHILD program, COMMAND's INT 24h handler
+; asks, the answer is Abort.  The handler then terminates the child
+; with 4Ch - and the shell's own 4Bh is still open, its frame sitting
+; at the top of this very stack, waiting for that 4Ch to return
+; through it.  Starting the 4Ch at the top writes the new frame exactly
+; over the old one, so the EXEC comes back to a frame full of its own
+; terminate call.  That is bug two of v0.33 arriving from a second
+; direction, and it would have been bug three.
+;
+; What it should be is simply what it was before the excursion started,
+; which is the one thing r3_thunk already wrote down.  The OUTERMOST
+; record holds it: handler calls nest, and undoing all of them means
+; going back to the level the first one interrupted.
 ;=====================================================================
 r3_abandon:
+        cmp     dword ptr [r3_calldep],0
+        je      ra_none                 ; no handler running, nothing to undo -
+                                        ; and in particular nothing to assume
+                                        ; about where the stack should be
+        push    eax
+        mov     eax,dword ptr [r3_calls+RC_ESP0]
+        mov     [r3_esp0],eax
+        pop     eax
         mov     dword ptr [r3_calldep],0
-        mov     dword ptr [r3_esp0],R3_KSTACK
+ra_none:
         ret
 
 ;=====================================================================
@@ -1157,7 +1184,32 @@ r3_fault:
         mov     [r3_ferr],edx
         mov     [r3_feip],ecx
 
-        mov     esp,R3_KSTACK                   ; ours again, whatever the
+        ; THE LEVEL, NOT THE TOP - and this cost a release.  The ring-0
+        ; stack is ONE stack shared by every EXEC level: 4Bh hands the
+        ; child the parent's frame base as its ceiling and the child
+        ; works downwards, so a program at depth 1 has its parent's
+        ; unfinished 4Bh frame sitting immediately ABOVE it.
+        ;
+        ; Setting ESP to R3_KSTACK put the stack pointer back at the
+        ; SHELL's level, above all of that - and the dozen nested calls
+        ; below, which only print a message, then wrote their return
+        ; addresses straight down through the waiting 4Bh frame.  The
+        ; report came out perfectly; it was the exit that died, on the
+        ; IRETD at the end of int21_entry, returning through a frame
+        ; this routine had just overwritten.  From outside: a program
+        ; faults, the fault is reported correctly, and THEN the machine
+        ; says "CPU exception" on its own account and reloads the
+        ; interpreter - which is AUTOEXEC.BAT running a second time.
+        ;
+        ; r3_esp0 is the running program's own level, kept by 4Bh and
+        ; lowered again while one of its handlers is in flight, so it
+        ; is below the parent's frame in every case.  At depth 0 it IS
+        ; R3_KSTACK, which is why the shell's own crashes always looked
+        ; fine and hid this.
+        ;
+        ; v0.34 fixed exactly this mistake in r3_abandon, four hundred
+        ; lines away, and did not think to look here.
+        mov     esp,[r3_esp0]                   ; ours again, whatever the
         sti                                     ; program was doing on it
 
         mov     esi,OFFSET msgR3Fault

@@ -202,6 +202,15 @@ exc_clearnest:
 exc_hook        dd      0
 exc_nested      dd      0
 
+IFDEF V86_WATCH
+V86_WATCHTICKS  EQU     36              ; two seconds at 18.2 Hz
+v86_watch       dd      0               ; ticks since the monitor last ran
+v86_wcs         dd      0
+v86_weip        dd      0
+msgV86Spin      db      'V86: the guest has run 2s without a single trap, at ',0
+msgV86SpinCR    db      13,10,0
+ENDIF
+
 ; The segment registers the faulting code was holding, kept by
 ; exc_common and put back by pm3_fault when it resumes ring-3 code.
 ; Not a stack, because a fault taken inside this handler is fatal
@@ -280,6 +289,51 @@ irq_timer:
         mov     byte ptr ds:[BDA_TICKROLL],1    ; flag INT 1Ah/00h reads
 it_noroll:
         mov     dword ptr ds:[BDA_TICKS],eax
+
+IFDEF V86_WATCH
+;--- the spinning-guest sampler --------------------------------------
+; A guest that CRASHES says so.  A guest that SPINS says nothing at
+; all, and from outside the two are one symptom: a machine that has
+; stopped.  The monitor's fault trace is no help either, because a
+; program going round a loop of its own makes no calls and so causes
+; no faults - the trace simply stops, which is the same thing the
+; screen was already doing.
+;
+; The timer tick is the one thing still running, so it does the
+; asking.  If the interrupted code was in V86 mode and the monitor has
+; not been entered for two seconds, print where the guest is.  It
+; prints a SAMPLE each time rather than once, because the question is
+; not only "where" but "is it moving": three prints of the same
+; address is a tight loop, three different ones inside a few hundred
+; bytes is a loop with a body.
+;
+; The counter is cleared by v86_fault, so an ordinary program - which
+; makes a DOS call every few milliseconds - never trips it.
+        test    dword ptr [esp+56],EFL_VM       ; ret, es, ds, pushad, irq#,
+        jz      it_nospin                       ; eip, cs, flags
+        inc     dword ptr ds:[v86_watch]
+        cmp     dword ptr ds:[v86_watch],V86_WATCHTICKS
+        jb      it_spun
+        mov     dword ptr ds:[v86_watch],0
+        mov     eax,[esp+48]
+        mov     dword ptr ds:[v86_weip],eax
+        mov     eax,[esp+52]
+        mov     dword ptr ds:[v86_wcs],eax
+        mov     esi,OFFSET msgV86Spin
+        call    con_str
+        mov     eax,dword ptr ds:[v86_wcs]
+        call    con_hex32
+        mov     al,':'
+        call    con_out
+        mov     eax,dword ptr ds:[v86_weip]
+        call    con_hex32
+        mov     esi,OFFSET msgV86SpinCR
+        call    con_str
+        jmp     short it_spun
+it_nospin:
+        mov     dword ptr ds:[v86_watch],0
+it_spun:
+ENDIF
 
 ;--- the floppy motor-off countdown ----------------------------------
 ; Zero means "no motor running and nothing to do", which is also the

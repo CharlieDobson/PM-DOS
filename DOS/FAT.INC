@@ -883,23 +883,45 @@ fct_used:
 ; the first one is the honest approximation - the alternative is
 ; telling the user a number they have never seen.
 ;=====================================================================
+; AH IS THE CALLER'S AND THIS USED TO EAT IT.  The scan counts in EAX
+; and started with `xor eax,eax`, which is the whole register - and the
+; caller that matters most is crit_disk, whose AH at that moment is the
+; set of answers the critical-error handler is allowed to give.  It
+; builds "Abort, Retry, Fail", calls this to turn a BIOS drive number
+; into a letter, and hands the handler a clean zero: NO RETRY AND NO
+; FAIL, on every disk error there has ever been.  Which makes Abort the
+; only answer to "Not ready reading drive A" - so a program that merely
+; LOOKS at an empty floppy, as every system-information program does,
+; cannot be told to carry on.  It is killed, and there is no other
+; option to press.
+;
+; Retry is the oldest reason INT 24h exists.  crit_disk's own comment
+; says so, four lines above the call that was throwing it away.
 bios2log:
         push    ebx
         push    ecx
         push    edx
+        push    eax
         mov     dl,al
         movzx   ecx,byte ptr [drv_count]
         or      ecx,ecx
-        jz      b2l_out
+        jz      b2l_keep                ; no table yet: the number stands
         mov     ebx,OFFSET drv_tbl
         xor     eax,eax
 b2l_scan:
         cmp     [ebx+DRV_BIOS],dl
-        je      b2l_out
+        je      b2l_found
         inc     eax
         add     ebx,DRV_LEN
         loop    b2l_scan
         xor     eax,eax                 ; nothing on that disk: say A:
+b2l_found:
+        mov     dh,al                   ; park it while EAX goes back
+        pop     eax
+        mov     al,dh
+        jmp     short b2l_out
+b2l_keep:
+        pop     eax                     ; AL was never touched
 b2l_out:
         pop     edx
         pop     ecx

@@ -807,6 +807,7 @@ P_BX            EQU     08h                     ; ES:BX
 ;---------------------------------------------------------------------
 EFL_IF          EQU     00000200h
 EFL_TF          EQU     00000100h
+EFL_OF          EQU     00000800h
 EFL_IOPL        EQU     00003000h
 EFL_NT          EQU     00004000h
 EFL_VM          EQU     00020000h
@@ -868,6 +869,10 @@ V86C_SIZE       EQU     60h
 V86R_INT        EQU     1                       ; EBX = vector
 V86R_HLT        EQU     2
 V86R_FAULT      EQU     3                       ; EBX = exception vector
+V86R_FLTLOOP    EQU     4                       ; EBX = a vector the guest's own
+                                                ; handler keeps taking at one
+                                                ; address without getting past
+                                                ; it - see vf_exc
 
 ;---------------------------------------------------------------------
 ; The VDM's nesting stack.  A DOS box used to be one program: one
@@ -1213,6 +1218,38 @@ BDA_CURSHAPE    EQU     BDA_BASE + 60h          ; dw - end,start scan lines
 BDA_VPAGE       EQU     BDA_BASE + 62h          ; db - the displayed page
 BDA_HDCOUNT     EQU     BDA_BASE + 75h          ; db - hard disks the BIOS found
 BDA_VROWS       EQU     BDA_BASE + 84h          ; db - rows on screen, LESS ONE
+
+; THE KEYBOARD BUFFER, and it belongs to the machine for the same
+; reason the tick count does.  Owning IRQ 1 means the BIOS's own
+; keyboard interrupt never runs, so everything that handler was
+; responsible for stops happening - and a 16-bit program asking INT 16h
+; for a key is asking the BIOS to look at exactly these bytes.  See
+; kb_put.
+;
+; The two pointers are OFFSETS FROM SEGMENT 40h, not addresses, which
+; is why they hold 1Eh and not 41Eh: that is the form every program
+; that reads them expects, and the form the ROM writes.  Head is where
+; the next key is taken FROM and tail is where the next one is put, so
+; equal means empty - the opposite way round from the ring this driver
+; used to keep, which is a good enough reason to have deleted that one.
+BDA_KBFLAG      EQU     BDA_BASE + 17h          ; db - shift state
+BDA_KBFLAG2     EQU     BDA_BASE + 18h          ; db - ...and the rest of it
+BDA_KBHEAD      EQU     BDA_BASE + 1Ah          ; dw - next key to read
+BDA_KBTAIL      EQU     BDA_BASE + 1Ch          ; dw - next free slot
+BDA_KBBUF       EQU     BDA_BASE + 1Eh          ; 16 words of (ASCII, scan)
+BDA_KBSTART     EQU     BDA_BASE + 80h          ; dw - where the ring begins
+BDA_KBEND       EQU     BDA_BASE + 82h          ; dw - and one past its end
+KB_RINGLO       EQU     1Eh                     ; the two values those hold
+KB_RINGHI       EQU     3Eh
+
+; The bits of BDA_KBFLAG a program reads.  Only the four this driver
+; actually tracks are written; the lock lights are not simulated, so
+; claiming their bits would be worse than leaving them alone.
+BDAK_RSHIFT     EQU     01h
+BDAK_LSHIFT     EQU     02h
+BDAK_CTRL       EQU     04h
+BDAK_ALT        EQU     08h
+BDAK_CAPS       EQU     40h
 
 ;---------------------------------------------------------------------
 ; INT 13h.  Status codes are the BIOS's own, in AH, and the ones below
@@ -1563,7 +1600,7 @@ SHELLTAIL_MAX   EQU     130             ; length byte + 126 + CR + slack
 ; has a call of its own; these two agree.
 ;---------------------------------------------------------------------
 PMDOS_MAJOR     EQU     0
-PMDOS_MINOR     EQU     33
+PMDOS_MINOR     EQU     35
 
 DOSVER_MAJOR    EQU     6
 DOSVER_MINOR    EQU     22

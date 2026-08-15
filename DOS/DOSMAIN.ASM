@@ -241,14 +241,13 @@ dos_fault:
         mov     esp,KSTACK_TOP
         cld
 
-        ; No DOS box, no DPMI client, no critical error, no call in
-        ; progress.  Every one of these is a flag that some unwind
-        ; would normally have cleared on its way out, and any of them
-        ; left set would make the exit below take a different path.
-        ; exec_depth is deliberately NOT touched: it is the count 4Ch
-        ; needs to find the waiting program.
-        mov     dword ptr ds:[vdm_busy],0
-        mov     dword ptr ds:[vdm_depth],0
+        ; No DPMI client, no critical error, no call in progress.
+        ; Every one of these is a flag that some unwind would normally
+        ; have cleared on its way out, and any of them left set would
+        ; make the exit below take a different path.  exec_depth is
+        ; deliberately NOT touched: it is the count 4Ch needs to find
+        ; the waiting program; neither is vdm_busy, for the reason at
+        ; the bottom of this routine.
         mov     dword ptr ds:[dpmi_active],0
         mov     dword ptr ds:[dpmi_rmact],0
         mov     byte ptr ds:[crit_busy],0
@@ -290,6 +289,32 @@ df_cook:
 
         call    dword ptr ds:[IOS_EXCCLEAR]     ; the next one is catchable
 
+        ; WITH A DOS BOX RUNNING, THE THING THAT DIED IS THE BOX.  A
+        ; 16-bit EXEC does not nest: the guest lives below 1MB, nothing
+        ; above it is disturbed, and vdm_exec RETURNS to the 4Bh that
+        ; called it - so that path pushes no nesting record and leaves
+        ; exec_depth alone.  4Ch would therefore find a depth of zero,
+        ; conclude that the INTERPRETER was what faulted, and reload it
+        ; - AUTOEXEC.BAT round again, and whatever batch file was
+        ; running gone, because one 16-bit utility crashed.  That is
+        ; the complaint v0.30 fixed for a 32-bit program without
+        ; noticing that a DOS box is the other half of it.
+        ;
+        ; vdm_abort is the unwind built for exactly this shape: it is
+        ; what a ^C and an Abort at the critical-error prompt already
+        ; use, and it does not care what stack it is standing on - it
+        ; longjmps to the one vdm_run started with, sweeps the guest's
+        ; handles and memory, and lets the shell's 4Bh return with the
+        ; failure.  4Dh will say the box ended on a system error, which
+        ; is the nearest true thing DOS has a code for: there is no
+        ; "the program faulted", because under real DOS the machine
+        ; simply stopped.
+        cmp     dword ptr ds:[vdm_busy],0
+        je      df_notbox
+        mov     eax,VDX_CRITERR
+        jmp     vdm_abortc
+
+df_notbox:
         ; 4Ch reads the exit code out of a frame, and the frame this
         ; fault came in on is not one - so it gets a manufactured one
         ; with 255 in it.  Nothing else in 4Ch looks at the frame until

@@ -88,26 +88,18 @@
 dpmi_init:
         pushad
         mov     ebx,(DPMI_RMSTK + 15) / 16
-        call    lm_alloc
+        call    lm_sysalloc
         jc      di_nostk
         mov     word ptr ds:[dpmi_stkseg],ax
-        movzx   eax,ax
-        dec     eax
-        shl     eax,4
-        mov     word ptr [eax+RMCB_OWN],8
 di_nostk:
 
         ; And the landing pads real-mode callbacks are made of, which
         ; are owner 8 for the same reason: a client comes and goes and
         ; these addresses do not move.
         mov     ebx,DPMICB_PARAS
-        call    lm_alloc
+        call    lm_sysalloc
         jc      di_nocb
         mov     word ptr ds:[dpmi_cbseg],ax
-        movzx   eax,ax
-        dec     eax
-        shl     eax,4
-        mov     word ptr [eax+RMCB_OWN],8
 
         movzx   edi,word ptr ds:[dpmi_cbseg]
         shl     edi,4

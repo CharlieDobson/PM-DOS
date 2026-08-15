@@ -331,7 +331,13 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
     unsigned long clus, dirent = 0, bpbsize;
     unsigned long lastfirst = 0;
     long lastsize = 0;
-    unsigned long rootclus = 4;         /* FAT32: clusters of root dir */
+    /* FAT32: clusters of root dir.  8, not 4: at one sector per cluster
+       four clusters is 64 entries, and the test image list went past it
+       the day MCBTEST and MEM622 were added.  A FAT32 root is a cluster
+       chain and could grow on demand; this is the smaller change, and
+       the failure it prevents was at least loud - "root full" and a
+       non-zero exit, rather than an image quietly missing files. */
+    unsigned long rootclus = 8;
     unsigned char *vbr, *fatp;
     unsigned char code[SECSIZE];
     FILE *f;

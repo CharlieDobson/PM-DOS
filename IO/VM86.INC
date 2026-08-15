@@ -138,6 +138,12 @@ v86_run:
         mov     dword ptr ds:[v86_ctx],esi
         mov     dword ptr ds:[v86_kesp],esp
 
+        ; Getting back here IS progress: the guest asked the DOS side
+        ; for something, so whatever it faulted over last time it is
+        ; past now.  vf_exc's runaway count starts again.
+        mov     dword ptr ds:[v86_fltn],0
+        mov     dword ptr ds:[v86_flteip],-1
+
         ; THE NULL GUARD IS FOR OUR CODE, NOT THE GUEST'S.  Linear 0 to
         ; 15 is the guest's interrupt vector table - vectors 0 to 3 -
         ; and a 16-bit program hooking divide-by-zero writes it as a
@@ -322,6 +328,9 @@ v86_fault:
         pushad                          ; the guest's registers, unsaved
         mov     ebp,esp                 ; by the CPU, are ours to keep
         add     ebp,32
+IFDEF V86_WATCH
+        mov     dword ptr ds:[v86_watch],0      ; the guest is still asking
+ENDIF
 IFDEF V86_TRACE
         pushad
         mov     esi,OFFSET msgV86Flt
@@ -336,13 +345,47 @@ IFDEF V86_TRACE
         call    con_out
         mov     eax,[ebp+FR_EIP]
         call    con_hex32
+        ; ...and the instruction, because "vector 13 at 0C57:1234" does
+        ; not say WHICH call, and on a #GP the whole question is which.
+        ; Two bytes is an INT and its vector, which is what is nearly
+        ; always being asked.
+        mov     esi,OFFSET msgV86Op
+        call    con_str
+        mov     esi,[ebp+FR_CS]
+        shl     esi,4
+        movzx   eax,word ptr [ebp+FR_EIP]
+        add     esi,eax
+        movzx   eax,byte ptr [esi]
+        call    con_hex8
+        movzx   eax,byte ptr [esi+1]
+        call    con_hex8
+        ; AX as well: on an INT 21h the function IS in AX, and a trace
+        ; that says a call happened without saying which one only moves
+        ; the question.
+        mov     esi,OFFSET msgV86Ax
+        call    con_str
+        mov     eax,[ebp+PA_EAX]
+        shr     eax,8
+        call    con_hex8
+        mov     eax,[ebp+PA_EAX]
+        call    con_hex8
         mov     esi,OFFSET msgV86CR
         call    con_str
         popad
 ENDIF
 
-        cmp     dword ptr [ebp+FR_VEC],13
-        jne     vf_notgp                ; only #GP means "emulate me"
+        mov     eax,[ebp+FR_VEC]
+        cmp     eax,13
+        je      vf_isgp                 ; only #GP means "emulate me"
+        cmp     eax,7                   ; ...but some of the rest are the
+        ja      vf_notgp                ; GUEST'S, and always were
+        mov     ebx,1
+        mov     ecx,eax
+        shl     ebx,cl
+        test    ebx,V86_EXCREFL
+        jnz     vf_exc
+        jmp     vf_notgp
+vf_isgp:
 
         ; The faulting instruction, at CS:IP in the guest's address
         ; space - which, with no paging yet, is just a linear address.
@@ -392,6 +435,8 @@ vf_pfx:
         je      vf_popf
         cmp     al,0CCh
         je      vf_int3
+        cmp     al,0CEh
+        je      vf_into
         cmp     al,0F4h
         je      vf_hlt
         cmp     al,0E4h                 ; IN  AL,imm8
@@ -656,6 +701,19 @@ vf_int:
 vf_int3:
         mov     bl,3
         call    v86_skip
+        jmp     short v86_doint
+
+;--- INTO -------------------------------------------------------------
+; The last of the INT family, and it was falling into vf_bad - so a
+; guest that used the overflow trap at all was killed for it, and the
+; message said "faulted" rather than "I do not know that instruction".
+; One byte, and the flag it tests is a real one: arithmetic flags are
+; the CPU's own in V86 mode, not something the monitor shadows.
+vf_into:
+        call    v86_skip                ; either way, INTO is finished with
+        test    dword ptr [ebp+FR_FLAGS],EFL_OF
+        jz      v86_resume
+        mov     bl,4
         ; fall through
 
 ;---------------------------------------------------------------------
@@ -679,6 +737,80 @@ v86_doint:
         movzx   ebx,bl
         mov     eax,V86R_INT
         jmp     v86_leave
+
+;=====================================================================
+; vf_exc - an exception that REAL MODE delivers through the IVT, and
+;          that the monitor therefore has no business eating.
+;
+; v0.34 and everything before it treated any fault that was not a #GP
+; as the end of the DOS box.  That is right for a page fault and for
+; the segment-and-stack family, which cannot happen to an 8086 and
+; mean the guest has got somewhere it should not be - but vectors 0
+; to 7 are ORDINARY on a real machine.  A 16-bit program that divides
+; by zero gets INT 00h.  One that runs BOUND gets INT 05h.  And one
+; that wants to know whether the CPU it is on has an instruction runs
+; the instruction with its own handler on INT 06h and sees whether it
+; comes back - which is how EVERY CPU detector written before CPUID
+; was universal asks the question, QCONFIG on a 486 among them.
+;
+; So the answer to "QCONFIG crashed with vector 06" is that QCONFIG
+; did not crash.  It asked a question, the way DOS software has always
+; asked it, and the monitor answered by killing it.  The program never
+; found out that it had been given the reply it was waiting for.
+;
+; Two guards, because reflecting blind is worse than not reflecting:
+;
+;   THE VECTOR MUST POINT SOMEWHERE.  A slot left at 0000:0000 would
+;   send the guest to linear zero to execute the interrupt vector
+;   table as instructions.
+;
+;   AND THE HANDLER MUST GET SOMEWHERE.  A fault pushes the address of
+;   the instruction that faulted, so a handler which IRETs without
+;   stepping over it takes the same fault again, for ever - and that
+;   is not a hypothetical, it is precisely what the ROM's own dummy
+;   INT 06h does.  Real hardware hangs there.  This kernel must not:
+;   a spinning guest makes no DOS calls, so nothing ever looks at the
+;   ^C flag, and the only way out of it is the power switch.  Count
+;   the identical faults and give up while somebody can still be told
+;   why.  The count is reset in v86_run, so it measures faults with no
+;   progress BETWEEN them rather than faults over the program's life.
+;=====================================================================
+V86_EXCREFL     EQU     0FBh            ; 0,1,3,4,5,6,7 - every vector
+                                        ; below 8 except #DF, which is
+                                        ; nobody's idea of recoverable
+V86_FLTMAX      EQU     32
+
+vf_exc:
+        mov     eax,[ebp+FR_EIP]
+        cmp     eax,dword ptr ds:[v86_flteip]
+        jne     vfe_moved
+        mov     eax,[ebp+FR_CS]
+        cmp     eax,dword ptr ds:[v86_fltcs]
+        jne     vfe_moved
+        mov     eax,[ebp+FR_VEC]
+        cmp     eax,dword ptr ds:[v86_fltvec]
+        jne     vfe_moved
+        inc     dword ptr ds:[v86_fltn]
+        cmp     dword ptr ds:[v86_fltn],V86_FLTMAX
+        jb      vfe_ivt
+        mov     eax,V86R_FLTLOOP        ; stuck: the caller says so and ends
+        mov     ebx,[ebp+FR_VEC]        ; the box
+        jmp     v86_leave
+vfe_moved:
+        mov     eax,[ebp+FR_EIP]
+        mov     dword ptr ds:[v86_flteip],eax
+        mov     eax,[ebp+FR_CS]
+        mov     dword ptr ds:[v86_fltcs],eax
+        mov     eax,[ebp+FR_VEC]
+        mov     dword ptr ds:[v86_fltvec],eax
+        mov     dword ptr ds:[v86_fltn],1
+vfe_ivt:
+        mov     eax,[ebp+FR_VEC]
+        shl     eax,2
+        cmp     dword ptr ds:[eax],0
+        je      vf_notgp                ; nothing there: it really is a crash
+        mov     eax,[ebp+FR_VEC]
+        jmp     short v86_reflect
 
 ;---------------------------------------------------------------------
 ; v86_reflect - AL = vector.  Do what the 8086 would have done: stack
@@ -854,6 +986,10 @@ v86_rvec        dd      0
 v86_vpriv       dd      0               ; the guest's virtual IOPL and NT: what
                                         ; it may read back, never what it runs
                                         ; under - see v86_setflags
+v86_fltcs       dd      -1              ; the last exception reflected into the
+v86_flteip      dd      -1              ; guest, and how many times running -
+v86_fltvec      dd      -1              ; see vf_exc.  -1 so that the first one
+v86_fltn        dd      0               ; can never match a real CS:IP
 v86_vif         db      0               ; the guest's virtual interrupt flag
 vio_porta       db      0               ; port 92h as the guest last wrote it
 vio_kbdwr       db      0               ; an 8042 D1h is outstanding
@@ -861,6 +997,8 @@ vio_kbdrd       db      0               ; ...or a D0h
 IFDEF V86_TRACE
 msgV86In        db      'V86: about to IRETD into the guest',13,10,0
 msgV86Flt       db      'V86: fault vec ',0
+msgV86Op        db      ' op ',0
+msgV86Ax        db      ' ax ',0
 msgV86CR        db      13,10,0
 ENDIF
 

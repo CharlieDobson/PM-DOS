@@ -114,7 +114,7 @@ XSE_BADUMB      EQU     0B2h
 xms_init:
         pushad
         mov     ebx,1                           ; one paragraph is plenty
-        call    lm_alloc
+        call    lm_sysalloc
         jc      xi_none
         mov     word ptr ds:[xms_cbseg],ax
 
@@ -130,10 +130,6 @@ xms_init:
         mov     byte ptr [edi+DPMICB_RET],0F4h  ; and the landing pad the
                                                 ; handler's IRET returns to
 
-        movzx   eax,ax                          ; and it is the system's
-        dec     eax
-        shl     eax,4
-        mov     word ptr [eax+RMCB_OWN],8
 xi_none:
         popad
         ret

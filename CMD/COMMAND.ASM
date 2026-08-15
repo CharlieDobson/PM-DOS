@@ -536,6 +536,12 @@ vb_lp:
         je      vb_end                  ; characters: PATH=C:\DOS is
         cmp     al,';'                  ; the form every AUTOEXEC
         je      vb_end                  ; uses, and PATH; clears it
+        cmp     al,','                  ; a comma is a DOS delimiter like
+        je      vb_end                  ; any other - which is the whole
+                                        ; mechanism behind "DIR," (see
+                                        ; cmd_dir), and costs nothing
+                                        ; anywhere else: no verb anybody
+                                        ; types has a comma in it
         call    upcase
         cmp     ecx,12
         jae     vb_skip
@@ -1014,6 +1020,34 @@ cmd_dir:
         mov     ah,1Ah
         int     21h
 
+        ; "DIR," - MS-DOS's undocumented "show me everything".  A comma
+        ; where the argument should be means hidden and system files are
+        ; listed too, and it survives because it is quicker to type than
+        ; /A:HS and because a comma is a delimiter, so the shell hands it
+        ; over as an argument in the first place rather than looking for
+        ; a command called "DIR,".
+        ;
+        ; THE COMMA IS THE WHOLE ARGUMENT OR IT IS NOTHING.  It is not a
+        ; prefix and it does not combine: "DIR, /P", "DIR, /W" and
+        ; "DIR,*.SYS" are all invalid under 6.x, and treating the comma
+        ; as a switch that happens to be spelled oddly - which is what a
+        ; first version here did - invents a form of the command that no
+        ; DOS ever had.  So anything at all after it, bar the trailing
+        ; blanks nobody can see, and this is not the form: the comma is
+        ; left where it is and goes on to be a pattern that matches
+        ; nothing, which is the failure it deserves.
+        mov     dword ptr [dir_all],0
+        mov     esi,[arg_ptr]
+        cmp     byte ptr [esi],','
+        jne     dir_notall
+        inc     esi
+        call    skip_blanks             ; a space at the end is not a parameter
+        cmp     byte ptr [esi],0
+        jne     dir_notall
+        mov     [arg_ptr],esi           ; nothing left: list the cwd
+        mov     dword ptr [dir_all],ATTR_HIDDEN OR ATTR_SYSTEM
+dir_notall:
+
         mov     esi,[arg_ptr]           ; /P and /W come out of the
         call    sw_scan                 ; argument before anything reads
         mov     [dir_sw],eax            ; it as a pattern
@@ -1144,7 +1178,8 @@ dir_pat:
         ; but each row arrives with the long name alongside the 8.3.
         ; (Under LFN=OFF the wrapper drops to the classic 4Eh/4Fh.)
         mov     edx,esi
-        mov     ecx,ATTR_DIR            ; CL = allowable: directories too
+        mov     ecx,ATTR_DIR            ; CL = allowable: directories too,
+        or      ecx,[dir_all]           ; and everything else if "DIR,"
         call    xfind_first
         jc      dir_none
         mov     word ptr [dir_hdl],ax
@@ -1295,6 +1330,16 @@ dir_fs36:
         imul    eax,ebx
         imul    eax,ecx
 dir_fsout:
+        ; UNDER THE BYTES, NOT UNDER THE FILE COUNT.  Both totals are
+        ; printed right-justified in ten columns, so the free figure on
+        ; its own started at column 0 and lined up with the number of
+        ; files - two quantities that have nothing to do with each other.
+        ; The one it wants to be read against is the byte total above it,
+        ; which pdec10 put in columns 20 to 29 because " file(s)  " is
+        ; ten characters wide.  So the line is indented by exactly that
+        ; much and the two columns of bytes sit under one another.
+        mov     edx,OFFSET msg_freepad
+        call    print
         call    pdec10
         mov     edx,OFFSET msg_free
         call    print
@@ -3699,6 +3744,9 @@ msg_nofiles db  'No files found',13,10,'$'
 msg_files   db  ' file(s)  ','$'
 msg_bytes   db  ' bytes',13,10,'$'
 msg_free    db  ' bytes free',13,10,'$'
+; Ten columns for the file count and ten for " file(s)  ": what the
+; byte total on the line above is indented by.
+msg_freepad db  '                    ','$'
 msg_vol1    db  ' Volume in drive is ','$'
 msg_nolabel db  'unlabelled','$'
 msg_dirof   db  13,10,' Directory of ','$'
@@ -3798,6 +3846,7 @@ cp_dest     db  144 dup(0)
 cp_srcbuf   db  144 dup(0)
 cp_dirbuf   db  144 dup(0)
 dir_sw      dd  0                       ; the /switches DIR was given
+dir_all     dd  0                       ; the attributes "DIR," adds
 dir_lines   dd  0                       ; lines since the last /P pause
 dir_col     dd  0                       ; /W column, 0 = start of a row
 sw_start    dd  0                       ; sw_scan's text, for the trim

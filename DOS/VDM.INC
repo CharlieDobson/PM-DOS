@@ -1017,7 +1017,7 @@ vdm_stublist    db  22h,23h,24h,28h,29h,2Ah,2Bh,2Ch,2Dh,2Eh,2Fh,0
 vdm_lolinit:
         pushad
         mov     ebx,GLOL_PARAS
-        call    lm_alloc
+        call    lm_sysalloc
         jc      vli_none                        ; no low memory, no list
         mov     word ptr ds:[vdm_lolseg],ax
 
@@ -1117,10 +1117,6 @@ vli_name:
         jmp     short vli_dev
 vli_devdone:
 
-        movzx   eax,word ptr ds:[vdm_lolseg]    ; and it is the system's
-        dec     eax
-        shl     eax,4
-        mov     word ptr [eax+RMCB_OWN],8
 vli_none:
         popad
         ret
@@ -1335,6 +1331,8 @@ vdm_loop:
         je      vdm_int
         cmp     eax,V86R_HLT
         je      vdm_halt
+        cmp     eax,V86R_FLTLOOP
+        je      vdm_fltloop
         jmp     vdm_fault
 
 ;---------------------------------------------------------------------
@@ -2138,6 +2136,35 @@ vdm_toparent:
         mov     word ptr [vdm_ctx+V86C_EAX],0
         and     dword ptr [vdm_ctx+V86C_FLAGS],NOT FL_CF
         jmp     vdm_loop
+;---------------------------------------------------------------------
+; vdm_fltloop - the guest's own handler for an exception is not getting
+;               past the instruction that caused it.
+;
+; The monitor gave up rather than reflect the same fault a thirty-third
+; time, and the distinction is worth a line of its own: the box is
+; being ended because it had stopped, not because the kernel could not
+; cope.  On real hardware this is the machine locking up, and the
+; reason nobody ever sees the message is that there is nobody left to
+; print it.
+;---------------------------------------------------------------------
+vdm_fltloop:
+        push    ebx
+        mov     esi,OFFSET msgVdmLoop
+        call    dword ptr ds:[IOS_CONSTR]
+        pop     eax
+        call    vdm_hex8
+        mov     esi,OFFSET msgVdmAt
+        call    dword ptr ds:[IOS_CONSTR]
+        mov     eax,dword ptr [vdm_ctx+V86C_CS]
+        call    vdm_hex4
+        mov     al,':'
+        call    dword ptr ds:[IOS_CONOUT]
+        mov     eax,dword ptr [vdm_ctx+V86C_EIP]
+        call    vdm_hex4
+        mov     esi,OFFSET msgVdmCR
+        call    dword ptr ds:[IOS_CONSTR]
+        jmp     vdm_abend
+
 vdm_fault:
         ; Say WHICH fault and WHERE.  "The guest faulted" on its own
         ; names a symptom and nothing else, and a DOS box has exactly
@@ -2229,14 +2256,26 @@ vdh_out:
 ; kernel call the guest is already inside, which the monitor has no
 ; way to nest.  Documented gap, not an oversight.
 ;=====================================================================
+; vdm_abortc - the same thing for a killer that is not a ^C.  EAX = the
+;              VDX_ code 4Dh is to report.  dos_fault uses it: a ring-0
+;              fault taken while a box is running ends the box, and the
+;              alternative - terminating "the current program" - reloads
+;              the interpreter, because a 16-bit EXEC has no depth.
+;=====================================================================
+vdm_abortc:
+        mov     dword ptr ds:[vdm_abrt],eax
+        jmp     short vdm_abort0
 vdm_abort:
+        mov     dword ptr ds:[vdm_abrt],VDX_CTRLC
+vdm_abort0:
         cli
         mov     esp,dword ptr ds:[vdm_esp]
         mov     eax,dword ptr ds:[vdm_indos]    ; the depth vdm_run was at
         mov     byte ptr ds:[DOS_INDOS],al
         sti
         mov     dword ptr ds:[vdm_exit],0
-        mov     dword ptr ds:[vdm_extype],VDX_CTRLC
+        mov     eax,dword ptr ds:[vdm_abrt]
+        mov     dword ptr ds:[vdm_extype],eax
 
         ; ^C KILLS THE WHOLE BOX, not the innermost program.  A guest
         ; three EXECs deep is still one thing the user started and one
@@ -2560,6 +2599,7 @@ k21_flg     dd  0
 vdm_hdl     dd  0
 vdm_exit    dd  0                       ; the last program's exit code...
 vdm_extype  dd  0                       ; ...and how it ended, for 4Dh
+vdm_abrt    dd  0                       ; which of those an abort is to be
 vdm_indos   dd  0                       ; the InDOS depth vdm_run started at
 vdm_busy    dd  0                       ; a VM is running: ^C, a critical
                                         ; error and 4Ch all mean the guest
@@ -2634,6 +2674,7 @@ msgVdmDone  db  'VDM: the guest terminated normally',13,10,0
 msgVdmNo    db  'VDM: could not load it',13,10,0
 msgVdmFault db  'VDM: the guest faulted, vector ',0
 msgVdmAt    db  ' at ',0
+msgVdmLoop  db  'VDM: the guest is stuck on its own handler for vector ',0
 msgVdmCR2   db  ' cr2 ',0
 msgVdmCR    db  13,10,0
 IFDEF VDM_DEBUG

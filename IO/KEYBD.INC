@@ -5,10 +5,35 @@
 ; and drops it in a ring buffer.  We do not go through the BIOS, so
 ; this keeps working with the machine in protected mode.
 ;
+; AND THE RING IS THE BIOS'S OWN, at 40:1E, which it was not until
+; v0.34.  This driver kept a private 32-entry buffer and left the BDA
+; alone, and the consequence is the same one v0.32 found for the timer
+; wearing different clothes: OWNING AN INTERRUPT MEANS OWNING WHAT THE
+; BIOS'S HANDLER DID.  IRQ 1 belongs to this code, so the ROM's INT 09h
+; never runs, so nothing ever wrote 40:1A, 40:1C or the sixteen words
+; between them.
+;
+; A 16-bit program asking for a key does it through INT 16h, which is
+; reflected to the ROM, which looks at exactly those bytes - finds head
+; equal to tail, concludes no key has been pressed, and waits.  It
+; waits for ever, because the thing that would have changed its mind is
+; the handler that no longer exists.  Every full-screen DOS program
+; hung at its first keystroke; a 486 with MSD on it is where that was
+; found, and "16-bit programs stopped working" is what it looked like
+; from outside.  Programs that read 40:17 for the shift state, or peek
+; at 40:1A themselves rather than calling anybody, were being lied to
+; by the same silence.
+;
+; So there is ONE buffer now and it is the machine's.  The kernel's
+; console reads it, the BIOS reads it, and a program reading it
+; directly reads it - which also means the shell and a DOS box cannot
+; disagree about what was typed, the way two buffers eventually would.
+; The private one is deleted rather than mirrored, for the reason
+; tick_count was deleted: a copy is a thing that can drift.
+;
 ; Included by IOPM.ASM.
 ;=====================================================================
 
-KB_BUFSZ        EQU     32              ; must stay a power of two
 KB_DATA         EQU     60h
 KB_CMD          EQU     64h
 
@@ -22,8 +47,16 @@ KBF_CAPS        EQU     10h
 ; kb_init - drain anything the BIOS left in the controller.
 ;=====================================================================
 kb_init:
-        mov     dword ptr [kb_head],0
-        mov     dword ptr [kb_tail],0
+        ; The ring, as the ROM would have set it up.  Both bounds are
+        ; written rather than trusted: a BIOS is entitled to move the
+        ; buffer, and kb_put honours wherever it says the buffer is, so
+        ; this states the arrangement instead of assuming it.
+        mov     word ptr ds:[BDA_KBSTART],KB_RINGLO
+        mov     word ptr ds:[BDA_KBEND],KB_RINGHI
+        mov     word ptr ds:[BDA_KBHEAD],KB_RINGLO
+        mov     word ptr ds:[BDA_KBTAIL],KB_RINGLO
+        mov     byte ptr ds:[BDA_KBFLAG],0
+        mov     byte ptr ds:[BDA_KBFLAG2],0
         mov     byte ptr [kb_flags],0
 ki_drain:
         in      al,KB_CMD
@@ -114,37 +147,44 @@ kb_clr_e0:
         ret
 
 ;--- modifier handling ------------------------------------------------
+; Every one of these ends at kb_mod, which publishes the state to
+; 40:17: a modifier that only this driver knows about is a modifier a
+; 16-bit program cannot see, and "is Shift down?" is a question half
+; the DOS software ever written asks by reading that byte.
 kb_shift:
         test    ah,ah
         jnz     kb_shift_up
         or      byte ptr [kb_flags],KBF_SHIFT
-        jmp     short kb_clr_e0
+        jmp     short kb_mod
 kb_shift_up:
         and     byte ptr [kb_flags],NOT KBF_SHIFT
-        jmp     short kb_clr_e0
+        jmp     short kb_mod
 
 kb_ctrl:
         test    ah,ah
         jnz     kb_ctrl_up
         or      byte ptr [kb_flags],KBF_CTRL
-        jmp     short kb_clr_e0
+        jmp     short kb_mod
 kb_ctrl_up:
         and     byte ptr [kb_flags],NOT KBF_CTRL
-        jmp     short kb_clr_e0
+        jmp     short kb_mod
 
 kb_alt:
         test    ah,ah
         jnz     kb_alt_up
         or      byte ptr [kb_flags],KBF_ALT
-        jmp     short kb_clr_e0
+        jmp     short kb_mod
 kb_alt_up:
         and     byte ptr [kb_flags],NOT KBF_ALT
-        jmp     short kb_clr_e0
+        jmp     short kb_mod
 
 kb_caps:
         test    ah,ah
         jnz     kb_clr_e0               ; toggle on the make code only
         xor     byte ptr [kb_flags],KBF_CAPS
+
+kb_mod:
+        call    kb_bdaflags
         jmp     short kb_clr_e0
 
 ;=====================================================================
@@ -162,20 +202,28 @@ kbr_hang:
         jmp     kbr_hang
 
 ;=====================================================================
-; kb_put - append AX (AL = ASCII, AH = scan code) to the ring buffer.
-;          Silently drops the key if the buffer is full.
+; kb_put - append AX (AL = ASCII, AH = scan code) to the BIOS ring at
+;          40:1E.  Silently drops the key if it is full, which is what
+;          the ROM does apart from the beep.
+;
+; The advance is "add two, and if that reaches the end go back to the
+; start" rather than a mask, because the buffer's bounds are read out
+; of 40:80 and 40:82 and are not required to be a power of two.
 ;=====================================================================
 kb_put:
         push    ebx
         push    ecx
-        mov     ebx,[kb_head]
-        mov     ecx,ebx
-        inc     ecx
-        and     ecx,KB_BUFSZ - 1
-        cmp     ecx,[kb_tail]
-        je      kp_full
-        mov     [kb_buf + ebx*2],ax
-        mov     [kb_head],ecx
+        movzx   ebx,word ptr ds:[BDA_KBTAIL]
+        lea     ecx,[ebx+2]
+        cmp     cx,word ptr ds:[BDA_KBEND]
+        jb      kp_nowrap
+        movzx   ecx,word ptr ds:[BDA_KBSTART]
+kp_nowrap:
+        cmp     cx,word ptr ds:[BDA_KBHEAD]
+        je      kp_full                 ; one slot always stays empty, or
+                                        ; full and empty would look alike
+        mov     word ptr ds:[ebx+BDA_BASE],ax
+        mov     word ptr ds:[BDA_KBTAIL],cx
 kp_full:
         pop     ecx
         pop     ebx
@@ -186,8 +234,8 @@ kp_full:
 ;=====================================================================
 kb_status:
         push    eax
-        mov     eax,[kb_head]
-        cmp     eax,[kb_tail]
+        mov     ax,word ptr ds:[BDA_KBHEAD]
+        cmp     ax,word ptr ds:[BDA_KBTAIL]
         pop     eax
         ret
 
@@ -197,21 +245,66 @@ kb_status:
 ;=====================================================================
 kb_getchar:
         push    ebx
+        push    ecx
 kg_wait:
         cli
-        mov     ebx,[kb_tail]
-        cmp     ebx,[kb_head]
+        mov     bx,word ptr ds:[BDA_KBHEAD]
+        cmp     bx,word ptr ds:[BDA_KBTAIL]
         jne     kg_have
         sti
         hlt                             ; idle until the next interrupt
         jmp     short kg_wait
 kg_have:
-        movzx   eax,word ptr [kb_buf + ebx*2]
-        inc     ebx
-        and     ebx,KB_BUFSZ - 1
-        mov     [kb_tail],ebx
+        movzx   ebx,bx
+        movzx   eax,word ptr ds:[ebx+BDA_BASE]
+        lea     ecx,[ebx+2]
+        cmp     cx,word ptr ds:[BDA_KBEND]
+        jb      kg_nowrap
+        movzx   ecx,word ptr ds:[BDA_KBSTART]
+kg_nowrap:
+        mov     word ptr ds:[BDA_KBHEAD],cx
         sti
+        pop     ecx
         pop     ebx
+        ret
+
+;=====================================================================
+; kb_bdaflags - mirror the modifier state into 40:17, where a program
+;               that wants to know whether Shift is down looks for it.
+;
+; The internal byte stays the master because it carries KBF_E0, which
+; is a decoding state and not a fact about the keyboard.  Only the bits
+; this driver genuinely tracks are written: Num Lock and Scroll Lock
+; are not tracked, and setting their bits would be a claim rather than
+; a report.  Left and right shift are not told apart here either, so
+; both bits move together - a program testing either one gets the right
+; answer, and one testing them separately learns that both are down,
+; which is the least wrong thing available.
+;=====================================================================
+kb_bdaflags:
+        push    eax
+        push    ebx
+        mov     bl,[kb_flags]
+        xor     al,al
+        test    bl,KBF_SHIFT
+        jz      kbf_noshift
+        or      al,BDAK_RSHIFT OR BDAK_LSHIFT
+kbf_noshift:
+        test    bl,KBF_CTRL
+        jz      kbf_noctrl
+        or      al,BDAK_CTRL
+kbf_noctrl:
+        test    bl,KBF_ALT
+        jz      kbf_noalt
+        or      al,BDAK_ALT
+kbf_noalt:
+        test    bl,KBF_CAPS
+        jz      kbf_nocaps
+        or      al,BDAK_CAPS
+kbf_nocaps:
+        mov     byte ptr ds:[BDA_KBFLAG],al
+        pop     ebx
+        pop     eax
         ret
 
 ;=====================================================================
@@ -258,10 +351,9 @@ kb_upper:
         db      0,0
 
 ;=====================================================================
-kb_buf      dw  KB_BUFSZ dup(0)
-kb_head     dd  0
-kb_tail     dd  0
-kb_flags    db  0
+kb_flags    db  0                       ; the decoder's state.  The buffer
+                                        ; it fills is the machine's, at
+                                        ; 40:1E - see the head comment
 
 null_idtr:  dw  0
             dd  0

@@ -108,6 +108,73 @@ la_none:
         ret
 
 ;=====================================================================
+; lm_sysalloc - EBX = paragraphs, for memory belonging to the MACHINE
+;               rather than to any program.  AX = the payload segment.
+;
+; Owner 8 is how DOS says "this is the system's", and PM-DOS has said
+; it since the XMS callback paragraph - but owner 8 is not only a
+; label.  It is a PROMISE ABOUT THE CONTENTS, and PM-DOS was breaking
+; it in a way that cost MS-DOS 6.22's MEM.EXE the whole machine.
+;
+; A DOS-owned block is not opaque.  MEM, MSD and every other memory
+; reporter walk INSIDE it, because that is where MS-DOS keeps the
+; things CONFIG.SYS asked for - the device drivers, the buffers, the
+; FILES and FCBS and STACKS tables - each behind a sixteen-byte header
+; laid out exactly like an MCB, with a letter in place of the 'M'.
+; The walk is the obvious one: read the letter, add the length at
+; offset 3, step on, stop at the end of the parent block.
+;
+; PM-DOS's system blocks had no such headers.  Their first bytes were
+; simply the structure they hold - and the list of lists begins with
+; the first-MCB word and then FFFF:FFFF, the "there is no drive
+; parameter block" sentinel.  So MEM read a length of FFFFh, added one
+; to step over the header, and got ZERO.  It never moved again: a
+; guest going round a loop makes no DOS call, causes no fault, and
+; says nothing, so from outside it is a machine that has stopped.
+;
+; The fix is not to hide the block but to describe it.  One paragraph
+; in front of every system allocation, holding a header of the shape
+; the walk expects and a length that tiles the block exactly, so the
+; walk lands on the end and stops. The letter is deliberately one DOS
+; does not define: PM-DOS's blocks are not buffers or FCBS or stacks,
+; and a walker that knows the letters skips what it does not know.
+; Claiming 'D' to be counted would be inventing a device driver, which
+; is the same lie the list of lists refuses to tell with its pointers.
+;=====================================================================
+SUBBLK_TAG      EQU     'P'
+
+lm_sysalloc:
+        push    ecx
+        push    edx
+        inc     ebx                             ; ...and its header
+        call    lm_alloc
+        jc      lsa_out                          ; EBX = the best we could do,
+                                                ; as lm_alloc leaves it
+        movzx   edx,ax                          ; the MCB is the system's
+        dec     edx
+        shl     edx,4
+        mov     word ptr [edx+RMCB_OWN],8
+
+        movzx   edx,ax                          ; and the first paragraph
+        shl     edx,4                           ; describes the rest
+        dec     ebx
+        mov     byte ptr [edx+RMCB_SIG],SUBBLK_TAG
+        mov     word ptr [edx+RMCB_OWN],8
+        mov     [edx+RMCB_LEN],bx
+        xor     ecx,ecx
+        mov     [edx+5],cx
+        mov     byte ptr [edx+7],cl
+        mov     [edx+RMCB_NAME],ecx
+        mov     [edx+RMCB_NAME+4],ecx
+
+        inc     ax                              ; the payload is one on
+        clc
+lsa_out:
+        pop     edx
+        pop     ecx
+        ret
+
+;=====================================================================
 ; lm_free - AX = the data segment of a block.  CF on a bad address,
 ;           which is how DOS answers 49h for a pointer it never gave
 ;           out and how a program with a wild pointer finds out.
@@ -212,8 +279,23 @@ lr_shrink:
         mov     [esi+RMCB_LEN],bx
         mov     eax,ecx
         sub     eax,ebx
-        cmp     eax,1
-        jbe     lr_ok                           ; no room for a new header
+        ; ONE LEFT-OVER PARAGRAPH IS A HEADER, NOT A GAP.  This used to
+        ; refuse to split when the remainder was a single paragraph -
+        ; but the length above has ALREADY been shortened by then, so
+        ; the paragraph was not kept, it was ORPHANED: the block said it
+        ; ended one paragraph before the next header really began, and a
+        ; walker stepping "this block plus its header" landed on the
+        ; last sixteen bytes of somebody's data and read them as a
+        ; signature and a length.  From there it goes wherever those
+        ; bytes point, for ever, without making a single DOS call - and
+        ; that is exactly what MS-DOS 6.22's MEM.EXE did on the 486.
+        ;
+        ; A zero-length block is a legal MCB and real DOS makes them all
+        ; the time: the header IS the paragraph, and it describes no
+        ; data at all.  The only case with nothing to write is an exact
+        ; fit, and that one really does leave the chain alone.
+        or      eax,eax
+        jz      lr_ok
         mov     edx,ebx
         inc     edx
         shl     edx,4
