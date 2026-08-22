@@ -238,6 +238,13 @@ irq_common:
         call    dword ptr [irq_vectors + ebx*4]
 
         ; End of interrupt.  Slave first if this came from IRQ 8-15.
+        ; THE NUMBER IS READ BACK RATHER THAN KEPT: a handler is under
+        ; no obligation to preserve anything, and irq_keyboard does not
+        ; - it leaves a scan code in EBX - so trusting the register
+        ; here was asking whether the last key pressed was above 08h.
+        ; Harmless only because a spurious EOI to the slave lands on a
+        ; PIC with nothing in service.
+        mov     ebx,[esp+40]
         cmp     ebx,8
         jb      irq_master
         mov     al,20h
@@ -245,6 +252,20 @@ irq_common:
 irq_master:
         mov     al,20h
         out     PIC1_CMD,al
+
+        ; ...and now, with the interrupt acknowledged, the guest can be
+        ; given one of its own if it is owed one.  After the EOI rather
+        ; than before, so that the guest's handler is entered on a PIC
+        ; that has already been told this interrupt is finished with -
+        ; its own EOI, which every DOS keyboard handler sends, is then
+        ; the harmless second one rather than the necessary first.
+        ;
+        ; EBP is four bytes below the IRQ number so that FR_EIP and the
+        ; rest of the fault-frame offsets address this frame: an IRQ
+        ; pushes everything an exception does except the error code.
+        mov     ebp,esp
+        add     ebp,36
+        call    v86_irqexit
 
         pop     es
         pop     ds
@@ -334,6 +355,51 @@ it_nospin:
         mov     dword ptr ds:[v86_watch],0
 it_spun:
 ENDIF
+
+;--- the mouse's litter ----------------------------------------------
+; THE 8042 HAS ONE OUTPUT BUFFER AND TWO DEVICES BEHIND IT, and a byte
+; from the auxiliary one that nobody reads sits in it for ever - with
+; every scan code queued up behind it, undelivered, because the
+; controller has nowhere to put them.  IRQ 1 simply stops.  Not the
+; box's keyboard: the MACHINE'S, and the first sign of it is a shell
+; that has stopped echoing.
+;
+; It became reachable in v0.36 for a good reason.  A DOS box may talk
+; to the mouse - vio_o64 hands D4h and its data byte to the real
+; controller, because the kernel has taken the keyboard away from the
+; guest and nothing else - so MSD's "is there a PS/2 mouse" now gets
+; the true answer.  What it also gets is a mouse that is awake, and a
+; mouse that is awake sends packets to a machine whose IRQ 12 is
+; masked and whose kernel has no use for them.
+;
+; So the tick clears them, which is what the tick is for: it is
+; already doing the BIOS's housekeeping for the floppy motor two
+; instructions below.  ONLY bytes flagged as the auxiliary device's
+; are taken - a keyboard byte belongs to irq_keyboard and is left
+; exactly where it is - and they are drained in a loop, because a
+; mouse in stream mode produces them faster than 18.2 times a second
+; and clearing one per tick would leave the buffer blocked between
+; them.
+;
+; It costs a guest that polls for a mouse reply a race it can lose:
+; the tick could take the byte first.  In practice the poll follows
+; the command within microseconds and the tick is 55 milliseconds
+; wide, and the alternative - a keyboard that stops - is not a race,
+; it is a certainty.
+;
+; The count is a bound and not a budget: a controller that answers
+; "still full" for ever would otherwise turn the timer tick into the
+; hang it was added to prevent, and an interrupt handler is the last
+; place to write a loop that trusts hardware to stop.
+        mov     ecx,32
+it_aux:
+        in      al,PORT_KBCMD
+        and     al,KBS_OBF OR KBS_AUXB
+        cmp     al,KBS_OBF OR KBS_AUXB
+        jne     it_noaux
+        in      al,PORT_KBDATA
+        loop    it_aux
+it_noaux:
 
 ;--- the floppy motor-off countdown ----------------------------------
 ; Zero means "no motor running and nothing to do", which is also the

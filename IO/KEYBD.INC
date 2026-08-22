@@ -31,6 +31,38 @@
 ; The private one is deleted rather than mirrored, for the reason
 ; tick_count was deleted: a copy is a thing that can drift.
 ;
+; AND A GUEST THAT HOOKS INT 09h ITSELF GETS THE INTERRUPT.  Filling
+; the ring answers every program that asks the BIOS for a key, and
+; answers none of the ones that ask the KEYBOARD - the full-screen
+; programs that put their own handler on INT 09h because they want key
+; up as well as key down, or a hot key that works while they are busy,
+; or the raw scan code the ring cannot carry.  Those programs saw
+; nothing at all: this driver had already taken the byte off port 60h
+; before the guest could have looked, and no INT 09h was ever delivered
+; into the box.  MSD is the one that showed it - it comes up, reports
+; the machine correctly, and will not take a keystroke.
+;
+; The rule the split follows is ONE CONSUMER PER KEYSTROKE, decided at
+; the instant the interrupt arrives, by asking whether a box is running
+; and whether its INT 09h is still the ROM's:
+;
+;   NO BOX RUNNING, or the vector is the ROM's own - this driver
+;   decodes the key and puts it in the ring, exactly as before.  That
+;   is every case that worked in v0.34 and v0.35, and it still takes
+;   the same path.
+;
+;   A BOX IS RUNNING AND IT HAS HOOKED INT 09h - the scan code is
+;   QUEUED instead, and an INT 09h is delivered into the guest.  Its
+;   handler reads port 60h, which the monitor traps, and gets the byte
+;   this queue is holding; if it chains on to the ROM's handler, the
+;   ROM fills the ring.  Either way the whole keystroke belongs to one
+;   chain, and there is no second decoder producing a duplicate.
+;
+; The ROM's vector is captured at boot, before anything has had the
+; chance to hook it, because "has this been hooked" has no other
+; answer: a guest's IVT is the machine's IVT and the ROM address is
+; not a constant.
+;
 ; Included by IOPM.ASM.
 ;=====================================================================
 
@@ -43,10 +75,23 @@ KBF_ALT         EQU     04h
 KBF_E0          EQU     08h
 KBF_CAPS        EQU     10h
 
+KBQ_SIZE        EQU     32              ; scan codes held for a DOS box.  A
+                                        ; key is at most three of them, and
+                                        ; the guest drains it inside its own
+                                        ; INT 09h, so this is deep enough to
+                                        ; be an overflow nobody reaches
+
 ;=====================================================================
 ; kb_init - drain anything the BIOS left in the controller.
 ;=====================================================================
 kb_init:
+        ; The ROM's INT 09h, before there is any way for it to have
+        ; been changed.  Everything after this compares against it to
+        ; decide whether a DOS box has a keyboard handler of its own.
+        mov     eax,dword ptr ds:[IVT_INT09]
+        mov     dword ptr [kb_romint9],eax
+        call    kb_boxreset
+
         ; The ring, as the ROM would have set it up.  Both bounds are
         ; written rather than trusted: a BIOS is entitled to move the
         ; buffer, and kb_put honours wherever it says the buffer is, so
@@ -69,10 +114,34 @@ ki_done:
 
 ;=====================================================================
 ; irq_keyboard - IRQ 1 service routine.
+;
+; Whose keystroke this is gets decided first, and once.  If it is the
+; box's it goes on the queue and the decoding below runs for its side
+; effects only: the modifier state, because Ctrl-Alt-Del has to be
+; caught HERE - the ROM's handler would answer it by jumping to the
+; power-on entry point, in V86, which is not a reboot but a dead box -
+; and nothing else.  The translation, the ring and 40:17 are all left
+; to the guest's own chain, which is the whole point of handing it
+; over.
+;
+; The interrupt itself is not delivered from here.  irq_common does it
+; on the way out, where the frame the CPU pushed says whether the code
+; we interrupted was the guest - see v86_irqexit.
 ;=====================================================================
 irq_keyboard:
         in      al,KB_DATA
 
+        mov     byte ptr [kb_forbox],0
+        cmp     byte ptr ds:[v86_active],0
+        je      kb_decode               ; no box: the keyboard is all ours
+        mov     ebx,dword ptr ds:[IVT_INT09]
+        cmp     ebx,dword ptr [kb_romint9]
+        je      kb_decode               ; a box, but it has not hooked 09h,
+                                        ; so the ring is still the answer
+        mov     byte ptr [kb_forbox],1
+        call    kbq_put
+
+kb_decode:
         cmp     al,0E0h                 ; extended key prefix
         jne     kb_notE0
         or      byte ptr [kb_flags],KBF_E0
@@ -141,6 +210,8 @@ kb_haveasc:
         and     al,1Fh                  ; Ctrl-A becomes 01h, and so on
 
 kb_store:
+        cmp     byte ptr [kb_forbox],0
+        jne     kb_clr_e0               ; the guest's chain fills the ring
         call    kb_put
 kb_clr_e0:
         and     byte ptr [kb_flags],NOT KBF_E0
@@ -184,6 +255,13 @@ kb_caps:
         xor     byte ptr [kb_flags],KBF_CAPS
 
 kb_mod:
+        ; 40:17 has ONE writer at a time, for the reason the ring does.
+        ; While the box owns the keystroke the ROM's handler is
+        ; publishing the shift state - and it tracks Num Lock and
+        ; Scroll Lock, which this driver does not, so writing over it
+        ; here would turn its lock lights off on every shift key.
+        cmp     byte ptr [kb_forbox],0
+        jne     kb_clr_e0
         call    kb_bdaflags
         jmp     short kb_clr_e0
 
@@ -227,6 +305,97 @@ kp_nowrap:
 kp_full:
         pop     ecx
         pop     ebx
+        ret
+
+;=====================================================================
+; THE DOS BOX'S SCAN CODES.
+;
+; A queue and a LATCH, and the second one is the part that has to be
+; got right, because it is where the 8042 is being stood in for.
+;
+; A real keyboard controller holds one byte in its output register and
+; goes on holding it until the next one arrives.  READING IT DOES NOT
+; TAKE IT AWAY.  That is not a detail: it is what makes a chained INT
+; 09h handler possible at all.  A resident program's handler reads port
+; 60h to see what was pressed and then jumps to the handler it replaced
+; - which reads port 60h again, and must get the SAME byte, or the two
+; halves of the chain are looking at two different keystrokes.  A queue
+; that popped on every read would give the second reader the next key,
+; or nothing, and a program that hooks the keyboard and passes the keys
+; on is the commonest kind there is.
+;
+; So the queue exists only to hold codes that arrive faster than the
+; guest is given interrupts for them, and it is emptied ONE CODE PER
+; INT 09h DELIVERED, at the moment of delivery - which is exactly when
+; the hardware would have latched it.  Everything the guest reads off
+; the port between one interrupt and the next is the latch, as often as
+; it likes.
+;=====================================================================
+kbq_put:
+        push    eax
+        push    ebx
+        push    ecx
+        movzx   ebx,byte ptr [kbq_tail]
+        lea     ecx,[ebx+1]
+        and     cl,KBQ_SIZE - 1
+        cmp     cl,byte ptr [kbq_head]
+        je      kqp_full                ; one slot stays empty, as the BIOS
+                                        ; ring does, so that full and empty
+                                        ; do not look alike
+        mov     [kbq + ebx],al
+        mov     byte ptr [kbq_tail],cl
+kqp_full:
+        pop     ecx
+        pop     ebx
+        pop     eax
+        ret
+
+;---------------------------------------------------------------------
+; kbq_take - move the next queued scan code into the latch.  CF clear
+;            if there was one, which is also the monitor's answer to
+;            "is an INT 09h owed to the guest".
+;---------------------------------------------------------------------
+kbq_take:
+        push    ebx
+        movzx   ebx,byte ptr [kbq_head]
+        cmp     bl,byte ptr [kbq_tail]
+        je      kqt_empty
+        mov     al,[kbq + ebx]
+        mov     byte ptr [kb_latch],al
+        mov     byte ptr [kb_lvalid],1
+        mov     byte ptr [kb_obf],1     ; and the status bit that says so,
+                                        ; until the guest reads the port
+        inc     bl
+        and     bl,KBQ_SIZE - 1
+        mov     byte ptr [kbq_head],bl
+        clc
+        pop     ebx
+        ret
+kqt_empty:
+        stc
+        pop     ebx
+        ret
+
+;---------------------------------------------------------------------
+; kb_boxreset - IOS_KBBOX.  A DOS box is starting; nothing queued for
+;               the last one is meant for this one.
+;
+; The latch goes too.  Left standing, it would answer the new guest's
+; first read of port 60h with a key pressed at the program before it -
+; and a program that reads the port before any interrupt has been
+; delivered is asking the hardware what it is holding, which at that
+; point is nothing at all.
+;---------------------------------------------------------------------
+kb_boxreset:
+        mov     byte ptr [kbq_head],0
+        mov     byte ptr [kbq_tail],0
+        mov     byte ptr [kb_lvalid],0
+        mov     byte ptr [kb_obf],0
+        mov     byte ptr [vio_kbdwr],0  ; and no half-finished 8042 sequence
+        mov     byte ptr [vio_kbdrd],0  ; from the box that has just ended
+        mov     byte ptr [vio_kbdcmd],0
+        mov     byte ptr [vio_kbdaux],0
+        mov     byte ptr [vio_kbdthru],0
         ret
 
 ;=====================================================================
@@ -354,6 +523,18 @@ kb_upper:
 kb_flags    db  0                       ; the decoder's state.  The buffer
                                         ; it fills is the machine's, at
                                         ; 40:1E - see the head comment
+kb_forbox   db  0                       ; this scan code belongs to the DOS
+                                        ; box, so decode it for Ctrl-Alt-Del
+                                        ; and the modifier state and stop
+kb_romint9  dd  0                       ; INT 09h as the ROM left it, taken
+                                        ; at boot: anything else in that slot
+                                        ; is a guest's own handler
+kb_latch    db  0                       ; the guest's port 60h, standing in
+kb_lvalid   db  0                       ; for the 8042's output register...
+kb_obf      db  0                       ; ...and its "there is a byte" bit
+kbq_head    db  0
+kbq_tail    db  0
+kbq         db  KBQ_SIZE dup (0)
 
 null_idtr:  dw  0
             dd  0

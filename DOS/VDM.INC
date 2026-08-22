@@ -255,11 +255,9 @@ vp_notail:
         movzx   eax,word ptr ds:[vdm_envseg]
         or      eax,eax
         jz      vp_noenv
-        dec     eax
-        shl     eax,4
         mov     edx,edi
         shr     edx,4                           ; the PSP, as a segment
-        mov     [eax+RMCB_OWN],dx
+        call    lm_setown
 vp_noenv:
         pop     edi
         popad
@@ -655,6 +653,10 @@ vl_got:
         mov     word ptr ds:[vdm_paras],dx
         call    vdm_psp                         ; AX = seg, DX = paragraphs
 
+        movzx   eax,word ptr ds:[vdm_pspseg]    ; and the block wears the
+        mov     esi,dword ptr ds:[vdm_pathp]    ; program.s name, as DOS 4
+        call    lm_setname                      ; onwards has done
+
         movzx   edi,word ptr ds:[vdm_pspseg]    ; read the image in behind it
         shl     edi,4
         add     edi,100h
@@ -812,6 +814,10 @@ vx_got:
         mov     word ptr ds:[vdm_paras],dx
         movzx   eax,word ptr ds:[vdm_pspseg]
         call    vdm_psp                         ; AX = seg, DX = paragraphs
+
+        movzx   eax,word ptr ds:[vdm_pspseg]    ; and the block wears the
+        mov     esi,dword ptr ds:[vdm_pathp]    ; program.s name, as DOS 4
+        call    lm_setname                      ; onwards has done
 
 ;--- read the load module in -----------------------------------------
         mov     ebx,dword ptr ds:[vdm_hdl]
@@ -1016,13 +1022,29 @@ vdm_stublist    db  22h,23h,24h,28h,29h,2Ah,2Bh,2Ch,2Dh,2Eh,2Fh,0
 ;=====================================================================
 vdm_lolinit:
         pushad
-        mov     ebx,GLOL_PARAS
-        call    lm_sysalloc
-        jc      vli_none                        ; no low memory, no list
+        ; IT IS NOT TAKEN OUT OF THE ARENA ANY MORE.  This used to call
+        ; lm_sysalloc, which put the list of lists five paragraphs
+        ; ABOVE the first MCB - inside the memory it describes, which
+        ; no real DOS does and which MEM sizes by subtracting.  See
+        ; DOSDATA in PMDOS.INC.  A fixed address below the arena is
+        ; also one less thing that can fail at boot.
+        mov     ax,DOSDATA_SEG
         mov     word ptr ds:[vdm_lolseg],ax
+        mov     edi,DOSDATA
 
-        movzx   edi,ax
-        shl     edi,4
+        ; ZERO IT FIRST.  Everything below writes the fields PM-DOS
+        ; means to publish, and what is left over used to be whatever
+        ; the paragraph held at boot - which a program reading a fixed
+        ; offset in the DOS data segment reads as an answer.  That is
+        ; not a hypothetical: UMB_HEAD at 8Ch is exactly such a field,
+        ; and MEM believed it.
+        push    edi
+        push    ecx
+        xor     eax,eax
+        mov     ecx,DOSDATA_SIZE / 4
+        rep     stosd
+        pop     ecx
+        pop     edi
 
         ; THE ONE FIELD THAT IS A CONTRACT.  The guest's arena starts
         ; at V86_TPA, which is where lm_init put the first header - and
@@ -1056,6 +1078,55 @@ vdm_lolinit:
         mov     byte ptr [edi+GLOL_NBLOCK],0    ; vdm_lol fills both of
         mov     byte ptr [edi+GLOL_LASTDRV],MAX_DRIVES
         mov     byte ptr [edi+GLOL_NJOIN],0
+
+        ; THE DOS 5 TAIL.  Four of these are "nothing here", said at
+        ; the offset a reader will look at rather than left as whatever
+        ; the device headers used to spell there; three are answers
+        ; PM-DOS has always known and had nowhere to put.
+        mov     word ptr [edi+GLOL_SPECIAL],0
+        mov     dword ptr [edi+GLOL_SETVER],0FFFFFFFFh
+        mov     word ptr [edi+GLOL_CPFIX],0
+        mov     word ptr [edi+GLOL_A20PSP],0
+
+        ; NO DISK BUFFERS, AND THAT IS THE TRUE ANSWER RATHER THAN A
+        ; MODEST ONE.  A DOS buffer is a 528-byte sector cache in
+        ; conventional memory that BUFFERS= sizes; PM-DOS caches whole
+        ; clusters and FAT windows above 1MB instead, so a program
+        ; costing the arena out finds none here because none of it is
+        ; down there to find.  Saying "20" would spend 10K of somebody
+        ; else's arithmetic on memory that is not missing.
+        mov     word ptr [edi+GLOL_NBUF],0
+        mov     word ptr [edi+GLOL_NLOOK],0
+
+        ; The boot drive as DOS numbers it - 1 = A - from the BIOS
+        ; number PMIO booted with.  A hard disk is C: because that is
+        ; where its first partition mounts.
+        movzx   eax,byte ptr ds:[GV_BOOTDRV]
+        cmp     al,80h
+        jb      vli_bootfd
+        sub     al,80h - 2
+vli_bootfd:
+        inc     al
+        mov     [edi+GLOL_BOOTDRV],al
+
+        mov     byte ptr [edi+GLOL_DWMOVE],1    ; a 386 is the entry price
+
+        ; Extended memory in KB, saturated, because the field is a
+        ; word and the machines this runs on are bigger than one - the
+        ; same clamp xms_cap16 makes for the same reason.
+        mov     eax,dword ptr ds:[GV_MEMKB]
+        cmp     eax,0FFFFh
+        jbe     vli_extok
+        mov     eax,0FFFFh
+vli_extok:
+        mov     [edi+GLOL_EXTMEM],ax
+
+        ; WHERE UPPER MEMORY BEGINS, WHICH IS NOWHERE.  FFFFh is DOS's
+        ; own "not initialised", and no segment can be at or above it,
+        ; so every block in the chain is conventional memory.  See the
+        ; comment on GLOL_UMBHEAD: this single word is what MS-DOS
+        ; 6.22's MEM.EXE classifies the entire arena by.
+        mov     word ptr [edi+GLOL_UMBHEAD],0FFFFh
 
         mov     byte ptr [edi+GLOL_RETF],0CBh   ; RETF
 
@@ -1116,8 +1187,6 @@ vli_name:
         add     esi,VDMDEV_LEN
         jmp     short vli_dev
 vli_devdone:
-
-vli_none:
         popad
         ret
 
@@ -1277,6 +1346,8 @@ vdm_run:
         mov     dword ptr ds:[vdm_extype],VDX_NORMAL
         mov     dword ptr ds:[vdm_busy],1
         call    xms_a20reset                    ; a fresh box, a shut gate
+        call    dword ptr ds:[IOS_KBBOX]        ; ...and no scan codes left
+                                                ; over from the last one
 
         ; Where to unwind to if the guest has to be killed from
         ; underneath - see vdm_abort.  The InDOS depth is part of that
@@ -1341,11 +1412,12 @@ vdm_loop:
 ; address settles it: the callback block is memory we planted and know
 ; the address of, and no ordinary program executes a HLT at all.
 ;---------------------------------------------------------------------
-; Five things can be at the far end of a HLT now, and the address is
-; what tells them apart: the XMS entry, DPMI's mode switch, the pad a
-; simulated real-mode interrupt returns to, one of the real-mode
-; callback landing pads, and - if it is none of those - a program that
-; has genuinely stopped.
+; Six things can be at the far end of a HLT now.  Four of them are
+; told apart by ADDRESS - the XMS entry, DPMI's mode switch, the pad a
+; simulated real-mode interrupt returns to, and one of the real-mode
+; callback landing pads - and if it is none of those, the guest's own
+; interrupt flag settles the last two: on, and it is a program waiting
+; for an interrupt; off, and it is one that has genuinely stopped.
 vdm_halt:
         call    xms_iscb
         jnc     vh_xms
@@ -1355,7 +1427,35 @@ vdm_halt:
         jnc     vh_dpmiret
         call    dpmi_iscall             ; EAX = which callback, if it is one
         jnc     vh_dpmicb
-        jmp     vdm_abend               ; a program that really did stop
+
+        ; A SIXTH, and it is not a stopped program at all: a HLT WITH
+        ; INTERRUPTS ON is a program waiting for one.  That is the
+        ; canonical way to wait for a key without spinning, and until
+        ; IRQ 1 could be delivered into a box there was nothing to wait
+        ; FOR - so ending the box was as good an answer as any.  Now
+        ; there is, and killing the guest at the exact moment its
+        ; keystroke was about to arrive would be a poor joke.
+        ;
+        ; The flags are the guest's own virtual ones, so this asks what
+        ; the program believes rather than what the CPU is doing; the
+        ; guest never really runs with interrupts off.  HLT with them
+        ; off is still the end, and it is the honest end: an 8086 that
+        ; halts with no way to be interrupted has genuinely stopped.
+        ;
+        ; What it costs is that a program which halts forever with
+        ; interrupts on now hangs its box instead of abending it.  That
+        ; is what the hardware does, Ctrl-Alt-Del still works because
+        ; the kernel owns IRQ 1, and V86_WATCH is the build that says
+        ; where a guest has got stuck.
+        test    dword ptr [vdm_ctx+V86C_FLAGS],EFL_IF
+        jz      vdm_abend
+        sti
+        hlt                             ; until the next interrupt - the
+                                        ; timer at worst, 18.2 times a second
+        mov     eax,dword ptr [vdm_ctx+V86C_EIP]
+        inc     ax                      ; over the HLT, which the monitor
+        mov     dword ptr [vdm_ctx+V86C_EIP],eax        ; leaves standing on
+        jmp     vdm_loop                                ; it
 vh_xms:
         call    xms_call
         jmp     vdm_loop
@@ -1549,11 +1649,27 @@ vr_nocf:
         ret
 
 ;--- the calls that cannot be passed through -------------------------
-vdm_alloc:                                      ; 48h - BX paragraphs
+; 48h - BX paragraphs.
+;
+; AND THE BLOCK BELONGS TO THE PROGRAM THAT ASKED FOR IT, which is the
+; whole of what this line does and the whole of what was missing.
+; lm_alloc leaves a block owning itself; the exit sweep frees by PSP;
+; so every allocation a DOS box ever made stood there until the
+; machine was switched off.  Nothing complained, because a leak is not
+; an error message - it is a largest-free-block that keeps getting
+; smaller.  MSD takes two of these and MEM afterwards reported 604K
+; free with the biggest run 309K, which is the shape a leak makes.
+;
+; The CURRENT PSP, not the one the box was started with, because that
+; is DOS's own rule and a TSR allocating on somebody's behalf relies
+; on it.  In every ordinary case they are the same value.
+vdm_alloc:
         movzx   ebx,word ptr [vdm_ctx+V86C_EBX]
         call    lm_alloc
         jc      va_fail
         mov     word ptr [vdm_ctx+V86C_EAX],ax
+        mov     dx,word ptr ds:[vdm_curpsp]
+        call    lm_setown
         and     dword ptr [vdm_ctx+V86C_FLAGS],NOT FL_CF
         jmp     vdm_loop
 va_fail:
@@ -1671,8 +1787,29 @@ vdm_country:
         shl     eax,4
         add     edx,eax
 vco_run:
+        ; ALL FOUR, INCLUDING THE ONE THIS CALL HAS NO USE FOR.
+        ; vdm_result copies EAX, EBX, ECX and EDX back into the guest,
+        ; so a register this does not LOAD is not "left alone" - it is
+        ; handed back holding whatever the kernel last had in it.  CX
+        ; is neither an input to 38h nor an output from it, and real
+        ; DOS preserves it; ours was returning zero, because the
+        ; kernel's own `rep movsb` copying the country block is the
+        ; last thing to touch ECX before the frame is built.
+        ;
+        ; That cost MS-DOS 6.22's MEM.EXE its numbers.  Its message
+        ; service formats every figure it prints by pushing digits and
+        ; COUNTING THEM IN CX, which it does not zero first - and it
+        ; calls 38h for the thousands separator on the way.  So the
+        ; count arrived poisoned, the digit collector popped two words
+        ; that were never digits, and MEM printed 1,703,7.. for 17,037
+        ; and then flooded the screen.
+        ;
+        ; The general rule, and it is worth more than the fix: A
+        ; REGISTER THE SPECIFICATION CALLS UNDEFINED IS STILL THE SAME
+        ; VALUE EVERY TIME ON REAL DOS, and somebody has built on it.
         movzx   eax,word ptr [vdm_ctx+V86C_EAX]
         movzx   ebx,word ptr [vdm_ctx+V86C_EBX]
+        movzx   ecx,word ptr [vdm_ctx+V86C_ECX]
         call    k21
         call    vdm_result
         jmp     vdm_loop
@@ -1722,7 +1859,14 @@ vdm_dsptr:                                      ; 1Bh, 1Ch - offset in BX
 vdm_dsptrsi:                                    ; 63h - offset in SI
         mov     byte ptr ds:[vdm_dssi],1
 vd_go:
+        ; All four, for the reason vdm_country gives at length: what is
+        ; not loaded comes back to the guest as the kernel's leftovers.
+        ; 1Bh and 1Ch answer IN CX, so the handler overwrites it - but
+        ; 63h does not, and a guest calling 63h was having its CX taken
+        ; away by a routine that had no interest in it.
         movzx   eax,word ptr [vdm_ctx+V86C_EAX]
+        movzx   ebx,word ptr [vdm_ctx+V86C_EBX]
+        movzx   ecx,word ptr [vdm_ctx+V86C_ECX]
         movzx   edx,word ptr [vdm_ctx+V86C_EDX]
         call    k21
         call    vdm_result

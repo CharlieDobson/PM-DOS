@@ -32,11 +32,22 @@ _MC     SEGMENT USE16 PUBLIC 'CODE'
         ORG     0
 
 MAXBLK  EQU     64
-TPATOP  EQU     0A000h                  ; the paragraph after 639K
 
 start:
         mov     dx,OFFSET msg_hi
         call    puts
+
+        ; WHERE CONVENTIONAL MEMORY ENDS IS A QUESTION, NOT A CONSTANT.
+        ; This file used to test the chain against a hardcoded 0A000h,
+        ; and passed on a machine whose BIOS had taken the top
+        ; kilobyte for its extended data area and said so - the arena
+        ; really did run past the end of memory the BIOS owned, and
+        ; the test agreed with the bug because it shared its
+        ; assumption.  INT 12h is the machine's own answer.
+        int     12h                     ; AX = KB of conventional memory
+        mov     cx,64                   ; ...and 1K is 64 paragraphs
+        mul     cx
+        mov     [tpatop],ax
 
 ;=====================================================================
 ; 1 - where the chain starts.  52h hands back a pointer INTO the list
@@ -56,7 +67,7 @@ start:
         call    put4
         or      ax,ax
         jz      mc_f_no
-        cmp     ax,TPATOP
+        cmp     ax,[tpatop]
         jae     mc_f_no
         call    ok
         jmp     short mc_walk
@@ -106,6 +117,38 @@ mc_p_ch:
         call    puts
         mov     ax,[len]
         call    put4
+
+        ; ...AND THE NAME, which is the field that says whose a block
+        ; is when the owner word only says which PSP - and a PSP that
+        ; has exited is a number pointing at nothing.  DOS 4 and later
+        ; put the program's name in the eight bytes at +8 and every
+        ; memory reporter prints it; a block still standing after its
+        ; program has gone is exactly the case where the number cannot
+        ; answer and the name can.
+        mov     dx,OFFSET msg_nm
+        call    puts
+        xor     bx,bx
+mc_nm:
+        mov     dl,es:[bx+8]
+        or      dl,dl
+        jz      mc_nmsp                 ; a short name pads with blanks
+        cmp     dl,20h
+        jb      mc_nmdot
+        cmp     dl,7Eh
+        jbe     mc_nmch
+mc_nmdot:
+        mov     dl,'.'
+mc_nmch:
+        call    putc
+        jmp     short mc_nmnext
+mc_nmsp:
+        mov     dl,' '
+        call    putc
+mc_nmnext:
+        inc     bx
+        cmp     bx,8
+        jb      mc_nm
+
         mov     dx,OFFSET msg_crlf
         call    puts
 
@@ -125,7 +168,7 @@ mc_sigok:
         mov     ax,[own]
         cmp     ax,[first]
         jb      mc_ownbad
-        cmp     ax,TPATOP
+        cmp     ax,[tpatop]
         jb      mc_ownok
 mc_ownbad:
         mov     byte ptr [badown],1
@@ -195,10 +238,10 @@ mc_top:
         call    put4
         mov     dl,'/'
         call    putc
-        mov     ax,TPATOP
+        mov     ax,[tpatop]
         call    put4
         pop     ax
-        cmp     ax,TPATOP
+        cmp     ax,[tpatop]
         jne     mc_t_no
         call    ok
         jmp     short mc_own
@@ -301,6 +344,7 @@ put1a:
 ; data
 ;=====================================================================
 first       dw  0
+tpatop      dw  0A000h                  ; INT 12h's answer, in paragraphs
 cur         dw  0
 len         dw  0
 own         dw  0
@@ -317,10 +361,11 @@ msg_ok      db  ' ok',13,10,'$'
 msg_bad     db  ' FAILED',13,10,'$'
 msg_crlf    db  13,10,'$'
 msg_fails   db  'checks failed: $'
-msg_head    db  13,10,'      seg sig  owner   paras',13,10,'$'
+msg_head    db  13,10,'      seg sig  owner   paras  name',13,10,'$'
 msg_ind     db  '      $'
 msg_own     db  '    $'
 msg_len     db  '    $'
+msg_nm      db  '   $'
 msg_noend   db  ' no Z in 64 blocks -$'
 
 t_first     db  '  1 52h, and [ES:BX-2] says           $'

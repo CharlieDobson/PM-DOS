@@ -16,7 +16,10 @@
 ;   00000530-00000FFF   Real-mode stack (SS=0000, SP=1000) - 2.7K
 ;   00001000-00001FFF   PMIO.SYS real-mode stub (4K, fixed size)
 ;   00002000-00003FFF   XFER     - transfer buffer for BIOS disk I/O
-;   00004000-0009FFFF   the DOS box's transient program area (624K)
+;   00004000-000040FF   DOS data segment - the list of lists and the
+;                       device headers, BELOW the arena as in real DOS
+;   00004100-0009FFFF   the DOS box's transient program area, ending
+;                       where the BIOS says conventional memory does
 ;   000A0000-000FFFFF   Video RAM and ROM
 ;   00100000-0013FFFF   PMDOS.SYS (256K reserved)
 ;   00140000-0017FFFF   shell slot: PSP at 140000, image at 141000,
@@ -535,9 +538,36 @@ DM_LEN          EQU     16
 ; is the code that gets into and out of protected mode, so it cannot
 ; be anywhere a real-mode far jump cannot reach.
 ;---------------------------------------------------------------------
-V86_TPA         EQU     00004000h
-V86_TPA_SEG     EQU     0400h
-V86_TPA_TOP     EQU     000A0000h
+; THE DOS DATA SEGMENT, AND IT HAS TO BE BELOW THE ARENA.
+;
+; The list of lists used to be allocated OUT OF the arena it
+; describes, five paragraphs above the first MCB, and that is a place
+; no real DOS has ever kept it: MS-DOS's data segment sits below the
+; transient program area, and the arena begins above it.  The
+; difference is not cosmetic.  MS-DOS 6's MEM.EXE sizes the DOS data
+; area by SUBTRACTING - "(first MCB) - (the segment 52h answered)" -
+; and with the list of lists above the first MCB that subtraction goes
+; NEGATIVE.  MEM took the result as an unsigned length, entered a four
+; gigabyte block in its table, flooded the screen padding a field to a
+; nonsense width, and then took a BOUND fault in its own bounds check.
+;
+; So the block is a fixed 256 bytes below the arena now, exactly where
+; DOS keeps it, and the arena starts one page further up.  What it
+; costs is a quarter of a kilobyte of a DOS box's memory; what it buys
+; is that every tool computing a size by subtraction gets a positive
+; one.
+DOSDATA         EQU     00004000h
+DOSDATA_SEG     EQU     0400h
+DOSDATA_SIZE    EQU     00000100h
+
+V86_TPA         EQU     00004100h
+V86_TPA_SEG     EQU     0410h
+V86_TPA_TOP     EQU     000A0000h       ; THE CEILING, NOT THE TOP.  Where the
+                                        ; arena really ends is what the BIOS
+                                        ; says at 40:13 and is decided at run
+                                        ; time - see lm_init and lm_top.  640K
+                                        ; is the most there can ever be, which
+                                        ; is what this is for.
 
 ;---------------------------------------------------------------------
 ; Memory control blocks, the DOS memory arena, unchanged since 1983.
@@ -600,10 +630,36 @@ GLOL_LASTDRV    EQU     23h             ; db - +21 LASTDRIVE
 GLOL_NUL        EQU     24h             ; +22 the NUL driver header, and with
                                         ; it the head of the device chain
 GLOL_NJOIN      EQU     36h             ; db - +34 JOIN'ed drives, none
-GLOL_RETF       EQU     37h             ; db - a far return, which is what both
-                                        ; driver entries above point at: they
-                                        ; are FAR CALL targets, and a program
-                                        ; that calls one must come back
+
+; THE TAIL OF THE STRUCTURE, AND WHY IT IS HERE AT ALL.
+;
+; The list of lists did not stop at the JOIN count in DOS 5, and this
+; one did: the device headers began immediately afterwards, on top of
+; eight documented fields.  A program reading the boot drive out of
+; LoL+43h got the high byte of the CON header's interrupt entry; one
+; reading the extended memory size out of LoL+45h got the letters "ON"
+; out of the word 'CON     ' - twenty thousand and forty-seven
+; kilobytes, from a machine with a hundred and twenty-eight megabytes.
+;
+; Nothing here was invented for a program to find.  These are fields
+; MS-DOS 5.0 and 6.x publish at fixed offsets, which means a memory
+; reporter written against them reads SOMETHING whatever we do; the
+; only choice is whether it reads an answer or a device name.  That is
+; the same argument the FFFF:FFFF pointers above are made of, one step
+; further along: say nothing, but say it in the right place.
+GLOL_SPECIAL    EQU     37h             ; dw - +35 "special code segment",
+                                        ; unused from DOS 5 onwards
+GLOL_SETVER     EQU     39h             ; dd - +37 the SETVER table
+GLOL_CPFIX      EQU     3Dh             ; dw - +3B Microsoft's copy-protection
+                                        ; .COM fixup entry
+GLOL_A20PSP     EQU     3Fh             ; dw - +3D PSP of the last program
+                                        ; loaded, for disabling A20
+GLOL_NBUF       EQU     41h             ; dw - +3F disk buffers
+GLOL_NLOOK      EQU     43h             ; dw - +41 lookahead buffers
+GLOL_BOOTDRV    EQU     45h             ; db - +43 boot drive, 1 = A
+GLOL_DWMOVE     EQU     46h             ; db - +44 386 dword moves available
+GLOL_EXTMEM     EQU     47h             ; dw - +45 extended memory, KB
+GLOL_TAIL       EQU     49h             ; +47 - and there the structure ends
 
 ; Past the list of lists proper, and in the same block for the same
 ; reason: THESE ARE THE OTHER THINGS A GUEST IS HANDED A POINTER TO.
@@ -612,10 +668,17 @@ GLOL_RETF       EQU     37h             ; db - a far return, which is what both
 ; can hold, and a kernel pointer above 1MB is not one.  Keeping them
 ; here means the handlers return a flat address inside this block and
 ; the bridge converts it the same way for all of them.
-GLOL_MEDIA      EQU     38h             ; db - 1Bh/1Ch hand back DS:BX
+;
+; They live AFTER the documented tail now, which is where anything of
+; ours belongs: an offset DOS defines is not ours to spend.
+GLOL_RETF       EQU     49h             ; db - a far return, which is what both
+                                        ; driver entries below point at: they
+                                        ; are FAR CALL targets, and a program
+                                        ; that calls one must come back
+GLOL_MEDIA      EQU     4Ah             ; db - 1Bh/1Ch hand back DS:BX
                                         ; pointing at the media descriptor
                                         ; byte of the drive just asked about
-GLOL_DBCS       EQU     3Ah             ; dw - 63h hands back DS:SI pointing
+GLOL_DBCS       EQU     4Ch             ; dw - 63h hands back DS:SI pointing
                                         ; at the DBCS lead-byte table, and a
                                         ; single zero word IS the table: no
                                         ; ranges, which is the truth for
@@ -652,11 +715,36 @@ DEVH_LEN        EQU     12h
 ; pointer AT the console header and is a different thing at a
 ; different offset - hence the H, which is not decoration.
 GLOL_HNUL       EQU     GLOL_NUL        ; the head, already inside the LoL
-GLOL_HCON       EQU     3Ch
-GLOL_HAUX       EQU     4Eh
-GLOL_HPRN       EQU     60h
-GLOL_SIZE       EQU     72h
-GLOL_PARAS      EQU     8               ; paragraphs to hold all of it
+GLOL_HCON       EQU     4Eh
+GLOL_HAUX       EQU     60h
+GLOL_HPRN       EQU     72h
+
+; UMB_HEAD, AND IT IS NOT PART OF THE LIST OF LISTS AT ALL.
+;
+; It is a word in the DOS DATA SEGMENT at a fixed offset - the segment
+; 52h answers in ES, not the pointer it answers in BX - and it is
+; where UPPER MEMORY BEGINS.  MS-DOS 6's own MEM.EXE reads it as
+; literally as this: take ES from 52h, force the offset to 008Ch,
+; read the word, and then for every block in the chain ask "is this
+; segment below it?"  Below is conventional; at or above is upper.
+;
+; PM-DOS left those two bytes as whatever was in the paragraph, and
+; the consequences were the whole of the report being wrong: the
+; ENTIRE arena classified as upper memory, conventional showing not
+; one free byte in it, and therefore a largest-executable-program
+; size of nothing on a machine with 600K free.  Every absurd figure
+; came from that one uninitialised word.
+;
+; FFFFh is the value DOS itself uses for "no upper memory", and the
+; kernel tests for exactly that (alloc.asm: "Q: is umb_head
+; initialized").  No segment can be at or above FFFFh, so every block
+; is conventional - which is the truth here, PM-DOS having no UMBs to
+; offer, and the same answer 58h/02h and XMS function 10h already
+; give.  Three ways of asking one question, and now they agree.
+GLOL_UMBHEAD    EQU     8Ch             ; dw - where upper memory starts
+GLOL_SIZE       EQU     8Eh
+                                        ; and it lives at DOSDATA, below the
+                                        ; arena - not in it
 
 ; Attribute words.  Bit 15 says character device and the rest say what
 ; kind of one.
@@ -682,14 +770,32 @@ DEV_ATTR_PRN    EQU     8000h
 IF GLOL_NJOIN NE GLOL_NUL + DEVH_LEN
         .ERR    <GLOL: the NUL device header is not 18 bytes>
 ENDIF
-IF GLOL_RETF NE GLOL_NJOIN + 1
-        .ERR    <GLOL: the driver return does not follow the JOIN count>
+IF GLOL_SPECIAL NE GLOL_NJOIN + 1
+        .ERR    <GLOL: the DOS 5 tail does not follow the JOIN count>
+ENDIF
+IF GLOL_SETVER NE GLOL_SPECIAL + 2
+        .ERR    <GLOL: the SETVER pointer is not at LoL+37h>
+ENDIF
+IF GLOL_NBUF NE GLOL_A20PSP + 2
+        .ERR    <GLOL: the buffer count is not at LoL+3Fh>
+ENDIF
+IF GLOL_BOOTDRV NE GLOL_NLOOK + 2
+        .ERR    <GLOL: the boot drive is not at LoL+43h>
+ENDIF
+IF GLOL_EXTMEM NE GLOL_DWMOVE + 1
+        .ERR    <GLOL: the extended memory size is not at LoL+45h>
+ENDIF
+IF GLOL_TAIL NE GLOL_EXTMEM + 2
+        .ERR    <GLOL: the documented structure does not end at LoL+47h>
+ENDIF
+IF GLOL_RETF LT GLOL_TAIL
+        .ERR    <GLOL: ours has been put inside the part DOS defines>
 ENDIF
 IF GLOL_MEDIA NE GLOL_RETF + 1
-        .ERR    <GLOL: the media byte does not follow the list of lists>
+        .ERR    <GLOL: the media byte does not follow the driver return>
 ENDIF
-IF GLOL_HCON NE GLOL_DBCS + 2
-        .ERR    <GLOL: the device chain does not follow the DBCS table>
+IF GLOL_HCON LT GLOL_DBCS + 2
+        .ERR    <GLOL: the device chain overlaps the DBCS table>
 ENDIF
 IF GLOL_HAUX NE GLOL_HCON + DEVH_LEN
         .ERR    <GLOL: the CON header is not 18 bytes>
@@ -697,11 +803,17 @@ ENDIF
 IF GLOL_HPRN NE GLOL_HAUX + DEVH_LEN
         .ERR    <GLOL: the AUX header is not 18 bytes>
 ENDIF
-IF GLOL_SIZE NE GLOL_HPRN + DEVH_LEN
+IF GLOL_UMBHEAD LT GLOL_HPRN + DEVH_LEN
+        .ERR    <GLOL: UMB_HEAD is underneath the PRN device header>
+ENDIF
+IF GLOL_SIZE NE GLOL_UMBHEAD + 2
         .ERR    <GLOL: GLOL_SIZE does not cover the whole structure>
 ENDIF
-IF GLOL_SIZE GT GLOL_PARAS * 10h
-        .ERR    <GLOL: the structure does not fit in GLOL_PARAS>
+IF GLOL_SIZE GT DOSDATA_SIZE
+        .ERR    <GLOL: the structure does not fit in the DOS data segment>
+ENDIF
+IF DOSDATA + DOSDATA_SIZE NE V86_TPA
+        .ERR    <GLOL: the DOS data segment does not end where the arena begins>
 ENDIF
 
 ;---------------------------------------------------------------------
@@ -1129,6 +1241,12 @@ IOS_NULLTRAP    EQU     IOSVC + 5Ch             ; AL = 1 arm the null-pointer
                                                 ; comment there says why it had
                                                 ; to be
 IOS_NULLGET     EQU     IOSVC + 60h             ; -> AL = armed as it stands
+IOS_KBBOX       EQU     IOSVC + 64h             ; a fresh DOS box: throw away
+                                                ; any scan codes queued for the
+                                                ; last one.  See kb_boxreset -
+                                                ; a key typed at a program that
+                                                ; never read it must not be
+                                                ; delivered to the next one
 
 ;---------------------------------------------------------------------
 ; The three ports the V86 monitor takes away from the guest.  Two of
@@ -1146,6 +1264,25 @@ KBC_RDOUT       EQU     0D0h                    ; read output port
 KBC_WROUT       EQU     0D1h                    ; write output port
 KBC_A20OFF      EQU     0DDh                    ; and the two shortcuts some
 KBC_A20ON       EQU     0DFh                    ; chipsets answer directly
+
+; The 8042 commands a DOS box may NOT have, and the two whose data
+; byte has to be followed to know whose the next write to port 60h is.
+; See vio_o64: the keyboard belongs to the kernel and the rest of the
+; controller does not, so the line is drawn command by command.
+KBC_WRCMD       EQU     060h                    ; write the command byte -
+                                                ; one more byte to 60h follows
+KBC_WRAUX       EQU     0D4h                    ; write to the AUXILIARY
+                                                ; device: likewise, and that
+                                                ; byte is the mouse's
+KBC_KBDOFF      EQU     0ADh                    ; disable the keyboard...
+KBC_KBDON       EQU     0AEh                    ; ...and enable it again
+KBC_PULSE       EQU     0F0h                    ; F0h-FFh pulse the output
+                                                ; lines, and FEh is the one
+                                                ; that resets the CPU
+KBS_OBF         EQU     001h                    ; status: a byte is waiting
+KBS_AUXB        EQU     020h                    ; ...and it came from the mouse
+KBCB_KBDINT     EQU     001h                    ; command byte: IRQ 1 enabled
+KBCB_KBDOFF     EQU     010h                    ; ...and the keyboard disabled
 
 ;---------------------------------------------------------------------
 ; 8259A PIC.  Remapped away from the CPU exception range.
@@ -1232,6 +1369,11 @@ BDA_VROWS       EQU     BDA_BASE + 84h          ; db - rows on screen, LESS ONE
 ; the next key is taken FROM and tail is where the next one is put, so
 ; equal means empty - the opposite way round from the ring this driver
 ; used to keep, which is a good enough reason to have deleted that one.
+BDA_MEMSIZE     EQU     BDA_BASE + 13h          ; dw - KB of conventional
+                                                ; memory, which is NOT always
+                                                ; 640: a BIOS with an extended
+                                                ; data area takes the top of it
+                                                ; and says so here.  lm_init
 BDA_KBFLAG      EQU     BDA_BASE + 17h          ; db - shift state
 BDA_KBFLAG2     EQU     BDA_BASE + 18h          ; db - ...and the rest of it
 BDA_KBHEAD      EQU     BDA_BASE + 1Ah          ; dw - next key to read
@@ -1241,6 +1383,13 @@ BDA_KBSTART     EQU     BDA_BASE + 80h          ; dw - where the ring begins
 BDA_KBEND       EQU     BDA_BASE + 82h          ; dw - and one past its end
 KB_RINGLO       EQU     1Eh                     ; the two values those hold
 KB_RINGHI       EQU     3Eh
+
+; Where a 16-bit program's keyboard handler is found: the slot for
+; vector 9 in the real-mode IVT at 0:0, which is a linear address and
+; not a segment:offset because the kernel is flat.  Both halves of the
+; IRQ 1 story read it - the driver to ask whether a DOS box has hooked
+; it, the monitor to find the handler to deliver into.
+IVT_INT09       EQU     9 * 4
 
 ; The bits of BDA_KBFLAG a program reads.  Only the four this driver
 ; actually tracks are written; the lock lights are not simulated, so

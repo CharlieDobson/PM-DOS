@@ -56,6 +56,7 @@ svc_table:
         dd      exc_clearnest           ; IOS_EXCCLEAR
         dd      nt_arm                  ; IOS_NULLTRAP
         dd      nt_get                  ; IOS_NULLGET
+        dd      kb_boxreset             ; IOS_KBBOX
 
 ;=====================================================================
 ; pm_entry - first instruction executed in 32-bit protected mode.

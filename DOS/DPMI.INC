@@ -898,6 +898,14 @@ d31_dosalloc:
         mov     ax,8012h
         jmp     d31_fail
 dda_got:
+        ; The same correction 21h/48h needs, for the same reason: a
+        ; block lm_alloc handed back owns ITSELF, and a client that
+        ; exits without calling 0101h would otherwise leave it behind
+        ; for good.  A DPMI client is a program in a DOS box, so the
+        ; box's own exit sweep takes it once it is stamped.
+        mov     dx,word ptr ds:[vdm_curpsp]
+        call    lm_setown
+
         movzx   eax,ax
         mov     dword ptr ds:[dpmi_dseg],eax
         mov     ecx,1

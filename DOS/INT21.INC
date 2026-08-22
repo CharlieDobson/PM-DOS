@@ -6384,7 +6384,7 @@ fF1_mgot:
 fF1_mlow:
         mov     ebx,V86_TPA
 fF1_lwalk:
-        cmp     ebx,V86_TPA_TOP
+        cmp     ebx,[lm_top]
         jae     fF1_mend
         movzx   eax,byte ptr [ebx+RMCB_SIG]
         cmp     al,'M'
@@ -6599,9 +6599,16 @@ f38_get:
         mov     ax,GLOL_RETF
         mov     [edi+CTRY_CASEMAP],eax
 
+        ; BX is where the country code is documented to come back, and
+        ; AX is where MS-DOS 6.22 ALSO puts it - the reference books
+        ; say "AX destroyed", and what real DOS actually destroys it
+        ; with is the answer.  Checked against 6.22 by dumping every
+        ; register after the call on both; see TOOLS\CTRYDMP.ASM.
+        mov     word ptr [ebp+F_EAX],CTRY_USA
         mov     word ptr [ebp+F_EBX],CTRY_USA
         jmp     i21_ok
 f38_set:
+        mov     word ptr [ebp+F_EAX],CTRY_USA
         mov     word ptr [ebp+F_EBX],CTRY_USA
         jmp     i21_ok
 f38_wrong:

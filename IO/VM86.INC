@@ -173,6 +173,25 @@ vr_noif:
         and     eax,V86_VFLAGS
         mov     dword ptr ds:[v86_vpriv],eax
 
+        ; A KEY THAT ARRIVED WHILE THE GUEST WAS NOT RUNNING.  The DOS
+        ; side has been holding the CPU - servicing a call, or reading
+        ; the disk - and IRQ 1 came in with no guest to interrupt, so
+        ; it was queued instead.  This is the moment it can be handed
+        ; over: the context is complete, nothing has been pushed for
+        ; the entry yet, and v86_intctx works on exactly this.
+        ;
+        ; Before the pushes below, because it MOVES the context: the
+        ; stack it stacks the guest's return frame on is the one those
+        ; pushes are about to copy out of it.
+        mov     byte ptr ds:[v86_active],1
+        call    v86_kbwant
+        jc      vr_nokey
+        mov     al,9
+        call    v86_intctx
+        mov     byte ptr ds:[v86_vif],0         ; an ISR starts closed, and
+                                                ; v86_intctx has already said
+                                                ; so in the context's flags
+vr_nokey:
         push    dword ptr [esi+V86C_GS]
         push    dword ptr [esi+V86C_FS]
         push    dword ptr [esi+V86C_DS]
@@ -212,6 +231,9 @@ ENDIF
 ;             ESP and EBP pointing at the fault frame.
 ;---------------------------------------------------------------------
 v86_leave:
+        mov     byte ptr ds:[v86_active],0      ; the guest has stopped, so a
+                                                ; keystroke from here on is the
+                                                ; kernel's to decode again
         mov     dword ptr ds:[v86_reason],eax
         mov     dword ptr ds:[v86_rvec],ebx
 
@@ -371,6 +393,102 @@ IFDEF V86_TRACE
         call    con_hex8
         mov     esi,OFFSET msgV86CR
         call    con_str
+        popad
+ENDIF
+
+IFDEF V86_CALLS
+;---------------------------------------------------------------------
+; THE SAME TRACE WITH THE NOISE TAKEN OUT.  V86_TRACE prints every
+; fault, and for a program that prints anything that is one line per
+; character - so the few calls where a program ASKS the machine
+; something scroll off the top before they can be read.  The questions
+; are what a bug like MEM's is made of; the printing is what the
+; program does with the answers.
+;
+; So: software interrupts only, and not the ones that are output.  A
+; DOS call is named by AH, which is why the filter cannot be by vector
+; alone - 21h is both "how much memory is there" and "print this
+; character".
+;---------------------------------------------------------------------
+        pushad
+        mov     esi,[ebp+FR_CS]
+        shl     esi,4
+        movzx   eax,word ptr [ebp+FR_EIP]
+        add     esi,eax
+        cmp     byte ptr [esi],0CDh     ; INT n, or there is no call here
+        jne     vc_skip
+        movzx   ebx,byte ptr [esi+1]    ; ...and n is the vector
+        cmp     ebx,10h                 ; video
+        je      vc_skip
+        cmp     ebx,16h                 ; the keyboard
+        je      vc_skip
+        cmp     ebx,28h                 ; the idle call, issued per wait
+        je      vc_skip
+        cmp     ebx,21h
+        jne     vc_show
+        mov     eax,[ebp+PA_EAX]
+        shr     eax,8
+        cmp     al,02h                  ; the console functions, which a
+        je      vc_skip                 ; program uses once per character
+        cmp     al,06h
+        je      vc_skip
+        cmp     al,09h
+        je      vc_skip
+        cmp     al,0Bh
+        je      vc_skip
+        cmp     al,0Ch
+        je      vc_skip
+        cmp     al,3Fh                  ; and read/write, which is the
+        je      vc_skip                 ; same thing through a handle
+        cmp     al,40h
+        je      vc_skip
+vc_show:
+        ; AND THE SAME CALL TWICE RUNNING IS ONE LINE.  MEM asks 38h
+        ; for the country before every number it prints, which is
+        ; forty identical lines that push the ones that differ off the
+        ; top - the same way the unfiltered trace pushes everything
+        ; off with output.  A repeat says nothing the first one did
+        ; not; what a trace is for is the call that CHANGES.
+        mov     eax,[ebp+PA_EAX]
+        xor     eax,[ebp+PA_EBX]
+        xor     eax,[ebp+PA_ECX]
+        xor     eax,[ebp+PA_EDX]
+        xor     eax,ebx
+        cmp     eax,dword ptr ds:[vc_last]
+        je      vc_skip
+        mov     dword ptr ds:[vc_last],eax
+
+        mov     esi,OFFSET msgVcInt
+        call    con_str
+        mov     eax,ebx
+        call    con_hex8
+        mov     esi,OFFSET msgVcAx
+        call    con_str
+        mov     eax,[ebp+PA_EAX]
+        call    con_hex16
+        mov     esi,OFFSET msgVcBx
+        call    con_str
+        mov     eax,[ebp+PA_EBX]
+        call    con_hex16
+        mov     esi,OFFSET msgVcCx
+        call    con_str
+        mov     eax,[ebp+PA_ECX]
+        call    con_hex16
+        mov     esi,OFFSET msgVcDx
+        call    con_str
+        mov     eax,[ebp+PA_EDX]
+        call    con_hex16
+        mov     esi,OFFSET msgVcDs
+        call    con_str
+        mov     eax,[ebp+FR_DS]
+        call    con_hex16
+        mov     esi,OFFSET msgVcEs
+        call    con_str
+        mov     eax,[ebp+FR_ES]
+        call    con_hex16
+        mov     esi,OFFSET msgVcCR
+        call    con_str
+vc_skip:
         popad
 ENDIF
 
@@ -564,6 +682,12 @@ vio_outw:
 ; because the real gate is not where the guest thinks it is.
 ;---------------------------------------------------------------------
 vio_in:
+IFDEF V86_KBIO
+        call    vio_in1
+        call    vio_traceI
+        ret
+vio_in1:
+ENDIF
         cmp     dx,PORT_SYSCTL
         je      vio_i92
         cmp     dx,PORT_KBDATA
@@ -586,7 +710,48 @@ vio_i60:
         ; output port" - is outstanding, in which case the byte the
         ; guest is about to get is the one carrying A20 on bit 1.
         cmp     byte ptr ds:[vio_kbdrd],0
+        jne     vio_i60out
+
+        ; THE SCAN CODE IS NOT ON THE PORT ANY MORE.  IRQ 1 belongs to
+        ; the kernel, and its handler reads 60h the instant the key
+        ; arrives - which it must, or the 8042 would go on asserting
+        ; the line - so by the time the guest's own INT 09h gets here
+        ; the controller has nothing left to say.  Reading it for real
+        ; would give the guest whatever byte happened to be sitting in
+        ; the register: usually the right one, on the strength of the
+        ; same code having been left there, which is a coincidence and
+        ; not an answer.
+        ;
+        ; So the byte is the one latched when the interrupt was
+        ; delivered, and it is returned as often as it is asked for -
+        ; see kbq_take for why that repeat matters.
+        ;
+        ; But only when the byte the guest is after is a KEYBOARD byte.
+        ; A reply the guest asked the controller for goes straight
+        ; back to it, and so does anything the MOUSE has sent, which
+        ; the status port distinguishes with a bit of its own: the
+        ; kernel has taken the keyboard away from the box and nothing
+        ; else, so standing in for the rest would be answering for
+        ; devices it is not driving.
+        cmp     byte ptr ds:[vio_kbdthru],0
+        je      vio_i60aux
+        mov     byte ptr ds:[vio_kbdthru],0
+        jmp     short vio_ireal
+vio_i60aux:
+        push    edx
+        mov     dx,PORT_KBCMD
+        in      al,dx
+        pop     edx
+        and     al,KBS_OBF OR KBS_AUXB
+        cmp     al,KBS_OBF OR KBS_AUXB
+        je      vio_ireal               ; the mouse is talking, not us
+
+        cmp     byte ptr ds:[kb_lvalid],0
         je      vio_ireal
+        mov     byte ptr ds:[kb_obf],0  ; reading it clears the status bit -
+        mov     al,byte ptr ds:[kb_latch]       ; but not the register
+        ret
+vio_i60out:
         mov     byte ptr ds:[vio_kbdrd],0
         call    pg_a20get
         shl     al,1
@@ -610,7 +775,16 @@ vio_i64:
         ; holding it.
         in      al,dx
         cmp     byte ptr ds:[vio_kbdrd],0
+        jne     vio_i64full
+        ; The same is true of a keystroke we delivered.  A handler is
+        ; entitled to check that there really is a byte before reading
+        ; one, and on the hardware there would be: the interrupt and
+        ; the full output buffer are the same event.  Ours says so from
+        ; the moment of delivery until the guest reads the port, which
+        ; is exactly how long the real bit lasts.
+        cmp     byte ptr ds:[kb_obf],0
         je      vio_i64out
+vio_i64full:
         or      al,01h
 vio_i64out:
         ret
@@ -619,6 +793,9 @@ vio_i64out:
 ; vio_out - DX = port, AL = the byte.
 ;---------------------------------------------------------------------
 vio_out:
+IFDEF V86_KBIO
+        call    vio_trace
+ENDIF
         cmp     dx,PORT_SYSCTL
         je      vio_o92
         cmp     dx,PORT_KBCMD
@@ -627,6 +804,78 @@ vio_out:
         je      vio_o60
         out     dx,al
         ret
+
+IFDEF V86_KBIO
+;---------------------------------------------------------------------
+; vio_trace - every byte the guest writes to a port the monitor stands
+;             in for.  The 8042 is a conversation, not a register, and
+;             a conversation is only debuggable as a transcript: which
+;             command, in what order, and what was outstanding when the
+;             next one arrived.
+;
+; Reads are traced too, and both are needed.  A guest spinning on a
+; status bit makes no DOS calls at all, so the call trace goes silent
+; at exactly the moment the interesting thing starts happening, and
+; the fault trace drowns in the loop it is trying to show.
+;---------------------------------------------------------------------
+vio_trace:
+        pushad
+        mov     byte ptr ds:[vio_tval],al       ; before anything prints:
+        mov     word ptr ds:[vio_tport],dx      ; con_str and con_hex both
+                                                ; work in EAX, so the byte
+                                                ; has to be put down first
+        mov     esi,OFFSET msgKbO
+        call    con_str
+        movzx   eax,word ptr ds:[vio_tport]
+        call    con_hex16
+        mov     esi,OFFSET msgKbEq
+        call    con_str
+        movzx   eax,byte ptr ds:[vio_tval]
+        call    con_hex8
+        mov     esi,OFFSET msgKbCR
+        call    con_str
+        popad
+        ret
+
+vio_traceI:
+        ; A GUEST WAITING ON A STATUS BIT READS THE SAME PORT FOREVER,
+        ; and one line per read is not a transcript, it is the loop
+        ; itself printed out.  A read that says what the last one said
+        ; carries nothing, so only the ones that CHANGE get a line -
+        ; the same rule the call trace settled on for the same reason.
+        pushad
+        movzx   ebx,dx
+        shl     ebx,8
+        movzx   eax,al
+        or      ebx,eax
+        cmp     ebx,dword ptr ds:[vio_last]
+        je      vit_same
+        mov     dword ptr ds:[vio_last],ebx
+        mov     byte ptr ds:[vio_tval],al
+        mov     word ptr ds:[vio_tport],dx
+        mov     esi,OFFSET msgKbI
+        call    con_str
+        movzx   eax,word ptr ds:[vio_tport]
+        call    con_hex16
+        mov     esi,OFFSET msgKbTo
+        call    con_str
+        movzx   eax,byte ptr ds:[vio_tval]
+        call    con_hex8
+        mov     esi,OFFSET msgKbCR
+        call    con_str
+vit_same:
+        popad
+        ret
+
+vio_last        dd      -1
+vio_tport       dw      0
+vio_tval        db      0
+msgKbO          db      'kb out ',0
+msgKbI          db      'kb in  ',0
+msgKbEq         db      '=',0
+msgKbTo         db      ' -> ',0
+msgKbCR         db      13,10,0
+ENDIF
 
 ;--- 92h: bit 1 is A20, bit 0 is the CPU reset line ------------------
 ; NEITHER OF THEM REACHES THE HARDWARE.  The gate is emulated in the
@@ -645,7 +894,36 @@ vio_o92:
         call    pg_a20
         ret
 
-;--- 64h: commands.  Four of them are about A20 ----------------------
+;--- 64h: commands ---------------------------------------------------
+; THE KEYBOARD IS THE KERNEL'S; THE REST OF THE CONTROLLER IS STILL
+; THE BOX'S.  That line is new in v0.36 and it is drawn command by
+; command, because the 8042 is two devices behind one pair of ports
+; and only one of them has been taken away.
+;
+; Delivering IRQ 1 into the box is what forced the question.  The
+; guest's INT 09h handler is the ROM's, or chains to it, and the ROM's
+; keyboard handler does not merely read the scan code: it talks BACK.
+; It disables the keyboard while it works and enables it after, and it
+; sends the lock lights their command whenever the shift state
+; changes.  Those went to the real 8042 - the one this kernel is
+; taking scan codes off and standing in for on port 60h - so the two
+; halves of one conversation were happening on different devices.  The
+; keyboard stopped scanning to wait for a byte nobody was going to
+; send it, and the machine lost its keyboard: not the box's, the
+; MACHINE'S, because there is only one and the shell was using it too.
+;
+; The first fix was to swallow every command, and it was too broad by
+; exactly one device.  MSD asks the ROM whether there is a PS/2 mouse;
+; the ROM answers by sending D4h and then FFh - "reset, and that byte
+; is for the auxiliary device" - and a monitor that treats every write
+; to port 60h as a keyboard command replies with the keyboard's ACK to
+; a question the mouse was asked.  The BIOS then waits for a self-test
+; result that is never coming, in a loop with no DOS call in it, and
+; the box is gone.  A trace of the port transcript is what says so;
+; nothing else could have.
+;
+; So: the three that would cost the kernel its keyboard are refused,
+; and everything else goes to the hardware it was addressed to.
 vio_o64:
         cmp     al,KBC_WROUT
         je      vio_c_d1
@@ -655,8 +933,43 @@ vio_o64:
         je      vio_c_dd
         cmp     al,KBC_A20ON
         je      vio_c_df
+
         mov     byte ptr ds:[vio_kbdwr],0       ; any other command ends
         mov     byte ptr ds:[vio_kbdrd],0       ; a half-done sequence
+        mov     byte ptr ds:[vio_kbdcmd],0
+        mov     byte ptr ds:[vio_kbdaux],0
+
+        ; The refusals.  A box that switches the machine's keyboard off
+        ; is the same offence as one that switches the timer off, and
+        ; F0h-FFh pulse the output lines - FEh being the one that
+        ; resets the CPU, which port 92h bit 0 is already refused for.
+        cmp     al,KBC_KBDOFF
+        je      vio_c_drop
+        cmp     al,KBC_KBDON
+        je      vio_c_drop
+        cmp     al,KBC_PULSE
+        jae     vio_c_drop
+
+        ; ...and the two whose DATA byte decides whose it is
+        cmp     al,KBC_WRCMD
+        je      vio_c_60
+        cmp     al,KBC_WRAUX
+        je      vio_c_d4
+
+        ; Everything else is the controller's own business - the self
+        ; tests, the aux interface, reading the command byte back - and
+        ; whatever it answers with belongs to the guest that asked.
+        mov     byte ptr ds:[vio_kbdthru],1
+        out     dx,al
+        ret
+vio_c_drop:
+        ret
+vio_c_60:
+        mov     byte ptr ds:[vio_kbdcmd],1
+        out     dx,al
+        ret
+vio_c_d4:
+        mov     byte ptr ds:[vio_kbdaux],1
         out     dx,al
         ret
 
@@ -679,17 +992,49 @@ vio_c_df:
         call    pg_a20
         ret
 
-;--- 60h: data.  Interesting only straight after a D1h ---------------
+;--- 60h: data -------------------------------------------------------
+; FOUR things can be written here, and what the guest last sent to 64h
+; is what tells them apart: after a D1h this is the output port and
+; carries A20, after a 60h it is the controller's command byte, after
+; a D4h it is the mouse's, and after none of those it is a command to
+; the KEYBOARD.
+;
+; Only the last is refused, and that is where the lock lights are.  It
+; is ANSWERED rather than dropped: the reply is the ACK the keyboard
+; would have sent, AND IT IS DELIVERED AS AN INTERRUPT, because that
+; is how it would have arrived.  The ROM's routine sends the command,
+; enables interrupts, and waits for its own INT 09h to see the FAh and
+; set a flag; latching the byte without raising the interrupt would
+; leave it waiting exactly as long as forwarding the command did.
 vio_o60:
         cmp     byte ptr ds:[vio_kbdwr],0
-        je      vio_o60r
+        je      vio_o60c
         mov     byte ptr ds:[vio_kbdwr],0
         shr     al,1                    ; bit 1 is A20; bit 0 is reset,
         and     al,01h                  ; and 92h's reasoning applies
         call    pg_a20
         ret
-vio_o60r:
+vio_o60c:
+        cmp     byte ptr ds:[vio_kbdcmd],0
+        je      vio_o60a
+        mov     byte ptr ds:[vio_kbdcmd],0
+        ; The command byte goes through, with the two bits that would
+        ; cost the kernel its keyboard put back the way they have to
+        ; be.  A guest is welcome to the mouse interrupt and the rest;
+        ; it is not welcome to turn IRQ 1 off underneath the machine.
+        or      al,KBCB_KBDINT
+        and     al,NOT KBCB_KBDOFF
         out     dx,al
+        ret
+vio_o60a:
+        cmp     byte ptr ds:[vio_kbdaux],0
+        je      vio_o60k
+        mov     byte ptr ds:[vio_kbdaux],0
+        out     dx,al                   ; the mouse's, and the mouse is not
+        ret                             ; a device this kernel has taken
+vio_o60k:
+        mov     al,0FAh                 ; ACK, through the same path a scan
+        call    kbq_put                 ; code takes
         ret
 
 ;--- INT n ------------------------------------------------------------
@@ -821,6 +1166,19 @@ vfe_ivt:
 ; and the handler is entered with interrupts "off" - virtually.
 ;---------------------------------------------------------------------
 v86_reflect:
+        call    v86_deliver
+        jmp     v86_resume
+
+;---------------------------------------------------------------------
+; v86_deliver - the body of it, as a subroutine, because a HARDWARE
+;               interrupt has to do the same thing to the same kind of
+;               frame and there is no second way to be right about it.
+;
+; EBP -> a frame laid out like the fault frame above.  The one an IRQ
+; leaves is that frame less the error code, and v86_irqexit hands over
+; an EBP four bytes low so that the FR_* offsets land on it.
+;---------------------------------------------------------------------
+v86_deliver:
         push    eax                     ; vector
 
         mov     eax,[ebp+FR_FLAGS]
@@ -845,7 +1203,90 @@ vr_ioff:
         mov     [ebp+FR_EIP],ebx
         shr     eax,16                  ; segment
         mov     [ebp+FR_CS],eax
-        jmp     v86_resume
+        ret
+
+;=====================================================================
+; IRQ 1 INTO THE DOS BOX.
+;
+; A software interrupt is easy: the guest asked for it, so it is
+; standing at an instruction boundary of its own choosing and the
+; monitor is already holding its frame.  A HARDWARE interrupt is the
+; awkward one, because the guest did not ask and the moment is not its
+; choice - and the three places it can be given the interrupt are the
+; three places the guest's state is complete and writable:
+;
+;   THE IRQ ITSELF, if it interrupted the guest.  The frame the CPU
+;   pushed is the guest's, VM and all, and rewriting CS:IP in it sends
+;   the guest to its handler instead of back where it was.  This is
+;   the case that matters, because a program spinning on a flag its
+;   own handler sets never faults and so is never seen anywhere else.
+;
+;   A RESUME OUT OF THE MONITOR, where the guest is about to go back
+;   after a fault we emulated.  This is how a key gets in promptly
+;   after a CLI has been holding it off: the STI that ends the
+;   critical section is itself a fault, and this runs on the way out
+;   of it.
+;
+;   AN ENTRY TO v86_run, where the interrupt arrived while the DOS
+;   side had the CPU and there was no guest to interrupt at all.
+;
+; Two conditions in all three places.  THE GUEST'S OWN INTERRUPT FLAG
+; MUST BE SET - the virtual one, not the real one, which is the whole
+; reason it is virtualised: a DOS program is entitled to a critical
+; section, it just is not entitled to stop the machine's timer to get
+; one.  AND THE VECTOR MUST POINT SOMEWHERE, for the reason vf_exc
+; gives: an unset slot would send the guest to linear zero to execute
+; its own vector table.
+;=====================================================================
+
+;---------------------------------------------------------------------
+; v86_kbwant - CF clear if a keyboard interrupt is owed to the guest
+;              and it can take one now.  Consumes the debt, so a caller
+;              that gets CF clear must deliver.
+;---------------------------------------------------------------------
+v86_kbwant:
+        cmp     byte ptr ds:[v86_vif],0
+        je      vkw_no
+        cmp     dword ptr ds:[IVT_INT09],0
+        je      vkw_no
+        call    kbq_take                ; and it latches the code, because
+        ret                             ; that is what raising the interrupt
+vkw_no:                                 ; does on the real part
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; v86_ckkbd - EBP -> a fault frame belonging to the guest.  Deliver a
+;             queued keystroke if there is one.
+;---------------------------------------------------------------------
+v86_ckkbd:
+        pushad
+        call    v86_kbwant
+        jc      vck_no
+        mov     eax,9
+        call    v86_deliver
+vck_no:
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; v86_irqexit - called by irq_common on its way out, with EBP already
+;               adjusted so that the FR_* offsets address the frame the
+;               IRQ pushed.
+;
+; The VM test is not a nicety.  Off it hangs the difference between the
+; guest's stack and the kernel's, and pushing a return frame onto the
+; wrong one would be the monitor corrupting itself with the interrupt
+; it was trying to be helpful about.
+;---------------------------------------------------------------------
+v86_irqexit:
+        cmp     byte ptr ds:[v86_active],0
+        je      vix_no
+        test    dword ptr [ebp+FR_FLAGS],EFL_VM
+        jz      vix_no                  ; ring 0: the monitor, not the guest
+        call    v86_ckkbd
+vix_no:
+        ret
 
 ;--- CLI / STI --------------------------------------------------------
 vf_cli:
@@ -972,6 +1413,9 @@ v86_pop:
 ; v86_resume - back into the guest, exactly where it left off
 ;---------------------------------------------------------------------
 v86_resume:
+        call    v86_ckkbd               ; EBP still points at the frame, and
+                                        ; this is the only door back into the
+                                        ; guest that a fault can leave by
         popad
         add     esp,8                   ; the vector and error code
         iretd
@@ -991,9 +1435,22 @@ v86_flteip      dd      -1              ; guest, and how many times running -
 v86_fltvec      dd      -1              ; see vf_exc.  -1 so that the first one
 v86_fltn        dd      0               ; can never match a real CS:IP
 v86_vif         db      0               ; the guest's virtual interrupt flag
+v86_active      db      0               ; a guest is executing, as opposed to
+                                        ; merely loaded: set on the way into
+                                        ; the guest and cleared the moment the
+                                        ; monitor takes the CPU back, so that
+                                        ; IRQ 1 knows whose keystroke it is
 vio_porta       db      0               ; port 92h as the guest last wrote it
 vio_kbdwr       db      0               ; an 8042 D1h is outstanding
 vio_kbdrd       db      0               ; ...or a D0h
+vio_kbdcmd      db      0               ; ...or a 60h, and then the next byte
+                                        ; to port 60h is the controller's
+                                        ; command register
+vio_kbdaux      db      0               ; ...or a D4h, and then it is the
+                                        ; mouse's
+vio_kbdthru     db      0               ; a command went to the real
+                                        ; controller, so its reply is the
+                                        ; guest's and not a scan code
 IFDEF V86_TRACE
 msgV86In        db      'V86: about to IRETD into the guest',13,10,0
 msgV86Flt       db      'V86: fault vec ',0
@@ -1001,6 +1458,18 @@ msgV86Op        db      ' op ',0
 msgV86Ax        db      ' ax ',0
 msgV86CR        db      13,10,0
 ENDIF
+
+IFDEF V86_CALLS
+msgVcInt        db      'int ',0
+msgVcAx         db      ' ax=',0
+msgVcBx         db      ' bx=',0
+msgVcCx         db      ' cx=',0
+msgVcDx         db      ' dx=',0
+msgVcDs         db      ' ds=',0
+msgVcEs         db      ' es=',0
+msgVcCR         db      13,10,0
+vc_last         dd      -1              ; the last call printed, folded
+ENDIF                                   ; into one dword - see vc_show
 
 ;=====================================================================
 ; pm3_fault - a fault taken in ring-3 PROTECTED mode: a DPMI client.
