@@ -56,8 +56,23 @@
 ; dwords, the saved EBP, then EIP/CS/FLAGS.  Forty-eight bytes of
 ; stack and the whole DOS API is callable from anywhere.
 ;=====================================================================
+; k21u is the same door with a label on it: the registers below came
+; from a DOS BOX, so the pointers in them are the guest's rather than
+; the kernel's.  It matters to exactly one thing - buf_ok, which has
+; to refuse a guest a buffer inside PMDOS.SYS and hand the kernel the
+; same buffer without complaint - and the answer travels in the frame
+; rather than in a global because these calls NEST: a guest's 4Bh runs
+; exec_kind, which calls k21 for itself while the guest's own call is
+; still open.  A flag would have to be saved and put back at every one
+; of those points; a frame field is already per-call, and stacks.
+k21u:
+        push    ebp
+        mov     ebp,1
+        jmp     short k21_body
 k21:
         push    ebp
+        xor     ebp,ebp
+k21_body:
         push    ebx
         push    ecx
         push    edx
@@ -68,7 +83,10 @@ k21:
         push    SEL_CODE32              ; F_CS - the kernel's own, so that
                                         ; anything asking "was this a DPMI
                                         ; client?" gets the right answer
-        push    0                       ; F_EIP
+        push    ebp                     ; F_EIP - 0 from the kernel, 1 from
+                                        ; a DOS box.  A manufactured frame
+                                        ; has no instruction pointer to put
+                                        ; here, so the field was spare
         push    0                       ; F_DS  } the two an interrupt gate
         push    0                       ; F_ES  } does not reload, and which
                                         ; a manufactured frame has no caller
@@ -1579,6 +1597,39 @@ vdm_dos:
         je      vdm_seek
 
 ;--- everything else goes to the kernel's own handler ----------------
+        call    vdm_do21
+        jmp     vdm_loop
+
+;=====================================================================
+; vdm_do21 - service one INT 21h out of vdm_ctx.  AL = the function,
+;            which the caller has already read out of the context to
+;            decide that this call is not one of the special cases
+;            above.  Returns with the answer written back into the
+;            context.
+;
+; It is a subroutine rather than a stretch of vdm_loop because a DOS
+; box is no longer the only thing that makes 16-bit DOS calls: a
+; DEVICE= driver's INIT routine makes them too, from an excursion into
+; V86 that has no program, no PSP and no box around it, and it would
+; be absurd for the driver that loads it to own a second copy of the
+; flattening, the 29h rule and the pointer guard.
+;=====================================================================
+vdm_do21:
+        ; 29h IS THE ONLY DOS CALL THAT ANSWERS IN A POINTER REGISTER.
+        ; It leaves SI past the text it parsed, and this bridge is
+        ; built on the assumption that pointers only ever travel
+        ; inwards - it flattens them on the way in and never looks at
+        ; them again, because until the FCB API went in there was
+        ; nothing to look at.  Handing the guest the kernel's flat
+        ; address there would send it walking off above 1MB with it,
+        ; so the ANSWER is carried out as a distance rather than an
+        ; address: see p29_adv, which is the one thing 29h publishes
+        ; that its own registers cannot.
+        mov     byte ptr ds:[vdm_p29],0
+        cmp     al,29h
+        jne     vd_not29
+        mov     byte ptr ds:[vdm_p29],1
+vd_not29:
         mov     ah,byte ptr [vdm_ctx+V86C_EAX]  ; AL: the subfunction, for the
         call    vdm_flags                       ; families that need it
         mov     byte ptr ds:[vdm_pf],bl
@@ -1618,14 +1669,82 @@ vd_nodi:
         add     eax,edx
 vd_nobx:
         mov     ebx,eax
+
+        ; THE POINTER HALF of what buf_ok does for lengths, and the
+        ; cheaper half: a guest's segment:offset cannot reach
+        ; PMDOS.SYS at all, but it reaches the kernel's low
+        ; scaffolding without trying.  0000:0600 is the thunk's
+        ; register frame; 0000:0800 is the real-mode stack the kernel
+        ; is standing on while it services this very call; and every
+        ; DOS program that has ever zeroed a segment register by
+        ; accident has pointed somewhere in there.  One byte is the
+        ; right measure here - what the call then DOES with the
+        ; pointer is measured where the length is known.
+        call    vdm_ptrchk
+        jc      vd_denied
+
         mov     edx,dword ptr ds:[vdm_adx]
         mov     esi,dword ptr ds:[vdm_asi]
         mov     edi,dword ptr ds:[vdm_adi]
         movzx   ecx,word ptr [vdm_ctx+V86C_ECX]
         movzx   eax,word ptr [vdm_ctx+V86C_EAX]
-        call    k21
+        call    k21u                    ; u for the guest's: see buf_ok
         call    vdm_result
-        jmp     vdm_loop
+        cmp     byte ptr ds:[vdm_p29],0
+        je      vd_done
+        mov     eax,dword ptr ds:[p29_adv]      ; how far the parse got, as a
+        add     word ptr [vdm_ctx+V86C_ESI],ax  ; distance from where it began
+vd_done:
+        ret
+
+vd_denied:
+        mov     word ptr [vdm_ctx+V86C_EAX],ERR_ACCESS
+        or      dword ptr [vdm_ctx+V86C_FLAGS],FL_CF
+        ret
+
+;---------------------------------------------------------------------
+; vdm_ptrchk - every pointer this call flattened, measured against the
+;              kernel's own memory.  CF if any of them is in it.
+;              EBX holds the flattened BX; the other three are in the
+;              vdm_a?? cells, which is why this cannot simply loop.
+;---------------------------------------------------------------------
+vdm_ptrchk:
+        push    eax
+        push    ecx
+        mov     ecx,1
+        test    byte ptr ds:[vdm_pf],P_DX
+        jz      vpc_nodx
+        mov     eax,dword ptr ds:[vdm_adx]
+        call    buf_ok
+        jc      vpc_bad
+vpc_nodx:
+        test    byte ptr ds:[vdm_pf],P_SI
+        jz      vpc_nosi
+        mov     eax,dword ptr ds:[vdm_asi]
+        call    buf_ok
+        jc      vpc_bad
+vpc_nosi:
+        test    byte ptr ds:[vdm_pf],P_DI
+        jz      vpc_nodi
+        mov     eax,dword ptr ds:[vdm_adi]
+        call    buf_ok
+        jc      vpc_bad
+vpc_nodi:
+        test    byte ptr ds:[vdm_pf],P_BX
+        jz      vpc_good
+        mov     eax,ebx
+        call    buf_ok
+        jc      vpc_bad
+vpc_good:
+        pop     ecx
+        pop     eax
+        clc
+        ret
+vpc_bad:
+        pop     ecx
+        pop     eax
+        stc
+        ret
 
 ;---------------------------------------------------------------------
 ; vdm_result - the kernel's answer, back into the guest's registers.
@@ -2682,8 +2801,14 @@ vdm_subptr:
         db  0
 
 ;=====================================================================
-; Which register holds a pointer, for each DOS function.  The FCB
-; calls are all zero because there is no FCB API here to point at.
+; Which register holds a pointer, for each DOS function.
+;
+; THE FCB ROWS WENT IN WITH THE FCB API and every one of them is a
+; DS:DX - an FCB is always addressed that way, which is the one mercy
+; of an API designed before anybody had thought about parameter
+; conventions.  29h is the exception and could not be otherwise: it
+; reads a string through DS:SI and writes the FCB through ES:DI, so it
+; is the only call here with two pointers in different segments.
 ;
 ; 00h to 6Ah, which is exactly the range of the kernel's own dispatch
 ; table - vdm_flags bounds-checks against the same constant, and
@@ -2701,11 +2826,14 @@ vdm_ptrtab:
         ;    0     1     2     3     4     5     6     7
         ;    8     9     A     B     C     D     E     F
         db  0,    0,    0,    0,    0,    0,    0,    0       ; 00-07
-        db  0,    P_DX, P_DX, 0,    0,    0,    0,    0       ; 08-0F
-        db  0,    0,    0,    0,    0,    0,    0,    0       ; 10-17
+        db  0,    P_DX, P_DX, 0,    0,    0,    0,    P_DX    ; 08-0F
+        db  P_DX, P_DX, P_DX, P_DX, P_DX, P_DX, P_DX, P_DX    ; 10-17
         db  0,    0,    P_DX, 0,    0,    0,    0,    0       ; 18-1F
-        db  0,    0,    0,    0,    0,    0,    0,    0       ; 20-27
-        db  0,    0,    0,    0,    0,    0,    0,    0       ; 28-2F
+        db  0,    P_DX, P_DX, P_DX, P_DX, 0,    0,    P_DX    ; 20-27
+        db  P_DX, P_SI+P_DI,  0,    0,    0,    0,    0,    0 ; 28-2F
+                                                              ; 29h: the text
+                                                              ; in DS:SI, the
+                                                              ; FCB in ES:DI
         db  0,    0,    0,    0,    0,    0,    0,    0       ; 30-37
         db  0,    P_DX, P_DX, P_DX, P_DX, P_DX, 0,    P_DX    ; 38-3F
         db  P_DX, P_DX, 0,    P_DX, 0,    0,    0,    P_SI    ; 40-47
@@ -2732,6 +2860,8 @@ ENDIF
 ;=====================================================================
 ; Data
 ;=====================================================================
+vdm_p29     db  0                       ; this call was 21h/29h
+            db  0,0,0
 k21_eax     dd  0
 k21_ebx     dd  0
 k21_ecx     dd  0

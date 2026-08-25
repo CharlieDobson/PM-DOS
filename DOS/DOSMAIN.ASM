@@ -340,6 +340,14 @@ df_notbox:
         INCLUDE RING3.INC               ; last: it sorts ring-3 faults into
                                         ; the DPMI host's and its own, and
                                         ; borrows the bridge's pointer table
+        INCLUDE FCB.INC                 ; ...and then this one, which asks
+                                        ; RING3.INC how big the running
+                                        ; program's memory is before it will
+                                        ; move bytes into it
+        INCLUDE DEVLOAD.INC             ; and last of all, DEVICE=: it runs a
+                                        ; real-mode driver through the V86
+                                        ; monitor and hands the driver's own
+                                        ; INT 21h calls to vdm_do21
 
 ;=====================================================================
 ; Data

@@ -350,6 +350,19 @@ v86_fault:
         pushad                          ; the guest's registers, unsaved
         mov     ebp,esp                 ; by the CPU, are ours to keep
         add     ebp,32
+
+        ; THE DIRECTION FLAG IS THE GUEST'S AND WE ARE STANDING IN IT.
+        ; DF is not shadowed - it is the CPU's own and a 16-bit program
+        ; is entitled to leave it set - and every string instruction
+        ; from here to v86_leave inherits it.  v86_leave saves the
+        ; guest's eight general registers with a REP MOVSD, so a guest
+        ; that traps with STD in force has them written BACKWARDS, off
+        ; the front of the context: EIP and CS come back correct
+        ; because they are stored one at a time, and AX and DX come
+        ; back as whatever they were before the guest ran.  A DOS
+        ; program that calls INT 21h in the middle of a string copy is
+        ; not exotic; it is a REP MOVSB with a CALL in the loop.
+        cld
 IFDEF V86_WATCH
         mov     dword ptr ds:[v86_watch],0      ; the guest is still asking
 ENDIF

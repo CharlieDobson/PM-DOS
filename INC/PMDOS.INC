@@ -138,10 +138,48 @@ PG_TOP          EQU     PG_TABS + PG_MAXTAB * 1000h
 ; on its own entry point.  Nothing is given away by it either - a
 ; 16-bit segment:offset cannot reach past 10FFEFh whatever the page
 ; tables say, so the guest is already confined by arithmetic that no
-; permission bit could tighten.
+; permission bit could tighten.  That is true of the POINTER and not
+; of the pointer plus a length, which is what buf_ok below is for.
 PG_PRESENT      EQU     7                       ; present + writable + user
 
 ARENA_BASE      EQU     PG_TOP                  ; start of the DOS memory arena
+
+;---------------------------------------------------------------------
+; WHERE A CALLER'S BUFFER MAY NOT BE.
+;
+; Every pointer that arrives at INT 21h came from somebody else - a
+; DOS box's segment:offset, a DPMI client's selector:offset, a native
+; program's slot offset - and each of the three bridges checks that a
+; pointer is one its own caller could have meant.  What none of them
+; can check is the LENGTH, because a length is not a pointer: a read
+; of FFFFh bytes into FFFF:FF00 begins inside the guest's own
+; megabyte and ends sixty kilobytes inside PMDOS.SYS.
+;
+; So the length-carrying calls ask buf_ok, and the rule it enforces is
+; deliberately NOT "this belongs to the caller" - it is "this is not
+; OURS".  Which program's memory a DOS program corrupts is DOS
+; behaving normally and always was; what cannot be allowed is the
+; kernel being overwritten while it is running the very call doing the
+; overwriting, because the transfer then reports success and the
+; machine dies somewhere else entirely with nothing to point at.  That
+; is the same argument i13_bufok was written for in v0.27, one API
+; further up.
+;
+; Three ranges, and the gaps between them are deliberate.  The IVT and
+; the BIOS data area below 4E8h are the guest's to ruin, as they are
+; on a real machine; so is the DOS data segment at 4000h, which holds
+; the list of lists and which a program is invited to read.  The slots
+; at 140000h-1FFFFFh are a PROGRAM's memory and not the kernel's, and
+; their owner passes pointers into them all day - r3_xlat bounds
+; those, and it is the only thing that can, since one slot's pointer
+; is the other slot's trespass.
+;---------------------------------------------------------------------
+KBUF_LO1        EQU     000004E8h       ; the thunk's register frame, the
+KBUF_HI1        EQU     00004000h       ; real-mode stack, the stub, XFER
+KBUF_LO2        EQU     DOS_BASE        ; PMDOS.SYS itself
+KBUF_HI2        EQU     DOS_LIMIT
+KBUF_LO3        EQU     IO_PM_BASE      ; PMIO, the IDT, the kernel stacks,
+KBUF_HI3        EQU     ARENA_BASE      ; the TSS and the page tables
 
 ;---------------------------------------------------------------------
 ; Program slots.  One shell, one transient program - DOS with the
@@ -759,6 +797,77 @@ DEV_ATTR_NUL    EQU     8004h           ; character, and the bit bucket
 DEV_ATTR_CON    EQU     8003h           ; character, is stdin, is stdout
 DEV_ATTR_AUX    EQU     8000h           ; character, and nothing special
 DEV_ATTR_PRN    EQU     8000h
+DEV_ATTR_CHAR   EQU     8000h           ; the bit that says which kind
+
+;---------------------------------------------------------------------
+; THE REQUEST PACKET - how a loaded driver is spoken to.
+;
+; The four devices above are 32-bit code inside the kernel and are
+; called as subroutines; a DEVICE= driver is 16-bit real-mode code
+; that has never heard of any of that, and the only thing it
+; understands is this structure.  DOS builds one, points ES:BX at it,
+; far-calls the driver's STRATEGY entry to hand it over, and then
+; far-calls the INTERRUPT entry to make it happen.  Two entries for
+; one operation is an artefact of a 1981 plan for asynchronous
+; drivers that never arrived; every driver ever shipped saves the
+; pointer in the first and does the work in the second, and a DOS
+; that called only the second would break all of them.
+;
+; The packet is the caller's memory and the driver writes its answer
+; back into it - REQ_STATUS, and for INIT the address where the
+; resident part ends.
+;---------------------------------------------------------------------
+REQ_LEN         EQU     00h             ; db - size of this packet
+REQ_UNIT        EQU     01h             ; db - which unit, block drivers only
+REQ_CMD         EQU     02h             ; db - DEVC_*
+REQ_STATUS      EQU     03h             ; dw - DEVS_*, written by the driver
+REQ_RESERVED    EQU     05h             ; 8 bytes DOS keeps its queue in
+REQ_HDRLEN      EQU     0Dh
+
+; INIT (command 0).  What goes in is a pointer to the rest of the
+; CONFIG.SYS line; what comes back is where the driver's resident part
+; ends, and everything above that address is handed straight back.
+REQI_UNITS      EQU     0Dh             ; db - units, block drivers only
+REQI_ENDOFF     EQU     0Eh             ; dw } the first byte NOT kept
+REQI_ENDSEG     EQU     10h             ; dw
+REQI_ARGOFF     EQU     12h             ; dw } in: the command line
+REQI_ARGSEG     EQU     14h             ; dw   out: the BPB array, block only
+REQI_DRIVE      EQU     16h             ; db - first drive letter, block only
+REQI_LEN        EQU     17h
+
+; Character read and write (commands 4, 8 and 9).
+REQC_MEDIA      EQU     0Dh             ; db - media descriptor, block only
+REQC_BUFOFF     EQU     0Eh             ; dw } where the bytes go or come from
+REQC_BUFSEG     EQU     10h             ; dw
+REQC_COUNT      EQU     12h             ; dw - in: wanted; out: transferred
+REQC_SECTOR     EQU     14h             ; dw - block drivers only
+REQC_LEN        EQU     16h
+
+; Non-destructive read (command 5) puts the byte it peeked here.
+REQP_CHAR       EQU     0Dh             ; db
+REQP_LEN        EQU     0Eh
+
+DEVC_INIT       EQU     0
+DEVC_MEDIACHK   EQU     1
+DEVC_BUILDBPB   EQU     2
+DEVC_IOCTLIN    EQU     3
+DEVC_READ       EQU     4
+DEVC_PEEK       EQU     5               ; non-destructive read
+DEVC_INSTAT     EQU     6
+DEVC_INFLUSH    EQU     7
+DEVC_WRITE      EQU     8
+DEVC_WRITEVFY   EQU     9
+DEVC_OUTSTAT    EQU     10
+DEVC_OUTFLUSH   EQU     11
+DEVC_IOCTLOUT   EQU     12
+DEVC_OPEN       EQU     13
+DEVC_CLOSE      EQU     14
+DEVC_REMOVABLE  EQU     15
+DEVC_OUTBUSY    EQU     16
+
+DEVS_DONE       EQU     0100h           ; the driver is finished
+DEVS_BUSY       EQU     0200h
+DEVS_ERROR      EQU     8000h           ; and the low byte says which
 
 ; These offsets are a published layout, not an internal one - they are
 ; what a DOS program compiled in 1989 expects to find - so a later edit
@@ -1691,7 +1800,30 @@ SFT_OWNER       EQU     40                      ; dd - owner id that opened it
 SFT_DEVID       EQU     44                      ; dd - DEV_* + unit, if a device
 SFT_TIME        EQU     48                      ; dw - the file's stamp, as
 SFT_DATE        EQU     50                      ; dw - opened or as 57h set it
-SFT_LEN         EQU     52
+
+; THE LAST TWO FIELDS EXIST FOR THE FCB API AND NOTHING ELSE.  An FCB
+; is the CALLER's memory and holds its own file position, so the eight
+; reserved bytes in it can only cache which table entry the file is
+; open on - and a cache needs a way to know it has gone stale.
+;
+;   SFT_STAMP is a number never handed out twice.  An FCB carries the
+;   stamp of the entry it was opened on, so an entry that has since
+;   been closed and reused answers "not yours" to the old FCB instead
+;   of handing it somebody else's file.  A bare index cannot: index 7
+;   is index 7 whoever is in it.
+;
+;   SFT_FCBLRU is zero for a handle and counts up for an FCB, so that
+;   when the table is full the FCB that has waited longest can be
+;   closed to make room.  Real DOS does exactly this (LRUFcb, and the
+;   FCBS= statement that sizes it) because a CP/M-era program opens
+;   FCBs and never closes them - it is not a leak there, it is the
+;   documented way the API is used, and a kernel that refuses the
+;   thirty-third one is a kernel those programs do not run on.  What
+;   makes eviction safe is that an FCB can always be re-opened from
+;   the name it is still carrying; see fcb_bind.
+SFT_STAMP       EQU     52                      ; dd - unique claim id
+SFT_FCBLRU      EQU     56                      ; dd - 0 = not an FCB's
+SFT_LEN         EQU     60
 
 SFTF_INUSE      EQU     0001h
 SFTF_DEVICE     EQU     0002h                   ; a character device, not a file
@@ -1699,6 +1831,82 @@ SFTF_DIRTY      EQU     0004h
 SFTF_DIRROOT    EQU     0008h                   ; SFT_DIRSTART is the fixed root
 SFTF_SETDT      EQU     0010h                   ; 57h set the stamp: keep it
 SFTF_RAW        EQU     0020h                   ; 44h/01h put it in binary mode
+
+;---------------------------------------------------------------------
+; FILE CONTROL BLOCKS - the pre-1983 file API, and the layout is the
+; caller's, not ours.  Every field below is a byte a program written
+; for DOS 1.0 fills in by hand and reads back, so this is a
+; description of somebody else's structure rather than a definition
+; of one of ours.
+;
+;   +00h  drive (0 = default, 1 = A:)
+;   +01h  8 bytes of name, blank padded
+;   +09h  3 bytes of extension, blank padded
+;   +0Ch  current block (a block is 128 records)
+;   +0Eh  record size; an open sets it to 128 and the program may
+;         change it afterwards, which is the whole trick of the API
+;   +10h  file size in bytes
+;   +14h  date, +16h time - of the last write, in FAT form
+;   +18h  EIGHT BYTES RESERVED TO DOS.  See below.
+;   +20h  record within the current block
+;   +21h  random record number (four bytes; the fourth is only read
+;         when the record size is under 64, which is a rule from the
+;         days when the field was three bytes and nobody wanted to
+;         break the programs that knew it)
+;
+; An EXTENDED FCB is the same thing with a seven-byte hat: FFh, five
+; unused bytes, and an attribute byte that lets a search see hidden,
+; system, directory and volume-label entries.  Everything here takes
+; either kind and works on the plain FCB inside.
+;---------------------------------------------------------------------
+FCB_DRIVE       EQU     00h
+FCB_NAME        EQU     01h
+FCB_EXT         EQU     09h
+FCB_EXTENT      EQU     0Ch                     ; dw - current block
+FCB_RECSIZ      EQU     0Eh                     ; dw
+FCB_FILSIZ      EQU     10h                     ; dd
+FCB_FDATE       EQU     14h                     ; dw
+FCB_FTIME       EQU     16h                     ; dw
+FCB_RSV         EQU     18h                     ; 8 bytes, ours
+FCB_NR          EQU     20h                     ; db - record in block
+FCB_RR          EQU     21h                     ; dd - random record
+FCB_LEN         EQU     25h
+
+FCBX_SIG        EQU     0FFh                    ; first byte of an extended FCB
+FCBX_ATTR       EQU     06h                     ; its attribute byte
+FCBX_LEN        EQU     07h                     ; and how much longer it is
+
+; WHAT WE KEEP IN THE EIGHT RESERVED BYTES, and why it is this and not
+; what real DOS keeps there.  MS-DOS stores the file's first cluster
+; and the sector and position of its directory entry, so that it can
+; rebuild a table entry without touching the disk.  Those fields are
+; sixteen bits wide, which is a FAT16 answer to a FAT16 question, and
+; PM-DOS mounts FAT32 volumes where none of the three fit.  So we keep
+; the one thing that is always enough - which entry it was open on,
+; and proof that the entry is still the same one - and rebuild by
+; RE-OPENING THE NAME, which the FCB is still carrying and which no
+; program is allowed to change while a file is open on it.  That is
+; what real DOS's own regeneration path does when its cached fields
+; are unusable, so it is the same answer arrived at from a wider disk.
+FCBR_SFN        EQU     18h                     ; db - table index, or FCBR_NONE
+FCBR_DRV        EQU     19h                     ; db - drive it resolved to, 1-based
+FCBR_STAMP      EQU     1Ah                     ; dw - the entry's claim id
+FCBR_OWN        EQU     1Ch                     ; dd - the program that opened it
+FCBR_NONE       EQU     0FFh                    ; SFN value meaning "not bound"
+
+; The four things an FCB read or write can be, in the two bits that
+; distinguish them, plus the block flag that says CX holds a count.
+FIOP_READ       EQU     01h
+FIOP_RANDOM     EQU     02h
+FIOP_BLOCK      EQU     04h
+
+; And the four answers, which are the FCB API's entire error
+; vocabulary - there is no error CODE, only these, and a program that
+; wants to know why asks 59h afterwards.
+FIOR_OK         EQU     0
+FIOR_EOF        EQU     1                       ; nothing there / disk full
+FIOR_TRIM       EQU     2                       ; would not fit at the DTA
+FIOR_PART       EQU     3                       ; partial record, zero filled
 
 ;---------------------------------------------------------------------
 ; Character devices.
@@ -1717,6 +1925,11 @@ DEV_CON         EQU     0                       ; keyboard and screen
 DEV_NUL         EQU     1                       ; the bit bucket
 DEV_PRN         EQU     2                       ; LPT1-3, via INT 17h
 DEV_AUX         EQU     3                       ; COM1-4, via INT 14h
+DEV_LOADED      EQU     4                       ; anything a DEVICE= line put
+                                                ; there; the unit is its row
+                                                ; in dl_tab, which is why the
+                                                ; unit byte is a byte and not
+                                                ; a port number here
 DEV_UNIT        EQU     256                     ; multiply the unit by this
 DEV_KIND        EQU     0FFh                    ; and mask by this to undo it
 
@@ -1749,7 +1962,7 @@ SHELLTAIL_MAX   EQU     130             ; length byte + 126 + CR + slack
 ; has a call of its own; these two agree.
 ;---------------------------------------------------------------------
 PMDOS_MAJOR     EQU     0
-PMDOS_MINOR     EQU     35
+PMDOS_MINOR     EQU     37
 
 DOSVER_MAJOR    EQU     6
 DOSVER_MINOR    EQU     22

@@ -432,6 +432,157 @@ i21_unsup:
         jmp     short i21_fail
 
 ;=====================================================================
+; buf_ok - EAX = a caller's buffer, ECX = how many bytes of it.
+;          CF set if any part of it is the kernel's own memory.
+;          All registers preserved.
+;
+; THE LENGTH IS THE HOLE, NOT THE POINTER.  Each of the three bridges
+; already refuses a pointer its own caller could not have meant, and
+; for a DOS box that check is free: a segment:offset stops at 10FFEFh
+; and PMDOS.SYS starts at 110000h, so the guest cannot POINT at the
+; kernel however hard it tries.  It can ask for FFFFh bytes to be read
+; into FFFF:FF00, though, and then the kernel writes the first sixteen
+; bytes into the guest's HMA and the next sixty-four kilobytes into
+; itself - with the read reporting success, because from inside the
+; copy loop nothing about the second half looks different from the
+; first.  The machine dies later, somewhere unrelated, and the only
+; evidence is that a file was read.
+;
+; A native program cannot do it (r3_xlat bounds its pointers and the
+; slot's neighbour above is PMIO, which is range three), but it is the
+; same mistake and the same guard catches it, which is the argument
+; for making the rule about the KERNEL rather than about the caller:
+; one rule, no caller identity to establish, and it stays true for
+; whatever bridge is built next.
+;
+; Empty is allowed and is not a special case - ECX = 0 makes the end
+; equal the start and the overlap test false for all three ranges.
+;=====================================================================
+buf_ok:
+        push    eax
+        push    ebx
+        push    ecx
+        push    edx
+        add     ecx,eax                 ; ECX = one past the end
+        jc      bo_bad                  ; a length that wraps 4GB is not one
+
+        mov     edx,KBUF_LO1            ; the low scaffolding
+        mov     ebx,KBUF_HI1
+        call    bo_range
+        jc      bo_bad
+        mov     edx,KBUF_LO2            ; PMDOS.SYS
+        mov     ebx,KBUF_HI2
+        call    bo_range
+        jc      bo_bad
+        mov     edx,KBUF_LO3            ; PMIO, IDT, stacks, TSS, page tables
+        mov     ebx,KBUF_HI3
+        call    bo_range
+        jc      bo_bad
+
+        pop     edx
+        pop     ecx
+        pop     ebx
+        pop     eax
+        clc
+        ret
+bo_bad:
+        pop     edx
+        pop     ecx
+        pop     ebx
+        pop     eax
+        stc
+        ret
+
+;--- one range.  EAX = start, ECX = end (both flat), EDX = the range's
+;--- low bound, EBX = its high.  CF set means they overlap, which is
+;--- the two comparisons and nothing else: the buffer is clear of the
+;--- range if it starts at or after the top of it, or ends at or
+;--- before the bottom.
+bo_range:
+        cmp     eax,ebx
+        jae     bo_clear
+        cmp     ecx,edx
+        jbe     bo_clear
+        stc
+        ret
+bo_clear:
+        clc
+        ret
+
+;--- buf_deny - the answer when it is not.  "Access denied" and not a
+;--- fault: the call has not happened, nothing is half done, and a
+;--- program that gets an error back can say so.  Real DOS has no
+;--- error for this because on a real machine there is nothing to
+;--- protect, so any answer here is an invention; this is the one the
+;--- ring-3 bridge already invented for the pointer half of it.
+;=====================================================================
+; cbuf_ok - buf_ok, but only for a buffer the CALLER chose.
+;
+; THE KERNEL CALLS ITS OWN INT 21h.  CONFIG.SYS is opened with 3Dh and
+; read with 3Fh exactly like any other file, into a buffer that is
+; inside PMDOS.SYS - which is the very address this guard exists to
+; refuse.  Guarded without this test, the machine boots with no
+; CONFIG.SYS, says nothing about it, and the first thing that looks
+; wrong is something else entirely.
+;
+; AND THE CS ALONE DOES NOT SAY SO, which is the trap this routine
+; exists to document.  A DOS box's calls arrive through k21, and k21
+; manufactures a frame with SEL_CODE32 in it ON PURPOSE - so that
+; anything asking "was this a DPMI client?" gets the right answer.
+; Believing the CS therefore exempts every guest in the machine and
+; leaves the guard testing nothing, which is precisely what it did:
+; the check ran, passed everything, and the test program walked into
+; PMDOS.SYS on the next line.
+;
+; The DS beside it is not enough either, and for the opposite reason.
+; An interrupt gate does not reload DS, so a real INT 21h carries
+; whatever the caller was using - SEL_DATA32 from kernel code, a
+; client's own selector from a DPMI program, SEL_PROG_DS from a native
+; one - while a manufactured frame has none and k21 pushes zero.  That
+; identifies the kernel's own INT 21h correctly; it says nothing about
+; the k21 frames, because THE KERNEL USES k21 TOO.  exec_kind reads
+; eight bytes of a program's header into a buffer in PMDOS.SYS through
+; exactly that door, which is why every EXEC in the machine started
+; failing the first time this was got wrong.
+;
+; So the third test is the one the caller had to be asked for: k21u
+; marks the frame as a guest's and k21 does not.  Three tests, three
+; kinds of caller, and each of the first two is a correct answer to a
+; question that turns out not to be the whole question.
+;=====================================================================
+cbuf_ok:
+        cmp     word ptr [ebp+F_CS],SEL_CODE32
+        jne     cbo_theirs              ; native or a DPMI client
+        cmp     word ptr [ebp+F_DS],SEL_DATA32
+        je      cbo_fine                ; kernel code's own INT 21h
+        cmp     dword ptr [ebp+F_EIP],0
+        jne     cbo_theirs              ; k21u: a DOS box's
+cbo_fine:
+        clc
+        ret
+cbo_theirs:
+        jmp     buf_ok                  ; its RET goes to our caller
+
+buf_deny:
+        mov     ax,ERR_ACCESS
+        jmp     i21_fail
+
+;--- dta_ok - the DTA, measured for a search record.  Its own routine
+;--- because 4Eh and 4Fh both need it and neither is given a size: 43
+;--- bytes is what a find record IS, and where the DTA points was
+;--- settled by a 1Ah that happened at some other time and possibly in
+;--- some other program.
+dta_ok:
+        push    eax
+        push    ecx
+        mov     eax,[dta_ptr]
+        mov     ecx,43
+        call    cbuf_ok
+        pop     ecx                     ; neither pop touches the carry
+        pop     eax
+        ret
+
+;=====================================================================
 ; 00h - terminate (treated as 4Ch with code 0)
 ;=====================================================================
 fn00:
@@ -631,6 +782,10 @@ f09_done:
 ;=====================================================================
 fn0A:
         mov     edi,[ebp+F_EDX]
+        mov     eax,edi                 ; 255 characters, a count byte and a
+        mov     ecx,257                 ; capacity byte is the most this call
+        call    cbuf_ok                 ; can ever touch, so the worst case is
+        jc      buf_deny                ; the only one worth measuring
         movzx   ecx,byte ptr [edi]      ; capacity
         or      ecx,ecx
         jz      f0A_done
@@ -1350,19 +1505,40 @@ fn5B:
         mov     byte ptr [create_new],1
 f3C_go:
         mov     esi,[ebp+F_EDX]
+        mov     ecx,[ebp+F_ECX]         ; requested attributes
+        call    create_core
+        jc      f3C_err
+        mov     [ebp+F_EAX],ax
+        jmp     i21_ok
+f3C_err:
+        jmp     i21_fail
+
+;---------------------------------------------------------------------
+; create_core - make a file (or open a device for writing).
+;
+;   ESI -> ASCIIZ path, ECX = attributes, [create_new] = must not exist
+;   -> AX = handle and ESI -> its table entry, or CF with AX = error.
+;
+; The other half of the open_core split, and for the same reason: the
+; FCB API's 16h is this call with the path spelled differently.
+;---------------------------------------------------------------------
+create_core:
+        mov     [cr_attr],ecx
+        push    esi
         call    dev_find                ; a device is a fine create target -
         jc      f3C_file                ; "> NUL" is a create, and so is
-        mov     edx,eax                 ; "> PRN"
+        pop     ecx                     ; "> PRN"
+        mov     edx,eax
         call    sft_new
         jc      f3C_full
         mov     dword ptr [esi+SFT_FLAGS],SFTF_INUSE OR SFTF_DEVICE
         mov     dword ptr [esi+SFT_MODE],1
         mov     [esi+SFT_DEVID],edx
-        mov     [ebp+F_EAX],ax
-        jmp     i21_ok
+        clc
+        ret
 
 f3C_file:
-        mov     esi,[ebp+F_EDX]
+        pop     esi
         call    resolve_parent
         jc      f3C_deny
         cmp     byte ptr [rp_noname],0
@@ -1423,7 +1599,7 @@ f3C_fill:
         pop     ebx
 
 f3C_stamp:
-        mov     al,[ebp+F_ECX]          ; requested attributes
+        mov     al,byte ptr [cr_attr]   ; requested attributes
         and     al,27h                  ; RHS + archive only
         or      al,ATTR_ARCHIVE
         mov     [esi+DE_ATTR],al
@@ -1458,8 +1634,8 @@ f3C_stamp:
         mov     [esi+SFT_DIRENT],edi
         mov     dword ptr [esi+SFT_HANDLE],0
         call    sft_setdir              ; remember which directory
-        mov     [ebp+F_EAX],ax
-        jmp     i21_ok
+        clc
+        ret
 
 ;---------------------------------------------------------------------
 ; sft_setdir - record the current directory context AND the loaded
@@ -1494,13 +1670,16 @@ sft_seldrv:
 
 f3C_deny:
         mov     ax,ERR_ACCESS
-        jmp     i21_fail
+        stc
+        ret
 f3C_full:
         mov     ax,ERR_NOHANDLES
-        jmp     i21_fail
+        stc
+        ret
 f3C_exists:
         mov     ax,ERR_EXISTS
-        jmp     i21_fail
+        stc
+        ret
 
 ;=====================================================================
 ; 5Ah - create a UNIQUE file.  EDX -> a directory path ending in a
@@ -1631,6 +1810,10 @@ fn60:
         call    resolve_core
         jc      f60_bad
 
+        mov     eax,[ebp+F_EDI]         ; 128 bytes is the API's own ceiling
+        mov     ecx,128                 ; on the answer, so it is also the
+        call    cbuf_ok                 ; measure of what may be written
+        jc      buf_deny
         mov     edi,[ebp+F_EDI]
         mov     al,[cur_vol]            ; whichever volume it resolved on,
         add     al,'A'                  ; which is not always the default
@@ -1703,14 +1886,23 @@ fn41:
         mov     edi,OFFSET name_buf
         call    fat_search
         jc      f41_nofile
-        call    lfn_tomb                ; the chain dies with the file
-        call    dir_seek                ; back onto OUR sector and entry
-        jc      f41_nofile
 
+        ; THE REFUSALS COME FIRST.  They used to come after lfn_tomb,
+        ; which meant that "DEL <a read-only file with a long name>"
+        ; printed "access denied", left the file exactly where it was,
+        ; and had already thrown its long name away - the entry stayed,
+        ; the chain in front of it was tombstoned, and the file was
+        ; afterwards reachable only by its 8.3 alias.  Found while
+        ; writing the FCB delete, which has the same two tests and
+        ; therefore had to decide which order they went in.
         test    byte ptr [esi+DE_ATTR],ATTR_DIR
         jnz     f41_deny                ; that is a directory - use 3Ah
         test    byte ptr [esi+DE_ATTR],ATTR_READONLY
         jnz     f41_deny
+
+        call    lfn_tomb                ; the chain dies with the file
+        call    dir_seek                ; back onto OUR sector and entry
+        jc      f41_nofile
 
         call    de_getclus
         call    fat_freechain
@@ -2014,12 +2206,34 @@ fn3D:
         cmp     al,3
         je      f3D_deny                ; 3 is not a valid access mode
         movzx   eax,al
+        mov     esi,[ebp+F_EDX]
+        call    open_core
+        jc      f3D_err
+        mov     [ebp+F_EAX],ax
+        jmp     i21_ok
+f3D_err:
+        jmp     i21_fail
+
+;---------------------------------------------------------------------
+; open_core - open an existing file or device.
+;
+;   ESI -> ASCIIZ path, EAX = access mode (0 read, 1 write, 2 both)
+;   -> AX = handle and ESI -> its table entry, or CF with AX = error.
+;
+; SEPARATED FROM 3Ch's HANDLER FOR THE FCB API, which opens files
+; nobody ever gave a handle to.  The alternative was a second copy of
+; the sequence below, and the memory of what an inline unnamed
+; correction costs is recent enough (v0.35's lm_setown) to make one
+; routine with a name the obvious answer.
+;---------------------------------------------------------------------
+open_core:
         mov     [open_mode],eax
 
         ; device name?
-        mov     esi,[ebp+F_EDX]
+        push    esi
         call    dev_find
         jc      f3D_file
+        pop     ecx                     ; the path, not needed further
         mov     edx,eax
         call    sft_new
         jc      f3D_full
@@ -2027,11 +2241,11 @@ fn3D:
         mov     ecx,[open_mode]
         mov     [esi+SFT_MODE],ecx
         mov     [esi+SFT_DEVID],edx
-        mov     [ebp+F_EAX],ax
-        jmp     i21_ok
+        clc
+        ret
 
 f3D_file:
-        mov     esi,[ebp+F_EDX]
+        pop     esi
         call    resolve_parent
         jc      f3D_nofile
         cmp     byte ptr [rp_noname],0
@@ -2069,17 +2283,20 @@ f3D_file:
         mov     [esi+SFT_DIRENT],edi
         mov     dword ptr [esi+SFT_HANDLE],0    ; cur cluster index
         call    sft_setdir
-        mov     [ebp+F_EAX],ax
-        jmp     i21_ok
+        clc
+        ret
+
+f3D_nofile:
+        mov     ax,ERR_NOFILE
+        stc
+        ret
+f3D_full:
+        mov     ax,ERR_NOHANDLES
+        stc
+        ret
 
 f3D_deny:
         mov     ax,ERR_ACCESS
-        jmp     i21_fail
-f3D_nofile:
-        mov     ax,ERR_NOFILE
-        jmp     i21_fail
-f3D_full:
-        mov     ax,ERR_NOHANDLES
         jmp     i21_fail
 
 ;=====================================================================
@@ -2305,6 +2522,14 @@ df_up:
 df_look:
         or      ecx,ecx
         jz      df_no                   ; an empty component names nothing
+
+        ; THE LOADED DRIVERS FIRST, and the order is the whole point
+        ; of loading one: ANSI.SYS is a CON driver, and a CON that
+        ; loses to the built-in console is a CON that does nothing.
+        ; DOS puts a loaded driver at the FRONT of the chain for the
+        ; same reason and gets the same answer.
+        call    dl_lookup
+        jnc     df_hit2
         mov     esi,OFFSET dev_tab
 df_try:
         cmp     dword ptr [esi],0       ; a zero name ends the table
@@ -2319,6 +2544,7 @@ df_try:
         jmp     short df_try
 df_hit:
         mov     eax,[esi+8]
+df_hit2:
         pop     edi
         pop     esi
         pop     edx
@@ -2374,8 +2600,12 @@ dev_out:
         je      do_prn
         cmp     dl,DEV_AUX
         je      do_aux
+        cmp     dl,DEV_LOADED
+        je      do_loaded
 do_nul:
         ret                             ; DEV_NUL, and anything unknown
+do_loaded:
+        jmp     dl_out                  ; DH is its row; its RET is ours
 do_con:
         jmp     dword ptr ds:[IOS_CONOUT]
 
@@ -2423,9 +2653,13 @@ dev_in:
         je      di_con
         cmp     dl,DEV_AUX
         je      di_aux
+        cmp     dl,DEV_LOADED
+        je      di_loaded
 di_eof:
         stc                             ; DEV_NUL, DEV_PRN, anything unknown
         ret
+di_loaded:
+        jmp     dl_in                   ; DH is its row; its RET is ours
 di_con:
         call    dos_conin
         clc
@@ -2617,6 +2851,12 @@ sc_keepopen db  0                       ; sft_flush, rather than sft_close
 ;       -> EAX = bytes actually read
 ;=====================================================================
 fn3F:
+        mov     eax,[ebp+F_EDX]         ; where the bytes are to go, and how
+        mov     ecx,[ebp+F_ECX]         ; many of them - see buf_ok, which is
+        call    cbuf_ok                 ; here because THIS is the call that
+        jc      buf_deny                ; can name a length longer than the
+                                        ; distance from the guest's last
+                                        ; addressable byte to the kernel
         movzx   ebx,word ptr [ebp+F_EBX]
         call    sft_get
         jc      f3F_bad
@@ -2625,10 +2865,27 @@ fn3F:
         jnz     f3F_dev
 
 ;--- plain file -------------------------------------------------------
-        call    sft_seldrv              ; the file's volume, not the cwd's
-        jc      f3F_ioerr
         mov     ecx,[ebp+F_ECX]         ; bytes wanted
         mov     edi,[ebp+F_EDX]         ; destination
+        call    file_read
+        jc      f3F_ioerr
+        mov     [ebp+F_EAX],edx
+        jmp     i21_ok
+
+;---------------------------------------------------------------------
+; file_read - ESI -> table entry, EDI -> where the bytes go, ECX = how
+;             many.  -> EDX = bytes actually delivered (short at end of
+;             file), CF on an I/O error.
+;
+; Lifted out of 3Fh whole so that the FCB API's four read functions
+; can have it too.  A record read is a byte read with the position
+; worked out beforehand - which is the entire difference between the
+; two file APIs, and the reason it would be silly to have two copies
+; of the loop that gets the bytes.
+;---------------------------------------------------------------------
+file_read:
+        call    sft_seldrv              ; the file's volume, not the cwd's
+        jc      f3F_rioerr
         xor     edx,edx                 ; EDX = bytes delivered
 
 f3F_more:
@@ -2645,7 +2902,7 @@ f3F_more:
         pop     edi
         pop     edx
         pop     ecx
-        jc      f3F_ioerr
+        jc      f3F_rioerr
         or      eax,eax
         jz      f3F_eof
         add     edi,eax
@@ -2654,8 +2911,12 @@ f3F_more:
         jmp     short f3F_more
 
 f3F_eof:
-        mov     [ebp+F_EAX],edx
-        jmp     i21_ok
+        clc
+        ret
+f3F_rioerr:
+        stc
+        ret
+
 f3F_ioerr:
         mov     ax,ERR_ACCESS
         jmp     i21_fail
@@ -2872,6 +3133,11 @@ fc_ioerr:
 ;       -> EAX = bytes written (less than ECX means the disk filled).
 ;=====================================================================
 fn40:
+        mov     eax,[ebp+F_EDX]         ; a write only READS the caller's
+        mov     ecx,[ebp+F_ECX]         ; buffer, so this one guards against
+        call    cbuf_ok                 ; the kernel being put in a FILE
+        jc      buf_deny                ; rather than overwritten - which is
+                                        ; worth refusing for its own reasons
         movzx   ebx,word ptr [ebp+F_EBX]
         call    sft_get
         jc      f40_bad
@@ -2904,14 +3170,35 @@ f40_devdone:
 f40_file:
         cmp     dword ptr [esi+SFT_MODE],0
         je      f40_deny                ; opened read-only
-        call    sft_seldrv              ; the file's volume, not the cwd's
-        jc      f40_ioerr
-
         mov     ecx,[ebp+F_ECX]
         or      ecx,ecx
-        jz      f40_trunc
+        jz      f40_trunc0
 
         mov     edi,[ebp+F_EDX]         ; source data
+        call    file_write
+        jc      f40_ioerr
+        mov     [ebp+F_EAX],edx
+        jmp     i21_ok
+
+f40_trunc0:
+        call    sft_seldrv
+        jc      f40_ioerr
+        call    file_trunc
+        mov     dword ptr [ebp+F_EAX],0
+        jmp     i21_ok
+
+;---------------------------------------------------------------------
+; file_write - ESI -> table entry, EDI -> the data, ECX = how many
+;              bytes.  -> EDX = bytes actually written (short means the
+;              disk filled up), CF on an I/O error.  ECX = 0 is NOT the
+;              truncate case here: that is 40h's own meaning for it and
+;              stays in 40h.
+;
+; The other half of the split file_read describes.
+;---------------------------------------------------------------------
+file_write:
+        call    sft_seldrv              ; the file's volume, not the cwd's
+        jc      f40_wioerr
         xor     edx,edx                 ; bytes done
 f40_more:
         or      ecx,ecx
@@ -2923,7 +3210,7 @@ f40_more:
         pop     edi
         pop     edx
         pop     ecx
-        jc      f40_ioerr
+        jc      f40_wioerr
         or      eax,eax
         jz      f40_fin                 ; disk full - report the shortfall
         add     edi,eax
@@ -2932,11 +3219,23 @@ f40_more:
         jmp     short f40_more
 f40_fin:
         or      dword ptr [esi+SFT_FLAGS],SFTF_DIRTY
-        mov     [ebp+F_EAX],edx
-        jmp     i21_ok
+        clc
+        ret
+f40_wioerr:
+        stc
+        ret
 
-;--- ECX = 0: truncate at POS ----------------------------------------
-f40_trunc:
+;---------------------------------------------------------------------
+; file_trunc - the file the entry at ESI describes becomes exactly as
+;              long as SFT_POS says, and the clusters past that point
+;              go back to the FAT.  The volume must already be
+;              selected.
+;
+; This is 40h's ECX = 0 case, which is how the handle API truncates,
+; and it is also 28h's CX = 0 case, which is how the FCB API does -
+; the same operation reached through two APIs a decade apart.
+;---------------------------------------------------------------------
+file_trunc:
         mov     eax,[esi+SFT_POS]
         cmp     eax,[esi+SFT_SIZE]
         jae     f40_setsz               ; truncating forward = just resize
@@ -2980,8 +3279,7 @@ f40_setsz:
         mov     [esi+SFT_SIZE],eax
         or      dword ptr [esi+SFT_FLAGS],SFTF_DIRTY
         mov     dword ptr [clusbuf_clus],-1
-        mov     dword ptr [ebp+F_EAX],0
-        jmp     i21_ok
+        ret
 
 f40_ioerr:
         mov     ax,ERR_ACCESS
@@ -4827,11 +5125,13 @@ fn4D:
 ;       Fills the DTA; CF/ERR_NOFILE when nothing matches.
 ;=====================================================================
 fn4E:
+        call    dta_ok                  ; the search record is 43 bytes and
+        jc      buf_deny                ; the DTA is wherever 1Ah left it
         mov     esi,[ebp+F_EDX]
         call    resolve_parent          ; sets the context, fills name_buf
         jc      f4E_none                ; ([rp_noname] leaves it all-'?')
         mov     dword ptr [srch_long],0 ; classic find stays pure 8.3 -
-                                        ; the DTA can only carry 8.3
+        mov     byte ptr [srch_lonly],0 ; the DTA can only carry 8.3
                                         ; state between 4Eh and 4Fh
 
         mov     edi,[dta_ptr]
@@ -4860,6 +5160,8 @@ fn4E:
 ; 4Fh - find next, from the state left in the DTA
 ;=====================================================================
 fn4F:
+        call    dta_ok
+        jc      buf_deny
         mov     edi,[dta_ptr]
         mov     al,[edi]                ; DTA+0 = the logical drive 4Eh was on
         call    vol_select
@@ -5141,6 +5443,7 @@ f7e_have:
         call    resolve_parent          ; the walk is LFN-transparent
         jc      f71_nofile
         mov     dword ptr [srch_long],0 ; find matches its own way
+        mov     byte ptr [srch_lonly],0
         cmp     byte ptr [rp_noname],0
         jne     f71_nofile
 
@@ -5511,9 +5814,13 @@ prd_mid:
         cmp     byte ptr [rp_lflag+edx],0
         je      prd_nolong
         mov     eax,[rp_lptr+edx*4]     ; only the long text can spell
-        mov     [srch_long],eax         ; this one - arm the match
+        mov     [srch_long],eax         ; this one - arm the match...
         mov     eax,[rp_llen+edx*4]
         mov     [srch_llen],eax
+        mov     byte ptr [srch_lonly],1 ; ...and mean it: the comment
+                                        ; above says "only", and until
+                                        ; this line the 8.3 rendering
+                                        ; could still answer first
 prd_nolong:
         mov     byte ptr [srch_attr],ATTR_DIR
         xor     ebx,ebx
@@ -5939,6 +6246,23 @@ sn_have:
         ; claimed, so that termination can tell whose it was
         mov     eax,[cur_own]
         mov     [esi+SFT_OWNER],eax
+
+        ; and a claim id, for the same reason one line up: this is the
+        ; only moment at which an entry becomes a different file, so it
+        ; is the only place that can say so.  An FCB holds the id of
+        ; the entry it was opened on and compares it before believing
+        ; its own cached index - see fcb_bind, which is the only reader.
+        ; Zero is never handed out, so a zeroed FCB cannot match.
+        mov     eax,[sft_nextstamp]
+        mov     [esi+SFT_STAMP],eax
+        inc     eax
+        and     eax,0FFFFh              ; the FCB has sixteen bits for it
+        jnz     sn_stamped
+        inc     eax                     ; and zero stays reserved
+sn_stamped:
+        mov     [sft_nextstamp],eax
+        mov     dword ptr [esi+SFT_FCBLRU],0    ; a handle, until an FCB
+                                                ; says otherwise
         mov     ax,bx
         pop     ebx
         clc
@@ -6866,14 +7190,14 @@ i21_table:
         dd      fn00,      fn01,      fn02,      fn03       ; 00-03
         dd      fn04,      fn05,      fn06,      fn07       ; 04-07
         dd      fn08,      fn09,      fn0A,      fn0B       ; 08-0B
-        dd      fn0C,      fn0D,      fn0E,      i21_unsup  ; 0C-0F
-        dd      i21_unsup, i21_unsup, i21_unsup, i21_unsup  ; 10-13
-        dd      i21_unsup, i21_unsup, i21_unsup, i21_unsup  ; 14-17
+        dd      fn0C,      fn0D,      fn0E,      fn0F       ; 0C-0F
+        dd      fn10,      fn11,      fn12,      fn13       ; 10-13
+        dd      fn14,      fn15,      fn16,      fn17       ; 14-17
         dd      i21_unsup, fn19,      fn1A,      fn1B       ; 18-1B
         dd      fn1C,      i21_unsup, i21_unsup, i21_unsup  ; 1C-1F
-        dd      i21_unsup, i21_unsup, i21_unsup, i21_unsup  ; 20-23
-        dd      i21_unsup, fn25,      i21_unsup, i21_unsup  ; 24-27
-        dd      i21_unsup, i21_unsup, fn2A,      fn2B       ; 28-2B
+        dd      i21_unsup, fn21,      fn22,      fn23       ; 20-23
+        dd      fn24,      fn25,      i21_unsup, fn27       ; 24-27
+        dd      fn28,      fn29,      fn2A,      fn2B       ; 28-2B
         dd      fn2C,      fn2D,      fn2E,      fn2F       ; 2C-2F
         dd      fn30,      i21_unsup, i21_unsup, fn33       ; 30-33
         dd      fn34,      fn35,      fn36,      i21_unsup  ; 34-37
@@ -6935,11 +7259,23 @@ name_buf    db  11 dup(0)
 name2_buf   db  11 dup(0)
 open_mode   dd  0
 open_stamp  dd  0                       ; the opened file's time and date
+sft_nextstamp dd 1                      ; the next SFT claim id.  Never 0.
+
+; HOW FAR 21h/29h GOT, as a distance rather than an address.  It lives
+; out here rather than in FCB.INC because the two bridges that need it
+; - the DOS box's and the DPMI host's - are assembled before that file
+; is, and because what it is for belongs with the frame it describes:
+; 29h is the only DOS function whose answer is a pointer register, and
+; every caller reaches it through a different kind of pointer.  A
+; distance is the one form all three can use.
+p29_adv     dd  0
 last_err    dw  0                       ; what 59h reports; set by i21_fail
             dw  0
 con_pending db  0                       ; second byte of an extended key,
                                         ; waiting for the next raw-mode read
 create_new  db  0                       ; 3Ch may truncate; 5Bh and 5Ah may not
+            db  0,0,0
+cr_attr     dd  0                       ; create_core's attribute argument
 verify_on   db  0                       ; 2Eh/54h.  See fn2E for why it is a
                                         ; setting and not a behaviour
             dw  0

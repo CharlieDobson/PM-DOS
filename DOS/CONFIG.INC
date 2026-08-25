@@ -310,6 +310,52 @@ ENDIF
 cfg_rem:
         ret
 
+;---------------------------------------------------------------------
+; DEVICE=path [options] - load a character device driver.
+;
+; DEVICEHIGH= is the same statement here, and that is not a shortcut:
+; a real DOS with no upper-memory provider loads a DEVICEHIGH driver
+; low and says nothing about it, because the statement asks for a
+; preference rather than a guarantee.  PM-DOS has no UMBs to offer
+; yet, so it gives the same answer for the same reason.
+;
+; A FAILURE IS A MESSAGE AND NOT A HALT.  A CONFIG.SYS naming a driver
+; that is not there is the commonest CONFIG.SYS there is - the line
+; survives the uninstall of what it loaded - and a DOS that refuses to
+; boot over it would be a DOS nobody could get back into.
+;---------------------------------------------------------------------
+cfg_device:
+        call    dl_load
+        jnc     cdv_out
+        push    eax
+        call    cfg_show_line
+        pop     eax
+        cmp     eax,DLERR_BLOCK
+        je      cdv_block
+        cmp     eax,DLERR_NOMEM
+        je      cdv_nomem
+        cmp     eax,DLERR_FULL
+        je      cdv_full
+        cmp     eax,DLERR_INIT
+        je      cdv_init
+        mov     esi,OFFSET msgDevNoFile
+        jmp     short cdv_say
+cdv_block:
+        mov     esi,OFFSET msgDevBlock
+        jmp     short cdv_say
+cdv_nomem:
+        mov     esi,OFFSET msgDevNoMem
+        jmp     short cdv_say
+cdv_full:
+        mov     esi,OFFSET msgDevFull
+        jmp     short cdv_say
+cdv_init:
+        mov     esi,OFFSET msgDevInit
+cdv_say:
+        call    dword ptr ds:[IOS_CONSTR]
+cdv_out:
+        ret
+
 ;=====================================================================
 ; PM-DOS's own statements
 ;=====================================================================
@@ -513,6 +559,8 @@ cfg_table:
         dd      OFFSET cfgn_break,   OFFSET cfg_break
 
 ;--- PM-DOS's own -----------------------------------------------------
+        dd      OFFSET cfgn_device,  OFFSET cfg_device
+        dd      OFFSET cfgn_devhigh, OFFSET cfg_device
         dd      OFFSET cfgn_lfn,     OFFSET cfg_lfn
         dd      OFFSET cfgn_dpmi,    OFFSET cfg_dpmi
         dd      OFFSET cfgn_nulltrp, OFFSET cfg_nulltrap
@@ -529,8 +577,6 @@ cfg_table:
         dd      OFFSET cfgn_numlock, OFFSET cfg_ignore
         dd      OFFSET cfgn_dos,     OFFSET cfg_ignore
         dd      OFFSET cfgn_drivparm,OFFSET cfg_ignore
-        dd      OFFSET cfgn_device,  OFFSET cfg_ignore
-        dd      OFFSET cfgn_devhigh, OFFSET cfg_ignore
         dd      OFFSET cfgn_install, OFFSET cfg_ignore
         dd      OFFSET cfgn_insthigh,OFFSET cfg_ignore
         dd      OFFSET cfgn_set,     OFFSET cfg_ignore
@@ -585,6 +631,11 @@ break_flag  db  0
 
 msgCrLf         db  13,10,0
 msgCfgBadCmd    db  'Unrecognized command in CONFIG.SYS',13,10,0
+msgDevNoFile    db  'Bad or missing device driver',13,10,0
+msgDevNoMem     db  'Not enough memory for device driver',13,10,0
+msgDevBlock     db  'Block device drivers are not supported yet',13,10,0
+msgDevInit      db  'Device driver failed to initialise',13,10,0
+msgDevFull      db  'Too many device drivers',13,10,0
 msgCfgBadVal    db  'Invalid parameter in CONFIG.SYS',13,10,0
 IFDEF PMDOS_DEBUG
 msgCfgFound     db  'Processing CONFIG.SYS',13,10,0

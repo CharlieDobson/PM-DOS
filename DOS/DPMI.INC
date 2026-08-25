@@ -2082,11 +2082,88 @@ dxl_nodi:
         add     eax,ebx
         mov     dword ptr [ebp+F_EBX],eax
 dxl_done:
+        ; AND THE SAME MEASUREMENT THE DOS BOX GETS.  A client's
+        ; pointer arrives as selector:offset and comes out of
+        ; dpmi_base as whatever base that descriptor carries, so
+        ; unlike a guest's segment:offset there is no arithmetic
+        ; confining it to the first megabyte - it can name the kernel
+        ; directly.  One byte again; the length-carrying calls are
+        ; measured inside the handlers, where the length is.
+        call    dpmi_ptrchk
+        jc      dxl_bad
         popad
         clc
         ret
+;--- Whatever had already been converted goes back before the error
+;--- does.  A refusal must leave the client's registers as it wrote
+;--- them: the call did not happen, and a flat kernel address in DX is
+;--- both a wrong answer and one the client had no way to ask for.
 dxl_bad:
+        test    byte ptr ds:[dpmi_pf],P_DX
+        jz      dxb_nodx
+        mov     eax,dword ptr ds:[dpmi_odx]
+        mov     dword ptr [ebp+F_EDX],eax
+dxb_nodx:
+        test    byte ptr ds:[dpmi_pf],P_SI
+        jz      dxb_nosi
+        mov     eax,dword ptr ds:[dpmi_osi]
+        mov     dword ptr [ebp+F_ESI],eax
+dxb_nosi:
+        test    byte ptr ds:[dpmi_pf],P_DI
+        jz      dxb_nodi
+        mov     eax,dword ptr ds:[dpmi_odi]
+        mov     dword ptr [ebp+F_EDI],eax
+dxb_nodi:
+        test    byte ptr ds:[dpmi_pf],P_BX
+        jz      dxb_nobx
+        mov     eax,dword ptr ds:[dpmi_obx]
+        mov     dword ptr [ebp+F_EBX],eax
+dxb_nobx:
         popad
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; dpmi_ptrchk - the converted pointers, back out of the frame and
+;               measured against the kernel's own memory.  CF if any
+;               of them is in it.  EBP still addresses the frame here,
+;               which is why this runs before the popad.
+;---------------------------------------------------------------------
+dpmi_ptrchk:
+        push    eax
+        push    ecx
+        mov     ecx,1
+        test    byte ptr ds:[dpmi_pf],P_DX
+        jz      dpc_nodx
+        mov     eax,dword ptr [ebp+F_EDX]
+        call    buf_ok
+        jc      dpc_bad
+dpc_nodx:
+        test    byte ptr ds:[dpmi_pf],P_SI
+        jz      dpc_nosi
+        mov     eax,dword ptr [ebp+F_ESI]
+        call    buf_ok
+        jc      dpc_bad
+dpc_nosi:
+        test    byte ptr ds:[dpmi_pf],P_DI
+        jz      dpc_nodi
+        mov     eax,dword ptr [ebp+F_EDI]
+        call    buf_ok
+        jc      dpc_bad
+dpc_nodi:
+        test    byte ptr ds:[dpmi_pf],P_BX
+        jz      dpc_good
+        mov     eax,dword ptr [ebp+F_EBX]
+        call    buf_ok
+        jc      dpc_bad
+dpc_good:
+        pop     ecx
+        pop     eax
+        clc
+        ret
+dpc_bad:
+        pop     ecx
+        pop     eax
         stc
         ret
 
@@ -2112,6 +2189,13 @@ dux_nodx:
         test    bl,P_SI
         jz      dux_nosi
         mov     eax,dword ptr ds:[dpmi_osi]
+        ; ...except 29h, whose whole answer is how far SI got.  AH is
+        ; still the function number: the parse writes AL and nothing
+        ; else, which is what makes this recognisable at all.
+        cmp     byte ptr [ebp+F_EAX+1],29h
+        jne     dux_si
+        add     eax,dword ptr ds:[p29_adv]
+dux_si:
         mov     dword ptr [ebp+F_ESI],eax
 dux_nosi:
         test    bl,P_DI

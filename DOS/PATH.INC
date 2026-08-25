@@ -50,6 +50,7 @@ rc_seldrv:
         ; Components seeded from the cwd never have long text (the
         ; cwd is stored canonicalized to 8.3 aliases, deliberately).
         mov     dword ptr [srch_long],0
+        mov     byte ptr [srch_lonly],0
         push    ecx
         push    edi
         mov     edi,OFFSET rp_lptr
@@ -227,6 +228,10 @@ wt_lp:
         mov     [srch_long],eax                 ; fat_search consumes it
         mov     eax,[rp_llen+edx*4]
         mov     [srch_llen],eax
+        ; ...and ONLY the long half.  The 8.3 rendering of this
+        ; component threw characters away, so anything it matches on
+        ; the way past is a different directory with a similar name.
+        mov     byte ptr [srch_lonly],1
 wt_nolong:
         mov     al,[srch_attr]          ; preserve the caller's filter
         push    eax
@@ -338,6 +343,11 @@ resolve_parent:
         mov     [srch_long],eax
         mov     eax,[rp_flen]
         mov     [srch_llen],eax
+        ; and the 8.3 pattern in name_buf is a lie about this name -
+        ; see the long note in fat_search.  It is still filled in,
+        ; because a CREATE needs somewhere to start from when it goes
+        ; looking for a free ~N alias; it just may not MATCH.
+        mov     byte ptr [srch_lonly],1
 rpx_noarm:
         pop     esi
         clc

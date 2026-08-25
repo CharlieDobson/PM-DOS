@@ -2450,8 +2450,39 @@ fsr_wild:
         pop     edi
         pop     esi
         pop     ecx
+
+        ; THE 8.3 PATTERN MATCHED - AND THAT IS NOT ALWAYS ENOUGH.
+        ;
+        ; When the name the caller typed could not BE written in 8.3,
+        ; the pattern in EDI is not that name: it is what fn_conv made
+        ; of it by throwing characters away.  Asking for
+        ; "SUBQ.CMDCMDTEST.CMD" produces the pattern "SUBQ    CMD",
+        ; which matches a real file called SUBQ.CMD - so the open
+        ; succeeded and handed back a DIFFERENT FILE with no error
+        ; anywhere.  v0.11 fixed the half of this where the truncated
+        ; name was silently CREATED; this is the half where it is
+        ; silently FOUND, and it is the worse half, because creating
+        ; the wrong name leaves evidence and opening the wrong file
+        ; does not.
+        ;
+        ; So when the resolver armed a long match BECAUSE the
+        ; conversion was lossy, only the long name may answer.  The
+        ; 8.3 hit falls through to the same comparison a miss does.
+        ;
+        ; UNDER LFN=OFF IT STANDS, and that is deliberate rather than
+        ; a gap: LFN=OFF means "behave like a DOS that has never heard
+        ; of long names", and such a DOS parses the name to SUBQ.CMD
+        ; and opens SUBQ.CMD.  Refusing there would be neither the old
+        ; behaviour nor the new one.
+        cmp     byte ptr [srch_lonly],0
+        je      fsr_hit
+        cmp     byte ptr [lfn_on],0
+        je      fsr_hit
+        jmp     short fsr_long
+
 fsr_hit:
         mov     dword ptr [srch_long],0 ; consumed
+        mov     byte ptr [srch_lonly],0
         clc
         ret
 
@@ -2460,6 +2491,7 @@ fsr_miss:
         pop     esi
         pop     ecx
         ; the 8.3 side said no - does the long name say yes?
+fsr_long:
         cmp     byte ptr [lfn_on],0     ; not under LFN=OFF: strict
         je      fsr_next                ; 8.3, exactly as real DOS
         cmp     dword ptr [srch_long],0
@@ -2502,6 +2534,7 @@ fsr_next:
         jmp     fsr_loop
 fsr_fail:
         mov     dword ptr [srch_long],0 ; consumed either way
+        mov     byte ptr [srch_lonly],0
         stc
         ret
 
@@ -2719,6 +2752,15 @@ fc_long     db  0                       ; fn_conv: 8.3 rendering was lossy
 ; long-name search and collection state (per-operation scratch)
 srch_long   dd  0                       ; ASCIIZ fragment to also match
 srch_llen   dd  0                       ; its length in characters
+
+; ...and whether it is the ONLY thing allowed to match.  Set beside
+; srch_long by whoever armed it, when the 8.3 rendering of the name
+; lost information and therefore describes some other file.  Cleared
+; wherever srch_long is, because a leftover here would refuse a
+; perfectly ordinary lookup and the symptom - "file not found" for a
+; file that is plainly there - would point nowhere near this byte.
+srch_lonly  db  0
+            db  0,0,0
 lfn_expect  db  0                       ; next sequence number due, 0 = idle
 lfn_ok      db  0                       ; a chain sealed onto the last entry
 lfn_ck      db  0                       ; the chain's 8.3 checksum
