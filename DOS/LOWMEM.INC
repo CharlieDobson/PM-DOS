@@ -52,6 +52,7 @@ li_notmore:                                     ; conventional memory
 li_sane:                                        ; useless is not believed
         and     eax,NOT 15
         mov     [lm_top],eax
+        mov     [lm_chtop],eax
 
         mov     edi,V86_TPA
         mov     byte ptr [edi+RMCB_SIG],'Z'      ; the only block, so last
@@ -67,45 +68,161 @@ li_sane:                                        ; useless is not believed
 
 lm_top      dd  V86_TPA_TOP             ; where the arena really ends
 
+; AND WHERE THE CHAIN DOES, WHICH STOPPED BEING THE SAME THING.  Every
+; walk below is bounded by this rather than by lm_top: with an upper
+; arena linked on, a walk legitimately continues past the top of
+; conventional memory, and a block a program allocated up there has to
+; be one that 49h will accept back.  The bound is a guard against a
+; corrupt chain and nothing more - a signature is what really ends a
+; walk - so it is safe for it to reach the top of upper memory whether
+; the chains are joined at this instant or not.  umb_chain sets it.
+lm_chtop    dd  V86_TPA_TOP
+
+
 ;=====================================================================
 ; lm_alloc - EBX = paragraphs wanted.
 ;            CF clear: AX = segment of the DATA (the paragraph after
 ;            the header), and the block owns itself.
 ;            CF set:   BX = the largest run available, as DOS does, so
 ;            the caller can report or retry.
+;
+; WHERE it looks and WHICH fitting block wins are both [alloc_strat],
+; set through 21h/58h, and until v0.38 neither was honoured here: the
+; strategy was stored for the KERNEL's arena and this routine was
+; first fit into conventional memory whatever anybody asked for.  That
+; was the only truthful answer while there was no upper memory to look
+; in, and it stopped being one the moment there was.
+;
+;   bit 7     upper memory ONLY - fail rather than come back low
+;   bit 6     upper memory FIRST, then low
+;   neither   conventional memory only
+;   bits 0-1  0 first fit, 1 best fit, 2 last fit
+;
+; LOADHIGH and DEVICEHIGH are those bits and nothing else.  They set
+; the strategy, link the chains, allocate, and put both back - so the
+; whole of "load this high" is a preference expressed to this routine,
+; which is why it has to be a preference this routine can act on.
+;
+; "Upper" is decided by umb_isupper, and when the chains are unlinked
+; the walk never reaches a UMB at all, so a high-only request fails
+; without needing to be told the link state.  The two mechanisms agree
+; because only one of them exists.
 ;=====================================================================
 lm_alloc:
         push    ecx
         push    edx
         push    esi
         push    edi
-        xor     edi,edi                         ; largest free seen
+        push    ebp
+
+        mov     ebp,[alloc_strat]
+        xor     eax,eax
+        mov     [lm_best],eax                   ; largest free seen, any scan
+
+        test    ebp,0C0h
+        jz      la_lowonly
+        mov     dl,1                            ; upper first, or upper only
+        call    lm_scan
+        jnc     la_won
+        test    ebp,80h
+        jnz     la_lost                         ; upper ONLY: no second chance
+la_lowonly:
+        xor     dl,dl
+        call    lm_scan
+        jc      la_lost
+la_won:
+        pop     ebp
+        pop     edi
+        pop     esi
+        pop     edx
+        pop     ecx
+        clc
+        ret
+la_lost:
+        mov     ebx,[lm_best]                   ; the best we could have done
+        pop     ebp
+        pop     edi
+        pop     esi
+        pop     edx
+        pop     ecx
+        stc
+        ret
+
+lm_best     dd  0                       ; largest free block any scan saw
+
+;=====================================================================
+; lm_scan - EBX = paragraphs, DL = 0 conventional / 1 upper, EBP = the
+;           strategy.  CF clear: AX = the data segment.  CF set:
+;           nothing fitted, and lm_best has grown to the largest block
+;           that did not.
+;
+; ONE WALK OF ONE CHAIN EITHER WAY, filtering on where a block is
+; rather than following a second chain, because there IS no second
+; chain - a linked upper arena is the same chain continued, which is
+; the whole elegance of the way DOS joins them.
+;=====================================================================
+lm_scan:
+        xor     edi,edi                         ; chosen block, 0 = none yet
         mov     esi,V86_TPA
-la_scan:
+ls_walk:
         cmp     byte ptr [esi+RMCB_SIG],'M'
-        je      la_live
+        je      ls_live
         cmp     byte ptr [esi+RMCB_SIG],'Z'
-        jne     la_none                         ; chain is broken - refuse
-la_live:
+        jne     ls_end                          ; chain is broken - stop here
+ls_live:
         cmp     word ptr [esi+RMCB_OWN],0
-        jne     la_next
+        jne     ls_next
+        mov     eax,esi
+        call    umb_isupper
+        jz      ls_islow
+        cmp     dl,1                            ; an upper block: wanted?
+        jne     ls_next
+        jmp     short ls_cand
+ls_islow:
+        or      dl,dl
+        jnz     ls_next
+ls_cand:
         movzx   eax,word ptr [esi+RMCB_LEN]
-        cmp     eax,edi
-        jbe     la_nomax
-        mov     edi,eax
-la_nomax:
+        cmp     eax,[lm_best]
+        jbe     ls_nomax
+        mov     [lm_best],eax
+ls_nomax:
         cmp     eax,ebx
-        jae     la_found
-la_next:
+        jb      ls_next                         ; too small to be a candidate
+
+        or      edi,edi
+        jz      ls_pick                         ; nothing to beat yet
+        mov     eax,ebp
+        and     eax,3
+        cmp     eax,2
+        je      ls_pick                         ; last fit: the higher one wins
+        cmp     eax,1
+        jne     ls_next                         ; first fit never arrives here
+        movzx   eax,word ptr [esi+RMCB_LEN]     ; best fit: only if tighter
+        movzx   ecx,word ptr [edi+RMCB_LEN]
+        cmp     eax,ecx
+        jae     ls_next
+ls_pick:
+        mov     edi,esi
+        mov     eax,ebp
+        and     eax,3
+        jz      ls_end                          ; first fit: stop looking
+ls_next:
         cmp     byte ptr [esi+RMCB_SIG],'Z'
-        je      la_none
+        je      ls_end
         movzx   eax,word ptr [esi+RMCB_LEN]
         inc     eax                             ; step over the header too
         shl     eax,4
         add     esi,eax
-        jmp     la_scan
+        cmp     esi,[lm_chtop]
+        jae     ls_end
+        jmp     ls_walk
 
-la_found:
+ls_end:
+        or      edi,edi
+        jz      ls_none
+        mov     esi,edi
+
         ; Split, unless the remainder is too small to be worth a header
         movzx   eax,word ptr [esi+RMCB_LEN]
         sub     eax,ebx
@@ -144,20 +261,157 @@ la_whole:
                                                 ; a dead program's name as a
                                                 ; live one.  lm_setname puts
                                                 ; the real one in.
+        clc
+        ret
+
+ls_none:
+        stc
+        ret
+
+;=====================================================================
+; lm_allocbig - EBX = the SMALLEST block that would do.  Allocates the
+;               LARGEST block available, in the region order the
+;               strategy asks for, provided it is at least that big.
+;               CF clear: AX = the data segment.  CF set: EBX = the
+;               largest there was anywhere.
+;
+; "GIVE IT EVERYTHING" IS A REGIONAL QUESTION AND ASKING IT GLOBALLY
+; IS WHAT WOULD HAVE MADE LOADHIGH A NO-OP.  A .COM is handed every
+; free paragraph there is, and the way that has always been written -
+; here and in MS-DOS both - is to ask for FFFFh paragraphs, be refused,
+; and allocate whatever size the refusal reported.  With one region
+; that is exact.  With two it is not: the refusal reports the largest
+; block ANYWHERE, which is the conventional one, and the second ask
+; then finds it low and puts the program there.  Every LOADHIGH would
+; have succeeded, said nothing, and loaded low.
+;
+; So the largest is asked for one region at a time, in the order the
+; strategy names, and the first region with a block big enough wins
+; the whole of that block.  A program too big for upper memory falls
+; into conventional memory exactly as before, and does it without a
+; message, which is what LOADHIGH has always done.
+;
+; The minimum is why this can be trusted with a small UMB.  Handing a
+; 40K program the 8K block that happened to be free up there would
+; have loaded it over the top of whatever came next - and nothing in
+; the .COM path checks, because with one region there was never a
+; block too small to be the largest.
+;=====================================================================
+lm_allocbig:
+        push    ecx
+        push    edx
+        push    esi
+        push    edi
+        push    ebp
+
+        mov     ebp,[alloc_strat]
+        mov     ecx,ebx                         ; the least that would do
+        xor     eax,eax
+        mov     [lm_best],eax
+
+        test    ebp,0C0h
+        jz      lab_low
+        mov     dl,1
+        call    lm_regmax
+        cmp     eax,ecx
+        jb      lab_hinone
+        mov     ebx,eax
+        mov     dl,1
+        call    lm_scan
+        jnc     lab_won
+lab_hinone:
+        test    ebp,80h
+        jnz     lab_lost                        ; upper only: no second chance
+lab_low:
+        xor     dl,dl
+        call    lm_regmax
+        cmp     eax,ecx
+        jb      lab_lost
+        mov     ebx,eax
+        xor     dl,dl
+        call    lm_scan
+        jc      lab_lost
+lab_won:
+        pop     ebp
         pop     edi
         pop     esi
         pop     edx
         pop     ecx
         clc
         ret
-
-la_none:
-        mov     ebx,edi                         ; the best we could have done
+lab_lost:
+        mov     ebx,[lm_best]
+        pop     ebp
         pop     edi
         pop     esi
         pop     edx
         pop     ecx
         stc
+        ret
+
+;---------------------------------------------------------------------
+; lm_regmax - DL = region, EBP = strategy.  EAX = the largest free
+;             block in that region, in paragraphs.
+;
+; A scan for a block nothing can satisfy, run for the side effect: no
+; block is FFFFh paragraphs, so lm_scan walks the whole region and
+; leaves the largest it saw in lm_best.  lm_best is left holding it
+; afterwards on purpose - a caller that goes on to fail reports it.
+;---------------------------------------------------------------------
+lm_regmax:
+        push    ebx
+        xor     eax,eax
+        mov     [lm_best],eax
+        mov     ebx,0FFFFh
+        call    lm_scan
+        mov     eax,[lm_best]
+        pop     ebx
+        ret
+
+;=====================================================================
+; lm_shrinktop - take the last paragraph of conventional memory away
+;                from the arena, so that an upper-memory chain has
+;                somewhere to put its first block header.  CF if it
+;                cannot be had.
+;
+; IT HAS TO COME OFF THE END OF A BLOCK and not merely off [lm_top].
+; Moving the number alone would leave the last block still claiming a
+; paragraph that is about to hold another block header, and the two
+; would be the same sixteen bytes with whichever was written second
+; winning.  That shows up as an arena walk running off into the video
+; BIOS, long afterwards, with nothing left to connect it to this.
+;=====================================================================
+lm_shrinktop:
+        pushad
+        mov     esi,V86_TPA
+lst_walk:
+        cmp     byte ptr [esi+RMCB_SIG],'Z'
+        je      lst_last
+        cmp     byte ptr [esi+RMCB_SIG],'M'
+        jne     lst_bad
+        movzx   eax,word ptr [esi+RMCB_LEN]
+        inc     eax
+        shl     eax,4
+        add     esi,eax
+        cmp     esi,[lm_top]
+        jb      lst_walk
+lst_bad:
+        popad
+        stc
+        ret
+lst_last:
+        cmp     word ptr [esi+RMCB_OWN],0       ; the top of memory is in use,
+        jne     lst_bad                         ; so there is nowhere to put it
+        movzx   eax,word ptr [esi+RMCB_LEN]
+        or      eax,eax
+        jz      lst_bad
+        dec     eax
+        mov     [esi+RMCB_LEN],ax
+        sub     dword ptr [lm_top],10h
+        mov     eax,[lm_top]                    ; and the chain follows it down
+        mov     [lm_chtop],eax                  ; until umb_chain raises it
+        popad
+        clc
         ret
 
 ;=====================================================================
@@ -313,7 +567,7 @@ lm_setown:
         shl     eax,4
         cmp     eax,V86_TPA
         jb      ls_bad
-        cmp     eax,[lm_top]
+        cmp     eax,[lm_chtop]
         jae     ls_bad
         cmp     byte ptr [eax+RMCB_SIG],'M'
         je      ls_own
@@ -341,7 +595,7 @@ lm_free:
         shl     eax,4
         cmp     eax,V86_TPA
         jb      lf_bad
-        cmp     eax,[lm_top]
+        cmp     eax,[lm_chtop]
         jae     lf_bad
         cmp     byte ptr [eax+RMCB_SIG],'M'
         je      lf_ok
@@ -378,7 +632,7 @@ lo_next:
         inc     eax
         shl     eax,4
         add     esi,eax
-        cmp     esi,[lm_top]
+        cmp     esi,[lm_chtop]
         jb      lo_scan
 lo_done:
         call    lm_coalesce
@@ -401,7 +655,7 @@ lm_resize:
         shl     esi,4
         cmp     esi,V86_TPA
         jb      lr_bad
-        cmp     esi,[lm_top]
+        cmp     esi,[lm_chtop]
         jae     lr_bad
 
         movzx   ecx,word ptr [esi+RMCB_LEN]      ; what we have now
@@ -516,7 +770,7 @@ lc_scan:
         inc     eax
         shl     eax,4
         lea     edi,[esi+eax]
-        cmp     edi,[lm_top]
+        cmp     edi,[lm_chtop]
         jae     lc_done
         cmp     word ptr [edi+RMCB_OWN],0
         jne     lc_next
@@ -533,7 +787,7 @@ lc_next:
         inc     eax
         shl     eax,4
         add     esi,eax
-        cmp     esi,[lm_top]
+        cmp     esi,[lm_chtop]
         jb      lc_scan
 lc_done:
         popad

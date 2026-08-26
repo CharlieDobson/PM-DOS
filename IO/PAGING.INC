@@ -9,6 +9,9 @@
 ; observe.
 ;
 ; Except for sixteen entries.  THE POINT OF THIS FILE IS THE A20 GATE.
+; (And, since v0.38, for whatever upper memory has been backed with:
+; see pg_map at the foot of this file.  Both exceptions are below 1MB
+; and neither is ever put on the bus.)
 ;
 ; On an 8086 there were twenty address lines, so FFFF:0010 came out at
 ; 00000h rather than 100000h, and a great deal of software written
@@ -169,3 +172,190 @@ pg_a20get:
 
 pg_a20st        db      0
                 db      0,0,0
+
+;=====================================================================
+; pg_map - IOS_PGMAP.  EAX = linear, EDX = physical, ECX = pages.
+;          Point that many page table entries somewhere other than at
+;          themselves, and flush.
+;
+; THIS IS THE SECOND AND LAST HOLE IN THE IDENTITY MAP, and the file
+; header's promise is now worth restating rather than deleting: a
+; linear address is a physical one EXCEPT for the sixteen pages of the
+; A20 alias and whatever upper memory has been backed with.  Both
+; exceptions are below 1MB and neither is ever handed to hardware.
+;
+; That last clause is load-bearing and is not an accident.  Anything
+; that puts an address on the bus - a bus-master controller, the DMA
+; page registers, a real-mode BIOS call made through rm_int with
+; paging switched off - would be given a number that no longer means
+; what it says.  Nothing here does: the ATA driver is polled PIO, the
+; floppy path stages every transfer through XFER_BUF down in the first
+; sixteen kilobytes, and rm_int passes registers and that same buffer.
+; A driver loaded into upper memory that programs the DMA controller
+; itself is the case this does not survive, and it is the same case
+; EMM386 needed virtual DMA services for.
+;
+; Both addresses must be page aligned; the caller is the kernel and
+; the kernel knows it.
+;=====================================================================
+pg_map:
+        pushad
+        or      ecx,ecx
+        jz      pgm_done
+        shr     eax,12                          ; linear page number = the
+        cmp     eax,PG_MAXTAB * 1024            ; index, the map being flat
+        jae     pgm_done
+        mov     edi,PG_TABS
+        lea     edi,[edi+eax*4]
+        mov     eax,edx
+        and     eax,NOT 0FFFh
+        or      eax,PG_PRESENT
+pgm_one:
+        stosd
+        add     eax,1000h
+        loop    pgm_one
+
+        mov     eax,dword ptr ds:[GV_PGDIR]     ; no TLB before paging is on
+        or      eax,eax
+        jz      pgm_done
+        mov     cr3,eax
+pgm_done:
+        popad
+        ret
+
+;=====================================================================
+; pg_umbprobe - IOS_UMBPROBE.  EDI -> UMB_SCAN_PAGES bytes, one per 4K
+;               page of C0000h-EFFFFh, filled in with a UMBP_*.
+;
+; The question is NOT "is there memory here" but "does anything at all
+; answer to this address", and they are different questions with
+; different consequences.  Memory that answers is memory somebody may
+; be using; an address nothing answers to is free by definition, and
+; on a paging kernel it is also usable, which is the whole point.
+;
+; Two passes, and the order matters.
+;
+; FIRST THE ROMs, BY THEIR OWN DECLARATION.  An option ROM begins on a
+; 2K boundary with 55 AA and a length in 512-byte blocks at offset 2,
+; and that length is the only honest way to know where it ends - the
+; tail of a ROM is very often FFh padding, which is indistinguishable
+; from nothing at all by measurement.  A video BIOS that ends halfway
+; through a page would otherwise donate the rest of that page to a
+; program, and the program would write into the ROM's own scratch.
+;
+; THEN THE WRITE TEST, ON WHAT IS LEFT.  Write a pattern, read it
+; back, put back what was there.  It comes back: something is storing
+; it, so somebody may own it - UMBP_TAKEN, and a machine with shadow
+; RAM already switched on over its ROMs loses that RAM, which is the
+; safe direction to be wrong in.  It does not come back: nothing
+; decodes the address and it is UMBP_EMPTY, and a page from the arena
+; will be put underneath it.
+;
+; The pattern is written and read as a DWORD at two places in the
+; page, at the front and near the end, because a decoder that answers
+; for part of a page is a decoder that answers.
+;
+; What this cannot see through is a WRITE-BACK CACHE holding the
+; pattern for a read that never reached the bus.  On the 386 there is
+; none; on a 486 the chipset does not cache what it does not decode,
+; which is the same fact this routine is measuring.  It is worth
+; knowing that the failure mode is a page reported as RAM that is not
+; - which loses memory rather than corrupting it.
+;=====================================================================
+pg_umbprobe:
+        pushad
+        push    edi
+
+;--- everything is empty until something claims it --------------------
+        mov     ecx,UMB_SCAN_PAGES
+        mov     al,UMBP_EMPTY
+        rep     stosb
+        pop     edi
+
+;--- pass one: option ROM headers, every 2K --------------------------
+        mov     esi,UMB_SCAN_LO
+pgu_rom:
+        cmp     esi,UMB_SCAN_HI
+        jae     pgu_write
+        cmp     word ptr [esi],0AA55h
+        jne     pgu_rnext
+        movzx   ecx,byte ptr [esi+2]            ; length, 512-byte blocks
+        or      ecx,ecx
+        jz      pgu_rnext                       ; a header claiming nothing
+        shl     ecx,9                           ; ...in bytes
+        mov     eax,esi
+        add     eax,ecx
+        add     eax,0FFFh                       ; and round UP to whole pages:
+        and     eax,NOT 0FFFh                   ; a ROM ending mid-page keeps
+        mov     edx,esi                         ; the rest of that page
+pgu_rmark:
+        cmp     edx,UMB_SCAN_HI
+        jae     pgu_rdone
+        cmp     edx,eax
+        jae     pgu_rdone
+        mov     ebx,edx
+        sub     ebx,UMB_SCAN_LO
+        shr     ebx,12
+        mov     byte ptr [edi+ebx],UMBP_TAKEN
+        add     edx,1000h
+        jmp     short pgu_rmark
+pgu_rdone:
+        mov     esi,eax                         ; carry on past it, not into
+        jmp     short pgu_rom                   ; the middle of it
+pgu_rnext:
+        add     esi,800h
+        jmp     short pgu_rom
+
+;--- pass two: does anything store what we write? --------------------
+pgu_write:
+        xor     ebx,ebx                         ; page index
+pgu_page:
+        cmp     ebx,UMB_SCAN_PAGES
+        jae     pgu_out
+        cmp     byte ptr [edi+ebx],UMBP_EMPTY
+        jne     pgu_pnext                       ; a ROM already spoke for it
+        mov     esi,ebx
+        shl     esi,12
+        add     esi,UMB_SCAN_LO
+        call    pgu_test                        ; front of the page
+        jc      pgu_isram
+        add     esi,0FF0h                       ; and the last dword of it
+        call    pgu_test
+        jnc     pgu_pnext
+pgu_isram:
+        mov     byte ptr [edi+ebx],UMBP_RAM
+pgu_pnext:
+        inc     ebx
+        jmp     short pgu_page
+pgu_out:
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; pgu_test - ESI -> a dword.  CF set if writing to it stuck.  What was
+;            there is put back either way, because a ROM that ignores
+;            the write is not the only thing this runs over.
+;---------------------------------------------------------------------
+pgu_test:
+        push    eax
+        push    edx
+        mov     edx,[esi]                       ; what is there now
+        mov     eax,05AA5F00Fh
+        mov     [esi],eax
+        cmp     [esi],eax
+        jne     pgu_tno
+        not     eax                             ; and again, inverted, so that
+        mov     [esi],eax                       ; an address that happens to
+        cmp     [esi],eax                       ; hold the pattern already
+        jne     pgu_tno                         ; cannot pass by standing still
+        mov     [esi],edx
+        pop     edx
+        pop     eax
+        stc
+        ret
+pgu_tno:
+        mov     [esi],edx
+        pop     edx
+        pop     eax
+        clc
+        ret

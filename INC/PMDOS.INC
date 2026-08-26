@@ -182,6 +182,46 @@ KBUF_LO3        EQU     IO_PM_BASE      ; PMIO, the IDT, the kernel stacks,
 KBUF_HI3        EQU     ARENA_BASE      ; the TSS and the page tables
 
 ;---------------------------------------------------------------------
+; UPPER MEMORY.  The region between the top of conventional memory and
+; the system BIOS, and the only part of the first megabyte that was
+; never anybody's to begin with.
+;
+; A0000h-BFFFFh is the display and is left alone: writing a test
+; pattern into the frame buffer to find out whether it is there is a
+; test that succeeds and is still wrong.  F0000h-FFFFFh is the system
+; BIOS, which the V86 monitor reflects every unclaimed interrupt to.
+; What is left is C0000h-EFFFFh, and on most machines most of it is
+; not decoded by anything at all.
+;
+; THE PAGE TABLES ARE WHY THIS IS WORTH DOING HERE.  A real-mode DOS
+; can only hand out upper memory that some chipset has already been
+; persuaded to put RAM behind, which is what made EMM386 and the
+; imitators of it necessary; PM-DOS is already paging, so a linear
+; address nothing decodes can simply be pointed at a physical page out
+; of the arena.  Upper memory stops being a scarce accident of the
+; hardware and becomes ordinary memory that happens to live at an
+; address a real-mode program can reach.
+;
+; The scan is in 4K pages because that is the granularity a page table
+; entry has.  UMB_MAXRUN caps how many separate runs the chain will
+; describe: every run costs a system-owned filler block in front of it
+; to keep the chain contiguous, and a machine whose upper memory comes
+; in nine pieces has nothing useful in any of them.
+;---------------------------------------------------------------------
+UMB_SCAN_LO     EQU     000C0000h       ; first page that may be offered
+UMB_SCAN_HI     EQU     000F0000h       ; one past the last
+UMB_SCAN_PAGES  EQU     (UMB_SCAN_HI - UMB_SCAN_LO) / 1000h
+UMB_MAXRUN      EQU     8               ; separate runs the chain describes
+
+; What pg_umbprobe writes in the byte belonging to each page.
+UMBP_TAKEN      EQU     0               ; something is there: a ROM, adapter
+                                        ; RAM, or a device that answered
+UMBP_RAM        EQU     1               ; writable memory already at that
+                                        ; address - usable as it stands
+UMBP_EMPTY      EQU     2               ; nothing decodes it: usable once a
+                                        ; page has been mapped underneath
+
+;---------------------------------------------------------------------
 ; Program slots.  One shell, one transient program - DOS with the
 ; serial numbers filed off.
 ;
@@ -776,9 +816,19 @@ GLOL_HPRN       EQU     72h
 ; FFFFh is the value DOS itself uses for "no upper memory", and the
 ; kernel tests for exactly that (alloc.asm: "Q: is umb_head
 ; initialized").  No segment can be at or above FFFFh, so every block
-; is conventional - which is the truth here, PM-DOS having no UMBs to
-; offer, and the same answer 58h/02h and XMS function 10h already
-; give.  Three ways of asking one question, and now they agree.
+; is conventional - which was the whole truth until v0.38 and is still
+; the answer whenever DOS=UMB is absent.
+;
+; WHEN THERE ARE UMBs THIS DOES NOT POINT AT ONE.  It points at the
+; LAST PARAGRAPH OF CONVENTIONAL MEMORY, which holds the header of a
+; system-owned block spanning the display and the ROMs; the first real
+; upper block is the one after that.  It reads like an off-by-one and
+; it is the only arrangement that works, because a block's header has
+; to live at an address something is willing to store sixteen bytes
+; at, and the first paragraph above conventional memory is the frame
+; buffer.  MS-DOS puts it in exactly the same place for exactly the
+; same reason (sysconf.asm, LinkFirstUMB: "cx = ax - 1" where ax is
+; the size of memory in paragraphs).  See UMB.INC.
 GLOL_UMBHEAD    EQU     8Ch             ; dw - where upper memory starts
 GLOL_SIZE       EQU     8Eh
                                         ; and it lives at DOSDATA, below the
@@ -798,6 +848,8 @@ DEV_ATTR_CON    EQU     8003h           ; character, is stdin, is stdout
 DEV_ATTR_AUX    EQU     8000h           ; character, and nothing special
 DEV_ATTR_PRN    EQU     8000h
 DEV_ATTR_CHAR   EQU     8000h           ; the bit that says which kind
+DEV_ATTR_BIG    EQU     0002h           ; block only: understands a 32-bit
+                                        ; sector number in a request packet
 
 ;---------------------------------------------------------------------
 ; THE REQUEST PACKET - how a loaded driver is spoken to.
@@ -842,6 +894,24 @@ REQC_BUFSEG     EQU     10h             ; dw
 REQC_COUNT      EQU     12h             ; dw - in: wanted; out: transferred
 REQC_SECTOR     EQU     14h             ; dw - block drivers only
 REQC_LEN        EQU     16h
+
+; ...and the DOS 4 form of that sector number, for a volume past the
+; 65535 sectors a word can name.  FFFFh in the word above says "look
+; here instead", and only a driver with DEV_ATTR_BIG set understands
+; it - one written earlier reads the word and transfers to sector
+; 65535, successfully, which is the worst way to be wrong.
+REQC_HUGE       EQU     16h             ; dd - the real sector number
+REQC_HUGELEN    EQU     1Ah
+
+; A BLOCK DRIVER'S BPB is not a boot sector and does not have a boot
+; sector's offsets: it begins at what a boot sector calls BPB_BPS, so
+; every field is 0Bh lower.  Spelled out rather than biased, because a
+; bias applied once too often is a number that still looks plausible.
+DBPB_BPS        EQU     00h             ; dw - bytes per sector
+DBPB_SPC        EQU     02h             ; db - sectors per cluster
+DBPB_TOTSEC16   EQU     08h             ; dw - 0 if it needs 32 bits
+DBPB_MEDIA      EQU     0Ah             ; db
+DBPB_TOTSEC32   EQU     15h             ; dd
 
 ; Non-destructive read (command 5) puts the byte it peeked here.
 REQP_CHAR       EQU     0Dh             ; db
@@ -1013,6 +1083,8 @@ F8_LEN          EQU     16
 
 F8_ARENA        EQU     0               ; DL: the kernel's, above 2MB
 F8_CONV         EQU     1               ; DL: the one a DOS box lives in
+F8_UPPER        EQU     2               ; DL: the upper half of that same
+                                        ; chain, when DOS=UMB built one
 
 ;---------------------------------------------------------------------
 ; How a V86 DOS call's pointer arguments have to be translated.  The
@@ -1356,6 +1428,16 @@ IOS_KBBOX       EQU     IOSVC + 64h             ; a fresh DOS box: throw away
                                                 ; a key typed at a program that
                                                 ; never read it must not be
                                                 ; delivered to the next one
+IOS_PGMAP       EQU     IOSVC + 68h             ; EAX = linear, EDX = physical,
+                                                ; ECX = pages.  Repoints that
+                                                ; many page table entries and
+                                                ; flushes.  The ONLY departure
+                                                ; from the identity map apart
+                                                ; from the A20 alias, and the
+                                                ; reason UMB.INC can exist
+IOS_UMBPROBE    EQU     IOSVC + 6Ch             ; EDI -> UMB_SCAN_PAGES bytes.
+                                                ; Fills in one UMBP_* for each
+                                                ; 4K page of C0000h-EFFFFh
 
 ;---------------------------------------------------------------------
 ; The three ports the V86 monitor takes away from the guest.  Two of
@@ -1749,6 +1831,11 @@ DRV_LEN         EQU     0Ch
 
 DRVF_PRESENT    EQU     01h                     ; the slot names something
 DRVF_FLOPPY     EQU     02h                     ; removable: re-mount on access
+DRVF_DRIVER     EQU     04h                     ; served by a loaded block driver
+                                        ; rather than by the block layer -
+                                        ; DRV_BIOS then names a dl_units row
+                                        ; rather than a BIOS drive.  See
+                                        ; DL_UNIT_BASE
 
 ;---------------------------------------------------------------------
 ; How many drive letters exist.  SHARED, and it has to be: COMMAND.COM
@@ -1785,7 +1872,8 @@ SRCH_FILTER     EQU     80h
 ;---------------------------------------------------------------------
 ; File handle table
 ;---------------------------------------------------------------------
-MAX_HANDLES     EQU     32
+MAX_HANDLES     EQU     64              ; the table.  FILES= chooses how much
+                                        ; of it is handed out; see cfg_files
 SFT_HANDLE      EQU     0                       ; per-entry field offsets
 SFT_MODE        EQU     4
 SFT_DIRSTART    EQU     8                       ; owning directory (LBA or cluster)
@@ -1962,7 +2050,7 @@ SHELLTAIL_MAX   EQU     130             ; length byte + 126 + CR + slack
 ; has a call of its own; these two agree.
 ;---------------------------------------------------------------------
 PMDOS_MAJOR     EQU     0
-PMDOS_MINOR     EQU     37
+PMDOS_MINOR     EQU     40
 
 DOSVER_MAJOR    EQU     6
 DOSVER_MINOR    EQU     22

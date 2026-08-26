@@ -170,6 +170,14 @@ shell_restart:
         ; AUTOEXEC.BAT and to ignore EXIT.
         mov     esi,OFFSET shell_tail
         call    build_psp
+
+        ; AND THE MASTER ENVIRONMENT, which CONFIG.SYS's SET= lines
+        ; filled in.  The interpreter is a program like any other and
+        ; gets its environment the way any other one does - behind its
+        ; PSP, with PSP_ENV pointing at it.  With no SET= line there is
+        ; nothing to hand over and the field stays zero, which is what
+        ; it always was.
+        call    cfg_shellenv
         mov     dword ptr ds:[exec_depth],0
 
         ; A fresh shell gets a fresh identity.  Nothing else can own
@@ -331,6 +339,10 @@ df_notbox:
         INCLUDE INT21.INC
         INCLUDE CONFIG.INC
         INCLUDE LOWMEM.INC
+        INCLUDE UMB.INC                 ; and immediately after it: upper
+                                        ; memory is the same chain, so the
+                                        ; two files are one arena in two
+                                        ; halves and read in that order
         INCLUDE XMS.INC
         INCLUDE VDM.INC
         INCLUDE INT13.INC               ; after VDM.INC: it works on vdm_ctx

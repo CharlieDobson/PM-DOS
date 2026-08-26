@@ -11,8 +11,8 @@
 ;
 ; Internal commands:
 ;   BREAK CALL CD CHDIR CLS COPY CTTY DATE DEL DIR ECHO ERASE EXIT
-;   FOR GOTO IF MD MKDIR PATH PAUSE PROMPT RD REM REN RENAME
-;   RMDIR SET SHIFT TIME TYPE VER VERIFY VOL  plus  A: / B:  drive
+;   FOR GOTO IF LH LOADHIGH MD MKDIR PATH PAUSE PROMPT RD REM REN
+;   RENAME RMDIR SET SHIFT TIME TYPE VER VERIFY VOL  plus  A: / B:  drive
 ;   changes.  CHOICE and MEM are deliberately NOT here: both are
 ;   externals in MS-DOS and externals here - CMD\CHOICE.ASM and
 ;   CMD\MEM.ASM.
@@ -78,6 +78,7 @@ cmd_entry:
         mov     ax,2524h
         int     21h
 
+        call    inherit_env             ; what CONFIG.SYS SET= left us
         call    set_comspec             ; before AUTOEXEC can read it
         call    cmd_startup             ; /P, /C and AUTOEXEC.BAT
 
@@ -91,6 +92,77 @@ main_loop:
         jc      main_loop               ; blank, label, or batch EOF
         call    exec_line
         jmp     main_loop
+
+;---------------------------------------------------------------------
+; inherit_env - seed our environment block from the one we were given.
+;
+; A PROGRAM'S ENVIRONMENT ARRIVES BEHIND ITS PSP and the interpreter
+; is a program like any other: PSP+2Ch holds the offset of a run of
+; ASCIIZ "NAME=value" strings ended by an empty one.  The kernel fills
+; it in from CONFIG.SYS's SET= lines, so PATH and TEMP set before the
+; shell existed are here waiting when it starts.
+;
+; It runs BEFORE set_comspec on purpose.  COMSPEC is what this
+; interpreter actually is, and a stale one inherited from anywhere
+; would name a program that may not be running - so it is written
+; afterwards and wins.
+;
+; Nothing here fails loudly.  An empty or absent block (no SET= line,
+; which is the usual case) leaves the environment exactly as it was.
+;---------------------------------------------------------------------
+inherit_env:
+        push    eax
+        push    ecx
+        push    esi
+        push    edi
+        ; ds: IS LOAD-BEARING AND ITS ABSENCE COST AN AFTERNOON.  Without
+        ; the override wasm makes this a reference INTO _CMD, and wlink's
+        ; "option offset=0x2000" then biases it - so the read lands two
+        ; pages inside our own image, finds whatever is there, and the
+        ; environment silently does not exist.  R3TEST.ASM writes every
+        ; one of its PSP reads the same way for the same reason.
+        mov     esi,ds:[SLOT_PSP + PSP_ENV]
+        or      esi,esi
+        jz      ie_out                  ; no environment: nothing to take
+ie_str:
+        cmp     byte ptr [esi],0
+        je      ie_out                  ; the empty string ends the block
+
+        ; env_set wants one ASCIIZ string and this block is a run of
+        ; them, so each is copied out before it is offered - env_set
+        ; writes into the block it is scanning and must not be handed
+        ; a pointer into another one.
+        mov     edi,OFFSET set_scratch
+        mov     ecx,SCRATCH_MAX - 1
+ie_cp:
+        mov     al,[esi]
+        mov     [edi],al
+        inc     esi
+        or      al,al
+        jz      ie_cpend
+        inc     edi
+        dec     ecx
+        jnz     ie_cp
+        mov     byte ptr [edi],0        ; a variable longer than the buffer
+ie_skip:                                ; is not silently half-taken: the
+        mov     al,[esi]                ; rest of it is stepped over and the
+        inc     esi                     ; entry is dropped
+        or      al,al
+        jnz     ie_skip
+        jmp     short ie_str
+ie_cpend:
+
+        push    esi
+        mov     esi,OFFSET set_scratch
+        call    env_set
+        pop     esi
+        jmp     short ie_str
+ie_out:
+        pop     edi
+        pop     esi
+        pop     ecx
+        pop     eax
+        ret
 
 ;---------------------------------------------------------------------
 ; set_comspec - COMSPEC = the interpreter that is actually running.
@@ -3662,6 +3734,71 @@ pd_out:
 ;=====================================================================
 ; Command table
 ;=====================================================================
+;=====================================================================
+; LOADHIGH cmd / LH cmd - run a command with its memory taken from
+;                         upper memory if any will fit it.
+;
+; THE WHOLE COMMAND IS FOUR CALLS TO 58h AND A RE-ENTRY.  Set the
+; allocation strategy to "upper first", join the upper chain onto the
+; conventional one so that there is anything up there to find, run the
+; command exactly as it would have been run anyway, and put both back.
+; The kernel does the rest in lm_alloc, which is where the decision
+; belongs - a shell that tried to place a program itself would have to
+; know how big the program was before loading it.
+;
+; UPPER FIRST AND NOT UPPER ONLY, so that a program too big for what
+; is free up there loads low and runs.  That is what LOADHIGH has
+; always done and it is why the command is not usually worth an error
+; message: the user asked for a preference and got the best available
+; answer to it.  MEM is where to find out what actually happened.
+;
+; PUT BACK IN THE OPPOSITE ORDER AND UNCONDITIONALLY.  The strategy
+; and the link state are system-wide settings that a program can read,
+; and a shell that leaves its own values in them has changed the
+; machine on behalf of a command that has already finished.
+;=====================================================================
+cmd_loadhigh:
+        mov     esi,[arg_ptr]
+        call    skip_blanks
+        cmp     byte ptr [esi],0
+        je      lh_bare
+
+        mov     ax,5800h                ; what the strategy is now
+        int     21h
+        movzx   ebx,ax
+        push    ebx
+        mov     ax,5802h                ; and whether they are linked
+        int     21h
+        movzx   ebx,al
+        push    ebx
+
+        mov     ax,5803h                ; link them.  A machine with no
+        mov     bx,1                    ; upper memory refuses, and the
+        int     21h                     ; strategy below then finds none
+                                        ; and comes back low - which is
+                                        ; the right answer, so the error
+                                        ; is not one
+        mov     ax,5801h
+        mov     bx,40h                  ; upper first, first fit
+        int     21h
+
+        mov     esi,[arg_ptr]
+        call    skip_blanks
+        call    exec_core
+
+        pop     ebx                     ; the link state, then the strategy
+        mov     ax,5803h
+        int     21h
+        pop     ebx
+        mov     ax,5801h
+        int     21h
+        ret
+
+lh_bare:
+        mov     edx,OFFSET msg_lhbare
+        call    print
+        ret
+
 cmd_table:
         dd      OFFSET cn_dir,    OFFSET cmd_dir
         dd      OFFSET cn_type,   OFFSET cmd_type
@@ -3696,6 +3833,8 @@ cmd_table:
         dd      OFFSET cn_shift,  OFFSET cmd_shift
         dd      OFFSET cn_call,   OFFSET cmd_call
         dd      OFFSET cn_ctty,   OFFSET cmd_ctty
+        dd      OFFSET cn_lh,     OFFSET cmd_loadhigh
+        dd      OFFSET cn_loadhigh, OFFSET cmd_loadhigh
         dd      0, 0
 
 cn_dir      db  'DIR',0
@@ -3731,6 +3870,8 @@ cn_for      db  'FOR',0
 cn_shift    db  'SHIFT',0
 cn_call     db  'CALL',0
 cn_ctty     db  'CTTY',0
+cn_lh       db  'LH',0
+cn_loadhigh db  'LOADHIGH',0
 
 ;=====================================================================
 ; Messages
@@ -3738,6 +3879,7 @@ cn_ctty     db  'CTTY',0
 msg_crlf    db  13,10,'$'
 msg_2sp     db  '  ','$'
 msg_bad     db  'Bad command or file name',13,10,'$'
+msg_lhbare  db  'Required parameter missing',13,10,'$'
 msg_needarg db  'Required parameter missing',13,10,'$'
 msg_notfound db 'File not found',13,10,'$'
 msg_nofiles db  'No files found',13,10,'$'
@@ -3878,7 +4020,8 @@ path_buf    db  PATHDIR_MAX + QVERB_MAX + 8 dup(0)      ; dir + verb + ext
 tail_buf    db  130 dup(0)
 dec_buf     db  12 dup(0)
 dta         db  43 dup(0)
-set_scratch db  136 dup(0)
+SCRATCH_MAX     EQU     176             ; wider than a CONFIG.SYS line, so
+set_scratch db  SCRATCH_MAX dup(0)      ; that inherit_env never has to trim
 env_blk     db  ENV_SIZE dup(0)
 copy_buf    db  COPYBUF_SIZE dup(0)
 

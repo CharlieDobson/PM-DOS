@@ -62,6 +62,9 @@ start:
         mov     ax,es
         or      ax,bx
         jz      mc_f_no                 ; 0000:0000 is not a list of lists
+        mov     ax,es:[8Ch]             ; and where upper memory begins,
+        mov     [umbhead],ax            ; which decides where the chain may
+                                        ; legitimately end - see check 4
         mov     ax,es:[bx-2]
         mov     [first],ax
         call    put4
@@ -168,11 +171,18 @@ mc_sigok:
         mov     ax,[own]
         cmp     ax,[first]
         jb      mc_ownbad
-        cmp     ax,[tpatop]
-        jb      mc_ownok
-mc_ownbad:
-        mov     byte ptr [badown],1
+        cmp     ax,[maxown]             ; THE CEILING IS NOT THE TOP OF
+        jbe     mc_ownok                ; CONVENTIONAL MEMORY ANY MORE.  A
+        mov     [maxown],ax             ; program loaded high has a PSP up
+        jmp     short mc_ownok          ; there, so the honest test is that
+mc_ownbad:                              ; no owner is above the LAST BLOCK,
+        mov     byte ptr [badown],1     ; judged where that is known
 mc_ownok:
+        mov     ax,[cur]                ; did the walk pass through the
+        cmp     ax,[umbhead]            ; paragraph upper memory starts at?
+        jne     mc_nothead
+        mov     byte ptr [sawumb],1
+mc_nothead:
         cmp     byte ptr [sig],'Z'
         je      mc_stop                 ; the end, and check 3 passes
 
@@ -223,10 +233,23 @@ mc_s_no:
         call    bad
 
 ;=====================================================================
-; 4 - the blocks have to tile the arena exactly.  cur + len + 1 for the
-;     LAST block is the paragraph after the arena, and that must be
-;     where conventional memory ends: short of it leaves memory nobody
-;     can reach, past it hands out memory that is not there.
+; 4 - the blocks have to tile memory exactly.  cur + len + 1 for the
+;     LAST block is the paragraph after the chain: short of the end
+;     leaves memory nobody can reach, past it hands out memory that is
+;     not there.
+;
+;     WHICH END, THOUGH, IS UMB_HEAD'S TO SAY.  With no upper memory
+;     the chain stops at the top of conventional memory and this is
+;     the test it always was.  With upper memory the chain runs on
+;     THROUGH it, and what has to be true instead is three things: the
+;     walk passed through umb_head, umb_head is the last paragraph of
+;     conventional memory (which is the contract, and reads like an
+;     off-by-one until you ask where that block's header could
+;     otherwise live), and the chain ends somewhere above it.
+;
+;     This test used to encode "the chain ends at the top of
+;     conventional memory" as if it were arithmetic.  It was a fact
+;     about a machine with one region.
 ;=====================================================================
 mc_top:
         mov     dx,OFFSET t_top
@@ -234,15 +257,34 @@ mc_top:
         mov     ax,[cur]
         add     ax,[len]
         inc     ax
-        push    ax
+        mov     [chainend],ax
         call    put4
         mov     dl,'/'
         call    putc
-        mov     ax,[tpatop]
+
+        cmp     word ptr [umbhead],0FFFFh
+        jne     mc_t_umb
+
+        mov     ax,[tpatop]             ; no upper memory: the old test
         call    put4
-        pop     ax
+        mov     ax,[chainend]
         cmp     ax,[tpatop]
         jne     mc_t_no
+        call    ok
+        jmp     short mc_own
+
+mc_t_umb:
+        mov     ax,[umbhead]
+        call    put4
+        cmp     byte ptr [sawumb],0     ; the walk has to have gone through
+        je      mc_t_no                 ; the block upper memory starts at
+        mov     ax,[umbhead]
+        inc     ax
+        cmp     ax,[tpatop]             ; ...and that block's header is the
+        jne     mc_t_no                 ; last paragraph of the TPA
+        mov     ax,[chainend]
+        cmp     ax,[tpatop]
+        jbe     mc_t_no                 ; and the chain ends above it
         call    ok
         jmp     short mc_own
 mc_t_no:
@@ -254,6 +296,11 @@ mc_t_no:
 mc_own:
         mov     dx,OFFSET t_own
         call    puts
+        mov     ax,[maxown]             ; nobody may own memory past the
+        cmp     ax,[chainend]           ; end of the chain
+        jbe     mc_o_inrange
+        mov     byte ptr [badown],1
+mc_o_inrange:
         cmp     byte ptr [badown],0
         jne     mc_o_no
         call    ok
@@ -349,9 +396,13 @@ cur         dw  0
 len         dw  0
 own         dw  0
 count       dw  0
+umbhead     dw  0FFFFh                  ; DOSDATA:008Ch, or FFFFh for none
+chainend    dw  0
+maxown      dw  0
 sig         db  0
 badsig      db  0
 badown      db  0
+sawumb      db  0
 noend       db  0
 fails       db  0
 
@@ -371,7 +422,7 @@ msg_noend   db  ' no Z in 64 blocks -$'
 t_first     db  '  1 52h, and [ES:BX-2] says           $'
 t_end       db  13,10,'  2 the chain ends in a Z             $'
 t_sig       db  '  3 every signature was M or Z        $'
-t_top       db  '  4 and they reach the top: got/want  $'
+t_top       db  '  4 and they tile to the end: got/want $'
 t_own       db  '  5 every owner is free, DOS or a PSP $'
 
 _MC     ENDS

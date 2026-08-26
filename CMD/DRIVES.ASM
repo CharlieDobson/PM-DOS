@@ -67,6 +67,13 @@ dv_one:
 
 ;--- which disk -------------------------------------------------------
         movzx   eax,byte ptr [drv_rec+DRV_BIOS]
+        test    byte ptr [drv_rec+DRV_FLAGS],DRVF_DRIVER
+        jz      dv_notdrv
+        mov     edx,OFFSET msg_driver   ; a loaded block driver: DRV_BIOS is
+        call    puts                    ; a unit number and not a disk, and
+        jmp     short dv_type           ; printing it as one prints a control
+                                        ; character
+dv_notdrv:
         test    byte ptr [drv_rec+DRV_FLAGS],DRVF_FLOPPY
         jz      dv_hd
         mov     edx,OFFSET msg_floppy
@@ -300,6 +307,7 @@ msg_head    db  13,10,'Drive  Disk    Type            Start     Size  '
             db  '-----  ------  ---------  ----------  -------  '
             db  '----------',13,10,'$'
 msg_floppy  db  'floppy  $'
+msg_driver  db  'driver  $'
 msg_disk    db  'hd$'
 msg_mb      db  ' MB  $'
 msg_fat12   db  'FAT12',13,10,'$'

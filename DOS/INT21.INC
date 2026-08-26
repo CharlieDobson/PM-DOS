@@ -4101,12 +4101,19 @@ err_unknown:
 ;   AL=02h  get UMB link state -> AL
 ;   AL=03h  set UMB link state from BL
 ;
-; The strategy is real: arena_alloc honours first / best / last fit.
-; The 40h and 80h "high memory" bits are accepted and ignored, which
-; is the only honest answer on a machine with no upper memory blocks -
-; and the UMB link state is therefore always 0 and refuses to become
-; 1.  A program that asks to be put in upper memory gets told there
-; is none, rather than being told it succeeded.
+; ALL FOUR OF THESE ARE REAL NOW, and until v0.38 two of them were
+; polite fictions.  The high-memory bits of the strategy were accepted
+; and dropped on the floor, and the link state was always 0 and
+; refused to become 1 - which was the honest answer on a machine with
+; no upper memory blocks and stops being one the moment DOS=UMB builds
+; some.  LOADHIGH and DEVICEHIGH are these four calls and nothing
+; else, so a kernel that lies here has no way to be asked properly.
+;
+; The strategy byte is kept whole rather than masked down to the fit,
+; because lm_alloc wants the region bits and arena_alloc wants the fit
+; bits and they are the same byte.  40h is "upper first", 80h is
+; "upper only", and 0 through 2 select first, best and last fit within
+; whichever region is being looked at.
 ;=====================================================================
 fn58:
         mov     al,[ebp+F_EAX]
@@ -4125,20 +4132,33 @@ f58_getstrat:
         mov     [ebp+F_EAX],ax
         jmp     i21_ok
 f58_setstrat:
-        mov     al,[ebp+F_EBX]
-        and     al,3                    ; the high-memory bits mean
-        cmp     al,3                    ; nothing here
+        movzx   eax,byte ptr [ebp+F_EBX]
+        mov     edx,eax
+        and     edx,3                   ; the fit has to be one of three
+        cmp     edx,3
         je      f58_bad
-        movzx   eax,al
+        mov     edx,eax
+        and     edx,NOT 0C3h            ; and nothing else may be set
+        jnz     f58_bad
         mov     [alloc_strat],eax
         jmp     i21_ok
 f58_getumb:
-        mov     word ptr [ebp+F_EAX],0  ; never linked, there being none
+        mov     eax,[umb_linked]
+        mov     word ptr [ebp+F_EAX],ax
         jmp     i21_ok
 f58_setumb:
-        cmp     byte ptr [ebp+F_EBX],0
-        jne     f58_bad                 ; "link them in" - there are none
+        mov     al,[ebp+F_EBX]
+        or      al,al
+        jnz     f58_dolink
+        call    umb_unlink
+        jc      f58_bad
         jmp     i21_ok
+f58_dolink:
+        cmp     al,1
+        jne     f58_bad
+        call    umb_link
+        jc      f58_bad                 ; there are none, or the chain does
+        jmp     i21_ok                  ; not lead to where they would be
 f58_bad:
         mov     ax,ERR_FUNC
         jmp     i21_fail
@@ -6232,7 +6252,7 @@ sft_new:
         push    ebx
         mov     ebx,3                   ; never hand out the std handles
 sn_lp:
-        cmp     ebx,MAX_HANDLES
+        cmp     ebx,[files_max]         ; ...and only as many as FILES= said
         jae     sn_full
         mov     esi,ebx
         imul    esi,SFT_LEN
@@ -6657,7 +6677,8 @@ fF1_mem:
 
 ;--- AL=8: a memory arena, one block at a time.  DL = which arena
 ;--- (0 = the kernel's, above 2MB; 1 = the conventional one a DOS box
-;--- lives in), EBX = which block counting from zero, EDI -> a 16-byte
+;--- lives in; 2 = upper memory), EBX = which block counting from zero,
+;--- EDI -> a 16-byte
 ;--- record.  CF when EBX is past the end, so a caller walks until it
 ;--- is told to stop and cannot loop for ever on a damaged chain.
 ;---
@@ -6705,21 +6726,40 @@ fF1_mgot:
         jmp     short fF1_mout
 
 ;--- and the one below 1MB, in the same terms -------------------------
+;--- ONE CHAIN, TWO REGIONS, AND THE CALLER ASKS FOR ONE OF THEM.
+;--- Conventional and upper memory are the same chain when they are
+;--- linked, and a walk that handed back all of it would leave every
+;--- caller to work out where the boundary was - which means every
+;--- caller reading umb_head, which is a word in a segment a ring-3
+;--- program cannot reach.  So the region is the selector, the kernel
+;--- does the classifying, and the index counts only blocks in the
+;--- region asked for.
 fF1_mlow:
+        movzx   edx,byte ptr [ebp+F_EDX]
         mov     ebx,V86_TPA
 fF1_lwalk:
-        cmp     ebx,[lm_top]
+        cmp     ebx,[lm_chtop]
         jae     fF1_mend
-        movzx   eax,byte ptr [ebx+RMCB_SIG]
-        cmp     al,'M'
+        cmp     byte ptr [ebx+RMCB_SIG],'M'
         je      fF1_lone
-        cmp     al,'Z'
+        cmp     byte ptr [ebx+RMCB_SIG],'Z'
         jne     fF1_mend                ; not a header: the chain is over
 fF1_lone:
+        mov     eax,ebx
+        call    umb_isupper
+        jz      fF1_lislow
+        cmp     edx,F8_UPPER
+        je      fF1_lmine
+        jmp     short fF1_lskip
+fF1_lislow:
+        cmp     edx,F8_CONV
+        jne     fF1_lskip
+fF1_lmine:
         jecxz   fF1_lgot
-        cmp     al,'Z'
-        je      fF1_mend                ; 'Z' is the last one there is
         dec     ecx
+fF1_lskip:
+        cmp     byte ptr [ebx+RMCB_SIG],'Z'
+        je      fF1_mend                ; 'Z' is the last one there is
         movzx   eax,word ptr [ebx+RMCB_LEN]
         shl     eax,4
         add     ebx,eax
@@ -7342,3 +7382,5 @@ f73_rec     db  F73_SIZE dup(0)         ; 7303h's answer, built whole
 f8_rec      db  F8_LEN dup(0)           ; and F1h/08's, likewise
 
 sft_tbl     db  MAX_HANDLES * SFT_LEN dup(0)
+files_max   dd  MAX_HANDLES             ; how many of it FILES= hands out
+lastdrive_n dd  MAX_DRIVES              ; and how far LASTDRIVE= says to look

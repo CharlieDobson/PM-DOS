@@ -64,7 +64,22 @@ dio_try:
         mov     cx,[dio_cnt]            ; retry has to start clean
         mov     edi,[dio_buf]
         mov     edx,[dio_svc]
+
+        ; A LOADED BLOCK DRIVER IS A DRIVE HERE TOO, and this is the
+        ; only place that has to know it.  Units get pseudo BIOS drive
+        ; numbers from DL_UNIT_BASE up - a range no BIOS uses - so the
+        ; number flows through fat_mount and bios2log and the volume
+        ; table untouched, and one comparison sends the transfer to a
+        ; request packet instead of to the block layer.  The retry, the
+        ; critical error and the answer the handler gives are the same
+        ; for both, which is the point of putting the fork here.
+        cmp     al,DL_UNIT_BASE
+        jb      dio_hw
+        call    dl_blkio
+        jmp     short dio_done
+dio_hw:
         call    dword ptr ds:[edx]
+dio_done:
         jnc     dio_ok
 
         call    crit_disk               ; -> AL = the answer

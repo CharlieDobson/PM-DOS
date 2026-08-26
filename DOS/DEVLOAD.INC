@@ -42,6 +42,17 @@ DLE_SEG         EQU     8               ; dw - the header's segment
 DLE_HDR         EQU     10              ; dw - and its offset in it
 DLE_LEN         EQU     12
 
+; Block drivers.  A unit is a DRIVE LETTER, and the table below is what
+; turns the pseudo BIOS drive number in drv_tbl back into "unit U of
+; the driver in dl_tab row T".
+DL_UNIT_BASE    EQU     0E0h            ; pseudo BIOS drive numbers for them
+DLU_MAX         EQU     16              ; driver units, in total
+DLU_TAB         EQU     0               ; dd - which dl_tab row
+DLU_UNIT        EQU     4               ; db - which unit of that driver
+DLU_MEDIA       EQU     5               ; db - its media descriptor
+DLU_LEN         EQU     8
+DL_IOSECS       EQU     16              ; the staging buffer, in sectors
+
 DL_PATH_MAX     EQU     80
 
 ; The scratch block, and everything in it is there because a real-mode
@@ -71,9 +82,12 @@ DL_PARAS        EQU     (DL_SIZE + 15) / 16
 
 DLERR_NOFILE    EQU     1
 DLERR_NOMEM     EQU     2
-DLERR_BLOCK     EQU     3
+DLERR_BLOCK     EQU     3               ; kept: the number is in no message
+                                        ; now, and renumbering the rest to
+                                        ; close the gap would be churn
 DLERR_INIT      EQU     4
 DLERR_FULL      EQU     5
+DLERR_NOUNITS   EQU     6               ; a block driver with no units
 
 ;=====================================================================
 ; dl_init - the scratch block, taken from conventional memory the
@@ -421,13 +435,29 @@ dll_hdr:
         mov     eax,[esi+DEVH_NEXT]
         mov     dword ptr [dl_fnext],eax
 
-        test    word ptr [esi+DEVH_ATTR],DEV_ATTR_CHAR
-        jz      dll_block               ; a block driver: not this release
+        ; CHARACTER OR BLOCK, and from here the two differ in exactly
+        ; one place: a block driver's units have to become drive
+        ; letters after it is chained, which is what dl_blkinit does.
+        ; Everything before that - reading it in, calling INIT, keeping
+        ; what INIT asked for, linking the header - is the same job.
+        mov     ax,[esi+DEVH_ATTR]
+        mov     byte ptr [dl_isblk],0
+        test    ax,DEV_ATTR_CHAR
+        jnz     dll_ischar
+        mov     byte ptr [dl_isblk],1
+dll_ischar:
 
         call    dl_doinit
         jc      dll_initbad
         call    dl_chain
         jc      dll_full
+
+        cmp     byte ptr [dl_isblk],0
+        je      dll_notblk
+        mov     esi,[dl_pktflat]        ; INIT's answers are still in it
+        call    dl_blkinit
+        jc      dll_nounits
+dll_notblk:
 
         mov     eax,dword ptr [dl_fnext]
         cmp     ax,0FFFFh
@@ -466,8 +496,8 @@ dll_nomem_c:
 dll_nomem:
         mov     eax,DLERR_NOMEM
         jmp     short dll_fail
-dll_block:
-        mov     eax,DLERR_BLOCK
+dll_nounits:
+        mov     eax,DLERR_NOUNITS
         jmp     short dll_undo
 dll_initbad:
         mov     eax,DLERR_INIT
@@ -817,8 +847,342 @@ dl_fnext    dd  0
 dl_endoff   dd  0
 dl_endseg   dd  0
 dl_lost     db  0
+dl_isblk    db  0
 dl_byte     db  0
             dw  0
 dl_path     db  DL_PATH_MAX dup (0)
 dl_line     db  DL_ARG_MAX dup (0)
 dl_tab      db  DL_MAX * DLE_LEN dup (0)
+
+; block drivers
+dl_nunits   dd  0                       ; driver units that got a letter
+dl_bunits   dd  0                       ; units the driver being loaded has
+dl_bpbtab   dd  0                       ; its BPB array, flat
+dl_bpb      dd  0                       ; and the one unit being looked at
+dl_stgseg   dd  0                       ; the staging block, or 0
+dl_iorow    dd  0                       ; the transfer in progress
+dl_iocnt    dd  0
+dl_iothis   dd  0
+dl_iolba    dd  0
+dl_iobuf    dd  0
+dl_units    db  DLU_MAX * DLU_LEN dup (0)
+;=====================================================================
+; BLOCK DRIVERS
+;
+; A character driver is a name; a BLOCK driver is a DRIVE LETTER, and
+; that difference is the whole of the extra work.  ANSI.SYS joins the
+; device chain and dev_find starts finding it.  RAMDRIVE.SYS hands
+; back a unit count and a BPB for each unit, and every one of those
+; units has to become a letter in a volume table that until now got
+; its letters by scanning partitions on real disks.
+;
+; THREE THINGS A BLOCK DRIVER NEEDS THAT A CHARACTER ONE DOES NOT.
+;
+; A ROW IN drv_tbl, so that the filesystem can be pointed at it.  The
+; table is keyed by BIOS drive number, which a driver unit does not
+; have, so it is given one: DL_UNIT_BASE upwards, a range no BIOS ever
+; uses (this machine's real disks are 80h and 81h).  The number then
+; flows through fat_mount, disk_read and bios2log untouched, and the
+; only place that has to know what it means is dio_try.  Inventing a
+; key is cheaper than threading a second one through nine routines.
+;
+; A STAGING BUFFER.  A driver is 16-bit real-mode code and takes the
+; address of its transfer as a segment and an offset, and the buffers
+; the filesystem hands down are sec_buf and clus_buf inside PMDOS.SYS
+; at 110000h, which no segment:offset can name.  So every transfer is
+; copied through a block of conventional memory, in chunks, exactly as
+; the floppy path has staged through XFER_BUF since v0.9.  It costs a
+; memcpy per sector and it is the only arrangement that works.
+;
+; AND A SECTOR NUMBER THAT FITS.  The request packet's sector field is
+; a WORD - the format is from 1983 and 32MB was a large disk - so a
+; volume past 65535 sectors needs the DOS 4 form: FFFFh in the word
+; and a dword after the packet.  A driver says it understands that by
+; setting bit 1 of its attribute word, and one that does not is held
+; to what it can address rather than being sent a sector number it
+; will silently truncate.
+;=====================================================================
+
+;---------------------------------------------------------------------
+; dl_blkinit - a block driver's INIT has come back.  Give each unit a
+;              drive letter.  ESI -> the packet.  CF if none of them
+;              could be taken.
+;
+; THE UNIT COUNT IS THE DRIVER'S ANSWER AND NOT ITS HEADER'S.  A block
+; header carries a unit count in the first byte of the name field, but
+; it is the count BEFORE init - the driver may find less hardware than
+; it hoped - and DOS uses the packet's, which is what was written
+; after the driver looked.
+;---------------------------------------------------------------------
+dl_blkinit:
+        pushad
+        movzx   ecx,byte ptr [esi+REQI_UNITS]
+        or      ecx,ecx
+        jz      dbi_none                ; a driver that found nothing
+        mov     [dl_bunits],ecx
+
+        ; The BPB array: a far pointer to N far pointers, one per unit.
+        movzx   eax,word ptr [esi+REQI_ARGSEG]
+        shl     eax,4
+        movzx   edx,word ptr [esi+REQI_ARGOFF]
+        add     eax,edx
+        mov     [dl_bpbtab],eax
+
+        xor     ebx,ebx                 ; unit number
+dbi_unit:
+        cmp     ebx,[dl_bunits]
+        jae     dbi_done
+        cmp     dword ptr [dl_nunits],DLU_MAX
+        jae     dbi_done                ; no more pseudo-drives to give
+
+        ; this unit's BPB, through the array
+        mov     eax,[dl_bpbtab]
+        mov     eax,[eax+ebx*4]
+        mov     edx,eax
+        shr     edx,16
+        shl     edx,4
+        movzx   eax,ax
+        add     eax,edx                 ; EAX -> the BPB, flat
+        mov     [dl_bpb],eax
+
+        ; how big is it?  The 16-bit total, or the 32-bit one behind it
+        ; when the 16-bit field is zero - which is how every BPB since
+        ; DOS 4 says "bigger than 65535 sectors".
+        movzx   ecx,word ptr [eax+DBPB_TOTSEC16]
+        or      ecx,ecx
+        jnz     dbi_size
+        mov     ecx,[eax+DBPB_TOTSEC32]
+dbi_size:
+        or      ecx,ecx
+        jz      dbi_next                ; a unit with no sectors in it
+
+        ; a row in dl_units, and the pseudo BIOS number that names it
+        mov     edi,[dl_nunits]
+        imul    edi,DLU_LEN
+        add     edi,OFFSET dl_units
+        mov     eax,[dl_count]
+        dec     eax                     ; dl_chain has already added ours
+        mov     [edi+DLU_TAB],eax
+        mov     [edi+DLU_UNIT],bl
+        mov     eax,[dl_bpb]
+        mov     al,[eax+DBPB_MEDIA]
+        mov     [edi+DLU_MEDIA],al
+
+        ; and a drive letter
+        mov     eax,[dl_nunits]
+        add     eax,DL_UNIT_BASE
+        xor     ah,ah                   ; NO PARTITION TYPE, which is what a
+        xor     edx,edx                 ; zero already means in this table -
+                                        ; "the whole medium".  Claiming
+                                        ; FAT16B for a unit whose BPB says
+                                        ; FAT12 put a contradiction in two
+                                        ; adjacent columns of DRIVES.
+        push    ebx
+        mov     bl,0FFh                 ; no partition entry behind it
+        call    drv_add
+        pop     ebx
+        jc      dbi_done                ; out of letters
+
+        movzx   edi,byte ptr [drv_count]        ; the row it just took
+        dec     edi
+        imul    edi,DRV_LEN
+        add     edi,OFFSET drv_tbl
+        or      byte ptr [edi+DRV_FLAGS],DRVF_DRIVER
+
+        inc     dword ptr [dl_nunits]
+dbi_next:
+        inc     ebx
+        jmp     short dbi_unit
+dbi_done:
+        popad
+        clc
+        ret
+dbi_none:
+        popad
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; dl_stage - the conventional buffer every block transfer is copied
+;            through.  Taken the first time a block driver loads and
+;            never given back.  CF if there is no room for it.
+;---------------------------------------------------------------------
+dl_stage:
+        cmp     dword ptr [dl_stgseg],0
+        jne     dst_have
+        pushad
+        mov     ebx,DL_IOSECS * 512 / 16
+        call    lm_alloc
+        jc      dst_fail
+        movzx   eax,ax
+        mov     [dl_stgseg],eax
+        mov     dx,8                    ; the system's, so that a program
+        call    lm_setown               ; exiting never takes it back
+        popad
+dst_have:
+        clc
+        ret
+dst_fail:
+        popad
+        stc
+        ret
+
+;=====================================================================
+; dl_blkio - one transfer for a driver unit.
+;
+;   AL = the pseudo BIOS drive (DL_UNIT_BASE upwards)
+;   EBX = LBA within the unit, CX = sectors, EDI = flat buffer
+;   [dio_wr] non-zero for a write, which is how disk_write says so
+;
+;   CF set if the driver could not do it.
+;
+; Chunked by the staging buffer, and the chunk loop is also what makes
+; a short transfer honest: the driver reports how many sectors it
+; really moved in the packet's count field, and a driver that moved
+; fewer than it was asked has hit the end of the medium or a bad one.
+; Stopping there and reporting failure is what lets INT 24h see it.
+;=====================================================================
+dl_blkio:
+        pushad
+        call    dl_stage
+        jc      dbio_fail
+
+        movzx   eax,al
+        sub     eax,DL_UNIT_BASE
+        cmp     eax,[dl_nunits]
+        jae     dbio_fail
+        imul    eax,DLU_LEN
+        add     eax,OFFSET dl_units
+        mov     [dl_iorow],eax
+
+        movzx   ecx,cx
+        mov     [dl_iocnt],ecx
+        mov     [dl_iolba],ebx
+        mov     [dl_iobuf],edi
+
+dbio_chunk:
+        cmp     dword ptr [dl_iocnt],0
+        je      dbio_done
+        mov     ecx,[dl_iocnt]
+        cmp     ecx,DL_IOSECS
+        jbe     dbio_size
+        mov     ecx,DL_IOSECS
+dbio_size:
+        mov     [dl_iothis],ecx
+
+        ; a write fills the staging buffer before the driver sees it
+        cmp     byte ptr [dio_wr],0
+        je      dbio_build
+        mov     esi,[dl_iobuf]
+        mov     edi,[dl_stgseg]
+        shl     edi,4
+        mov     ecx,[dl_iothis]
+        shl     ecx,7                   ; sectors -> dwords
+        rep     movsd
+
+dbio_build:
+        mov     eax,[dl_iorow]
+        mov     eax,[eax+DLU_TAB]
+        mov     ecx,DEVC_READ
+        cmp     byte ptr [dio_wr],0
+        je      dbio_cmd
+        mov     ecx,DEVC_WRITE
+dbio_cmd:
+        call    dl_prep
+        jc      dbio_fail
+
+        mov     eax,[dl_iorow]
+        mov     dl,[eax+DLU_UNIT]
+        mov     [edi+REQ_UNIT],dl
+        mov     dl,[eax+DLU_MEDIA]
+        mov     [edi+REQC_MEDIA],dl
+        mov     word ptr [edi+REQC_BUFOFF],0
+        mov     eax,[dl_stgseg]
+        mov     word ptr [edi+REQC_BUFSEG],ax
+        mov     eax,[dl_iothis]
+        mov     word ptr [edi+REQC_COUNT],ax
+
+        ; THE SECTOR NUMBER, AND THE TWO FORMS OF IT
+        mov     eax,[dl_iolba]
+        cmp     eax,0FFFFh
+        jb      dbio_small
+        call    dl_islarge              ; will this driver understand it?
+        jc      dbio_toobig
+        mov     word ptr [edi+REQC_SECTOR],0FFFFh
+        mov     [edi+REQC_HUGE],eax
+        mov     byte ptr [edi+REQ_LEN],REQC_HUGELEN
+        jmp     short dbio_fire
+dbio_small:
+        mov     word ptr [edi+REQC_SECTOR],ax
+dbio_fire:
+        call    dl_fire
+        jc      dbio_fail
+
+        ; how many did it really move?
+        mov     edi,[dl_pktflat]
+        movzx   eax,word ptr [edi+REQC_COUNT]
+        cmp     eax,[dl_iothis]
+        jb      dbio_fail               ; short: the medium ended, or is bad
+
+        ; a read empties the staging buffer afterwards
+        cmp     byte ptr [dio_wr],0
+        jne     dbio_moved
+        mov     esi,[dl_stgseg]
+        shl     esi,4
+        mov     edi,[dl_iobuf]
+        mov     ecx,[dl_iothis]
+        shl     ecx,7
+        rep     movsd
+
+dbio_moved:
+        mov     eax,[dl_iothis]
+        mov     ecx,eax
+        shl     ecx,9                   ; sectors -> bytes
+        add     [dl_iobuf],ecx
+        add     [dl_iolba],eax
+        sub     [dl_iocnt],eax
+        jmp     dbio_chunk
+
+dbio_done:
+        popad
+        clc
+        ret
+dbio_toobig:
+        call    dl_leave                ; dl_prep took a level: give it back
+dbio_fail:
+        popad
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; dl_islarge - CF clear if the unit in [dl_iorow] belongs to a driver
+;              that understands 32-bit sector numbers.
+;
+; Bit 1 of a block driver's attribute word, and it is worth checking
+; rather than assuming: a driver written before DOS 4 reads the word
+; at REQC_SECTOR and would take FFFFh as a sector number, which is a
+; transfer to the wrong place reported as a success.
+;---------------------------------------------------------------------
+dl_islarge:
+        push    eax
+        push    esi
+        mov     eax,[dl_iorow]
+        mov     eax,[eax+DLU_TAB]
+        imul    eax,DLE_LEN
+        add     eax,OFFSET dl_tab
+        movzx   esi,word ptr [eax+DLE_SEG]
+        shl     esi,4
+        movzx   eax,word ptr [eax+DLE_HDR]
+        add     esi,eax
+        test    word ptr [esi+DEVH_ATTR],DEV_ATTR_BIG
+        jz      dil_no
+        pop     esi
+        pop     eax
+        clc
+        ret
+dil_no:
+        pop     esi
+        pop     eax
+        stc
+        ret
+

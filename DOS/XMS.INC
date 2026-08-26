@@ -38,7 +38,10 @@
 ;               code in means honouring A20 for code fetches as well
 ;               as data, and 01h says "no HMA" instead.  DOS=HIGH is
 ;               the only common customer and PM-DOS has no DOS=HIGH.
-;   UMBs      - there are none below 1MB to give.
+;   UMBs      - it does now, when DOS=UMB has built some.  10h-12h
+;               allocate out of the same MCB chain 48h does, because
+;               two doors onto one pool is correct and two pools is a
+;               bug waiting to be found by whoever opens both.
 ;
 ; Included by DOSMAIN.ASM.
 ;=====================================================================
@@ -635,19 +638,102 @@ xf_0F_locked:
         jmp     xms_err
 
 ;---------------------------------------------------------------------
-; 10h-12h - upper memory blocks.  There are none: everything between
-;           the top of the transient program area and 1MB is video RAM
-;           and option ROMs on the machines this runs on, and PM-DOS
-;           does not shadow ROM to make room.  BL = B0h with DX = 0 is
-;           the spec's way of saying "none at all".
+; 10h-12h - upper memory blocks.
+;
+; THE SAME MEMORY THE MCB CHAIN DESCRIBES, HANDED OUT THROUGH THE
+; OTHER DOOR.  There is exactly one pool of upper memory here and two
+; ways of asking for a piece of it, and they must not become two
+; pools: a program that takes a UMB through XMS and one that takes it
+; through 48h with a high strategy have to be unable to get the same
+; paragraph.  So this allocates out of the chain, with the strategy
+; bits that mean "upper only", and the block it hands back is an
+; ordinary MCB that MEM will list and that 49h would also free.
+;
+; The relationship is the reverse of a real DOS's, and worth saying
+; out loud: there, EMM386 owns the memory and DOS asks XMS for it with
+; exactly this call, then lays a chain over what it gets.  Here the
+; kernel is both, so the chain is authoritative and this is the
+; wrapper.
+;
+; When there is no upper memory - no DOS=UMB, or nothing found - this
+; answers B0h with DX = 0 exactly as it always did, which is the
+; spec's "none at all".
 ;---------------------------------------------------------------------
 xf_10:
+        movzx   ebx,word ptr [vdm_ctx+V86C_EDX]
+        or      ebx,ebx
+        jz      xf_10_none                      ; nought paragraphs of it
+        cmp     dword ptr [umb_have],0
+        je      xf_10_none
+
+        ; EDX AND NOT EAX, because AX is the answer by the time the
+        ; strategy is put back - the same trap lm_alloc's own comment
+        ; describes, and it reads as innocently here as it did there:
+        ; the register looks free and the value has already arrived.
+        mov     edx,[alloc_strat]
+        push    edx
+        mov     dword ptr [alloc_strat],80h     ; upper only, first fit
+        call    lm_alloc
+        pop     edx
+        mov     [alloc_strat],edx
+        jc      xf_10_small
+
+        mov     dx,word ptr ds:[vdm_curpsp]     ; and it belongs to whoever
+        call    lm_setown                       ; asked, so that 4Ch takes it
+                                                ; back - see the note on 48h
+        mov     word ptr [vdm_ctx+V86C_EBX],ax
+        movzx   eax,ax
+        dec     eax
+        shl     eax,4
+        movzx   eax,word ptr [eax+RMCB_LEN]     ; what it really got
+        mov     word ptr [vdm_ctx+V86C_EDX],ax
+        jmp     xms_ok
+
+xf_10_small:
+        mov     word ptr [vdm_ctx+V86C_EDX],bx  ; the largest there is
+        mov     bl,XSE_NOUMB
+        jmp     xms_err
+xf_10_none:
         mov     word ptr [vdm_ctx+V86C_EDX],0
         mov     bl,XSE_NOUMBS
         jmp     xms_err
+
+;--- 11h - release one.  DX = the segment it was given -----------------
 xf_11:
-xf_12:
+        cmp     dword ptr [umb_have],0
+        je      xf_11_bad
+        movzx   eax,word ptr [vdm_ctx+V86C_EDX]
+        push    eax
+        dec     eax
+        shl     eax,4
+        call    umb_isupper                     ; a conventional block is not
+        pop     eax                             ; a UMB, whatever it says
+        jz      xf_11_bad
+        call    lm_free
+        jc      xf_11_bad
+        jmp     xms_ok
+xf_11_bad:
         mov     bl,XSE_BADUMB
+        jmp     xms_err
+
+;--- 12h - resize one, XMS 3.0.  DX = segment, BX = new paragraphs ----
+xf_12:
+        cmp     dword ptr [umb_have],0
+        je      xf_11_bad
+        movzx   eax,word ptr [vdm_ctx+V86C_EDX]
+        push    eax
+        dec     eax
+        shl     eax,4
+        call    umb_isupper
+        pop     eax
+        jz      xf_11_bad
+        movzx   ebx,word ptr [vdm_ctx+V86C_EBX]
+        call    lm_resize
+        jc      xf_12_small
+        jmp     xms_ok
+xf_12_small:
+        mov     word ptr [vdm_ctx+V86C_EDX],bx
+        mov     bl,XSE_NOUMB
         jmp     xms_err
 
 ;---------------------------------------------------------------------

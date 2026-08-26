@@ -132,6 +132,23 @@ me_argdone:
         call    col_kb
         call    crlf
 
+        ; upper memory, when there is any
+        cmp     dword ptr [u_total],0
+        je      no_upper
+        mov     edx,OFFSET msg_row_upper
+        call    print
+        mov     eax,[u_total]
+        shr     eax,10
+        call    col_kb
+        mov     eax,[u_used]
+        shr     eax,10
+        call    col_kb
+        mov     eax,[u_free]
+        shr     eax,10
+        call    col_kb
+        call    crlf
+no_upper:
+
         ; the arena, as the block chain actually stands
         mov     edx,OFFSET msg_row_arena
         call    print
@@ -154,16 +171,19 @@ me_argdone:
         ; the table is worse than no table at all.
         mov     eax,[a_total]
         add     eax,[c_total]
+        add     eax,[u_total]
         add     eax,ARENA_BASE - HMA_BASE
         shr     eax,10
         call    col_kb
         mov     eax,[a_used]
         add     eax,[c_used]
+        add     eax,[u_used]
         add     eax,ARENA_BASE - HMA_BASE
         shr     eax,10
         call    col_kb
         mov     eax,[a_free]
         add     eax,[c_free]
+        add     eax,[u_free]
         shr     eax,10
         call    col_kb
         call    crlf
@@ -201,6 +221,7 @@ me_argdone:
         cmp     byte ptr [want_list],0
         je      me_done
         call    list_blocks
+        call    list_dos
 me_done:
         mov     ax,4C00h
         int     21h
@@ -290,6 +311,38 @@ cv_out:
         mov     eax,[c_used]
         add     eax,[c_free]
         mov     [c_total],eax
+
+;--- and upper memory, which is the same chain past umb_head ----------
+; A THIRD PASS AND NOT A THIRD ARENA.  The kernel classifies, because
+; the boundary is a word in the DOS data segment and this program runs
+; in a segment of its own; all that arrives here is "the blocks in the
+; region I asked about".  When DOS=UMB was never given there are none,
+; u_total stays at zero, and the row is not printed - a report with an
+; empty Upper line would be a report inviting the question.
+        xor     ebx,ebx
+uv_lp:
+        mov     dl,F8_UPPER
+        call    get_block
+        jc      uv_out
+        mov     eax,dword ptr [blk+F8_SIZE]
+        cmp     dword ptr [blk+F8_OWNER],0
+        je      uv_free
+        add     [u_used],eax
+        jmp     short uv_next
+uv_free:
+        add     [u_free],eax
+        cmp     eax,[u_largest]
+        jbe     uv_next
+        mov     [u_largest],eax
+uv_next:
+        add     dword ptr [u_used],RMCB_SIZE    ; the header, as above
+        inc     ebx
+        cmp     ebx,BLOCKS_MAX
+        jb      uv_lp
+uv_out:
+        mov     eax,[u_used]
+        add     eax,[u_free]
+        mov     [u_total],eax
         ret
 
 ;---------------------------------------------------------------------
@@ -312,6 +365,129 @@ get_block:
         pop     edi
         pop     ebx
         pop     eax
+        ret
+
+;=====================================================================
+; list_dos - the chain a DOS program lives in, block by block, with
+;            the region each block is in.
+;
+; THE ARENA LISTING ABOVE CANNOT ANSWER THE QUESTION LOADHIGH RAISES.
+; It walks the kernel's own heap above 2MB, which is where native
+; programs live and where nothing a DEVICEHIGH or a LOADHIGH touches
+; ever goes.  "Did it load high?" is a question about this chain, and
+; before there were two regions in it there was nothing to ask.
+;
+; Conventional and upper are one chain and the kernel is what knows
+; where the join is, so this is two walks of one chain rather than one
+; walk with a comparison - see F8_UPPER.  Printing them in order keeps
+; the addresses ascending, which is what makes a listing readable.
+;=====================================================================
+list_dos:
+        call    crlf
+        mov     edx,OFFSET msg_dhead1
+        call    print
+        mov     edx,OFFSET msg_dhead2
+        call    print
+
+        mov     byte ptr [ld_region],F8_CONV
+        call    ld_walk
+        mov     byte ptr [ld_region],F8_UPPER
+        call    ld_walk
+        ret
+
+ld_walk:
+        xor     ebx,ebx
+ld_lp:
+        mov     dl,[ld_region]
+        call    get_block
+        jc      ld_out
+        cmp     dword ptr [blk+F8_SIG],SIG_USED
+        je      ld_used
+        cmp     byte ptr [free_only],0
+        je      ld_show
+        jmp     ld_next                 ; /F wants the free ones...
+ld_used:
+        cmp     byte ptr [free_only],0
+        jne     ld_next                 ; ...and not the others
+ld_show:
+        push    ebx
+
+        ; the DATA, which is a paragraph past the header and is the
+        ; segment the program was handed - the number it would print
+        ; if you asked it where it was
+        mov     eax,dword ptr [blk+F8_ADDR]
+        shr     eax,4
+        inc     eax
+        call    puthex16
+        mov     edx,OFFSET msg_2sp
+        call    print
+
+        mov     eax,dword ptr [blk+F8_SIZE]
+        mov     ebx,12
+        call    pdec_cw
+        mov     edx,OFFSET msg_2sp
+        call    print
+
+        mov     eax,dword ptr [blk+F8_OWNER]
+        or      eax,eax
+        jnz     ld_owner
+        mov     edx,OFFSET msg_dnoown
+        call    print
+        jmp     short ld_area
+ld_owner:
+        mov     ebx,6
+        call    pdec_cw
+ld_area:
+        mov     edx,OFFSET msg_2sp
+        call    print
+        mov     edx,OFFSET msg_aconv
+        cmp     byte ptr [ld_region],F8_CONV
+        je      ld_parea
+        mov     edx,OFFSET msg_aupper
+ld_parea:
+        call    print
+
+        cmp     dword ptr [blk+F8_SIG],SIG_USED
+        je      ld_pused
+        mov     edx,OFFSET msg_isfree
+        call    print
+        pop     ebx
+        jmp     ld_next
+ld_pused:
+        mov     edx,OFFSET msg_used
+        call    print
+        pop     ebx
+ld_next:
+        inc     ebx
+        cmp     ebx,BLOCKS_MAX
+        jb      ld_lp
+ld_out:
+        ret
+
+;--- puthex16 - AX, four digits.  A segment is four and printing eight
+;--- of them puts four zeroes in front of every line for no reason.
+puthex16:
+        pushad
+        mov     edi,OFFSET hexbuf
+        mov     ecx,4
+        shl     eax,16
+p16_lp:
+        rol     eax,4
+        mov     dl,al
+        and     dl,0Fh
+        add     dl,'0'
+        cmp     dl,'9'
+        jbe     p16_dig
+        add     dl,7
+p16_dig:
+        mov     [edi],dl
+        inc     edi
+        dec     ecx
+        jnz     p16_lp
+        mov     byte ptr [edi],'$'
+        mov     edx,OFFSET hexbuf
+        call    print
+        popad
         ret
 
 ;=====================================================================
@@ -508,6 +684,13 @@ c_total     dd  0                   ; the conventional arena, below 1M
 c_used      dd  0
 c_free      dd  0
 c_largest   dd  0
+u_total     dd  0                   ; upper memory, when DOS=UMB
+u_used      dd  0                   ; built any
+u_free      dd  0
+u_largest   dd  0
+ld_region   db  0
+            db  0,0,0
+free_only_pad db 0
 numbuf      db  24 dup(0)
 hexbuf      db  12 dup(0)
 
@@ -529,6 +712,7 @@ msg_head2   db  16 dup('-'),(LABEL_W - 16 + 2) dup(' '),NUM_W dup('-')
 
 msg_row_sys   db 'Kernel and slots',(LABEL_W - 16) dup(' '),'$'
 msg_row_conv  db 'Conventional',(LABEL_W - 12) dup(' '),'$'
+msg_row_upper db 'Upper',(LABEL_W - 5) dup(' '),'$'
 msg_row_arena db 'DOS arena',(LABEL_W - 9) dup(' '),'$'
 msg_row_tot   db 'Total memory',(LABEL_W - 12) dup(' '),'$'
 
@@ -545,6 +729,13 @@ msg_bhead1  db  'Address',6 dup(' '),'Size (bytes)',3 dup(' '),'Owner'
 msg_bhead2  db  8 dup('-'),2 dup(' '),15 dup('-'),2 dup(' '),6 dup('-')
             db  2 dup(' '),6 dup('-'),13,10,'$'
 msg_used    db  '  in use',13,10,'$'
+msg_dhead1  db  'Segment',2 dup(' '),'Size (bytes)',2 dup(' '),' Owner'
+            db  '  Area          Status',13,10,'$'
+msg_dhead2  db  4 dup('-'),5 dup(' '),12 dup('-'),2 dup(' '),6 dup('-')
+            db  2 dup(' '),12 dup('-'),2 dup('-'),13,10,'$'
+msg_aconv   db  'conventional','$'
+msg_aupper  db  'upper       ','$'
+msg_dnoown  db  5 dup(' '),'-','$'
 msg_isfree  db  '  free',13,10,'$'
 msg_noowner db  5 dup(' '),'-','$'
 msg_2sp     db  '  ','$'
@@ -553,7 +744,7 @@ msg_crlf    db  13,10,'$'
 msg_badsw   db  'Invalid switch',13,10,'$'
 msg_usage   db  'Displays the amount of used and free memory.',13,10,13,10
             db  '  MEM [/D | /F]',13,10,13,10
-            db  '  /D   list every block in the DOS arena',13,10
+            db  '  /D   list every block, in both arenas',13,10
             db  '  /F   list the free blocks only',13,10,'$'
 
 _MEM    ENDS

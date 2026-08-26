@@ -656,11 +656,37 @@ vl_com:
         call    k21
         jc      vl_close
 
-        mov     ebx,0FFFFh                      ; ask for everything
-        call    lm_alloc
-        jnc     vl_got
-        call    lm_alloc                        ; BX now holds the biggest
-        jc      vl_nomem                        ; run there is; take it
+        ; HOW SMALL IS TOO SMALL?  The PSP, the image, and enough stack
+        ; for the program to make one call - which is what MS-DOS has
+        ; always insisted on before it will load a .COM at all, and
+        ; which nothing here had to ask while there was only one place
+        ; to put it.  lm_allocbig then hands over the largest block in
+        ; the region the strategy names, so a .COM still gets every
+        ; paragraph of wherever it lands.
+        mov     ebx,dword ptr ds:[vdm_hdl]
+        xor     ecx,ecx
+        mov     eax,4202h                       ; seek to the end: the size
+        call    k21
+        jc      vl_close
+        ; EAX IS THE WHOLE OF IT.  42h hands a DOS program back DX:AX
+        ; and hands the kernel back a flat 32-bit position in EAX -
+        ; see fn42 - so recombining a DX that nothing wrote is how the
+        ; size of every .COM in the machine became a large number and
+        ; every one of them stopped loading.
+        add     eax,15
+        shr     eax,4
+        add     eax,10h + 10h                   ; the PSP, and 256 bytes of
+        mov     esi,eax                         ; stack behind it
+
+        mov     ebx,dword ptr ds:[vdm_hdl]      ; and back to the start
+        xor     ecx,ecx
+        mov     eax,4200h
+        call    k21
+        jc      vl_close
+
+        mov     ebx,esi
+        call    lm_allocbig
+        jc      vl_nomem
 vl_got:
         mov     word ptr ds:[vdm_pspseg],ax
 
@@ -816,9 +842,12 @@ vx_ask:
         ; MAXALLOC is 0FFFFh in nearly every .EXE ever linked, so that
         ; first ask nearly always fails and BX comes back holding the
         ; largest run there is.  Take it, if the program can live in it.
-        cmp     ebx,dword ptr ds:[vdm_minpar]
-        jb      vx_nomem
-        call    lm_alloc
+        ; ...and the largest run IN THE REGION THE STRATEGY NAMES, which
+        ; stopped being one number the moment there were two regions.
+        ; See lm_allocbig: asking globally is what would have made every
+        ; DEVICEHIGH and every LOADHIGH load low without a word.
+        mov     ebx,dword ptr ds:[vdm_minpar]
+        call    lm_allocbig
         jc      vx_nomem
 vx_got:
         mov     word ptr ds:[vdm_pspseg],ax
@@ -1093,7 +1122,7 @@ vdm_lolinit:
 
         mov     word ptr [edi+GLOL_MAXSEC],512
         mov     word ptr [edi+GLOL_PROTFCB],0
-        mov     byte ptr [edi+GLOL_NBLOCK],0    ; vdm_lol fills both of
+        mov     byte ptr [edi+GLOL_NBLOCK],0    ; vdm_lol fills all three of
         mov     byte ptr [edi+GLOL_LASTDRV],MAX_DRIVES
         mov     byte ptr [edi+GLOL_NJOIN],0
 
@@ -1873,9 +1902,11 @@ vdm_indosptr:
 ; exception behind it, which is exactly what Quarterdeck's Manifest
 ; did at its splash screen.
 ;
-; The two drive counts are filled HERE rather than in vdm_lolinit,
-; because a volume can be mounted after boot and a count copied once
-; would be a lie the moment it was.
+; The two drive counts and LASTDRIVE are filled HERE rather than in
+; vdm_lolinit, because a volume can be mounted after boot and a count
+; copied once would be a lie the moment it was - and because
+; vdm_lolinit runs at boot, BEFORE CONFIG.SYS has been read at all, so
+; a LASTDRIVE= written there would be the default every time.
 ; 1Bh, 1Ch and 63h - the calls that answer a FLAT pointer in a
 ; register the guest reads as DS:something.  The kernel's handlers
 ; deliberately keep what they point at inside the guest block, so all
@@ -2022,6 +2053,14 @@ vdm_lol:
         shl     edi,4
         mov     dl,byte ptr ds:[drv_count]
         mov     byte ptr [edi+GLOL_NBLOCK],dl
+        ; DL AND NOT EAX.  EAX is the list-of-lists SEGMENT here and is
+        ; handed to the guest two lines further down - the third time
+        ; this release that a register looked free and already held the
+        ; answer.  The symptom was a guest reading its LASTDRIVE out of
+        ; whatever segment this number happened to name.
+        mov     dl,byte ptr [lastdrive_n]       ; and LASTDRIVE=, for the same
+        mov     byte ptr [edi+GLOL_LASTDRV],dl  ; reason: CONFIG.SYS is read
+                                                ; long after vdm_lolinit ran
         mov     word ptr [vdm_ctx+V86C_EBX],GLOL_PTR
         mov     dword ptr [vdm_ctx+V86C_ES],eax
         and     dword ptr [vdm_ctx+V86C_FLAGS],NOT FL_CF

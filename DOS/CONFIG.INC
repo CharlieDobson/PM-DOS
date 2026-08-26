@@ -33,6 +33,12 @@ CFG_BUF_SIZE    EQU     4096            ; a CONFIG.SYS bigger than this
 CFG_LINE_MAX    EQU     160             ; is not a configuration file
 CFG_KEY_MAX     EQU     16
 
+; The walks over the file, in order.  See cfg_phaseof for which
+; statement belongs to which, and why any of them has to.
+CFG_PASS_DOS    EQU     0               ; DOS=, so upper memory exists
+CFG_PASS_MAIN   EQU     1               ; everything else, in file order
+CFG_PASS_INST   EQU     2               ; INSTALL=, after every driver
+
 ;=====================================================================
 ; config_run - find CONFIG.SYS on the boot drive and act on it.
 ;              Its absence is not an error and never was.
@@ -71,7 +77,48 @@ IFDEF PMDOS_DEBUG
         call    dword ptr ds:[IOS_CONSTR]
 ENDIF
 
-;--- walk it a line at a time ----------------------------------------
+;--- walk it TWICE, and the first walk reads one statement -----------
+; DOS=UMB decides whether there is any upper memory for a DEVICEHIGH
+; on an earlier line to be loaded into, and a CONFIG.SYS is a
+; DESCRIPTION OF A SYSTEM rather than a program: nothing in it is
+; written expecting to be read top to bottom, and a user who puts
+; DOS=UMB at the bottom has not made a mistake.  So the file is read
+; through once for DOS=, upper memory is built, and then it is read
+; again for everything else.  MS-DOS makes several passes over it for
+; exactly this reason.
+        mov     dword ptr [cfg_pass],CFG_PASS_DOS
+        call    cfg_walk
+        call    cfg_upper
+        mov     dword ptr [cfg_pass],CFG_PASS_MAIN
+        call    cfg_walk
+        mov     dword ptr [cfg_pass],CFG_PASS_INST
+        call    cfg_walk
+cfg_none:
+        ret
+
+;=====================================================================
+; cfg_upper - act on DOS=UMB, in between the two walks.
+;
+; Silent when it works, because a real DOS says nothing here and the
+; shipped CONFIG.SYS is meant to boot without a word.  NOT silent when
+; it fails: the user asked for upper memory in writing and did not get
+; any, and a machine that quietly loads everything low looks exactly
+; like a machine where the statement was never read.
+;=====================================================================
+cfg_upper:
+        cmp     dword ptr [umb_wanted],0
+        je      cup_out
+        call    umb_init
+        jnc     cup_out
+        mov     esi,OFFSET msgNoUmb
+        call    dword ptr ds:[IOS_CONSTR]
+cup_out:
+        ret
+
+;=====================================================================
+; cfg_walk - one pass over cfg_buf, a line at a time.
+;=====================================================================
+cfg_walk:
         mov     esi,OFFSET cfg_buf
 cfg_line:
         cmp     byte ptr [esi],0
@@ -113,7 +160,6 @@ cfg_lend:
         jmp     short cfg_line
 
 cfg_done:
-cfg_none:
         ret
 
 ;=====================================================================
@@ -187,6 +233,15 @@ cdl_miss:
         add     ebx,8
         jmp     short cdl_lp
 cdl_hit:
+        ; ONE WALK PER PHASE, AND THE HANDLER SAYS WHICH PHASE IT IS
+        ; IN.  A statement acted on out of order is a statement acted
+        ; on before the thing it needs exists - DOS=UMB before a
+        ; DEVICEHIGH could load into it, every DEVICE= before an
+        ; INSTALL= is entitled to the drivers.
+        call    cfg_phaseof
+        cmp     eax,[cfg_pass]
+        jne     cdl_out
+cdl_go:
 IFDEF PMDOS_DEBUG
         mov     esi,OFFSET msgCfgLine
         call    dword ptr ds:[IOS_CONSTR]
@@ -201,9 +256,37 @@ cdl_out:
         ret
 
 cdl_unknown:
+        cmp     dword ptr [cfg_pass],CFG_PASS_MAIN
+        jne     cdl_out                 ; complain once, on the main walk
         call    cfg_show_line
         mov     esi,OFFSET msgCfgBadCmd
         call    dword ptr ds:[IOS_CONSTR]
+        ret
+
+;---------------------------------------------------------------------
+; cfg_phaseof - EBX -> a cfg_table row.  EAX = the walk that row's
+;               statement belongs to.
+;
+; Kept here as a list of exceptions rather than a column in the table,
+; because it IS a list of exceptions: two statements have to be early,
+; two have to be late, and the other twenty-odd genuinely do not care.
+; A fourth phase goes in as two more lines.
+;---------------------------------------------------------------------
+cfg_phaseof:
+        mov     eax,[ebx+4]
+        cmp     eax,OFFSET cfg_dos
+        je      cph_first
+        cmp     eax,OFFSET cfg_install
+        je      cph_last
+        cmp     eax,OFFSET cfg_insthigh
+        je      cph_last
+        mov     eax,CFG_PASS_MAIN
+        ret
+cph_first:
+        mov     eax,CFG_PASS_DOS
+        ret
+cph_last:
+        mov     eax,CFG_PASS_INST
         ret
 
 ;=====================================================================
@@ -289,13 +372,45 @@ cbk_on:
 ; nothing, so that a CONFIG.SYS carried over from a real install
 ; loads without a word of complaint.  They describe machinery PM-DOS
 ; does not have and mostly does not want: it caches per volume rather
-; than in BUFFERS, has no FCBs, and is flat and unpaged, which makes
-; DOS=HIGH,UMB a statement about a memory model that does not exist
-; here.  They are advisory in a real CONFIG.SYS too.
+; than in BUFFERS and has no FCB table to size.  They are advisory in
+; a real CONFIG.SYS too.
 ;
-; DEVICE= and DEVICEHIGH= are in this list for now and will not stay:
-; they are what the 16-bit VDM will need, and the drivers named on
-; those lines are exactly what it will be asked to load.
+; SEVEN STATEMENTS HAVE LEFT THIS LIST and the way they left it is
+; worth keeping in view.  DEVICE= and DEVICEHIGH= sat here "for now"
+; with a note saying they would not stay; they went in v0.37 and
+; v0.38.  DOS= sat here with a note saying that HIGH,UMB described a
+; memory model that did not exist - which was true of a flat unpaged
+; kernel and stopped being true when the A20 gate needed page tables.
+; SET=, INSTALL=, INSTALLHIGH=, FILES= and LASTDRIVE= went in v0.39.
+; A statement parked here is a statement waiting for its machinery,
+; and the note beside it is what says which.
+;
+; WHAT IS LEFT, AND WHY EACH ONE STAYS - because "inert" without a
+; reason is indistinguishable from "not done yet", and five of these
+; will never be done:
+;
+;   BUFFERS=    PM-DOS caches per volume, not in a global pool.  There
+;               is no number here to set.
+;   FCBS=       there is no system FCB table to size: an FCB lives in
+;               the CALLER's memory and carries its own index - see
+;               FCB.INC, which is the whole argument.
+;   STACKS=     interrupt stack switching, which this kernel does in
+;               hardware through the TSS.
+;   DRIVPARM=   overrides a block driver's BPB.  There is something
+;               to override as of v0.40, so this is now real work
+;               rather than a statement with no subject.
+;   COUNTRY=    would need country tables PM-DOS does not carry.  38h
+;               and 65h answer for codepage 437 and say so; a second
+;               country is a data problem, not a parsing one.
+;   NUMLOCK=    needs the lock keys tracked and their lights driven,
+;               and KEYBD.INC deliberately tracks neither - see the
+;               note on BDAK_CAPS.  It is a keyboard feature wearing a
+;               CONFIG.SYS statement's clothes.
+;   SWITCHES=   /F skips a startup delay there is none of, /N disables
+;               function keys at boot that are not read, /K forces a
+;               conventional keyboard that is the only kind here.
+;   the [menu] family - multi-config.  Every block is read and none is
+;               chosen from, which is deliberate and documented.
 ;---------------------------------------------------------------------
 cfg_ignore:
 IFDEF PMDOS_DEBUG
@@ -311,26 +426,586 @@ cfg_rem:
         ret
 
 ;---------------------------------------------------------------------
+; SET name=value - a variable in the MASTER ENVIRONMENT.
+;
+; THE MASTER ENVIRONMENT IS THE KERNEL'S, and until now there was no
+; such thing: COMMAND.COM started with an empty block and put COMSPEC
+; in it, and nothing the machine had been configured with could reach
+; the shell at all.  That is what SET= in CONFIG.SYS is for - PATH and
+; TEMP and PROMPT set before AUTOEXEC.BAT runs, and set for every
+; program in the machine rather than for one interpreter.
+;
+; It goes to the shell the way an environment goes to any program:
+; copied into its slot behind its PSP with PSP_ENV pointing at it,
+; which is exactly what exec_setenv already does for a child of 4Bh.
+; The interpreter reads it there and seeds its own block from it.  A
+; second mechanism would have been a second thing to get wrong.
+;
+; "SET NAME=" with nothing after the equals DELETES the variable, here
+; as everywhere else, which is why this is not simply an append.
+;---------------------------------------------------------------------
+cfg_set:
+        call    menv_set
+        jc      cfg_badparm
+        ret
+
+;---------------------------------------------------------------------
+; menv_set - ESI -> "NAME=value", ASCIIZ.  Replaces any entry with the
+;            same name; an empty value deletes it.  CF if the name is
+;            malformed or the block is full.
+;
+; The name is UPPERCASED on the way in.  DOS stores them that way and
+; every lookup in the machine - COMMAND's env_find, a program's own
+; walk of the block - compares them raw, so a lower-case name stored
+; here would be a variable nobody could find and nobody could unset.
+;---------------------------------------------------------------------
+menv_set:
+        pushad
+
+;--- copy it to the scratch, uppercasing as far as the '=' -----------
+        mov     edi,OFFSET menv_tmp
+        xor     ecx,ecx                 ; name length, up to and incl '='
+        xor     edx,edx                 ; 0 = still in the name
+        xor     ebx,ebx                 ; total length
+ms_copy:
+        mov     al,[esi]
+        or      al,al
+        jz      ms_copied
+        cmp     ebx,MENV_LINE - 2
+        jae     ms_bad
+        or      edx,edx
+        jnz     ms_store
+        cmp     al,'='
+        je      ms_iseq
+        call    cfg_upcase
+        jmp     short ms_store
+ms_iseq:
+        mov     edx,1                   ; past the equals: value text, as
+        lea     ecx,[ebx+1]             ; typed
+ms_store:
+        mov     [edi],al
+        inc     edi
+        inc     esi
+        inc     ebx
+        jmp     short ms_copy
+ms_copied:
+        mov     byte ptr [edi],0
+        or      ecx,ecx
+        jz      ms_bad                  ; no '=' at all: not a SET
+        cmp     ecx,1
+        je      ms_bad                  ; "=value": no name either
+
+;--- take out any entry that already has this name -------------------
+        mov     esi,OFFSET master_env
+        xor     edx,edx                 ; offset of the entry
+ms_find:
+        cmp     edx,[master_envlen]
+        jae     ms_notthere
+        cmp     byte ptr [esi+edx],0
+        je      ms_notthere             ; the empty string ends the block
+        push    ecx
+        push    edx
+        mov     edi,OFFSET menv_tmp
+        lea     ebx,[esi+edx]
+ms_cmp:
+        mov     al,[edi]
+        cmp     al,[ebx]
+        jne     ms_nomatch
+        inc     edi
+        inc     ebx
+        dec     ecx
+        jnz     ms_cmp
+        pop     edx                     ; matched name and '=' both
+        pop     ecx
+        jmp     short ms_remove
+ms_nomatch:
+        pop     edx
+        pop     ecx
+ms_skip:
+        cmp     edx,[master_envlen]
+        jae     ms_notthere
+        mov     al,[esi+edx]
+        inc     edx
+        or      al,al
+        jnz     ms_skip
+        jmp     short ms_find
+
+;--- shift the rest of the block down over it ------------------------
+ms_remove:
+        push    ecx
+        mov     ebx,edx                 ; EBX = where it starts
+        mov     edi,edx                 ; EDI = one past its NUL
+ms_rlen:
+        mov     al,[esi+edi]
+        inc     edi
+        or      al,al
+        jnz     ms_rlen
+        mov     ecx,[master_envlen]
+        sub     ecx,edi                 ; bytes that follow it
+        push    esi
+        push    edi
+        lea     edx,[esi+ebx]
+        add     esi,edi
+        mov     edi,edx
+        rep     movsb
+        pop     edi
+        pop     esi
+        mov     eax,edi
+        sub     eax,ebx                 ; how long the entry was
+        sub     [master_envlen],eax
+        pop     ecx
+        cmp     dword ptr [master_envlen],1
+        ja      ms_notthere
+        mov     dword ptr [master_envlen],0     ; nothing left: no block
+ms_notthere:
+
+;--- "NAME=" with no value has done its whole job by deleting --------
+        mov     edi,OFFSET menv_tmp
+        cmp     byte ptr [edi+ecx],0
+        je      ms_done
+
+;--- append, over the terminator if there is one ---------------------
+        mov     edx,[master_envlen]
+        or      edx,edx
+        jz      ms_at
+        dec     edx                     ; write over the empty string
+ms_at:
+        mov     esi,OFFSET menv_tmp
+        mov     edi,OFFSET master_env
+        add     edi,edx
+ms_app:
+        cmp     edx,MENV_MAX - 2
+        jae     ms_bad
+        mov     al,[esi]
+        mov     [edi],al
+        inc     esi
+        inc     edi
+        inc     edx
+        or      al,al
+        jnz     ms_app
+        mov     byte ptr [edi],0        ; and the empty string after it
+        inc     edx
+        mov     [master_envlen],edx
+ms_done:
+        popad
+        clc
+        ret
+ms_bad:
+        popad
+        stc
+        ret
+
+;=====================================================================
+; cfg_shellenv - hand the master environment to the interpreter.
+;                Called from shell_restart, after build_psp.
+;
+; It goes through exec_env / exec_setenv rather than being copied
+; straight into the slot, because that is the one routine that knows
+; where a program's environment lives and how PSP_ENV is filled in,
+; and there is nothing else running at this point to want the buffer.
+; An empty master environment leaves exec_envlen at zero, which is
+; exactly the "no environment" case exec_setenv already handles - so a
+; CONFIG.SYS with no SET= line leaves the shell exactly as it was.
+;=====================================================================
+cfg_shellenv:
+        pushad
+        mov     ecx,[master_envlen]
+        mov     [exec_envlen],ecx
+        jecxz   cse_out
+        mov     esi,OFFSET master_env
+        mov     edi,OFFSET exec_env
+        rep     movsb
+cse_out:
+        call    exec_setenv
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; DOS=HIGH|LOW[,UMB|NOUMB] - and the halves are answered separately.
+;
+; UMB is the half with teeth.  It builds upper memory - probes what is
+; out there, backs the empty pages from the arena, lays an MCB chain
+; over the result, and joins that chain onto the conventional one - and
+; without it DEVICEHIGH and LOADHIGH mean what they have always meant
+; here, which is "load it low and say nothing".  See UMB.INC.
+;
+; THIS STATEMENT IS READ BEFORE ANY OTHER, whatever line it is on.  A
+; CONFIG.SYS that says DEVICEHIGH on line one and DOS=UMB on line ten
+; is not unusual and is not wrong - the statements describe a system
+; and not a sequence - so config_run walks the file twice and this
+; handler is the whole of the first walk.  MS-DOS makes several passes
+; for the same reason.
+;
+; HIGH is accepted and does nothing, and that is not the same kind of
+; nothing.  It asks for the kernel to be moved into the HMA, and this
+; kernel is 32-bit and lives at 110000h; the 64K at 100000h is the
+; guest's, deliberately, and giving it away is what DOS=HIGH would
+; mean here.  The answer is no and the statement is not an error.
+;---------------------------------------------------------------------
+cfg_dos:
+cdo_word:
+        call    cfg_blanks
+        cmp     byte ptr [esi],0
+        je      cdo_out
+        mov     edi,OFFSET cfgw_umb
+        call    cfg_iskw_part
+        jnc     cdo_umb
+        mov     edi,OFFSET cfgw_noumb
+        call    cfg_iskw_part
+        jnc     cdo_noumb
+        mov     edi,OFFSET cfgw_high
+        call    cfg_iskw_part
+        jnc     cdo_next
+        mov     edi,OFFSET cfgw_low
+        call    cfg_iskw_part
+        jnc     cdo_next
+        jmp     cfg_badparm
+cdo_umb:
+        mov     dword ptr [umb_wanted],1
+        jmp     short cdo_next
+cdo_noumb:
+        mov     dword ptr [umb_wanted],0
+cdo_next:
+        call    cfg_blanks
+        cmp     byte ptr [esi],','
+        jne     cdo_out
+        inc     esi
+        jmp     short cdo_word
+cdo_out:
+        ret
+
+;---------------------------------------------------------------------
+; cfg_iskw_part - ESI -> text, EDI -> a keyword.  Like cfg_iskw, but
+;                 for a word inside a list: it matches a PREFIX and
+;                 leaves ESI past it, where cfg_iskw wants the whole
+;                 of the value and nothing after it.
+;
+; "DOS=HIGH,UMB" has to be read a word at a time, and the separator is
+; not a terminator to the routine that reads the word.
+;---------------------------------------------------------------------
+cfg_iskw_part:
+        push    eax
+        push    ebx
+        mov     ebx,esi
+ckp_cmp:
+        mov     al,[edi]
+        or      al,al
+        jz      ckp_end
+        mov     al,[ebx]
+        call    cfg_upcase
+        cmp     al,[edi]
+        jne     ckp_no
+        inc     ebx
+        inc     edi
+        jmp     short ckp_cmp
+ckp_end:
+        mov     al,[ebx]                ; and it must end there: UMBFOO is
+        or      al,al                   ; not UMB
+        jz      ckp_yes
+        cmp     al,','
+        je      ckp_yes
+        cmp     al,' '
+        je      ckp_yes
+        cmp     al,9
+        jne     ckp_no
+ckp_yes:
+        mov     esi,ebx
+        pop     ebx
+        pop     eax
+        clc
+        ret
+ckp_no:
+        pop     ebx
+        pop     eax
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; FILES=n - how many files the system will have open at once.
+;
+; IT IS THE SYSTEM FILE TABLE AND NOT A PER-PROGRAM LIMIT, here as in
+; real DOS: one table, shared, and a handle is an index into it.  Real
+; DOS defaults to eight and everybody writes FILES=30 or FILES=40 to
+; get past it; PM-DOS's table is sixty-four entries and the statement
+; chooses how much of it to hand out.
+;
+; A LINE ASKING FOR MORE THAN THERE IS GETS WHAT THERE IS, silently,
+; which is what real DOS does with its own ceiling of 255 - and is why
+; raising the table to sixty-four mattered more than making the
+; statement adjustable.  At thirty-two a FILES=40 line was a promise
+; the kernel could not keep and did not say so.  Now the only lines it
+; cannot keep are ones no CONFIG.SYS in the world contains.
+;
+; The low bound is eight, because that is DOS's own floor and three of
+; the entries are the standard handles before any program starts.
+;---------------------------------------------------------------------
+cfg_files:
+        call    cfg_num
+        jc      cfg_badparm
+        cmp     eax,8
+        jae     cfi_low
+        mov     eax,8
+cfi_low:
+        cmp     eax,MAX_HANDLES
+        jbe     cfi_high
+        mov     eax,MAX_HANDLES
+cfi_high:
+        mov     [files_max],eax
+        mov     dword ptr [dos_lol+4],eax       ; and 52h says the same number
+        ret
+
+;---------------------------------------------------------------------
+; LASTDRIVE=letter - the highest drive letter that can exist.
+;
+; What a program does with it is size a loop, so the number has to be
+; at least the number of drives there really are: a LASTDRIVE below
+; the last mounted volume would be a machine hiding one of its own
+; disks from anything that asked politely.  Real DOS raises it for the
+; same reason.  The ceiling is MAX_DRIVES, which is what the volume
+; table was built with at assembly time.
+;
+; PM-DOS's letters come from scanning partitions rather than from this
+; statement, so raising it does not create drives - it says how far a
+; program should bother looking, which is all it ever said.
+;---------------------------------------------------------------------
+cfg_lastdrv:
+        mov     al,[esi]
+        or      al,al
+        jz      cfg_badparm
+        call    cfg_upcase
+        sub     al,'A' - 1              ; A: is one drive, not none
+        jbe     cfg_badparm
+        movzx   eax,al
+        cmp     eax,MAX_DRIVES
+        jbe     cld_ceil
+        mov     eax,MAX_DRIVES
+cld_ceil:
+        movzx   edx,byte ptr ds:[drv_count]
+        cmp     eax,edx
+        jae     cld_floor
+        mov     eax,edx                 ; never fewer than really exist
+cld_floor:
+        mov     [lastdrive_n],eax
+        ret
+
+;---------------------------------------------------------------------
+; cfg_num - ESI -> decimal digits.  EAX = the value, CF if there are
+;           none or it runs away.  Anything after the digits is
+;           ignored, because FILES=30,8 and BUFFERS=30,8 both exist
+;           and only the first number was ever ours.
+;---------------------------------------------------------------------
+cfg_num:
+        push    ecx
+        push    edx
+        xor     eax,eax
+        xor     ecx,ecx                 ; digits seen
+cn_lp:
+        mov     dl,[esi]
+        cmp     dl,'0'
+        jb      cn_end
+        cmp     dl,'9'
+        ja      cn_end
+        sub     dl,'0'
+        imul    eax,10
+        cmp     eax,10000
+        ja      cn_bad
+        movzx   edx,dl
+        add     eax,edx
+        inc     esi
+        inc     ecx
+        jmp     short cn_lp
+cn_end:
+        or      ecx,ecx
+        jz      cn_bad
+        pop     edx
+        pop     ecx
+        clc
+        ret
+cn_bad:
+        pop     edx
+        pop     ecx
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; INSTALL=path [arguments] - run a program before the shell exists.
+;
+; What it is FOR is TSRs.  SHARE, FASTOPEN, KEYB, NLSFUNC: programs
+; that install themselves and stay, and that a real DOS runs here
+; rather than from AUTOEXEC.BAT because they cost less memory when
+; nothing else has been loaded yet.  A program that simply runs and
+; exits works too and achieves nothing that AUTOEXEC could not.
+;
+; IT RUNS ON THE THIRD WALK, AFTER EVERY DEVICE= LINE, wherever it
+; sits in the file.  That is not tidiness: an INSTALL= program is
+; entitled to the drivers, and a real DOS makes the same guarantee by
+; running all of these after all of those.  See config_run.
+;
+; SIXTEEN-BIT PROGRAMS ONLY, and the refusal is not a limitation so
+; much as an admission of what a native program is here.  vdm_exec
+; sets up a DOS box, runs the guest, and RETURNS - which is what lets
+; CONFIG.SYS carry on to the next line - while the native path jumps
+; into the program at ring 3 and never comes back to its caller.  A
+; native program installed here could not return to finish reading the
+; file it was named in, and there is no such thing as a native TSR to
+; make it worth solving.
+;
+; A FAILURE IS A MESSAGE AND NOT A HALT, for the same reason DEVICE=
+; gives: a CONFIG.SYS naming a program that has been uninstalled is
+; the commonest CONFIG.SYS there is.
+;---------------------------------------------------------------------
+cfg_insthigh:
+        mov     eax,[alloc_strat]
+        push    eax
+        mov     dword ptr [alloc_strat],40h     ; upper first, then low
+        call    cfg_install
+        pop     eax
+        mov     [alloc_strat],eax
+        ret
+
+cfg_install:
+        call    cfg_split
+        jc      cin_noname
+
+        mov     edx,OFFSET inst_path            ; whose kind of program?
+        call    exec_kind
+        cmp     eax,EK_16BIT
+        jne     cin_native
+
+        mov     edi,OFFSET master_env           ; the environment it gets is
+        cmp     dword ptr [master_envlen],0     ; the one SET= built, and it
+        jne     cin_env                         ; is the same block the shell
+        xor     edi,edi                         ; will get
+cin_env:
+        mov     edx,OFFSET inst_path
+        mov     esi,OFFSET inst_tail
+        call    vdm_exec
+        jc      cin_failed
+        ret
+
+cin_noname:
+        call    cfg_show_line
+        mov     esi,OFFSET msgInstName
+        jmp     short cin_say
+cin_native:
+        call    cfg_show_line
+        mov     esi,OFFSET msgInstNative
+        jmp     short cin_say
+cin_failed:
+        call    cfg_show_line
+        mov     esi,OFFSET msgInstFail
+cin_say:
+        call    dword ptr ds:[IOS_CONSTR]
+        ret
+
+;---------------------------------------------------------------------
+; cfg_split - ESI -> "path arguments".  Fills inst_path with the path
+;             and inst_tail with the rest in DOS command-tail form -
+;             a length byte, the text, and a carriage return.
+;             CF if there is no path at all.
+;
+; The tail keeps its leading space, because that is what a program
+; parsing its own tail expects to find and what COMMAND.COM builds
+; when it starts one.
+;---------------------------------------------------------------------
+cfg_split:
+        push    eax
+        push    ecx
+        push    esi
+        push    edi
+        mov     edi,OFFSET inst_path
+        xor     ecx,ecx
+cs_path:
+        mov     al,[esi]
+        or      al,al
+        jz      cs_pend
+        cmp     al,' '
+        je      cs_pend
+        cmp     al,9
+        je      cs_pend
+        cmp     ecx,EXEC_PATH_MAX - 1
+        jae     cs_pskip
+        mov     [edi],al
+        inc     edi
+        inc     ecx
+cs_pskip:
+        inc     esi
+        jmp     short cs_path
+cs_pend:
+        mov     byte ptr [edi],0
+        or      ecx,ecx
+        jz      cs_none
+
+        mov     edi,OFFSET inst_tail
+        xor     ecx,ecx
+        cmp     byte ptr [esi],0
+        je      cs_tend
+        mov     byte ptr [edi+1],' '
+        inc     ecx
+cs_tail:
+        mov     al,[esi]
+        or      al,al
+        jz      cs_tend
+        cmp     ecx,7Eh
+        jae     cs_tend
+        mov     [edi+ecx+1],al
+        inc     ecx
+        inc     esi
+        jmp     short cs_tail
+cs_tend:
+        mov     [edi],cl
+        mov     byte ptr [edi+ecx+1],0Dh
+        pop     edi
+        pop     esi
+        pop     ecx
+        pop     eax
+        clc
+        ret
+cs_none:
+        pop     edi
+        pop     esi
+        pop     ecx
+        pop     eax
+        stc
+        ret
+
+;---------------------------------------------------------------------
 ; DEVICE=path [options] - load a character device driver.
 ;
-; DEVICEHIGH= is the same statement here, and that is not a shortcut:
-; a real DOS with no upper-memory provider loads a DEVICEHIGH driver
-; low and says nothing about it, because the statement asks for a
-; preference rather than a guarantee.  PM-DOS has no UMBs to offer
-; yet, so it gives the same answer for the same reason.
+; DEVICEHIGH= is the same statement with the allocation strategy set
+; to "upper first" around it, which is the whole of what loading high
+; is - see lm_alloc.  If DOS=UMB never built any upper memory the
+; strategy finds none, lm_alloc falls back to conventional, and the
+; driver loads low WITHOUT A WORD: the statement asks for a preference
+; and not a guarantee, and a real DOS with no upper-memory provider
+; gives the same answer for the same reason.
+;
+; The strategy is put back afterwards whatever happened.  It is a
+; setting a program can read and change through 58h, and CONFIG.SYS
+; leaving its own value behind in it would be a system that starts up
+; differently depending on what was in a file.
 ;
 ; A FAILURE IS A MESSAGE AND NOT A HALT.  A CONFIG.SYS naming a driver
 ; that is not there is the commonest CONFIG.SYS there is - the line
 ; survives the uninstall of what it loaded - and a DOS that refuses to
 ; boot over it would be a DOS nobody could get back into.
 ;---------------------------------------------------------------------
+cfg_devhigh:
+        mov     eax,[alloc_strat]
+        push    eax
+        mov     dword ptr [alloc_strat],40h     ; upper first, then low
+        call    cfg_device
+        pop     eax
+        mov     [alloc_strat],eax
+        ret
+
 cfg_device:
         call    dl_load
         jnc     cdv_out
         push    eax
         call    cfg_show_line
         pop     eax
-        cmp     eax,DLERR_BLOCK
+        cmp     eax,DLERR_NOUNITS
         je      cdv_block
         cmp     eax,DLERR_NOMEM
         je      cdv_nomem
@@ -341,7 +1016,7 @@ cfg_device:
         mov     esi,OFFSET msgDevNoFile
         jmp     short cdv_say
 cdv_block:
-        mov     esi,OFFSET msgDevBlock
+        mov     esi,OFFSET msgDevUnits
         jmp     short cdv_say
 cdv_nomem:
         mov     esi,OFFSET msgDevNoMem
@@ -560,7 +1235,7 @@ cfg_table:
 
 ;--- PM-DOS's own -----------------------------------------------------
         dd      OFFSET cfgn_device,  OFFSET cfg_device
-        dd      OFFSET cfgn_devhigh, OFFSET cfg_device
+        dd      OFFSET cfgn_devhigh, OFFSET cfg_devhigh
         dd      OFFSET cfgn_lfn,     OFFSET cfg_lfn
         dd      OFFSET cfgn_dpmi,    OFFSET cfg_dpmi
         dd      OFFSET cfgn_nulltrp, OFFSET cfg_nulltrap
@@ -568,18 +1243,18 @@ cfg_table:
 ;--- the inherited set: recognised, and doing nothing ----------------
         dd      OFFSET cfgn_rem,     OFFSET cfg_rem
         dd      OFFSET cfgn_buffers, OFFSET cfg_ignore
-        dd      OFFSET cfgn_files,   OFFSET cfg_ignore
-        dd      OFFSET cfgn_lastdrv, OFFSET cfg_ignore
+        dd      OFFSET cfgn_files,   OFFSET cfg_files
+        dd      OFFSET cfgn_lastdrv, OFFSET cfg_lastdrv
         dd      OFFSET cfgn_fcbs,    OFFSET cfg_ignore
         dd      OFFSET cfgn_stacks,  OFFSET cfg_ignore
         dd      OFFSET cfgn_country, OFFSET cfg_ignore
         dd      OFFSET cfgn_switches,OFFSET cfg_ignore
         dd      OFFSET cfgn_numlock, OFFSET cfg_ignore
-        dd      OFFSET cfgn_dos,     OFFSET cfg_ignore
+        dd      OFFSET cfgn_dos,     OFFSET cfg_dos
         dd      OFFSET cfgn_drivparm,OFFSET cfg_ignore
-        dd      OFFSET cfgn_install, OFFSET cfg_ignore
-        dd      OFFSET cfgn_insthigh,OFFSET cfg_ignore
-        dd      OFFSET cfgn_set,     OFFSET cfg_ignore
+        dd      OFFSET cfgn_install, OFFSET cfg_install
+        dd      OFFSET cfgn_insthigh,OFFSET cfg_insthigh
+        dd      OFFSET cfgn_set,     OFFSET cfg_set
         dd      OFFSET cfgn_include, OFFSET cfg_ignore
         dd      OFFSET cfgn_menuitem,OFFSET cfg_ignore
         dd      OFFSET cfgn_menudflt,OFFSET cfg_ignore
@@ -620,12 +1295,26 @@ cfgn_multitrk db  'MULTITRACK',0
 
 cfgw_on       db  'ON',0
 cfgw_off      db  'OFF',0
+cfgw_umb      db  'UMB',0
+cfgw_noumb    db  'NOUMB',0
+cfgw_high     db  'HIGH',0
+cfgw_low      db  'LOW',0
 
 ;=====================================================================
 ; Data
 ;=====================================================================
 cfg_name    db  'A:\CONFIG.SYS',0       ; drive letter patched at boot
 cfg_val     dd  0
+cfg_pass    dd  0                       ; which walk over the file this is
+
+MENV_MAX    EQU 1024                    ; the master environment, which is the
+MENV_LINE   EQU 160                     ; shell's to start with
+master_env  db  MENV_MAX dup(0)
+master_envlen dd 0
+menv_tmp    db  MENV_LINE dup(0)
+
+inst_path   db  EXEC_PATH_MAX dup(0)    ; what INSTALL= names, and the tail
+inst_tail   db  132 dup(0)              ; it is given, in DOS's own form
 cfg_tmp     dd  0
 break_flag  db  0
 
@@ -633,9 +1322,13 @@ msgCrLf         db  13,10,0
 msgCfgBadCmd    db  'Unrecognized command in CONFIG.SYS',13,10,0
 msgDevNoFile    db  'Bad or missing device driver',13,10,0
 msgDevNoMem     db  'Not enough memory for device driver',13,10,0
-msgDevBlock     db  'Block device drivers are not supported yet',13,10,0
+msgDevUnits     db  'Device driver has no units',13,10,0
 msgDevInit      db  'Device driver failed to initialise',13,10,0
 msgDevFull      db  'Too many device drivers',13,10,0
+msgNoUmb        db  'DOS=UMB: no upper memory is available on this machine',13,10,0
+msgInstName     db  'INSTALL= names no program',13,10,0
+msgInstNative   db  'INSTALL= cannot run a 32-bit program',13,10,0
+msgInstFail     db  'Bad or missing INSTALL= program',13,10,0
 msgCfgBadVal    db  'Invalid parameter in CONFIG.SYS',13,10,0
 IFDEF PMDOS_DEBUG
 msgCfgFound     db  'Processing CONFIG.SYS',13,10,0
