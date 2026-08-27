@@ -48,6 +48,9 @@ ENDIF
         call    vdm_lolinit             ; and a 52h list of lists a 16-bit
                                         ; program can actually follow
         call    i13_count_drives        ; what the BIOS counted at power-on
+        call    crit_init               ; a device header a GUEST'S INT 24h
+                                        ; handler can address - see the note
+                                        ; on crit_guest
         call    dpmi_init               ; and the protected-mode interface
         call    sft_init
 
@@ -347,6 +350,10 @@ df_notbox:
         INCLUDE VDM.INC
         INCLUDE INT13.INC               ; after VDM.INC: it works on vdm_ctx
                                         ; and ends its calls at vdm_loop
+        INCLUDE EMS.INC                 ; and so does this one.  It also
+                                        ; wants UMB.INC above it: the page
+                                        ; frame is reserved out of the same
+                                        ; probe upper memory is found with
         INCLUDE DPMI.INC                ; and after both: the DPMI host
                                         ; borrows the DOS box's own V86 loop
         INCLUDE RING3.INC               ; last: it sorts ring-3 faults into

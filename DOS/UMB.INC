@@ -64,6 +64,8 @@ umb_rend    dd  UMB_MAXRUN dup (0)      ; one paragraph past its last
 umb_state   db  UMB_SCAN_PAGES dup (0)  ; one UMBP_* per page
             db  0,0,0,0                 ; and alignment after it
 
+umb_probed  dd  0                       ; the measurement has been made
+
 umb_have    dd  0                       ; non-zero once there are UMBs
 umb_linked  dd  0                       ; the link state 58h/02h reports
 umb_head    dd  0                       ; the filler block below the first
@@ -96,8 +98,10 @@ umb_init:
         jne     ui_already
 
 ;--- what is out there ------------------------------------------------
-        mov     edi,OFFSET umb_state
-        call    dword ptr ds:[IOS_UMBPROBE]
+; Not necessarily for the first time: EMS= reserves the page frame
+; out of this same measurement before this routine runs, and it has to
+; be the SAME measurement or the frame would be offered twice.
+        call    umb_probe
 
 ;--- back every empty page with one out of the arena -------------------
 ; A SPAN AT A TIME, and the span is the run of consecutive pages that
@@ -187,6 +191,60 @@ ui_already:
 ui_nothing:
         popad
         stc
+        ret
+
+;=====================================================================
+; umb_probe - fill in umb_state, ONCE.
+;
+; The probe is a MEASUREMENT OF HARDWARE - it writes a pattern into
+; each page and sees whether anything stores it - so running it twice
+; is not merely wasteful, it is wrong the second time: by then some of
+; those pages have a page out of the arena underneath them and would
+; measure as RAM that was always there.  Two callers want the answer
+; and the second must get the first one's.
+;=====================================================================
+umb_probe:
+        cmp     dword ptr [umb_probed],0
+        jne     up_done
+        pushad
+        mov     edi,OFFSET umb_state
+        call    dword ptr ds:[IOS_UMBPROBE]
+        popad
+        mov     dword ptr [umb_probed],1
+up_done:
+        ret
+
+;=====================================================================
+; umb_reserve - EAX = linear base, ECX = bytes.  Take that much of
+;               upper memory out of what may be offered as UMBs.
+;
+; TAKEN is exactly the right word for it: the pages are spoken for by
+; something that is not a UMB, which is the same thing an option ROM
+; is as far as this file is concerned.  The chain builder already
+; knows how to walk round a stretch of TAKEN pages - that is what the
+; filler blocks are for - so a reservation costs nothing but the
+; memory it reserves.
+;
+; The caller has already established that the range is worth having;
+; this does not check, because the one caller measured it out of
+; umb_state itself.  It must run BEFORE umb_init, and cfg_upper is
+; where that order is kept.
+;=====================================================================
+umb_reserve:
+        pushad
+        sub     eax,UMB_SCAN_LO
+        shr     eax,12                          ; the first page's index
+        add     ecx,0FFFh
+        shr     ecx,12                          ; and how many
+        jecxz   urs_out
+urs_mark:
+        cmp     eax,UMB_SCAN_PAGES
+        jae     urs_out
+        mov     byte ptr [umb_state+eax],UMBP_TAKEN
+        inc     eax
+        loop    urs_mark
+urs_out:
+        popad
         ret
 
 ;=====================================================================

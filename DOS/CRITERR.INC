@@ -253,6 +253,272 @@ ca_out:
         ret
 
 ;=====================================================================
+; crit_dev - A CHARACTER DEVICE DRIVER SAID NO.  AL = the low byte of
+;            the status word it put in the request packet, ESI = the
+;            flat address of its device header, EBX = the same header
+;            as a real-mode far pointer.  Returns AL = the handler's
+;            answer.
+;
+; TWO POINTERS TO ONE HEADER because there are two kinds of handler
+; and they cannot hold the same thing.  A native one is shown the flat
+; address; a DOS box's is shown BP:SI, which has to be a segment and
+; an offset.  A loaded driver is the only device in this kernel where
+; both exist - it lives below 1MB, which is where drivers live.
+;
+; This is the other half of INT 24h and it has been on the roadmap
+; since v0.20 waiting for something to raise it.  The wait was real:
+; the only character devices were CON, NUL, PRN and AUX, and the first
+; two cannot fail while the other two are reached through the BIOS,
+; which answers by not answering.  A DEVICE= driver is the first
+; character device in this kernel that can report a reason - and until
+; now dl_out threw the reason away, so a driver saying "out of paper"
+; and a driver saying "done" were the same event.
+;
+; NO TRANSLATION TABLE, unlike crit_disk.  A block driver's status
+; byte is INT 13h's and has to be mapped; a character driver's IS a
+; DOS error code, because the request packet was designed to carry one
+; - the numbering in the packet and the numbering INT 24h publishes
+; are the same numbering, and have been since DOS 2.0.
+;
+; FAIL IS NOT OFFERED, and that is a statement about the call rather
+; than about the device.  dev_out has no error return and never had
+; one: 02h, 09h and the rest of the DOS character-output calls cannot
+; report that a byte did not go anywhere.  So a handler answering Fail
+; would get exactly what Ignore gives it - the byte is lost, the call
+; says nothing - and offering a choice with no consequence is worse
+; than not offering it.  Retry, Ignore and Abort all mean different
+; things here, and those three are what AH allows.
+;=====================================================================
+crit_dev:
+        push    ebx
+        push    ecx
+        push    edx
+        push    esi
+        push    edi
+        movzx   edi,al
+        cmp     edi,CERR_MAXCODE
+        jbe     cdv_code
+        mov     edi,CERR_GENERAL        ; a driver inventing its own
+cdv_code:
+        mov     edx,[crit_rmhdr]        ; the handler is shown the driver,
+        push    edx                     ; whichever kind of handler it is
+        mov     [crit_hdr],esi
+        mov     [crit_rmhdr],ebx
+        mov     ah,CE_CHARDEV OR CE_RETRY_OK OR CE_IGNORE_OK
+        xor     al,al                   ; there is no drive; DOS says AL is
+                                        ; undefined when bit 7 is set, and
+                                        ; zero is a better undefined than
+                                        ; whatever was in the register
+        call    crit_raise
+        mov     dword ptr [crit_hdr],OFFSET crit_devhdr
+        pop     edx
+        mov     [crit_rmhdr],edx        ; ...and the low copy of it back
+        pop     edi
+        pop     esi
+        pop     edx
+        pop     ecx
+        pop     ebx
+        ret
+
+;=====================================================================
+; crit_init - a copy of crit_devhdr somewhere a 16-bit program can
+;             point at.  Once, at boot.
+;
+; The header the handler is shown travels in BP:SI, and for a DOS box
+; that has to be a REAL-MODE far pointer.  A loaded character driver
+; has one already - it lives below 1MB because that is where drivers
+; live - but crit_devhdr is inside PMDOS.SYS at 110000h and no
+; segment:offset can name it.  So eighteen bytes are copied into
+; conventional memory and marked owner 8, the way the XMS callback
+; paragraph and the DPMI landing pads are: it belongs to the machine
+; and no exit sweep takes it.
+;
+; If there is no low memory for it the pointer stays zero, and
+; crit_guest hands the handler a null BP:SI rather than a wrong one.
+;=====================================================================
+crit_init:
+        pushad
+        mov     ebx,(DEVH_LEN + 15) / 16
+        call    lm_sysalloc
+        jc      ci_none
+        movzx   edi,ax
+        shl     edi,16
+        mov     [crit_rmhdr],edi                ; offset zero within it
+        shr     edi,16
+        shl     edi,4
+        mov     esi,OFFSET crit_devhdr
+        mov     ecx,DEVH_LEN
+        rep     movsb
+ci_none:
+        popad
+        ret
+
+;=====================================================================
+; crit_guest - hand the critical error to a DOS BOX'S OWN INT 24h
+;              handler, if there is a box and it has one.
+;
+;   AH = flags, AL = drive, DI = code, exactly as crit_raise has them.
+;   CF clear: the guest answered, and AL is the answer.
+;   CF set:   not delivered; the caller falls back to the IDT.
+;
+; THIS IS THE HALF THAT WAS MISSING, and it was missing invisibly.  A
+; guest's 21h/25h writes the REAL-MODE IVT at 0:0, which is where the
+; monitor reflects an untrapped interrupt; crit_raise executes INT 24h
+; from 32-bit kernel code, which goes through the IDT.  Two tables, and
+; only the second was ever consulted - so a DOS program that hooked
+; 24h to handle its own disk errors quietly got COMMAND's "Abort,
+; Retry, Fail?" prompt instead, and a program that meant to fail
+; silently asked the user a question.  R3TEST's fourteenth check has
+; covered the ring-3 half since the ring-3 release, which is exactly
+; why this went unnoticed: the mechanism works perfectly for the
+; caller it was written for.
+;
+; NOTHING NEW HAD TO BE BUILT.  dpmi_simint parks the current V86
+; context, points the guest at an INT instruction with the vector byte
+; patched, and borrows the box's own loop; the monitor reflects 24h
+; through the guest's table; the handler's IRET lands on a HLT the
+; host planted, and dpmi_rmdone hands the registers back.  That is the
+; whole delivery, and dos_int28 has been using it for INT 28h since
+; v0.30.  EXECUTING the instruction rather than reading the vector is
+; also what makes this correct rather than nearly correct - see the
+; note in dpmi_simint.
+;
+; THE FOUR REFUSALS, and each of them is a different way of there
+; being nobody to ask:
+;
+;   No box.  A native program's handler is an IDT gate and the caller
+;   already knows how to reach it.
+;
+;   A simulated interrupt already in flight, or a DEVICE= driver's
+;   INIT excursion running.  There is one vdm_ctx and both of those
+;   have borrowed it; a third borrower would return the wrong context
+;   to the wrong owner.  dl_depth is the driver half and it matters:
+;   a driver's INIT makes DOS calls, and one of those can hit a disk.
+;
+;   No callback paragraph.  Without one there is no INT instruction to
+;   execute and no landing pad to come back to.
+;
+;   AND THE GUEST HAS NOT HOOKED 24h AT ALL, which is the one that
+;   cannot be skipped.  The vector always points at SOMETHING - v0.41
+;   plants an IRET there for every DOS vector a box reflects - so a
+;   box that never hooked it would run that IRET and come back with
+;   whatever was in AL, which is the DRIVE NUMBER, which reads as
+;   Ignore.  Comparing the vector against the stub we planted is what
+;   tells "nobody is listening" from "somebody is".
+;=====================================================================
+crit_guest:
+        mov     [cg_ax],ax                      ; the register set, before
+        mov     [cg_di],di                      ; anything below needs them
+
+        cmp     dword ptr ds:[vdm_busy],0
+        je      cg_no
+        cmp     dword ptr ds:[dpmi_rmact],0
+        jne     cg_no
+        cmp     dword ptr [dl_depth],0
+        jne     cg_no
+        cmp     word ptr ds:[xms_cbseg],0
+        je      cg_no
+        call    crit_hooked
+        jc      cg_no
+
+        mov     byte ptr [cg_ok],0
+        pushad
+
+        ; The register set, from the GUEST'S OWN parked context, for
+        ; the reason dos_int28 gives about INT 28h: a critical error is
+        ; taken at a moment when the program was in the middle of
+        ; something, so the handler sees whatever was live - and in
+        ; particular a plausible DS.  Zeroes would be a machine state
+        ; no real DOS ever produces.
+        mov     edi,OFFSET crit_rmcs
+        xor     eax,eax
+        mov     ecx,(RMCS_LEN + 3) / 4
+        rep     stosd
+
+        mov     esi,OFFSET vdm_ctx
+        mov     edi,OFFSET crit_rmcs
+        mov     eax,[esi+V86C_EBX]
+        mov     [edi+RMCS_EBX],eax
+        mov     eax,[esi+V86C_EDX]
+        mov     [edi+RMCS_EDX],eax
+        mov     eax,[esi+V86C_ECX]
+        mov     [edi+RMCS_ECX],eax
+        mov     eax,[esi+V86C_ES]
+        mov     [edi+RMCS_ES],ax
+        mov     eax,[esi+V86C_DS]
+        mov     [edi+RMCS_DS],ax
+        mov     eax,[esi+V86C_FS]
+        mov     [edi+RMCS_FS],ax
+        mov     eax,[esi+V86C_GS]
+        mov     [edi+RMCS_GS],ax
+
+        ; THE GUEST'S OWN STACK, and not the scratch one dpmi_simint
+        ; would otherwise lend.  A handler is the program's code and
+        ; the program sized its own stack; the 256 bytes the DPMI host
+        ; keeps for clients is tight for one that prints a message and
+        ; reads a key, and this is a place where running out would be
+        ; very hard to recognise afterwards.  It is also what a real
+        ; INT 24h looks like from inside: an interrupt taken on the
+        ; stack that was current.
+        mov     eax,[esi+V86C_SS]
+        mov     [edi+RMCS_SS],ax
+        mov     eax,[esi+V86C_ESP]
+        mov     [edi+RMCS_SP],ax
+
+        ; ...and the four registers that ARE the critical error.
+        movzx   eax,word ptr [cg_ax]
+        mov     [edi+RMCS_EAX],eax
+        movzx   eax,word ptr [cg_di]
+        mov     [edi+RMCS_EDI],eax
+        mov     eax,[crit_rmhdr]                ; BP:SI, the device header
+        movzx   edx,ax                          ; as a guest can hold it
+        mov     [edi+RMCS_ESI],edx
+        shr     eax,16
+        mov     [edi+RMCS_EBP],eax
+
+        mov     dword ptr ds:[dpmi_rmcs],OFFSET crit_rmcs
+        mov     byte ptr ds:[dpmi_rmint],24h
+        mov     word ptr ds:[dpmi_rmwords],0
+        call    dpmi_simint
+        jc      cg_done
+        mov     byte ptr [cg_ok],1
+cg_done:
+        popad
+        cmp     byte ptr [cg_ok],0
+        je      cg_no
+        mov     al,byte ptr [crit_rmcs+RMCS_EAX]
+        clc
+        ret
+cg_no:
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; crit_hooked - CF clear if the guest's INT 24h vector points anywhere
+;               other than the IRET vdm_stubs planted.
+;---------------------------------------------------------------------
+crit_hooked:
+        push    eax
+        push    edx
+        movzx   edx,word ptr ds:[xms_cbseg]
+        shl     edx,16
+        mov     dx,VDMCB_IRET
+        mov     eax,dword ptr ds:[24h * 4]
+        cmp     eax,edx
+        je      ch_no                           ; still our stub
+        or      eax,eax
+        jz      ch_no                           ; 0000:0000 is nobody's
+        pop     edx
+        pop     eax
+        clc
+        ret
+ch_no:
+        pop     edx
+        pop     eax
+        stc
+        ret
+
+;=====================================================================
 ; crit_raise - AH = flags, AL = drive, DI = error code.  Calls the
 ;              INT 24h vector and returns its answer in AL.
 ;
@@ -281,14 +547,30 @@ cr_go:
         ; subtracted one, rather than calling 5D06h for it.
         mov     byte ptr ds:[DOS_ERRFLG],1
         mov     byte ptr [crit_resp],CERR_FAIL
+
+        ; A DOS BOX'S OWN HANDLER FIRST, when there is one.  The error
+        ; belongs to the program that caused it, and a program that
+        ; hooked 24h did so to be asked.  crit_guest refuses unless
+        ; there is genuinely somebody in there listening, and the IDT
+        ; below is what answers for everyone else - including a box
+        ; that never hooked the vector, whose errors go to COMMAND's
+        ; prompt exactly as they always have.
+        call    crit_guest
+        jc      cr_ourown
+        and     eax,3
+        mov     [crit_resp],al
+        jmp     short cr_answered
+
+cr_ourown:
         pushad
         movzx   edi,di                  ; the code, and nothing above it
-        mov     esi,OFFSET crit_devhdr
-        xor     ebp,ebp
+        mov     esi,[crit_hdr]          ; whose driver it was - the block
+        xor     ebp,ebp                 ; stand-in unless crit_dev said
         int     24h
         and     eax,3                   ; an answer of 4 is an answer
         mov     [crit_resp],al          ; of 3
         popad
+cr_answered:
         mov     byte ptr [crit_busy],0
         mov     byte ptr ds:[DOS_ERRFLG],0
         mov     al,[crit_resp]
@@ -334,6 +616,24 @@ crit_devhdr dd  -1                      ; no next driver
             dw  0, 0                    ; strategy, interrupt: none
             db  MAX_DRIVES              ; units, where a name would be
             db  7 dup(0)
+
+; ...and which header the handler is actually shown.  A character
+; device error points this at the REAL driver's header, because there
+; is one and because the attribute word is the field a handler reads:
+; showing it the block stand-in would be telling it the printer was a
+; disk.  crit_dev puts it back on the way out.
+crit_hdr    dd  OFFSET crit_devhdr
+
+; ...and the same thing again as a REAL-MODE far pointer, for a guest's
+; handler, which cannot hold the one above.  crit_init fills in the low
+; copy of the block stand-in; crit_dev points it at the real driver.
+crit_rmhdr  dd  0
+
+crit_rmcs   db  ((RMCS_LEN + 3) / 4) * 4 dup (0)
+cg_ax       dw  0                       ; the register set crit_raise was
+cg_di       dw  0                       ; called with, parked across the
+cg_ok       db  0                       ; pushad that builds the guest's
+            db  0
 
 crit_busy   db  0                       ; a handler is running
 crit_resp   db  CERR_FAIL

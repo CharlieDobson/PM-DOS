@@ -997,6 +997,19 @@ vdm_traps:
                                                         ; covering 10h-17h
         mov     byte ptr [vdm_ctx+V86C_TRAP+4],0FFh     ; 20h-27h
         mov     byte ptr [vdm_ctx+V86C_TRAP+5],0FFh     ; 28h-2Fh
+
+        ; 67h, and ONLY WHEN THERE IS A MANAGER TO ANSWER IT.  Claiming
+        ; the vector on a machine with no expanded memory would mean
+        ; answering as though there were one, and the honest reply to
+        ; "is EMS here" is the IRET vdm_stubs plants: a program reads
+        ; the vector's segment, fails to find EMMXXXX0 in it, and
+        ; concludes correctly.  Bit 7 of byte 12: eight vectors to a
+        ; byte, and 67h is 103.
+        mov     byte ptr [vdm_ctx+V86C_TRAP+12],0
+        cmp     dword ptr [ems_have],0
+        je      vt_noems
+        mov     byte ptr [vdm_ctx+V86C_TRAP+12],80h
+vt_noems:
         ret
 
 ;=====================================================================
@@ -1049,7 +1062,17 @@ vs_none:
 ; likewise.  29h is the fast console write, which DOS provides and
 ; ANSI.SYS hooks - an IRET loses the character, which is the right
 ; kind of wrong until there is a device chain to do better.
-vdm_stublist    db  22h,23h,24h,28h,29h,2Ah,2Bh,2Ch,2Dh,2Eh,2Fh,0
+;
+; 67h IS NOT A DOS VECTOR AND IS ON THE LIST ANYWAY.  It belongs to
+; expanded memory, and a machine with none leaves it exactly as the
+; BIOS did - which on most BIOSes is nothing at all, so a program that
+; probes for EMS by CALLING the vector rather than by reading it jumps
+; to 0000:0000 and starts executing the interrupt vector table.
+; Programs that do this are wrong and they exist.  ems_init overwrites
+; the entry with a segment that has a name in it when there is a
+; manager to name; until then an IRET is the whole of the right
+; answer, and AH comes back unchanged rather than saying "no error".
+vdm_stublist    db  22h,23h,24h,28h,29h,2Ah,2Bh,2Ch,2Dh,2Eh,2Fh,67h,0
 
 ;=====================================================================
 ; vdm_lolinit - build the list of lists a 16-bit guest can follow.
@@ -1540,6 +1563,8 @@ vdm_int:
         je      vdm_i15
         cmp     ebx,2Fh
         je      vdm_i2F
+        cmp     ebx,67h                         ; expanded memory, and the bit
+        je      vdm_i67                         ; is only set when there is any
         cmp     ebx,13h                         ; the disk BIOS, served out
         jne     vdm_notours                     ; of the kernel's own block
         jmp     vdm_i13                         ; layer - see INT13.INC
@@ -1567,6 +1592,15 @@ vdm_i2F:
         jnc     vdm_loop
         call    dpmi_int2F              ; 1686h/1687h: is there a host?
         jc      vdm_reflect
+        jmp     vdm_loop
+
+;--- INT 67h: the whole vector, and every subfunction of it.  Unlike
+;--- 15h and 2Fh there is nothing on 67h that belongs to anyone else:
+;--- it was allocated to expanded memory and to nothing else, and a
+;--- manager that hands part of it back would be handing it to the
+;--- IRET it replaced.
+vdm_i67:
+        call    ems_call
         jmp     vdm_loop
 
 vdm_reflect:
@@ -2605,6 +2639,17 @@ vdm_done:
         ; which with the flag still set would be a loop rather than an
         ; exit.
         mov     dword ptr ds:[vdm_busy],0
+
+        ; AND NO SIMULATED INTERRUPT IS STILL IN FLIGHT, whatever the
+        ; flag says.  dpmi_simint sets it and dpmi_rmdone clears it,
+        ; which covers every case where the guest comes back - but a
+        ; guest CAN end without coming back: an INT 24h handler that
+        ; answers by calling 4Ch, or a ^C during an idle hook.  The
+        ; flag would then be left standing and refuse every simulated
+        ; interrupt in every box after this one, for the lifetime of
+        ; the machine.  The box is over; nothing can still be in it.
+        mov     dword ptr ds:[dpmi_rmact],0
+
         call    vdm_cleanup
         call    vdm_pop                 ; frame 0: cur_own and dta_ptr
                                         ; go back to the 32-bit shell
@@ -2665,6 +2710,10 @@ vt_nomem:
         mov     eax,[cur_own]
         call    arena_freeown
         call    xms_relown
+        call    ems_relown              ; AFTER arena_freeown, which has
+                                        ; already taken the pages: this
+                                        ; drops the windows and the rows
+                                        ; and deliberately frees nothing
 vt_resident:
         popad
         ret

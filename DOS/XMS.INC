@@ -48,30 +48,11 @@
 
 XMS_MAXH        EQU     32              ; handles, which is DOS's own default
 
-; The callback block, one paragraph of guest-visible memory.  Offset 0
-; is XMS; the next entries are free for EMS and DPMI to claim without
-; needing a second mechanism.  Each is HLT followed by RETF, and the
-; VM loop tells a service call from a program that really halted by
-; the address the HLT was executed at.
-XMSCB_ENTRY     EQU     0
-VDMCB_IRET      EQU     2               ; and one spare byte of it holds an
-                                        ; IRET, for the DOS vectors nobody
-                                        ; has hooked - see vdm_stubs
-DPMICB_ENTRY    EQU     4               ; DPMI: the real-to-protected switch
-DPMICB_SIM      EQU     8               ; "INT xx", the vector byte patched
-                                        ; per call - this is how a simulated
-                                        ; real-mode interrupt is DELIVERED,
-                                        ; rather than by reading the vector
-                                        ; out of the table at 0:0.  The
-                                        ; monitor traps INT 21h, so the
-                                        ; table has no entry for it to read;
-                                        ; executing the instruction instead
-                                        ; means every vector goes wherever
-                                        ; it would have gone for a DOS
-                                        ; program, trapped or reflected
-DPMICB_RET      EQU     10              ; and a bare HLT, which the handler's
-                                        ; IRET lands on.  Never called: the
-                                        ; monitor recognises the address
+; The callback block used to be described here, because XMS was the
+; only thing in it.  It is XMSCB_ENTRY, VDMCB_IRET and the DPMI
+; entries, and it now lives in PMDOS.INC with the rest of the layout
+; the whole kernel agrees on - CRITERR.INC needs VDMCB_IRET and is
+; assembled before this file, so an EQU here is an EQU too late.
 
 XH_FLAGS        EQU     0               ; dd - 0 free, 1 allocated
 XH_KB           EQU     4               ; dd - size in KB

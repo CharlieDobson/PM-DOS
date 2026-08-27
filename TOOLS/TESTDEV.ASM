@@ -17,7 +17,13 @@
 ;          program - the one thing in this kernel that had never
 ;          happened before - and if it comes out on the screen then
 ;          the excursion into V86 and the way back both work.
-;   WRITE  counts the bytes it is given.
+;   WRITE  counts the bytes it is given - and REFUSES a '!' every
+;          other time, with "printer out of paper", which is the only
+;          way to find out whether a character driver's error status
+;          reaches INT 24h.  Alternate refusals rather than permanent
+;          ones because a driver that always failed could only test
+;          Ignore: a Retry would go round for ever.  DEVCRIT.COM is
+;          what this is for.
 ;   READ   says how many.  So:
 ;
 ;               TYPE TESTDEV            "0 bytes written"
@@ -168,12 +174,49 @@ rd_end:
 ;=====================================================================
 ; WRITE.  Count them.  A device that swallowed its input and reported
 ;         nothing would pass a test that a broken one also passes.
+;
+; EXCEPT FOR '!', WHICH IT REFUSES EVERY OTHER TIME, and that is the
+; only reason this driver has a failure mode at all: until v0.41 a
+; character driver's error status was read out of the packet and
+; thrown away, so there was no way to find out whether the kernel
+; would do anything with one.  Now dl_out raises a critical error with
+; it and acts on the answer, and a driver that always failed could
+; only ever test Ignore - a Retry would go round for ever.  Refusing
+; alternate attempts means the SAME byte offered twice succeeds the
+; second time, so Retry has somewhere to arrive.
+;
+; The reason it gives is 09h, "printer out of paper", because that is
+; the archetype: the error a character device raises that a human can
+; actually do something about, which is the whole argument for asking
+; rather than failing.
 ;=====================================================================
 do_write:
+        mov     word ptr [readpos],0    ; ANY write lets the reply be read
+                                        ; again, refused or not - a test
+                                        ; that compares the count before
+                                        ; and after needs to be able to
+                                        ; read it both times
+        mov     cx,es:[bx+12h]
+        jcxz    wr_count
+
+        push    es                      ; the first byte of the buffer, and
+        push    di                      ; les reloads ES over the packet's
+        les     di,dword ptr es:[bx+0Eh]
+        mov     al,es:[di]
+        pop     di
+        pop     es
+        cmp     al,'!'
+        jne     wr_count
+        xor     byte ptr [bangfail],1
+        cmp     byte ptr [bangfail],0
+        je      wr_count                ; the second offer of it goes through
+        mov     word ptr es:[bx+12h],0  ; nothing was transferred...
+        mov     word ptr es:[bx+3],8109h        ; ...error, done, no paper
+        jmp     intr_out
+
+wr_count:
         mov     cx,es:[bx+12h]
         add     [written],cx
-        mov     word ptr [readpos],0    ; the answer has changed: let it be
-                                        ; read again
         mov     word ptr es:[bx+3],0100h
         jmp     intr_out
 
@@ -277,6 +320,8 @@ r_head      db  'TESTDEV: ',0
 r_tail      db  ' bytes written to me',13,10,0
 written     dw  0
 readpos     dw  0
+bangfail    db  0                       ; whether the next '!' is refused
+            db  0
 replylen    dw  0
 reply       db  64 dup (0)
 

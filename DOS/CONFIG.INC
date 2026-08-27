@@ -97,15 +97,30 @@ cfg_none:
         ret
 
 ;=====================================================================
-; cfg_upper - act on DOS=UMB, in between the two walks.
+; cfg_upper - act on EMS= and DOS=UMB, in between the two walks.
+;
+; EMS FIRST, AND THAT ORDER IS THE WHOLE OF THE ARRANGEMENT BETWEEN
+; THEM.  Both want 16K pages of C0000h-EFFFFh that nothing decodes and
+; both find them with the same probe, so the page frame is reserved
+; out of umb_state before umb_init has laid a chain over anything.
+; Reversing these two lines would leave the frame inside a UMB, which
+; is a page a program may have been given and which this kernel would
+; then remap underneath it.
 ;
 ; Silent when it works, because a real DOS says nothing here and the
 ; shipped CONFIG.SYS is meant to boot without a word.  NOT silent when
-; it fails: the user asked for upper memory in writing and did not get
-; any, and a machine that quietly loads everything low looks exactly
-; like a machine where the statement was never read.
+; it fails: the user asked for it in writing and did not get it, and a
+; machine that quietly loads everything low looks exactly like a
+; machine where the statement was never read.
 ;=====================================================================
 cfg_upper:
+        cmp     dword ptr [ems_wanted],0
+        je      cup_umb
+        call    ems_init
+        jnc     cup_umb
+        mov     esi,OFFSET msgNoEms
+        call    dword ptr ds:[IOS_CONSTR]
+cup_umb:
         cmp     dword ptr [umb_wanted],0
         je      cup_out
         call    umb_init
@@ -276,6 +291,11 @@ cfg_phaseof:
         mov     eax,[ebx+4]
         cmp     eax,OFFSET cfg_dos
         je      cph_first
+        cmp     eax,OFFSET cfg_ems      ; for the same reason as DOS=: the
+        je      cph_first               ; frame is reserved out of upper
+                                        ; memory before the chain is laid
+                                        ; over what is left, and both of
+                                        ; those happen between the walks
         cmp     eax,OFFSET cfg_install
         je      cph_last
         cmp     eax,OFFSET cfg_insthigh
@@ -621,7 +641,7 @@ cse_out:
         ret
 
 ;---------------------------------------------------------------------
-; DOS=HIGH|LOW[,UMB|NOUMB] - and the halves are answered separately.
+; DOS=HIGH|LOW[,UMB|NOUMB] - answered a word at a time.
 ;
 ; UMB is the half with teeth.  It builds upper memory - probes what is
 ; out there, backs the empty pages from the arena, lays an MCB chain
@@ -1057,6 +1077,168 @@ clf_on:
         ret
 
 ;---------------------------------------------------------------------
+; EMS=segment | AUTO | NO - expanded memory, and where its page frame
+;                           goes.
+;
+;   EMS=NO      no expanded memory.  Also what an absent statement
+;               means, so the line only ever documents the default.
+;   EMS=AUTO    on, and the kernel picks the frame.  A bare "EMS="
+;               with nothing after it means this too.
+;   EMS=D000    on, with the frame at that segment.
+;
+; A STATEMENT OF ITS OWN RATHER THAN A WORD IN DOS=, and the address
+; is why.  DOS= is a list of yes-or-no words about how the machine
+; uses memory; "where the page frame goes" is not one of those, and
+; hanging a four-digit number off one of the words would have been the
+; wrong shape.  Real DOS asks the same question as a parameter on
+; DEVICE=EMM386.EXE (FRAME=D000), which is that DOS's way of saying
+; the same thing: the manager is a driver there, so its statement is
+; DEVICE=.  Here the manager is the kernel, so its statement is EMS=.
+;
+; AN EXPLICIT SEGMENT OVERRULES THE PROBE, ON PURPOSE.  Choosing the
+; frame automatically means writing to an address and seeing whether
+; anything stores it, and that measurement can be wrong on hardware
+; nobody here has: an adapter with a window and no option ROM in front
+; of it looks exactly like shadow RAM, and shadow RAM that is switched
+; on over a ROM looks exactly like memory somebody owns.  A user who
+; knows their machine can say so, and being overruled is the whole
+; point of being able to name an address.  What is NOT overruled is
+; the format: the frame is 64K and 16K-aligned because the
+; specification says so, and a segment that cannot hold one is a
+; mistake rather than an opinion.
+;
+; The automatic search insists on 64K alignment as well, which is
+; convention rather than rule - every EMM ever shipped put its frame
+; at C000h, D000h or E000h and there is software that quietly assumes
+; it.  An explicit request is held only to the 16K the specification
+; asks for, because a user naming C400h has said something deliberate.
+;---------------------------------------------------------------------
+cfg_ems:
+        mov     edi,OFFSET cfgw_no
+        call    cfg_iskw
+        jnc     cem_off
+        mov     edi,OFFSET cfgw_off
+        call    cfg_iskw
+        jnc     cem_off
+
+        cmp     byte ptr [esi],0        ; "EMS=" and nothing else
+        je      cem_auto
+        mov     edi,OFFSET cfgw_auto
+        call    cfg_iskw
+        jnc     cem_auto
+        mov     edi,OFFSET cfgw_on
+        call    cfg_iskw
+        jnc     cem_auto
+        mov     edi,OFFSET cfgw_yes
+        call    cfg_iskw
+        jnc     cem_auto
+
+        call    cfg_hex
+        jc      cfg_badparm
+        cmp     eax,0C000h              ; it has to be upper memory...
+        jb      cem_badseg
+        cmp     eax,0E000h              ; ...and 64K of it has to fit
+        ja      cem_badseg              ; below the system BIOS
+        test    eax,03FFh               ; ...on a 16K boundary
+        jnz     cem_badseg
+        mov     [ems_wantseg],eax
+        mov     dword ptr [ems_wanted],1
+        ret
+
+cem_auto:
+        mov     dword ptr [ems_wantseg],0
+        mov     dword ptr [ems_wanted],1
+        ret
+cem_off:
+        mov     dword ptr [ems_wanted],0
+        ret
+cem_badseg:
+        call    cfg_show_line
+        mov     esi,OFFSET msgEmsSeg
+        call    dword ptr ds:[IOS_CONSTR]
+        ret
+
+;---------------------------------------------------------------------
+; cfg_hex - ESI -> text.  EAX = the value, CF if it is not a hex
+;           number of one to four digits.
+;
+; A trailing 'h' is allowed and ignored, because that is how anyone
+; who has written assembler spells a segment and "EMS=D000h" should
+; not be a syntax error over one character.  Four digits is the limit
+; rather than an overflow check: what this reads is a SEGMENT, and a
+; fifth digit means the line says something the reader did not mean.
+;---------------------------------------------------------------------
+cfg_hex:
+        push    ebx
+        push    ecx
+        push    edx
+        push    esi
+        xor     ebx,ebx                 ; the value so far
+        xor     ecx,ecx                 ; digits seen
+chx_lp:
+        movzx   edx,byte ptr [esi]
+        or      dl,dl
+        jz      chx_end
+        cmp     dl,' '
+        je      chx_end
+        cmp     dl,9
+        je      chx_end
+        cmp     dl,'a'
+        jb      chx_nolc
+        cmp     dl,'z'
+        ja      chx_nolc
+        sub     dl,20h
+chx_nolc:
+        cmp     dl,'H'
+        jne     chx_digit
+        inc     esi                     ; and it has to be the LAST thing
+        cmp     byte ptr [esi],0        ; on the line: "D0H00" is not a
+        je      chx_end                 ; number with an h in it
+        cmp     byte ptr [esi],' '
+        je      chx_end
+        cmp     byte ptr [esi],9
+        je      chx_end
+        jmp     short chx_bad
+chx_digit:
+        cmp     dl,'0'
+        jb      chx_bad
+        cmp     dl,'9'
+        jbe     chx_num
+        cmp     dl,'A'
+        jb      chx_bad
+        cmp     dl,'F'
+        ja      chx_bad
+        sub     dl,'A' - 10
+        jmp     short chx_add
+chx_num:
+        sub     dl,'0'
+chx_add:
+        cmp     ecx,4
+        jae     chx_bad
+        shl     ebx,4
+        or      ebx,edx
+        inc     ecx
+        inc     esi
+        jmp     short chx_lp
+chx_end:
+        or      ecx,ecx
+        jz      chx_bad                 ; nothing but an 'h', or nothing
+        mov     eax,ebx
+        pop     esi
+        pop     edx
+        pop     ecx
+        pop     ebx
+        clc
+        ret
+chx_bad:
+        pop     esi
+        pop     edx
+        pop     ecx
+        pop     ebx
+        stc
+        ret
+
+;---------------------------------------------------------------------
 ; DPMI=ON|OFF - the protected-mode interface.
 ;
 ; ON is the default.  OFF makes INT 2Fh AX=1687h answer "no host",
@@ -1239,6 +1421,7 @@ cfg_table:
         dd      OFFSET cfgn_lfn,     OFFSET cfg_lfn
         dd      OFFSET cfgn_dpmi,    OFFSET cfg_dpmi
         dd      OFFSET cfgn_nulltrp, OFFSET cfg_nulltrap
+        dd      OFFSET cfgn_ems,     OFFSET cfg_ems
 
 ;--- the inherited set: recognised, and doing nothing ----------------
         dd      OFFSET cfgn_rem,     OFFSET cfg_rem
@@ -1268,6 +1451,7 @@ cfgn_shell    db  'SHELL',0
 cfgn_break    db  'BREAK',0
 cfgn_lfn      db  'LFN',0
 cfgn_dpmi     db  'DPMI',0
+cfgn_ems      db  'EMS',0
 cfgn_nulltrp  db  'NULLTRAP',0
 cfgn_rem      db  'REM',0
 cfgn_buffers  db  'BUFFERS',0
@@ -1295,6 +1479,9 @@ cfgn_multitrk db  'MULTITRACK',0
 
 cfgw_on       db  'ON',0
 cfgw_off      db  'OFF',0
+cfgw_no       db  'NO',0
+cfgw_yes      db  'YES',0
+cfgw_auto     db  'AUTO',0
 cfgw_umb      db  'UMB',0
 cfgw_noumb    db  'NOUMB',0
 cfgw_high     db  'HIGH',0
@@ -1326,6 +1513,9 @@ msgDevUnits     db  'Device driver has no units',13,10,0
 msgDevInit      db  'Device driver failed to initialise',13,10,0
 msgDevFull      db  'Too many device drivers',13,10,0
 msgNoUmb        db  'DOS=UMB: no upper memory is available on this machine',13,10,0
+msgNoEms        db  'EMS: no 64K page frame is available on this machine',13,10,0
+msgEmsSeg       db  'EMS: the page frame wants a 16K-aligned segment from '
+                db  'C000 to E000',13,10,0
 msgInstName     db  'INSTALL= names no program',13,10,0
 msgInstNative   db  'INSTALL= cannot run a 32-bit program',13,10,0
 msgInstFail     db  'Bad or missing INSTALL= program',13,10,0

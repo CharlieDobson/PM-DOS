@@ -222,6 +222,95 @@ UMBP_EMPTY      EQU     2               ; nothing decodes it: usable once a
                                         ; page has been mapped underneath
 
 ;---------------------------------------------------------------------
+; The callback block - one paragraph of guest-visible memory that the
+; monitor watches the address of.
+;
+; Offset 0 is XMS; the rest were free for whatever else needed a way
+; into the kernel from real mode without claiming an interrupt vector.
+; Each entry is HLT followed by RETF, and the VM loop tells a service
+; call from a program that really halted by the address the HLT was
+; executed at.
+;
+; It lives here rather than in XMS.INC, where it was written, because
+; three files now read it and one of them - CRITERR.INC - is
+; assembled first.
+;---------------------------------------------------------------------
+XMSCB_ENTRY     EQU     0
+VDMCB_IRET      EQU     2               ; and one spare byte of it holds an
+                                        ; IRET, for the DOS vectors nobody
+                                        ; has hooked - see vdm_stubs.  It is
+                                        ; also how crit_guest tells a box
+                                        ; that hooked INT 24h from one that
+                                        ; did not
+DPMICB_ENTRY    EQU     4               ; DPMI: the real-to-protected switch
+DPMICB_SIM      EQU     8               ; "INT xx", the vector byte patched
+                                        ; per call - this is how a simulated
+                                        ; real-mode interrupt is DELIVERED,
+                                        ; rather than by reading the vector
+                                        ; out of the table at 0:0.  The
+                                        ; monitor traps INT 21h, so the
+                                        ; table has no entry for it to read;
+                                        ; executing the instruction instead
+                                        ; means every vector goes wherever
+                                        ; it would have gone for a DOS
+                                        ; program, trapped or reflected
+DPMICB_RET      EQU     10              ; and a bare HLT, which the handler's
+                                        ; IRET lands on.  Never called: the
+                                        ; monitor recognises the address
+
+;---------------------------------------------------------------------
+; Expanded memory - INT 67h, LIM EMS 3.2.  See DOS\EMS.INC.
+;
+; EMS is a 64K PAGE FRAME somewhere in the same C0000h-EFFFFh that the
+; UMB probe measures, divided into four 16K windows, each of which can
+; be pointed at any 16K page of a much larger pool.  The frame and the
+; UMBs are therefore competing for one resource and are found by one
+; measurement, which is why the frame is reserved out of umb_state
+; before umb_init ever sees it.
+;
+; A WINDOW IS FOUR PAGE TABLE ENTRIES.  That is the whole of the
+; mechanism on this kernel, where on a real DOS it was EMM386, V86
+; mode, and a monitor built to run the machine underneath itself.
+; PM-DOS has been paging since v0.29 and has had the monitor since
+; v0.30, so what is left to write is the API and the bookkeeping.
+;---------------------------------------------------------------------
+EMS_MAXH        EQU     32              ; handles, the count XMS has too
+EMS_PGSIZE      EQU     4000h           ; 16K, and the specification says so
+EMS_PGPAGES     EQU     EMS_PGSIZE / 1000h      ; ...in CPU pages
+EMS_WINDOWS     EQU     4               ; physical pages in the frame
+EMS_FRAMESZ     EQU     EMS_WINDOWS * EMS_PGSIZE
+EMS_FRAMEPG     EQU     EMS_FRAMESZ / 1000h
+EMS_MAXPAGES    EQU     512             ; 8MB, which is the LIM 3.2 ceiling
+                                        ; and not an opinion about this
+                                        ; machine's memory
+EMS_VERSION     EQU     32h             ; 3.2 in BCD, and the truth: 4.0 is
+                                        ; not implemented and claiming it
+                                        ; would earn a call to 5Ah
+EMS_MAPLEN      EQU     EMS_WINDOWS * 4 ; the 4Eh page-map array, whose shape
+                                        ; is the manager's own business
+EMS_UNMAPPED    EQU     0FFFFFFFFh      ; a window pointing at nothing: a
+                                        ; handle of FFFFh, which is not one
+
+; The status codes, from the LIM specification.  AH carries them; there
+; is no carry flag in this API.
+EMSE_OK         EQU     00h
+EMSE_SOFT       EQU     80h             ; the manager itself has broken
+EMSE_HARD       EQU     81h             ; ...or the hardware under it
+EMSE_BADHANDLE  EQU     83h
+EMSE_BADFUNC    EQU     84h
+EMSE_NOHANDLES  EQU     85h
+EMSE_MAPCTX     EQU     86h             ; a save/restore sequence went wrong
+EMSE_TOOMANY    EQU     87h             ; more pages than the system has
+EMSE_NOTAVAIL   EQU     88h             ; ...than are free right now
+EMSE_ZERO       EQU     89h             ; a request for no pages at all
+EMSE_BADLOG     EQU     8Ah             ; that handle has no such page
+EMSE_BADPHYS    EQU     8Bh             ; a window that is not 0-3
+EMSE_SAVEFULL   EQU     8Ch
+EMSE_SAVED      EQU     8Dh             ; already saved under this handle
+EMSE_NOTSAVED   EQU     8Eh             ; ...and never saved under it
+EMSE_BADSUB     EQU     8Fh             ; 4Eh subfunction out of range
+
+;---------------------------------------------------------------------
 ; Program slots.  One shell, one transient program - DOS with the
 ; serial numbers filed off.
 ;
@@ -2018,6 +2107,15 @@ DEV_LOADED      EQU     4                       ; anything a DEVICE= line put
                                                 ; in dl_tab, which is why the
                                                 ; unit byte is a byte and not
                                                 ; a port number here
+DEV_EMM         EQU     5                       ; EMMXXXX0, and only when there
+                                                ; is expanded memory to find.
+                                                ; It needs no code in dev_out
+                                                ; or dev_in: writes to an
+                                                ; unknown device are discarded
+                                                ; and reads of one are end of
+                                                ; file, which is exactly how a
+                                                ; memory manager's device
+                                                ; behaves.  See ems_devname
 DEV_UNIT        EQU     256                     ; multiply the unit by this
 DEV_KIND        EQU     0FFh                    ; and mask by this to undo it
 
@@ -2050,7 +2148,7 @@ SHELLTAIL_MAX   EQU     130             ; length byte + 126 + CR + slack
 ; has a call of its own; these two agree.
 ;---------------------------------------------------------------------
 PMDOS_MAJOR     EQU     0
-PMDOS_MINOR     EQU     40
+PMDOS_MINOR     EQU     41
 
 DOSVER_MAJOR    EQU     6
 DOSVER_MINOR    EQU     22

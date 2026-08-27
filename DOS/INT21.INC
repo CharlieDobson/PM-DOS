@@ -2741,6 +2741,24 @@ dev_tab:
         dd  DEV_AUX + 2 * DEV_UNIT
         db  'COM4    '
         dd  DEV_AUX + 3 * DEV_UNIT
+
+        ; EMMXXXX0, and ONLY WHEN THERE IS EXPANDED MEMORY.  The name
+        ; is written here by ems_hdr and is eight FFh bytes until then
+        ; - a name no path component can be, so the row is unreachable
+        ; on a machine with no manager.  A table entry that appeared
+        ; only when a feature existed had to be either built at run
+        ; time or hidden behind a flag tested on every lookup, and
+        ; overwriting eight bytes once is the cheaper half of that.
+        ;
+        ; This is the SECOND way a program detects EMS.  The first and
+        ; recommended one is reading the INT 67h vector, which EMS.INC
+        ; also serves; the LIM specification warns against this one
+        ; because opening a device can have side effects on some
+        ; managers.  It has none here.
+ems_devname:
+        db  0FFh,0FFh,0FFh,0FFh,0FFh,0FFh,0FFh,0FFh
+        dd  DEV_EMM
+
         db  0,0,0,0,0,0,0,0             ; CLOCK$ is deliberately absent:
         dd  0                           ; half of it would be a lie, and
                                         ; 2Ah-2Dh are the whole of the truth
@@ -6549,6 +6567,8 @@ fF0_size:
 ;       AL = 3: EDX -> buffer for the interpreter's own path
 ;       AL = 4: -> EAX = extended memory in KB as the BIOS reported it,
 ;                  EBX = the highest usable linear address
+;       AL = 9: -> EAX = 1 if there is an EMS manager, EBX = the page
+;                  frame segment, ECX = pages in the system, EDX = free
 ;
 ; 30h has to keep lying about being DOS 5 so that ordinary programs
 ; recognise us, which leaves nothing there to report what the kernel
@@ -6579,7 +6599,35 @@ fnF1:
         je      fF1_null
         cmp     al,8
         je      fF1_mcb
+        cmp     al,9
+        je      fF1_ems
         jmp     i21_unsup
+
+;--- AL=9: expanded memory.  EAX = 1 if there is a manager, EBX = the
+;--- page frame segment, ECX = pages in the system, EDX = pages free.
+;---
+;--- IT HAS TO BE ASKED FOR HERE because INT 67h is served to V86
+;--- guests and MEM.EXE is a native program at ring 3: it cannot make
+;--- the call it would be reporting.  That is the same argument this
+;--- whole family exists to make - a report that has to reach inside
+;--- the kernel is a report proving the kernel has no way to ask.
+fF1_ems:
+        xor     eax,eax
+        mov     [ebp+F_EBX],eax
+        mov     [ebp+F_ECX],eax
+        mov     [ebp+F_EDX],eax
+        cmp     dword ptr [ems_have],0
+        je      fF1_emsno
+        mov     eax,[ems_frame]
+        mov     [ebp+F_EBX],eax
+        mov     eax,[ems_total]
+        mov     [ebp+F_ECX],eax
+        call    ems_avail
+        mov     [ebp+F_EDX],eax
+        mov     eax,1
+fF1_emsno:
+        mov     [ebp+F_EAX],eax
+        jmp     i21_ok
 fF1_ver:
         mov     word ptr [ebp+F_EBX],PMDOS_MAJOR * 256 + PMDOS_MINOR
         jmp     i21_ok

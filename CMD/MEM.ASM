@@ -16,6 +16,10 @@
 ; What it asks:
 ;   21h/F1h AL=4    extended memory size, as the BIOS reported it
 ;   21h/F1h AL=8    one block of one arena, by index
+;   21h/F1h AL=9    the EMS page frame and page counts, which it has
+;                   to ask for rather than call INT 67h: expanded
+;                   memory is served to V86 guests and this is a
+;                   native program at ring 3
 ;
 ; IT USED TO READ THE HEADERS ITSELF, from the pointer 21h/52h hands
 ; out, which is exactly what MEM did under real DOS and worked here for
@@ -217,6 +221,34 @@ no_upper:
         call    pdec_c
         mov     edx,OFFSET msg_free
         call    print
+
+        ; Expanded memory, and only when there is any.  MEM.EXE is a
+        ; native program at ring 3 and cannot make an INT 67h call, so
+        ; the kernel is asked instead - see 21h/F1h AL=9.
+        mov     eax,0F109h
+        int     21h
+        or      eax,eax
+        jz      me_noems
+        mov     [e_frame],ebx
+        mov     [e_total],ecx
+        mov     [e_free],edx
+        mov     edx,OFFSET msg_ems
+        call    print
+        mov     eax,[e_frame]
+        call    puthex16
+        mov     edx,OFFSET msg_emstot
+        call    print
+        mov     eax,[e_total]
+        shl     eax,4                   ; 16K pages, in KB
+        call    pdec_c
+        mov     edx,OFFSET msg_emsfree
+        call    print
+        mov     eax,[e_free]
+        shl     eax,4
+        call    pdec_c
+        mov     edx,OFFSET msg_kb
+        call    print
+me_noems:
 
         cmp     byte ptr [want_list],0
         je      me_done
@@ -687,6 +719,9 @@ c_largest   dd  0
 u_total     dd  0                   ; upper memory, when DOS=UMB
 u_used      dd  0                   ; built any
 u_free      dd  0
+e_frame     dd  0                   ; expanded memory, when EMS=
+e_total     dd  0                   ; found a page frame
+e_free      dd  0
 u_largest   dd  0
 ld_region   db  0
             db  0,0,0
@@ -722,6 +757,9 @@ msg_blocks  db  'Arena blocks:                         ','$'
 msg_inuse   db  ' in use, ','$'
 msg_free    db  ' free',13,10,'$'
 msg_kb      db  ' KB',13,10,'$'
+msg_ems     db  'Expanded memory (EMS):  page frame at ','$'
+msg_emstot  db  ', ','$'
+msg_emsfree db  ' KB total, ','$'
 
 ;--- the block list: 8 hex, 2, 15 for the size, 2, 6 for the owner ---
 msg_bhead1  db  'Address',6 dup(' '),'Size (bytes)',3 dup(' '),'Owner'

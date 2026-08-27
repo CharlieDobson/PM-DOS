@@ -231,6 +231,14 @@ dl_excur:
         ; 21h is 33.
         mov     byte ptr [edi+V86C_TRAP+4],02h
 
+        ; AND 67h, WHEN THERE IS EXPANDED MEMORY, because a driver's
+        ; INIT is entitled to ask for some: RAMDRIVE.SYS /A is exactly
+        ; that driver, and it allocates its handle before it reports
+        ; its unit count.  Bit 7 of byte 12.
+        cmp     dword ptr [ems_have],0
+        je      dlx_run
+        mov     byte ptr [edi+V86C_TRAP+12],80h
+
 dlx_run:
         mov     esi,OFFSET vdm_ctx
         call    dword ptr ds:[IOS_V86RUN]
@@ -238,7 +246,9 @@ dlx_run:
         je      dlx_halt
         cmp     eax,V86R_INT
         jne     dlx_lost                ; a fault inside a driver is not
-        cmp     ebx,21h                 ; ours to recover from
+        cmp     ebx,67h                 ; ours to recover from
+        je      dlx_ems
+        cmp     ebx,21h
         jne     dlx_lost
         mov     al,byte ptr [vdm_ctx+V86C_EAX+1]
         cmp     al,4Ch                  ; a driver that TERMINATES has gone
@@ -247,6 +257,10 @@ dlx_run:
         je      dlx_lost
         mov     al,byte ptr [vdm_ctx+V86C_EAX+1]
         call    vdm_do21
+        jmp     short dlx_run
+
+dlx_ems:
+        call    ems_call
         jmp     short dlx_run
 
 ;--- the HLT.  WHICH one?  Only the pad ends the excursion; a HLT
@@ -758,11 +772,28 @@ dlk_no:
 ; dl_out - write AL to loaded device number DH.  No error return, in
 ;          keeping with every other dev_out path: the DOS character
 ;          output calls this serves have never had one.
+;
+; NO ERROR RETURN IS NOT THE SAME AS NO ERROR, and until v0.41 this
+; routine treated them as the same thing: it called the driver, the
+; driver set DEVS_ERROR and a reason, and the reason went nowhere.  A
+; printer driver reporting out of paper and one reporting success were
+; indistinguishable from here, which is the exact situation INT 24h
+; was invented for.  Now the reason goes to the handler, and Retry
+; comes back here and does the write again - which is what makes
+; "put paper in and press R" work for a character device the same way
+; it has worked for a disk since v0.20.
+;
+; The row is kept in a variable rather than in DH, because a retry has
+; to start from the same place twice and DH belongs to a caller who
+; has no idea a driver is involved.  Same argument as dio_try.
 ;=====================================================================
 dl_out:
         pushad
         mov     [dl_byte],al
         movzx   eax,dh
+        mov     [dl_row],eax
+dlo_try:
+        mov     eax,[dl_row]
         mov     ecx,DEVC_WRITE
         call    dl_prep
         jc      dlo_out
@@ -775,8 +806,33 @@ dl_out:
         mov     al,[dl_byte]
         mov     [edi+DL_PKTLEN-8],al
         call    dl_fire
+        jnc     dlo_out
+        call    dl_crit                 ; -> AL = the answer
+        cmp     al,CERR_RETRY
+        je      dlo_try
 dlo_out:
         popad
+        ret
+
+;---------------------------------------------------------------------
+; dl_crit - AX = the status word dl_fire came back with.  Raise the
+;           critical error and return the handler's answer in AL.
+;
+; Both callers reach this having lost nothing yet, which is why the
+; header pointer is read out of dl_hdrflat rather than saved: dl_prep
+; set it for this row and a retry sets it again.
+;---------------------------------------------------------------------
+dl_crit:
+        push    ebx
+        push    esi
+        and     eax,0FFh                ; the driver's own reason, which is
+        mov     esi,[dl_hdrflat]        ; already a DOS error code
+        mov     ebx,[dl_drvseg]         ; ...and the same header as a guest's
+        shl     ebx,16                  ; handler has to be shown it: BP:SI,
+        or      ebx,[dl_hdroff]         ; which is a segment and an offset
+        call    crit_dev
+        pop     esi
+        pop     ebx
         ret
 
 ;=====================================================================
@@ -794,6 +850,9 @@ dl_in:
         push    esi
         push    edi
         movzx   eax,dh
+        mov     [dl_row],eax
+dlin_try:
+        mov     eax,[dl_row]
         mov     ecx,DEVC_READ
         call    dl_prep
         jc      dlin_none
@@ -804,7 +863,17 @@ dl_in:
         mov     word ptr [edi+REQC_BUFSEG],ax
         mov     word ptr [edi+REQC_COUNT],1
         call    dl_fire
-        jc      dlin_none
+        jnc     dlin_got
+
+        ; AN ERROR AND AN EMPTY DEVICE ARE DIFFERENT THINGS and only
+        ; one of them is worth asking about.  dl_fire's carry is the
+        ; driver saying it went wrong; a driver that came back clean
+        ; having moved nothing is end of input, and falls out below.
+        call    dl_crit
+        cmp     al,CERR_RETRY
+        je      dlin_try
+        jmp     short dlin_none
+dlin_got:
         mov     edi,[dl_pktflat]
         cmp     word ptr [edi+REQC_COUNT],0
         je      dlin_none
@@ -829,6 +898,8 @@ dlin_none:
 ; state
 ;=====================================================================
 dl_seg      dd  0                       ; the scratch block, or 0
+dl_row      dd  0                       ; whose driver, kept so a retry
+                                        ; can ask the same one twice
 dl_depth    dd  0
 dl_count    dd  0                       ; how many names are in dl_tab
 dl_drvseg   dd  0

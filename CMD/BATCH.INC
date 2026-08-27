@@ -1090,27 +1090,107 @@ fsp_out:
         ret
 
 ;=====================================================================
-; CTTY device
+; CTTY device - move the console onto another character device.
 ;
-; Honest about its limits: CON is where console I/O already goes, so
-; "CTTY CON" is correct and does nothing.  Anything else means moving
-; the console onto another device, and PM-DOS has no device chain to
-; move it onto yet - so it says so rather than pretending.
+; IT IS THREE DOS CALLS AND NOT A KERNEL FEATURE, which is worth
+; saying because the entry for it sat on the roadmap for eight
+; releases waiting for "a device chain to move the console onto".  The
+; chain arrived in v0.37 and the calls this needs were all already
+; here: open the device, force the handle over 0, 1 and 2 with 46h,
+; close the original.  Standard input and output are SFT slots, every
+; console call in the kernel goes through those slots, and pointing
+; them somewhere else is the whole of what CTTY has ever meant.  Real
+; DOS does exactly this (tcmd2b.asm) and reaches handle 0 the long way
+; round, by closing it and dupping three times so that the new handle
+; lands in the lowest free slot - which does not work here, because
+; PM-DOS refuses to close the standard handles.  46h says the same
+; thing without the trick.
+;
+; 44h IS THE CHECK THAT MATTERS.  A name that is not a device opens
+; perfectly well as a file, and "CTTY AUTOEXEC.BAT" would otherwise
+; install a file as the console - reads coming back as the text of the
+; batch file and writes appending to it.  Bit 7 of DL is the answer
+; and real DOS tests the same bit in the same place.
+;
+; The name is REMEMBERED, and that is not bookkeeping either: two
+; places in this interpreter open the console by name rather than
+; using handle 1 - the ^C handler, putting the standard handles back
+; after a redirection, and the critical-error prompt, which
+; deliberately asks its question somewhere that cannot have been
+; redirected into the file on the disk that just failed.  Both used
+; to open the literal string "CON", and after a CTTY both would have
+; quietly moved the console back.
+;
+; WHAT IT CANNOT DO IS UNDO ITSELF.  "CTTY AUX" on a machine with
+; nothing on the serial port leaves an interpreter reading a device
+; that has nothing to say, and there is no keyboard left to type
+; "CTTY CON" on.  That is authentic - it is the oldest joke in DOS -
+; and the answer is the same as it was in 1983.
 ;=====================================================================
 cmd_ctty:
         call    need_arg
         jc      ctty_out
         call    next_arg
         jc      ctty_out
-        mov     esi,OFFSET tok_buf
-        mov     edi,OFFSET lit_con
-        call    kw_match                ; whole-word, case insensitive
+
+        mov     edx,OFFSET tok_buf
+        mov     ax,3D02h                ; read and write, as a console is
+        int     21h
         jc      ctty_nodev
+        movzx   eax,ax
+        mov     [ctty_hdl],eax
+
+        mov     ebx,eax
+        mov     ax,4400h
+        int     21h
+        jc      ctty_shut
+        test    dl,80h                  ; a character device, or a file
+        jz      ctty_shut               ; wearing the name of one?
+
+        xor     ecx,ecx                 ; stdin
+        call    ctty_force
+        mov     ecx,1                   ; stdout
+        call    ctty_force
+        mov     ecx,2                   ; and stderr, which real DOS moves
+        call    ctty_force              ; too: a console you cannot be told
+                                        ; anything on is half a console
+        mov     ebx,[ctty_hdl]
+        mov     ah,3Eh
+        int     21h
+
+        mov     esi,OFFSET tok_buf      ; and remember what it is called
+        mov     edi,OFFSET ctty_name
+        mov     ecx,CTTYNAME_MAX - 1
+ctty_cp:
+        mov     al,[esi]
+        or      al,al
+        jz      ctty_cpend
+        mov     [edi],al
+        inc     esi
+        inc     edi
+        dec     ecx
+        jnz     ctty_cp
+ctty_cpend:
+        mov     byte ptr [edi],0
 ctty_out:
         ret
+
+ctty_shut:
+        mov     ebx,[ctty_hdl]
+        mov     ah,3Eh
+        int     21h
 ctty_nodev:
         mov     edx,OFFSET msg_noctty
         call    print
+        ret
+
+;--- ctty_force - the opened handle over standard handle ECX ---------
+ctty_force:
+        push    ecx
+        mov     ebx,[ctty_hdl]
+        mov     ah,46h
+        int     21h
+        pop     ecx
         ret
 
 ;=====================================================================
@@ -1250,6 +1330,16 @@ lit_exist   db  'EXIST',0
 lit_in      db  'IN',0
 lit_do      db  'DO',0
 lit_con     db  'CON',0
+
+; WHERE THE CONSOLE IS, as a name, because two places reopen it by
+; name rather than by handle.  CTTY writes here; everything else reads
+; it and would have read the literal 'CON' above.  It goes back to CON
+; when the interpreter is reloaded, which is the right recovery: a
+; fresh shell has fresh standard handles.
+CTTYNAME_MAX    EQU     16
+ctty_name   db  'CON',0
+            db  (CTTYNAME_MAX - 4) dup (0)
+ctty_hdl    dd  0
 lit_bat     db  '.BAT',0
 lit_cmd     db  '.CMD',0
 lit_echodot db  'ECHO.',0
@@ -1260,7 +1350,7 @@ msg_syntax  db  'Syntax error',13,10,'$'
 msg_nolabel2 db 'Label not found',13,10,'$'
 msg_batdeep db  'Batch files nested too deeply',13,10,'$'
 msg_fornest db  'FOR cannot be nested',13,10,'$'
-msg_noctty  db  'Console can only be CON: no device chain yet',13,10,'$'
+msg_noctty  db  'Invalid device',13,10,'$'
 
 bat_raw     db  BAT_CHUNK dup(0)
 line_buf    db  BAT_LINE dup(0)

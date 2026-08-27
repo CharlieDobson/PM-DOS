@@ -259,7 +259,9 @@ cmd_gohome:
         mov     byte ptr [for_busy],0
         mov     byte ptr [call_flag],0
 
-        mov     edx,OFFSET lit_con      ; consoles back over 0 and 1
+        mov     edx,OFFSET ctty_name    ; consoles back over 0 and 1 - and
+                                        ; the CONSOLE, which is not always
+                                        ; CON once CTTY has been used
         mov     ax,3D02h
         int     21h
         jc      cb_prompt               ; no CON?  soldier on
@@ -344,8 +346,12 @@ ce_nodrive:
         mov     esi,OFFSET ce_crlf
         call    ce_puts
 
-;--- CON, for the answer.  No CON, no question: fail and get on -----
-        mov     edx,OFFSET lit_con
+;--- The console, for the answer.  No console, no question: fail and
+;--- get on.  By NAME and not through handle 2, because the command
+;--- that hit the error has very likely had its output redirected
+;--- into a file on the disk that just failed - and by the name CTTY
+;--- last set, because after a CTTY the console is not CON.
+        mov     edx,OFFSET ctty_name
         mov     ax,3D00h
         int     21h
         jc      ce_nocon
