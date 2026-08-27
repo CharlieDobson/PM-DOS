@@ -22,9 +22,11 @@ MAX_DRIVES      EQU     4               ; slots: A:, B:, hd0, hd1
 ; per-drive geometry cache entry
 GEO_SPT         EQU     0               ; word - sectors per track
 GEO_HEADS       EQU     2               ; word - head count
-GEO_TOTAL       EQU     4               ; dword - total sectors
+GEO_TOTAL       EQU     4               ; dword - total sectors BY CHS
 GEO_FLAGS       EQU     8               ; word - 1 = valid
-GEO_LEN         EQU     10
+GEO_EXT         EQU     10              ; word - 1 = INT 13h extensions
+GEO_LBATOT      EQU     12              ; dword - true capacity, 0 = unknown
+GEO_LEN         EQU     16
 
 ;=====================================================================
 ; blk_init - forget any cached geometry, then look for IDE disks.
@@ -84,7 +86,9 @@ blk_getgeo:
         push    esi
         push    edi
         push    ebx
-
+        mov     [bg_drive],al           ; 08h answers in DL and EAX is scratch
+                                        ; from here on, so the number this
+                                        ; call is about is kept aside
         call    rm_clear                ; INT 13h/08h - drive parameters
         mov     byte ptr ds:[RMR_EAX+1],08h
         mov     byte ptr ds:[RMR_EDX],al
@@ -141,6 +145,8 @@ ENDIF
         mov     [ebx+GEO_TOTAL],eax
         mov     word ptr [ebx+GEO_FLAGS],1
 
+        call    blk_edd                 ; and does it know 42h as well?
+
         pop     edi
         pop     esi
         pop     edx
@@ -161,6 +167,88 @@ bg_fail:
         ret
 
 ;=====================================================================
+; blk_edd - does the BIOS know AH=42h for the drive in bg_drive?
+;           EBX = its cache entry.  Fills GEO_EXT and GEO_LBATOT.
+;
+; THE HALF OF THE EXTENSIONS THAT WAS MISSING.  A DOS box has had
+; 41h/42h/43h/48h since v0.27, out of DOS\INT13.INC - but that is the
+; kernel ANSWERING them, translated into the flat sector I/O below.
+; This is the kernel ASKING them, and without it every BIOS transfer
+; was a CHS one: a cylinder number ten bits wide, which stops at 1024
+; cylinders and, with sixteen heads and 63 sectors, at 504 megabytes.
+;
+; It matters only where ATA.INC is not already doing the work.  An IDE
+; disk that answered IDENTIFY is addressed directly and in LBA and
+; always has been; this is the machine whose controller PM-DOS does not
+; drive - a SCSI card with an INT 13h ROM, a BIOS-only build, DOSBox -
+; carrying a disk larger than the CHS geometry can name.
+;
+; FLOPPIES ARE NOT ASKED.  41h on drive 00h on a BIOS that does not
+; have the extensions returns whatever was in the registers, and there
+; is no floppy anywhere near the horizon these calls exist to cross.
+;=====================================================================
+blk_edd:
+        push    eax
+        push    ecx
+        push    edx
+        push    esi
+        push    edi
+
+        mov     word ptr [ebx+GEO_EXT],0
+        mov     dword ptr [ebx+GEO_LBATOT],0
+        cmp     byte ptr [bg_drive],80h
+        jb      be_out
+
+        call    rm_clear                ; AH=41h BX=55AAh - are you there?
+        mov     byte ptr ds:[RMR_EAX+1],41h
+        mov     word ptr ds:[RMR_EBX],EDD_MAGIC
+        mov     al,[bg_drive]
+        mov     byte ptr ds:[RMR_EDX],al
+        mov     al,13h
+        call    rm_int
+        call    rm_cf
+        jnz     be_out                  ; CF: no extensions here
+        cmp     word ptr ds:[RMR_EBX],EDD_REPLY
+        jne     be_out                  ; BX not transformed: nor here
+        test    byte ptr ds:[RMR_ECX],EDD_CAP_EXT
+        jz      be_out                  ; present, but not the packet calls
+        mov     word ptr [ebx+GEO_EXT],1
+
+        ; AH=48h - the capacity, which is the other thing CHS cannot
+        ; say.  A drive can have the extensions and refuse this, so
+        ; the answer is optional and GEO_TOTAL stays the fallback.
+        push    ebx
+        mov     edi,GV_EDP
+        xor     eax,eax
+        mov     ecx,32 / 4
+        rep     stosd
+        mov     word ptr ds:[GV_EDP+DP_SIZE],DP_MINLEN
+        call    rm_clear
+        mov     byte ptr ds:[RMR_EAX+1],48h
+        mov     al,[bg_drive]
+        mov     byte ptr ds:[RMR_EDX],al
+        mov     word ptr ds:[RMR_DS],IO_SEG
+        mov     dword ptr ds:[RMR_ESI],GVO_EDP
+        mov     al,13h
+        call    rm_int
+        call    rm_cf
+        pop     ebx
+        jnz     be_out
+        cmp     dword ptr ds:[GV_EDP+DP_TOTAL+4],0
+        jne     be_huge                 ; past 2TB: keep what CHS said and
+                                        ; let the partition table decide
+        mov     eax,dword ptr ds:[GV_EDP+DP_TOTAL]
+        mov     [ebx+GEO_LBATOT],eax
+be_huge:
+be_out:
+        pop     edi
+        pop     esi
+        pop     edx
+        pop     ecx
+        pop     eax
+        ret
+
+;=====================================================================
 ; blk_params - IOS_DRVPARM.  AL = drive.
 ;              Returns EBX = total sectors, CX = bytes per sector.
 ;              CF set if the drive does not exist.
@@ -170,6 +258,11 @@ blk_params:
         jnc     bp_ata
         call    blk_getgeo
         jc      bp_out
+        cmp     dword ptr [ebx+GEO_LBATOT],0
+        je      bp_chs
+        mov     ebx,[ebx+GEO_LBATOT]    ; and so does AH=48h
+        jmp     short bp_ata
+bp_chs:
         mov     ebx,[ebx+GEO_TOTAL]
 bp_ata:
         mov     cx,512
@@ -295,7 +388,21 @@ bio_n_ok:
 bio_n_ok2:
         mov     [bio_chunk],ecx
 
+        ; CAN CHS SAY WHERE THIS IS?  The cylinder goes into ten bits
+        ; and stops there, so a sector past cylinder 1023 has no CHS
+        ; address at all - and until this release it got one anyway,
+        ; the high bits quietly dropped, which reads or WRITES some
+        ; entirely different part of the disk and reports success.
+        ; Either the extensions can name it or nobody can.
+        mov     byte ptr [bio_ext],0
+        cmp     eax,1023
+        jbe     bio_stage
+        cmp     word ptr [ebx+GEO_EXT],0
+        je      bio_nocyl
+        mov     byte ptr [bio_ext],1
+
 ;--- writes: copy the payload down into the staging buffer first ------
+bio_stage:
         cmp     byte ptr [bio_write],0
         je      bio_setup
         push    esi
@@ -311,6 +418,8 @@ bio_n_ok2:
 
 ;--- build the INT 13h register frame ---------------------------------
 bio_setup:
+        cmp     byte ptr [bio_ext],0
+        jne     bio_extio
         push    eax
         push    edx
         call    rm_clear
@@ -361,8 +470,44 @@ IFDEF FDD_DEBUG
         popfd
 ENDIF
         jnz     bio_retry               ; CF from the BIOS -> retry logic
+        jmp     short bio_lift
+
+;--- the same transfer, addressed by LBA ------------------------------
+; A disk address packet says the whole thing in one place: how many
+; sectors, where they go, and a sixty-four-bit sector number that no
+; amount of geometry is involved in.  The staging buffer and the
+; retry are shared with the CHS path above, because neither of them
+; has anything to do with how the sector was named.
+bio_extio:
+        mov     edi,GV_DAP
+        xor     eax,eax
+        mov     ecx,DAP_LEN / 4
+        rep     stosd
+        mov     byte ptr ds:[GV_DAP+DAP_SIZE],DAP_LEN
+        mov     eax,[bio_chunk]
+        mov     word ptr ds:[GV_DAP+DAP_COUNT],ax
+        mov     dword ptr ds:[GV_DAP+DAP_BUF],XFER_SEG * 10000h
+        mov     eax,[bio_lba]
+        mov     dword ptr ds:[GV_DAP+DAP_LBA],eax
+
+        call    rm_clear
+        mov     al,42h                          ; AH = 42 read / 43 write,
+        cmp     byte ptr [bio_write],0          ; and AL = 0 on a write means
+        je      bio_extfn                       ; "no verify" - ours is done
+        mov     al,43h                          ; a level up, in dio_verify
+bio_extfn:
+        mov     byte ptr ds:[RMR_EAX+1],al
+        mov     al,[bio_drive]
+        mov     byte ptr ds:[RMR_EDX],al
+        mov     word ptr ds:[RMR_DS],IO_SEG     ; DS:SI = the packet
+        mov     dword ptr ds:[RMR_ESI],GVO_DAP
+        mov     al,13h
+        call    rm_int
+        call    rm_cf
+        jnz     bio_retry
 
 ;--- reads: lift the data out of the staging buffer -------------------
+bio_lift:
         cmp     byte ptr [bio_write],0
         jne     bio_advance
         push    esi
@@ -414,6 +559,17 @@ bio_geofail:
         stc
         ret
 
+; Past the CHS horizon on a BIOS that cannot go there.  This is a real
+; refusal and not a retry: nothing about trying again makes cylinder
+; 1024 expressible in ten bits.  04h is "sector not found", which is
+; the truest of the INT 13h status codes for a sector this machine has
+; no way to ask for.
+bio_nocyl:
+        popad
+        mov     ah,04h
+        stc
+        ret
+
 bio_done:
         popad
         xor     ah,ah
@@ -428,10 +584,13 @@ ENDIF
 
 geo_cache   db  MAX_DRIVES * GEO_LEN dup(0)
 
+bg_drive    db  0                       ; the drive blk_getgeo is asking about
 bio_drive   db  0
 bio_write   db  0
 bio_tries   db  0
 bio_status  db  0
+bio_ext     db  0                       ; this chunk goes by packet, not CHS
+            db  0,0,0
 bio_lba     dd  0
 bio_count   dd  0
 bio_buf     dd  0

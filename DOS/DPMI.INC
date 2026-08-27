@@ -2075,6 +2075,10 @@ dxl_nodi:
         test    byte ptr ds:[dpmi_pf],P_BX
         jz      dxl_done
         mov     ax,word ptr [ebp+F_ES]
+        test    byte ptr ds:[dpmi_pf],P_BXD
+        jz      dxl_bxes
+        mov     ax,word ptr [ebp+F_DS]  ; 7305h's packet, against DS
+dxl_bxes:
         call    dpmi_base
         jc      dxl_bad
         mov     eax,dword ptr [ebp+F_EBX]

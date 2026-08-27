@@ -936,6 +936,8 @@ dl_iocnt    dd  0
 dl_iothis   dd  0
 dl_iolba    dd  0
 dl_iobuf    dd  0
+dl_iowr     db  0                       ; ...and which way it goes, out of
+            db  0,0,0                   ; the SERVICE the caller named
 dl_units    db  DLU_MAX * DLU_LEN dup (0)
 ;=====================================================================
 ; BLOCK DRIVERS
@@ -1103,9 +1105,17 @@ dst_fail:
 ;
 ;   AL = the pseudo BIOS drive (DL_UNIT_BASE upwards)
 ;   EBX = LBA within the unit, CX = sectors, EDI = flat buffer
-;   [dio_wr] non-zero for a write, which is how disk_write says so
+;   EDX = IOS_RDBLK or IOS_WRBLK, which is the direction
 ;
 ;   CF set if the driver could not do it.
+;
+; THE DIRECTION IS THE SERVICE AND NOT [dio_wr], which it was until
+; v0.42.  dio_wr describes the transfer disk_write is retrying, and
+; that is very nearly the same thing - it was the same thing while
+; disk_write was the only caller.  It stopped being one the moment
+; VERIFY started reading a sector back in the middle of a write, at
+; which point "what is this transfer" and "what was the call" are
+; opposite answers and the read went out as a second write.
 ;
 ; Chunked by the staging buffer, and the chunk loop is also what makes
 ; a short transfer honest: the driver reports how many sectors it
@@ -1115,6 +1125,11 @@ dst_fail:
 ;=====================================================================
 dl_blkio:
         pushad
+        mov     byte ptr [dl_iowr],0
+        cmp     edx,IOS_WRBLK
+        jne     dbio_dir
+        mov     byte ptr [dl_iowr],1
+dbio_dir:
         call    dl_stage
         jc      dbio_fail
 
@@ -1142,7 +1157,7 @@ dbio_size:
         mov     [dl_iothis],ecx
 
         ; a write fills the staging buffer before the driver sees it
-        cmp     byte ptr [dio_wr],0
+        cmp     byte ptr [dl_iowr],0
         je      dbio_build
         mov     esi,[dl_iobuf]
         mov     edi,[dl_stgseg]
@@ -1155,7 +1170,7 @@ dbio_build:
         mov     eax,[dl_iorow]
         mov     eax,[eax+DLU_TAB]
         mov     ecx,DEVC_READ
-        cmp     byte ptr [dio_wr],0
+        cmp     byte ptr [dl_iowr],0
         je      dbio_cmd
         mov     ecx,DEVC_WRITE
 dbio_cmd:
@@ -1196,7 +1211,7 @@ dbio_fire:
         jb      dbio_fail               ; short: the medium ended, or is bad
 
         ; a read empties the staging buffer afterwards
-        cmp     byte ptr [dio_wr],0
+        cmp     byte ptr [dl_iowr],0
         jne     dbio_moved
         mov     esi,[dl_stgseg]
         shl     esi,4

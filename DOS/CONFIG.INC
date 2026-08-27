@@ -775,6 +775,58 @@ cfi_high:
         ret
 
 ;---------------------------------------------------------------------
+; KEYRATE=rate[,delay] - how fast a held-down key repeats.
+;
+; THE NUMBERS ARE MODE CON'S, not the hardware's.  RATE runs from 1 to
+; 32 and counts UPWARDS to faster (32 is thirty characters a second);
+; DELAY is 1 to 4 quarter-seconds before the repeating starts.  The
+; 8042 wants the rate the other way up in five bits and the delay in
+; two, which is a conversion and not a decision, so it happens here
+; and the kernel's side of IOS_KBRATE speaks the hardware's units.
+;
+; It is a CONFIG.SYS statement because the alternative is MODE CON,
+; and MODE is a program PM-DOS does not have; it goes with LFN=, DPMI=
+; and NULLTRAP= as a machine-wide setting the kernel owns.  Saying
+; nothing leaves the rate the BIOS set, which is the right default: a
+; statement that is absent should change nothing.
+;
+; RATE=32 DELAY=1 IS THE BYTE ZERO, and it is legal - it is what "as
+; fast as the keyboard goes, after the shortest pause" comes to.  It
+; is also the one value DOSBox 0.74 cannot take: that emulator does
+; not implement F3h's argument state, reads the zero as a COMMAND
+; instead, and stops delivering keystrokes altogether.  Nothing is
+; done about it here, because the byte is correct and the emulator is
+; not - see the note in DISK\CONFIG.SYS, which says which value to use
+; instead when a DOSBox is in the mix.
+;---------------------------------------------------------------------
+cfg_keyrate:
+        call    cfg_num
+        jc      cfg_badparm
+        or      eax,eax
+        jz      cfg_badparm
+        cmp     eax,32
+        ja      cfg_badparm
+        mov     edx,32
+        sub     edx,eax                 ; 32 fastest -> 0 fastest
+
+        mov     eax,1                   ; a delay of 250ms unless told
+        cmp     byte ptr [esi],','
+        jne     ckr_have
+        inc     esi
+        call    cfg_num
+        jc      cfg_badparm
+ckr_have:
+        or      eax,eax
+        jz      cfg_badparm
+        cmp     eax,4
+        ja      cfg_badparm
+        dec     eax
+        shl     eax,5
+        or      eax,edx
+        call    dword ptr ds:[IOS_KBRATE]
+        ret
+
+;---------------------------------------------------------------------
 ; LASTDRIVE=letter - the highest drive letter that can exist.
 ;
 ; What a program does with it is size a loop, so the number has to be
@@ -1422,6 +1474,7 @@ cfg_table:
         dd      OFFSET cfgn_dpmi,    OFFSET cfg_dpmi
         dd      OFFSET cfgn_nulltrp, OFFSET cfg_nulltrap
         dd      OFFSET cfgn_ems,     OFFSET cfg_ems
+        dd      OFFSET cfgn_keyrate, OFFSET cfg_keyrate
 
 ;--- the inherited set: recognised, and doing nothing ----------------
         dd      OFFSET cfgn_rem,     OFFSET cfg_rem
@@ -1452,6 +1505,7 @@ cfgn_break    db  'BREAK',0
 cfgn_lfn      db  'LFN',0
 cfgn_dpmi     db  'DPMI',0
 cfgn_ems      db  'EMS',0
+cfgn_keyrate  db  'KEYRATE',0
 cfgn_nulltrp  db  'NULLTRAP',0
 cfgn_rem      db  'REM',0
 cfgn_buffers  db  'BUFFERS',0

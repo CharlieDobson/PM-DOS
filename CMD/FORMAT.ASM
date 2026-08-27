@@ -96,7 +96,7 @@ fm_up:
         add     esi,2
         sub     ecx,2
 
-;--- switches: /Q is the only one ------------------------------------
+;--- switches: /Q and /S ---------------------------------------------
 fm_sw:
         or      ecx,ecx
         jz      fm_argsdone
@@ -111,13 +111,16 @@ fm_sw:
         cmp     ecx,2
         jb      fm_badsw
         mov     al,[esi+1]
-        cmp     al,'q'
-        jne     fm_swq
-        mov     al,'Q'
-fm_swq:
+        call    fm_upcase
         cmp     al,'Q'
-        jne     fm_badsw
+        jne     fm_swnq
         mov     byte ptr [quick],1
+        jmp     short fm_swtake
+fm_swnq:
+        cmp     al,'S'
+        jne     fm_badsw
+        mov     byte ptr [sysit],1
+fm_swtake:
         add     esi,2
         sub     ecx,2
         jmp     short fm_sw
@@ -527,9 +530,148 @@ fmx_free:
         mov     edx,OFFSET msg_avail
         mov     ah,09h
         int     21h
+        cmp     byte ptr [sysit],0
+        jne     fm_sys
 fm_exit:
         mov     ax,4C00h
         int     21h
+
+;=====================================================================
+; /S - and it is SYS.COM that does it, run as a child.
+;
+; NOT A COPY OF SYS INSIDE FORMAT.  Making a disk bootable is three
+; jobs - a boot sector with the target's own BPB spliced into it, the
+; stage-2 loader in the reserved sectors, and three files copied and
+; re-attributed - and SYS.ASM does all three already, correctly, on
+; every FAT type.  A second implementation here would be a second
+; thing to keep right, and the one that got it wrong would be the one
+; nobody ran.  Real FORMAT carried the code because real DOS had no
+; nested EXEC worth the name; this one has had one since v0.18.
+;
+; WHERE SYS.COM IS is the only question, and COMSPEC answers it: the
+; interpreter is on the system disk by definition, so the directory it
+; came from is the directory the system came from.  If the environment
+; will not say, "SYS.COM" on its own is tried, which finds it in the
+; current directory - and a plain "not found" from EXEC is a good
+; enough message for a disk that has been formatted correctly and
+; simply cannot be made bootable from here.
+;=====================================================================
+fm_sys:
+        mov     edx,OFFSET msg_sysing
+        mov     ah,09h
+        int     21h
+
+        call    fm_syspath              ; sys_path = where SYS.COM is
+        mov     edi,OFFSET sys_tail     ; " d:" as a DOS command tail
+        mov     byte ptr [edi],3
+        mov     byte ptr [edi+1],' '
+        mov     al,[tgt_log]
+        add     al,'A'
+        mov     [edi+2],al
+        mov     byte ptr [edi+3],':'
+        mov     byte ptr [edi+4],0Dh
+
+        ; THE NATIVE PARAMETER BLOCK, WHICH IS NOT THE EP_* ONE.  A
+        ; 16-bit program's block is a WORD environment segment and
+        ; three far pointers; a D32 program's is two flat dwords, an
+        ; environment and a tail, and nothing else - there are no FCBs
+        ; to parse for a program that has no PSP fields to put them in.
+        ; Building the sixteen-bit shape put the tail two bytes from
+        ; where fn4B reads it, and SYS came up with no arguments and
+        ; printed its usage.
+        mov     dword ptr [sys_blk],0           ; no environment: SYS wants
+                                                ; nothing out of one
+        mov     dword ptr [sys_blk+4],OFFSET sys_tail
+        mov     edx,OFFSET sys_path
+        mov     ebx,OFFSET sys_blk
+        mov     ax,4B00h
+        int     21h
+        jc      fm_sysfail
+        jmp     short fm_exit
+fm_sysfail:
+        mov     edx,OFFSET msg_nosys
+        mov     ah,09h
+        int     21h
+        mov     ax,4C01h
+        int     21h
+
+;---------------------------------------------------------------------
+; fm_syspath - sys_path = COMSPEC's directory + "SYS.COM", or just
+;              "SYS.COM" when there is no COMSPEC to read.
+;---------------------------------------------------------------------
+fm_syspath:
+        push    eax
+        push    ecx
+        push    esi
+        push    edi
+        mov     edi,OFFSET sys_path
+        xor     edx,edx                 ; EDX = length of the directory part
+
+        ; ds: IS LOAD-BEARING here for the reason it is everywhere else
+        ; a PSP field is read - without the override wasm biases the
+        ; address by the link offset and the environment silently is
+        ; not there.  See inherit_env in COMMAND.ASM.
+        mov     esi,ds:[SLOT_PSP + PSP_ENV]
+        or      esi,esi
+        jz      fsp_bare
+fsp_var:
+        cmp     byte ptr [esi],0
+        je      fsp_bare                ; the end of the block
+        push    esi
+        mov     ecx,OFFSET fm_comspec
+fsp_cmp:
+        mov     al,[ecx]
+        or      al,al
+        jz      fsp_hit
+        cmp     al,[esi]
+        jne     fsp_next
+        inc     esi
+        inc     ecx
+        jmp     short fsp_cmp
+fsp_next:
+        pop     esi
+fsp_skip:
+        mov     al,[esi]
+        inc     esi
+        or      al,al
+        jnz     fsp_skip
+        jmp     short fsp_var
+fsp_hit:
+        add     esp,4                   ; the pushed ESI is finished with
+                                        ; ...and ESI is ALREADY past the '=':
+                                        ; fm_comspec carries it, so the
+                                        ; comparison consumed it.  Stepping
+                                        ; over it again ate the drive letter
+                                        ; and left ":\SYS.COM"
+        xor     ecx,ecx
+fsp_scan:
+        mov     al,[esi+ecx]
+        or      al,al
+        jz      fsp_cut
+        mov     [edi+ecx],al
+        inc     ecx
+        cmp     al,'\'
+        je      fsp_mark
+        cmp     al,':'
+        jne     fsp_scan
+fsp_mark:
+        mov     edx,ecx                 ; keep everything up to here
+        jmp     short fsp_scan
+fsp_cut:
+        mov     edi,OFFSET sys_path
+        add     edi,edx
+fsp_bare:
+        mov     esi,OFFSET fm_sysname
+fsp_name:
+        lodsb
+        stosb
+        or      al,al
+        jnz     fsp_name
+        pop     edi
+        pop     esi
+        pop     ecx
+        pop     eax
+        ret
 fm_quit:
         mov     ax,4C01h
         int     21h
@@ -819,6 +961,7 @@ tgt_log     db  0                       ; 0-based logical drive
 fat_kind    db  0                       ; 12, 16 or 32
 g_media     db  0
 quick       db  0                       ; /Q
+sysit       db  0                       ; /S
 
 g_rsvd      dd  0                       ; the BPB, pulled apart
 g_nfats     dd  0
@@ -859,7 +1002,14 @@ msg_done    db  13,10,'Format complete',13,10,13,10,'$'
 msg_total   db  ' bytes total disk space',13,10,'$'
 msg_bad     db  ' bytes in bad sectors',13,10,'$'
 msg_avail   db  ' bytes available on disk',13,10,'$'
-msg_usage   db  'Usage: FORMAT d: [/Q]',13,10,'$'
+msg_usage   db  'Usage: FORMAT d: [/Q] [/S]',13,10,'$'
+msg_sysing  db  'Transferring the system...',13,10,'$'
+msg_nosys   db  'System not transferred (SYS.COM would not run)',13,10,'$'
+fm_comspec  db  'COMSPEC=',0
+fm_sysname  db  'SYS.COM',0
+sys_path    db  144 dup(0)              ; where SYS.COM turned out to be
+sys_tail    db  16 dup(0)               ; " d:" as EXEC wants it
+sys_blk     db  16 dup(0)               ; and the parameter block
 msg_baddrv  db  'Invalid drive specification',13,10,'$'
 msg_badsw   db  'Invalid switch',13,10,'$'
 msg_iscur   db  'Cannot format the current drive',13,10,'$'

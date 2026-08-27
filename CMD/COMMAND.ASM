@@ -34,10 +34,40 @@ COPYBUF_SIZE    EQU     8192
 ; for /A up to bit 25 for /Z.  Up here rather than beside sw_scan
 ; because wasm cannot size a forward-referenced EQU used as an
 ; immediate - the uses come hundreds of lines before the definition.
+SW_A            EQU     00000001h       ; bit 'A' - 'A'
+SW_B            EQU     00000002h       ; bit 'B' - 'A'
+SW_O            EQU     00004000h       ; bit 'O' - 'A'
 SW_P            EQU     00008000h       ; bit 'P' - 'A'
+SW_S            EQU     00040000h       ; bit 'S' - 'A'
+SW_V            EQU     00200000h       ; bit 'V' - 'A'
 SW_W            EQU     00400000h       ; bit 'W' - 'A'
 
+SW_ARGMAX       EQU     8               ; per-switch argument text
+
 DIR_PAGE        EQU     SCR_ROWS - 2    ; listing lines between /P stops
+DIR_MAXKEY      EQU     8               ; sort keys in one /O
+DIR_MAXDEPTH    EQU     32              ; how far /S will descend
+DIR_SUBNAME     EQU     16              ; one subdirectory's 8.3 name
+
+; COPY's /A and /B, per item.  UNSET is a third state and has to be:
+; the DEFAULT depends on whether the whole command turned out to be a
+; concatenation, which is not known until the line has been read.
+CPM_ASCII       EQU     0
+CPM_BINARY      EQU     1
+CPM_UNSET       EQU     0FFh
+
+; /O's collected entry.  A find record is 318 bytes and a directory
+; can hold thousands of them, so what is kept is the six fields the
+; listing actually prints and nothing else - and printing puts them
+; back into a find record, so that the two code paths that draw a row
+; stay one piece of code.
+DR_ATTR         EQU     0               ; db
+DR_TIME         EQU     2               ; dw
+DR_DATE         EQU     4               ; dw
+DR_SIZE         EQU     8               ; dd
+DR_NAME         EQU     12              ; 13 bytes - the 8.3 alias
+DR_LONG         EQU     28              ; 132 bytes - the long name
+DR_LEN          EQU     160
 
 _CMD    SEGMENT USE32 PUBLIC 'CODE'
         ASSUME  CS:_CMD, DS:_CMD, ES:_CMD, SS:_CMD
@@ -1126,11 +1156,18 @@ cmd_dir:
         mov     dword ptr [dir_all],ATTR_HIDDEN OR ATTR_SYSTEM
 dir_notall:
 
-        mov     esi,[arg_ptr]           ; /P and /W come out of the
+        mov     esi,[arg_ptr]           ; the switches come out of the
         call    sw_scan                 ; argument before anything reads
         mov     [dir_sw],eax            ; it as a pattern
+        mov     eax,[sw_negm]
+        mov     [dir_neg],eax
+        call    dir_dircmd              ; ...and DIRCMD underneath them
         mov     dword ptr [dir_lines],0
         mov     dword ptr [dir_col],0
+        mov     dword ptr [dir_total],0
+        mov     dword ptr [dir_tbytes],0
+        mov     dword ptr [dir_depth],0
+        call    dir_order               ; /O, into a list of sort keys
 
 ;--- header: volume label + directory line ---------------------------
 ; The label is looked for BEFORE a word of the header is printed.  It
@@ -1250,18 +1287,99 @@ dirx_add:
         mov     esi,OFFSET dir_scratch
 
 dir_pat:
-        call    dir_sayplace            ; "Directory of X:\WHEREVER"
+        ; THE PATTERN IS SPLIT ONCE, HERE, and everything below works
+        ; from the two halves rather than from the text as typed.  That
+        ; is what /S needs: "list *.TXT in this directory" and "and in
+        ; every directory under it" are the same operation with the
+        ; directory half changed, and nothing else about the listing
+        ; knows or cares which directory it is being run in.
+        call    dir_resolve
+        jc      dir_pat_plain
+
+        mov     dword ptr [dir_found],0
+        mov     dword ptr [walk_act],OFFSET dir_one
+        mov     dword ptr [walk_rec],0
+        test    dword ptr [dir_sw],SW_S
+        jz      dir_go
+        mov     dword ptr [walk_rec],1
+dir_go:
+        call    tree_walk
+        cmp     dword ptr [dir_found],0
+        je      dir_none
+
+        test    dword ptr [dir_sw],SW_S  ; the grand total, which only a
+        jz      dir_free                 ; recursive listing has
+        mov     edx,OFFSET msg_totlist
+        call    print
+        mov     eax,[dir_total]
+        call    pdec10
+        mov     edx,OFFSET msg_files
+        call    print
+        mov     eax,[dir_tbytes]
+        call    pdec10
+        mov     edx,OFFSET msg_bytes
+        call    print
+        jmp     dir_free
+
+; 7160h would not truename it - a drive with nothing mounted, most
+; likely.  Fall back to the listing this command has always done: the
+; pattern exactly as typed, in one directory, which is right for every
+; form with no path in it and is most of them.
+dir_pat_plain:
+        call    dir_sayplace            ; ESI is the pattern as typed
+        mov     dword ptr [dir_hdrdone],1
+        mov     edx,esi
+        call    dir_list
+        jc      dir_none
+        call    dir_subtot
+        jmp     dir_free
+
+;---------------------------------------------------------------------
+; dir_list - list one directory's worth of the pattern in EDX.
+;            CF set if the find found nothing at all.
+;
+; Sorted first when /O asked for it, which is the only reason this is
+; two loops instead of one: an order cannot be decided until every
+; entry has been seen, so /O collects the whole directory before it
+; prints a line of it and the plain listing streams as it always did.
+;---------------------------------------------------------------------
+dir_list:
+        cmp     dword ptr [dir_nkey],0
+        jne     dir_sorted
 
         ; the listing walks the LONG-name find (714Eh): same entries,
         ; but each row arrives with the long name alongside the 8.3.
         ; (Under LFN=OFF the wrapper drops to the classic 4Eh/4Fh.)
-        mov     edx,esi
         mov     ecx,ATTR_DIR            ; CL = allowable: directories too,
         or      ecx,[dir_all]           ; and everything else if "DIR,"
         call    xfind_first
-        jc      dir_none
+        jc      dir_listnone
         mov     word ptr [dir_hdl],ax
 dir_row:
+        call    dir_drawrow
+        mov     bx,word ptr [dir_hdl]
+        call    xfind_next
+        jnc     dir_row
+        mov     bx,word ptr [dir_hdl]   ; the walk is over - let the
+        call    xfind_close             ; kernel have the handle back
+        clc
+        ret
+dir_listnone:
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; dir_drawrow - one line of the listing, out of find_data.
+;
+; A subroutine rather than the middle of the loop because the SORTED
+; listing draws the same rows from somewhere else - it puts a stored
+; record back into find_data and calls this.  One piece of code draws
+; every row in either order, which is the point.
+;---------------------------------------------------------------------
+dir_drawrow:
+        call    dir_heading             ; with /S, the first match is what
+                                        ; proves the directory is worth
+                                        ; naming - see dir_walk
         test    byte ptr [find_data],ATTR_DIR   ; the byte total counts
         jnz     dir_fmt                         ; files in either format
         mov     eax,dword ptr [find_data+20h]
@@ -1345,14 +1463,12 @@ dir_stamp:
         call    dir_endline
 dir_counted:
         inc     dword ptr [dir_count]
+        ret
 
-        mov     bx,word ptr [dir_hdl]
-        call    xfind_next
-        jnc     dir_row
-
-        mov     bx,word ptr [dir_hdl]   ; the walk is over - let the
-        call    xfind_close             ; kernel have the handle back
-
+;---------------------------------------------------------------------
+; dir_subtot - the two lines under one directory's listing.
+;---------------------------------------------------------------------
+dir_subtot:
         cmp     dword ptr [dir_col],0   ; /W may have left a part row
         je      dir_totals
         mov     dword ptr [dir_col],0
@@ -1366,7 +1482,9 @@ dir_totals:
         call    pdec10
         mov     edx,OFFSET msg_bytes
         call    print
+        ret
 
+dir_free:
         ; Free space through 7303h, whose fields are 32 bits wide.  36h
         ; would do the same arithmetic in 16-bit registers and saturate
         ; at 65535 clusters, which is how a 40MB volume used to report
@@ -1593,6 +1711,950 @@ dlc_out:
         ret
 
 ;=====================================================================
+; DIRCMD - the switches a user wants on every listing.
+;
+; MS-DOS reads this variable and puts its contents in front of the
+; command line, which is a description of the effect rather than of
+; the mechanism: what is in it is switches, and switches are already
+; lifted out of the line and turned into a mask before anything else
+; happens.  So the merge is done on the masks, where the rule can be
+; stated exactly - THE COMMAND LINE WINS - instead of on text, where
+; it would depend on which of two /O switches came first.
+;
+; The rule is the whole reason "/-x" exists.  A DIRCMD of "/W" with no
+; way to say "not this time" is a variable nobody would set.
+;---------------------------------------------------------------------
+dir_dircmd:
+        pushad
+        mov     esi,OFFSET env_dircmd
+        call    env_find                ; CF: no such variable
+        jc      dc_out
+        mov     edi,OFFSET dir_ecmd     ; copied out, because sw_scan
+        mov     edx,edi                 ; rewrites what it is given and
+        mov     ecx,143                 ; the environment is not scratch
+        call    dir_cpn
+
+        mov     esi,OFFSET dir_ecmd     ; its arguments are kept aside,
+        call    sw_scan                 ; because the command line's scan
+        mov     ebx,eax                 ; is about to overwrite them
+        push    esi
+        push    edi
+        mov     esi,OFFSET sw_args
+        mov     edi,OFFSET dir_eargs
+        mov     ecx,(26 * SW_ARGMAX) / 4
+        rep     movsd
+        pop     edi
+        pop     esi
+
+        ; the environment's, minus what it turned off, minus what the
+        ; command line mentioned either way
+        mov     eax,[sw_negm]
+        not     eax
+        and     ebx,eax
+        mov     eax,[dir_sw]
+        or      eax,[dir_neg]
+        not     eax
+        and     ebx,eax                 ; EBX = what only DIRCMD asked for
+        or      [dir_sw],ebx
+
+        ; and those switches' arguments, for the same letters
+        xor     ecx,ecx
+dc_arg:
+        cmp     ecx,26
+        jae     dc_done
+        bt      ebx,ecx
+        jnc     dc_next
+        push    ecx
+        mov     esi,ecx
+        shl     esi,3
+        mov     edi,esi
+        add     esi,OFFSET dir_eargs
+        add     edi,OFFSET sw_args
+        mov     ecx,SW_ARGMAX
+        rep     movsb
+        pop     ecx
+dc_next:
+        inc     ecx
+        jmp     short dc_arg
+dc_done:
+        mov     eax,[dir_neg]           ; and last of all, said again: a
+        not     eax                     ; "/-x" on the line beats anything
+        and     [dir_sw],eax            ; DIRCMD had to say about it
+dc_out:
+        popad
+        ret
+
+;=====================================================================
+; /O - the sort order, as a list of keys.
+;
+;   N name   E extension   D date and time   S size   G directories
+;   first, and a '-' in front of any of them reverses it.
+;
+; A bare /O is /OGN, which is what MS-DOS 6 documents it as and is the
+; order anybody typing /O without thinking about it means.
+;=====================================================================
+dir_order:
+        pushad
+        mov     dword ptr [dir_nkey],0
+        test    dword ptr [dir_sw],SW_O
+        jz      do_out
+
+        mov     al,'O'
+        call    sw_arg                  ; ESI -> what was stuck to it
+        cmp     byte ptr [esi],0
+        jne     do_parse
+        mov     esi,OFFSET dir_dfltord  ; "GN"
+do_parse:
+        cmp     byte ptr [esi],':'
+        jne     do_lp
+        inc     esi
+do_lp:
+        mov     al,[esi]
+        or      al,al
+        jz      do_out
+        mov     ah,0                    ; ascending unless a sign says not
+        cmp     al,'-'
+        jne     do_nosign
+        mov     ah,1
+        inc     esi
+        mov     al,[esi]
+do_nosign:
+        cmp     al,'+'
+        jne     do_have
+        inc     esi
+        mov     al,[esi]
+do_have:
+        or      al,al
+        jz      do_out
+        call    upcase
+        inc     esi
+        cmp     al,'N'
+        je      do_add
+        cmp     al,'E'
+        je      do_add
+        cmp     al,'D'
+        je      do_add
+        cmp     al,'S'
+        je      do_add
+        cmp     al,'G'
+        jne     do_lp                   ; anything else is not a key
+do_add:
+        mov     ecx,[dir_nkey]
+        cmp     ecx,DIR_MAXKEY
+        jae     do_lp
+        shl     ecx,1
+        mov     [dir_keys+ecx],al
+        mov     [dir_keys+ecx+1],ah
+        inc     dword ptr [dir_nkey]
+        jmp     short do_lp
+do_out:
+        popad
+        ret
+
+dir_dfltord db  'GN',0
+
+;=====================================================================
+; dir_resolve - split the pattern in ESI into the DIRECTORY it lives
+;               in and the PATTERN within that directory.
+;
+; 21h/7160h renders the thing absolute, wildcards and all, and the
+; last backslash is the join between the two halves.  Splitting once
+; here is what lets /S exist: every directory of the walk lists the
+; same dir_fpat, and nothing below this knows where it is.
+;=====================================================================
+dir_resolve:
+        pushad
+        mov     edi,OFFSET dir_hdrbuf
+        mov     ecx,2                   ; CL = 2, the long form
+        mov     ax,7160h
+        int     21h
+        jc      drs_fail
+
+        mov     esi,OFFSET dir_hdrbuf
+        xor     edx,edx                 ; index just past the last '\'
+        xor     ecx,ecx
+drs_scan:
+        mov     al,[esi+ecx]
+        or      al,al
+        jz      drs_split
+        inc     ecx
+        cmp     al,'\'
+        jne     drs_scan
+        mov     edx,ecx
+        jmp     short drs_scan
+drs_split:
+        or      edx,edx
+        jz      drs_fail                ; no separator at all
+        cmp     byte ptr [esi+edx],0
+        je      drs_fail                ; nothing after it to match
+
+        mov     esi,OFFSET dir_hdrbuf   ; the tail is the pattern
+        add     esi,edx
+        mov     edi,OFFSET dir_fpat
+drs_cp:
+        lodsb
+        stosb
+        or      al,al
+        jnz     drs_cp
+
+        cmp     edx,3                   ; "X:\" keeps its backslash;
+        jbe     drs_keep                ; anything deeper drops it
+        dec     edx
+drs_keep:
+        mov     esi,OFFSET dir_hdrbuf
+        mov     edi,OFFSET dir_dirpath
+        mov     ecx,edx
+        rep     movsb
+        mov     byte ptr [edi],0
+        popad
+        clc
+        ret
+drs_fail:
+        popad
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; dir_join - dir_scratch = dir_dirpath + '\' + dir_fpat
+;---------------------------------------------------------------------
+dir_join:
+        pushad
+        mov     esi,OFFSET dir_dirpath
+        mov     edi,OFFSET dir_scratch
+        xor     ecx,ecx
+dj_cp:
+        mov     al,[esi+ecx]
+        or      al,al
+        jz      dj_end
+        mov     [edi+ecx],al
+        inc     ecx
+        jmp     short dj_cp
+dj_end:
+        or      ecx,ecx
+        jz      dj_pat
+        cmp     byte ptr [edi+ecx-1],'\'
+        je      dj_pat
+        mov     byte ptr [edi+ecx],'\'
+        inc     ecx
+dj_pat:
+        add     edi,ecx
+        mov     esi,OFFSET dir_fpat
+dj_cp2:
+        lodsb
+        stosb
+        or      al,al
+        jnz     dj_cp2
+        popad
+        ret
+
+;=====================================================================
+; tree_walk - do [walk_act] to dir_dirpath, and if walk_rec says so to
+;             every directory under it.
+;
+; ONE WALKER, TWO COMMANDS.  DIR /S and DEL /S are the same traversal
+; with a different thing done at each stop, and the traversal is the
+; part with the difficulties in it - so it is written once and the
+; command supplies the verb.  dir_one lists; del_one deletes.
+;
+; RECURSIVE, AND THE FIND IS NOT HELD OPEN ACROSS THE RECURSION.  It
+; cannot be: under LFN=OFF the wrapper falls back to 4Eh/4Fh, which
+; resume out of one DTA, so a second search started inside the first
+; would take the first one's place.  So a directory's subdirectory
+; NAMES are collected into a block first, the find is closed, and the
+; walk goes down the list - which costs one allocation per level and
+; works the same whether long names are on or off.
+;
+; A directory that will not open is stepped over in silence, which is
+; what a walk of a tree with something unreadable in it should do: the
+; unreadable part is not the part that was asked for.
+;=====================================================================
+tree_walk:
+        push    ebp
+        push    ebx
+        push    esi
+        push    edi
+        sub     esp,8
+        mov     ebp,esp                 ; [ebp] = block, [ebp+4] = count
+
+        call    dword ptr [walk_act]    ; whatever this walk is FOR
+
+        cmp     dword ptr [walk_rec],0
+        jz      dw_done
+        mov     eax,[dir_depth]
+        cmp     eax,DIR_MAXDEPTH
+        jae     dw_done
+
+        call    dir_subcount            ; -> ECX subdirectories
+        or      ecx,ecx
+        jz      dw_done
+        mov     dword ptr [ebp+4],ecx
+        mov     eax,ecx
+        imul    eax,DIR_SUBNAME
+        mov     ebx,eax
+        mov     ah,48h
+        int     21h
+        jc      dw_done                 ; no room to remember them: this
+        mov     [ebp],eax               ; branch is as far as the walk goes
+        mov     edi,eax
+        mov     ecx,[ebp+4]
+        call    dir_subfill
+
+        xor     ebx,ebx
+dw_each:
+        cmp     ebx,[ebp+4]
+        jae     dw_free
+        mov     esi,[ebp]
+        mov     eax,ebx
+        imul    eax,DIR_SUBNAME
+        add     esi,eax
+        call    dir_descend
+        inc     ebx
+        jmp     short dw_each
+dw_free:
+        mov     edx,[ebp]
+        mov     ah,49h
+        int     21h
+dw_done:
+        add     esp,8
+        pop     edi
+        pop     esi
+        pop     ebx
+        pop     ebp
+        ret
+
+;---------------------------------------------------------------------
+; dir_one - what DIR does at one stop of the walk.
+;---------------------------------------------------------------------
+dir_one:
+        mov     dword ptr [dir_count],0
+        mov     dword ptr [dir_bytes],0
+        mov     dword ptr [dir_hdrdone],0
+
+        test    dword ptr [dir_sw],SW_S ; WITHOUT /S the heading comes
+        jnz     do1_defer               ; first, so that a listing with
+        call    dir_heading             ; nothing in it still says where
+do1_defer:                              ; it looked.  WITH /S it waits for
+                                        ; the first match, or a walk of a
+                                        ; whole disk is one heading per
+                                        ; directory and five matches
+        call    dir_join
+        mov     edx,OFFSET dir_scratch
+        call    dir_list
+        jc      do1_out
+
+        inc     dword ptr [dir_found]
+        call    dir_subtot
+        mov     eax,[dir_count]
+        add     [dir_total],eax
+        mov     eax,[dir_bytes]
+        add     [dir_tbytes],eax
+do1_out:
+        ret
+
+;---------------------------------------------------------------------
+; dir_descend - append the 8.3 name at ESI to dir_dirpath, walk what
+;               is now named, and cut the path back to what it was.
+;---------------------------------------------------------------------
+dir_descend:
+        push    ebx
+        push    esi
+        push    edi
+        mov     edi,OFFSET dir_dirpath
+        xor     ecx,ecx
+dd_len:
+        cmp     byte ptr [edi+ecx],0
+        je      dd_got
+        inc     ecx
+        jmp     short dd_len
+dd_got:
+        push    ecx                     ; where to cut back to
+        or      ecx,ecx
+        jz      dd_app
+        cmp     byte ptr [edi+ecx-1],'\'
+        je      dd_app
+        mov     byte ptr [edi+ecx],'\'
+        inc     ecx
+dd_app:
+        add     edi,ecx
+dd_cp:
+        lodsb
+        stosb
+        or      al,al
+        jnz     dd_cp
+
+        inc     dword ptr [dir_depth]
+        call    tree_walk
+        dec     dword ptr [dir_depth]
+
+        pop     ecx
+        mov     byte ptr [dir_dirpath+ecx],0
+        pop     edi
+        pop     esi
+        pop     ebx
+        ret
+
+;---------------------------------------------------------------------
+; dir_subcount / dir_subfill - the subdirectories of dir_dirpath, in
+;                              two passes over the same enumeration:
+;                              how many there are, then what they are
+;                              called.  Two passes rather than a guess
+;                              at how many a directory might hold.
+;---------------------------------------------------------------------
+dir_subcount:
+        push    eax
+        push    ebx
+        push    edx
+        push    esi
+        push    edi
+        mov     dword ptr [dir_nfill],0
+        call    dir_subpat
+        mov     edx,OFFSET dir_scratch
+        mov     ecx,ATTR_DIR
+        call    xfind_first
+        jc      dsc_out
+        mov     word ptr [dir_hdl],ax
+dsc_lp:
+        call    dir_issub
+        jc      dsc_next
+        inc     dword ptr [dir_nfill]
+dsc_next:
+        mov     bx,word ptr [dir_hdl]
+        call    xfind_next
+        jnc     dsc_lp
+        mov     bx,word ptr [dir_hdl]
+        call    xfind_close
+dsc_out:
+        mov     ecx,[dir_nfill]
+        pop     edi
+        pop     esi
+        pop     edx
+        pop     ebx
+        pop     eax
+        ret
+
+dir_subfill:                            ; EDI -> the block, ECX = how many
+        pushad
+        mov     [dir_nrec],ecx
+        mov     [dir_subblk],edi        ; KEPT, not carried in EDI: the find
+                                        ; points EDI at find_data every time
+                                        ; it fetches an entry, so a block
+                                        ; pointer left in it is a block
+                                        ; pointer that becomes find_data and
+                                        ; every name comes back empty
+        mov     dword ptr [dir_nfill],0
+        call    dir_subpat
+        mov     edx,OFFSET dir_scratch
+        mov     ecx,ATTR_DIR
+        call    xfind_first
+        jc      dsf_out
+        mov     word ptr [dir_hdl],ax
+dsf_lp:
+        call    dir_issub
+        jc      dsf_next
+        mov     eax,[dir_nfill]
+        cmp     eax,[dir_nrec]
+        jae     dsf_close               ; more than the first pass saw
+        imul    eax,DIR_SUBNAME
+        add     eax,[dir_subblk]
+        mov     edi,eax
+        mov     esi,OFFSET find_data + 130h
+        mov     ecx,DIR_SUBNAME
+dsf_cp:
+        lodsb
+        stosb
+        dec     ecx
+        jz      dsf_cpend
+        or      al,al
+        jnz     dsf_cp
+dsf_cpend:
+        inc     dword ptr [dir_nfill]
+dsf_next:
+        mov     bx,word ptr [dir_hdl]
+        call    xfind_next
+        jnc     dsf_lp
+dsf_close:
+        mov     bx,word ptr [dir_hdl]
+        call    xfind_close
+dsf_out:
+        popad
+        ret
+
+; dir_subpat - dir_scratch = dir_dirpath + "\*.*"
+dir_subpat:
+        pushad
+        mov     eax,dword ptr [dir_fpat]        ; the listing's own pattern,
+        push    eax                             ; four bytes of which is all
+                                                ; "*.*" needs to borrow
+        mov     dword ptr [dir_fpat],002A2E2Ah  ; '*' '.' '*' 0
+        call    dir_join
+        pop     eax
+        mov     dword ptr [dir_fpat],eax
+        popad
+        ret
+
+; dir_issub - CF clear if find_data is a real subdirectory and not
+;             one of the two that lead back up.
+dir_issub:
+        test    byte ptr [find_data],ATTR_DIR
+        jz      dis_no
+        cmp     byte ptr [find_data+130h],'.'
+        jne     dis_yes
+dis_no:
+        stc
+        ret
+dis_yes:
+        clc
+        ret
+
+;---------------------------------------------------------------------
+; dir_heading - "Directory of X:\WHEREVER", once per directory.
+;---------------------------------------------------------------------
+dir_heading:
+        cmp     dword ptr [dir_hdrdone],0
+        jne     dh_out
+        mov     dword ptr [dir_hdrdone],1
+        push    edx
+        push    esi
+        mov     edx,OFFSET msg_dirof
+        call    print
+        mov     esi,OFFSET dir_dirpath
+        call    print_asciiz
+        mov     edx,OFFSET msg_dirof2
+        call    print
+        pop     esi
+        pop     edx
+dh_out:
+        ret
+
+;=====================================================================
+; /O - the same listing, in an order.
+;
+; Two passes and a block: count the directory, take memory for that
+; many records, fill it, sort an index over it, then draw the rows.
+; A sort cannot start until the last entry has been seen, which is the
+; only reason the plain listing and this one are different code at all
+; - and why the plain one is kept: it streams, and streaming a large
+; directory needs no memory and shows the first line at once.
+;
+; NO MEMORY MEANS NO ORDER, NOT NO LISTING.  A directory too big to
+; collect is listed unsorted rather than refused, because what the
+; user asked for was to see it.
+;=====================================================================
+dir_sorted:
+        push    edx
+        mov     dword ptr [dir_nrec],0
+        mov     ecx,ATTR_DIR
+        or      ecx,[dir_all]
+        call    xfind_first
+        jnc     ds_counting
+        pop     edx
+        jmp     dir_listnone
+ds_counting:
+        mov     word ptr [dir_hdl],ax
+ds_count:
+        inc     dword ptr [dir_nrec]
+        mov     bx,word ptr [dir_hdl]
+        call    xfind_next
+        jnc     ds_count
+        mov     bx,word ptr [dir_hdl]
+        call    xfind_close
+        pop     edx
+
+        mov     eax,[dir_nrec]
+        imul    eax,DR_LEN + 4
+        mov     ebx,eax
+        mov     ah,48h
+        int     21h
+        jc      ds_plain
+        mov     [dir_recs],eax
+        mov     ecx,[dir_nrec]
+        imul    ecx,DR_LEN
+        add     ecx,eax
+        mov     [dir_idx],ecx
+
+        push    edx
+        mov     ecx,ATTR_DIR
+        or      ecx,[dir_all]
+        call    xfind_first
+        pop     edx
+        jc      ds_freeplain
+        mov     word ptr [dir_hdl],ax
+        mov     dword ptr [dir_nfill],0
+ds_fill:
+        mov     eax,[dir_nfill]
+        cmp     eax,[dir_nrec]
+        jae     ds_filled
+        imul    eax,DR_LEN              ; WORKED OUT AFRESH EVERY TIME, not
+        add     eax,[dir_recs]          ; carried in EDI: xfind_next points
+        mov     edi,eax                 ; EDI at find_data on its way past
+        call    dir_record
+        mov     eax,[dir_nfill]
+        mov     ecx,[dir_idx]
+        mov     [ecx+eax*4],edi
+        inc     dword ptr [dir_nfill]
+        mov     bx,word ptr [dir_hdl]
+        call    xfind_next
+        jnc     ds_fill
+ds_filled:
+        mov     bx,word ptr [dir_hdl]
+        call    xfind_close
+
+        call    dir_sortidx
+        mov     dword ptr [dir_nrec],0
+ds_show:
+        mov     eax,[dir_nrec]
+        cmp     eax,[dir_nfill]
+        jae     ds_shown
+        mov     ecx,[dir_idx]
+        mov     esi,[ecx+eax*4]
+        call    dir_unrecord            ; the record back into find_data
+        call    dir_drawrow
+        inc     dword ptr [dir_nrec]
+        jmp     short ds_show
+ds_shown:
+        mov     edx,[dir_recs]
+        mov     ah,49h
+        int     21h
+        clc
+        ret
+
+; the records were taken and the second pass found nothing after all
+ds_freeplain:
+        push    edx
+        mov     edx,[dir_recs]
+        mov     ah,49h
+        int     21h
+        pop     edx
+        jmp     dir_listnone
+
+; there was no room to collect the directory.  List it unsorted rather
+; than not at all: what was asked for was to see it.
+ds_plain:
+        mov     dword ptr [dir_nkey],0  ; and do not ask again this run
+        jmp     dir_list
+
+;---------------------------------------------------------------------
+; dir_record / dir_unrecord - the six fields that get printed, out of
+;                             a find record and back into one.
+;---------------------------------------------------------------------
+dir_record:                             ; EDI -> the record
+        pushad
+        push    edi
+        xor     eax,eax
+        mov     ecx,DR_LEN / 4
+        rep     stosd
+        pop     edi
+        mov     al,[find_data]
+        mov     [edi+DR_ATTR],al
+        mov     ax,word ptr [find_data+14h]
+        mov     [edi+DR_TIME],ax
+        mov     ax,word ptr [find_data+16h]
+        mov     [edi+DR_DATE],ax
+        mov     eax,dword ptr [find_data+20h]
+        mov     [edi+DR_SIZE],eax
+
+        mov     esi,OFFSET find_data + 130h
+        lea     edx,[edi+DR_NAME]
+        mov     ecx,13
+        call    dir_cpn
+        mov     esi,OFFSET find_data + 2Ch
+        lea     edx,[edi+DR_LONG]
+        mov     ecx,132
+        call    dir_cpn
+        popad
+        ret
+
+; dir_cpn - at most ECX bytes of the ASCIIZ at ESI to EDX, always
+;           terminated.  A long name past the record's room is cut
+;           rather than allowed to run into the next one.
+dir_cpn:
+        push    edi
+        mov     edi,edx
+        dec     ecx
+dcn_lp:
+        or      ecx,ecx
+        jz      dcn_end
+        lodsb
+        or      al,al
+        jz      dcn_end
+        stosb
+        dec     ecx
+        jmp     short dcn_lp
+dcn_end:
+        mov     byte ptr [edi],0
+        pop     edi
+        ret
+
+dir_unrecord:                           ; ESI -> the record
+        pushad
+        push    esi
+        mov     edi,OFFSET find_data
+        xor     eax,eax
+        mov     ecx,318 / 2
+        rep     stosw
+        pop     esi
+        mov     al,[esi+DR_ATTR]
+        mov     [find_data],al
+        mov     ax,[esi+DR_TIME]
+        mov     word ptr [find_data+14h],ax
+        mov     ax,[esi+DR_DATE]
+        mov     word ptr [find_data+16h],ax
+        mov     eax,[esi+DR_SIZE]
+        mov     dword ptr [find_data+20h],eax
+        push    esi
+        lea     esi,[esi+DR_NAME]
+        mov     edx,OFFSET find_data + 130h
+        mov     ecx,13
+        call    dir_cpn
+        pop     esi
+        lea     esi,[esi+DR_LONG]
+        mov     edx,OFFSET find_data + 2Ch
+        mov     ecx,132
+        call    dir_cpn
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; dir_sortidx - insertion sort over the index, which moves four bytes
+;               a step rather than a hundred and sixty.  A directory
+;               is a few hundred entries; the algorithm is not what
+;               anybody will wait for.
+;---------------------------------------------------------------------
+dir_sortidx:
+        pushad
+        mov     ebx,1                   ; EBX = the entry being placed
+dsi_out:
+        cmp     ebx,[dir_nfill]
+        jae     dsi_done
+        mov     edi,[dir_idx]
+        mov     ebp,[edi+ebx*4]         ; the record it points at
+        mov     ecx,ebx
+dsi_in:
+        or      ecx,ecx
+        jz      dsi_put
+        mov     esi,[edi+ecx*4-4]       ; the one before it
+        push    ecx
+        mov     edx,ebp
+        call    dir_cmprec              ; ESI against EDX
+        pop     ecx
+        jle     dsi_put                 ; in place already
+        mov     [edi+ecx*4],esi
+        dec     ecx
+        jmp     short dsi_in
+dsi_put:
+        mov     [edi+ecx*4],ebp
+        inc     ebx
+        jmp     short dsi_out
+dsi_done:
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; dir_cmprec - compare the records at ESI and EDX by every key in
+;              dir_keys until one of them says something.  Sets the
+;              flags for a signed test: positive if ESI sorts after.
+;---------------------------------------------------------------------
+dir_cmprec:
+        push    ebx
+        push    ecx
+        push    esi
+        push    edi
+        xor     ecx,ecx
+dcr_key:
+        cmp     ecx,[dir_nkey]
+        jae     dcr_same
+        push    ecx
+        mov     ebx,ecx
+        shl     ebx,1
+        mov     al,[dir_keys+ebx]
+        mov     ah,[dir_keys+ebx+1]     ; 1 = reversed
+        call    dir_key1                ; -> EAX = -1, 0 or 1
+        pop     ecx
+        or      eax,eax
+        jnz     dcr_out
+        inc     ecx
+        jmp     short dcr_key
+
+; EVERY KEY AGREED, SO THE NAME DECIDES.  Without this the order of
+; equal entries is whatever the directory happened to hold - /O:E puts
+; three directories in front, all with no extension, and they come out
+; in no order at all.  DOS breaks the same tie the same way, and it is
+; also what makes a listing REPRODUCIBLE, which a sorted listing had
+; better be.  The tie-break is never reversed: "-E" means backwards by
+; extension, not backwards by everything.
+dcr_same:
+        mov     al,'N'
+        xor     ah,ah
+        call    dir_key1
+dcr_out:
+        pop     edi
+        pop     esi
+        pop     ecx
+        pop     ebx
+        or      eax,eax                 ; the flags the caller tests
+        ret
+
+;---------------------------------------------------------------------
+; dir_key1 - one key.  AL = its letter, AH = 1 if reversed.
+;            ESI and EDX are the two records; EAX comes back -1, 0
+;            or 1 for "ESI first", "no opinion", "EDX first".
+;---------------------------------------------------------------------
+dir_key1:
+        push    ebx
+        push    ecx
+        push    esi
+        push    edi
+        mov     bl,ah                   ; the direction, kept
+        cmp     al,'G'
+        je      dk_group
+        cmp     al,'S'
+        je      dk_size
+        cmp     al,'D'
+        je      dk_date
+        cmp     al,'E'
+        je      dk_ext
+                                        ; 'N' and anything unknown
+dk_name:
+        lea     esi,[esi+DR_LONG]
+        lea     edi,[edx+DR_LONG]
+        call    dir_stricmp
+        jmp     short dk_signed
+
+dk_ext:
+        lea     esi,[esi+DR_NAME]
+        call    dir_extof
+        push    esi
+        lea     esi,[edx+DR_NAME]
+        call    dir_extof
+        mov     edi,esi
+        pop     esi
+        call    dir_stricmp
+        jmp     short dk_signed
+
+dk_size:
+        mov     eax,[esi+DR_SIZE]
+        cmp     eax,[edx+DR_SIZE]
+        jb      dk_less
+        ja      dk_more
+        jmp     short dk_equal
+
+dk_date:
+        movzx   eax,word ptr [esi+DR_DATE]
+        shl     eax,16
+        mov     ax,word ptr [esi+DR_TIME]
+        movzx   ecx,word ptr [edx+DR_DATE]
+        shl     ecx,16
+        mov     cx,word ptr [edx+DR_TIME]
+        cmp     eax,ecx
+        jb      dk_less
+        ja      dk_more
+        jmp     short dk_equal
+
+; GROUPING IS NOT A SORT KEY LIKE THE OTHERS: it has two values and
+; directories come first, which is the one order anybody wants.  A
+; '-' in front of it puts the files first, because a key that cannot
+; be reversed would be the only one in the list that could not.
+dk_group:
+        mov     al,[esi+DR_ATTR]
+        and     al,ATTR_DIR
+        mov     ah,[edx+DR_ATTR]
+        and     ah,ATTR_DIR
+        cmp     al,ah
+        je      dk_equal
+        or      al,al
+        jnz     dk_less                 ; ESI is a directory: it goes first
+        jmp     short dk_more
+
+dk_signed:
+        or      eax,eax
+        js      dk_less
+        jnz     dk_more
+dk_equal:
+        xor     eax,eax
+        jmp     short dk_out
+dk_less:
+        mov     eax,-1
+        jmp     short dk_rev
+dk_more:
+        mov     eax,1
+dk_rev:
+        or      bl,bl
+        jz      dk_out
+        neg     eax
+dk_out:
+        pop     edi
+        pop     esi
+        pop     ecx
+        pop     ebx
+        ret
+
+; dir_extof - ESI -> an 8.3 name; leaves ESI on its extension, or on
+;             the terminator when it has none.
+dir_extof:
+        push    eax
+        cmp     byte ptr [esi],0
+        je      de_out
+        inc     esi                     ; A LEADING DOT IS NOT A SEPARATOR.
+                                        ; "." and ".." are directory entries
+                                        ; and DOS stores them with a blank
+                                        ; extension; reading the second dot
+                                        ; of ".." as one gave them an
+                                        ; extension nothing else had and put
+                                        ; them in the middle of a /O:E
+                                        ; listing
+de_lp:
+        mov     al,[esi]
+        or      al,al
+        jz      de_out
+        cmp     al,'.'
+        je      de_dot
+        inc     esi
+        jmp     short de_lp
+de_dot:
+        inc     esi
+de_out:
+        pop     eax
+        ret
+
+; dir_stricmp - ESI against EDI, case-insensitively.  EAX comes back
+;               negative, zero or positive the way strcmp does.
+dir_stricmp:
+        push    ebx
+        push    ecx
+dsc_lp2:
+        movzx   eax,byte ptr [esi]
+        movzx   ecx,byte ptr [edi]
+        cmp     al,'a'
+        jb      dsc_a
+        cmp     al,'z'
+        ja      dsc_a
+        sub     al,32
+dsc_a:
+        cmp     cl,'a'
+        jb      dsc_b
+        cmp     cl,'z'
+        ja      dsc_b
+        sub     cl,32
+dsc_b:
+        cmp     al,cl
+        jne     dsc_diff
+        or      al,al
+        jz      dsc_eq
+        inc     esi
+        inc     edi
+        jmp     short dsc_lp2
+dsc_diff:
+        sub     eax,ecx
+        pop     ecx
+        pop     ebx
+        ret
+dsc_eq:
+        xor     eax,eax
+        pop     ecx
+        pop     ebx
+        ret
+
+;=====================================================================
 ; TYPE file
 ;=====================================================================
 cmd_type:
@@ -1661,6 +2723,9 @@ cmd_copy:
         mov     byte ptr [cp_append],0
         mov     byte ptr [cp_glued],0
         mov     byte ptr [cp_opened],0
+        mov     byte ptr [cp_verify],0
+        mov     byte ptr [cp_curmode],CPM_UNSET
+        mov     byte ptr [cp_ztail],0
         mov     dword ptr [copy_src],-1
         mov     dword ptr [copy_dst],-1
 
@@ -1681,8 +2746,11 @@ cmd_copy:
         mov     eax,[cp_items+ebx*4]
         mov     [cp_dstptr],eax
         mov     [cp_nitem],ebx
+        mov     al,[cp_mode+ebx]        ; the destination's own /A or /B
+        mov     [cp_dmode],al
         jmp     short cp_havedest
 cp_nodest:
+        mov     byte ptr [cp_dmode],CPM_UNSET
         cmp     dword ptr [cp_nitem],1
         jbe     cp_havedest             ; one source, no destination:
                                         ; the current directory
@@ -1708,12 +2776,55 @@ cp_notdir:
 cp_setcat:
         mov     [cp_concat],al
 
+;--- what /A and /B mean when nobody said ----------------------------
+; DOS's defaults, and they are not arbitrary.  A plain copy is BINARY:
+; the point of it is that the file at the far end is the same file, and
+; a byte that happens to be 1Ah is a byte.  A CONCATENATION is ASCII,
+; because joining files is a text operation - it exists so that three
+; text files become one, and a text file of that era ended at its
+; first Ctrl-Z whatever came after.
+        mov     al,CPM_BINARY
+        cmp     byte ptr [cp_glued],0
+        je      cp_dflt
+        mov     al,CPM_ASCII
+cp_dflt:
+        mov     ah,al
+        xor     ecx,ecx
+cp_dlp:
+        cmp     ecx,[cp_nitem]
+        jae     cp_dend
+        cmp     byte ptr [cp_mode+ecx],CPM_UNSET
+        jne     cp_dnext
+        mov     [cp_mode+ecx],al
+cp_dnext:
+        inc     ecx
+        jmp     short cp_dlp
+cp_dend:
+        cmp     byte ptr [cp_dmode],CPM_UNSET
+        jne     cp_dhave
+        mov     [cp_dmode],ah
+cp_dhave:
+
+; /V turns VERIFY on for the length of the copy and puts it back
+; afterwards, which is exactly what it has always meant - and which
+; means something now that the kernel reads the flag.
+        mov     ah,54h
+        int     21h
+        mov     [cp_oldvfy],al
+        cmp     byte ptr [cp_verify],0
+        je      cp_novfy
+        mov     ax,2E01h
+        int     21h
+cp_novfy:
+
 ;--- walk the sources ------------------------------------------------
         mov     ebx,[cp_first]
 cp_item:
         cmp     ebx,[cp_nitem]
         jae     cp_finish
         mov     esi,[cp_items+ebx*4]
+        mov     al,[cp_mode+ebx]        ; this source's own reading of
+        mov     [cp_srcmode],al         ; where its end is
         push    ebx
         call    cp_source
         pop     ebx
@@ -1723,10 +2834,12 @@ cp_item:
 
 cp_stop:
         call    cp_shut
+        call    cp_vfyback
         ret
 
 cp_finish:
         call    cp_shut
+        call    cp_vfyback
         cmp     dword ptr [cp_count],0
         jne     cp_report
         mov     edx,OFFSET msg_notfound
@@ -1737,6 +2850,19 @@ cp_report:
         call    pdec10
         mov     edx,OFFSET msg_copied
         call    print
+        ret
+
+; VERIFY goes back to whatever it was, however the copy ended.  A /V
+; that left the flag standing would make every write in the machine
+; twice as slow until the next reboot, which is a thing nobody would
+; connect to a COPY they typed an hour ago.
+cp_vfyback:
+        push    eax
+        mov     al,[cp_oldvfy]
+        and     al,1
+        mov     ah,2Eh
+        int     21h
+        pop     eax
         ret
 
 cp_usage:
@@ -1757,12 +2883,29 @@ cpp_next:
         mov     al,[esi]
         or      al,al
         jz      cpp_done
+        cmp     al,'/'
+        je      cpp_sw
         cmp     al,'+'
         jne     cpp_item
         mov     byte ptr [cp_pend],1    ; a '+' standing on its own
         mov     byte ptr [cp_glued],1
         inc     esi
         jmp     short cpp_next
+
+; COPY'S SWITCHES ARE PARSED HERE AND NOT BY sw_scan, because two of
+; the three are POSITIONAL and sw_scan's answer is a set.  "/A applies
+; to the file it follows and to every file after it until another /A
+; or /B" is a rule about WHERE the switch was written, and a bit in a
+; mask has forgotten that by the time anybody reads it.
+cpp_sw:
+        mov     al,[esi+1]
+        call    upcase
+        call    cpp_isswl
+        jnc     cpp_item                ; not one of ours: a path, then
+        call    cpp_apply
+        add     esi,2
+        jmp     short cpp_next
+
 cpp_item:
         cmp     ebx,CP_MAXITEM
         jae     cpp_done
@@ -1798,8 +2941,21 @@ cpp_scan:
         je      cpp_cut
         cmp     al,'+'
         je      cpp_plus
+        cmp     al,'/'                  ; "FILE.TXT/B" is a real form, and
+        jne     cpp_step                ; the only way to say which of two
+        call    cpp_issw                ; joined files is which
+        jc      cpp_swcut
+cpp_step:
         inc     esi
         jmp     short cpp_scan
+cpp_swcut:
+        mov     byte ptr [esi],0        ; the name ends where the switch
+        inc     esi                     ; begins, and the '/' is what ends
+        mov     al,[esi]                ; it - so the letter is read from
+        call    upcase                  ; where the '/' used to be plus one
+        call    cpp_apply
+        inc     esi
+        jmp     short cpp_next
 cpp_plus:
         mov     byte ptr [esi],0        ; "A+B" - cut here and glue on
         inc     esi
@@ -1824,7 +2980,82 @@ cpp_record:
         mov     [cp_items+ebx*4],esi
         mov     al,[cp_pend]
         mov     [cp_glue+ebx],al
+        mov     al,[cp_curmode]         ; whichever of /A and /B is in
+        mov     [cp_mode+ebx],al        ; force where this item was written
         mov     byte ptr [cp_pend],0
+        ret
+
+;---------------------------------------------------------------------
+; cpp_isswl - AL is an uppercased letter; CF set if it is one of
+;             COPY's three.
+;---------------------------------------------------------------------
+cpp_isswl:
+        cmp     al,'V'
+        je      cis_yes
+        cmp     al,'A'
+        je      cis_yes
+        cmp     al,'B'
+        je      cis_yes
+        clc
+        ret
+cis_yes:
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; cpp_issw - ESI -> a '/' inside a name.  CF set if what follows is
+;            one of COPY's switches AND nothing but a delimiter comes
+;            after it, which is what tells "FILE/B" from a path with
+;            a forward slash in it.
+;---------------------------------------------------------------------
+cpp_issw:
+        push    eax
+        mov     al,[esi+1]
+        call    upcase
+        call    cpp_isswl
+        jnc     cis_no
+        mov     al,[esi+2]
+        or      al,al
+        jz      cis_ok
+        cmp     al,' '
+        je      cis_ok
+        cmp     al,9
+        je      cis_ok
+        cmp     al,'+'
+        je      cis_ok
+        cmp     al,'/'
+        je      cis_ok
+cis_no:
+        pop     eax
+        clc
+        ret
+cis_ok:
+        pop     eax
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; cpp_apply - AL = V, A or B.  /V is about the whole copy; /A and /B
+;             are about this point in the line and everything after
+;             it - AND about the file just before it, which is the
+;             half that makes them positional.
+;---------------------------------------------------------------------
+cpp_apply:
+        cmp     al,'V'
+        jne     cpa_ab
+        mov     byte ptr [cp_verify],1
+        ret
+cpa_ab:
+        mov     ah,CPM_BINARY
+        cmp     al,'B'
+        je      cpa_set
+        mov     ah,CPM_ASCII
+cpa_set:
+        mov     [cp_curmode],ah
+        or      ebx,ebx
+        jz      cpa_out
+        mov     [cp_mode+ebx-1],ah
+cpa_out:
         ret
 
 ;---------------------------------------------------------------------
@@ -2147,15 +3378,41 @@ cpx_pump:
         or      eax,eax
         jz      cpx_done
         mov     ecx,eax
+
+        ; /A: A CTRL-Z ENDS THE FILE, and does not travel.  This is
+        ; what "ASCII" meant when it was written on a switch: a text
+        ; file of the CP/M line ends at the first 1Ah because its
+        ; length was only ever known to the nearest 128 bytes, and
+        ; COPY has honoured that ever since.  A binary copy sees the
+        ; same byte as a byte, which is why the two modes exist.
+        cmp     byte ptr [cp_srcmode],CPM_ASCII
+        jne     cpx_write
+        push    ecx
+        mov     edi,OFFSET copy_buf
+        mov     al,1Ah
+        repne   scasb
+        pop     ecx                     ; the count back - POP leaves the
+        jne     cpx_write               ; flags scasb set alone
+        mov     ecx,edi
+        sub     ecx,OFFSET copy_buf
+        dec     ecx                     ; ...and the Ctrl-Z itself stays
+        mov     byte ptr [cp_ztail],1   ; behind
+cpx_write:
+        or      ecx,ecx
+        jz      cpx_chkz
         mov     ebx,[copy_dst]
         mov     ah,40h
         int     21h
         jc      cpx_werr
         cmp     eax,ecx
         jb      cpx_full
+cpx_chkz:
+        cmp     byte ptr [cp_ztail],0
+        jne     cpx_done
         jmp     short cpx_pump
 
 cpx_done:
+        mov     byte ptr [cp_ztail],0
         inc     dword ptr [cp_count]
         call    cp_shutsrc
         cmp     byte ptr [cp_concat],0
@@ -2245,6 +3502,23 @@ cp_shutdst:
         mov     ebx,[copy_dst]
         cmp     ebx,-1
         je      cpsd_out
+
+        ; /A on the DESTINATION puts the Ctrl-Z back on, which is the
+        ; other half of the same convention: a text file made by
+        ; joining text files should end the way one does.
+        cmp     byte ptr [cp_dmode],CPM_ASCII
+        jne     cpsd_close
+        push    ecx
+        push    edx
+        mov     byte ptr [cp_zbyte],1Ah
+        mov     edx,OFFSET cp_zbyte
+        mov     ecx,1
+        mov     ah,40h
+        int     21h
+        pop     edx
+        pop     ecx
+        mov     ebx,[copy_dst]
+cpsd_close:
         mov     ah,3Eh
         int     21h
         mov     dword ptr [copy_dst],-1
@@ -2288,6 +3562,28 @@ cmd_del:
         jne     cd_out
 
 cd_go:
+        ; /S: THE SAME DELETION IN EVERY DIRECTORY UNDERNEATH, over the
+        ; walker DIR /S is built on.  It is not an MS-DOS 6 switch -
+        ; DELTREE is what that DOS offered and it deletes DIRECTORIES,
+        ; which is a different and much more dangerous verb.  This is
+        ; the one everybody means: the same pattern, everywhere below
+        ; here.  It goes through dir_resolve, so "DEL /S *.BAK" starts
+        ; at the current directory and "DEL /S C:\*.BAK" at a root.
+        test    dword ptr [del_sw],SW_S
+        jz      cd_flat
+        mov     esi,[arg_ptr]
+        call    dir_resolve
+        jc      cd_flat                 ; not truenameable: one directory
+        mov     dword ptr [del_count],0
+        mov     dword ptr [dir_depth],0
+        mov     dword ptr [walk_act],OFFSET del_one
+        mov     dword ptr [walk_rec],1
+        call    tree_walk
+        cmp     dword ptr [del_count],0
+        je      cd_none
+        ret
+
+cd_flat:
         ; the find gives back bare names - keep the directory part of
         ; the argument to glue in front of each one
         mov     esi,[arg_ptr]
@@ -2373,6 +3669,85 @@ cd_none:
 cd_usage:
         mov     edx,OFFSET msg_needarg
         call    print
+        ret
+
+;---------------------------------------------------------------------
+; del_one - what DEL /S does at one stop of the walk: the pattern in
+;           dir_fpat, in the directory dir_dirpath, and each name it
+;           deletes is printed IN FULL.
+;
+; The name is printed because a recursive delete that says nothing is
+; a recursive delete nobody can check afterwards, and the bare 8.3
+; names a flat DEL would print do not say which directory they were
+; in - which is the only interesting thing about them here.
+;---------------------------------------------------------------------
+del_one:
+        call    dir_join                ; dir_scratch = this directory's
+        mov     edx,OFFSET dir_scratch  ; worth of the pattern
+        xor     ecx,ecx                 ; plain files only
+        call    xfind_first
+        jc      d1_out
+        mov     [del_hdl],ax
+d1_each:
+        ; del_path = the directory + the hit's 8.3 alias, which is
+        ; unambiguous where a long name may not be
+        mov     esi,OFFSET dir_dirpath
+        mov     edi,OFFSET del_path
+        xor     ecx,ecx
+d1_dir:
+        mov     al,[esi+ecx]
+        or      al,al
+        jz      d1_dend
+        mov     [edi+ecx],al
+        inc     ecx
+        jmp     short d1_dir
+d1_dend:
+        or      ecx,ecx
+        jz      d1_name
+        cmp     byte ptr [edi+ecx-1],'\'
+        je      d1_name
+        mov     byte ptr [edi+ecx],'\'
+        inc     ecx
+d1_name:
+        add     edi,ecx
+        mov     esi,OFFSET find_data + 130h
+d1_glue:
+        lodsb
+        stosb
+        or      al,al
+        jnz     d1_glue
+
+        test    dword ptr [del_sw],SW_P ; /P asks about each one
+        jz      d1_kill
+        mov     esi,OFFSET del_path
+        call    print_asciiz
+        mov     edx,OFFSET msg_delq
+        call    print
+        mov     ah,01h
+        int     21h
+        call    put_crlf
+        call    upcase
+        cmp     al,'Y'
+        jne     d1_next
+
+d1_kill:
+        mov     edx,OFFSET del_path
+        mov     ah,41h
+        int     21h
+        jc      d1_next
+        inc     dword ptr [del_count]
+        test    dword ptr [del_sw],SW_P ; /P has already shown the name
+        jnz     d1_next
+        mov     esi,OFFSET del_path
+        call    print_asciiz
+        call    put_crlf
+d1_next:
+        mov     bx,word ptr [del_hdl]
+        call    xfind_next
+        jnc     d1_each
+        mov     bx,word ptr [del_hdl]
+        call    xfind_close
+d1_out:
         ret
 
 ; is_star - CF set if the arg at EDI is "*" or "*.*"
@@ -3522,13 +4897,37 @@ ta_fail:
 ; up to bit 25 for /Z, which is what the SW_* equates index.  A '/'
 ; that is not followed by a letter is left alone - it is a path
 ; separator often enough to matter.
+;
+; TWO THINGS A BIT PER LETTER CANNOT SAY, and DIR needs both.
+;
+; A SWITCH CAN CARRY AN ARGUMENT - /O:GN, /A:-D, /ON - so whatever is
+; stuck to the letter is lifted with it and left in sw_args, eight
+; bytes a letter, indexed the same way the bits are.  It runs to the
+; next blank or the next '/', which is what makes "DIR /O *.TXT" the
+; pattern it looks like and not a sort order called "*.TXT".
+;
+; AND A SWITCH CAN BE TURNED OFF.  "/-W" clears a bit instead of
+; setting one, and it exists for DIRCMD: a variable that puts /W on
+; every listing is no use without a way to say "not this one".  The
+; negatives come back in sw_negm rather than in EAX, because a caller
+; that merges two sources has to be able to tell "asked for off" from
+; "did not ask" - which is the whole difference between DIRCMD and the
+; command line.
 ;---------------------------------------------------------------------
 sw_scan:
         push    ebx
         push    ecx
+        push    edx
         push    esi
         push    edi
         mov     [sw_start],esi
+        mov     dword ptr [sw_negm],0
+        push    esi
+        mov     edi,OFFSET sw_args      ; last call's arguments are not
+        xor     eax,eax                 ; this call's
+        mov     ecx,(26 * SW_ARGMAX) / 4
+        rep     stosd
+        pop     esi
         mov     edi,esi
         xor     ebx,ebx
 sws_lp:
@@ -3537,7 +4936,13 @@ sws_lp:
         jz      sws_done
         cmp     al,'/'
         jne     sws_keep
-        mov     al,[esi+1]
+        mov     edx,1                   ; how far past the '/' the letter
+        mov     al,[esi+1]              ; is: one, or two for "/-x"
+        cmp     al,'-'
+        jne     sws_letter
+        mov     edx,2
+        mov     al,[esi+2]
+sws_letter:
         call    upcase
         sub     al,'A'
         cmp     al,26
@@ -3545,9 +4950,42 @@ sws_lp:
         movzx   ecx,al
         mov     eax,1
         shl     eax,cl
+        cmp     edx,1
+        je      sws_on
+        or      [sw_negm],eax           ; "/-x": asked for OFF
+        jmp     short sws_after
+sws_on:
         or      ebx,eax
-        add     esi,2
-        jmp     short sws_lp
+sws_after:
+        lea     esi,[esi+edx+1]         ; past the '/', the '-' and the letter
+
+        ; ...and whatever is stuck to the letter, which belongs to it
+        push    edi
+        mov     edi,OFFSET sw_args
+        shl     ecx,3                   ; eight bytes a letter
+        add     edi,ecx
+        xor     ecx,ecx
+sws_arg:
+        mov     al,[esi]
+        or      al,al
+        jz      sws_argend
+        cmp     al,' '
+        je      sws_argend
+        cmp     al,9
+        je      sws_argend
+        cmp     al,'/'
+        je      sws_argend
+        cmp     ecx,SW_ARGMAX - 1
+        jae     sws_argskip
+        mov     [edi+ecx],al
+        inc     ecx
+sws_argskip:
+        inc     esi
+        jmp     short sws_arg
+sws_argend:
+        mov     byte ptr [edi+ecx],0
+        pop     edi
+        jmp     sws_lp
 sws_keep:
         mov     al,[esi]
         mov     [edi],al
@@ -3572,8 +5010,23 @@ sws_end:
         mov     eax,ebx
         pop     edi
         pop     esi
+        pop     edx
         pop     ecx
         pop     ebx
+        ret
+
+;---------------------------------------------------------------------
+; sw_arg - ESI -> the argument text of switch AL ('A'..'Z'), which is
+;          an empty string when the switch was given without one.
+;---------------------------------------------------------------------
+sw_arg:
+        push    eax
+        call    upcase
+        sub     al,'A'
+        movzx   esi,al
+        shl     esi,3
+        add     esi,OFFSET sw_args
+        pop     eax
         ret
 
 ; has_wild - CF set if the ASCIIZ at ESI contains * or ?
@@ -3900,6 +5353,8 @@ msg_nolabel db  'unlabelled','$'
 msg_dirof   db  13,10,' Directory of ','$'
 msg_dirof2  db  13,10,13,10,'$'
 msg_isdir   db  '     <DIR>','$'
+msg_totlist db  13,10,'Total files listed:',13,10,'$'
+env_dircmd  db  'DIRCMD',0
 msg_mdfail  db  'Unable to create directory',13,10,'$'
 msg_cdfail  db  'Invalid directory',13,10,'$'
 msg_rdfail  db  'Invalid path, not directory,',13,10
@@ -3978,6 +5433,15 @@ copy_dst    dd  0
 ; which cp_parse has cut into ASCIIZ pieces in place.
 cp_items    dd  CP_MAXITEM dup(0)
 cp_glue     db  CP_MAXITEM dup(0)
+cp_mode     db  CP_MAXITEM dup(0)       ; each item's /A or /B
+cp_curmode  db  CPM_UNSET               ; the one in force while parsing
+cp_srcmode  db  CPM_UNSET               ; ...the source being read now
+cp_dmode    db  CPM_UNSET               ; ...and the destination's
+cp_verify   db  0                       ; /V was given
+cp_oldvfy   db  0                       ; and what VERIFY was before it
+cp_ztail    db  0                       ; a Ctrl-Z ended this source
+cp_zbyte    db  0                       ; and the one written to end the
+            db  0                       ; destination
 cp_nitem    dd  0
 cp_first    dd  0                       ; first source item to copy
 cp_count    dd  0                       ; files copied, for the report
@@ -3994,11 +5458,33 @@ cp_dest     db  144 dup(0)
 cp_srcbuf   db  144 dup(0)
 cp_dirbuf   db  144 dup(0)
 dir_sw      dd  0                       ; the /switches DIR was given
+dir_neg     dd  0                       ; ...and the ones it was refused
 dir_all     dd  0                       ; the attributes "DIR," adds
+dir_total   dd  0                       ; /S: every directory's files
+dir_tbytes  dd  0                       ; ...and every directory's bytes
+dir_depth   dd  0                       ; how far down the walk is
+dir_found   dd  0                       ; directories that had a match
+dir_hdrdone dd  0                       ; this one's heading is printed
+dir_nrec    dd  0                       ; /O: entries in this directory
+dir_nfill   dd  0                       ; ...and how many are stored
+dir_recs    dd  0                       ; the block holding them
+dir_idx     dd  0                       ; and the index that gets sorted
+dir_nkey    dd  0                       ; /O: how many sort keys
+dir_keys    db  (DIR_MAXKEY * 2) dup(0) ; each a letter and a direction
+dir_dirpath db  144 dup(0)              ; the directory being listed
+dir_fpat    db  80 dup(0)               ; and the pattern within it
+dir_subblk  dd  0                       ; where dir_subfill is putting names
+walk_act    dd  0                       ; what tree_walk does at each stop
+walk_rec    dd  0                       ; ...and whether it goes deeper
+dir_ecmd    db  144 dup(0)              ; DIRCMD's value, scanned apart
+dir_eargs   db  (26 * SW_ARGMAX) dup(0) ; and the arguments it carried
 dir_lines   dd  0                       ; lines since the last /P pause
 dir_col     dd  0                       ; /W column, 0 = start of a row
 sw_start    dd  0                       ; sw_scan's text, for the trim
+sw_negm     dd  0                       ; the "/-x" switches of that scan
+sw_args     db  (26 * SW_ARGMAX) dup(0) ; and what was stuck to each letter
 del_sw      dd  0
+del_count   dd  0                       ; what DEL /S has deleted so far
 dir_count   dd  0
 dir_bytes   dd  0
 tmp_a       dd  0

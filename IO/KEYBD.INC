@@ -151,6 +151,21 @@ kb_notE0:
         and     ah,80h                  ; AH != 0 means this is a break
         and     al,7Fh
 
+;--- the fake shifts, which are not keys ------------------------------
+; A keyboard sends E0 2A in front of a grey key and E0 AA behind it -
+; and E0 B6 / E0 36 for the right-hand one - so that a program reading
+; 40:17 sees the shift state the key was pressed with rather than the
+; one the numeric keypad would have needed.  They are an artefact of
+; the wire protocol, and taking them for shift presses means the
+; SHIFT STATE LATCHES ON the first time an arrow key is touched.
+        test    byte ptr [kb_flags],KBF_E0
+        jz      kb_realmod
+        cmp     al,2Ah
+        je      kb_clr_e0
+        cmp     al,36h
+        je      kb_clr_e0
+kb_realmod:
+
 ;--- modifier keys ----------------------------------------------------
         cmp     al,2Ah                  ; left shift
         je      kb_shift
@@ -176,6 +191,18 @@ kb_notE0:
 
 ;--- ordinary key -----------------------------------------------------
 kb_normal:
+        test    byte ptr [kb_flags],KBF_E0
+        jnz     kb_grey                 ; the cursor pad and its neighbours
+
+        cmp     al,3Bh                  ; THE FUNCTION KEYS ARE FOUR KEYS
+        jb      kb_plain                ; EACH.  F1 is 3Bh, Shift-F1 is
+        cmp     al,44h                  ; 54h, Ctrl-F1 5Eh and Alt-F1 68h,
+        jbe     kb_fkey                 ; and a program that offers Alt-F4
+        cmp     al,57h                  ; is reading for that last one and
+        je      kb_fkey11               ; not for 3Bh with a flag set - the
+        cmp     al,58h                  ; flags are gone by the time it
+        je      kb_fkey11               ; looks
+kb_plain:
         cmp     al,59h                  ; beyond our translation tables?
         jae     kb_clr_e0
 
@@ -203,11 +230,38 @@ kb_shifted:
         add     al,32
 
 kb_haveasc:
+        test    byte ptr [kb_flags],KBF_ALT
+        jnz     kb_altkey
         test    byte ptr [kb_flags],KBF_CTRL
         jz      kb_store
         or      al,al
         jz      kb_store
         and     al,1Fh                  ; Ctrl-A becomes 01h, and so on
+        jmp     short kb_store
+
+;--- Alt and a key is an extended key, not a letter -------------------
+; Alt-F is how half the DOS software ever written opens its File menu,
+; and it arrives as ASCII zero with the SCAN code - which is the only
+; way it can arrive, because "F" and "Alt-F" would otherwise be the
+; same byte.  The digit row is the exception the BIOS makes: Alt-1 to
+; Alt-0 have codes of their own at 78h..81h, with Alt-hyphen and
+; Alt-equals behind them, rather than their unshifted scan codes.
+;
+; The keypad is left out of this on purpose.  Alt with a keypad digit
+; is how a character is entered by number, and a real BIOS answers it
+; by composing rather than by reporting anything at all; giving those
+; keys an extended code would be inventing a third behaviour.  Without
+; Num Lock tracking the honest thing is to let them stay digits.
+kb_altkey:
+        cmp     ah,47h
+        jae     kb_store                ; keypad and beyond: leave it be
+        cmp     ah,02h
+        jb      kb_altout
+        cmp     ah,0Dh
+        ja      kb_altout
+        add     ah,78h - 02h
+kb_altout:
+        xor     al,al
 
 kb_store:
         cmp     byte ptr [kb_forbox],0
@@ -216,6 +270,127 @@ kb_store:
 kb_clr_e0:
         and     byte ptr [kb_flags],NOT KBF_E0
         ret
+
+;=====================================================================
+; THE GREY KEYS.
+;
+; An E0 prefix means the key is the one on the cursor pad rather than
+; the one on the numeric keypad, and the two send THE SAME SCAN CODE.
+; Until this release the prefix was tracked, cleared, and never once
+; consulted - so the arrow keys went through the ordinary table and
+; came out as the digits printed on the keypad.  Pressing Left typed a
+; four.
+;
+; The scan code is the same for both and the BIOS distinguishes them
+; in the ASCII byte: E0h for the grey key, 00h for the keypad one.
+; That is what INT 16h function 10h reports and what function 00h
+; folds back to a zero, and it is why kb_getchar folds it too - the
+; classic call is what the DOS console is.
+;
+; CTRL GIVES EACH ONE A CODE OF ITS OWN, and they are not adjacent to
+; anything: Ctrl-Left is 73h, Ctrl-Right 74h, Ctrl-Home 77h.  A text
+; editor reads exactly those for "word left" and "top of file", so
+; they are a table rather than a rule.
+;=====================================================================
+kb_grey:
+        cmp     al,1Ch                  ; the keypad's Enter is an Enter
+        je      kb_greyent
+        cmp     al,35h                  ; and its slash is a slash
+        je      kb_greysl
+        cmp     al,47h
+        jb      kb_clr_e0               ; Print Screen, Break, the Windows
+        cmp     al,53h                  ; keys: nothing the ring can carry
+        ja      kb_clr_e0
+
+        mov     ah,al
+        mov     al,0E0h                 ; "the grey one", not the keypad
+        test    byte ptr [kb_flags],KBF_CTRL
+        jz      kb_store
+        movzx   ebx,ah
+        sub     ebx,47h
+        mov     ah,[kb_ctrlnav + ebx]
+        or      ah,ah
+        jz      kb_clr_e0               ; no Ctrl form of that one
+        jmp     short kb_store
+
+kb_greyent:
+        mov     ah,1Ch
+        mov     al,13
+        jmp     kb_haveasc
+kb_greysl:
+        mov     ah,35h
+        mov     al,'/'
+        jmp     kb_haveasc
+
+;---------------------------------------------------------------------
+; kb_fkey - F1..F10 (3Bh..44h), shifted into whichever of the four
+;           rows the modifiers ask for.  Alt wins over Ctrl over
+;           Shift, which is the order the BIOS resolves them in.
+;---------------------------------------------------------------------
+kb_fkey:
+        mov     ah,al
+        xor     al,al
+        test    byte ptr [kb_flags],KBF_ALT
+        jnz     kf_alt
+        test    byte ptr [kb_flags],KBF_CTRL
+        jnz     kf_ctrl
+        test    byte ptr [kb_flags],KBF_SHIFT
+        jnz     kf_shift
+        jmp     short kb_store
+kf_shift:
+        add     ah,54h - 3Bh
+        jmp     short kb_store
+kf_ctrl:
+        add     ah,5Eh - 3Bh
+        jmp     short kb_store
+kf_alt:
+        add     ah,68h - 3Bh
+        jmp     short kb_store
+
+;---------------------------------------------------------------------
+; kb_fkey11 - F11 and F12, which are 57h and 58h on the wire and
+;             85h..8Ch to a program.  They used to be reported as
+;             their scan codes, which are the ones a 101-key BIOS
+;             never sends and nothing looks for.
+;---------------------------------------------------------------------
+kb_fkey11:
+        sub     al,57h                  ; 0 = F11, 1 = F12
+        mov     ah,al
+        add     ah,85h
+        xor     al,al
+        test    byte ptr [kb_flags],KBF_ALT
+        jnz     kf11_alt
+        test    byte ptr [kb_flags],KBF_CTRL
+        jnz     kf11_ctrl
+        test    byte ptr [kb_flags],KBF_SHIFT
+        jnz     kf11_shift
+        jmp     short kb_store
+kf11_shift:
+        add     ah,2
+        jmp     short kb_store
+kf11_ctrl:
+        add     ah,4
+        jmp     short kb_store
+kf11_alt:
+        add     ah,6
+        jmp     short kb_store
+
+; Ctrl and a cursor-pad key, indexed by scan code from 47h (Home).
+; A zero means the BIOS has no code for that combination.
+kb_ctrlnav:
+        db      77h                     ; 47 Home    -> Ctrl-Home
+        db      8Dh                     ; 48 Up
+        db      84h                     ; 49 PgUp
+        db      0                       ; 4A grey minus - keypad only
+        db      73h                     ; 4B Left
+        db      0                       ; 4C
+        db      74h                     ; 4D Right
+        db      0                       ; 4E grey plus - keypad only
+        db      75h                     ; 4F End
+        db      91h                     ; 50 Down
+        db      76h                     ; 51 PgDn
+        db      92h                     ; 52 Insert
+        db      93h                     ; 53 Delete
 
 ;--- modifier handling ------------------------------------------------
 ; Every one of these ends at kb_mod, which publishes the state to
@@ -399,6 +574,106 @@ kb_boxreset:
         ret
 
 ;=====================================================================
+; kb_typematic - IOS_KBRATE.  AL = the 8042's rate byte: bits 4-0 the
+;                repeat rate (0 = 30 a second, 31 = 2), bits 6-5 the
+;                delay before repeating (0 = 250ms, 3 = 1000ms).
+;
+; CONFIG.SYS's KEYRATE= is what calls this, and CONFIG.INC does the
+; conversion from the numbers MODE CON uses to the byte the hardware
+; wants - the kernel's side of the line is the hardware's units.
+;
+; INTERRUPTS OFF FOR THE WHOLE EXCHANGE, and the acknowledgements are
+; swallowed here rather than left for the decoder.  A command to the
+; keyboard is a CONVERSATION - F3h, an ACK, the argument, another ACK -
+; and by the time this runs IRQ 1 belongs to irq_keyboard, which would
+; take those ACKs off the port as though they were keystrokes.  They
+; are harmless when it does (FAh has bit 7 set, so it reads as a break
+; code for a key nobody pressed), but a HALF-DELIVERED conversation is
+; not harmless at all: a keyboard left waiting for its argument treats
+; the next thing it is sent as one.  So the two bytes go out together
+; and the two answers come back here, and the controller is drained
+; afterwards so that nothing is left in it when interrupts come back.
+;
+; A keyboard that will not talk simply keeps the rate it had.  Nothing
+; here waits for ever and nothing here reports failure: a typematic
+; rate is a preference, and a machine that boots slightly differently
+; from the way somebody asked is better than one that does not boot.
+;=====================================================================
+kb_typematic:
+        pushfd
+        cli
+        push    eax
+        mov     ah,al
+        mov     al,0F3h                 ; "set typematic rate/delay"
+        call    kb_send
+        call    kb_eat                  ; its ACK
+        mov     al,ah
+        call    kb_send
+        call    kb_eat                  ; and the argument's
+        pop     eax
+        call    kb_drain                ; anything else it had to say
+        popfd
+        ret
+
+;---------------------------------------------------------------------
+; kb_eat - wait a moment for a byte from the keyboard and swallow it.
+;          kb_drain - swallow whatever is there without waiting.
+;---------------------------------------------------------------------
+kb_eat:
+        push    eax
+        push    ecx
+        mov     ecx,200000
+ke_wait:
+        in      al,KB_CMD
+        test    al,1                    ; output buffer full?
+        jnz     ke_take
+        dec     ecx
+        jnz     ke_wait
+        jmp     short ke_out
+ke_take:
+        in      al,KB_DATA
+ke_out:
+        pop     ecx
+        pop     eax
+        ret
+
+kb_drain:
+        push    eax
+kd_lp:
+        in      al,KB_CMD
+        test    al,1
+        jz      kd_out
+        in      al,KB_DATA
+        jmp     short kd_lp
+kd_out:
+        pop     eax
+        ret
+
+;---------------------------------------------------------------------
+; kb_send - wait for the 8042 to be ready for a byte, then write AL.
+;           Gives up rather than hanging: a machine with no keyboard
+;           controller must still boot.
+;---------------------------------------------------------------------
+kb_send:
+        push    eax
+        push    ecx
+        mov     ecx,100000
+ks_wait:
+        in      al,KB_CMD
+        test    al,2                    ; input buffer still full?
+        jz      ks_go
+        dec     ecx
+        jnz     ks_wait
+        pop     ecx
+        pop     eax
+        ret
+ks_go:
+        pop     ecx
+        pop     eax
+        out     KB_DATA,al
+        ret
+
+;=====================================================================
 ; kb_status - ZF set if the buffer is empty (IOS_CONSTAT).
 ;=====================================================================
 kb_status:
@@ -433,6 +708,19 @@ kg_have:
 kg_nowrap:
         mov     word ptr ds:[BDA_KBHEAD],cx
         sti
+
+        ; E0h IN THE ASCII BYTE MEANS "THE GREY ONE", and this call is
+        ; the classic one.  INT 16h function 00h folds it to a zero and
+        ; function 10h does not; the DOS console API has no function
+        ; 10h, and every program reading a key through INT 21h tests
+        ; AL for zero to find an extended key.  Leaving E0h standing
+        ; would make an arrow key look like a printable character.
+        ; The scan code in AH is untouched and is what tells them
+        ; apart anyway.
+        cmp     al,0E0h
+        jne     kg_notgrey
+        xor     al,al
+kg_notgrey:
         pop     ecx
         pop     ebx
         ret

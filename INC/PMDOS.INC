@@ -1183,6 +1183,15 @@ P_DX            EQU     01h                     ; DS:DX
 P_SI            EQU     02h                     ; DS:SI
 P_DI            EQU     04h                     ; ES:DI
 P_BX            EQU     08h                     ; ES:BX
+P_BXD           EQU     10h                     ; ...but DS:BX, with P_BX.
+                                                ; 7305h is the one call that
+                                                ; wants BX against DS, and
+                                                ; only a segmented caller can
+                                                ; tell the difference - a flat
+                                                ; one has a pointer either way,
+                                                ; which is why this is a
+                                                ; modifier and not a bit of
+                                                ; its own
 
 ;---------------------------------------------------------------------
 ; EFLAGS bits the monitor cares about
@@ -1290,6 +1299,17 @@ EP_ENV          EQU     00h                     ; dw - environment segment,
 EP_TAIL         EQU     02h                     ; dd - far ptr, command tail
 EP_FCB1         EQU     06h                     ; dd - far ptr
 EP_FCB2         EQU     0Ah                     ; dd - far ptr
+EP_SSSP         EQU     0Eh                     ; dd - AL=1 writes these two:
+EP_CSIP         EQU     12h                     ; dd - the loaded program's
+                                                ; stack and entry point, which
+                                                ; is what "load without
+                                                ; executing" is FOR
+
+; ...and AL=3's, which is a different block entirely: an overlay is
+; loaded into memory the caller already owns, so there is nothing to
+; say about environments or tails and only two things to say at all.
+OVL_SEG         EQU     00h                     ; dw - load it here
+OVL_RELOC       EQU     02h                     ; dw - and fix it up by this
 
 ; 21h/4Dh - how the last program ended, in AH
 VDX_NORMAL      EQU     0
@@ -1440,6 +1460,21 @@ GV_MEMTOP       EQU     GV_BASE + 10h           ; dword - highest usable linear
 GV_PGDIR        EQU     GV_BASE + 14h           ; dword - CR3, 0 = not paging
 GVO_PGDIR       EQU     GV_OFF  + 14h
 
+; THE TWO EDD STRUCTURES THE KERNEL HANDS THE BIOS, and they are up
+; here for the one reason anything is: an INT 13h AH=42h takes its
+; disk address packet at DS:SI, so the packet has to be somewhere a
+; real-mode segment and offset can name.  Everything else the block
+; layer owns is above 1MB.
+;
+; The globals block is where they belong rather than a corner of the
+; transfer buffer or a hole below the real-mode stack, because it is
+; already low memory that belongs to the kernel for good, is already
+; addressed both ways, and had two hundred spare bytes in it.
+GV_DAP          EQU     GV_BASE + 20h           ; 16 bytes - DAP_* below
+GVO_DAP         EQU     GV_OFF  + 20h
+GV_EDP          EQU     GV_BASE + 40h           ; 32 bytes - AH=48h's answer
+GVO_EDP         EQU     GV_OFF  + 40h
+
 ;---------------------------------------------------------------------
 ; PMIO service table.  IOPM.BIN begins with a JMP to its entry point,
 ; then a table of near function pointers at IO_PM_BASE+10h.  PMDOS
@@ -1527,6 +1562,10 @@ IOS_PGMAP       EQU     IOSVC + 68h             ; EAX = linear, EDX = physical,
 IOS_UMBPROBE    EQU     IOSVC + 6Ch             ; EDI -> UMB_SCAN_PAGES bytes.
                                                 ; Fills in one UMBP_* for each
                                                 ; 4K page of C0000h-EFFFFh
+IOS_KBRATE      EQU     IOSVC + 70h             ; AL = the 8042 typematic byte:
+                                                ; rate in bits 4-0, delay in
+                                                ; bits 6-5.  CONFIG.SYS's
+                                                ; KEYRATE= is the only caller
 
 ;---------------------------------------------------------------------
 ; The three ports the V86 monitor takes away from the guest.  Two of
@@ -1734,6 +1773,7 @@ ERR_ACCESS      EQU     5                       ; access denied
 ERR_BADHANDLE   EQU     6                       ; invalid handle
 ERR_NOMEM       EQU     8                       ; insufficient memory
 ERR_BADBLOCK    EQU     9                       ; memory block address invalid
+ERR_BADDATA     EQU     13                      ; invalid data (7304h)
 ERR_BADMCB      EQU     7                       ; memory control block destroyed
 ERR_EXEFMT      EQU     11                      ; invalid executable format
 ERR_BADDRIVE    EQU     15                      ; invalid drive
@@ -1803,6 +1843,77 @@ F73_TOTSEC      EQU     16h             ; dd - total physical sectors
 F73_FREEAU      EQU     1Ah             ; dd - available allocation units
 F73_TOTAU       EQU     1Eh             ; dd - total allocation units
 F73_SIZE        EQU     2Ch             ; ...and eight reserved bytes
+
+;---------------------------------------------------------------------
+; 21h/7302h and 7304h - the DRIVE PARAMETER BLOCK, in the wide form
+; the FAT32 API uses.  Every field that was a word in the DOS 4 DPB is
+; a dword here, which is the whole reason there is a 73h version of the
+; call: a FAT32 volume has more clusters and more sectors per FAT than
+; sixteen bits can count.
+;
+; PM-DOS HAS NO DPBs, and says so where it matters: fn52's list of
+; lists answers FFFF:FFFF for the DPB chain, because a pointer into a
+; structure that does not exist is an invitation to walk it.  This is
+; a different call and the difference is the direction: 7302h COPIES a
+; block into the caller's own buffer, so there is nothing to follow
+; and nothing that outlives the call.  Building one out of the mounted
+; volume is a description, not a fiction - every field below is a fact
+; about the disk that the kernel already knows.
+;
+; The chain pointer is the exception and is the one field that must
+; lie or refuse.  It refuses: FFFF:FFFF, the same sentinel and for the
+; same reason as fn52's.
+;---------------------------------------------------------------------
+DPB_DRIVE       EQU     00h             ; db - 0 = A:
+DPB_UNIT        EQU     01h             ; db - unit within its driver
+DPB_BPS         EQU     02h             ; dw - bytes per sector
+DPB_SPCM1       EQU     04h             ; db - sectors per cluster, less one
+DPB_SHIFT       EQU     05h             ; db - and the same as a shift
+DPB_RSVD        EQU     06h             ; dw - reserved sectors
+DPB_NFATS       EQU     08h             ; db - FAT copies
+DPB_ROOTENT     EQU     09h             ; dw - root entries (0 on FAT32)
+DPB_DATA        EQU     0Bh             ; dd - first data sector
+DPB_MAXCLUS     EQU     0Fh             ; dd - highest cluster number
+DPB_SPF         EQU     13h             ; dd - sectors per FAT
+DPB_ROOT        EQU     17h             ; dd - root sector, or its cluster
+DPB_DRIVER      EQU     1Bh             ; dd - the block driver's header
+DPB_MEDIA       EQU     1Fh             ; db - media descriptor
+DPB_ACCESS      EQU     20h             ; db - 0 once the drive has been read
+DPB_NEXT        EQU     21h             ; dd - the next DPB, or no such thing
+DPB_NEXTFREE    EQU     25h             ; dd - where to start looking
+DPB_FREE        EQU     29h             ; dd - free clusters, -1 = unknown
+DPB_LEN         EQU     2Dh
+
+; ...and the two bytes 7302h puts in front of it.  Real DOS calls this
+; field "special functions" on the way IN to some of the 73h family and
+; there is no reading of it under which a nonzero value here means
+; anything, so it is written as zero and the block behind it is what a
+; caller reads.
+F72_FLAGS       EQU     00h             ; dw - zero
+F72_DPB         EQU     02h
+F72_SIZE        EQU     F72_DPB + DPB_LEN
+
+;---------------------------------------------------------------------
+; 21h/7305h - extended absolute disk read and write, the FAT32 form of
+; INT 25h and 26h.  The packet is DOS's DISKIO structure.
+;
+; THE TRANSFER ADDRESS IS THE ONE FIELD THAT CANNOT BE UNIVERSAL, and
+; it is the reason this call has to know what kind of program made it.
+; Every other pointer in the DOS API arrives in a register, and the
+; VDM's bridge flattens those on the way in; this one is INSIDE a
+; structure, where no bridge can reach it.  So a 16-bit guest's packet
+; carries a real-mode segment and offset - which is the only thing it
+; can carry - and a native program's carries a flat address, the same
+; deviation INT 25h and 26h already make with EBX and for the same
+; reason.  See f7305 for how the two are told apart.
+;---------------------------------------------------------------------
+DSKIO_START     EQU     00h             ; dd - first sector of the volume
+DSKIO_COUNT     EQU     04h             ; dw - how many
+DSKIO_BUF       EQU     06h             ; dd - far ptr, or flat address
+DSKIO_LEN       EQU     0Ah
+
+DSKIO_WRITE     EQU     0001h           ; SI bit 0: this is a write
+DSKIO_AREA      EQU     0006h           ; SI bits 2-1: what is being written
 
 ;---------------------------------------------------------------------
 ; The MBR partition table: four entries of sixteen bytes at 1BEh, and
@@ -2148,7 +2259,7 @@ SHELLTAIL_MAX   EQU     130             ; length byte + 126 + CR + slack
 ; has a call of its own; these two agree.
 ;---------------------------------------------------------------------
 PMDOS_MAJOR     EQU     0
-PMDOS_MINOR     EQU     41
+PMDOS_MINOR     EQU     42
 
 DOSVER_MAJOR    EQU     6
 DOSVER_MINOR    EQU     22

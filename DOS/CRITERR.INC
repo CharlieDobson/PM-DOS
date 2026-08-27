@@ -64,24 +64,42 @@ dio_try:
         mov     cx,[dio_cnt]            ; retry has to start clean
         mov     edi,[dio_buf]
         mov     edx,[dio_svc]
-
-        ; A LOADED BLOCK DRIVER IS A DRIVE HERE TOO, and this is the
-        ; only place that has to know it.  Units get pseudo BIOS drive
-        ; numbers from DL_UNIT_BASE up - a range no BIOS uses - so the
-        ; number flows through fat_mount and bios2log and the volume
-        ; table untouched, and one comparison sends the transfer to a
-        ; request packet instead of to the block layer.  The retry, the
-        ; critical error and the answer the handler gives are the same
-        ; for both, which is the point of putting the fork here.
-        cmp     al,DL_UNIT_BASE
-        jb      dio_hw
-        call    dl_blkio
-        jmp     short dio_done
-dio_hw:
-        call    dword ptr ds:[edx]
+        call    dio_raw
 dio_done:
-        jnc     dio_ok
+        jc      dio_bad
 
+        ; AND IF VERIFY IS ON, THE WRITE IS NOT OVER YET.  A read-back
+        ; that disagrees is a failed write and is reported as one -
+        ; same status byte, same critical error, same retry - because
+        ; the whole point of the flag is that the caller finds out.
+        cmp     byte ptr [dio_wr],0
+        je      dio_ok
+        cmp     byte ptr [verify_on],0
+        je      dio_ok
+
+        ; ESI IS SAVED HERE AND THE ABSENCE OF THIS PUSH COST AN HOUR.
+        ; disk_write preserves every register its callers use, and it
+        ; preserves ESI by NEVER TOUCHING IT - there is no push for it
+        ; below, because until this release nothing in here needed a
+        ; fifth register.  Handing the buffer to dio_verify in ESI is
+        ; four instructions that read like argument setup and are
+        ; really a promise being broken: fat_flush walks the FAT copies
+        ; with ESI as its counter, so a verified write turned its
+        ; two-copy loop into one that never stopped and wrote the FAT
+        ; across the whole disk.  POP does not touch the flags, so the
+        ; answer still arrives in CF.
+        push    esi
+        mov     al,[dio_drv]
+        mov     ebx,[dio_lba]
+        movzx   ecx,word ptr [dio_cnt]
+        mov     esi,[dio_buf]
+        call    dio_verify
+        pop     esi
+        jnc     dio_ok
+        mov     ah,10h                  ; "CRC error", which is what a
+                                        ; sector that reads back different
+                                        ; is, whatever made it one
+dio_bad:
         call    crit_disk               ; -> AL = the answer
         cmp     al,CERR_RETRY
         je      dio_try
@@ -99,6 +117,111 @@ dio_ok:
         pop     ecx
         pop     ebx
         clc
+        ret
+
+;=====================================================================
+; dio_raw - one sector transfer, to whichever kind of drive AL names.
+;
+;   AL = BIOS drive   EBX = LBA   CX = count   EDI = buffer
+;   EDX = IOS_RDBLK or IOS_WRBLK
+;
+; A LOADED BLOCK DRIVER IS A DRIVE HERE TOO, and this is the only
+; place that has to know it.  Units get pseudo BIOS drive numbers from
+; DL_UNIT_BASE up - a range no BIOS uses - so the number flows through
+; fat_mount and bios2log and the volume table untouched, and one
+; comparison sends the transfer to a request packet instead of to the
+; block layer.
+;
+; IT IS A ROUTINE RATHER THAN FOUR LINES INSIDE dio_try because three
+; callers need it now and only one of them knew: disk_read and
+; disk_write, VERIFY's read-back, and INT 25h/26h - and the third was
+; missing it.  Absolute disk I/O on a driver's drive went to the block
+; layer with a drive number no BIOS has ever heard of and failed, and
+; nothing noticed because nothing has called 25h or 26h since v0.17.
+;=====================================================================
+dio_raw:
+        cmp     al,DL_UNIT_BASE
+        jb      dir_hw
+        jmp     dl_blkio                ; its CF and AH are the answer
+dir_hw:
+        jmp     dword ptr ds:[edx]
+
+;=====================================================================
+; dio_verify - a write came back clean.  Read it again and compare.
+;
+;   AL = BIOS drive   EBX = LBA   ECX = sector count   ESI = the data
+;
+;              CF set if any sector differs, or will not read at all.
+;              Every register is preserved; the answer is the flag.
+;
+; THIS IS THE OTHER HALF OF 2Eh, and where it belongs.  The flag has
+; been remembered honestly since v0.31 and acted on by nobody, which
+; is the difference between "writes are not verified" and "VERIFY is
+; broken" - a program that turns it on and copies a file has been
+; asking a question nothing answered.
+;
+; ONE SECTOR AT A TIME, THROUGH A BUFFER OF ITS OWN.  The caller's
+; buffer cannot be scratch - it is the data being checked - and the
+; transfer may be a whole cluster, which is larger than anything the
+; kernel would spend statically on a feature that is off by default.
+; So a verified write costs one extra transfer per sector, and that
+; is exactly the price the roadmap said it would be: it is why the
+; flag exists at all instead of the behaviour being permanent.
+;
+; A read that FAILS counts as a mismatch rather than reporting its own
+; status, because the answer the caller needs is about the write.  The
+; sector cannot be shown to hold what it was given, and that is one
+; fact however the reading went.
+;=====================================================================
+dio_verify:
+        pushad
+        mov     [dv_drv],al
+        mov     [dv_left],ecx
+dv_sec:
+        cmp     dword ptr [dv_left],0
+        je      dv_same
+        mov     al,[dv_drv]
+        mov     cx,1
+        mov     edi,OFFSET vfy_buf
+        mov     edx,IOS_RDBLK
+        call    dio_raw
+        jc      dv_diff
+        mov     edi,OFFSET vfy_buf      ; the driver may have moved it
+        mov     ecx,512 / 4
+        repe    cmpsd                   ; ESI walks the caller's copy and
+        jne     dv_diff                 ; is left on the next sector
+        inc     ebx
+        dec     dword ptr [dv_left]
+        jmp     short dv_sec
+dv_same:
+        popad
+        clc
+        ret
+dv_diff:
+IFDEF VFY_DEBUG
+        push    esi
+        mov     esi,OFFSET msgVfy
+        call    dword ptr ds:[IOS_CONSTR]
+        pop     esi
+        mov     eax,ebx                 ; the sector that disagreed
+        call    vdm_hex32
+        mov     al,' '
+        call    dword ptr ds:[IOS_CONOUT]
+        mov     eax,[dv_left]
+        call    vdm_hex32
+        mov     al,' '
+        call    dword ptr ds:[IOS_CONOUT]
+        movzx   eax,byte ptr [esi-4]    ; what was sent...
+        call    vdm_hex32
+        mov     al,'/'
+        call    dword ptr ds:[IOS_CONOUT]
+        movzx   eax,byte ptr [edi-4]    ; ...and what came back
+        call    vdm_hex32
+        mov     al,']'
+        call    dword ptr ds:[IOS_CONOUT]
+ENDIF
+        popad
+        stc
         ret
 
 ;=====================================================================
@@ -644,3 +767,12 @@ dio_cnt     dw  0
 dio_lba     dd  0
 dio_buf     dd  0
 dio_svc     dd  0
+
+IFDEF VFY_DEBUG
+msgVfy      db  13,10,'[verify: lba/left/sent/got ',0
+ENDIF
+
+dv_drv      db  0                       ; dio_verify's own arguments, out of
+            db  0,0,0                   ; the registers it has to preserve
+dv_left     dd  0                       ; sectors still unverified
+vfy_buf     db  512 dup(0)              ; ...and the one being read back

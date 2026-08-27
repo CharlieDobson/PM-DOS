@@ -248,13 +248,36 @@ int20_entry:
 ; for; a program that can rewrite a boot sector has no need of a
 ; 45-year-old stack wart on top.
 ;=====================================================================
+; AND THESE TWO ENTRIES DID NOT DO WHAT int21_entry DOES, which was a
+; bug and a large one.  An interrupt gate does not reload DS and ES,
+; and a program's pointers are offsets in its own slot - int21_entry
+; says both of those things at length twenty lines up and then does
+; something about them.  These did neither: the kernel ran with the
+; CALLER'S data segment, so every variable it touched was read through
+; a descriptor based at the program's slot, and the caller's buffer
+; address was used as though a slot offset were a flat address.
+;
+; It has been that way since v0.33 moved programs to ring 3, and it
+; went unnoticed for eight releases because these two calls have
+; exactly two users - SYS and FORMAT - and the last time either was
+; run was v0.17, before there was a ring 3 to get wrong.  Everything
+; else that reads a sector does it through INT 21h.  Found in v0.42 by
+; a test that had no interest in the subject: VFYTEST calls 26h to
+; write a sector it can then prove was verified, and the machine took
+; a page fault inside the kernel.
+;=====================================================================
 int25_entry:
         push    ds                      ; the frame shape is shared, so the
         push    es                      ; F_ pass offsets are too
         push    ebp
         pushad
         mov     ebp,esp
+        mov     ax,SEL_DATA32           ; ...and so is the reason these are
+        mov     ds,ax                   ; reloaded, which is that the gate
+        mov     es,ax                   ; leaves them holding the caller's
         cld
+        call    disk_absptr
+        jc      i25_fail
         call    disk_absio
         jc      i25_fail
         mov     eax,IOS_RDBLK
@@ -266,6 +289,7 @@ i25_fail:
         mov     word ptr [ebp+F_EAX],ax
         or      dword ptr [ebp+F_FLAGS],FL_CF
 i25_out:
+        call    disk_absback            ; the caller's own EBX back
         popad
         pop     ebp
         pop     es
@@ -278,7 +302,12 @@ int26_entry:
         push    ebp
         pushad
         mov     ebp,esp
+        mov     ax,SEL_DATA32
+        mov     ds,ax
+        mov     es,ax
         cld
+        call    disk_absptr
+        jc      i26_fail
         call    disk_absio
         jc      i26_fail
         mov     eax,IOS_WRBLK
@@ -290,11 +319,66 @@ i26_fail:
         mov     word ptr [ebp+F_EAX],ax
         or      dword ptr [ebp+F_FLAGS],FL_CF
 i26_out:
+        call    disk_absback
         popad
         pop     ebp
         pop     es
         pop     ds
         iretd
+
+;---------------------------------------------------------------------
+; disk_absptr - the caller's buffer, in the kernel's terms.
+;
+; The same three kinds of caller int21_entry sorts out, and the same
+; answers: the kernel's own address is already flat, a native
+; program's is an offset in its slot, and anything else at ring 3 is a
+; DPMI client whose EBX is an offset in a selector.  A pointer that
+; will not translate is answered with an error rather than a fault -
+; the transfer has not started and nothing is half-done.
+;
+; The original goes in absbx so that the caller gets its own register
+; back: popad hands EBX out of the frame, and a program that found the
+; kernel's flat address in it afterwards would be entitled to be
+; surprised.
+;---------------------------------------------------------------------
+disk_absptr:
+        mov     eax,[ebp+F_EBX]
+        mov     [absbx],eax
+        cmp     word ptr [ebp+F_CS],SEL_CODE32
+        je      dap_ok                  ; the kernel's own: already flat
+        cmp     word ptr [ebp+F_CS],SEL_PROG_CS
+        jne     dap_client
+        call    r3_flat
+        jc      dap_deny
+        mov     [ebp+F_EBX],eax
+dap_ok:
+        clc
+        ret
+dap_client:
+        push    ebx
+        mov     ax,word ptr [ebp+F_DS]
+        call    dpmi_base
+        jc      dap_popdeny
+        mov     eax,[ebp+F_EBX]
+        call    dpmi_off
+        add     eax,ebx
+        mov     [ebp+F_EBX],eax
+        pop     ebx
+        clc
+        ret
+dap_popdeny:
+        pop     ebx
+dap_deny:
+        mov     ax,ERR_ACCESS
+        stc
+        ret
+
+disk_absback:
+        push    eax
+        mov     eax,[absbx]
+        mov     [ebp+F_EBX],eax
+        pop     eax
+        ret
 
 ;---------------------------------------------------------------------
 ; disk_absio - common validation: AL = logical drive is selected and
@@ -360,7 +444,10 @@ disk_absgo:
         push    ecx
         push    ebx
         push    eax
-        call    dword ptr ds:[edx]
+        call    dio_raw                 ; a loaded block driver's unit is a
+                                        ; drive here too - see dio_raw, which
+                                        ; this path did not consult until
+                                        ; v0.42 and should always have
         pop     edx                     ; EDX = the drive, EAX = the status
         pop     ebx
         pop     ecx
@@ -368,6 +455,18 @@ disk_absgo:
         pop     eax                     ; the service, again
         cmp     eax,IOS_WRBLK
         jne     dag_ok
+
+        ; VERIFY reaches 26h too.  It is a flag about writing sectors
+        ; and these are sectors; that this path reports its own errors
+        ; rather than raising a critical error changes who hears the
+        ; answer, not whether the question is asked.
+        cmp     byte ptr [verify_on],0
+        je      dag_wrok
+        mov     al,dl                   ; EBX and ECX are still the LBA and
+        mov     esi,[ebp+F_EBX]         ; the count the transfer used
+        call    dio_verify
+        jc      dag_fail
+dag_wrok:
         mov     al,dl
         mov     ah,1
         call    vol_syncdrv             ; those sectors are theirs now
@@ -601,7 +700,7 @@ fn00:
 ; historically test for.
 ;=====================================================================
 fn01:
-        call    std_in
+        call    con_extin
         jc      f01_eof
         mov     [ebp+F_EAX],ax
         call    std_out                 ; echo follows stdout, so a
@@ -661,19 +760,22 @@ fn05:
 ;=====================================================================
 ; 2Eh / 54h - the verify flag: read every sector back after writing it.
 ;
-; SET AND REPORTED, AND DELIBERATELY NOT ACTED ON, which is a thing
-; worth being explicit about rather than quietly doing.  Verification
-; belongs in the block layer, where a write could be read back and
-; compared; putting it there is a real piece of work and doubles the
-; cost of every write when it is on.
+; AND IT NOW DOES.  For eleven releases this flag was set, reported and
+; acted on by nobody - which was said plainly here rather than hidden,
+; but "VERIFY is remembered" and "VERIFY works" are different claims and
+; only one of them is what a program setting it is asking for.
 ;
-; The calls exist anyway because of what a program does when they are
-; missing.  VERIFY is a global setting that anything may read and
-; almost anything may set - installers set it, batch files set it - and
-; 54h answering "invalid function" tells a caller the DOS underneath it
-; is broken, which is a much larger claim than "writes are not
-; verified".  So the flag is remembered honestly and the roadmap
-; carries the other half.
+; The work is dio_verify, in CRITERR.INC, one level below every write in
+; the system: the filesystem's sectors go through disk_write and the raw
+; ones through 26h, and both consult the flag at the point where the
+; sector has just been handed to a driver.  A read-back that disagrees
+; is reported as a FAILED WRITE - same status byte, same INT 24h, same
+; retry - because that is what it is, and because a caller that hears
+; "the write worked" about a sector holding something else has been told
+; the one thing verification exists to prevent.
+;
+; It costs an extra transfer per sector, which is why it is a flag and
+; not the behaviour.  DOS made the same trade and so does this.
 ;=====================================================================
 fn2E:
         mov     al,[ebp+F_EAX]
@@ -703,9 +805,19 @@ f06_in:
         jz      f06_file
         cmp     dword ptr [sft_tbl+SFT_DEVID],DEV_CON
         jne     f06_other
+        cmp     byte ptr [con_pending],0        ; the half of an extended
+        jne     f06_pend                        ; key that is still owed
         call    dword ptr ds:[IOS_CONSTAT]
         jz      f06_none
         call    dword ptr ds:[IOS_CONIN]
+        or      al,al
+        jnz     f06_got
+        mov     [con_pending],ah
+        jmp     short f06_got
+f06_pend:
+        movzx   eax,byte ptr [con_pending]
+        mov     byte ptr [con_pending],0
+f06_got:
         mov     [ebp+F_EAX],ax
         and     dword ptr [ebp+F_FLAGS],NOT FL_ZF
         jmp     i21_ok
@@ -732,12 +844,48 @@ f06_none:
 ;=====================================================================
 fn07:
 fn08:
-        call    std_in
+        call    con_extin
         jnc     f07_have
         mov     ax,001Ah                ; end of file reads as ^Z
 f07_have:
         mov     [ebp+F_EAX],ax
         jmp     i21_ok
+
+;=====================================================================
+; con_extin - a character for 01h, 06h, 07h and 08h, with the extended
+;             key convention on top of std_in.
+;
+; A FUNCTION KEY IS TWO CALLS, and until this release it was one.  DOS
+; reports a key with no ASCII of its own as a ZERO, and the program
+; asks again to be told WHICH - so F1 through 08h is 00h, then 3Bh.
+; std_in has always handed back the scan code in AH alongside the zero,
+; which is more information than DOS gives and no use at all, because
+; the program that wants it is looking in AL on its second call: what
+; it got instead was the NEXT KEY, and the one it asked about was gone.
+; Every menu that offers a function key was reading a keystroke behind.
+;
+; So the scan code is parked, in the same one-byte pending slot the raw
+; 3Fh path has used since the console got a raw mode - there is exactly
+; one console and one program reading it, and DOS held one byte too.
+; The pending byte is what 0Bh reports and what 0Ch flushes, because it
+; is a keystroke that has been typed and not yet collected.
+;=====================================================================
+con_extin:
+        cmp     byte ptr [con_pending],0
+        je      cei_read
+        movzx   eax,byte ptr [con_pending]
+        mov     byte ptr [con_pending],0
+        clc
+        ret
+cei_read:
+        call    std_in
+        jc      cei_out                 ; end of input: nothing to park
+        or      al,al
+        jnz     cei_out
+        mov     [con_pending],ah        ; extended: the scan code follows
+        clc
+cei_out:
+        ret
 
 ;=====================================================================
 ; 09h - print the '$'-terminated string at EDX.
@@ -869,9 +1017,12 @@ fn0B:
         jz      f0B_file
         cmp     dword ptr [sft_tbl+SFT_DEVID],DEV_CON
         jne     f0B_dead                ; NUL and a silent port: nothing, and
-        call    dword ptr ds:[IOS_CONSTAT]      ; there never will be
+        cmp     byte ptr [con_pending],0        ; there never will be
+        jne     f0B_yes                 ; a scan code owed IS a key waiting
+        call    dword ptr ds:[IOS_CONSTAT]
         mov     al,0
         jz      f0B_none
+f0B_yes:
         mov     al,0FFh
 f0B_none:
         mov     [ebp+F_EAX],al
@@ -896,6 +1047,8 @@ fn0C:
         jz      f0C_empty
         cmp     dword ptr [sft_tbl+SFT_DEVID],DEV_CON
         jne     f0C_empty               ; only the keyboard has a buffer
+        mov     byte ptr [con_pending],0        ; including a half-collected
+                                                ; extended key
 f0C_drain:
         call    dword ptr ds:[IOS_CONSTAT]
         jz      f0C_empty
@@ -2986,6 +3139,11 @@ f3Fd_nobrk:
         je      f3Fd_cr
         cmp     al,8
         je      f3Fd_bs
+        or      al,al                   ; an extended key has no character
+        jz      f3Fd_key                ; to put in a line - 0Ah drops them
+                                        ; too, and a NUL echoed into the
+                                        ; middle of what the user typed is
+                                        ; not the alternative anybody wants
         mov     [edi+edx],al
         inc     edx
         call    dword ptr ds:[IOS_CONOUT]
@@ -4529,6 +4687,17 @@ f4B_lf_done:
         call    i21_fail
         jmp     i21_return
 
+; AL=1 AND AL=3 ARE A DOS BOX'S, AND ARE REFUSED HERE ON PURPOSE.
+; Both went in with v0.42, in vdm_child, where they belong: an overlay
+; is loaded into memory the caller already owns at an address the
+; caller picks, and "load without executing" hands back a CS:IP for the
+; caller to jump to.  Neither sentence can be finished about a D32
+; program.  Every image is linked for one absolute offset in its own
+; slot, and a slot is the whole of a program's address space - so
+; there is no other program's memory to load into, and no way to jump
+; to an entry point in a slot that is not yours.  A sixteen-bit guest
+; has neither restriction, which is why the same two functions are
+; ordinary work over there and impossible here.
 f4B_badfn:
         mov     ax,ERR_FUNC
         jmp     i21_fail
@@ -6465,25 +6634,17 @@ sw_done:
 
 fn73:
         mov     al,[ebp+F_EAX]
+        cmp     al,02h
+        je      f7302
+        cmp     al,04h
+        je      f7304
+        cmp     al,05h
+        je      f7305
         cmp     al,03h
         jne     f73_bad
 
 ;--- which drive?  The path names it, or the default one does -------
-        mov     esi,[ebp+F_EDX]
-        or      esi,esi
-        jz      f73_dflt
-        cmp     byte ptr [esi+1],':'
-        jne     f73_dflt
-        mov     al,[esi]
-        or      al,20h
-        sub     al,'a'
-        cmp     al,MAX_DRIVES
-        jae     f73_bad
-        jmp     short f73_sel
-f73_dflt:
-        mov     al,[cur_drive]
-f73_sel:
-        call    vol_select
+        call    f73_seldrv
         jc      f73_bad
 
 ;--- build the whole record, then hand over as much as was asked ----
@@ -6525,6 +6686,380 @@ f73_short:
 f73_bad:
         mov     ax,ERR_FUNC
         jmp     i21_fail
+
+;---------------------------------------------------------------------
+; f73_seldrv - the drive named by the ASCIIZ path at EDX, or the
+;              current one if there is no path and no colon in it.
+;              vol_select is called; CF set if there is no such drive.
+;
+; Lifted out of 7303h when 7302h and 7304h turned out to name their
+; drive exactly the same way.  The whole 73h family does.
+;---------------------------------------------------------------------
+f73_seldrv:
+        mov     esi,[ebp+F_EDX]
+        or      esi,esi
+        jz      f73s_dflt
+        cmp     byte ptr [esi+1],':'
+        jne     f73s_dflt
+        mov     al,[esi]
+        or      al,20h
+        sub     al,'a'
+        cmp     al,MAX_DRIVES
+        jae     f73s_bad
+        jmp     short f73s_sel
+f73s_dflt:
+        mov     al,[cur_drive]
+f73s_sel:
+        jmp     vol_select              ; its CF is the answer
+f73s_bad:
+        stc
+        ret
+
+;=====================================================================
+; 7302h - the extended drive parameter block, into the caller's own
+;         buffer: EDX -> the drive, EDI -> the buffer, ECX = its size.
+;
+; What a program is after here is the SHAPE of the volume - cluster
+; size, where the data starts, how many clusters there are - which is
+; what it needs to work in sectors and clusters rather than in files.
+; 7303h answers the free-space half of the same question and has since
+; v0.24; this is the layout half, and the two together are why the
+; FAT32 family exists at all: every field in both is 32 bits wide,
+; because the DOS 4 originals were 16 and a FAT32 volume overflows
+; them.
+;
+; The block is DESCRIBED rather than POINTED AT - see the DPB_* notes
+; in PMDOS.INC for why that distinction is the whole reason this call
+; can be answered honestly when fn52's DPB chain cannot.
+;=====================================================================
+f7302:
+        call    f73_seldrv              ; AL survives it: vol_select is a
+        jc      f73_bad                 ; pushad round the whole of itself
+        mov     [f73_drv],al
+
+        mov     edi,OFFSET f73_dpb
+        xor     eax,eax
+        mov     ecx,(F72_SIZE + 3) / 4
+        rep     stosd
+        mov     edi,OFFSET f73_dpb + F72_DPB
+
+        mov     al,[f73_drv]            ; ...whichever one was selected
+        mov     [edi+DPB_DRIVE],al
+        mov     byte ptr [edi+DPB_UNIT],0
+        mov     word ptr [edi+DPB_BPS],512
+
+        mov     eax,[fat_spc]
+        dec     eax
+        mov     [edi+DPB_SPCM1],al
+        mov     eax,[fat_spc]
+        xor     ecx,ecx                 ; and the same number as a SHIFT,
+f72_shift:                              ; which is the field beside it and
+        cmp     eax,1                   ; is why a cluster is always a
+        jbe     f72_gotshift            ; power of two sectors
+        shr     eax,1
+        inc     ecx
+        jmp     short f72_shift
+f72_gotshift:
+        mov     [edi+DPB_SHIFT],cl
+
+        mov     eax,[fat_rsvd]
+        mov     [edi+DPB_RSVD],ax
+        mov     eax,[fat_nfats]
+        mov     [edi+DPB_NFATS],al
+        mov     eax,[fat_rootent]
+        mov     [edi+DPB_ROOTENT],ax
+
+        ; The sector numbers are the VOLUME'S, not the disk's.  Every
+        ; LBA the kernel holds has the partition folded into it - see
+        ; fm_layout - and a DPB has always counted from the start of
+        ; the drive it describes.
+        mov     eax,[fat_datalba]
+        sub     eax,[fat_partlba]
+        mov     [edi+DPB_DATA],eax
+        mov     eax,[fat_totclus]
+        inc     eax                     ; the HIGHEST number, and cluster
+        mov     [edi+DPB_MAXCLUS],eax   ; numbering starts at two
+        mov     eax,[fat_spf]
+        mov     [edi+DPB_SPF],eax
+
+        ; The root: a SECTOR on FAT12 and FAT16, a CLUSTER on FAT32,
+        ; which is the same field meaning two things and is exactly
+        ; what the on-disk BPB does with it.
+        cmp     byte ptr [fat_type],32
+        je      f72_root32
+        mov     eax,[fat_rootlba]
+        sub     eax,[fat_partlba]
+        jmp     short f72_rootset
+f72_root32:
+        mov     eax,[fat_rootclus]
+f72_rootset:
+        mov     [edi+DPB_ROOT],eax
+
+        mov     dword ptr [edi+DPB_DRIVER],0FFFFFFFFh
+        mov     al,[fat_media]
+        mov     [edi+DPB_MEDIA],al
+        mov     byte ptr [edi+DPB_ACCESS],0     ; it has been read: we read it
+        mov     dword ptr [edi+DPB_NEXT],0FFFFFFFFh
+
+        mov     eax,[fat_hint]
+        mov     [edi+DPB_NEXTFREE],eax
+        call    fat_freecount
+        mov     [edi+DPB_FREE],eax
+
+        mov     ecx,[ebp+F_ECX]         ; never more than was offered
+        cmp     ecx,F72_SIZE
+        jbe     f72_len
+        mov     ecx,F72_SIZE
+f72_len:
+        or      ecx,ecx
+        jz      f73_short               ; no room for even the flags word
+        mov     eax,[ebp+F_EDI]
+        call    cbuf_ok                 ; ECX bytes into a caller's buffer
+        jc      buf_deny
+        mov     esi,OFFSET f73_dpb
+        mov     edi,[ebp+F_EDI]
+        rep     movsb
+        jmp     i21_ok
+
+;=====================================================================
+; 7304h - set the drive parameter block, which real DOS offers so that
+;         a formatter can tell it the shape of a disk before there is
+;         a filesystem on it to read the shape out of.
+;
+;         EDX -> the drive, EDI -> a DPB, ECX = its length.
+;
+; PM-DOS'S NOTION OF A VOLUME'S SHAPE COMES FROM ITS BPB AND CANNOT BE
+; OVERRULED, and that is a decision rather than an omission: the kernel
+; re-reads the BPB on every mount, FORMAT works from it too (which is
+; why FORMAT here is a structural rebuild and not a low-level format),
+; and 21h/F1h AL=2 exists precisely to say "read it again".  There is
+; nothing here for a caller to set.
+;
+; So there are two truthful answers and this call gives both.  A DPB
+; that AGREES with the volume is accepted - the caller has asked for a
+; state the kernel is already in, and telling it no would be a refusal
+; with nothing behind it.  A DPB that DISAGREES is refused, because
+; success would mean the kernel had adopted a geometry it has not.
+; What is compared is the four fields that describe the layout and
+; would make the difference to a formatter; the free-cluster and
+; search-hint fields are bookkeeping and are not the caller's to state.
+;
+; This is the one call in the family whose parameters are read from a
+; buffer the caller filled in, so a short one is refused outright
+; rather than compared as far as it goes.
+;=====================================================================
+f7304:
+        call    f73_seldrv
+        jc      f73_bad
+        mov     ecx,[ebp+F_ECX]
+        cmp     ecx,F72_SIZE
+        jb      f74_baddata
+
+        mov     eax,[ebp+F_EDI]
+        mov     ecx,F72_SIZE
+        call    cbuf_ok
+        jc      buf_deny
+        mov     esi,[ebp+F_EDI]
+        add     esi,F72_DPB
+
+        cmp     word ptr [esi+DPB_BPS],512
+        jne     f74_baddata
+        mov     eax,[fat_spc]
+        dec     eax
+        cmp     [esi+DPB_SPCM1],al
+        jne     f74_baddata
+        mov     eax,[fat_rsvd]
+        cmp     [esi+DPB_RSVD],ax
+        jne     f74_baddata
+        mov     eax,[fat_nfats]
+        cmp     [esi+DPB_NFATS],al
+        jne     f74_baddata
+        mov     eax,[fat_rootent]
+        cmp     [esi+DPB_ROOTENT],ax
+        jne     f74_baddata
+        mov     eax,[fat_spf]
+        cmp     [esi+DPB_SPF],eax
+        jne     f74_baddata
+        jmp     i21_ok
+
+f74_baddata:
+        mov     ax,ERR_BADDATA
+        jmp     i21_fail
+
+;=====================================================================
+; 7305h - extended absolute disk read and write.  The FAT32 API's
+;         answer to INT 25h and 26h, and the reason it needs one is
+;         that those two take a sixteen-bit sector number in the form
+;         every program knows how to call.
+;
+;         EBX -> a DISKIO packet, DX = drive (0 = default, 1 = A:),
+;         CX = FFFFh, SI = the mode: bit 0 write, bits 2-1 what is
+;         being written.
+;
+; CX = FFFFh IS CHECKED, and it is not a formality.  It is there
+; because INT 25h's own escape hatch for a volume too large to address
+; the old way was ALSO a count of FFFFh, so the value is what tells
+; this call from a mistake; a program that gets it wrong is a program
+; that has confused two APIs, and answering it would be worse than
+; refusing.
+;
+; The area bits in SI are read and ignored.  They tell a compressing
+; filesystem whether it is being handed a FAT, a directory or file
+; data so that it can treat them differently; PM-DOS compresses
+; nothing, so every sector is a sector.
+;=====================================================================
+f7305:
+        cmp     word ptr [ebp+F_ECX],0FFFFh
+        jne     f73_bad
+
+        mov     al,[ebp+F_EDX]          ; 0 = default, 1 = A:
+        or      al,al
+        jnz     f75_named
+        mov     al,[cur_drive]
+        inc     al
+f75_named:
+        dec     al
+        cmp     al,MAX_DRIVES
+        jae     f75_baddrv
+        call    vol_select
+        jc      f75_baddrv
+
+        mov     ebx,[ebp+F_EBX]         ; the packet, in the caller's terms
+        mov     eax,ebx
+        mov     ecx,DSKIO_LEN
+        call    cbuf_ok
+        jc      buf_deny
+
+        mov     eax,dword ptr [ebx+DSKIO_START]
+        mov     [f75_lba],eax
+        movzx   eax,word ptr [ebx+DSKIO_COUNT]
+        mov     [f75_cnt],eax
+        mov     eax,dword ptr [ebx+DSKIO_BUF]
+
+        ; THE POINTER INSIDE THE PACKET IS THE ONE NOTHING ELSE CAN
+        ; CONVERT, and it is why this call has to know what kind of
+        ; program made it.  Everywhere else in the kernel the bridge
+        ; has already flattened the pointers on the way in, because
+        ; everywhere else they arrive in REGISTERS; one inside a
+        ; structure is past the last point at which anything could
+        ; have looked at it.  So all three callers are sorted out
+        ; here, exactly as int25_entry now sorts out its EBX:
+        ;
+        ;   a 16-bit guest    a real-mode segment and offset
+        ;   a native program  an offset in its own slot
+        ;   the kernel        a flat address already
+        call    f73_isguest
+        jnc     f75_notguest
+        movzx   ecx,ax                  ; offset
+        shr     eax,16                  ; segment
+        shl     eax,4
+        add     eax,ecx
+        jmp     short f75_flat
+f75_notguest:
+        cmp     word ptr [ebp+F_CS],SEL_PROG_CS
+        jne     f75_flat
+        call    r3_flat
+        jc      f75_badptr
+f75_flat:
+        mov     [f75_buf],eax
+
+        ; and the transfer itself is 25h's and 26h's, bounds and all
+        mov     eax,[f75_lba]
+        add     eax,[f75_cnt]
+        jc      f75_range
+        cmp     eax,[fat_totsec]
+        ja      f75_range
+
+        mov     ecx,[f75_cnt]
+        or      ecx,ecx
+        jz      f75_done                ; a transfer of nothing is done
+        shl     ecx,9                   ; sectors -> bytes, which is what
+        mov     eax,[f75_buf]           ; the bounds check speaks
+        call    cbuf_ok
+        jc      buf_deny
+
+        mov     ebx,[f75_lba]
+        add     ebx,[fat_partlba]
+        mov     ecx,[f75_cnt]
+        mov     edi,[f75_buf]
+        mov     al,[fat_drive]
+        test    word ptr [ebp+F_ESI],DSKIO_WRITE
+        jnz     f75_write
+
+        push    eax
+        mov     ah,0
+        call    vol_syncdrv             ; see disk_absgo: the filesystem is
+        pop     eax                     ; being gone round, and has to know
+        mov     ebx,[f75_lba]
+        add     ebx,[fat_partlba]
+        mov     ecx,[f75_cnt]
+        mov     edi,[f75_buf]
+        mov     al,[fat_drive]
+        mov     edx,IOS_RDBLK
+        call    dio_raw
+        jc      f75_ioerr
+        jmp     short f75_done
+
+f75_write:
+        push    eax
+        mov     ah,0
+        call    vol_syncdrv
+        pop     eax
+        mov     ebx,[f75_lba]
+        add     ebx,[fat_partlba]
+        mov     ecx,[f75_cnt]
+        mov     edi,[f75_buf]
+        mov     al,[fat_drive]
+        mov     edx,IOS_WRBLK
+        call    dio_raw
+        jc      f75_ioerr
+
+        cmp     byte ptr [verify_on],0
+        je      f75_wrsync
+        mov     al,[fat_drive]
+        mov     ebx,[f75_lba]
+        add     ebx,[fat_partlba]
+        mov     ecx,[f75_cnt]
+        mov     esi,[f75_buf]
+        call    dio_verify
+        jc      f75_ioerr
+f75_wrsync:
+        mov     al,[fat_drive]
+        mov     ah,1
+        call    vol_syncdrv             ; those sectors are the caller's now
+f75_done:
+        jmp     i21_ok
+
+f75_baddrv:
+        mov     ax,ERR_BADDRIVE
+        jmp     i21_fail
+f75_badptr:
+        mov     ax,ERR_ACCESS           ; the packet names memory the caller
+        jmp     i21_fail                ; does not have
+f75_range:
+        mov     ax,8                    ; classic "sector not found"
+        jmp     i21_fail
+f75_ioerr:
+        mov     ax,0Bh                  ; classic "read/write fault"
+        jmp     i21_fail
+
+;---------------------------------------------------------------------
+; f73_isguest - CF set if the frame belongs to a 16-bit DOS box.
+;               The three tests are cbuf_ok's, and the long comment
+;               above that routine is why they are the three.
+;---------------------------------------------------------------------
+f73_isguest:
+        cmp     word ptr [ebp+F_CS],SEL_CODE32
+        jne     f73g_no                 ; native, or a DPMI client
+        cmp     word ptr [ebp+F_DS],SEL_DATA32
+        je      f73g_no                 ; the kernel's own INT 21h
+        cmp     dword ptr [ebp+F_EIP],0
+        je      f73g_no
+        stc
+        ret
+f73g_no:
+        clc
+        ret
 
 fnF0:
         mov     al,[ebp+F_EAX]
@@ -7427,6 +7962,17 @@ exec_sig    dd  0,0                     ; the eight bytes that say whose
 exec_stk    db  EXEC_MAX * XN_LEN dup(0)
 
 f73_rec     db  F73_SIZE dup(0)         ; 7303h's answer, built whole
+f73_dpb     db  F72_SIZE dup(0)         ; ...and 7302h's, the same way
+f73_drv     db  0                       ; the drive the path named
+            db  0,0,0
+absbx       dd  0                       ; 25h/26h: the caller's own EBX, to
+                                        ; hand back where the flattened one
+                                        ; would otherwise go
+f75_lba     dd  0                       ; 7305h's packet, taken apart before
+f75_cnt     dd  0                       ; anything is done with it - it is
+f75_buf     dd  0                       ; the caller's memory and a transfer
+                                        ; into the caller's memory could be
+                                        ; a transfer over the packet
 f8_rec      db  F8_LEN dup(0)           ; and F1h/08's, likewise
 
 sft_tbl     db  MAX_HANDLES * SFT_LEN dup(0)

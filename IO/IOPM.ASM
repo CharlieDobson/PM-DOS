@@ -59,6 +59,7 @@ svc_table:
         dd      kb_boxreset             ; IOS_KBBOX
         dd      pg_map                  ; IOS_PGMAP
         dd      pg_umbprobe             ; IOS_UMBPROBE
+        dd      kb_typematic            ; IOS_KBRATE
 
 ;=====================================================================
 ; pm_entry - first instruction executed in 32-bit protected mode.

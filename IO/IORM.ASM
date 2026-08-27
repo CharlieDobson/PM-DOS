@@ -835,6 +835,14 @@ v_memkb    dd  0
 v_e820cnt  dd  0
 v_memtop   dd  0
 
+; The EDD packets the protected-mode block layer fills in and points
+; INT 13h at.  Declared here so the space is accounted for rather than
+; simply being part of the pad below.
+        ORG     GV_OFF + 20h
+v_dap      db  16 dup(0)                ; AH=42h/43h disk address packet
+        ORG     GV_OFF + 40h
+v_edp      db  32 dup(0)                ; AH=48h drive parameters
+
 ;=====================================================================
 ; Pad the stub to exactly RMSTUB_SIZE so IOPM.BIN lands at IO_PM_BASE.
 ;=====================================================================

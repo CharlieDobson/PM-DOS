@@ -152,6 +152,26 @@ rdp_one:
         or      byte ptr [rx_flags],RX_OUT
         jmp     short rdp_lp
 rdp_end:
+        ; TRIM WHAT THE REDIRECTOR LEFT BEHIND.  "TYPE FILE > OUT"
+        ; compacts to "TYPE FILE " - the space in front of the '>' is
+        ; ordinary text and is copied through - and a command that
+        ; takes its argument raw then opens a name with a space on the
+        ; end of it.  DIR and DEL never saw this because sw_scan trims
+        ; for them; TYPE, MD, CD and RD do not call sw_scan, so every
+        ; one of them failed the moment its line was redirected.
+        ; Real DOS trims the tail for the same reason.
+        mov     eax,[esp+4]             ; the saved ESI: the line's start
+rdp_trim:
+        cmp     edi,eax
+        jbe     rdp_term
+        cmp     byte ptr [edi-1],' '
+        je      rdp_cut
+        cmp     byte ptr [edi-1],9
+        jne     rdp_term
+rdp_cut:
+        dec     edi
+        jmp     short rdp_trim
+rdp_term:
         mov     byte ptr [edi],0
         pop     edi
         pop     esi

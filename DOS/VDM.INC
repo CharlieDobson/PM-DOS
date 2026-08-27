@@ -1728,6 +1728,10 @@ vd_nodi:
         test    byte ptr ds:[vdm_pf],P_BX
         jz      vd_nobx
         mov     edx,dword ptr [vdm_ctx+V86C_ES]
+        test    byte ptr ds:[vdm_pf],P_BXD
+        jz      vd_bxes
+        mov     edx,dword ptr [vdm_ctx+V86C_DS]
+vd_bxes:
         shl     edx,4
         add     eax,edx
 vd_nobx:
@@ -2093,8 +2097,22 @@ vdm_lol:
         ; answer.  The symptom was a guest reading its LASTDRIVE out of
         ; whatever segment this number happened to name.
         mov     dl,byte ptr [lastdrive_n]       ; and LASTDRIVE=, for the same
-        mov     byte ptr [edi+GLOL_LASTDRV],dl  ; reason: CONFIG.SYS is read
+                                                ; reason: CONFIG.SYS is read
                                                 ; long after vdm_lolinit ran
+
+        ; ...RAISED AGAIN HERE, because a DRIVE CAN APPEAR AFTER THE
+        ; STATEMENT DID.  cfg_lastdrv already clamps the number up to
+        ; the drives that exist when the line is read - but a
+        ; DEVICE= block driver further down the file adds a letter
+        ; after that, and a CONFIG.SYS with LASTDRIVE= above its
+        ; DEVICE= lines is the ordinary way round.  The rule is "never
+        ; fewer than there really are", and the only place that can be
+        ; true at the moment somebody asks is the moment somebody asks.
+        cmp     dl,byte ptr ds:[drv_count]
+        jae     vl_lastok
+        mov     dl,byte ptr ds:[drv_count]
+vl_lastok:
+        mov     byte ptr [edi+GLOL_LASTDRV],dl
         mov     word ptr [vdm_ctx+V86C_EBX],GLOL_PTR
         mov     dword ptr [vdm_ctx+V86C_ES],eax
         and     dword ptr [vdm_ctx+V86C_FLAGS],NOT FL_CF
@@ -2123,57 +2141,22 @@ vl_nolol:
 ; and every program that EXECs knows to shrink first.  Nothing here
 ; special-cases it; the memory manager simply says no.
 ;
-; AL selects: 00h load and execute.  01h (load without executing, hand
-; back the entry point) and 03h (overlay, load at a caller-chosen
-; segment with no PSP) are refused - they are real functions, but they
-; are a different job from starting a program and neither belongs in
-; the process path.
+; AL selects: 00h load and execute, 01h load and hand back the entry
+; point, 03h load an overlay at a segment the caller names.  All three
+; are here now; 01h and 03h are vc_load1 and vc_overlay below, and the
+; three of them share the path-copying above and nothing else, because
+; the three of them ARE three different jobs.
 ;=====================================================================
 vdm_child:
+        cmp     byte ptr [vdm_ctx+V86C_EAX],3
+        je      vc_overlay
+        cmp     byte ptr [vdm_ctx+V86C_EAX],1
+        je      vc_load1
         cmp     byte ptr [vdm_ctx+V86C_EAX],0
         jne     vc_badfn
         cmp     dword ptr ds:[vdm_depth],VDM_MAXNEST
         jae     vc_deep
-
-        ; The path, copied out of the guest before anything can move.
-        mov     esi,dword ptr [vdm_ctx+V86C_DS]
-        shl     esi,4
-        movzx   eax,word ptr [vdm_ctx+V86C_EDX]
-        add     esi,eax
-        mov     edi,OFFSET vdm_cpath
-        mov     ecx,EXEC_PATH_MAX - 1
-        call    exec_cpz
-
-        ; The parameter block
-        mov     ebx,dword ptr [vdm_ctx+V86C_ES]
-        shl     ebx,4
-        movzx   eax,word ptr [vdm_ctx+V86C_EBX]
-        add     ebx,eax
-
-        mov     esi,[ebx+EP_TAIL]               ; the tail, seg:off -> flat
-        call    vdm_farflat
-        mov     dword ptr ds:[vdm_ctail],eax
-        mov     esi,[ebx+EP_FCB1]
-        call    vdm_farflat
-        mov     dword ptr ds:[vdm_cfcb1],eax
-        mov     esi,[ebx+EP_FCB2]
-        call    vdm_farflat
-        mov     dword ptr ds:[vdm_cfcb2],eax
-
-        ; The environment.  Zero means inherit, and what gets inherited
-        ; is the STRINGS - vdm_env copies them and appends the child's
-        ; own path, so the child gets its own block and its own name in
-        ; it, exactly as DOS 3 did.
-        movzx   eax,word ptr [ebx+EP_ENV]
-        or      eax,eax
-        jnz     vc_envgiven
-        movzx   eax,word ptr ds:[vdm_envseg]    ; still the parent's
-vc_envgiven:
-        or      eax,eax
-        jz      vc_envflat
-        shl     eax,4
-vc_envflat:
-        mov     dword ptr ds:[vdm_cenv],eax
+        call    vc_args
 
 ;--- from here the parent is on the stack and the child is live -------
         call    vdm_push
@@ -2218,6 +2201,374 @@ vc_badfn:
         jmp     vdm_loop
 vc_deep:
         mov     word ptr [vdm_ctx+V86C_EAX],ERR_NOMEM
+        or      dword ptr [vdm_ctx+V86C_FLAGS],FL_CF
+        jmp     vdm_loop
+
+;---------------------------------------------------------------------
+; vc_args - everything AL=0 and AL=1 take out of the guest before the
+;           load starts: the path, the command tail, the two FCBs and
+;           the environment, all of them flattened and copied into the
+;           kernel.
+;
+; COPIED, AND THAT IS THE POINT.  Every one of these is a pointer into
+; the guest's own memory, and the loader is about to allocate in that
+; memory and read a file into it.  A tail still being read out of the
+; place the child has just been loaded over is the kind of bug that
+; shows up as one program's arguments appearing inside another.
+;---------------------------------------------------------------------
+vc_args:
+        pushad
+        mov     esi,dword ptr [vdm_ctx+V86C_DS]
+        shl     esi,4
+        movzx   eax,word ptr [vdm_ctx+V86C_EDX]
+        add     esi,eax
+        mov     edi,OFFSET vdm_cpath
+        mov     ecx,EXEC_PATH_MAX - 1
+        call    exec_cpz
+
+        ; The parameter block
+        mov     ebx,dword ptr [vdm_ctx+V86C_ES]
+        shl     ebx,4
+        movzx   eax,word ptr [vdm_ctx+V86C_EBX]
+        add     ebx,eax
+
+        mov     esi,[ebx+EP_TAIL]               ; the tail, seg:off -> flat
+        call    vdm_farflat
+        mov     dword ptr ds:[vdm_ctail],eax
+        mov     esi,[ebx+EP_FCB1]
+        call    vdm_farflat
+        mov     dword ptr ds:[vdm_cfcb1],eax
+        mov     esi,[ebx+EP_FCB2]
+        call    vdm_farflat
+        mov     dword ptr ds:[vdm_cfcb2],eax
+
+        ; The environment.  Zero means inherit, and what gets inherited
+        ; is the STRINGS - vdm_env copies them and appends the child's
+        ; own path, so the child gets its own block and its own name in
+        ; it, exactly as DOS 3 did.
+        movzx   eax,word ptr [ebx+EP_ENV]
+        or      eax,eax
+        jnz     vca_given
+        movzx   eax,word ptr ds:[vdm_envseg]    ; still the parent's
+vca_given:
+        or      eax,eax
+        jz      vca_flat
+        shl     eax,4
+vca_flat:
+        mov     dword ptr ds:[vdm_cenv],eax
+        popad
+        ret
+
+;=====================================================================
+; 4Bh AL=1 - LOAD BUT DO NOT EXECUTE.
+;
+; The program is loaded exactly as AL=0 loads one - its own block, its
+; own PSP, its own environment, its own copy of the command tail - and
+; then nothing happens.  The parameter block comes back with the entry
+; point (CS:IP) and the initial stack (SS:SP) written into its last
+; two fields, and the CALLER decides what to do next.  What a caller
+; does next is single-step it, which is what this function is for and
+; very nearly all it has ever been used for.
+;
+; THE CALLER'S CONTEXT IS WHAT HAS TO BE PROTECTED, and it is the only
+; hard part.  vdm_load writes the loaded program's registers straight
+; into vdm_ctx, which for AL=0 is exactly right - the box is about to
+; become that program - and for AL=1 is the caller's live context
+; being overwritten by a program that is not going to run.  So the
+; whole frame is parked first and put back afterwards, in the shape
+; vdm_push and vdm_pop already agreed on, and the entry point is read
+; out of vdm_ctx in between.
+;
+; THE CHILD'S MEMORY IS NOT FREED and no nesting level is used.  There
+; is no child as far as the box is concerned: there is a caller, and
+; some memory with a program in it that the caller now owns the
+; problem of.  Real DOS says the same thing in the same words - the
+; documentation's warning that the loaded program's memory is the
+; caller's to release is the whole of the contract - and it is why the
+; child's PSP is handed back rather than kept.
+;=====================================================================
+vc_load1:
+        call    vc_args                 ; path, tail, FCBs, environment
+
+        mov     esi,OFFSET vdm_ctx      ; park the caller, whole
+        mov     edi,OFFSET vdm_lframe
+        mov     ecx,V86C_SIZE / 4
+        rep     movsd
+        mov     edi,OFFSET vdm_lframe
+        mov     eax,dword ptr [cur_own]
+        mov     [edi+VF_OWN],eax
+        mov     eax,dword ptr [dta_ptr]
+        mov     [edi+VF_DTA],eax
+        mov     ax,word ptr ds:[vdm_pspseg]
+        mov     [edi+VF_PSPSEG],ax
+        mov     ax,word ptr ds:[vdm_envseg]
+        mov     [edi+VF_ENVSEG],ax
+        mov     ax,word ptr ds:[vdm_paras]
+        mov     [edi+VF_PARAS],ax
+        mov     ax,word ptr ds:[vdm_curpsp]
+        mov     [edi+VF_CURPSP],ax
+        mov     ax,word ptr ds:[vdm_parpsp]
+        mov     [edi+VF_PARPSP],ax
+
+        mov     ax,word ptr ds:[vdm_curpsp]     ; the loaded program's
+        mov     word ptr ds:[vdm_parpsp],ax     ; parent is whoever asked
+        mov     eax,dword ptr ds:[vdm_ctail]
+        mov     dword ptr ds:[vdm_tailp],eax
+        mov     eax,dword ptr ds:[vdm_cenv]
+        mov     dword ptr ds:[vdm_envp],eax
+        mov     edx,OFFSET vdm_cpath
+        call    vdm_load
+        jc      vl1_failed
+
+        ; The two far pointers, out of the context the load just built
+        ; and before it is thrown away.
+        mov     eax,dword ptr [vdm_ctx+V86C_SS]
+        shl     eax,16
+        mov     ax,word ptr [vdm_ctx+V86C_ESP]
+        mov     dword ptr ds:[vl1_ss],eax
+        mov     eax,dword ptr [vdm_ctx+V86C_CS]
+        shl     eax,16
+        mov     ax,word ptr [vdm_ctx+V86C_EIP]
+        mov     dword ptr ds:[vl1_cs],eax
+        movzx   eax,word ptr ds:[vdm_pspseg]
+        mov     dword ptr ds:[vl1_psp],eax
+
+        call    vl1_unpark
+
+        ; ...and into the caller's parameter block, which is where it
+        ; expects to find them.  The block is re-derived rather than
+        ; remembered: the load may have moved memory about, and the
+        ; caller's ES:BX is what the caller said.
+        mov     ebx,dword ptr [vdm_ctx+V86C_ES]
+        shl     ebx,4
+        movzx   eax,word ptr [vdm_ctx+V86C_EBX]
+        add     ebx,eax
+        mov     eax,dword ptr ds:[vl1_ss]
+        mov     dword ptr [ebx+EP_SSSP],eax
+        mov     eax,dword ptr ds:[vl1_cs]
+        mov     dword ptr [ebx+EP_CSIP],eax
+
+        ; AX = the child's PSP, which DOS leaves there and a debugger
+        ; reads to find the program it has just been handed.
+        mov     eax,dword ptr ds:[vl1_psp]
+        mov     word ptr [vdm_ctx+V86C_EAX],ax
+        and     dword ptr [vdm_ctx+V86C_FLAGS],NOT FL_CF
+        jmp     vdm_loop
+
+vl1_failed:
+        movzx   eax,word ptr ds:[vdm_err]
+        mov     dword ptr ds:[vl1_psp],eax
+        call    vl1_unpark
+        mov     eax,dword ptr ds:[vl1_psp]
+        mov     word ptr [vdm_ctx+V86C_EAX],ax
+        or      dword ptr [vdm_ctx+V86C_FLAGS],FL_CF
+        jmp     vdm_loop
+
+;--- put the caller back exactly as it was ---------------------------
+vl1_unpark:
+        pushad
+        mov     esi,OFFSET vdm_lframe
+        mov     edi,OFFSET vdm_ctx
+        mov     ecx,V86C_SIZE / 4
+        rep     movsd
+        mov     esi,OFFSET vdm_lframe
+        mov     eax,[esi+VF_OWN]
+        mov     dword ptr [cur_own],eax
+        mov     eax,[esi+VF_DTA]
+        mov     dword ptr [dta_ptr],eax
+        mov     ax,[esi+VF_PSPSEG]
+        mov     word ptr ds:[vdm_pspseg],ax
+        mov     ax,[esi+VF_ENVSEG]
+        mov     word ptr ds:[vdm_envseg],ax
+        mov     ax,[esi+VF_PARAS]
+        mov     word ptr ds:[vdm_paras],ax
+        mov     ax,[esi+VF_CURPSP]
+        mov     word ptr ds:[vdm_curpsp],ax
+        mov     ax,[esi+VF_PARPSP]
+        mov     word ptr ds:[vdm_parpsp],ax
+        popad
+        ret
+
+;=====================================================================
+; 4Bh AL=3 - LOAD AN OVERLAY.
+;
+; The smallest of the three and the least like the other two: no
+; memory is allocated, no PSP is built, no environment is copied and
+; nothing is executed.  The caller has already got the memory - it is
+; the caller's own block - and says where in it the file is to go.
+; The parameter block is two words: the segment to load at, and the
+; relocation factor to add to every fixup.
+;
+; A .COM overlay is a straight read.  A .EXE one is a read and the
+; same fixup walk vl_exe does, with the factor the caller gave instead
+; of a load segment the loader chose - which is the entire difference
+; between an overlay and a program, and is why the two words are the
+; only parameters there are.
+;
+; A D32 IMAGE CANNOT BE AN OVERLAY and is refused as a bad format.
+; The roadmap suspected this function might never be implementable and
+; that suspicion was about the wrong caller: a D32 image is linked for
+; one absolute address, so it cannot be loaded into somebody else's
+; memory at somebody else's address - but a DOS BOX has neither of
+; those problems, and an overlay is a sixteen-bit idea from beginning
+; to end.  Every program that ever used one was sixteen-bit.
+;=====================================================================
+vc_overlay:
+        mov     esi,dword ptr [vdm_ctx+V86C_DS]
+        shl     esi,4
+        movzx   eax,word ptr [vdm_ctx+V86C_EDX]
+        add     esi,eax
+        mov     edi,OFFSET vdm_cpath
+        mov     ecx,EXEC_PATH_MAX - 1
+        call    exec_cpz
+
+        mov     ebx,dword ptr [vdm_ctx+V86C_ES]
+        shl     ebx,4
+        movzx   eax,word ptr [vdm_ctx+V86C_EBX]
+        add     ebx,eax
+        movzx   eax,word ptr [ebx+OVL_SEG]
+        mov     dword ptr ds:[vov_seg],eax
+        movzx   eax,word ptr [ebx+OVL_RELOC]
+        mov     dword ptr ds:[vov_fix],eax
+
+        mov     edx,OFFSET vdm_cpath
+        mov     eax,3D00h
+        call    k21
+        jc      vov_nofile
+        mov     dword ptr ds:[vdm_hdl],eax
+
+        mov     ebx,eax
+        mov     edx,OFFSET vdm_hdrbuf
+        mov     ecx,EXE_HDRLEN
+        mov     eax,3F00h
+        call    k21
+        jc      vov_ioerr
+        cmp     eax,EXE_HDRLEN
+        jb      vov_flat                        ; too short to be an .EXE
+        mov     ax,word ptr ds:[vdm_hdrbuf+EXE_SIG]
+        cmp     ax,EXE_MZ
+        je      vov_exe
+        cmp     ax,EXE_ZM
+        je      vov_exe
+        cmp     dword ptr ds:[vdm_hdrbuf+D32H_MAGIC],D32_MAGIC
+        je      vov_badfmt
+
+;--- a flat overlay: the whole file, where it was asked for ----------
+vov_flat:
+        mov     ebx,dword ptr ds:[vdm_hdl]
+        xor     ecx,ecx
+        mov     eax,4200h                       ; unread the sniff
+        call    k21
+        jc      vov_ioerr
+        mov     edx,dword ptr ds:[vov_seg]
+        shl     edx,4
+        mov     ebx,dword ptr ds:[vdm_hdl]
+        mov     ecx,0FFF0h
+        mov     eax,3F00h
+        call    k21
+        jc      vov_ioerr
+        jmp     vov_done
+
+;--- an .EXE overlay: the load module, then its fixups ---------------
+vov_exe:
+        movzx   eax,word ptr ds:[vdm_hdrbuf+EXE_CP]
+        shl     eax,9
+        movzx   edx,word ptr ds:[vdm_hdrbuf+EXE_CBLP]
+        or      edx,edx
+        jz      vov_whole
+        sub     eax,512
+        add     eax,edx
+vov_whole:
+        movzx   edx,word ptr ds:[vdm_hdrbuf+EXE_CPARHDR]
+        shl     edx,4
+        mov     dword ptr ds:[vdm_hdrsz],edx
+        sub     eax,edx
+        jbe     vov_badfmt
+        mov     dword ptr ds:[vdm_imgsz],eax
+
+        mov     ebx,dword ptr ds:[vdm_hdl]
+        mov     ecx,dword ptr ds:[vdm_hdrsz]
+        mov     eax,4200h
+        call    k21
+        jc      vov_ioerr
+        mov     edx,dword ptr ds:[vov_seg]
+        shl     edx,4
+        mov     ebx,dword ptr ds:[vdm_hdl]
+        mov     ecx,dword ptr ds:[vdm_imgsz]
+        mov     eax,3F00h
+        call    k21
+        jc      vov_ioerr
+
+        movzx   eax,word ptr ds:[vdm_hdrbuf+EXE_CRLC]
+        mov     dword ptr ds:[vdm_relcnt],eax
+        or      eax,eax
+        jz      vov_done
+        movzx   ecx,word ptr ds:[vdm_hdrbuf+EXE_LFARLC]
+        mov     ebx,dword ptr ds:[vdm_hdl]
+        mov     eax,4200h
+        call    k21
+        jc      vov_ioerr
+vov_batch:
+        mov     ecx,dword ptr ds:[vdm_relcnt]
+        or      ecx,ecx
+        jz      vov_done
+        cmp     ecx,VDM_RELBAT
+        jbe     vov_some
+        mov     ecx,VDM_RELBAT
+vov_some:
+        mov     dword ptr ds:[vdm_relthis],ecx
+        shl     ecx,2
+        mov     edx,OFFSET vdm_relbuf
+        mov     ebx,dword ptr ds:[vdm_hdl]
+        mov     eax,3F00h
+        call    k21
+        jc      vov_ioerr
+        mov     esi,OFFSET vdm_relbuf
+        mov     ecx,dword ptr ds:[vdm_relthis]
+vov_one:
+        ; THE FIXUP IS FOUND AT THE LOAD SEGMENT AND ADJUSTED BY THE
+        ; RELOCATION FACTOR, and those are two different numbers here
+        ; where for a program they are one.  An overlay is read into
+        ; the caller's memory at one place and may be meant to run
+        ; addressed from another; the caller knows which and says so
+        ; in the second word of the block.
+        movzx   eax,word ptr [esi+2]
+        mov     edx,dword ptr ds:[vov_seg]
+        add     eax,edx
+        shl     eax,4
+        movzx   edx,word ptr [esi]
+        add     eax,edx
+        mov     dx,word ptr ds:[vov_fix]
+        add     word ptr [eax],dx
+        add     esi,4
+        loop    vov_one
+        mov     eax,dword ptr ds:[vdm_relthis]
+        sub     dword ptr ds:[vdm_relcnt],eax
+        jmp     vov_batch
+
+vov_done:
+        mov     ebx,dword ptr ds:[vdm_hdl]
+        mov     eax,3E00h
+        call    k21
+        and     dword ptr [vdm_ctx+V86C_FLAGS],NOT FL_CF
+        jmp     vdm_loop
+
+vov_ioerr:
+        mov     ebx,dword ptr ds:[vdm_hdl]
+        mov     eax,3E00h
+        call    k21
+        mov     word ptr [vdm_ctx+V86C_EAX],ERR_ACCESS
+        or      dword ptr [vdm_ctx+V86C_FLAGS],FL_CF
+        jmp     vdm_loop
+vov_badfmt:
+        mov     ebx,dword ptr ds:[vdm_hdl]
+        mov     eax,3E00h
+        call    k21
+        mov     word ptr [vdm_ctx+V86C_EAX],ERR_EXEFMT
+        or      dword ptr [vdm_ctx+V86C_FLAGS],FL_CF
+        jmp     vdm_loop
+vov_nofile:
+        mov     word ptr [vdm_ctx+V86C_EAX],ERR_NOFILE
         or      dword ptr [vdm_ctx+V86C_FLAGS],FL_CF
         jmp     vdm_loop
 
@@ -2880,7 +3231,15 @@ vdm_subptr:
         db  71h,  6Ch,  P_SI            ; extended open
         db  71h, 0A0h,  P_DX+P_DI       ; volume information
                                         ; A1h - FindClose - is BX only
+        db  73h,  02h,  P_DX+P_DI       ; get DPB: drive in, block out
         db  73h,  03h,  P_DX+P_DI       ; free space, the FAT32 form
+        db  73h,  04h,  P_DX+P_DI       ; set DPB, the same two pointers
+        db  73h,  05h,  P_BX+P_BXD      ; absolute I/O - and the pointer
+                                        ; INSIDE the packet is the one thing
+                                        ; here that no table can convert.
+                                        ; f7305 does it, and is the only
+                                        ; handler in the kernel that has to
+                                        ; know what kind of caller it has
         db  0F1h, 03h,  P_DX            ; the interpreter's own path
         db  0F1h, 06h,  P_DI            ; the volume table
         db  0F1h, 08h,  P_DI            ; and one block of the arena
@@ -2994,6 +3353,18 @@ vdm_paras   dw  0
             dw  0
 vdm_cpath   db  EXEC_PATH_MAX dup(0)
 vdm_stack   db  (VDM_MAXNEST * VF_LEN) dup(0)
+
+; 4Bh AL=1's parking space: one frame, in the shape vdm_push writes,
+; holding the CALLER while the loader writes over the live context
+; with a program that is not going to run.  One is enough - the load
+; is finished before the caller can start another.
+vdm_lframe  db  VF_LEN dup(0)
+vl1_ss      dd  0                       ; and what the load turned out to
+vl1_cs      dd  0                       ; be, read out before the parking
+vl1_psp     dd  0                       ; space is put back
+
+vov_seg     dd  0                       ; 4Bh AL=3: where the overlay goes
+vov_fix     dd  0                       ; and what to add to its fixups
 vdm_loadseg dw  0                       ; PSP + 10h: what every fixup is
             dw  0                       ; relative to
 

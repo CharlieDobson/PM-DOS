@@ -27,6 +27,15 @@
 ;   READ (4)        a memcpy between the caller's buffer and the disk
 ;   WRITE (8,9)     image behind this code, in either direction.
 ;
+; AND ONE THING NO REAL DRIVER WOULD DO: a sector written with the
+; eight bytes 'POISON!!' at the front of it reads back ONCE with a
+; byte changed.  That is here because VERIFY - the 2Eh flag, which
+; reads every written sector back and compares it - cannot otherwise
+; be tested at all: nothing else in this machine can be made to hand
+; back something different from what it was given.  It arms only when
+; a program writes that signature on purpose, disarms on the first
+; read, and the disk still holds exactly what was written.
+;
 ; THE IMAGE HAS TO BE BELOW endres AND THAT IS THE ONE THING TO GET
 ; RIGHT.  A driver tells DOS where its resident part ends and every
 ; paragraph above that goes back to the arena - so a RAM disk whose
@@ -71,6 +80,14 @@ reqoff  dw      0
 reqseg  dw      0
 iowrite db      0                       ; which way this transfer goes
 imgbase dw      0                       ; the image's base paragraph
+iosec   dw      0                       ; the transfer's first sector, and
+iobufo  dw      0                       ; the caller's buffer - all three
+iobufs  dw      0                       ; kept because ES, BX and DI have
+                                        ; all moved on by the time the
+                                        ; poison check needs them
+poisoned dw     0FFFFh                  ; the sector armed to read back
+                                        ; wrong once.  See the read path
+poisonsig db    'POISON!!'              ; ...and what arms it
 
 ;=====================================================================
 ; strategy - remember ES:BX and go away
@@ -191,8 +208,17 @@ do_write:
         mov     byte ptr [iowrite],1
 do_io:
         mov     ax,es:[bx+14h]          ; start sector
+        mov     [iosec],ax              ; kept, because ES and BX are both
+                                        ; other things by the time the
+                                        ; poison check wants it
         cmp     ax,NSECS
         jae     io_bad
+        push    ax
+        mov     ax,es:[bx+0Eh]          ; and so is the caller's buffer
+        mov     [iobufo],ax
+        mov     ax,es:[bx+10h]
+        mov     [iobufs],ax
+        pop     ax
         mov     dx,es:[bx+12h]          ; sectors wanted
         or      dx,dx
         jz      io_none
@@ -226,8 +252,61 @@ io_fits:
         mov     es,cx
         mov     cx,bx
         rep     movsw
+
+        ; THE POISONED SECTOR, WHICH EXISTS SO THAT VERIFY CAN BE
+        ; TESTED.  Nothing else in this machine can be made to read
+        ; back differently from what was written, and a verify that
+        ; has never once caught anything is a verify nobody has
+        ; tested.  A sector written with the signature below reads
+        ; back ONCE with a byte changed, and then behaves.  It costs
+        ; four instructions on the read path and is armed only by a
+        ; program that means it.
+        push    ds
+        push    cs
+        pop     ds
+        push    ax
+        mov     ax,[iosec]
+        cmp     ax,0FFFFh               ; -1 is "nothing armed"
+        je      io_nopoison
+        cmp     ax,[poisoned]
+        jne     io_nopoison
+        mov     word ptr [poisoned],0FFFFh
+        mov     es,[iobufs]             ; back to the caller's buffer, and
+        mov     di,[iobufo]             ; one byte of it is not what was
+        mov     al,es:[di]              ; put there
+        not     al
+        mov     es:[di],al
+io_nopoison:
+        pop     ax
+        pop     ds
         jmp     short io_fin
 io_wr:
+        ; arm it?  The signature is looked for in the caller's data,
+        ; before the copy - and the copy still happens, so what is on
+        ; the disk afterwards is exactly what was written.
+        push    ax
+        push    cx
+        push    si
+        push    di
+        push    es
+        push    ds
+        push    cs
+        pop     ds
+        mov     si,OFFSET poisonsig
+        mov     es,[iobufs]
+        mov     di,[iobufo]
+        mov     cx,8
+        repe    cmpsb
+        jne     io_notsig
+        mov     ax,[iosec]
+        mov     [poisoned],ax
+io_notsig:
+        pop     ds
+        pop     es
+        pop     di
+        pop     si
+        pop     cx
+        pop     ax
         mov     ds,cx                   ; write: caller -> image
         mov     si,di
         mov     es,ax
