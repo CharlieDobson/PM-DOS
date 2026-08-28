@@ -249,14 +249,21 @@ d_end:
         cmp     cx,4                    ; NUL, CON, AUX, PRN
         jne     d_bad
         call    good
-        jmp     cpu_test
+        jmp     short d_done
 d_bad:
         call    bad
-        jmp     cpu_test
+        jmp     short d_done
 d_runaway:
         mov     dx,OFFSET msg_runaway
         call    puts
         call    bad
+
+; ALL THREE PATHS ARRIVE HERE.  The two ordinary ones used to jump
+; to cpu_test instead, which is past every check below - so 1Bh, 1Ch,
+; 38h, 67h, 5Ch, 63h, 6Ch and 65h ran ONLY when the device chain
+; failed to terminate, which it never does.  Eight checks that
+; printed nothing and were counted as neither passing nor failing.
+d_done:
 
 ;=====================================================================
 ; 1Bh - allocation information, and the SECOND pointer this bridge
@@ -551,9 +558,14 @@ ctryext:
         mov     dl,'a'
         int     21h
         jc      x65_capbad
+        mov     bl,dl                   ; BEFORE printing it: put1 puts each
+                                        ; digit in DL to call 02h with, so the
+                                        ; answer is gone by the time put2
+                                        ; returns and the check below read the
+                                        ; last character printed instead
         mov     al,dl
         call    put2
-        cmp     dl,'A'
+        cmp     bl,'A'
         jne     x65_capbad
 
         mov     ax,6522h                ; and a whole ASCIZ string

@@ -19,7 +19,37 @@
 ; Interrupts are suppressed at the drive (nIEN) and transfers are
 ; polled, so no IRQ 14/15 handlers are needed.
 ;
-; Included by IOPM.ASM.
+; SINCE v0.43 THERE ARE THREE WAYS TO MOVE THE DATA, and the driver
+; picks one per transfer:
+;
+;   - 16-bit PIO, REP INSW.  What it has always done, what every
+;     machine can do, and the only path an ISA controller gets.
+;   - 32-bit PIO, REP INSD.  Half the bus cycles for the same bytes.
+;     The data register is sixteen bits wide at the drive; what makes
+;     a doubleword access legal is the HOST ADAPTER latching two
+;     words, which is a VLB and PCI thing and is not an ISA thing.
+;   - bus-master DMA, which does not use the processor at all.  The
+;     engine is on the controller and only configuration space knows
+;     where its registers are, so this one needs PCI.INC.
+;
+; THE TWO DETECTIONS ARE COMPLEMENTARY AND THAT IS NOT A COINCIDENCE.
+; IDENTIFY word 48 was defined in ATA-1 as "can do doubleword I/O"
+; and the VLB-era drives set it; ATA-3 made the word obsolete, so a
+; later drive reports zero there whatever it is plugged into.  A PCI
+; IDE controller, on the other hand, handles a 32-bit access to the
+; data port by construction.  Word 48 covers the drives too old to be
+; on a PCI bus and the PCI controller covers the drives too new to
+; set word 48, and between them they cover the machines this kernel
+; runs on.
+;
+; NEITHER IS TURNED ON BY GUESSWORK ON A WRITE PATH.  See ata_pickdma
+; for why an unselected transfer mode is left unselected, and
+; ata_dmarun for what happens when a bus master gets it wrong: the
+; device is demoted to PIO for the rest of the session and the
+; transfer is done again.  A machine whose chipset lies gets a slow
+; disk rather than a wrong one.
+;
+; Included by IOPM.ASM, after PCI.INC.
 ;=====================================================================
 
 ATA_MAXDEV      EQU     4               ; two channels, master + slave
@@ -55,15 +85,28 @@ ATA_CMD_WRITE48 EQU     34h
 ATA_CMD_FLUSH   EQU     0E7h
 ATA_CMD_FLUSH48 EQU     0EAh
 ATA_CMD_SETGEO  EQU     091h            ; INITIALIZE DEVICE PARAMETERS
+ATA_CMD_SETFEAT EQU     0EFh            ; SET FEATURES
 ATA_CMD_IDENT   EQU     0ECh
+ATA_CMD_RDDMA   EQU     0C8h            ; READ DMA
+ATA_CMD_WRDMA   EQU     0CAh            ; WRITE DMA
+ATA_CMD_RDDMA48 EQU     025h            ; READ DMA EXT
+ATA_CMD_WRDMA48 EQU     035h            ; WRITE DMA EXT
+
+ATA_FEAT_XFER   EQU     03h             ; SET FEATURES: set transfer mode
 
 ; Words of interest in the 256-word IDENTIFY block
 ATA_ID_CYLS     EQU     1 * 2           ; word - logical cylinders
 ATA_ID_HEADS    EQU     3 * 2           ; word - logical heads
 ATA_ID_SPT      EQU     6 * 2           ; word - logical sectors per track
+ATA_ID_DWIO     EQU     48 * 2          ; bit 0 = doubleword I/O (ATA-1/2)
 ATA_ID_CAPS     EQU     49 * 2          ; bit 9 = LBA supported
+                                        ; bit 8 = DMA supported
+ATA_ID_VALID    EQU     53 * 2          ; bit 1 = word 63 means something,
+                                        ; bit 2 = word 88 does
 ATA_ID_LBA28    EQU     60 * 2          ; dword - LBA28 sector count
+ATA_ID_MWDMA    EQU     63 * 2          ; low byte supported, high selected
 ATA_ID_CMDSET   EQU     83 * 2          ; bit 10 = LBA48 supported
+ATA_ID_UDMA     EQU     88 * 2          ; low byte supported, high selected
 ATA_ID_LBA48    EQU     100 * 2         ; qword - LBA48 sector count
 
 ; Per-device table entry
@@ -73,12 +116,46 @@ ATD_SEL         EQU     4               ; byte - 00h master, 10h slave
 ATD_FLAGS       EQU     5               ; byte - see below
 ATD_HEADS       EQU     6               ; word - CHS heads
 ATD_SPT         EQU     8               ; word - CHS sectors per track
+ATD_BM          EQU     10              ; word - bus-master base for this
+                                        ; device's channel, 0 if it has none
 ATD_TOTAL       EQU     12              ; dword - total sectors
-ATD_LEN         EQU     16
+ATD_DMA         EQU     16              ; byte - the transfer mode in force,
+                                        ; as SET FEATURES spells it
+ATD_LEN         EQU     20
 
-ATDF_PRESENT    EQU     01h
-ATDF_LBA48      EQU     02h
-ATDF_LBA        EQU     04h             ; clear = address it the CHS way
+; ATDF_* live in PMDOS.INC, because F1h AL=0Ah publishes them: a
+; program asking how its disk is being talked to is told in these
+; bits, so they are an interface rather than a private note.
+ATDF_NODMA      EQU     0F7h            ; ATDF_DMA taken away again
+ATDF_NO32       EQU     0EFh            ; and ATDF_PIO32
+
+;---------------------------------------------------------------------
+; Bus-master IDE registers, as offsets from the channel's engine.  The
+; primary channel's are at BAR4 and the secondary's at BAR4 + 8, which
+; is the one piece of the layout that is fixed rather than discovered.
+;---------------------------------------------------------------------
+BM_CMD          EQU     0
+BM_STATUS       EQU     2
+BM_PRDT         EQU     4               ; dword - physical address of the
+                                        ; descriptor table
+
+BM_CM_START     EQU     01h             ; run
+BM_CM_READ      EQU     08h             ; direction: 1 = write to memory,
+                                        ; which is a disk READ
+BM_ST_ACTIVE    EQU     01h             ; still going
+BM_ST_ERR       EQU     02h             ; write 1 to clear
+BM_ST_IRQ       EQU     04h             ; write 1 to clear
+
+; A descriptor table entry: a physical address and a byte count, with
+; 0 meaning 65536 and bit 31 of the second dword ending the table.
+PRD_ADDR        EQU     0
+PRD_COUNT       EQU     4
+PRD_LEN         EQU     8
+PRD_EOT         EQU     8000h           ; in the high word of PRD_COUNT
+
+ATA_PRDMAX      EQU     8               ; entries in the table
+ATA_DMAMAX      EQU     256             ; sectors in one DMA command: 128K,
+                                        ; which is also the LBA28 ceiling
 
 ; Spin limit for the status waits.  Deliberately generous: it only has
 ; to be an upper bound, and a wedged controller must not hang the
@@ -97,6 +174,12 @@ ata_init:
         xor     eax,eax
         mov     ecx,(ATA_MAXDEV * ATD_LEN) / 4
         rep     stosd
+
+        call    ata_prdinit
+        call    ata_bminit                      ; before the probe, because
+                                                ; a device decides how it
+                                                ; will transfer at the moment
+                                                ; IDENTIFY answers
 
         xor     ebx,ebx                         ; EBX = device index
 ai_loop:
@@ -349,6 +432,13 @@ aid_store:
         mov     byte ptr [ata_stage],'+'
         mov     [esi+ATD_TOTAL],eax
 
+        ; how this device's data will move.  It has to be decided here
+        ; and not in a later pass, because every input is in ata_idbuf
+        ; and the next IDENTIFY overwrites it
+        call    ata_pickbm
+        call    ata_pickdma
+        call    ata_pick32
+
         ; polled driver: tell the drive to keep its interrupt to itself
         movzx   edx,word ptr [esi+ATD_CTRL]
         mov     al,ATA_DC_NIEN
@@ -582,6 +672,739 @@ as_bad:
         ret
 
 ;=====================================================================
+; ata_prdinit - decide where the descriptor table lives.
+;
+; TWO ALIGNMENT RULES AND ONE OF THEM IS ODD.  The table has to start
+; on a dword boundary, which is ordinary, and it must not CROSS a 64K
+; boundary, which is not: the engine carries the table's address in a
+; register whose low sixteen bits it increments by itself, so a table
+; that straddles the line wraps back to its own beginning.  There is
+; no way to ask an assembler for that, so twice the room is reserved
+; and the half that does not straddle is used.
+;
+; The address handed to the controller is a PHYSICAL one and this is
+; a linear pointer - which is the same number here, because PAGING.INC
+; maps every page to itself.  See ata_dmaok, which is where that stops
+; being true.
+;=====================================================================
+ata_prdinit:
+        push    eax
+        push    edx
+        mov     eax,OFFSET ata_prdraw
+        add     eax,7
+        and     eax,0FFFFFFF8h
+        mov     edx,eax
+        and     edx,0FFFFh
+        add     edx,ATA_PRDMAX * PRD_LEN
+        cmp     edx,10000h
+        jbe     api_fits
+        add     eax,10000h              ; start again on the far side
+        and     eax,0FFFF0000h
+api_fits:
+        mov     [ata_prdaddr],eax
+        pop     edx
+        pop     eax
+        ret
+
+;=====================================================================
+; ata_bminit - find the bus-master engine, if there is one.
+;
+; Class 01h subclass 01h is "mass storage, IDE" and BAR4 is where the
+; specification puts the engine's registers - eight bytes for the
+; primary channel and eight more for the secondary, in one I/O block.
+;
+; THE PROG-IF BYTE IS THE PART THAT MATTERS.  Bit 0 says the primary
+; channel is in native mode and bit 2 says the secondary is, and a
+; native-mode channel does not answer at 1F0h or 170h at all.  This
+; driver probes the two legacy addresses and nothing else, so a
+; channel in native mode is a channel whose drives were never found -
+; and attaching its engine to a device found at a legacy address
+; would be pointing the bus master at the wrong disk.
+;=====================================================================
+ata_bminit:
+        pushad
+        mov     byte ptr [ata_bmok],0
+        mov     word ptr [ata_bmbase],0
+        mov     dword ptr [ata_pciid],0
+
+        mov     cx,0101h                        ; mass storage, IDE
+        call    pci_find
+        jc      abi_none
+        mov     [ata_pcidev],ebx
+
+        mov     al,PCIR_VENDOR
+        call    pci_read
+        mov     [ata_pciid],eax
+
+        mov     al,PCIR_BAR4
+        call    pci_read
+        test    al,1                            ; it has to be an I/O BAR
+        jz      abi_none
+        and     eax,0FFFCh
+        jz      abi_none                        ; ...and a real address
+        mov     [ata_bmbase],ax
+
+        mov     al,PCIR_CLASS
+        call    pci_read
+        shr     eax,8
+        mov     [ata_progif],al
+
+        ; a device that has not been told it may master the bus will
+        ; sit there with its Start bit set and transfer nothing
+        mov     al,PCIR_COMMAND
+        call    pci_read
+        mov     ecx,eax
+        or      ecx,PCIC_BUSMASTER OR PCIC_IOEN
+        mov     al,PCIR_COMMAND
+        call    pci_write
+
+        mov     byte ptr [ata_bmok],1
+abi_none:
+        popad
+        ret
+
+;=====================================================================
+; ata_pickbm - ESI = device.  Fill in ATD_BM, or leave it zero.
+;=====================================================================
+ata_pickbm:
+        push    eax
+        push    edx
+        mov     word ptr [esi+ATD_BM],0
+        cmp     byte ptr [ata_bmok],0
+        je      pbm_out
+        movzx   eax,word ptr [ata_bmbase]
+        or      eax,eax
+        jz      pbm_out
+        mov     dl,[ata_progif]
+        cmp     word ptr [esi+ATD_BASE],1F0h
+        jne     pbm_second
+        test    dl,1                    ; primary in native mode
+        jnz     pbm_out
+        jmp     short pbm_have
+pbm_second:
+        test    dl,4                    ; secondary in native mode
+        jnz     pbm_out
+        add     eax,8
+pbm_have:
+        mov     [esi+ATD_BM],ax
+pbm_out:
+        pop     edx
+        pop     eax
+        ret
+
+;=====================================================================
+; ata_pickdma - ESI = device, ata_idbuf = its IDENTIFY block.  Decide
+;               whether this device transfers by bus master, and say
+;               so in ATD_FLAGS and ATD_DMA.
+;
+; AUTO DOES NOT SELECT A MODE, AND THAT IS THE WHOLE ARGUMENT.  A
+; transfer mode is TWO settings that have to agree: the drive's, which
+; SET FEATURES chooses and which is standardised, and the host
+; adapter's timing, which is a chipset register and is not.  Every
+; controller spells its timing differently - PIIX one way, VIA
+; another, ALi a third - and PM-DOS knows none of them.  Telling a
+; drive to run UDMA against timing the BIOS programmed for something
+; slower is how a disk returns data that is almost right.
+;
+; So AUTO uses the mode that is ALREADY SELECTED - which the BIOS
+; selected at POST, having programmed its own end to match - and if
+; nothing is selected, it does nothing at all and the transfers stay
+; PIO.  That is not timidity: it is the only version of "automatic"
+; that cannot be wrong.
+;
+; IDEDMA=ON and IDEDMA=<mode> do issue SET FEATURES, because a user
+; who writes one of those has said something deliberate about their
+; own machine.  ON stops at UDMA mode 2 - 33 MB/s - which is the last
+; mode a 40-conductor cable carries, and so the last one that can be
+; chosen without asking a cable-detect question that hardware of this
+; era answers unreliably.
+;=====================================================================
+ata_pickdma:
+        push    eax
+        push    ebx
+        mov     byte ptr [esi+ATD_DMA],0
+        and     byte ptr [esi+ATD_FLAGS],ATDF_NODMA
+
+        cmp     byte ptr [ata_dmapol],0
+        je      apd_out                 ; IDEDMA=OFF
+        cmp     word ptr [esi+ATD_BM],0
+        je      apd_out                 ; no engine on this channel
+        test    word ptr [ata_idbuf+ATA_ID_CAPS],0100h
+        jz      apd_out                 ; the drive does not do DMA
+
+        cmp     byte ptr [ata_dmapol],1
+        je      apd_auto
+        cmp     byte ptr [ata_dmapol],3
+        je      apd_forced
+
+        call    ata_bestmode            ; IDEDMA=ON
+        jc      apd_out
+        jmp     short apd_select
+apd_forced:
+        mov     al,[ata_dmaforce]       ; IDEDMA=<mode>
+        call    ata_hasmode
+        jc      apd_out
+apd_select:
+        mov     bl,al
+        call    ata_setmode
+        jc      apd_out
+        mov     al,bl
+        jmp     short apd_take
+apd_auto:
+        call    ata_curmode
+        or      al,al
+        jz      apd_out
+apd_take:
+        mov     [esi+ATD_DMA],al
+        or      byte ptr [esi+ATD_FLAGS],ATDF_DMA
+apd_out:
+        pop     ebx
+        pop     eax
+        ret
+
+;=====================================================================
+; ata_curmode - AL = the DMA mode already selected, or 0 for none.
+;               UDMA first: a drive with both selected is answering
+;               about two different things and the faster one wins.
+;=====================================================================
+ata_curmode:
+        test    word ptr [ata_idbuf+ATA_ID_VALID],4
+        jz      acm_mw
+        movzx   eax,byte ptr [ata_idbuf+ATA_ID_UDMA+1]
+        or      al,al
+        jz      acm_mw
+        call    ata_topbit
+        or      al,40h
+        ret
+acm_mw:
+        test    word ptr [ata_idbuf+ATA_ID_VALID],2
+        jz      acm_none
+        movzx   eax,byte ptr [ata_idbuf+ATA_ID_MWDMA+1]
+        or      al,al
+        jz      acm_none
+        call    ata_topbit
+        or      al,20h
+        ret
+acm_none:
+        xor     eax,eax
+        ret
+
+;=====================================================================
+; ata_bestmode - AL = the fastest mode the drive OFFERS, capped at
+;                UDMA 2.  CF set if it offers none.
+;=====================================================================
+ata_bestmode:
+        test    word ptr [ata_idbuf+ATA_ID_VALID],4
+        jz      abm_mw
+        movzx   eax,byte ptr [ata_idbuf+ATA_ID_UDMA]
+        and     al,07h                  ; modes 0, 1 and 2 only
+        jz      abm_mw
+        call    ata_topbit
+        or      al,40h
+        clc
+        ret
+abm_mw:
+        test    word ptr [ata_idbuf+ATA_ID_VALID],2
+        jz      abm_none
+        movzx   eax,byte ptr [ata_idbuf+ATA_ID_MWDMA]
+        and     al,07h
+        jz      abm_none
+        call    ata_topbit
+        or      al,20h
+        clc
+        ret
+abm_none:
+        stc
+        ret
+
+;=====================================================================
+; ata_hasmode - AL = a mode byte.  CF clear if the drive says it can
+;               do that one.  AL is preserved.
+;=====================================================================
+ata_hasmode:
+        push    ecx
+        push    edx
+        mov     ah,al
+        and     ah,0F8h                 ; 40h = UDMA, 20h = multiword
+        mov     cl,al
+        and     cl,07h
+        mov     dl,1
+        shl     dl,cl                   ; DL = the bit that would say so
+        cmp     ah,40h
+        jne     ahm_mw
+        test    word ptr [ata_idbuf+ATA_ID_VALID],4
+        jz      ahm_no
+        test    byte ptr [ata_idbuf+ATA_ID_UDMA],dl
+        jz      ahm_no
+        jmp     short ahm_yes
+ahm_mw:
+        cmp     ah,20h
+        jne     ahm_no
+        test    word ptr [ata_idbuf+ATA_ID_VALID],2
+        jz      ahm_no
+        test    byte ptr [ata_idbuf+ATA_ID_MWDMA],dl
+        jz      ahm_no
+ahm_yes:
+        pop     edx
+        pop     ecx
+        clc
+        ret
+ahm_no:
+        pop     edx
+        pop     ecx
+        stc
+        ret
+
+;=====================================================================
+; ata_topbit - AL = a byte with at least one bit set.
+;              -> EAX = the index of the highest one.
+;=====================================================================
+ata_topbit:
+        push    ecx
+        movzx   ecx,al
+        mov     eax,7
+atb_lp:
+        bt      ecx,eax
+        jc      atb_done
+        dec     eax
+        jns     atb_lp
+        xor     eax,eax
+atb_done:
+        pop     ecx
+        ret
+
+;=====================================================================
+; ata_setmode - ESI = device, AL = mode byte.  SET FEATURES it.
+;               CF set if the drive refused.
+;=====================================================================
+ata_setmode:
+        push    eax
+        push    ebx
+        push    edx
+        mov     bl,al
+        movzx   edx,word ptr [esi+ATD_BASE]
+        call    ata_select
+        jc      asm_bad
+
+        push    edx
+        add     dx,ATA_FEATURES
+        mov     al,ATA_FEAT_XFER
+        out     dx,al
+        inc     dx                      ; the mode goes in the sector count
+        mov     al,bl
+        out     dx,al
+        pop     edx
+
+        push    edx
+        add     dx,ATA_COMMAND
+        mov     al,ATA_CMD_SETFEAT
+        out     dx,al
+        pop     edx
+        call    ata_delay
+        call    ata_waitbsy
+        jc      asm_bad
+
+        push    edx
+        add     dx,ATA_STATUS
+        in      al,dx
+        pop     edx
+        test    al,ATA_ST_ERR OR ATA_ST_DF
+        jnz     asm_bad
+
+        pop     edx
+        pop     ebx
+        pop     eax
+        clc
+        ret
+asm_bad:
+        pop     edx
+        pop     ebx
+        pop     eax
+        stc
+        ret
+
+;=====================================================================
+; ata_pick32 - ESI = device.  Is the data port read a dword at a time?
+;
+; Two independent reasons to say yes and each covers an era the other
+; does not; the file header argues it at length.  Neither is a
+; measurement, because there is no way to measure this: a host adapter
+; that cannot latch two words does not report an error, it returns
+; half the data.
+;=====================================================================
+ata_pick32:
+        and     byte ptr [esi+ATD_FLAGS],ATDF_NO32
+        cmp     byte ptr [ata_32pol],0
+        je      p32_out                 ; IDE32=OFF
+        cmp     byte ptr [ata_32pol],2
+        je      p32_yes                 ; IDE32=ON
+        test    word ptr [ata_idbuf+ATA_ID_DWIO],1
+        jnz     p32_yes                 ; the drive says so (ATA-1/2)
+        cmp     byte ptr [ata_bmok],0
+        je      p32_out
+p32_yes:                                ; or it is on a PCI controller
+        or      byte ptr [esi+ATD_FLAGS],ATDF_PIO32
+p32_out:
+        ret
+
+;=====================================================================
+; ata_dmaok - CF clear if [ata_buf] for [ata_chunk] sectors is memory
+;             a bus master may be pointed at.
+;
+; THE IDENTITY MAP IS WHY THIS IS FOUR COMPARISONS.  PAGING.INC maps
+; every page to itself, so a linear address IS a physical one and the
+; kernel's own pointers can go on the bus - with two exceptions, both
+; below 1MB and both deliberate.  The sixteen pages from 100000h are
+; what the A20 gate aliases down to zero, so an address in there means
+; one of two different physical places depending on a switch.  And
+; whatever UMB.INC and EMS.INC have pointed at upper memory means, by
+; definition, somewhere other than itself.
+;
+; Everything below A0000h is itself and always has been; everything
+; from DOS_BASE up is itself and always will be.  The band between
+; them is the one place in the machine where our own pointer is not
+; the device's, and a transfer aimed there goes by PIO - which needs
+; no physical address at all, because the processor is the one doing
+; the moving.
+;
+; The word alignment is the descriptor format's rule rather than
+; ours: a PRD address with bit 0 set is not representable.
+;=====================================================================
+ata_dmaok:
+        push    eax
+        push    edx
+        mov     eax,[ata_buf]
+        test    al,1
+        jnz     adk_no
+        mov     edx,[ata_chunk]
+        shl     edx,9
+        add     edx,eax                 ; EDX = one past the last byte
+        jc      adk_no
+        cmp     edx,0A0000h
+        jbe     adk_yes
+        cmp     eax,DOS_BASE
+        jb      adk_no
+adk_yes:
+        pop     edx
+        pop     eax
+        clc
+        ret
+adk_no:
+        pop     edx
+        pop     eax
+        stc
+        ret
+
+;=====================================================================
+; ata_prdbuild - describe [ata_buf] for [ata_chunk] sectors as a list
+;                of physical regions.  CF set if it will not fit.
+;
+; A region may not cross a 64K boundary - the same wrap that decides
+; where the table itself lives - so the buffer is cut at every one it
+; spans.  A length of zero in an entry means 65536, which is why the
+; count is stored as a word and the full 64K case needs no special
+; handling: it stores as zero by arithmetic.
+;=====================================================================
+ata_prdbuild:
+        push    eax
+        push    ebx
+        push    ecx
+        push    edx
+        push    edi
+        mov     edi,[ata_prdaddr]
+        mov     ebx,[ata_buf]           ; EBX = where we have got to
+        mov     ecx,[ata_chunk]
+        shl     ecx,9                   ; ECX = bytes still to describe
+        xor     edx,edx                 ; EDX = entries used
+apr_lp:
+        cmp     edx,ATA_PRDMAX
+        jae     apr_full
+        mov     eax,ebx
+        and     eax,0FFFFh
+        neg     eax
+        add     eax,10000h              ; EAX = bytes to the next boundary
+        cmp     eax,ecx
+        jbe     apr_take
+        mov     eax,ecx
+apr_take:
+        mov     [edi+PRD_ADDR],ebx
+        mov     [edi+PRD_COUNT],ax
+        mov     word ptr [edi+PRD_COUNT+2],0
+        add     ebx,eax
+        sub     ecx,eax
+        add     edi,PRD_LEN
+        inc     edx
+        or      ecx,ecx
+        jnz     apr_lp
+        or      word ptr [edi-PRD_LEN+PRD_COUNT+2],PRD_EOT
+        pop     edi
+        pop     edx
+        pop     ecx
+        pop     ebx
+        pop     eax
+        clc
+        ret
+apr_full:
+        pop     edi
+        pop     edx
+        pop     ecx
+        pop     ebx
+        pop     eax
+        stc
+        ret
+
+;=====================================================================
+; ata_dmaprep - ESI = device.  Point the engine at the table and set
+;               the direction, before the command goes to the drive.
+;
+; The order the specification gives is: table, direction, clear the
+; latched bits, issue the ATA command, and only then Start.  It reads
+; like ceremony and is not - the engine begins moving data the moment
+; the drive asserts DMARQ, so Start must not be set until there is a
+; command for the drive to be executing.
+;=====================================================================
+ata_dmaprep:
+        push    eax
+        push    edx
+        movzx   edx,word ptr [esi+ATD_BM]
+
+        xor     al,al                   ; stop whatever it thinks it is
+        out     dx,al                   ; doing
+
+        add     dx,BM_STATUS
+        in      al,dx
+        or      al,BM_ST_IRQ OR BM_ST_ERR
+        out     dx,al                   ; both are write-one-to-clear
+
+        movzx   edx,word ptr [esi+ATD_BM]
+        add     dx,BM_PRDT
+        mov     eax,[ata_prdaddr]
+        out     dx,eax
+
+        movzx   edx,word ptr [esi+ATD_BM]
+        mov     al,BM_CM_READ           ; the engine WRITES to memory
+        cmp     byte ptr [ata_dir],0
+        je      adp_dir
+        xor     al,al
+adp_dir:
+        out     dx,al
+        pop     edx
+        pop     eax
+        ret
+
+;=====================================================================
+; ata_dmarun - ESI = device.  Start the engine and wait for it.
+;              CF set on failure, and [ata_bmbad] says whose fault it
+;              was.
+;
+; WITH nIEN SET THE INTERRUPT BIT NEVER ARRIVES, so the thing waited
+; on is the ACTIVE bit going down, which happens when the last
+; descriptor is exhausted.  That is the same event and needs no
+; interrupt controller behind it - which is the point, because this
+; driver has no IRQ 14 handler and the slave PIC is masked.
+;
+; A drive that fails part way through never exhausts the table, so
+; the wait ends in a timeout rather than a clean stop; that is why
+; the drive's own status is read afterwards either way.  An error the
+; DRIVE reports is an ordinary bad sector and is passed up.  An error
+; the ENGINE reports, or a stop that never came with the drive
+; perfectly happy, is a bus-master fault - and a bus master that has
+; got a transfer wrong once is not trusted with the retry.
+;=====================================================================
+ata_dmarun:
+        push    eax
+        push    ebx
+        push    ecx
+        push    edx
+        mov     byte ptr [ata_bmbad],0
+        movzx   ebx,word ptr [esi+ATD_BM]
+
+        mov     edx,ebx
+        in      al,dx
+        or      al,BM_CM_START
+        out     dx,al
+
+        mov     ecx,ATA_SPIN
+        lea     edx,[ebx+BM_STATUS]
+adr_wait:
+        in      al,dx
+        test    al,BM_ST_ERR
+        jnz     adr_stop
+        test    al,BM_ST_ACTIVE
+        jz      adr_stop
+        dec     ecx
+        jnz     adr_wait
+adr_stop:
+        mov     edx,ebx                 ; stop the engine whatever happened
+        xor     al,al
+        out     dx,al
+        lea     edx,[ebx+BM_STATUS]
+        in      al,dx
+        mov     [ata_bmst],al           ; the engine's account of it, kept
+                                        ; somewhere that is not half of the
+                                        ; port number we are still using
+        or      al,BM_ST_IRQ OR BM_ST_ERR
+        out     dx,al
+
+        movzx   edx,word ptr [esi+ATD_BASE]
+        call    ata_waitbsy
+        jc      adr_bmfault             ; a drive that never came back is
+                                        ; not evidence against itself, but
+                                        ; there is nothing else to blame
+        push    edx
+        add     dx,ATA_STATUS
+        in      al,dx
+        pop     edx
+        test    al,ATA_ST_ERR OR ATA_ST_DF
+        jnz     adr_drvfault
+
+        test    byte ptr [ata_bmst],BM_ST_ERR
+        jnz     adr_bmfault
+        test    byte ptr [ata_bmst],BM_ST_ACTIVE    ; still going, drive idle
+        jnz     adr_bmfault
+
+        pop     edx
+        pop     ecx
+        pop     ebx
+        pop     eax
+        clc
+        ret
+adr_bmfault:
+        mov     byte ptr [ata_bmbad],1
+adr_drvfault:
+        pop     edx
+        pop     ecx
+        pop     ebx
+        pop     eax
+        stc
+        ret
+
+;=====================================================================
+; ata_config - IOS_ATACFG.  AL = 0 sets the DMA policy from AH (with
+;              the mode byte in BL when AH = 3), AL = 1 sets the
+;              32-bit PIO policy from AH.
+;
+; IT RE-RUNS THE WHOLE PROBE, and that is deliberate rather than
+; lazy.  A policy does not change any fact about a device; it changes
+; what the facts MEAN, and every one of those facts is in an IDENTIFY
+; block that was overwritten three devices ago.  Asking again is the
+; only honest way to apply it, the probe is idempotent, and the one
+; caller is a CONFIG.SYS line read before any program exists.
+;=====================================================================
+ata_config:
+        push    eax
+        or      al,al
+        jnz     acf_p32
+        mov     [ata_dmapol],ah
+        mov     [ata_dmaforce],bl
+        jmp     short acf_redo
+acf_p32:
+        cmp     al,1
+        jne     acf_out
+        mov     [ata_32pol],ah
+acf_redo:
+        call    ata_init
+acf_out:
+        pop     eax
+        ret
+
+;=====================================================================
+; ata_info - IOS_ATAINFO.  AL = device index, or FFh for the
+;            controller.
+;
+;   a device:     EAX = ATDF_* flags, EBX = its engine's base port,
+;                 ECX = the transfer mode in force, EDX = sectors
+;   the whole:    EAX = disks found, EBX = PCI vendor:device,
+;                 ECX = the engine's base, EDX = the prog-if byte,
+;                 bit 16 PCI answered, bit 17 an engine was found,
+;                 bits 24-27 the DMA policy, 28-31 the 32-bit one
+;
+; It exists because the report has to come from inside the kernel:
+; MEM and a test program run at ring 3 out of a slot with no I/O
+; privilege, so a native program cannot look at a controller even to
+; describe it.  Same argument as F1h AL=9 makes for expanded memory.
+;=====================================================================
+ata_info:
+        cmp     al,0FFh
+        je      ain_whole
+        movzx   ebx,al
+        cmp     ebx,ATA_MAXDEV
+        jae     ain_bad
+        imul    ebx,ATD_LEN
+        add     ebx,OFFSET ata_devs
+        movzx   eax,byte ptr [ebx+ATD_FLAGS]
+        movzx   ecx,byte ptr [ebx+ATD_DMA]
+        mov     edx,[ebx+ATD_TOTAL]
+        movzx   ebx,word ptr [ebx+ATD_BM]
+        ret
+ain_bad:
+        xor     eax,eax
+        xor     ebx,ebx
+        xor     ecx,ecx
+        xor     edx,edx
+        ret
+ain_whole:
+        mov     eax,[ata_count]
+        mov     ebx,[ata_pciid]
+        movzx   ecx,word ptr [ata_bmbase]
+        movzx   edx,byte ptr [ata_progif]
+        cmp     byte ptr [pci_ok],0
+        je      ain_nopci
+        or      edx,00010000h
+ain_nopci:
+        cmp     byte ptr [ata_bmok],0
+        je      ain_nobm
+        or      edx,00020000h
+ain_nobm:
+        movzx   eax,byte ptr [ata_dmapol]
+        shl     eax,24
+        or      edx,eax
+        movzx   eax,byte ptr [ata_32pol]
+        shl     eax,28
+        or      edx,eax
+        mov     eax,[ata_count]
+        ret
+
+;=====================================================================
+; ata_cmd28 / ata_cmd48 - AL = the command byte for this transfer.
+;
+; Four commands where there were two, and the choice is made in one
+; place because it is made from the same two flags each time: which
+; way the data is going, and who is going to move it.
+;=====================================================================
+ata_cmd28:
+        cmp     byte ptr [ata_usedma],0
+        jne     ac28_dma
+        mov     al,ATA_CMD_READ28
+        cmp     byte ptr [ata_dir],0
+        je      ac28_out
+        mov     al,ATA_CMD_WRITE28
+        ret
+ac28_dma:
+        mov     al,ATA_CMD_RDDMA
+        cmp     byte ptr [ata_dir],0
+        je      ac28_out
+        mov     al,ATA_CMD_WRDMA
+ac28_out:
+        ret
+
+ata_cmd48:
+        cmp     byte ptr [ata_usedma],0
+        jne     ac48_dma
+        mov     al,ATA_CMD_READ48
+        cmp     byte ptr [ata_dir],0
+        je      ac48_out
+        mov     al,ATA_CMD_WRITE48
+        ret
+ac48_dma:
+        mov     al,ATA_CMD_RDDMA48
+        cmp     byte ptr [ata_dir],0
+        je      ac48_out
+        mov     al,ATA_CMD_WRDMA48
+ac48_out:
+        ret
+
+;=====================================================================
 ; ata_rw - the transfer itself.
 ;
 ;   ESI = device entry   [ata_lba] = starting LBA
@@ -610,6 +1433,29 @@ arw_cap:
         mov     ecx,eax
 arw_have:
         mov     [ata_chunk],ecx
+
+        ; can this chunk go by bus master?  The question is asked per
+        ; chunk rather than per device because the answer depends on
+        ; WHERE the buffer is, and that changes call by call
+        mov     byte ptr [ata_usedma],0
+        test    byte ptr [esi+ATD_FLAGS],ATDF_DMA
+        jz      arw_pio32
+        cmp     ecx,ATA_DMAMAX
+        jbe     arw_dmacap
+        mov     ecx,ATA_DMAMAX
+        mov     [ata_chunk],ecx
+arw_dmacap:
+        call    ata_dmaok
+        jc      arw_pio32
+        call    ata_prdbuild
+        jc      arw_pio32
+        mov     byte ptr [ata_usedma],1
+arw_pio32:
+        mov     byte ptr [ata_p32],0
+        test    byte ptr [esi+ATD_FLAGS],ATDF_PIO32
+        jz      arw_wide
+        mov     byte ptr [ata_p32],1
+arw_wide:
 
         movzx   edx,word ptr [esi+ATD_BASE]
         call    ata_select
@@ -667,11 +1513,7 @@ arw_chs:
         out     dx,al                   ; cylinder 15:8
         pop     edx
 
-        mov     al,ATA_CMD_READ28
-        cmp     byte ptr [ata_dir],0
-        je      arw_go2
-        mov     al,ATA_CMD_WRITE28
-arw_go2:
+        call    ata_cmd28
         jmp     arw_issue
 
 ;--- LBA28 -----------------------------------------------------------
@@ -701,11 +1543,7 @@ arw_lba28:
         out     dx,al                   ; LBA 23:16
         pop     edx
 
-        mov     al,ATA_CMD_READ28
-        cmp     byte ptr [ata_dir],0
-        je      arw_chs_go
-        mov     al,ATA_CMD_WRITE28
-arw_chs_go:
+        call    ata_cmd28
         jmp     arw_issue
 
 ;--- LBA48 -----------------------------------------------------------
@@ -749,13 +1587,17 @@ arw_lba48:
         out     dx,al                   ; LBA 23:16
         pop     edx
 
-        mov     al,ATA_CMD_READ48
-        cmp     byte ptr [ata_dir],0
-        je      arw_issue
-        mov     al,ATA_CMD_WRITE48
+        call    ata_cmd48
 
-;--- issue it and move the data one sector at a time -----------------
+;--- issue it, and then move the data --------------------------------
+;
+; The engine is armed BEFORE the command and started AFTER it: see
+; ata_dmaprep, which is where the order is argued.
 arw_issue:
+        cmp     byte ptr [ata_usedma],0
+        je      arw_nodmaprep
+        call    ata_dmaprep             ; AL is the command byte and this
+arw_nodmaprep:                          ; routine keeps it
         push    edx
         add     dx,ATA_COMMAND
         out     dx,al
@@ -777,6 +1619,29 @@ IFDEF ATA_DEBUG
 arw_nodbg:
 ENDIF
 
+        cmp     byte ptr [ata_usedma],0
+        je      arw_polled
+
+;--- the controller moves it, and we wait -----------------------------
+        call    ata_dmarun
+        jc      arw_dmabad
+        mov     eax,[ata_chunk]         ; nothing advanced the pointer a
+        shl     eax,9                   ; sector at a time this way
+        add     [ata_buf],eax
+        jmp     arw_written             ; over the whole polled path
+
+arw_dmabad:
+        cmp     byte ptr [ata_bmbad],0
+        je      arw_fail                ; the DRIVE failed: a real error
+        ; the ENGINE failed.  Take this device off DMA for the rest of
+        ; the session and do the same chunk again the slow way: nothing
+        ; has been advanced, so arw_more starts it over
+        and     byte ptr [esi+ATD_FLAGS],ATDF_NODMA
+        mov     byte ptr [esi+ATD_DMA],0
+        jmp     arw_more
+
+;--- or the processor does, a sector at a time ------------------------
+arw_polled:
         mov     ecx,[ata_chunk]
 arw_sector:
         push    ecx
@@ -786,13 +1651,27 @@ arw_sector:
         push    edx
         add     dx,ATA_DATA
         mov     edi,[ata_buf]
-        mov     ecx,256                 ; 512 bytes as words
+        mov     ecx,256                 ; 512 bytes as words...
+        cmp     byte ptr [ata_p32],0
+        je      arw_narrow
+        mov     ecx,128                 ; ...or as doublewords
+arw_narrow:
         cmp     byte ptr [ata_dir],0
         jne     arw_out
+        cmp     byte ptr [ata_p32],0
+        je      arw_in16
+        rep     insd
+        jmp     short arw_moved
+arw_in16:
         rep     insw
         jmp     short arw_moved
 arw_out:
         mov     esi,edi                 ; OUTSW sources from DS:ESI
+        cmp     byte ptr [ata_p32],0
+        je      arw_out16
+        rep     outsd
+        jmp     short arw_moved
+arw_out16:
         rep     outsw
 arw_moved:
         pop     edx
@@ -801,7 +1680,10 @@ arw_moved:
         call    ata_delay               ; settle before polling again
         pop     ecx
         dec     ecx
-        jnz     arw_sector
+        jz      arw_written             ; the loop body outgrew a short jump
+        jmp     arw_sector              ; when the wide path went into it
+
+arw_written:
 
         ; writes have to be flushed or the drive may lie about being done
         cmp     byte ptr [ata_dir],0
@@ -912,5 +1794,29 @@ ata_nsec    dd  0
 ata_chunk   dd  0
 ata_buf     dd  0
 
+;--- how the data moves ----------------------------------------------
+ata_dmapol   db 1                       ; 0 off, 1 auto, 2 best, 3 forced
+ata_dmaforce db 0                       ; the mode IDEDMA=<mode> named
+ata_32pol    db 1                       ; 0 off, 1 auto, 2 on
+ata_usedma   db 0                       ; this chunk, not this device
+ata_p32      db 0                       ; ditto, for the data port width
+ata_bmok     db 0                       ; a bus-master controller was found
+ata_progif   db 0                       ; and which of its channels are
+            db  0                       ; in compatibility mode
+ata_bmbad   db  0                       ; the last failure was the engine's
+ata_bmst    db  0                       ; and its status when it ended
+            db  0
+            db  0
+ata_bmbase  dw  0                       ; BAR4: the engine's register block
+            dw  0
+ata_pcidev  dd  0                       ; where in configuration space
+ata_pciid   dd  0                       ; and what it says it is
+ata_prdaddr dd  0                       ; the descriptor table, placed by
+                                        ; ata_prdinit rather than declared
+
 ata_devs    db  ATA_MAXDEV * ATD_LEN dup(0)
 ata_idbuf   db  512 dup(0)
+
+; Twice the room the table needs, so that a start which does not cross
+; a 64K boundary can always be found inside it.
+ata_prdraw  db  (ATA_PRDMAX * PRD_LEN * 2) + 8 dup(0)

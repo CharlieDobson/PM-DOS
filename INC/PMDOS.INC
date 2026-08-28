@@ -11,13 +11,13 @@
 ;   00000000-000004FF   Real-mode IVT and BIOS data area
 ;   000004E8-000004EB   RMSAVE_ESP - the caller's 32-bit ESP
 ;   000004F0-000004F5   RMRET    - 16:32 far pointer, thunk return address
-;   000004F6-000004F7   DOS_ERRFLG / DOS_INDOS - the two DOS status flags
 ;   00000500-0000052B   RMFRAME  - register frame for the PM->RM thunk
 ;   00000530-00000FFF   Real-mode stack (SS=0000, SP=1000) - 2.7K
 ;   00001000-00001FFF   PMIO.SYS real-mode stub (4K, fixed size)
 ;   00002000-00003FFF   XFER     - transfer buffer for BIOS disk I/O
-;   00004000-000040FF   DOS data segment - the list of lists and the
-;                       device headers, BELOW the arena as in real DOS
+;   00004000-000040FF   DOS data segment - the list of lists, the device
+;                       headers and the swappable data area (SDA_OFF),
+;                       BELOW the arena as in real DOS
 ;   00004100-0009FFFF   the DOS box's transient program area, ending
 ;                       where the BIOS says conventional memory does
 ;   000A0000-000FFFFF   Video RAM and ROM
@@ -1373,8 +1373,7 @@ RMRET           EQU     000004F0h               ; dd offset32, dw selector
 RMFRAME         EQU     00000500h               ; RMR_* offsets below
 
 ;---------------------------------------------------------------------
-; The two DOS status flags, and why they live down here in the BIOS
-; data area rather than in the kernel's own data with everything else.
+; THE SWAPPABLE DATA AREA, and with it the two DOS status flags.
 ;
 ; 21h/34h hands a program the ADDRESS of the InDOS flag, and the
 ; program that asks is nearly always a TSR that will read it from
@@ -1383,19 +1382,79 @@ RMFRAME         EQU     00000500h               ; RMR_* offsets below
 ; mode far pointer, so the flag has to be somewhere a real-mode far
 ; pointer can reach - and the kernel's data segment is above 1MB.
 ;
-; They go at the tail of the BDA's user area, which the thunk's return
-; address already occupies, rather than into the transient program
-; area: a paragraph taken out of the TPA would be a paragraph off
-; every DOS box AND a stray block in the MCB chain that MEM would
-; report and nobody could account for.
-;
 ; The critical-error flag is at InDOS-1 ON PURPOSE.  That adjacency is
 ; not a coincidence in real DOS either, and a great deal of TSR code
 ; finds the error flag by subtracting one from what 34h returned
 ; rather than by calling 5D06h.
+;
+; AND NOW 5D06h ANSWERS TOO, WHICH IS WHY THE FLAGS MOVED.  They used
+; to sit at 4F6h and 4F7h, in the tail of the BIOS data area's user
+; region next to the thunk's return address.  That was a fine place
+; for two loose bytes and an impossible one for a STRUCTURE: 5D06h
+; hands out the address of a contiguous block whose first two bytes
+; are exactly these flags, and at 4F6h the block would have run into
+; RMFRAME at 500h after six bytes.
+;
+; So they live in the DOS data segment now - the same 256 bytes the
+; list of lists is built in, above it and inside the same paragraph a
+; guest already addresses as DOSDATA_SEG - which is precisely where
+; MS-DOS keeps its own: SWAP_START in the DOS data segment, with
+; ErrorMode first and INDOS second.  The layout below is MS-DOS 6's,
+; field for field, taken from SWAP_START in INC\CONST2.ASM rather than
+; from a reference book, and it stops where MS-DOS's Swap_Always label
+; does because everything past that point is working storage for a DOS
+; whose work happens somewhere else entirely.
+;
+; WHAT A CONSUMER GETS IS THE TRUTH AND IT IS SHORT.  MS-DOS 5 publishes
+; about 1440 bytes here; PM-DOS publishes 26.  The difference is not
+; modesty - it is that the other 1414 bytes are MS-DOS's internal
+; scratch (device request packets, directory-search state, arena
+; walking) and PM-DOS's equivalents are 32-bit structures above 1MB
+; that no real-mode pointer can name.  A block of plausible-looking
+; zeroes at those offsets would be worse than a short answer, for the
+; same reason the list of lists says FFFF:FFFF where it has nothing.
 ;---------------------------------------------------------------------
-DOS_ERRFLG      EQU     000004F6h               ; byte - in a critical error
-DOS_INDOS       EQU     000004F7h               ; byte - INT 21h nesting depth
+SDA_OFF         EQU     00000090h               ; within the DOS data segment,
+                                                ; above the list of lists
+SDA_BASE        EQU     DOSDATA + SDA_OFF
+SDA_SEG         EQU     DOSDATA_SEG             ; what 5D06h answers in DS...
+SDA_PTR         EQU     SDA_OFF                 ; ...and in SI
+
+SDA_ERRMODE     EQU     00h     ; db - INT 24h in progress
+SDA_INDOS       EQU     01h     ; db - INT 21h nesting depth
+SDA_WPERR       EQU     02h     ; db - write-protect error drive, FFh = none
+SDA_LOCUS       EQU     03h     ; db - extended error locus
+SDA_EXTERR      EQU     04h     ; dw - extended error code
+SDA_ACTION      EQU     06h     ; db - suggested action
+SDA_CLASS       EQU     07h     ; db - error class
+SDA_ERRPTR      EQU     08h     ; dd - seg:off of the item in error
+SDA_DTA         EQU     0Ch     ; dd - the current disk transfer address
+SDA_PSP         EQU     10h     ; dw - the current process
+SDA_CONCSP      EQU     12h     ; dw - SP saved across an INT 23h
+SDA_EXITCODE    EQU     14h     ; dw - the last program's return code
+SDA_DRIVE       EQU     16h     ; db - current drive, 0 = A
+SDA_BREAK       EQU     17h     ; db - extended break checking
+SDA_CPSW        EQU     18h     ; db - code page switching in progress
+SDA_CPSWSAVE    EQU     19h     ; db - and a copy of it kept across an abort
+SDA_LEN         EQU     1Ah     ; MS-DOS's Swap_Always is here, and so is our
+                                ; end: every byte of ours must always be
+                                ; swapped, so 5D06h answers CX = DX = this
+
+DOS_ERRFLG      EQU     SDA_BASE + SDA_ERRMODE  ; byte - in a critical error
+DOS_INDOS       EQU     SDA_BASE + SDA_INDOS    ; byte - INT 21h nesting depth
+
+; The list of lists is built at DOSDATA and the SDA sits above it in
+; the same 256 bytes.  Both are published addresses, so an edit that
+; grows either one into the other is a bug the assembler should catch
+; rather than something a DOS box discovers by reading its own InDOS
+; flag out of the middle of a device header.
+IF SDA_OFF LT GLOL_SIZE
+        .ERR    <SDA: the swappable data area overlaps the list of lists>
+ENDIF
+IF SDA_OFF + SDA_LEN GT DOSDATA_SIZE
+        .ERR    <SDA: the swappable data area runs past the DOS data segment>
+ENDIF
+
 RMT_PM2RM       EQU     0010h                   ; entry in the RM stub
 
 ; Register frame layout. Deliberately in PUSHAD order so the thunk can
@@ -1566,6 +1625,35 @@ IOS_KBRATE      EQU     IOSVC + 70h             ; AL = the 8042 typematic byte:
                                                 ; rate in bits 4-0, delay in
                                                 ; bits 6-5.  CONFIG.SYS's
                                                 ; KEYRATE= is the only caller
+IOS_ATACFG      EQU     IOSVC + 74h             ; AL = 0: DMA policy in AH -
+                                                ; 0 off, 1 auto, 2 the best
+                                                ; mode the drive offers, 3 the
+                                                ; mode in BL.  AL = 1: 32-bit
+                                                ; PIO policy in AH - 0 off,
+                                                ; 1 auto, 2 on.  IDEDMA= and
+                                                ; IDE32= are the only callers,
+                                                ; and setting either re-probes
+;---------------------------------------------------------------------
+; What an ATA device is, in one byte.  ATA.INC keeps them in its own
+; table and 21h/F1h AL=0Ah hands them to a program unchanged, which is
+; why they are declared here rather than there: the moment a report
+; leaves the kernel the bits in it are an interface.
+;---------------------------------------------------------------------
+ATDF_PRESENT    EQU     01h                     ; a disk answered IDENTIFY
+ATDF_LBA48      EQU     02h                     ; addressed 48 bits at a time
+ATDF_LBA        EQU     04h                     ; addressed at all, rather
+                                                ; than by cylinder and head
+ATDF_DMA        EQU     08h                     ; the controller moves the
+                                                ; data, not the processor
+ATDF_PIO32      EQU     10h                     ; the data port is read a
+                                                ; doubleword at a time
+
+IOS_ATAINFO     EQU     IOSVC + 78h             ; AL = an ATA device index, or
+                                                ; FFh for the controller.  See
+                                                ; ata_info: it is what F1h
+                                                ; AL=0Ah reports, and it has to
+                                                ; be asked here because a ring
+                                                ; 3 program cannot read a port
 
 ;---------------------------------------------------------------------
 ; The three ports the V86 monitor takes away from the guest.  Two of
@@ -2259,7 +2347,7 @@ SHELLTAIL_MAX   EQU     130             ; length byte + 126 + CR + slack
 ; has a call of its own; these two agree.
 ;---------------------------------------------------------------------
 PMDOS_MAJOR     EQU     0
-PMDOS_MINOR     EQU     42
+PMDOS_MINOR     EQU     44
 
 DOSVER_MAJOR    EQU     6
 DOSVER_MINOR    EQU     22

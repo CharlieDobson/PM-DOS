@@ -60,6 +60,8 @@ svc_table:
         dd      pg_map                  ; IOS_PGMAP
         dd      pg_umbprobe             ; IOS_UMBPROBE
         dd      kb_typematic            ; IOS_KBRATE
+        dd      ata_config              ; IOS_ATACFG
+        dd      ata_info                ; IOS_ATAINFO
 
 ;=====================================================================
 ; pm_entry - first instruction executed in 32-bit protected mode.
@@ -102,6 +104,9 @@ ENDIF
 
         call    pic_init
         call    kb_init
+        call    pci_init                ; before blk_init, which probes the
+                                        ; disks and asks each one how it
+                                        ; would rather be talked to
         call    blk_init
 IFDEF PMDOS_DEBUG
         mov     esi,OFFSET msgATA
@@ -228,6 +233,7 @@ panic_hlt:
         INCLUDE CONSOLE.INC
         INCLUDE KEYBD.INC
         INCLUDE RMCALL.INC
+        INCLUDE PCI.INC
         INCLUDE ATA.INC
         INCLUDE BLOCK.INC
 

@@ -29,8 +29,28 @@
 ; Included by DOSMAIN.ASM.
 ;=====================================================================
 
-CFG_BUF_SIZE    EQU     4096            ; a CONFIG.SYS bigger than this
-CFG_LINE_MAX    EQU     160             ; is not a configuration file
+; A CONFIG.SYS bigger than this is not a configuration file - but the
+; SIZE IS THE SMALL HALF OF THIS AND SAYING SO IS THE LARGE ONE.  It
+; was 4096 from the first day and nothing checked whether the file
+; fitted: a longer one was read as far as the buffer went and the rest
+; was DROPPED IN SILENCE, with no message and no clue.  PM-DOS's own
+; sample CONFIG.SYS grew to 5,543 bytes over eleven releases, so its
+; last third - NULLTRAP=, the whole KEYRATE block, and any statement
+; anyone added at the bottom - had not been read for some time.  The
+; three statements it lost all happened to be documenting defaults,
+; which is exactly why nobody noticed.
+;
+; Found in v0.43 by adding IDEDMA= to the end of that file and
+; watching it do nothing, which is the third release running where a
+; test written for one thing has found something else.
+;
+; 16K RATHER THAN 8K, AND THE ARITHMETIC IS THE ARGUMENT.  The sample
+; file gains roughly a kilobyte of its own documentation per release;
+; 8192 would have been a wall again within two of them, and the wall
+; is the thing being removed.  16K is a tenth of the kernel and buys
+; a decade of releases.
+CFG_BUF_SIZE    EQU     16384
+CFG_LINE_MAX    EQU     160
 CFG_KEY_MAX     EQU     16
 
 ; The walks over the file, in order.  See cfg_phaseof for which
@@ -58,15 +78,60 @@ config_run:
         mov     edx,OFFSET cfg_buf
         mov     ah,3Fh
         int     21h
-        pushfd
-        push    eax
-        mov     ah,3Eh                  ; close before doing anything
+        mov     byte ptr [cfg_bad],0
+        jnc     cfg_readok
+        mov     byte ptr [cfg_bad],1
+        xor     eax,eax
+cfg_readok:
+        mov     [cfg_got],eax
+
+        ; DID IT ALL FIT?  A read that filled the buffer exactly may
+        ; have been the whole file or may have been the first part of
+        ; a longer one, and those are very different: the second means
+        ; statements the user wrote are about to be ignored.  One more
+        ; byte settles it, and costs a call on the boot path once.
+        ;
+        ; THE ANSWER IS CARRIED IN MEMORY AND NOT IN THE CARRY FLAG,
+        ; and that is not fussiness.  This routine used to close the
+        ; file with the read's own CF held across the call in PUSHFD,
+        ; which was right while nothing stood between the read and the
+        ; close.  Putting a COMPARISON in between quietly changed what
+        ; PUSHFD was saving - "the file is shorter than the buffer" is
+        ; JB, which is CF SET - so the close preserved a carry that
+        ; meant success, the test below read it as failure, and every
+        ; CONFIG.SYS in the machine was abandoned in silence.  Nothing
+        ; announced it because an absent CONFIG.SYS is not an error.
+        mov     byte ptr [cfg_over],0
+        cmp     byte ptr [cfg_bad],0
+        jne     cfg_shut
+        cmp     eax,CFG_BUF_SIZE
+        jb      cfg_shut
+        mov     ecx,1
+        mov     edx,OFFSET cfg_extra
+        mov     ah,3Fh
         int     21h
-        pop     eax
-        popfd
-        jc      cfg_none
+        jc      cfg_shut
+        or      eax,eax
+        jz      cfg_shut
+        mov     byte ptr [cfg_over],1
+cfg_shut:
+        mov     ah,3Eh                  ; the handle goes back whatever
+        int     21h                     ; happened, and nothing below
+                                        ; needs a flag to survive it
+
+        cmp     byte ptr [cfg_bad],0
+        jne     cfg_none
+        mov     eax,[cfg_got]
         or      eax,eax
         jz      cfg_none
+
+        cmp     byte ptr [cfg_over],0
+        je      cfg_fitted
+        push    eax
+        mov     esi,OFFSET msgCfgLong
+        call    dword ptr ds:[IOS_CONSTR]
+        pop     eax
+cfg_fitted:
 
         mov     esi,OFFSET cfg_buf      ; NUL-terminate what we read
         add     esi,eax
@@ -426,9 +491,17 @@ cbk_on:
 ;               and KEYBD.INC deliberately tracks neither - see the
 ;               note on BDAK_CAPS.  It is a keyboard feature wearing a
 ;               CONFIG.SYS statement's clothes.
-;   SWITCHES=   /F skips a startup delay there is none of, /N disables
-;               function keys at boot that are not read, /K forces a
-;               conventional keyboard that is the only kind here.
+;   SWITCHES=   /F skips a startup delay there is none of and /N
+;               disables startup keys nothing reads - but /K HAS
+;               ACQUIRED A SUBJECT since this note was written.  It
+;               means "treat the keyboard as an 84-key one", and until
+;               v0.42 that was the only kind here; now KEYBD.INC
+;               reports the E0 cursor pad, F11 and F12 and the Alt
+;               rows, so there is something for /K to take away.  It
+;               is the one statement in this list that has moved from
+;               "never" to "real work", and the work is small: fold
+;               the extended codes to their conventional equivalents
+;               and refuse the two keys an 84-key board does not have.
 ;   the [menu] family - multi-config.  Every block is read and none is
 ;               chosen from, which is deliberate and documented.
 ;---------------------------------------------------------------------
@@ -824,6 +897,130 @@ ckr_have:
         shl     eax,5
         or      eax,edx
         call    dword ptr ds:[IOS_KBRATE]
+        ret
+
+;---------------------------------------------------------------------
+; IDEDMA=OFF|AUTO|ON|<mode> - how the IDE disks move their data.
+;
+;   IDEDMA=OFF      programmed I/O, always.  The kernel did nothing
+;                   else before v0.43 and this is how to get that back
+;                   on a machine where the bus master misbehaves.
+;   IDEDMA=AUTO     bus-master DMA if, and only if, the drive already
+;                   has a transfer mode selected.  The default, and
+;                   what an absent statement means.
+;   IDEDMA=ON       bus-master DMA in the best mode the drive offers,
+;                   selecting it if the BIOS did not.  Stops at UDMA 2.
+;   IDEDMA=UDMA2    that mode exactly, if the drive claims it.  Also
+;                   UDMA0, UDMA1, MWDMA0, MWDMA1 and MWDMA2.
+;
+; WHY THE DEFAULT IS THE CAUTIOUS ONE, when this kernel's habit is to
+; do the work rather than ask: a transfer mode is two settings that
+; must agree, and only one of them is standardised.  SET FEATURES
+; tells the DRIVE how fast to talk; how fast the CONTROLLER listens is
+; a timing register that every chipset spells differently and that
+; PM-DOS does not know how to write.  The BIOS programmed both at POST
+; and made them match.  AUTO means "use what they agreed on"; ON and a
+; named mode mean "I know my machine", which is a thing a user may
+; well know and the kernel cannot.  See ata_pickdma, which is where
+; the argument is made in full.
+;
+; A failed bus-master transfer takes that disk off DMA for the rest of
+; the session and does the transfer again by PIO, so getting this
+; wrong costs speed rather than data - see ata_dmarun.
+;---------------------------------------------------------------------
+cfg_idedma:
+        mov     edi,OFFSET cfgw_off
+        call    cfg_iskw
+        jnc     cid_off
+        mov     edi,OFFSET cfgw_no
+        call    cfg_iskw
+        jnc     cid_off
+
+        cmp     byte ptr [esi],0        ; a bare "IDEDMA=" is AUTO
+        je      cid_auto
+        mov     edi,OFFSET cfgw_auto
+        call    cfg_iskw
+        jnc     cid_auto
+
+        mov     edi,OFFSET cfgw_on
+        call    cfg_iskw
+        jnc     cid_best
+        mov     edi,OFFSET cfgw_yes
+        call    cfg_iskw
+        jnc     cid_best
+
+        mov     ebx,OFFSET cfg_idemodes
+cid_scan:
+        mov     edi,[ebx]
+        or      edi,edi
+        jz      cfg_badparm
+        call    cfg_iskw
+        jnc     cid_named
+        add     ebx,8
+        jmp     short cid_scan
+cid_named:
+        mov     ebx,[ebx+4]             ; BL = the mode byte itself
+        mov     ax,0300h                ; policy 3: this mode and no other
+        call    dword ptr ds:[IOS_ATACFG]
+        ret
+
+cid_off:
+        mov     ax,0000h
+        jmp     short cid_go
+cid_auto:
+        mov     ax,0100h
+        jmp     short cid_go
+cid_best:
+        mov     ax,0200h
+cid_go:
+        xor     ebx,ebx
+        call    dword ptr ds:[IOS_ATACFG]
+        ret
+
+;---------------------------------------------------------------------
+; IDE32=OFF|AUTO|ON - whether the data port is read a doubleword at a
+;                     time.
+;
+; AUTO, the default, says yes when the drive reports doubleword I/O
+; (which is an ATA-1 and ATA-2 thing, and those are the drives on the
+; VLB machines where it matters most) or when the controller is on the
+; PCI bus (which is the machines where the drive stopped reporting
+; it).  OFF is the escape hatch, and it is a real one: an adapter that
+; cannot latch two words does not report an error, it returns half the
+; data - so if a machine reads rubbish off a disk that a real DOS
+; reads perfectly, this is the line to try first.
+;---------------------------------------------------------------------
+cfg_ide32:
+        mov     edi,OFFSET cfgw_off
+        call    cfg_iskw
+        jnc     ci32_off
+        mov     edi,OFFSET cfgw_no
+        call    cfg_iskw
+        jnc     ci32_off
+
+        cmp     byte ptr [esi],0
+        je      ci32_auto
+        mov     edi,OFFSET cfgw_auto
+        call    cfg_iskw
+        jnc     ci32_auto
+
+        mov     edi,OFFSET cfgw_on
+        call    cfg_iskw
+        jnc     ci32_on
+        mov     edi,OFFSET cfgw_yes
+        call    cfg_iskw
+        jc      cfg_badparm
+ci32_on:
+        mov     ax,0201h
+        jmp     short ci32_go
+ci32_off:
+        mov     ax,0001h
+        jmp     short ci32_go
+ci32_auto:
+        mov     ax,0101h
+ci32_go:
+        xor     ebx,ebx
+        call    dword ptr ds:[IOS_ATACFG]
         ret
 
 ;---------------------------------------------------------------------
@@ -1475,6 +1672,8 @@ cfg_table:
         dd      OFFSET cfgn_nulltrp, OFFSET cfg_nulltrap
         dd      OFFSET cfgn_ems,     OFFSET cfg_ems
         dd      OFFSET cfgn_keyrate, OFFSET cfg_keyrate
+        dd      OFFSET cfgn_idedma,  OFFSET cfg_idedma
+        dd      OFFSET cfgn_ide32,   OFFSET cfg_ide32
 
 ;--- the inherited set: recognised, and doing nothing ----------------
         dd      OFFSET cfgn_rem,     OFFSET cfg_rem
@@ -1506,6 +1705,8 @@ cfgn_lfn      db  'LFN',0
 cfgn_dpmi     db  'DPMI',0
 cfgn_ems      db  'EMS',0
 cfgn_keyrate  db  'KEYRATE',0
+cfgn_idedma   db  'IDEDMA',0
+cfgn_ide32    db  'IDE32',0
 cfgn_nulltrp  db  'NULLTRAP',0
 cfgn_rem      db  'REM',0
 cfgn_buffers  db  'BUFFERS',0
@@ -1541,6 +1742,26 @@ cfgw_noumb    db  'NOUMB',0
 cfgw_high     db  'HIGH',0
 cfgw_low      db  'LOW',0
 
+;--- the transfer modes IDEDMA= will name, and the byte SET FEATURES
+;--- takes for each.  UDMA stops at 2 because mode 3 and up need an
+;--- 80-conductor cable, and asking a machine of this era what cable
+;--- it has is a question it answers wrongly often enough to matter.
+cfgw_udma0    db  'UDMA0',0
+cfgw_udma1    db  'UDMA1',0
+cfgw_udma2    db  'UDMA2',0
+cfgw_mwdma0   db  'MWDMA0',0
+cfgw_mwdma1   db  'MWDMA1',0
+cfgw_mwdma2   db  'MWDMA2',0
+
+cfg_idemodes:
+        dd      OFFSET cfgw_udma0,  040h
+        dd      OFFSET cfgw_udma1,  041h
+        dd      OFFSET cfgw_udma2,  042h
+        dd      OFFSET cfgw_mwdma0, 020h
+        dd      OFFSET cfgw_mwdma1, 021h
+        dd      OFFSET cfgw_mwdma2, 022h
+        dd      0, 0
+
 ;=====================================================================
 ; Data
 ;=====================================================================
@@ -1561,6 +1782,7 @@ break_flag  db  0
 
 msgCrLf         db  13,10,0
 msgCfgBadCmd    db  'Unrecognized command in CONFIG.SYS',13,10,0
+msgCfgLong      db  'CONFIG.SYS is too long: only the first 16K was read',13,10,0
 msgDevNoFile    db  'Bad or missing device driver',13,10,0
 msgDevNoMem     db  'Not enough memory for device driver',13,10,0
 msgDevUnits     db  'Device driver has no units',13,10,0
@@ -1581,5 +1803,9 @@ msgCfgInert     db  '        (recognised, no effect)',13,10,0
 ENDIF
 
 cfg_key     db  CFG_KEY_MAX dup(0)
+cfg_got     dd  0                       ; how much of the file was read
+cfg_bad     db  0                       ; whether the read failed at all
+cfg_over    db  0                       ; and whether there was more of it
+cfg_extra   db  0                       ; the one byte that answers that
 cfg_line_buf db CFG_LINE_MAX dup(0)
 cfg_buf     db  CFG_BUF_SIZE + 1 dup(0)

@@ -168,6 +168,13 @@ i21_r3native:
         mov     eax,[r3_esp0]
         mov     dword ptr ds:[TSS_BASE + TSS_ESP0],eax
 i21_r0:
+        ; The swappable data area is refreshed HERE, before the count
+        ; goes back down, because zero is the moment a TSR is allowed
+        ; to look at it - see win_sdasync for why this is the only
+        ; site rather than one per setter.  Registers are dead at this
+        ; label: what the caller gets back comes out of the frame.
+        call    win_sdasync
+
         ; The matching decrement goes HERE rather than at i21_return,
         ; because the bad-selector path skips straight to this label
         ; and would otherwise leave the count one too high for good.
@@ -4221,24 +4228,41 @@ f57_badfn:
 fn59:
         movzx   eax,word ptr [last_err]
         mov     [ebp+F_EAX],ax
-        mov     esi,OFFSET err_xlat
-f59_scan:
-        movzx   ecx,byte ptr [esi]
-        or      ecx,ecx
-        jz      f59_unknown             ; end of table
-        cmp     cx,ax
-        je      f59_have
-        add     esi,4
-        jmp     short f59_scan
-f59_unknown:
-        mov     esi,OFFSET err_unknown
-f59_have:
-        mov     bh,[esi+1]              ; class
-        mov     bl,[esi+2]              ; action
+        call    err_classify
         mov     [ebp+F_EBX],bx
-        mov     ch,[esi+3]              ; locus
         mov     byte ptr [ebp+F_ECX+1],ch
         jmp     i21_ok
+
+;=====================================================================
+; err_classify - AX = an extended error code -> BH class, BL action,
+;                CH locus.  Clobbers ECX.
+;
+; Split out of 59h because there is a second caller now: the swappable
+; data area publishes these same three bytes at fixed offsets, and had
+; nowhere to get them.  PM-DOS DERIVES class, action and locus from the
+; code rather than storing them alongside it, which is why there is a
+; table here at all and why win_sdasync has to call into it rather than
+; copy three variables.
+;=====================================================================
+err_classify:
+        push    esi
+        mov     esi,OFFSET err_xlat
+ec_scan:
+        movzx   ecx,byte ptr [esi]
+        or      ecx,ecx
+        jz      ec_unknown              ; end of table
+        cmp     cx,ax
+        je      ec_have
+        add     esi,4
+        jmp     short ec_scan
+ec_unknown:
+        mov     esi,OFFSET err_unknown
+ec_have:
+        mov     bh,[esi+1]              ; class
+        mov     bl,[esi+2]              ; action
+        mov     ch,[esi+3]              ; locus
+        pop     esi
+        ret
 
 ;--- code, class, action, locus.  A zero code ends it -----------------
 ; Classes:  01 out of resource  02 temporary  03 authorization
@@ -7104,6 +7128,9 @@ fF0_size:
 ;                  EBX = the highest usable linear address
 ;       AL = 9: -> EAX = 1 if there is an EMS manager, EBX = the page
 ;                  frame segment, ECX = pages in the system, EDX = free
+;       AL = 0Ah: DL = an ATA device index, or FFh for the controller
+;                 -> how that disk's data is being moved.  Documented
+;                    where it is answered, at fF1_ide below
 ;
 ; 30h has to keep lying about being DOS 5 so that ordinary programs
 ; recognise us, which leaves nothing there to report what the kernel
@@ -7136,7 +7163,39 @@ fnF1:
         je      fF1_mcb
         cmp     al,9
         je      fF1_ems
+        cmp     al,0Ah
+        je      fF1_ide
         jmp     i21_unsup
+
+;--- AL=0Ah: the IDE controller and how its disks are being talked to.
+;--- DL = a device index 0-3, or FFh for the controller itself.
+;---
+;---   a device:    EAX = flags - 01h present, 02h LBA48, 04h LBA,
+;---                08h bus-master DMA, 10h 32-bit PIO
+;---                EBX = its channel's bus-master base port
+;---                ECX = the transfer mode in force, as SET FEATURES
+;---                spells it (40h+n UDMA, 20h+n multiword, 0 = PIO)
+;---                EDX = total sectors
+;---   controller:  EAX = disks found, EBX = PCI vendor:device,
+;---                ECX = the bus-master register block,
+;---                EDX = the prog-if byte, bit 16 set if PCI answered
+;---                at all, bit 17 if an engine was found, bits 24-27
+;---                the IDEDMA= policy and 28-31 the IDE32= one
+;---
+;--- SAME ARGUMENT AS AL=9 MAKES FOR EXPANDED MEMORY, and it is worth
+;--- restating because it is the reason this family keeps growing: a
+;--- native program runs at ring 3 with no I/O privilege, so it cannot
+;--- read a controller's registers even to describe them, and the DOS
+;--- box that could is a different machine's worth of state.  A report
+;--- about the hardware has to be asked for from inside the kernel.
+fF1_ide:
+        mov     al,[ebp+F_EDX]
+        call    dword ptr ds:[IOS_ATAINFO]
+        mov     [ebp+F_EAX],eax
+        mov     [ebp+F_EBX],ebx
+        mov     [ebp+F_ECX],ecx
+        mov     [ebp+F_EDX],edx
+        jmp     i21_ok
 
 ;--- AL=9: expanded memory.  EAX = 1 if there is a manager, EBX = the
 ;--- page frame segment, ECX = pages in the system, EDX = pages free.
@@ -7833,7 +7892,7 @@ i21_table:
         dd      fn50,      fn51,      fn52,      i21_unsup  ; 50-53
         dd      fn54,      i21_unsup, fn56,      fn57       ; 54-57
         dd      fn58,      fn59,      fn5A,      fn5B       ; 58-5B
-        dd      fn5C,      i21_unsup, i21_unsup, i21_unsup  ; 5C-5F
+        dd      fn5C,      fn5D,      i21_unsup, i21_unsup  ; 5C-5F
         dd      fn60,      i21_unsup, fn62,      fn63       ; 60-63
         dd      i21_unsup, fn65,      i21_unsup, fn67       ; 64-67
         dd      fn68,      i21_unsup, fn68,      i21_unsup  ; 68-6B

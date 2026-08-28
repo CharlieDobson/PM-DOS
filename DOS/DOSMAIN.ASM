@@ -33,9 +33,13 @@ IFDEF PMDOS_DEBUG
 ENDIF
 
         ; The two DOS status flags, before anything can raise either.
-        ; They live in the BIOS data area, which the BIOS left holding
-        ; whatever it liked, and CONFIG.SYS makes DOS calls long before
-        ; the shell exists.
+        ; They are the first two bytes of the swappable data area
+        ; now, which is in the DOS data segment - memory the BIOS
+        ; left holding whatever it liked - and CONFIG.SYS makes DOS
+        ; calls long before the shell exists.  win_sdainit lays out
+        ; the rest of that structure further down; these two cannot
+        ; wait for it, because arena_init is a DOS call away and it
+        ; comes first.
         mov     byte ptr ds:[DOS_INDOS],0
         mov     byte ptr ds:[DOS_ERRFLG],0
 
@@ -47,6 +51,9 @@ ENDIF
                                         ; a DOS box reflects through
         call    vdm_lolinit             ; and a 52h list of lists a 16-bit
                                         ; program can actually follow
+        call    win_sdainit             ; and the swappable data area, in
+                                        ; the same 256 bytes and ABOVE it -
+                                        ; the call above zeroes this one
         call    i13_count_drives        ; what the BIOS counted at power-on
         call    crit_init               ; a device header a GUEST'S INT 24h
                                         ; handler can address - see the note
@@ -348,6 +355,9 @@ df_notbox:
                                         ; halves and read in that order
         INCLUDE XMS.INC
         INCLUDE VDM.INC
+        INCLUDE WINDOWS.INC             ; after VDM.INC: the 2Fh half of
+                                        ; it works on vdm_ctx, and the SDA
+                                        ; half reads vdm_curpsp
         INCLUDE INT13.INC               ; after VDM.INC: it works on vdm_ctx
                                         ; and ends its calls at vdm_loop
         INCLUDE EMS.INC                 ; and so does this one.  It also

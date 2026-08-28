@@ -1591,8 +1591,10 @@ vdm_i2F:
         call    xms_int2F
         jnc     vdm_loop
         call    dpmi_int2F              ; 1686h/1687h: is there a host?
-        jc      vdm_reflect
-        jmp     vdm_loop
+        jnc     vdm_loop
+        call    win_int2F               ; and the 16xx Windows family,
+        jc      vdm_reflect             ; which VETOES 1605h and then
+        jmp     vdm_loop                ; reflects it anyway - see there
 
 ;--- INT 67h: the whole vector, and every subfunction of it.  Unlike
 ;--- 15h and 2Fh there is nothing on 67h that belongs to anyone else:
@@ -1640,6 +1642,8 @@ vdm_dos:
         je      vdm_indosptr
         cmp     al,52h
         je      vdm_lol
+        cmp     al,5Dh
+        je      vdm_sda
         cmp     al,1Bh
         je      vdm_dsptr
         cmp     al,1Ch
@@ -2044,6 +2048,21 @@ vce_run:
 vdm_dsptr:                                      ; 1Bh, 1Ch - offset in BX
         mov     byte ptr ds:[vdm_dssi],0
         jmp     short vd_go
+; 5D06h - ES:BX would be wrong here and DS:SI is right: the swappable
+; data area is answered in the SAME register pair 63h uses, and for the
+; same reason 1Bh, 1Ch and 63h needed a handler at all - fn5D hands
+; back a FLAT address in ESI and a guest cannot hold one.  So this is
+; vdm_dsptrsi with a different door on it.
+;
+; Only AL=06h.  The rest of the 5Dh family is refused by the kernel
+; (see fn5D), and refusing it through the ordinary bridge keeps the
+; error the kernel's rather than making up a second one here.
+vdm_sda:
+        cmp     byte ptr [vdm_ctx+V86C_EAX],06h
+        je      vdm_dsptrsi
+        call    vdm_do21
+        jmp     vdm_loop
+
 vdm_dsptrsi:                                    ; 63h - offset in SI
         mov     byte ptr ds:[vdm_dssi],1
 vd_go:
