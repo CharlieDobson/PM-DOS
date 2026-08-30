@@ -366,6 +366,18 @@ v86_fault:
 IFDEF V86_WATCH
         mov     dword ptr ds:[v86_watch],0      ; the guest is still asking
 ENDIF
+IFDEF V86_WATCHQ
+; WHERE THE GUEST FAULTED, kept for the timer to display.  The spin
+; counter this used to clear answered "is the guest making calls at
+; all", and the answer for a guest that is looping THROUGH the
+; monitor is yes - which is no answer.  The address is.
+        pushad
+        mov     eax,[ebp+FR_CS]
+        mov     dword ptr ds:[v86_wcs],eax
+        mov     eax,[ebp+FR_EIP]
+        mov     dword ptr ds:[v86_weip],eax
+        popad
+ENDIF
 IFDEF V86_TRACE
         pushad
         mov     esi,OFFSET msgV86Flt

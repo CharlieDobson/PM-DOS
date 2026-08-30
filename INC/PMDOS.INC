@@ -725,10 +725,49 @@ DM_LEN          EQU     16
 ; one.
 DOSDATA         EQU     00004000h
 DOSDATA_SEG     EQU     0400h
-DOSDATA_SIZE    EQU     00000100h
+DOSDATA_SIZE    EQU     00001000h       ; four kilobytes, and it was 256 bytes
+                                        ; until the system file table below
+                                        ; needed somewhere real to be
 
-V86_TPA         EQU     00004100h
-V86_TPA_SEG     EQU     0410h
+;---------------------------------------------------------------------
+; THE SYSTEM FILE TABLE A GUEST CAN WALK, and it exists because of what
+; happened without it.
+;
+; The list of lists points at a CHAIN of file table blocks - a next
+; pointer, a count, and that many entries - and DOS ends the chain by
+; putting FFFFh in the OFFSET of the next pointer.  PM-DOS used to
+; publish FFFF:FFFF as the HEAD, meaning "there is no such structure
+; here", which reads as an honest answer and is not one: a walker
+; loads ES:BX from it, tests the word at ES:BX, finds whatever is at
+; the top of the first megabyte, and follows it.
+;
+; WIN.COM does exactly that.  It walks the chain adding up the counts
+; to see whether the machine has the thirty file handles Windows
+; needs, and on PM-DOS it went round that loop for ever - four
+; instructions, no DOS call, nothing on the screen.  That was the
+; "WIN.COM hangs" of v0.44, and the answer was not in WIN.COM.
+;
+; So there is one block, with a real terminator and a real count, and
+; MAX_HANDLES entries after it that are all zero - which in this
+; structure means "not open", and is true.  What is NOT here is a live
+; mirror of the kernel's own table: PM-DOS's real SFT is 32-bit and
+; above the megabyte, and copying it down on every call is work for a
+; reader that has not turned up yet.  A guest that walks the entries
+; sees a table with nothing open in it, which is a lie only if it is
+; looking for a file somebody else has open.
+;---------------------------------------------------------------------
+GSFT_OFF        EQU     00000100h       ; within the DOS data segment
+GSFT_BASE       EQU     DOSDATA + GSFT_OFF
+GSFT_NEXT       EQU     00h             ; dd - the next block, FFFFh = last
+GSFT_COUNT      EQU     04h             ; dw - entries in this block
+GSFT_ENTRY      EQU     06h             ; and here they start
+GSFT_ENTSIZE    EQU     3Bh             ; as DOS 4 and later lay one out
+GSFT_ENTRIES    EQU     64              ; = MAX_HANDLES, guarded where that
+                                        ; is defined
+GSFT_SIZE       EQU     GSFT_ENTRY + GSFT_ENTRIES * GSFT_ENTSIZE
+
+V86_TPA         EQU     00005000h
+V86_TPA_SEG     EQU     0500h
 V86_TPA_TOP     EQU     000A0000h       ; THE CEILING, NOT THE TOP.  Where the
                                         ; arena really ends is what the BIOS
                                         ; says at 40:13 and is decided at run
@@ -1082,6 +1121,12 @@ IF GLOL_SIZE GT DOSDATA_SIZE
 ENDIF
 IF DOSDATA + DOSDATA_SIZE NE V86_TPA
         .ERR    <GLOL: the DOS data segment does not end where the arena begins>
+ENDIF
+IF GSFT_OFF LT GLOL_SIZE
+        .ERR    <GSFT: the file table starts inside the list of lists>
+ENDIF
+IF GSFT_OFF + GSFT_SIZE GT DOSDATA_SIZE
+        .ERR    <GSFT: the file table does not fit in the DOS data segment>
 ENDIF
 
 ;---------------------------------------------------------------------
@@ -1453,6 +1498,9 @@ IF SDA_OFF LT GLOL_SIZE
 ENDIF
 IF SDA_OFF + SDA_LEN GT DOSDATA_SIZE
         .ERR    <SDA: the swappable data area runs past the DOS data segment>
+ENDIF
+IF SDA_OFF + SDA_LEN GT GSFT_OFF
+        .ERR    <SDA: the swappable data area runs into the file table>
 ENDIF
 
 RMT_PM2RM       EQU     0010h                   ; entry in the RM stub
@@ -2204,6 +2252,9 @@ SRCH_FILTER     EQU     80h
 ; File handle table
 ;---------------------------------------------------------------------
 MAX_HANDLES     EQU     64              ; the table.  FILES= chooses how much
+IF GSFT_ENTRIES NE MAX_HANDLES
+        .ERR    <GSFT: the published file table is not the size of the real one>
+ENDIF
                                         ; of it is handed out; see cfg_files
 SFT_HANDLE      EQU     0                       ; per-entry field offsets
 SFT_MODE        EQU     4
@@ -2390,7 +2441,7 @@ SHELLTAIL_MAX   EQU     130             ; length byte + 126 + CR + slack
 ; has a call of its own; these two agree.
 ;---------------------------------------------------------------------
 PMDOS_MAJOR     EQU     0
-PMDOS_MINOR     EQU     46
+PMDOS_MINOR     EQU     47
 
 DOSVER_MAJOR    EQU     6
 DOSVER_MINOR    EQU     22

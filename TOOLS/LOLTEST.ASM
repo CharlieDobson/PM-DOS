@@ -188,9 +188,69 @@ lastdrv:
         cmp     ah,al
         ja      drv_bad                 ; more drives than letters for them
         call    good
-        jmp     short devchain
+        jmp     sftchain
 drv_bad:
         call    bad
+
+;=====================================================================
+; The system file table chain, walked to its end.
+;
+; THE CHAIN THAT WAS NOT WALKED IS THE CHAIN THAT WAS WRONG.  This
+; test had a device-chain walk from the day it was written and no file
+; table walk, and the list of lists published FFFF:FFFF as the head of
+; this one - which reads as "there is no such structure" and is not
+; what a walker does with it.  It loads ES:BX from it and follows it,
+; and WIN.COM went round that loop for ever.
+;
+; So: bounded, like the device chain, and the total is checked against
+; THIRTY, because that is the number Windows adds these up to find.
+;=====================================================================
+sftchain:
+        mov     dx,OFFSET t_sft
+        call    puts
+        mov     es,[lol_seg]
+        mov     bx,[lol_off]
+        les     bx,es:[bx+4]
+        mov     ax,es
+        call    put4
+        mov     dl,':'
+        call    putc
+        mov     ax,bx
+        call    put4
+        mov     dx,OFFSET t_sfttot
+        call    puts
+
+        mov     word ptr [sft_tot],0
+        mov     cx,16                   ; blocks, bounded
+sft_loop:
+        mov     ax,es
+        cmp     ax,0FFFFh
+        je      sft_end                 ; no chain at all
+        mov     ax,es:[bx+4]
+        add     [sft_tot],ax
+        cmp     word ptr es:[bx],0FFFFh
+        je      sft_end
+        les     bx,es:[bx]
+        loop    sft_loop
+
+        mov     ax,[sft_tot]
+        call    put4
+        mov     dx,OFFSET t_sftloop
+        call    puts
+        call    bad
+        jmp     devchain
+sft_end:
+        mov     ax,[sft_tot]
+        call    put4
+        cmp     word ptr [sft_tot],30
+        jb      sft_few
+        call    good
+        jmp     devchain
+sft_few:
+        mov     dx,OFFSET t_sftfew
+        call    puts
+        call    bad
+        jmp     devchain
 
 ;=====================================================================
 ; The device chain, walked from its HEAD and BOUNDED.
@@ -834,6 +894,11 @@ t_call      db  '  52h list of lists at $'
 t_mcb       db  '  first MCB at [BX-2] is $'
 t_walk      db  '  the arena walks: $'
 t_drives    db  '  block devices / LASTDRIVE $'
+t_sft       db  '  system file table at $'
+t_sfttot    db  ', handles $'
+t_sftloop   db  ' - THE CHAIN DOES NOT END'
+t_sftfew    db  ' - fewer than the thirty Windows wants'
+sft_tot     dw  0
 t_dev       db  '  device chain: $'
 t_alloc     db  '  1Bh media byte at $'
 t_geom      db  '  1Bh geometry $'

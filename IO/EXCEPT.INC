@@ -203,6 +203,12 @@ exc_hook        dd      0
 exc_nested      dd      0
 
 IFDEF V86_WATCH
+V86_WATCHDATA   EQU     1
+ENDIF
+IFDEF V86_WATCHQ
+V86_WATCHDATA   EQU     1
+ENDIF
+IFDEF V86_WATCHDATA
 V86_WATCHTICKS  EQU     36              ; two seconds at 18.2 Hz
 v86_watch       dd      0               ; ticks since the monitor last ran
 v86_wcs         dd      0
@@ -354,6 +360,65 @@ IFDEF V86_WATCH
 it_nospin:
         mov     dword ptr ds:[v86_watch],0
 it_spun:
+ENDIF
+
+IFDEF V86_WATCHQ
+;--- the same sampler, without disturbing what it is sampling --------
+; THE LOUD ONE CHANGES THE ANSWER.  V86_WATCH prints through con_str
+; from inside the timer interrupt, which takes long enough that the
+; guest runs measurably fewer instructions per tick - and a guest whose
+; hang depends on timing then hangs somewhere else, or not at all.
+; That is not a hypothetical: WIN.COM reaches its logo under the loud
+; watchdog and stops before it without one.
+;
+; So this one writes sixteen bytes straight into the text page, which
+; is nine instructions and no calls, and shows the last sample rather
+; than a history.  A number that stops changing is a guest that has
+; stopped; a number that keeps moving is a loop with a body.
+        test    dword ptr [esp+56],EFL_VM
+        jz      itq_out
+        mov     edi,0B8000h + (80 - 12) * 2     ; top right, out of the way
+        mov     eax,dword ptr ds:[v86_wcs]
+        call    itq_word
+        mov     al,':'
+        mov     ah,4Fh
+        stosw
+        mov     eax,dword ptr ds:[v86_weip]
+        call    itq_word
+
+        ; NO BARS, AND THIS IS WHERE THEY WERE.  A version of this
+        ; drew the same thirty-two bits into A0000 so that they
+        ; would be visible when the guest had taken the screen into
+        ; a graphics mode - and they came out unreadable, because
+        ; the VGA's write mode, map mask and set/reset registers
+        ; belong to the GUEST at that moment and a byte written to
+        ; the framebuffer does not mean what the writer intended.
+        ; Holding the guest in text mode is the way to see this, and
+        ; that is what V86_NOMODE is for.
+        jmp     short itq_out
+
+; AX = the word, EDI = where.  Four nibbles, high one first.
+itq_word:
+        push    ecx
+        push    edx
+        mov     edx,eax
+        mov     ecx,4
+itq_dig:
+        rol     dx,4
+        mov     al,dl
+        and     al,0Fh
+        add     al,'0'
+        cmp     al,'9'
+        jbe     itq_ch
+        add     al,7
+itq_ch:
+        mov     ah,4Fh
+        stosw
+        loop    itq_dig
+        pop     edx
+        pop     ecx
+        ret
+itq_out:
 ENDIF
 
 ;--- the mouse's litter ----------------------------------------------

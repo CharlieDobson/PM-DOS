@@ -995,6 +995,10 @@ vdm_traps:
         mov     byte ptr [vdm_ctx+V86C_TRAP+2],28h      ; 13h and 15h: bits
                                                         ; 3 and 5 of the byte
                                                         ; covering 10h-17h
+IFDEF V86_NOMODE
+        or      byte ptr [vdm_ctx+V86C_TRAP+2],1        ; ...and 10h, to hold
+                                                ; the screen in text mode
+ENDIF
         mov     byte ptr [vdm_ctx+V86C_TRAP+4],0FFh     ; 20h-27h
         mov     byte ptr [vdm_ctx+V86C_TRAP+5],0FFh     ; 28h-2Fh
 
@@ -1126,10 +1130,23 @@ vdm_lolinit:
         ; The structures PM-DOS does not have, said plainly.
         mov     eax,0FFFFFFFFh
         mov     [edi+GLOL_DPB],eax
-        mov     [edi+GLOL_SFT],eax
         mov     [edi+GLOL_BUFFERS],eax
         mov     [edi+GLOL_CDS],eax
         mov     [edi+GLOL_FCB],eax
+
+        ; ...AND ONE THAT IT DOES, because FFFF:FFFF was not an
+        ; honest answer for this one - it is a CHAIN HEAD, and a
+        ; walker does not read it as "nothing here", it follows it.
+        ; One block, terminated the way DOS terminates one, with
+        ; MAX_HANDLES entries after it that the zero-fill above has
+        ; already made "not open".  See GSFT_ in PMDOS.INC for what
+        ; this cost and what it bought.
+        mov     dword ptr ds:[GSFT_BASE + GSFT_NEXT],0FFFFFFFFh
+        mov     word ptr ds:[GSFT_BASE + GSFT_COUNT],GSFT_ENTRIES
+        movzx   eax,word ptr ds:[vdm_lolseg]
+        shl     eax,16
+        mov     ax,GSFT_OFF
+        mov     [edi+GLOL_SFT],eax
 
         ; CON points at the real CON header now.  CLOCK$ says FFFF:FFFF
         ; with the rest of what is not here: PM-DOS deliberately has no
@@ -1563,6 +1580,10 @@ vdm_int:
         je      vdm_i15
         cmp     ebx,2Fh
         je      vdm_i2F
+IFDEF V86_NOMODE
+        cmp     ebx,10h
+        je      vdm_i10
+ENDIF
         cmp     ebx,67h                         ; expanded memory, and the bit
         je      vdm_i67                         ; is only set when there is any
         cmp     ebx,13h                         ; the disk BIOS, served out
@@ -1604,6 +1625,21 @@ vdm_i2F:
 vdm_i67:
         call    ems_call
         jmp     vdm_loop
+
+IFDEF V86_NOMODE
+;--- INT 10h AH=00h, swallowed.  A DEBUG SWITCH AND NOTHING ELSE ----
+; Every trace this monitor has writes to the text page, and a guest
+; that sets a graphics mode takes the screen away from the thing
+; watching it - at exactly the moment the watching matters.  Windows
+; puts up its logo and then hangs: with this the logo never happens,
+; the guest carries on believing it did, and the trace stays
+; readable.  Nothing else about the call is faked, so a guest that
+; then WRITES to A0000 writes to memory nobody is displaying.
+vdm_i10:
+        cmp     byte ptr [vdm_ctx+V86C_EAX+1],0
+        jne     vdm_reflect
+        jmp     vdm_loop
+ENDIF
 
 vdm_reflect:
         mov     eax,ebx
@@ -2132,6 +2168,23 @@ vdm_lol:
         mov     dl,byte ptr ds:[drv_count]
 vl_lastok:
         mov     byte ptr [edi+GLOL_LASTDRV],dl
+
+        ; AND THE FILE COUNT, for the same reason the two above are
+        ; refreshed here: FILES= is read out of CONFIG.SYS long after
+        ; vdm_lolinit built the block, and the number a guest adds up
+        ; walking this chain is the number it decides with.  Windows
+        ; wants thirty.
+        ; ...IN ECX, BECAUSE EAX IS STILL THE ANSWER.  The comment
+        ; twenty lines above says exactly this about DL, and this
+        ; code was written under it and used EAX anyway.  The
+        ; symptom was a guest reading its list of lists at
+        ; 0028:0002 - forty, which is what FILES= says.
+        mov     ecx,dword ptr ds:[files_max]
+        cmp     ecx,GSFT_ENTRIES
+        jbe     vl_filesok
+        mov     ecx,GSFT_ENTRIES
+vl_filesok:
+        mov     word ptr ds:[GSFT_BASE + GSFT_COUNT],cx
         mov     word ptr [vdm_ctx+V86C_EBX],GLOL_PTR
         mov     dword ptr [vdm_ctx+V86C_ES],eax
         and     dword ptr [vdm_ctx+V86C_FLAGS],NOT FL_CF
