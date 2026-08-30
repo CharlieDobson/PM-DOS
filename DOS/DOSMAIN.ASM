@@ -18,6 +18,8 @@
         .386P
 
         INCLUDE PMDOS.INC
+        INCLUDE RMDOS.INC               ; the handover contract, for
+                                        ; PARK.INC further down
 
 _DOS    SEGMENT USE32 PUBLIC 'CODE'
         ASSUME  CS:_DOS, DS:_DOS, ES:_DOS, SS:_DOS
@@ -356,6 +358,10 @@ df_notbox:
         INCLUDE XMS.INC
         INCLUDE VDM.INC
         INCLUDE WINDOWS.INC             ; after VDM.INC: the 2Fh half of
+        INCLUDE PARK.INC                ; and after it: leaving
+                                        ; protected mode for good,
+                                        ; which is what WINDOWS.INC
+                                        ; currently refuses to do
                                         ; it works on vdm_ctx, and the SDA
                                         ; half reads vdm_curpsp
         INCLUDE INT13.INC               ; after VDM.INC: it works on vdm_ctx

@@ -7165,6 +7165,8 @@ fnF1:
         je      fF1_ems
         cmp     al,0Ah
         je      fF1_ide
+        cmp     al,0Bh
+        je      fF1_park
         jmp     i21_unsup
 
 ;--- AL=0Ah: the IDE controller and how its disks are being talked to.
@@ -7188,6 +7190,26 @@ fnF1:
 ;--- read a controller's registers even to describe them, and the DOS
 ;--- box that could is a different machine's worth of state.  A report
 ;--- about the hardware has to be asked for from inside the kernel.
+
+;--- AL=0Bh: PARK.  EDX -> an ASCIIZ path of a 16-bit program, or 0.
+;
+; Leaves protected mode for good, hands the machine to RMDOS.SYS, and
+; comes back when the program RMDOS ran has ended.  EAX is its exit
+; code.  See DOSPARK.INC for what survives the trip and what does not.
+;
+; THIS IS THE CALL WINDOWS WILL EVENTUALLY COME IN THROUGH, from the
+; 1605h handler rather than from a program - which is why it takes a
+; program to run at all: it is the same machinery with something
+; smaller than Windows on the other end of it, so that the mode switch
+; can be tested before there is a Windows in the picture to blame.
+fF1_park:
+        mov     esi,[ebp+F_EDX]
+        call    park_run
+        jc      fF1_parkbad
+        mov     [ebp+F_EAX],eax
+        jmp     i21_ok
+fF1_parkbad:
+        jmp     i21_fail
 fF1_ide:
         mov     al,[ebp+F_EDX]
         call    dword ptr ds:[IOS_ATAINFO]

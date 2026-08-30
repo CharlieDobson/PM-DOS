@@ -248,6 +248,83 @@ move_wrong:
         call    say_fail
 did_move:
 
+;--- 0Eh: and the driver agrees about how big it is ------------------
+        mov     ah,0Eh
+        mov     dx,word ptr [handle]
+        call    dword ptr [xms_entry]
+        or      ax,ax
+        jz      info_bad
+        cmp     dx,64
+        jne     info_wrong
+        mov     dx,OFFSET msg_info
+        call    say_ok
+        jmp     short did_info
+info_bad:
+        mov     dx,OFFSET msg_infobad
+        call    say_fail
+        jmp     short did_info
+info_wrong:
+        mov     dx,OFFSET msg_infowrong
+        call    say_fail
+did_info:
+
+;--- 0Fh: grow it, and then shrink it --------------------------------
+; A block that grows usually grows where it is; a block that cannot
+; has to be MOVED, contents and all, and the only way to tell the two
+; apart from out here is to put something in it first and look for it
+; afterwards.  The move above left the pattern at offset zero.
+        mov     ah,0Fh
+        mov     dx,word ptr [handle]
+        mov     bx,128
+        call    dword ptr [xms_entry]
+        or      ax,ax
+        jz      grow_bad
+
+        mov     word ptr [mv_len],32    ; read offset 0 back again
+        mov     word ptr [mv_len+2],0
+        mov     ax,word ptr [handle]
+        mov     word ptr [mv_srch],ax
+        mov     word ptr [mv_srco],0
+        mov     word ptr [mv_srco+2],0
+        mov     word ptr [mv_dsth],0
+        mov     word ptr [mv_dsto],OFFSET readback
+        mov     ax,cs
+        mov     word ptr [mv_dsto+2],ax
+        mov     si,OFFSET mv_len
+        mov     ah,0Bh
+        call    dword ptr [xms_entry]
+        or      ax,ax
+        jz      grow_bad
+
+        mov     si,OFFSET pattern
+        mov     di,OFFSET readback
+        mov     cx,32
+        cld
+        push    es
+        push    ds
+        pop     es
+        repe    cmpsb
+        pop     es
+        jne     grow_lost
+
+        mov     ah,0Fh                  ; and back down again
+        mov     dx,word ptr [handle]
+        mov     bx,32
+        call    dword ptr [xms_entry]
+        or      ax,ax
+        jz      grow_bad
+        mov     dx,OFFSET msg_grew
+        call    say_ok
+        jmp     short did_grow
+grow_bad:
+        mov     dx,OFFSET msg_growbad
+        call    say_fail
+        jmp     short did_grow
+grow_lost:
+        mov     dx,OFFSET msg_growlost
+        call    say_fail
+did_grow:
+
 ;--- 0Ah: give it back -----------------------------------------------
         mov     ah,0Ah
         mov     dx,word ptr [handle]
@@ -261,6 +338,50 @@ free_bad:
         mov     dx,OFFSET msg_freebad
         call    say_fail
 did_free:
+
+;--- 09h again, for everything there is ------------------------------
+; WHICH IS WHAT WINDOWS DOES.  WIN386 asks how much there is and then
+; takes all of it in one block, so a manager that can hand out 64K and
+; cannot hand out the whole pool fails at the only moment that counts.
+        mov     ah,08h
+        call    dword ptr [xms_entry]
+        or      ax,ax
+        jz      did_all
+        mov     word ptr [t_ax],ax
+        mov     dx,ax
+        mov     ah,09h
+        call    dword ptr [xms_entry]
+        or      ax,ax
+        jz      all_bad
+        mov     word ptr [handle],dx
+        mov     ah,08h                  ; and the largest must have shrunk -
+        call    dword ptr [xms_entry]   ; NOT gone, because a manager may
+        cmp     ax,word ptr [t_ax]      ; have a second free block that was
+        jae     all_left                ; never the largest one
+        mov     ah,0Ah
+        mov     dx,word ptr [handle]
+        call    dword ptr [xms_entry]
+        or      ax,ax
+        jz      all_bad
+        mov     ah,08h                  ; and all of it back again
+        call    dword ptr [xms_entry]
+        cmp     ax,word ptr [t_ax]
+        jne     all_short
+        mov     dx,OFFSET msg_all
+        call    say_ok
+        jmp     short did_all
+all_bad:
+        mov     dx,OFFSET msg_allbad
+        call    say_fail
+        jmp     short did_all
+all_left:
+        mov     dx,OFFSET msg_allleft
+        call    say_fail
+        jmp     short did_all
+all_short:
+        mov     dx,OFFSET msg_allshort
+        call    say_fail
+did_all:
 
 ;--- INT 15h AH=88h: the BIOS must say there is nothing --------------
         mov     dx,OFFSET msg_i15
@@ -495,6 +616,7 @@ mv_dsto     dd  0
 
 pattern     db  'XMS round trip, 32 bytes long!!!'
 scratch     db  32 dup(0)
+readback    db  32 dup(0)
 
 msg_hi      db  'XMSTEST.COM - extended memory and the A20 gate',13,10,'$'
 msg_noxms   db  '  no XMS driver is installed',13,10,'$'
@@ -517,6 +639,16 @@ msg_move    db  '  moving 32 bytes out and back',13,10,'$'
 msg_moveok  db  'the bytes came back intact',13,10,'$'
 msg_movebad db  'the move was refused',13,10,'$'
 msg_movewrong db 'the bytes came back changed',13,10,'$'
+msg_info    db  'the handle says 64 KB',13,10,'$'
+msg_infobad db  'the handle would not describe itself',13,10,'$'
+msg_infowrong db 'the handle says the wrong size',13,10,'$'
+msg_grew    db  'grown to 128 KB and back, contents intact',13,10,'$'
+msg_growbad db  'reallocate was refused',13,10,'$'
+msg_growlost db 'reallocate lost the contents',13,10,'$'
+msg_all     db  'the whole pool, taken and given back',13,10,'$'
+msg_allbad  db  'could not take the whole pool',13,10,'$'
+msg_allleft db  'took the largest block and it did not shrink',13,10,'$'
+msg_allshort db 'the pool did not come back the same size',13,10,'$'
 msg_freed   db  'handle freed',13,10,'$'
 msg_freebad db  'could not free the handle',13,10,'$'
 msg_i15     db  '  INT 15h/88h: $'

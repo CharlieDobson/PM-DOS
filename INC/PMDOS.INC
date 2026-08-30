@@ -1457,6 +1457,39 @@ ENDIF
 
 RMT_PM2RM       EQU     0010h                   ; entry in the RM stub
 
+;---------------------------------------------------------------------
+; PARKING - the second entry into the real-mode stub, and the one that
+; does not come back on its own.
+;
+; RMT_PM2RM above goes to real mode, runs one interrupt, and returns.
+; RMT_PARK goes to real mode and STAYS, handing the machine to a
+; 16-bit program that has no idea a protected-mode kernel was ever
+; here.  What brings it back is that program FAR JMPing to the unpark
+; entry - an address it is given rather than one it is compiled with,
+; because RMDOS.SYS is built separately and PMIO may move.
+;
+; The offset is where it is because the stub's code and data end at
+; about 0830h and the GDT begins at 0C00h.  An assembler check below
+; keeps that true rather than trusting this comment.
+;---------------------------------------------------------------------
+RMT_PARK        EQU     0900h                   ; PM -> real, for good
+RMT_UNPARK      EQU     0A80h                   ; real -> PM, from RMDOS
+
+; What to hand the real-mode program.  In the globals block rather than
+; in RMFRAME because RMFRAME is 44 bytes with four to spare before the
+; real-mode stack, and this needs fourteen.
+GV_PARK         EQU     GV_BASE + 60h
+GVO_PARK        EQU     GV_OFF  + 60h
+GVP_CS          EQU     00h                     ; dw - where to go
+GVP_IP          EQU     02h                     ; dw
+GVP_DS          EQU     04h                     ; dw
+GVP_ES          EQU     06h                     ; dw
+GVP_SS          EQU     08h                     ; dw
+GVP_SP          EQU     0Ah                     ; dw
+GVP_ACTIVE      EQU     0Ch                     ; db - 1 while parked
+GVP_AX          EQU     0Eh                     ; dw - handed over in AX
+GVP_LEN         EQU     10h
+
 ; Register frame layout. Deliberately in PUSHAD order so the thunk can
 ; POPAD straight out of it.
 RMR_EDI         EQU     RMFRAME + 00h
@@ -1654,6 +1687,16 @@ IOS_ATAINFO     EQU     IOSVC + 78h             ; AL = an ATA device index, or
                                                 ; AL=0Ah reports, and it has to
                                                 ; be asked here because a ring
                                                 ; 3 program cannot read a port
+
+IOS_PARK        EQU     IOSVC + 7Ch             ; ESI -> a GVP_ block: leave
+                                                ; protected mode for good and
+                                                ; hand the machine to the
+                                                ; real-mode address in it.
+                                                ; Returns when that code jumps
+                                                ; to the unpark entry.
+IOS_UNPARKADDR  EQU     IOSVC + 80h             ; -> EAX = seg:off of the
+                                                ; unpark entry, to hand to the
+                                                ; real-mode side
 
 ;---------------------------------------------------------------------
 ; The three ports the V86 monitor takes away from the guest.  Two of
@@ -2347,7 +2390,7 @@ SHELLTAIL_MAX   EQU     130             ; length byte + 126 + CR + slack
 ; has a call of its own; these two agree.
 ;---------------------------------------------------------------------
 PMDOS_MAJOR     EQU     0
-PMDOS_MINOR     EQU     44
+PMDOS_MINOR     EQU     46
 
 DOSVER_MAJOR    EQU     6
 DOSVER_MINOR    EQU     22

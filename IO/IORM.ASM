@@ -34,6 +34,7 @@
 _RM     SEGMENT USE16 PUBLIC 'CODE'
         ASSUME  CS:_RM, DS:_RM, ES:NOTHING, SS:NOTHING
         ORG     0
+rm_base:
 
 ;=====================================================================
 ; Fixed entry vectors
@@ -146,7 +147,10 @@ rm_intop:
         mov     ax,word ptr cs:[t_ds]
         mov     word ptr ds:[RMR_DS],ax
 
-        ; Back into protected mode
+        ; Back into protected mode.  Labelled because UNPARKING ends
+        ; here too - see rm_unpark - and the two paths differ only in
+        ; how long they spent down here.
+rm_toprot:
         cli
         call    pic_to_pm               ; IRQs back out of the exception range
         lgdt    fword ptr cs:[gdtr]
@@ -768,6 +772,140 @@ ld_this     dd  0                       ; sectors in the piece in hand
 ;=====================================================================
 ; GDT.  Lives inside the resident stub so it stays valid forever.
 ;=====================================================================
+
+;=====================================================================
+; PARKING.  Two entries, at fixed offsets, because the code on each
+; side of them is assembled separately: PMDOS.SYS reaches rm_park by a
+; far JMP to SEL_CODE16:RMT_PARK, and RMDOS.SYS reaches rm_unpark by a
+; far JMP to a real-mode address it is HANDED rather than compiled
+; with - see RMH_UNPARKSEG in RMDOS.INC.
+;
+; WHAT MAKES THIS CHEAP is that pm2rm above already does every hard
+; part: paging off before PE off, an identity-mapped instruction doing
+; the switch, the BIOS IVT back, the PICs back where the BIOS put
+; them.  Parking is that routine with its ending removed - it goes
+; down and does not come up - and unparking is the ending on its own.
+;
+; THE MACHINE IT LEAVES BEHIND IS A COHERENT REAL-MODE MACHINE, and
+; that is not luck.  Below 1MB the page map is the identity, so every
+; segment:offset in the arena still addresses the byte it addressed a
+; moment ago; the arena is already a real MCB chain because a 16-bit
+; program has to be able to walk it; and the programs in it are at
+; real segment addresses because there was never anywhere else to put
+; them.  Nothing is moved, copied or relocated by parking.  The state
+; that does NOT survive is the state that lived above 1MB, and
+; supplying that again is RMDOS's whole job.
+;=====================================================================
+park_mark:
+IF (park_mark - rm_base) GT RMT_PARK
+        .ERR    <the stub's code has grown into the park entry at RMT_PARK>
+ENDIF
+        ORG     RMT_PARK
+
+;---------------------------------------------------------------------
+; rm_park - protected mode to real mode, and stay there.
+;
+; Entered by a far JMP SEL_CODE16:RMT_PARK with interrupts already off
+; and GV_PARK filled in.  RMRET and RMSAVE_ESP are the caller's, exactly
+; as for pm2rm, and are what rm_unpark eventually returns through - so
+; from PMDOS.SYS's point of view this is one very slow subroutine call.
+;---------------------------------------------------------------------
+rm_park:
+        mov     ax,SEL_DATA16
+        mov     ds,ax
+        mov     es,ax
+        mov     fs,ax
+        mov     gs,ax
+        mov     ss,ax
+        mov     sp,RM_STACK_TOP
+
+        mov     byte ptr ds:[GVO_PARK + GVP_ACTIVE],1
+
+        mov     eax,cr0                 ; paging first, on its own
+        and     eax,7FFFFFFFh
+        mov     cr0,eax
+
+        mov     eax,cr0                 ; then protected mode
+        and     al,0FEh
+        mov     cr0,eax
+
+        db      0EAh                    ; JMP FAR IO_SEG:park_land
+        dw      OFFSET park_land
+        dw      IO_SEG
+
+park_land:
+        xor     ax,ax
+        mov     ds,ax
+        mov     es,ax
+        mov     fs,ax
+        mov     gs,ax
+        mov     ss,ax
+        mov     sp,RM_STACK_TOP
+        lidt    fword ptr cs:[rm_idtr]  ; the BIOS IVT is the IVT again
+        call    pic_to_rm               ; and IRQs where a BIOS expects them
+
+        ; Hand over.  The far jump is built in the code stream rather
+        ; than done indirectly because DS is about to stop addressing
+        ; the globals: everything the target needs is loaded first and
+        ; the jump target is patched into the two words below.
+        mov     bx,IO_SEG
+        mov     es,bx
+        mov     ax,word ptr cs:[GVO_PARK + GVP_IP]
+        mov     word ptr es:[park_go + 1],ax
+        mov     ax,word ptr cs:[GVO_PARK + GVP_CS]
+        mov     word ptr es:[park_go + 3],ax
+
+        mov     ax,word ptr cs:[GVO_PARK + GVP_SS]
+        mov     bx,word ptr cs:[GVO_PARK + GVP_SP]
+        cli
+        mov     ss,ax
+        mov     sp,bx
+        mov     ax,word ptr cs:[GVO_PARK + GVP_ES]
+        mov     es,ax
+        mov     ax,word ptr cs:[GVO_PARK + GVP_AX]
+        mov     ds,word ptr cs:[GVO_PARK + GVP_DS]
+        sti
+park_go:
+        db      0EAh                    ; JMP FAR <patched>:<patched>
+        dw      0
+        dw      0
+
+;---------------------------------------------------------------------
+; rm_unpark - and back again.  FAR JMPed to from real mode by RMDOS,
+;             so CS is IO_SEG and nothing else can be relied on.
+;
+; A20 IS FORCED ON HERE AND NOT ASSUMED.  Whatever ran while we were
+; parked owned the gate - Windows drives it constantly, and a DOS
+; program that used HMA may have left it shut - and the kernel this
+; returns to lives above 1MB.  enable_a20 is the same routine cold
+; start uses.
+;---------------------------------------------------------------------
+; AND THE SECOND BOUNDARY IS CHECKED TOO, which it was not: the
+; guard above only covered the code BEFORE RMT_PARK.  park_land
+; grew to end one byte past RMT_UNPARK, the ORG below silently
+; overwrote it, and the handover far-jumped into an instruction
+; stream that was half of one routine and half of another - which
+; wandered into rm_unpark and came straight back to protected
+; mode, so the machine SURVIVED and reported success.  A fixed
+; offset with code in front of it needs a check at both ends.
+unpark_mark:
+IF (unpark_mark - rm_base) GT RMT_UNPARK
+        .ERR    <the park code has grown into the unpark entry>
+ENDIF
+        ORG     RMT_UNPARK
+rm_unpark:
+        cli
+        xor     ax,ax
+        mov     ss,ax
+        mov     sp,RM_STACK_TOP
+        mov     ax,cs
+        mov     ds,ax
+        mov     es,ax
+        mov     byte ptr cs:[GVO_PARK + GVP_ACTIVE],0
+        call    enable_a20
+        cli
+        jmp     rm_toprot
+
         ORG     GDT_OFF
 gdt_start:
         ; 0000 - null

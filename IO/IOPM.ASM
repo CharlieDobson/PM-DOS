@@ -62,6 +62,8 @@ svc_table:
         dd      kb_typematic            ; IOS_KBRATE
         dd      ata_config              ; IOS_ATACFG
         dd      ata_info                ; IOS_ATAINFO
+        dd      rm_park         ; IOS_PARK
+        dd      rm_unparkaddr   ; IOS_UNPARKADDR
 
 ;=====================================================================
 ; pm_entry - first instruction executed in 32-bit protected mode.

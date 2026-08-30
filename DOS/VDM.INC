@@ -3262,6 +3262,7 @@ vdm_subptr:
         db  0F1h, 03h,  P_DX            ; the interpreter's own path
         db  0F1h, 06h,  P_DI            ; the volume table
         db  0F1h, 08h,  P_DI            ; and one block of the arena
+        db  0F1h, 0Bh,  P_DX            ; the program to run parked
                                         ; F0h converts nothing at all: its
                                         ; DX is a row and a column
         db  0
