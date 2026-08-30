@@ -208,8 +208,28 @@ ENDIF
 IFDEF V86_WATCHQ
 V86_WATCHDATA   EQU     1
 ENDIF
+IFDEF DBG_LPT
+V86_WATCHDATA   EQU     1
+ENDIF
 IFDEF V86_WATCHDATA
 V86_WATCHTICKS  EQU     36              ; two seconds at 18.2 Hz
+DBG_DEADLINE    EQU     820             ; ...and forty-five seconds no
+                                        ; matter what, because A GUEST
+                                        ; THAT SPINS THROUGH THE MONITOR
+                                        ; IS NEVER QUIET: it faults on
+                                        ; every turn of its loop, clears
+                                        ; the counter below, and defeats
+                                        ; a trigger that waits for
+                                        ; silence.  That is not a
+                                        ; hypothetical - it is what
+                                        ; Windows does after the logo.
+DBG_QUIETTICKS  EQU     91              ; five seconds, and deliberately
+                                        ; longer than the loud watchdog's
+                                        ; two: this one fires ONCE and
+                                        ; there is no second chance, so it
+                                        ; waits until a slow disk read or a
+                                        ; long BIOS call cannot be the
+                                        ; explanation for the silence.
 v86_watch       dd      0               ; ticks since the monitor last ran
 v86_wcs         dd      0
 v86_weip        dd      0
@@ -360,6 +380,77 @@ IFDEF V86_WATCH
 it_nospin:
         mov     dword ptr ds:[v86_watch],0
 it_spun:
+ENDIF
+
+IFDEF DBG_LPT
+;--- and the same sampler again, printing where nobody is looking ----
+; THE RECORDING IS ALREADY DONE by the time this runs.  dbg_rec has
+; been filling a ring buffer on every guest trap, at a cost of about a
+; dozen instructions and no I/O, so nothing here has perturbed
+; anything yet.  This is only the trigger: count ticks since the
+; monitor was last entered, and when the guest has been silent for
+; long enough that it is not coming back, print the ring to the
+; printer port - ONCE.
+;
+; Printing after the guest has stopped is the whole trick.  There is
+; no longer anything to disturb, so the trace can be as slow and as
+; long as it likes.
+        ; NOT "is the guest in V86".  That was the first version and it
+        ; asks the wrong thing: if the machine has stopped with the CPU
+        ; somewhere else - in the kernel, in a ring-3 program, or in a
+        ; guest that has been given the machine outright - then the
+        ; test fails on every tick and the trace never prints, which
+        ; reads exactly like a channel that does not work.  Count the
+        ; ticks whatever mode the interrupted code was in, and REPORT
+        ; the mode: it is one of the things worth knowing.
+        cmp     byte ptr ds:[dbg_dumped],0
+        jne     itl_out
+        ; ...and not before there is anything to say.  Nothing has run
+        ; a guest yet during the kernel's own boot, so without this the
+        ; five seconds elapse at the command prompt and the one dump
+        ; there is gets spent on an idle machine.
+        cmp     dword ptr ds:[dbg_count],0
+        je      itl_out
+
+        ; TWO TRIGGERS, and the second is the one that works.  Quiet
+        ; means the guest stopped asking; the deadline means it never
+        ; will stop asking and the answer has to be taken anyway.
+        inc     dword ptr ds:[dbg_age]
+        inc     dword ptr ds:[v86_watch]
+        cmp     dword ptr ds:[v86_watch],DBG_QUIETTICKS
+        jae     itl_fire
+        cmp     dword ptr ds:[dbg_age],DBG_DEADLINE
+        jb      itl_out
+itl_fire:
+        mov     byte ptr ds:[dbg_dumped],1
+
+        ; Where it stopped goes out first, because it is the one fact
+        ; the ring does NOT hold: the ring's last entry is the last
+        ; trap the guest took, and a guest that is spinning took that
+        ; one some time before it started spinning.
+        mov     eax,[esp+52]
+        mov     dword ptr ds:[v86_wcs],eax
+        mov     eax,[esp+48]
+        mov     dword ptr ds:[v86_weip],eax
+        mov     esi,OFFSET dbg_mstop
+        call    dbg_str
+        mov     al,'R'                  ; real/V86...
+        test    dword ptr [esp+56],EFL_VM
+        jnz     itl_mode
+        mov     al,'P'                  ; ...or protected
+itl_mode:
+        call    dbg_out
+        mov     al,' '
+        call    dbg_out
+        mov     eax,dword ptr ds:[v86_wcs]
+        call    dbg_hex16
+        mov     al,':'
+        call    dbg_out
+        mov     eax,dword ptr ds:[v86_weip]
+        call    dbg_hex32       ; 32 bits: in protected mode EIP is not a word
+        call    dbg_crlf
+        call    dbg_dump
+itl_out:
 ENDIF
 
 IFDEF V86_WATCHQ

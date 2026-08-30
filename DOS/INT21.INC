@@ -3819,7 +3819,7 @@ f44_outstat:
 f44_removbl:
         call    f44_drive
         jc      f44_baddrv
-        cmp     byte ptr [fat_drive],80h
+        cmp     byte ptr [ebx+DRV_BIOS],80h     ; the table, not the mounted volume
         jae     f44_fixed
         mov     word ptr [ebp+F_EAX],0
         jmp     i21_ok
@@ -3857,8 +3857,29 @@ f44_drvmap:
         jmp     i21_ok
 
 ;---------------------------------------------------------------------
-; f44_drive - the drive in BL (0 = default, 1 = A:), selected.
-;             CF set if there is no such drive.
+; f44_drive - the drive in BL (0 = default, 1 = A:), looked up.
+;             CF set if there is no such drive; EBX = its drv_tbl row.
+;
+; LOOKED UP, NOT MOUNTED, and the difference is the whole point.  This
+; served the three INFORMATIONAL subfunctions - 08h removable, 09h
+; remote, 0Eh drive map - by calling vol_select, which mounts the
+; volume, which READS THE DISK.  For a floppy drive with no disk in it
+; that read fails, and a failed read on a DOS call is a critical error:
+; "Not ready reading drive A - Abort, Retry, Fail?" and a wait for a
+; keystroke.
+;
+; A real DOS answers all three out of the drive parameter block
+; without touching the medium, which is exactly WHY a program uses
+; them.  Windows 3.1 asks 4408 about drive A: while it is starting,
+; gets no answer back, and stops - and because it has already switched
+; the screen to 640x480 by then, the prompt waiting for a key is
+; drawn where nothing can be seen.  Twenty-one releases of tests never
+; found it because every one of them boots with a disk in the drive,
+; and a machine with an empty floppy drive is the ordinary case.
+;
+; Everything these three need is in drv_tbl, which the boot-time scan
+; filled in: the BIOS drive number says removable or fixed, and
+; DRVF_PRESENT says whether the letter means anything.  No I/O.
 ;---------------------------------------------------------------------
 f44_drive:
         mov     al,[ebp+F_EBX]
@@ -3871,7 +3892,10 @@ f44d_expl:
         cmp     al,MAX_DRIVES
         jae     f44d_no
 f44d_sel:
-        call    vol_select
+        call    drv_slot                ; AL -> EBX, and nothing else
+        test    byte ptr [ebx+DRV_FLAGS],DRVF_PRESENT
+        jz      f44d_no
+        clc
         ret
 f44d_no:
         stc

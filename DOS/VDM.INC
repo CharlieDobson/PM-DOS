@@ -1614,8 +1614,10 @@ vdm_i2F:
         call    dpmi_int2F              ; 1686h/1687h: is there a host?
         jnc     vdm_loop
         call    win_int2F               ; and the 16xx Windows family,
-        jc      vdm_reflect             ; which VETOES 1605h and then
-        jmp     vdm_loop                ; reflects it anyway - see there
+        jc      vdm_reflect             ; which vetoes ENHANCED mode's
+        cmp     byte ptr ds:[win_parkreq],0     ; 1605h and reflects it
+        jne     vdm_winpark                     ; anyway - see there
+        jmp     vdm_loop
 
 ;--- INT 67h: the whole vector, and every subfunction of it.  Unlike
 ;--- 15h and 2Fh there is nothing on 67h that belongs to anyone else:
@@ -1645,6 +1647,86 @@ vdm_reflect:
         mov     eax,ebx
         mov     esi,OFFSET vdm_ctx
         call    dword ptr ds:[IOS_V86INT]
+        jmp     vdm_loop
+
+;=====================================================================
+; vdm_winpark - Windows in standard mode broadcast 1605h and PM-DOS
+;               said yes.  Now it has to mean it.
+;
+; WHY SAYING YES IS NOT ENOUGH, and why this is a handover rather than
+; a permission.  DOSX.EXE is a DOS extender: before it switches the
+; machine into protected mode it checks whether anybody else already
+; has, with SMSW, and the PE bit answers for the whole machine.  Under
+; this kernel it reads back set - because it IS set, the guest is in
+; V86 mode inside a protected-mode monitor - and DOSX will not switch a
+; machine that is already switched.  It looks for the two ways a
+; resident monitor is supposed to let it in, VCPI on INT 67h and DPMI
+; on INT 2Fh AX=1687h, and takes neither: it never asks for DPMI at
+; all, and PM-DOS has no VCPI.  So it prints "Cannot start Windows in
+; Standard Mode" and leaves.
+;
+; There is no answer to that from inside protected mode.  The bit it
+; is reading is the truth.  The only way to make the answer no is to
+; stop being in protected mode - which is what parking is, and what
+; RMDOS.SYS is underneath it.
+;
+; THE GUEST IS NOT TOLD, AND CANNOT TELL.  It executed an INT and it
+; gets a return from that INT with its registers intact; that the
+; return arrives in real mode, on a machine whose DOS is now a
+; different and much smaller one, is not a thing an 8086 instruction
+; stream can observe.  It observes only what it went looking for: PE
+; clear, and a machine it may have.
+;=====================================================================
+vdm_winpark:
+        mov     byte ptr ds:[win_parkreq],0
+        call    park_fromv86
+        xor     esi,esi
+        call    park_run
+        jc      vwp_failed
+
+        ; Windows has ended and the machine is ours again.  From this
+        ; box's point of view the program that broadcast 1605h has
+        ; simply finished, so finish it the way it would have finished
+        ; itself - 4Ch, carrying the code RMDOS brought back - and let
+        ; the ordinary exit path unwind it.  Its parent's EXEC returns,
+        ; and nothing in the box has to know where it has been.
+        mov     byte ptr [vdm_ctx+V86C_EAX],al
+        jmp     vdm_term
+
+;--- The excursion did not happen: no RMDOS.SYS, no room for it, or a
+;--- file still open.  Say so, because the guest is about to act on a
+;--- permission that has just been withdrawn - and then withdraw it
+;--- properly, by vetoing after all.  A veto is the one answer that is
+;--- always safe: Windows unwinds and the machine is exactly as it was.
+;--- ...and it says WHICH of the three, because the three have nothing
+;--- in common from the user's side: one is a missing file, one is a
+;--- full machine, and one is something the user did a moment ago and
+;--- can undo.  park_run already distinguishes them in EAX and the
+;--- first version of this handler threw that away.
+vwp_failed:
+        push    esi
+        push    eax
+        mov     esi,OFFSET msgWinPark
+        call    dword ptr ds:[IOS_CONSTR]
+        pop     eax
+        mov     esi,OFFSET msgWinPMem
+        cmp     eax,ERR_ACCESS
+        jne     vwp_why2
+        mov     esi,OFFSET msgWinPFile
+        jmp     short vwp_say
+vwp_why2:
+        cmp     eax,ERR_NOFILE
+        jne     vwp_why3
+        mov     esi,OFFSET msgWinPNoRM
+        jmp     short vwp_say
+vwp_why3:
+        cmp     eax,ERR_BADDATA
+        jne     vwp_say
+        mov     esi,OFFSET msgWinPBad
+vwp_say:
+        call    dword ptr ds:[IOS_CONSTR]
+        pop     esi
+        mov     word ptr [vdm_ctx+V86C_ECX],1
         jmp     vdm_loop
 
 ;---------------------------------------------------------------------

@@ -103,6 +103,9 @@ ENDIF
                                         ; the roadmap wanted - NULLTRAP.INC
                                         ; says why page zero cannot go
         call    v86_init                ; the TSS, before anything can fault
+IFDEF DBG_LPT
+        call    dbg_init                ; ...and the channel that is not the screen
+ENDIF
 
         call    pic_init
         call    kb_init
@@ -232,6 +235,9 @@ panic_hlt:
         INCLUDE PAGING.INC
         INCLUDE NULLTRAP.INC
         INCLUDE VM86.INC
+IFDEF DBG_LPT
+        INCLUDE DBGSINK.INC      ; after VM86.INC: it reads the fault frame
+ENDIF
         INCLUDE CONSOLE.INC
         INCLUDE KEYBD.INC
         INCLUDE RMCALL.INC

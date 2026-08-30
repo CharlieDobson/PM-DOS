@@ -366,6 +366,15 @@ v86_fault:
 IFDEF V86_WATCH
         mov     dword ptr ds:[v86_watch],0      ; the guest is still asking
 ENDIF
+IFDEF DBG_LPT
+; EVERY FAULT INTO THE RING, and nothing else here: no I/O, no
+; formatting, no decisions.  What this costs is what the guest pays
+; for being watched, and the whole point of the ring is that it is
+; almost nothing.
+IFNDEF DBG_NOREC
+        call    dbg_rec
+ENDIF
+ENDIF
 IFDEF V86_WATCHQ
 ; WHERE THE GUEST FAULTED, kept for the timer to display.  The spin
 ; counter this used to clear answered "is the guest making calls at

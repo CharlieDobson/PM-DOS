@@ -146,6 +146,11 @@ rd_entry:
         jmp     rd_goback
 rd_sigok:
         mov     word ptr [h_why],RMW_EXIT
+IFDEF DBG_LPT
+        call    rdbg_saveframe0         ; the frame AS PM-DOS HANDED IT OVER
+        mov     al,RDBGM_ENTRY
+        call    rdbg_mark
+ENDIF
 IFDEF RMDOS_BISECT
         jmp     rd_goback               ; straight back out: does the
                                         ; SWITCH work, before asking
@@ -153,10 +158,30 @@ IFDEF RMDOS_BISECT
 ENDIF
 
         call    rd_vecs                 ; the vectors a DOS owns
+IFDEF DBG_LPT
+        mov     al,RDBGM_VECS
+        call    rdbg_mark
+ENDIF
         call    rd_volinit              ; per-drive geometry
+IFDEF DBG_LPT
+        mov     al,RDBGM_VOL
+        call    rdbg_mark
+ENDIF
         call    rd_sysinit              ; SDA, list of lists, CDS
+IFDEF DBG_LPT
+        mov     al,RDBGM_SYS
+        call    rdbg_mark
+ENDIF
         call    rd_sftinit              ; the handle table and its devices
+IFDEF DBG_LPT
+        mov     al,RDBGM_SFT
+        call    rdbg_mark
+ENDIF
         call    rx_init                 ; extended memory, and the A20 gate
+IFDEF DBG_LPT
+        mov     al,RDBGM_XMS
+        call    rdbg_mark
+ENDIF
 
         mov     ax,[h_psp]
         mov     [rd_psp],ax
@@ -181,6 +206,10 @@ rd_quiet:
 ; The program's 4Ch comes back through fn4C to rd_goback, so one
 ; excursion is one program.  A real handover takes the other branch.
 ;---------------------------------------------------------------------
+IFDEF DBG_LPT
+        mov     al,RDBGM_RUN
+        call    rdbg_mark
+ENDIF
         mov     ax,[h_runoff]
         mov     word ptr [rd_go + 1],ax
         mov     ax,[h_runseg]
@@ -210,6 +239,11 @@ rd_go:
 ; and which the program above cannot detect.
 ;---------------------------------------------------------------------
 rd_resume:
+IFDEF DBG_LPT
+        call    rdbg_saveframe
+        mov     al,RDBGM_RESUME
+        call    rdbg_mark
+ENDIF
         cli
         mov     ax,word ptr [h_frame + RMI_SS - RMH_IRET]
         mov     bx,word ptr [h_frame + RMI_ESP - RMH_IRET]
@@ -253,6 +287,10 @@ rd_resume:
 ;=====================================================================
 rd_goback:
         cli
+IFDEF DBG_LPT
+        mov     al,RDBGM_BACK
+        call    rdbg_mark
+ENDIF
         mov     ax,cs
         mov     ds,ax
         mov     ss,ax
@@ -429,6 +467,9 @@ i21_cpy:
         mov     es,ax
         sti
         cld
+IFDEF DBG_LPT
+        call    rdbg_rec                ; BP is the frame - see RMDBG.INC
+ENDIF
 
         mov     bl,byte ptr [bp+F_AX+1]
         movzx   bx,bl
@@ -548,6 +589,12 @@ rs_done:
         INCLUDE RMMEM.INC               ; the arena, EXEC and terminate
         INCLUDE RMINFO.INC              ; everything that only answers
         INCLUDE RMXMS.INC               ; extended memory, A20 and INT 15h
+IFDEF DBG_LPT
+        INCLUDE RMDBG.INC               ; and, when the build asks for it, a
+                                        ; trace that survives a hang - which
+                                        ; is the only kind that is any use on
+                                        ; this side of the handover
+ENDIF
 
 ;=====================================================================
 ; Data

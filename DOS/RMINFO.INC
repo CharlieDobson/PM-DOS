@@ -534,6 +534,9 @@ i24:
 ; calls from then on.  The driver behind it is RMXMS.INC.
 ;=====================================================================
 i2F:
+IFDEF DBG_LPT
+        call    rdbg_i2frec
+ENDIF
         cmp     ah,11h
         je      i2F_none                ; the network redirector: none
         cmp     ah,43h

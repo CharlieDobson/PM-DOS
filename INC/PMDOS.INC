@@ -1840,6 +1840,7 @@ TICKS_PER_DAY   EQU     001800B0h               ; 18.2 Hz x 24 hours
 BDA_BASE        EQU     00000400h
 BDA_MOTORST     EQU     BDA_BASE + 3Fh          ; db - floppy motors running
 BDA_MOTORCNT    EQU     BDA_BASE + 40h          ; db - ticks until motor off
+BDA_LPT1        EQU     BDA_BASE + 08h          ; dw - LPT1 base port, 0 if none
 BDA_EQUIP       EQU     BDA_BASE + 10h          ; dw - equipment word
 BDA_DSKSTAT     EQU     BDA_BASE + 41h          ; db - last INT 13h status
 BDA_TICKS       EQU     BDA_BASE + 6Ch          ; dd - 18.2 Hz since midnight
@@ -2441,7 +2442,7 @@ SHELLTAIL_MAX   EQU     130             ; length byte + 126 + CR + slack
 ; has a call of its own; these two agree.
 ;---------------------------------------------------------------------
 PMDOS_MAJOR     EQU     0
-PMDOS_MINOR     EQU     47
+PMDOS_MINOR     EQU     49
 
 DOSVER_MAJOR    EQU     6
 DOSVER_MINOR    EQU     22

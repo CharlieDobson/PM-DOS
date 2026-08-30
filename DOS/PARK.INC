@@ -41,10 +41,23 @@ PARK_SLACK      EQU     256             ; paragraphs of working room past
 
 ;=====================================================================
 ; park_run - ESI -> a flat ASCIIZ path of a 16-bit program to run
-;                   under RMDOS, or 0 to resume the frame at
-;                   [park_frame] instead (which is the Windows case).
+;                   under RMDOS, or 0 to resume the frame in
+;                   [park_iret] instead, which is the Windows case.
 ;
 ; Returns EAX = the exit code, CF set if the excursion never happened.
+;
+; THE TWO WAYS IN ARE NOT SYMMETRIC AND IT IS WORTH SAYING WHY.  With a
+; path, PM-DOS creates the process: it allocates the memory, builds the
+; PSP, loads the image and tells RMDOS where to start it.  With a
+; frame, THE PROCESS ALREADY EXISTS AND IS MID-INSTRUCTION - it is a
+; guest that executed INT 2Fh AX=1605h and is owed a return from it -
+; so there is nothing to create and the only thing to carry across is
+; the register state.  park_fromv86 fills [park_iret] from the guest
+; context and [park_psp] from the guest's current process; RMDOS's
+; rd_resume turns that back into an IRET.
+;
+; What the guest cannot be told, and does not need to be, is that the
+; IRET happens in a different processor mode from the INT.
 ;=====================================================================
 park_run:
         push    ebx
@@ -53,6 +66,12 @@ park_run:
         push    edi
         push    ebp
         mov     dword ptr [park_prog],esi
+        or      esi,esi
+        jz      pk_keeppsp
+        mov     word ptr [park_psp],0   ; a path means PM-DOS makes the
+                                        ; process; anything park_fromv86
+                                        ; left behind is last time's
+pk_keeppsp:
 
         ; No file may be open.  Handles 0 to 4 are the standard ones
         ; and are devices; anything above them is a file, and a file is
@@ -84,7 +103,7 @@ pk_busy:
         stc
         jmp     short pk_out
 pk_noimage:
-        mov     eax,ERR_NOFILE
+        mov     eax,dword ptr [park_lderr]
         stc
         jmp     short pk_out
 pk_nomem:
@@ -99,6 +118,82 @@ pk_out:
         pop     edx
         pop     ecx
         pop     ebx
+        ret
+
+;=====================================================================
+; park_fromv86 - fill [park_iret] and [park_psp] from the DOS box that
+;                is currently trapped in the monitor.
+;
+; Called before park_run(0).  The context is vdm_ctx, which the V86
+; fault handler has already unpacked, and whose EIP has already been
+; stepped past the two bytes of the INT that got us here - so this
+; frame resumes the guest AT THE INSTRUCTION AFTER THE BROADCAST,
+; which is exactly what a returning INT would have done.
+;
+; SS:SP IS COPIED UNCHANGED AND NOTHING IS PUSHED HERE.  In V86 mode
+; with IOPL 0 the INT never reached the CPU's own interrupt path: it
+; faulted first, and the three words an INT would have pushed were
+; never pushed.  The guest's stack pointer is therefore still exactly
+; where the guest left it, and rd_resume is free to build its IRET
+; frame in the six dead bytes below it.
+;=====================================================================
+park_fromv86:
+        pushad
+        mov     edi,OFFSET park_iret
+
+        ; NOT ZEROED FIRST, and not because it does not need to be:
+        ; every one of the 48 bytes below is written, with no gaps -
+        ; eight dwords of general registers and eight words of segments
+        ; and flags is exactly RMI_LEN.  The clear that used to be here
+        ; was a REP STOSD, which writes through ES, and see the loop in
+        ; park_fillhdr for what that turned out to be worth.
+        mov     eax,dword ptr [vdm_ctx+V86C_EAX]
+        mov     dword ptr [edi + RMI_EAX - RMH_IRET],eax
+        mov     eax,dword ptr [vdm_ctx+V86C_EBX]
+        mov     dword ptr [edi + RMI_EBX - RMH_IRET],eax
+        mov     eax,dword ptr [vdm_ctx+V86C_ECX]
+        mov     dword ptr [edi + RMI_ECX - RMH_IRET],eax
+        mov     eax,dword ptr [vdm_ctx+V86C_EDX]
+        mov     dword ptr [edi + RMI_EDX - RMH_IRET],eax
+        mov     eax,dword ptr [vdm_ctx+V86C_ESI]
+        mov     dword ptr [edi + RMI_ESI - RMH_IRET],eax
+        mov     eax,dword ptr [vdm_ctx+V86C_EDI]
+        mov     dword ptr [edi + RMI_EDI - RMH_IRET],eax
+        mov     eax,dword ptr [vdm_ctx+V86C_EBP]
+        mov     dword ptr [edi + RMI_EBP - RMH_IRET],eax
+        mov     eax,dword ptr [vdm_ctx+V86C_ESP]
+        mov     dword ptr [edi + RMI_ESP - RMH_IRET],eax
+
+        mov     eax,dword ptr [vdm_ctx+V86C_CS]
+        mov     word ptr [edi + RMI_CS - RMH_IRET],ax
+        mov     eax,dword ptr [vdm_ctx+V86C_EIP]
+        mov     word ptr [edi + RMI_IP - RMH_IRET],ax
+        mov     eax,dword ptr [vdm_ctx+V86C_SS]
+        mov     word ptr [edi + RMI_SS - RMH_IRET],ax
+        mov     eax,dword ptr [vdm_ctx+V86C_DS]
+        mov     word ptr [edi + RMI_DS - RMH_IRET],ax
+        mov     eax,dword ptr [vdm_ctx+V86C_ES]
+        mov     word ptr [edi + RMI_ES - RMH_IRET],ax
+        mov     eax,dword ptr [vdm_ctx+V86C_FS]
+        mov     word ptr [edi + RMI_FS - RMH_IRET],ax
+        mov     eax,dword ptr [vdm_ctx+V86C_GS]
+        mov     word ptr [edi + RMI_GS - RMH_IRET],ax
+
+        ; THE FLAGS ARE THE GUEST'S, WITH THE MONITOR'S OWN BITS TAKEN
+        ; OUT.  V86C_FLAGS carries VM and IOPL because that is how the
+        ; guest was being run; on the other side there is no monitor,
+        ; no V86 mode and no privilege level, and an IRET that put
+        ; those bits back into a real-mode FLAGS register would be
+        ; setting NT and IOPL in a machine that has no use for either.
+        mov     eax,dword ptr [vdm_ctx+V86C_FLAGS]
+        and     eax,0FFFh
+        or      eax,EFL_IF                      ; it is about to run: let it
+        mov     word ptr [edi + RMI_FLAGS - RMH_IRET],ax
+
+        mov     word ptr [edi + RMI_GS - RMH_IRET],1605h ; a signature: this ran
+        movzx   eax,word ptr ds:[vdm_curpsp]
+        mov     word ptr [park_psp],ax
+        popad
         ret
 
 ;---------------------------------------------------------------------
@@ -143,11 +238,13 @@ park_loadrm:
 
         ; Open it.  It lives in the root of the boot volume, next to
         ; PMIO.SYS and PMDOS.SYS, and is found the same way they are.
+        mov     dword ptr [park_lderr],ERR_NOFILE
         mov     edx,OFFSET park_name
         mov     eax,3D00h
         call    k21
         jc      plr_nofile
         mov     word ptr [park_hnd],ax
+        mov     dword ptr [park_lderr],ERR_BADDATA
 
         ; How big?  Seek to the end and back.
         movzx   ebx,word ptr [park_hnd]
@@ -176,6 +273,7 @@ park_loadrm:
         shr     eax,4
         add     eax,PARK_SLACK
         mov     ebx,eax
+        mov     dword ptr [park_lderr],ERR_NOMEM
         mov     word ptr [park_paras],ax        ; BEFORE the call: lm_alloc
                                         ; does not preserve EBX, and on
                                         ; failure it deliberately puts
@@ -403,6 +501,9 @@ park_fillhdr:
         mov     ax,word ptr [park_pspseg]
         or      ax,ax
         jnz     pfh_psp
+        mov     ax,word ptr [park_psp]  ; a guest we are resuming: its own
+        or      ax,ax
+        jnz     pfh_psp
         mov     ax,V86_TPA_SEG          ; nothing of ours is running: the
                                         ; arena's own first block will do
 pfh_psp:
@@ -422,7 +523,20 @@ pfh_fd:
         mov     al,LASTDRIVE
 pfh_ndrv:
         mov     byte ptr [edi + RMH_NDRV],al
-        mov     byte ptr [edi + RMH_FLAGS],RMHF_VERBOSE
+
+        ; VERBOSE ONLY WHEN PM-DOS STARTED THE PROGRAM.  Announcing
+        ; itself is what makes RMDOS testable - PARKWIN.COM's screen is
+        ; the whole of that test - but on the frame path the program
+        ; being resumed is Windows, which has already taken the screen
+        ; and put a 640x480 logo on it.  A banner there is not a
+        ; message, it is a band of corruption across somebody's
+        ; graphics, printed by a DOS the user did not know had started.
+        mov     al,RMHF_VERBOSE
+        cmp     dword ptr [park_prog],0
+        jne     pfh_verb
+        xor     al,al
+pfh_verb:
+        mov     byte ptr [edi + RMH_FLAGS],al
 
         mov     ax,word ptr [park_pspseg]
         or      ax,ax
@@ -432,8 +546,36 @@ pfh_ndrv:
         mov     word ptr [edi + RMH_RUNSS],ax
         mov     word ptr [edi + RMH_RUNSP],0FFFEh
         jmp     short pfh_drives
+
+;--- No program to start, so RMDOS takes the other branch and IRETs to
+;--- the frame instead.  It reads the frame OUT OF ITS OWN IMAGE, so
+;--- the staging copy has to be moved in here with everything else -
+;--- after the mode switch there is no protected-mode code left to do
+;--- it, and memory is the only thing that survives the switch.
+;
+;--- A LOOP, WHERE A REP MOVSB WOULD BE ONE INSTRUCTION.  A string move
+;--- writes through ES, and every other write in this routine goes
+;--- through DS - which is why the REP MOVSB that used to be here was
+;--- the only line that did not arrive.  It failed silently and it
+;--- failed convincingly: RMDOS started, checked a signature this
+;--- routine HAD written, found it, ran its whole initialisation and
+;--- IRETed onto a frame of zeroes, which sent the guest to 0000:0000
+;--- to execute the interrupt vector table.  Nothing about that looks
+;--- like a segment register.
 pfh_noprog:
         mov     word ptr [edi + RMH_RUNSEG],0
+        push    ecx
+        push    esi
+        mov     esi,OFFSET park_iret
+        xor     ecx,ecx
+pfh_frame:
+        mov     eax,dword ptr [esi + ecx*4]
+        mov     dword ptr [edi + RMH_IRET + ecx*4],eax
+        inc     ecx
+        cmp     ecx,RMI_LEN / 4
+        jb      pfh_frame
+        pop     esi
+        pop     ecx
 pfh_drives:
         mov     word ptr [edi + RMH_EXITCODE],0
         mov     word ptr [edi + RMH_WHY],RMW_NOTOURS
@@ -545,9 +687,28 @@ park_recover:
 ; swap the volume's state in, throw away every cached thing about it,
 ; and mount it again.  A failed mount is not an error here - a floppy
 ; that is not in the drive was not readable before we parked either.
+;
+; AND "NOT AN ERROR" HAS TO BE SAID TO THE CRITICAL-ERROR MACHINERY,
+; not just meant.  This walks EVERY drive letter, empty ones included,
+; and a mount reads the medium; on an empty floppy that read fails and
+; raises a critical error, which prompts - "Not ready reading drive A,
+; Abort, Retry, Fail?" - on behalf of a program that asked for none of
+; this, at a moment when the screen may belong to Windows and there
+; may be nobody to read it.  crit_busy is the flag that makes
+; crit_raise answer FAIL and return, and this is exactly the case it
+; is for: housekeeping with no caller to ask.
+;
+; It went unnoticed for four releases because the unpark path had
+; never run on a machine with an empty drive in it - the same reason,
+; and very nearly the same bug, as the 4408 critical error v0.48 found
+; on the way IN to Windows.  Both ends of the excursion now know that
+; a drive which is not there is an answer and not a question.
 park_remount:
         push    eax
         push    ecx
+        movzx   eax,byte ptr [crit_busy]
+        push    eax
+        mov     byte ptr [crit_busy],1
         xor     ecx,ecx
 pr_loop:
         cmp     cl,MAX_DRIVES
@@ -566,6 +727,9 @@ pr_loop:
         inc     cl
         jmp     short pr_loop
 pr_done:
+        pop     eax
+        mov     byte ptr [crit_busy],al ; back to whatever it was, which is
+                                        ; zero unless a handler is running
         pop     ecx
         pop     eax
         ret
@@ -615,3 +779,8 @@ park_blk    db  GVP_LEN dup(0)
 park_xmsblk  dd  0                      ; the arena block, for giving back
 park_xmsbase dd  0                      ; and the aligned range inside it
 park_xmslen  dd  0
+park_lderr   dd  ERR_NOFILE             ; WHERE in park_loadrm it went
+                                        ; wrong - every one of its six
+                                        ; failures used to say "no file"
+park_psp     dw  0                      ; the guest process to resume, and
+park_iret    db  RMI_LEN dup(0AAh)      ; the registers to resume it with

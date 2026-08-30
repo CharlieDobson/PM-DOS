@@ -20,20 +20,36 @@
 ; The second is the INT 2Fh multiplex family in the 16xx range, which
 ; is how Windows and the machine underneath it introduce themselves.
 ; PM-DOS answers the questions ("is Windows running?" - no) and, for
-; the one call that is not a question, REFUSES: AX=1605h is Windows/386
-; announcing that it is about to take the machine, and PM-DOS cannot
-; let it, because WIN386.EXE is itself a V86 monitor and this kernel is
-; already one.
+; the one call that is not a question, DECIDES: AX=1605h is Windows
+; announcing that it is about to start, and every resident on the chain
+; gets a veto.  PM-DOS uses it on ONE of the two Windowses that send it.
 ;
-; WHY REFUSING IS WORTH CODE.  Before this file, 1605h reached the IRET
-; stub the VDM installs on INT 2Fh for a guest, came back with every
-; register exactly as WIN386 had set it, and WIN386 read CX - which it
-; had not initialised for the purpose of being read - as the verdict on
-; whether it could start.  Whatever happened next was not a decision
-; anybody had made.  Now it is: CX comes back non-zero, WIN386 stops,
-; and the user is told why and what to try instead.  That is the entire
-; behavioural change in this file, and it turns an undefined outcome
-; into a defined one.
+; THE BROADCAST IS SENT BY BOTH MODES AND MEANS TWO DIFFERENT THINGS.
+; DX bit 0 is clear for 386 enhanced mode and set for standard mode,
+; and that bit is the whole of the decision:
+;
+;   enhanced   WIN386.EXE is itself a V86 monitor.  It wants CR0, CR3,
+;              the GDT, the IDT and ring 0 - the seat PM-DOS is sitting
+;              in.  Vetoed, with an explanation on the screen.
+;
+;   standard   DOSX.EXE is a DOS EXTENDER, not a monitor.  It wants to
+;              run 16-bit protected-mode code and to be given a way
+;              into that mode; it does not want the machine.  PM-DOS
+;              hosts DPMI, which is exactly that way in.  Allowed.
+;
+; That distinction is not a refinement of the veto, it is the reason
+; the veto was wrong.  The message PM-DOS printed talked about
+; WIN386.EXE needing the supervisor seat, and for WIN /S the program
+; reading it was DOSX, which does not want the seat and had said so in
+; a register nobody looked at.
+;
+; WHY ANSWERING AT ALL IS WORTH CODE.  Before this file, 1605h reached
+; the IRET stub the VDM installs on INT 2Fh for a guest and came back
+; with every register exactly as Windows had set it, so the verdict
+; Windows read out of CX was whatever Windows had happened to leave
+; there.  Nobody had made that decision.  Now somebody has - and, since
+; the decision turns out to have two answers, making it explicitly is
+; also what made it possible to get one of them right.
 ;=====================================================================
 
 ;=====================================================================
@@ -237,25 +253,36 @@ w2f_held:
         ret
 
 ;=====================================================================
-; 1605h - Windows/386 is starting, and it is asking permission.
+; 1605h - Windows is starting, and it is asking permission.
 ;
-; This is the one call in the family with teeth.  WIN386.EXE broadcasts
-; it before it takes the machine; every resident on the chain gets a
-; look, may add instance-data records through the structure at ES:BX,
-; and may VETO the whole startup by returning CX non-zero.  PM-DOS
-; vetoes.
+; This is the one call in the family with teeth.  Windows broadcasts it
+; before it takes the machine; every resident on the chain gets a look,
+; may add instance-data records through the structure at ES:BX, and may
+; VETO the whole startup by returning CX non-zero.
 ;
-; WHY IT HAS TO.  WIN386.EXE is a V86 monitor: it builds its own page
-; tables, its own GDT and IDT, puts DOS in a virtual machine and runs
-; the machine from ring 0 itself.  There is exactly one of those seats
-; and PM-DOS is in it.  Under MS-DOS the seat is empty, and where a
-; monitor is already there - EMM386 - Windows starts only because
-; EMM386 answers this call by getting out of protected mode entirely
-; and handing the whole machine over, with a real-mode MS-DOS left
-; underneath still able to serve INT 21h.  PM-DOS has no real-mode DOS
-; to leave underneath: its entire API is 32-bit protected-mode code.
-; That is the thing that has to be built before this call can be
-; answered any other way, and it is a second DOS, not a shim.
+; DX BIT 0 IS READ FIRST, because the two modes are asking two
+; different questions - see the head of this file.  Enhanced mode wants
+; the supervisor seat, which is taken.  Standard mode wants a door into
+; protected mode, which PM-DOS holds open.
+;
+; WHY ENHANCED MODE CANNOT BE LET IN.  WIN386.EXE is a V86 monitor: it
+; builds its own page tables, its own GDT and IDT, puts DOS in a
+; virtual machine and runs the machine from ring 0 itself.  There is
+; exactly one of those seats and PM-DOS is in it.  Under MS-DOS the
+; seat is empty, and where a monitor is already there - EMM386 -
+; Windows starts only because EMM386 answers this call by getting out
+; of protected mode entirely and handing the whole machine over, with a
+; real-mode MS-DOS left underneath still able to serve INT 21h.  That
+; second DOS now EXISTS here - it is RMDOS.SYS, and DOS\PARK.INC is the
+; handover that leaves it running - but handing the machine over ON
+; THIS CALL is a phase of its own, and the veto stands until it is done.
+;
+; SAYING YES IS SPELLED BY DOING NOTHING, which is worth being explicit
+; about because it reads as an omission.  The caller sets CX to zero
+; itself and a resident that consents leaves it there; there is no
+; "accept" to write.  Writing a zero would be worse than useless - it
+; would erase a veto set by someone else, and this handler runs before
+; the guest's own chain does.
 ;
 ; THE VETO IS SET AND THEN THE CALL IS REFLECTED ANYWAY.  Returning CF
 ; set sends it on to the guest's own INT 2Fh chain, which is correct
@@ -264,8 +291,12 @@ w2f_held:
 ; see it even though the answer is already no.  Nothing downstream can
 ; undo the veto - the protocol has no way to clear CX back to zero -
 ; so setting it first and chaining second is both polite and safe.
+; Both branches below chain, for the same reason.
 ;=====================================================================
 w2f_start:
+        test    byte ptr [vdm_ctx+V86C_EDX],1   ; DX bit 0: 1 = standard mode
+        jnz     w2f_std
+
         mov     word ptr [vdm_ctx+V86C_ECX],1   ; non-zero: do not start
 
         cmp     byte ptr ds:[win_said],0
@@ -279,6 +310,45 @@ w2f_saidit:
         stc                                     ; and on down the chain
         ret
 
+;--- Standard mode: consent - and then get out of the way, which is a
+;--- much bigger thing than consenting and cannot be done from here.
+;--- vdm_winpark does it, on the way out of the monitor, where there is
+;--- no interrupt half-handled and no DOS call in flight; see there for
+;--- why a yes that leaves the kernel in protected mode is worth
+;--- nothing to DOSX.  CX is left exactly as DOSX set it - see above.
+;---
+;--- CF CLEAR, so this one does NOT chain.  The other 16xx answers
+;--- reflect because a broadcast should reach every resident; this one
+;--- is not going to return to the guest at all in the ordinary way,
+;--- and reflecting it would rewrite the CS:IP that park_fromv86 is
+;--- about to copy into the frame Windows gets resumed on.
+w2f_std:
+        mov     byte ptr ds:[win_parkreq],1
+        clc
+        ret
+
+win_parkreq db  0                   ; set here, acted on and cleared in
+                                    ; vdm_winpark - the two are in
+                                    ; different files because the answer
+                                    ; and the consequence belong to
+                                    ; different layers
+
+msgWinPark  db  13,10
+            db  'PM-DOS: cannot hand the machine over - Windows will not '
+            db  'start.',13,10,0
+msgWinPNoRM db  'RMDOS.SYS is not in the root of the boot drive.',13,10,0
+msgWinPMem  db  'There is not enough conventional memory left for RMDOS.SYS.'
+            db  13,10,0
+msgWinPBad  db  'RMDOS.SYS is there and could not be read: it is empty, or '
+            db  'bigger',13,10
+            db  'than the 64K it has to fit in, or the read failed.',13,10,0
+msgWinPFile db  'A file is open, and the handover cannot carry one across: '
+            db  'RMDOS',13,10
+            db  'has its own handle table, so a handle that means something '
+            db  'here',13,10
+            db  'would mean something else there.  Close it and try again.'
+            db  13,10,0
+
 win_said    db  0                   ; the message is per boot, not per try:
                                     ; WIN.COM will broadcast again if the
                                     ; user runs it again, and saying it
@@ -290,6 +360,8 @@ msgWinEnh   db  13,10
             db  ' already',13,10
             db  'the one running this machine - there is no second seat to '
             db  'give it.',13,10
-            db  'Standard mode - WIN /S - runs as a DPMI client instead, and '
-            db  'PM-DOS',13,10
-            db  'hosts DPMI.  That is the one to try.',13,10,0
+            db  'Standard mode - WIN /S - is allowed: for that one PM-DOS '
+            db  'leaves',13,10
+            db  'protected mode altogether and hands the machine to '
+            db  'RMDOS.SYS.',13,10
+            db  'That is the one to try.',13,10,0

@@ -346,6 +346,16 @@ w1680_bad:
 ; non-zero, and PM-DOS does, because WIN386 is itself a V86 monitor and
 ; this kernel is already the one running the machine.
 ;
+; DX BIT 0 SAYS WHICH WINDOWS IS ASKING, and since v0.49 the kernel
+; reads it: clear is 386 enhanced mode, which is vetoed and is what
+; this check is about, and SET is standard mode, which is allowed and
+; makes PM-DOS hand the whole machine over.  Those are very different
+; outcomes to reach by accident, and this test used to reach one of
+; them by accident - it never set DX at all, so the bit came from
+; whatever the last "mov dx,OFFSET" had left there.  Zeroing it is now
+; part of the test rather than housekeeping.  PARKWIN.COM is the one
+; that sets the bit on purpose.
+;
 ; THE KERNEL PRINTS ITS REASON WHEN THIS RUNS.  That is the refusal
 ; working, not a fault in the test, and it happens once per boot.
 ;
@@ -364,6 +374,7 @@ win_1605:
         xor     di,di
         xor     cx,cx                   ; WIN386 asks with CX clear and reads
                                         ; the answer back out of it
+        xor     dx,dx                   ; bit 0 clear: 386 enhanced mode
         mov     ax,1605h
         int     2Fh
         mov     bp,cx
