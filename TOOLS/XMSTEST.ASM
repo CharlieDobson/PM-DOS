@@ -401,10 +401,46 @@ did_i15:
 
 ;=====================================================================
 ; A20, and the 1MB wrap it exists to switch off.
+;
+; NOT WHEN SOMEBODY LIVES UP THERE, and that is not politeness - it is
+; that this test writes a byte to FFFF:0510 to prove the wrap, and
+; FFFF:0510 is inside the HMA.  If the provider would not GIVE us the
+; HMA a moment ago, something is already in it, and since PM-DOS v0.50
+; that something is RMDOS.SYS itself: the byte lands in the middle of
+; the code answering this very call.  It did, and the DOS spent the
+; rest of the run printing its own message table.
+;
+; A provider that has loaded itself into the HMA also cannot shut the
+; gate - the instruction after the OUT would be fetched from the
+; interrupt vector table - so it reports the disable as done and
+; leaves the gate open, exactly as MS-DOS does with DOS=HIGH.  Both
+; halves of the check below would therefore be wrong as well as
+; destructive.  Say so and move on; that is a different machine, not a
+; broken one.
 ;=====================================================================
         mov     dx,OFFSET msg_a20
         mov     ah,09h
         int     21h
+
+        ; WHERE IS THE DRIVER ITSELF?  "The HMA is not on offer" is not
+        ; the question - PM-DOS refuses it too, because it is keeping
+        ; the HMA empty for RMDOS to move into, and there the wrap
+        ; test is perfectly safe and worth running.  The question is
+        ; whether anything is LIVING at FFFF:0510, and a provider
+        ; answers that about itself: its own entry point.  RMXMS
+        ; answers FFFF:4306, PM-DOS's answers 0502:0000.  An entry
+        ; point above the megabyte is a driver in the HMA, and the
+        ; byte this test would write lands in its code.
+        movzx   eax,word ptr [xms_entry + 2]
+        shl     eax,4
+        movzx   ebx,word ptr [xms_entry]
+        add     eax,ebx
+        cmp     eax,100000h
+        jb      a20_dotest
+        mov     dx,OFFSET msg_a20skip
+        call    say_ok
+        jmp     a20_done
+a20_dotest:
 
         mov     ax,0FFFFh               ; ES:0510 is 10FFEF+ territory
         mov     es,ax
@@ -655,6 +691,7 @@ msg_i15     db  '  INT 15h/88h: $'
 msg_i15ok   db  'no extended memory, as it should say',13,10,'$'
 msg_i15bad  db  'the BIOS offered extended memory',13,10,'$'
 msg_a20     db  '  the 1MB wrap:',13,10,'$'
+msg_a20skip db  'not tested - this provider LIVES in the HMA, so FFFF:0510 is its code',13,10,'$'
 msg_a20on   db  'A20 on: 0000:0500 and FFFF:0510 differ',13,10,'$'
 msg_a20onbad db 'A20 on: they still alias',13,10,'$'
 msg_a20off  db  'A20 off: 0000:0500 and FFFF:0510 alias',13,10,'$'

@@ -37,9 +37,17 @@ SFF_DEVICE      EQU 01h                 ; a character device, not a file
 SFF_WRITTEN     EQU 02h                 ; the directory entry needs updating
 SFF_EOF         EQU 04h
 
-SFT_COUNT       EQU 40
-JFT_COUNT       EQU 20                  ; what fits in a PSP, and what 67h
-                                        ; would have to move somewhere else
+SFT_COUNT       EQU 80                  ; Windows keeps seventeen files open
+                                        ; at once before the shell has even
+                                        ; started; forty was the number a
+                                        ; test program needed
+JFT_COUNT       EQU 20                  ; what fits in a PSP, and what a
+                                        ; process starts with.  It is NOT the
+                                        ; limit: 67h moves the table into a
+                                        ; block of its own and makes it
+                                        ; bigger, and Windows moves it without
+                                        ; asking at all - see jft_ptr in
+                                        ; RMFILE2.INC, and NOTES.TXT v0.55.
 
 ;--- devices, in the order the standard handles open them ------------
 DEV_CON         EQU 0
@@ -990,4 +998,15 @@ rp_vol      dw  0
 rp_indir    db  0
 
 rd_cds      db  (LASTDRIVE * CDS_LEN) dup(0)
+; BUILD lptpad - pushes rd_sfts 1000h bytes up the image.  It was
+; built to ask whether the DI in the Windows fault dump follows the
+; SFT, and the answer was NO: DI stayed 9030 with the table moved
+; 1000h and the image 4K larger, and every other register in that
+; dump was identical too.  So DI is not the SFT, the fault does not
+; depend on anything about this image, and "the scan faults at the
+; table" is a dead reading.  Kept because it is the cheap way to ask
+; the question again.  See NOTES.TXT, v0.53.
+IFDEF RMDOS_PAD
+rd_sftpad   db  1000h dup(0)
+ENDIF
 rd_sfts     db  (SFT_COUNT * SFT_LEN) dup(0)

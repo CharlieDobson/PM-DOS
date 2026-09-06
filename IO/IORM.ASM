@@ -205,14 +205,34 @@ no_paging:
 ; driver sees its timer tick and IRQ 6 completion interrupt; protected
 ; mode needs the IRQs clear of the CPU exception vectors.
 ;
-; pic_to_rm unmasks timer, keyboard, cascade, floppy and the RTC for
-; the BIOS; pic_to_pm restores the kernel's own mask set.
+; pic_to_rm unmasks timer, keyboard, cascade, floppy, the RTC and the
+; two IDE channels for the BIOS; pic_to_pm restores the kernel's own
+; mask set.
+;
+; IRQ 14 IS IN THAT LIST NOW, AND THE REASON IT WAS NOT IS THAT THIS
+; ROUTINE OUTGREW ITS PURPOSE.  It was written for rm_call - a short
+; excursion into the BIOS and straight back - and on those trips the
+; kernel drives the disk itself, with polled port I/O, and has no use
+; for the controller's interrupt.  Masking it was correct.
+;
+; Then v0.45 made rm_park share it, and a park is not an excursion:
+; the machine STAYS there, with a whole DOS on it whose only way to a
+; disk is the BIOS's INT 13h - and this BIOS waits on IRQ 14 for the
+; drive.  So the first call or two would get through on a drive that
+; was already idle and the rest would time out with AH=80h, which is
+; indistinguishable from a disk that is not there.  It cost three
+; releases of theory about a trace channel that was never the problem,
+; and it is a fault in the machine RMDOS is handed, not in the
+; instrument pointed at it: Windows runs on that BIOS too.
+;
+; A routine that two callers share is a routine written for the first
+; of them.
 ;=====================================================================
 pic_to_rm:
         mov     bh,08h                  ; master base
         mov     bl,70h                  ; slave base
         mov     ch,0B8h                 ; master mask: IRQ 0,1,2,6 live
-        mov     cl,0FEh                 ; slave mask:  IRQ 8 (RTC) live
+        mov     cl,3Eh                  ; slave mask:  IRQ 8, 14, 15 live
         jmp     short pic_prog
 pic_to_pm:
         mov     bh,IRQ_BASE
@@ -247,6 +267,89 @@ pic_prog:
         jmp     short $+2
         mov     al,cl
         out     PIC2_DATA,al
+        ret
+
+;=====================================================================
+; ata_toRM / ata_toPM - the OTHER half of pic_to_rm, and the half that
+; was missing.
+;
+; ATA.INC drives the disk itself, polled, and at IDENTIFY time it
+; tells every drive it finds to keep its interrupt to itself: nIEN in
+; the device control register.  That is right for a polled driver and
+; it is set ONCE, at start-up, and never cleared.
+;
+; It lives IN THE DRIVE.  Masking IRQ 14 at the PIC is a decision this
+; kernel can take back in six instructions; nIEN is a decision it
+; leaves inside the hardware, and it survives the mode switch, the
+; park, and everything RMDOS or Windows does afterwards - because
+; nothing down there knows it was ever made.  This BIOS's INT 13h
+; waits for the drive's interrupt, so on the far side of a park the
+; first call would return, the second would time out with AH=80h and
+; the third would hang the machine, which is what PROBE13.COM measures
+; and what three releases of a silent trace channel were really
+; reporting.
+;
+; Both channels unconditionally: a control port with nothing behind it
+; swallows the write, and a channel this kernel never detected is
+; exactly the one whose drive the BIOS may still be using.
+;=====================================================================
+;=====================================================================
+; disk_reset - INT 13h AH=00h on both fixed disks, on the way out.
+;
+; THE FIRST BIOS DISK CALL AFTER A PARK FAILS.  It comes back AH=80h,
+; "the drive did not become ready", and the drive is idle and ready:
+; alternate status 50h, no error, IRQ 14 unmasked, the tick advancing,
+; INT 13h/76h still pointing at ROM.  What the BIOS has lost is the
+; drive's own parameters - this kernel's ATA driver addresses the disk
+; by LBA and has reprogrammed it since POST - and AH=00h is how a BIOS
+; is asked to establish them again.  One call per drive, here, where
+; the IVT is already the BIOS's and nothing has used the disk yet.
+;
+; IT HAS ALWAYS FAILED, AND IT HAS NEVER SHOWN.  RMDISK.INC retries
+; once through a reset on any error, with a comment about floppies
+; needing a second seek - which is true, and is why the retry was
+; written, and is why a hard disk that fails its first call and works
+; ever afterwards has been invisible since v0.45.  Every read RMDOS
+; has ever done has been the second attempt.  It cost three releases
+; of theory about a trace channel whose writes went through the same
+; door and had no retry behind them.
+;
+; A workaround written for one cause will hide a second one for as
+; long as the symptom is the same.
+;=====================================================================
+disk_reset:
+        push    ax
+        push    dx
+        mov     dl,80h
+        xor     ah,ah
+        int     13h
+        mov     dl,81h
+        xor     ah,ah
+        int     13h
+        pop     dx
+        pop     ax
+        ret
+
+ata_toRM:
+        mov     al,0                    ; interrupts on at the drive
+        jmp     short ata_dcr
+ata_toPM:
+        mov     al,02h                  ; and off again for the polled path
+;
+; SPELT OUT AND NOT ATA_DC_NIEN, which is what it said first and which
+; cost more than the constant is worth.  ATA.INC is included by
+; IOPM.ASM; this file is assembled on its own, so the symbol does not
+; exist here - and the build printed "E551: Symbol ATA_DC_NIEN is not
+; defined", carried on, EXITED ZERO, and left the previous PMIO.SYS
+; sitting in BIN for four experiments to be run against.  Two fixes
+; were tested that were never in the machine.
+;
+; The number is nIEN, bit 1 of the device control register.
+ata_dcr:
+        mov     dx,3F6h
+        out     dx,al
+        mov     dx,376h
+        out     dx,al
         ret
 
 ;=====================================================================
@@ -843,6 +946,11 @@ park_land:
         mov     sp,RM_STACK_TOP
         lidt    fword ptr cs:[rm_idtr]  ; the BIOS IVT is the IVT again
         call    pic_to_rm               ; and IRQs where a BIOS expects them
+        call    ata_toRM                ; ...and the drives allowed to raise
+                                        ; them - see below, and v0.52
+        sti                             ; the BIOS's disk code wants these
+        call    disk_reset              ; and the drives put back the way it
+        cli                             ; left them
 
         ; Hand over.  The far jump is built in the code stream rather
         ; than done indirectly because DS is about to stop addressing
@@ -902,6 +1010,9 @@ rm_unpark:
         mov     ds,ax
         mov     es,ax
         mov     byte ptr cs:[GVO_PARK + GVP_ACTIVE],0
+        call    ata_toPM                ; the drives go quiet again: the
+                                        ; driver waiting for them upstairs
+                                        ; is polled and has no handler
         call    enable_a20
         cli
         jmp     rm_toprot

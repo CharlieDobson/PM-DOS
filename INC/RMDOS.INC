@@ -58,17 +58,63 @@ RMDOS_VER       EQU     0101h                   ; 1.01 - this contract.  1.00 ha
                                         ; extended memory in it.
 
 ;---------------------------------------------------------------------
-; The image.  RMDOS.SYS is a flat binary loaded at paragraph RM_SEG,
-; assembled with ORG 0, and every address inside it is relative to its
-; own segment - so PM-DOS may put it anywhere a paragraph starts.
+; WHERE IT LIVES, AND WHY THAT IS THE HARD PART.
+;
+; RMDOS has to be in memory a real-mode segment can reach, which means
+; the first megabyte - and the first megabyte belongs to the program
+; that asked for the handover.  A .COM owns the whole transient
+; program area until it says otherwise, and DOSX.EXE does its 4Ah
+; AFTER broadcasting 1605h, not before: at the instant it asks
+; permission there is not one paragraph free to put a DOS in.  Loading
+; RMDOS out of the box's own arena therefore fails on a machine with
+; 620K free, which is where v0.49 stopped.
+;
+; So it goes in the HIGH MEMORY AREA, which is where a real DOS puts
+; itself and for the same reason.  100000h to 10FFEFh is the only part
+; of extended memory a 16-bit far pointer can address - FFFF:FFFF
+; comes out at 10FFEFh and no further - it is real memory the moment
+; paging is off, it costs no conventional memory at all, and PM-DOS
+; has deliberately left it empty since v0.38 (see PMDOS.INC).
+;
+; THE PRICE IS THE SIXTEEN BYTES BELOW THE MEGABYTE.  Segment FFFFh
+; starts at FFFF0h, which is in the ROM, so the image is assembled at
+; ORG 10h and its first byte lands at exactly 100000h.  Everything
+; inside it is still addressed as an offset from its own segment, so
+; the only thing that changes is that the smallest legal offset is 16
+; rather than 0 - and RMH_* below carry RM_ORG, so no field moves
+; relative to the segment base and no code that reads them changes.
+;
+; RM_ORG also makes the LOW path still work, unchanged, from the same
+; image: load the image at flat (seg+1)*16 and set the segment to seg,
+; and every offset means what it says.  That path is the fallback and
+; it is what the PARKWIN and RMTEST tests exercise from a prompt,
+; where there IS free memory.
+;
+; THE ONE RULE THIS CREATES: NOTHING RUNNING FROM UP HERE MAY EVER
+; CLOSE THE A20 GATE.  With A20 off, segment FFFFh aliases to zero and
+; the instruction after the one that shut it is fetched from the
+; interrupt vector table.  RMXMS.INC's gate is chocked off when
+; RMHF_HIGH is set, which is the whole of the defence.
+;---------------------------------------------------------------------
+RM_ORG          EQU     0010h           ; where the image begins inside its
+                                        ; own segment: 16, so that segment
+                                        ; FFFFh puts byte zero on the megabyte
+RM_HMA_SEG      EQU     0FFFFh          ; the segment that reaches it
+RM_HMA_TOP      EQU     0FFFEh          ; and the highest word-aligned offset
+                                        ; in it - SP starts here
+
+;---------------------------------------------------------------------
+; The image.  RMDOS.SYS is a flat binary assembled with ORG RM_ORG,
+; and every address inside it is relative to its own segment - so
+; PM-DOS may put it at any paragraph whose 16th byte it can write.
 ;
 ; The first bytes are a jump over the handoff block, which PM-DOS fills
 ; IN THE IMAGE before it hands over.  Passing arguments in registers
 ; would not survive: between the fill and the entry there is a mode
 ; switch, and the only thing certain to come through it is memory.
 ;---------------------------------------------------------------------
-RMH_JMP         EQU     0000h           ; db 0E9h + word - jmp rm_entry
-RMH_BASE        EQU     0003h           ; the handoff block starts here
+RMH_JMP         EQU     RM_ORG + 0000h  ; db 0E9h + word - jmp rm_entry
+RMH_BASE        EQU     RM_ORG + 0003h  ; the handoff block starts here
 
 RMH_SIG         EQU     RMH_BASE + 00h  ; dd  RMDOS_SIG, checked by both sides
 RMH_VER         EQU     RMH_BASE + 04h  ; dw  RMDOS_VER
@@ -156,6 +202,13 @@ RMHF_A20        EQU     01h             ; the gate was open when we parked, and
 RMHF_VERBOSE    EQU     02h             ; say what is happening - a test aid,
                                         ; and useless once Windows owns the
                                         ; screen
+RMHF_HIGH       EQU     04h             ; THIS IMAGE IS IN THE HMA.  The gate
+                                        ; that makes the HMA exist is the gate
+                                        ; RMXMS hands out, so when this is set
+                                        ; the gate is nailed open and every
+                                        ; request to close it is answered
+                                        ; "done" without being obeyed.  See
+                                        ; the note above RM_ORG.
 
 ;--- RMH_WHY: why the excursion ended --------------------------------
 RMW_EXIT        EQU     0               ; the program called 4Ch, or Windows

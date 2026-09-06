@@ -109,6 +109,12 @@ rd_getvol:
         test    byte ptr [si+VOL_FLAGS],VF_MOUNTED
         jnz     rgv_ok
 rgv_mount:
+IFDEF RMDOS_MARK
+        push    ax
+        add     al,'A'                  ; which drive is being mounted, which
+        call    rd_vmark                ; is the one thing rd_mount cannot say
+        pop     ax
+ENDIF
         call    rd_mount
         jc      rgv_bad
 rgv_ok:
@@ -182,6 +188,10 @@ rm_geook:
         mov     cx,1
         call    rd_rdsec
         jc      rm_fail
+IFDEF RMDOS_MARK
+        mov     al,'R'                  ; the boot sector came off the disk
+        call    rd_vmark
+ENDIF
 
         mov     di,OFFSET rd_bootbuf
         cmp     word ptr [di+0Bh],SECSIZE
@@ -256,6 +266,10 @@ rm_tot:
         jb      rm_typed
         mov     byte ptr [si+VOL_FATTYPE],32
 rm_typed:
+IFDEF RMDOS_MARK
+        mov     al,'M'                  ; ...and the BPB behind it made sense
+        call    rd_vmark
+ENDIF
         mov     dword ptr [si+VOL_FREEHINT],2
         or      byte ptr [si+VOL_FLAGS],VF_MOUNTED
         pop     es
@@ -263,6 +277,16 @@ rm_typed:
         clc
         ret
 rm_fail:
+IFDEF RMDOS_MARK
+        mov     al,'X'
+        call    rd_vmark
+        mov     ax,word ptr [si+VOL_START]      ; the sector we asked for...
+        call    rd_vhex
+        mov     ax,word ptr [rd_bootbuf+0Bh]    ; ...and the bytes per sector
+        call    rd_vhex                         ; in whatever came back
+        mov     ax,word ptr [rd_bootbuf]        ; and its first two bytes
+        call    rd_vhex
+ENDIF
         and     byte ptr [si+VOL_FLAGS],NOT VF_MOUNTED
         pop     es
         popa
@@ -308,10 +332,27 @@ rx_one:
         jz      rx_ok
         mov     byte ptr [rd_retry],0
 
+;--- CHS FIRST, AND THE PACKET ONLY WHERE CHS CANNOT REACH.
+;
+; The extended calls are the modern ones and they are the ones that do
+; not work here.  AH=42h against this BIOS RETURNS SUCCESS AND MOVES
+; NOTHING: the boot sector read came back with carry clear, AH zero,
+; and a buffer still full of the zeroes it was assembled with, so the
+; volume failed to mount on a BPB that had never been read.  A failure
+; with no symptom is the worst kind, and this is the second time this
+; tree has met this exact one - RMDBG.INC gave up on AH=43h for the
+; same reason and left a note saying so, and this routine never got
+; the message.
+;
+; So the packet is now the FALLBACK, reached only when the cylinder
+; will not fit in ten bits.  CHS reaches 1024 x 256 x 63 sectors,
+; which is eight gigabytes; a machine that runs Windows 3.1 does not
+; have one, and if it ever does, the path that cannot be tested here
+; is at least not the path everything depends on.
 rx_try:
-        test    byte ptr [rd_vflags],VF_LBA
-        jz      rx_chs
+        jmp     short rx_chs
 
+rx_lba:
         mov     word ptr [rd_dap+0],0010h
         mov     word ptr [rd_dap+2],1
         mov     word ptr [rd_dap+4],bx
@@ -372,7 +413,9 @@ rx_chsbad:
         pop     si
         pop     ecx
         pop     eax
-        jmp     short rx_dead
+        test    byte ptr [rd_vflags],VF_LBA
+        jnz     rx_lba                  ; past the tenth bit: the packet is
+        jmp     short rx_dead           ; the only thing left to try
 
 ;--- ONE RETRY, AND IT IS A RESET.  A floppy that has not been touched
 ;--- for a while answers the first seek with an error and the second

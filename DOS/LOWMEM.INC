@@ -228,6 +228,40 @@ ls_end:
         sub     eax,ebx
         cmp     eax,1
         jbe     la_whole
+
+        ; AND LAST FIT SPLITS THE OTHER WAY.  Picking the last block
+        ; that fits is only half of what last fit means: DOS then puts
+        ; the allocation at the TOP of that block and leaves the free
+        ; remainder BELOW it.  Carving from the bottom, as the one
+        ; split here used to do, makes last fit and first fit return
+        ; the same address whenever there is only one free region -
+        ; which is exactly the case that matters, and is why setting
+        ; the strategy to 2 for the park moved nothing at all.
+        ;
+        ; It matters because of where RMDOS lands.  Parked from the
+        ; bottom of the free region it sits in the MIDDLE of the DOS
+        ; box: the Windows kernel is EXECed underneath it and told it
+        ; owns 73K, while 460K sits above RMDOS where nothing can
+        ; reach it.  Parked at the top, the free region below stays
+        ; whole and the kernel gets all of it.  See NOTES.TXT, v0.53.
+        mov     edx,ebp
+        and     edx,3
+        cmp     edx,2
+        jne     ls_lowsplit
+
+        mov     cl,[esi+RMCB_SIG]               ; the end marker belongs to
+        mov     byte ptr [esi+RMCB_SIG],'M'     ; whichever block ends up last
+        mov     word ptr [esi+RMCB_OWN],0       ; the low part stays free
+        dec     eax                             ; and is one header shorter
+        mov     [esi+RMCB_LEN],ax
+        inc     eax
+        shl     eax,4
+        add     esi,eax                         ; ESI -> the allocated header
+        mov     [esi+RMCB_SIG],cl
+        mov     [esi+RMCB_LEN],bx
+        jmp     short la_whole
+
+ls_lowsplit:
         mov     edx,ebx
         inc     edx
         shl     edx,4

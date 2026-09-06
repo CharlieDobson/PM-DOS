@@ -2442,7 +2442,7 @@ SHELLTAIL_MAX   EQU     130             ; length byte + 126 + CR + slack
 ; has a call of its own; these two agree.
 ;---------------------------------------------------------------------
 PMDOS_MAJOR     EQU     0
-PMDOS_MINOR     EQU     49
+PMDOS_MINOR     EQU     55
 
 DOSVER_MAJOR    EQU     6
 DOSVER_MINOR    EQU     22

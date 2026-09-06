@@ -73,6 +73,28 @@ park_run:
                                         ; left behind is last time's
 pk_keeppsp:
 
+        ; THE ONE HOLE IN THE IDENTITY MAP IS THE ONE WE ARE MOVING
+        ; INTO.  PM-DOS emulates the A20 gate in the page tables -
+        ; sixteen entries covering 100000h, pointing at themselves
+        ; when the gate is open and at 00000h when it is shut - and
+        ; the kernel is not exempt from its own page tables.  A DOS
+        ; box starts with the gate SHUT, because that is what a real
+        ; machine does, so a kernel write to linear 100000h lands on
+        ; physical zero: on the interrupt vector table.  Loading RMDOS
+        ; into the HMA that way overwrites the bottom of memory and
+        ; then hands control to a segment FFFFh that has nothing in
+        ; it, which is a triple fault two instructions later.
+        ;
+        ; So the alias goes to the identity for the length of the
+        ; excursion and the guest's own idea of the gate is put back
+        ; afterwards by park_release.  The REAL gate is already open
+        ; and has been since boot - the kernel lives above the
+        ; megabyte - and rm_unpark forces it open again on the way up.
+        call    dword ptr ds:[IOS_A20GET]
+        mov     byte ptr [park_a20],al
+        mov     al,1
+        call    dword ptr ds:[IOS_A20]
+
         ; No file may be open.  Handles 0 to 4 are the standard ones
         ; and are devices; anything above them is a file, and a file is
         ; a reason to refuse.
@@ -88,7 +110,10 @@ pk_keeppsp:
         jc      pk_nomem
 pk_nofill:
 
+        call    park_xmsreclaim         ; what the parking program is holding
         call    park_xmsgrab            ; the extended memory to hand over
+        call    park_chaincut           ; ...and the memory that is about to
+                                        ; stop existing
         call    park_fillhdr
         call    park_go
 
@@ -254,46 +279,168 @@ park_loadrm:
         call    k21
         jc      plr_bad
         mov     dword ptr [park_size],eax
-        or      eax,eax
-        jz      plr_bad
+        cmp     eax,RM_ORG + 100h
+        jbe     plr_bad                 ; nothing this short is an image
         cmp     eax,64 * 1024
         jae     plr_bad                 ; it has to fit in one segment, and
                                         ; everything in it assumes so
 
+        ; BACK TO RM_ORG, NOT TO ZERO.  The file is a picture of the
+        ; whole segment and its first RM_ORG bytes are the pad wlink
+        ; put in front of the ORG - they are not part of the image,
+        ; and in the HMA the address they belong to is in the ROM.
+        ;
+        ; THE OFFSET GOES IN ECX.  k21's 42h is not the 16-bit call's
+        ; CX:DX - it takes one flat 32-bit offset in ECX and does not
+        ; look at EDX at all.  Every 42h in this routine until now
+        ; asked for zero and zeroed both registers, so which one
+        ; carried the number had never once mattered; the first call
+        ; that wanted a non-zero position put it in the wrong one and
+        ; got a silent, successful seek to the beginning.
         movzx   ebx,word ptr [park_hnd]
         mov     eax,4200h
-        xor     ecx,ecx
+        mov     ecx,RM_ORG
         xor     edx,edx
         call    k21
         jc      plr_bad
 
-        ; Room for it, plus a margin
+        ; WHERE IT GOES, AND THE HMA FIRST.
+        ;
+        ; The arena is the obvious place and it is the wrong one.  A
+        ; .COM owns the whole transient program area until it shrinks
+        ; itself, and the caller that matters here - DOSX.EXE - does
+        ; its 4Ah AFTER broadcasting 1605h rather than before, so at
+        ; the instant it asks for the handover there is nothing free
+        ; to put a DOS in.  v0.49 failed here with "not enough memory"
+        ; on a machine with 620K of it.
+        ;
+        ; 100000h-10FFEFh is real memory with paging off, it is the
+        ; only extended memory a 16-bit segment can reach, PM-DOS has
+        ; kept it empty since v0.38, and it costs the DOS box nothing.
+        ; It is where a real DOS puts itself.  Segment FFFFh, offset
+        ; RM_ORG; see the note above RM_ORG in RMDOS.INC.
+        ;
+        ; AND YET IT GOES LOW FIRST NOW, from v0.53, because of what
+        ; the Windows kernel does with the file table.  KRNL386 never
+        ; asks where the SFT is.  It opens CON five times to plant
+        ; handles, then scans memory for the name "CON " and takes the
+        ; distance between two of them as the size of an entry - and
+        ; the scan does not reach the megabyte.  Parked up here this
+        ; DOS is invisible to it and the answer is "Incorrect MS-DOS
+        ; version"; parked low the same build walks straight past.
+        ;
+        ; A real DOS with DOS=HIGH puts its CODE in the HMA and leaves
+        ; the SFT below, which is the right shape and is eighty-one
+        ; access sites away from here.  Until then the whole image
+        ; goes where the table has to be, and the HMA becomes the
+        ; fallback for when there is no room low - everything except
+        ; Windows works from up there, and the reasoning above is
+        ; still why it is worth keeping.
+        mov     byte ptr [park_high],0
+IFDEF RMDOS_HIGH
+        jmp     short plr_hma           ; BUILD rmhigh - what the default
+                                        ; was up to v0.52, kept reachable
+                                        ; so the two can be compared one
+                                        ; build apart instead of one
+                                        ; release apart
+ENDIF
+
+        ; park_size is the file's size and the file is a picture of the
+        ; segment from offset 0, so it already counts the RM_ORG bytes
+        ; the image does not use - the arithmetic is unchanged.
+plr_low:
+        ; ONE WHOLE SEGMENT, ALWAYS, WHATEVER THE IMAGE WEIGHS.
+        ;
+        ; This used to ask for the image rounded up plus PARK_SLACK,
+        ; which is the honest arithmetic and is the wrong answer.  It
+        ; makes the address of everything ABOVE RMDOS a function of how
+        ; big RMDOS happens to be, and Windows is sensitive to that to
+        ; a degree this project has now been bitten by twice: the trace
+        ; build stalls at the splash where the release build reaches
+        ; the desktop, and the only difference between a run that
+        ; reached Program Manager and one that did not was FORTY-EIGHT
+        ; MORE BYTES of RMDOS.  An instrument that moves the machine it
+        ; is measuring is not an instrument.
+        ;
+        ; So the block is a fixed 64K.  RMDOS already has to fit in one
+        ; segment - everything in it assumes so, and park_loadrm
+        ; refuses an image that does not - and owning the whole segment
+        ; costs about forty kilobytes of a machine that has six hundred.
+        ; What it buys is that park_seg, and therefore every address
+        ; Windows will ever see, is the SAME in the release build and
+        ; in the build with eight kilobytes of trace buffer in it.  A
+        ; debug build and a release build can now be compared.
         mov     eax,dword ptr [park_size]
         add     eax,15
         shr     eax,4
         add     eax,PARK_SLACK
+        cmp     eax,1000h
+        ja      plr_bad                 ; too big to sit in one segment,
+                                        ; which everything here assumes
+        mov     eax,1000h
         mov     ebx,eax
         mov     dword ptr [park_lderr],ERR_NOMEM
         mov     word ptr [park_paras],ax        ; BEFORE the call: lm_alloc
                                         ; does not preserve EBX, and on
                                         ; failure it deliberately puts
                                         ; the largest free run there
+        ; FIRST FIT, and deliberately.  Parking at the TOP of conventional
+        ; memory was tried and is wrong: the Windows kernel scans for the
+        ; SFT only as far as 80000h, and RMDOS at 96C2 - 626K - is past
+        ; it, so the measurement fails exactly as it does from the HMA.
+        ; And the reason it was tried does not hold either.  The kernel is
+        ; not short of memory: KRNL386.EXE asks for MAXALLOC 0000, so 73K
+        ; is image-plus-nothing and is the RIGHT answer.  Low it stays.
         call    lm_alloc                ; -> AX = segment
-        jc      plr_bad
+IFDEF RMDOS_LOW
+        jc      plr_bad                 ; BUILD rmlow - low or nothing, so
+                                        ; that a failure here is loud
+ELSE
+        jc      plr_hma
+ENDIF
         mov     word ptr [park_seg],ax
+        jmp     short plr_placed
 
-        ; Read it straight into conventional memory.  The address is
-        ; flat here because the kernel is flat; it is the same bytes
-        ; the real-mode side will address as a segment.
+plr_hma:
+        mov     eax,dword ptr [park_size]
+        add     eax,256                 ; and a little room to grow into
+        cmp     eax,10000h
+        ja      plr_bad
+        mov     word ptr [park_seg],RM_HMA_SEG
+        mov     word ptr [park_paras],1000h     ; the whole 64K, which is
+                                        ; only read to work out SP
+        mov     byte ptr [park_high],1
+
+plr_placed:
+
+        ; Read it straight into memory.  The address is flat here
+        ; because the kernel is flat; it is the same bytes the
+        ; real-mode side will address as [park_seg]:RM_ORG, and for the
+        ; HMA that arithmetic - FFFF0h + 10h - is exactly the
+        ; megabyte.
         movzx   edx,word ptr [park_seg]
         shl     edx,4
+        add     edx,RM_ORG
         movzx   ebx,word ptr [park_hnd]
         mov     ecx,dword ptr [park_size]
+        sub     ecx,RM_ORG
+        push    ecx
         mov     eax,3F00h
         call    k21
+        pop     ecx
         jc      plr_bad
-        cmp     eax,dword ptr [park_size]
+        cmp     eax,ecx
         jne     plr_bad
+IFDEF RMDOS_BISECT
+        push    eax
+        mov     eax,edx                         ; where we told it to go
+        mov     edi,0B8000h + 160 + 100
+        call    park_mhex
+        mov     eax,dword ptr ds:[edx]          ; and what is there NOW -
+        mov     edi,0B8000h + 160 + 120         ; before anything else has
+        call    park_mhex                       ; had a chance to touch it
+        pop     eax
+ENDIF
 
         movzx   ebx,word ptr [park_hnd]
         mov     eax,3E00h
@@ -427,6 +574,116 @@ plp_bad2:
         ret
 
 ;---------------------------------------------------------------------
+; park_xmswho - who is holding the arena.
+;
+; PARKWIN parks the same DOS on the same machine and hands over 13600K.
+; WIN.COM hands over nothing, and not because the arena is in pieces:
+; largest and total are both 512 bytes, so it is FULL.  Something
+; between COMMAND.COM starting WIN.COM and WIN.COM asking to park takes
+; all thirteen megabytes, and freeing the parking program's XMS handles
+; does not get any of it back - so it was not taken through the XMS
+; host, or not under an owner that matches.
+;
+; So look.  The largest ALLOCATED block, its owner, and the owner the
+; park is running as, which together say whether this is the parking
+; program's own memory under a name the reclaim did not recognise, or
+; somebody else's entirely.
+;---------------------------------------------------------------------
+park_xmswho:
+        pushad
+        xor     ebx,ebx                         ; biggest so far
+        xor     edi,edi                         ; and its owner
+        mov     esi,ARENA_BASE
+pxw_walk:
+        cmp     dword ptr [esi+MCB_SIG],SIG_END
+        je      pxw_done
+        cmp     dword ptr [esi+MCB_SIG],SIG_FREE
+        je      pxw_next
+        cmp     dword ptr [esi+MCB_SIZE],ebx
+        jbe     pxw_next
+        mov     ebx,dword ptr [esi+MCB_SIZE]
+        mov     edi,dword ptr [esi+MCB_OWNER]
+pxw_next:
+        mov     eax,dword ptr [esi+MCB_SIZE]
+        add     eax,MCB_LEN
+        add     esi,eax
+        cmp     esi,dword ptr [arena_top]
+        jb      pxw_walk
+pxw_done:
+        mov     dword ptr [park_xmsbig],ebx
+        mov     dword ptr [park_xmsbigown],edi
+        mov     eax,dword ptr [cur_own]
+        mov     dword ptr [park_xmscur],eax
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; park_xmsreclaim - take back the extended memory the parking program
+;                   is holding through PM-DOS's OWN XMS host.
+;
+; This is what stopped Windows 3.1 standard mode on a 16MB machine, and
+; it took an XMS log to see because none of it goes through INT 21h.
+; The trace reads:
+;
+;       POOL base 00000000  0 KB
+;       arena_avail said 00000200 - 512 bytes
+;       AH=08 free?  -> AX=0000  FAILED BL=A0
+;       AH=09 alloc  DX=0024 -> FAILED BL=A0
+;
+; WIN.COM asks RMDOS for 36K, is told there is none, prints
+; "Insufficient extended memory to run Windows in standard mode" and
+; leaves.  And RMDOS is telling the truth: park_xmsgrab found 512 bytes
+; in the arena.  PARKTEST parking the same DOS on the same machine
+; hands over 13600K, so the arena is not small - it is EMPTY, and
+; WIN.COM emptied it before it parked, by allocating extended memory
+; from the host it found at the time, which was PM-DOS's.
+;
+; Those blocks cannot survive the park in any case.  The park replaces
+; the XMS host: PM-DOS's goes out of reach the moment the excursion
+; starts and RMDOS's takes over, so a handle issued by one is not a
+; handle the other has ever heard of.  Holding the memory for them
+; keeps it away from BOTH.  And Windows does not want it kept: the log
+; shows it asking the new host how much there is and allocating again
+; from scratch, which is exactly what a program does when it has just
+; been handed a different DOS.
+;
+; NOT BY OWNER, which is where the first attempt at this went wrong.
+; It followed xms_relown and compared each handle against cur_own, and
+; freed nothing at all: the probe above says the arena is held in ONE
+; block of 13734K by owner 3, while the park is running as owner 4.
+; The memory belongs to the program that STARTED the handover, not to
+; the one making it, and in standard mode those are two different
+; programs.
+;
+; So every live handle goes.  That is not a liberty: the excursion
+; replaces the XMS host wholesale, and a handle issued by PM-DOS is
+; not a handle RMDOS has ever heard of, so between 1605h and 1606h
+; there is nobody who can use one.  Real DOS never faces this because
+; HIMEM is a TSR and simply stays put across the park; PM-DOS s host
+; is part of a kernel that steps out of the room.
+;---------------------------------------------------------------------
+park_xmsreclaim:
+        pushad
+        mov     esi,OFFSET xms_handles
+        mov     ecx,XMS_MAXH
+pxr_one:
+        cmp     dword ptr [esi+XH_FLAGS],0
+        je      pxr_next
+        push    ecx
+        push    esi
+        mov     edx,dword ptr [esi+XH_ADDR]
+        call    arena_free
+        pop     esi
+        pop     ecx
+        mov     dword ptr [esi+XH_FLAGS],0
+        mov     dword ptr [esi+XH_LOCK],0
+pxr_next:
+        add     esi,XH_LEN
+        loop    pxr_one
+        popad
+        ret
+
+;---------------------------------------------------------------------
 ; park_xmsgrab - take the arena's free memory, to hand over as XMS.
 ;
 ; RMDOS cannot work extended memory out for itself the way a real
@@ -451,7 +708,19 @@ park_xmsgrab:
         mov     dword ptr [park_xmsbase],0
         mov     dword ptr [park_xmslen],0
 
-        call    arena_avail             ; -> EAX, the largest single block
+IFDEF DBG_LPT
+        call    park_xmswho                     ; and who is holding the rest
+        call    xms_total                       ; ...and every free byte added
+        mov     dword ptr [park_xmstotal],eax   ; up, because largest-versus-total
+                                                ; is the difference between an
+                                                ; arena that is FULL and one that
+                                                ; is merely in pieces
+ENDIF
+        call    arena_avail
+        mov     dword ptr [park_xmsavail],eax   ; recorded whatever happens: a
+                                                ; pool of zero is the same header
+                                                ; whether the arena was empty or
+                                                ; arena_alloc lost the race
         cmp     eax,PARK_XMSKEEP + PARK_XMSMIN + 4096
         jb      pxg_none
         sub     eax,PARK_XMSKEEP
@@ -509,6 +778,10 @@ park_fillhdr:
 pfh_psp:
         mov     word ptr [edi + RMH_PSP],ax
 
+        mov     eax,[lm_top]                    ; RMH_MEMTOP: declared by both
+        shr     eax,4                           ; sides since v0.45 and written
+        mov     word ptr [edi + RMH_MEMTOP],ax  ; by neither until now
+
         movzx   eax,byte ptr ds:[GV_BOOTDRV]
         cmp     al,80h
         jb      pfh_fd
@@ -536,6 +809,15 @@ pfh_ndrv:
         jne     pfh_verb
         xor     al,al
 pfh_verb:
+        ; AND WHERE IT IS, WHICH IT CANNOT WORK OUT SAFELY FOR ITSELF.
+        ; RMDOS could read its own CS and compare it to FFFFh, but the
+        ; thing this flag guards is the A20 gate, and a driver that
+        ; got that test wrong would find out by executing the
+        ; interrupt vector table.  Being told is better.
+        cmp     byte ptr [park_high],0
+        je      pfh_flagout
+        or      al,RMHF_HIGH
+pfh_flagout:
         mov     byte ptr [edi + RMH_FLAGS],al
 
         mov     ax,word ptr [park_pspseg]
@@ -584,6 +866,19 @@ pfh_drives:
         mov     dword ptr [edi + RMH_XMSBASE],eax
         mov     eax,dword ptr [park_xmslen]
         mov     dword ptr [edi + RMH_XMSLEN],eax
+IFDEF DBG_LPT
+        ; The two spare header dwords, carrying the ownership probe.
+        ; Largest and total are both known to be 512 bytes in the case
+        ; being chased, so the space is better spent on WHOSE.
+        mov     eax,dword ptr [park_xmsbigown]
+        mov     dword ptr [edi + RMH_RSVD],eax
+        mov     eax,dword ptr [park_xmsbig]
+        shr     eax,10                          ; KB - it fits in sixteen bits
+        mov     edx,dword ptr [park_xmscur]
+        shl     edx,16
+        or      eax,edx
+        mov     dword ptr [edi + RMH_RSVD + 4],eax
+ENDIF
 
         ; The drive table.  PM-DOS scanned the partitions; this is the
         ; answer, in the two fields RMDOS needs to find each volume's
@@ -636,7 +931,10 @@ park_go:
 
         movzx   eax,word ptr [park_seg]
         mov     word ptr [park_blk + GVP_CS],ax
-        mov     word ptr [park_blk + GVP_IP],0
+        mov     word ptr [park_blk + GVP_IP],RM_ORG     ; not 0: the image
+                                        ; starts sixteen bytes into its own
+                                        ; segment, and RMH_JMP is its first
+                                        ; instruction
         mov     word ptr [park_blk + GVP_DS],ax
         mov     word ptr [park_blk + GVP_ES],ax
         mov     word ptr [park_blk + GVP_SS],ax
@@ -651,8 +949,30 @@ pg_sp:
         mov     byte ptr [park_blk + GVP_ACTIVE],0
         mov     word ptr [park_blk + GVP_AX],0
 
+IFDEF RMDOS_BISECT
+        ; WHAT IS ACTUALLY AT THE TWO ADDRESSES THAT MATTER.  Reading
+        ; linear 100000h proves nothing on its own - if the A20 alias
+        ; is still pointing at zero, that read follows the image to
+        ; wherever it really went and reports success either way.  So
+        ; read linear 0 as well.  The image begins E9 xx xx 'R' 'M'
+        ; 'D': see it at 100000h and it is where it was meant to go,
+        ; see it at 0 and it landed on the interrupt vector table.
+        movzx   eax,word ptr [park_seg]
+        mov     edi,0B8000h + 60
+        call    park_mhex
+        mov     eax,dword ptr ds:[00100000h]    ; should be the E9 of the jmp
+        mov     edi,0B8000h + 100
+        call    park_mhex
+        mov     eax,dword ptr ds:[00100010h]    ; and if the E9 is HERE, the
+        mov     edi,0B8000h + 120               ; whole image is 16 too high
+        call    park_mhex
+        mov     word ptr ds:[0B8000h + 140],1F31h       ; '1' - about to go
+ENDIF
         mov     esi,OFFSET park_blk
         call    dword ptr ds:[IOS_PARK]
+IFDEF RMDOS_BISECT
+        mov     word ptr ds:[0B8000h + 150],1F35h       ; '5' - and back
+ENDIF
 
         ; ...and we are back in protected mode, with paging on, at the
         ; instruction after the call.
@@ -665,11 +985,139 @@ pg_sp:
         popad
         ret
 
+IFDEF RMDOS_BISECT
+;--- EAX in hex at EDI, straight into the text page.  Eight digits,
+;--- high nibble first, and no service call anywhere in it: this runs
+;--- with the machine half-way out of protected mode's usefulness and
+;--- the console is one of the things the excursion is about to take.
+park_mhex:
+        pushad
+        mov     ecx,8
+pmh_one:
+        rol     eax,4
+        mov     bl,al
+        and     bl,0Fh
+        add     bl,'0'
+        cmp     bl,'9'
+        jbe     pmh_dig
+        add     bl,'A' - '0' - 10
+pmh_dig:
+        mov     byte ptr ds:[edi],bl
+        mov     byte ptr ds:[edi+1],1Fh
+        add     edi,2
+        loop    pmh_one
+        popad
+        ret
+ENDIF
+
+;=====================================================================
+; park_chaincut - end the MCB chain at the top of conventional memory,
+;                 and park_chainjoin puts it back.
+;
+; UPPER MEMORY EXISTS BECAUSE OF PAGING, AND THE PARK TURNS PAGING OFF.
+; PM-DOS's UMBs are ordinary RAM mapped into the holes between A0000h
+; and 100000h, and the MCB chain covers the whole span - a chain is
+; contiguous, so it has to, which is what v0.38 found out.  The moment
+; the kernel drops paging, every one of those addresses goes back to
+; meaning what the hardware says it means: video memory and ROM.  The
+; blocks are still described by a chain that says they are memory.
+;
+; So a walk from the head runs off the end of conventional memory into
+; the frame buffer, reads whatever the VGA answers with as a block
+; header, and stops - or does not stop.  RMTEST could not walk it.
+; Windows walks it too, to find out how much conventional memory there
+; is, and the answer it got was small enough that it said so and quit.
+;
+; For the length of the excursion the machine genuinely HAS no upper
+; memory, so this is not a trick to get past a check: it is the chain
+; telling the truth for once.  The last block below the ceiling becomes
+; the last block, and gets its 'M' back on the way home.
+;=====================================================================
+park_chaincut:
+        pushad
+        mov     word ptr [park_cutseg],0
+        mov     eax,[lm_top]
+        shr     eax,4                   ; first paragraph above conventional
+        mov     ebx,V86_TPA_SEG
+        xor     edx,edx                 ; the last block seen below it
+pcc_walk:
+        cmp     ebx,eax
+        jae     pcc_found
+        mov     esi,ebx
+        shl     esi,4
+        cmp     byte ptr [esi+RMCB_SIG],'M'
+        jne     pcc_done                ; a 'Z' below the ceiling already
+                                        ; ends it, and anything else is not
+                                        ; a chain we should be editing
+        mov     edx,ebx
+        movzx   ecx,word ptr [esi+RMCB_LEN]
+        add     ebx,ecx
+        inc     ebx
+        jmp     short pcc_walk
+pcc_found:
+        or      edx,edx
+        jz      pcc_done
+        mov     esi,edx
+        shl     esi,4
+        mov     word ptr [park_cutseg],dx
+        mov     byte ptr [esi+RMCB_SIG],'Z'
+pcc_done:
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; park_chainjoin - and give upper memory back.
+;
+; NOT BY REMEMBERING WHICH BLOCK WAS CUT.  RMDOS allocates out of this
+; arena the whole time it is parked, and a split gives the TAIL block
+; the marker the original carried - so the block that ends the chain
+; when we come back is very often not the block that was ended, and
+; putting the 'M' back where it was leaves the real 'Z' in the middle
+; with upper memory orphaned behind it.  That is exactly what the
+; first version of this did, and UMBTEST said so in three checks.
+;
+; So find the end of the chain as it is NOW, and only mend it if it
+; ends exactly where conventional memory does - which is the one
+; place this routine put a 'Z'.  A chain ending anywhere else is
+; something else's problem and is left alone.
+;---------------------------------------------------------------------
+park_chainjoin:
+        pushad
+        cmp     word ptr [park_cutseg],0
+        je      pcj_done
+        mov     word ptr [park_cutseg],0
+        mov     eax,[lm_top]
+        shr     eax,4                   ; the paragraph the chain must reach
+        mov     ebx,V86_TPA_SEG
+pcj_walk:
+        mov     esi,ebx
+        shl     esi,4
+        movzx   ecx,word ptr [esi+RMCB_LEN]
+        cmp     byte ptr [esi+RMCB_SIG],'Z'
+        je      pcj_last
+        cmp     byte ptr [esi+RMCB_SIG],'M'
+        jne     pcj_done                ; not a chain we should be editing
+        add     ebx,ecx
+        inc     ebx
+        cmp     ebx,eax
+        jb      pcj_walk
+        jmp     short pcj_done          ; already runs past the ceiling
+pcj_last:
+        add     ebx,ecx
+        inc     ebx
+        cmp     ebx,eax
+        jne     pcj_done                ; ends somewhere we did not end it
+        mov     byte ptr [esi+RMCB_SIG],'M'
+pcj_done:
+        popad
+        ret
+
 ;---------------------------------------------------------------------
 ; park_recover - put back what the excursion changed.
 ;---------------------------------------------------------------------
 park_recover:
         pushad
+        call    park_chainjoin          ; upper memory exists again
 
         ; The DOS vectors a guest reflects through.  RMDOS pointed them
         ; at itself, and itself is about to be freed.
@@ -739,6 +1187,13 @@ pr_done:
 ;---------------------------------------------------------------------
 park_release:
         pushad
+        ; The guest's A20 back the way the guest left it - see park_run.
+        ; Unconditional, and saved at the top of park_run rather than
+        ; where it is changed, so that the paths which fail before the
+        ; change restore the value they saved rather than last time's.
+        mov     al,byte ptr [park_a20]
+        call    dword ptr ds:[IOS_A20]
+
         mov     edx,dword ptr [park_xmsblk]
         or      edx,edx
         jz      prl_noxms
@@ -753,10 +1208,18 @@ prl_noxms:
         call    lm_free
         mov     word ptr [park_pspseg],0
 prl_nop:
+        ; THE HMA WAS NEVER ALLOCATED, SO IT IS NOT FREED.  It is not
+        ; in the arena and lm_free has no block to find; handing it a
+        ; segment of FFFFh would be asking it to walk an MCB chain
+        ; from the ROM.
+        cmp     byte ptr [park_high],0
+        jne     prl_wasHMA
         mov     ax,word ptr [park_seg]
         or      ax,ax
         jz      prl_none
         call    lm_free
+prl_wasHMA:
+        mov     byte ptr [park_high],0
         mov     word ptr [park_seg],0
 prl_none:
         popad
@@ -777,10 +1240,23 @@ park_exit   dw  0
 park_why    dw  0
 park_blk    db  GVP_LEN dup(0)
 park_xmsblk  dd  0                      ; the arena block, for giving back
+park_xmsbig    dd 0                   ; the largest allocated block,
+park_xmsbigown dd 0                   ; whose it is,
+park_xmscur    dd 0                   ; and who the park is running as
+park_xmstotal dd 0                     ; every free byte in the arena
+park_xmsavail dd 0                     ; and what arena_avail said, which
+                                                ; is the only way to tell an empty
+                                                ; arena from a failed allocate
 park_xmsbase dd  0                      ; and the aligned range inside it
 park_xmslen  dd  0
 park_lderr   dd  ERR_NOFILE             ; WHERE in park_loadrm it went
                                         ; wrong - every one of its six
                                         ; failures used to say "no file"
+park_high    db  0                      ; the image went in the HMA, so it
+                                        ; is not the arena's to give back
+park_cutseg  dw  0                     ; the block whose 'M' became a 'Z'
+park_a20     db  0                      ; the guest's emulated gate, which
+                                        ; the excursion has to force open
+                                        ; and then hand back
 park_psp     dw  0                      ; the guest process to resume, and
-park_iret    db  RMI_LEN dup(0AAh)      ; the registers to resume it with
+park_iret    db  RMI_LEN dup(0)         ; the registers to resume it with

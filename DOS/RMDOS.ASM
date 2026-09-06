@@ -79,7 +79,12 @@ I21_MAX     EQU 6Dh
 
 _RD     SEGMENT USE16 PUBLIC 'CODE'
         ASSUME  CS:_RD, DS:_RD, ES:NOTHING, SS:_RD
-        ORG     0
+
+; NOT ZERO.  Sixteen, so that segment FFFFh - the only segment that
+; reaches above the megabyte - puts this byte at exactly 100000h and
+; the image sits in the HMA.  See the note above RM_ORG in RMDOS.INC;
+; every RMH_* offset carries it, so nothing below moves.
+        ORG     RM_ORG
 
 rd_base:
         jmp     rd_entry                ; RMH_JMP - three bytes, E9 + word
@@ -120,7 +125,7 @@ h_drives    db  (LASTDRIVE * RMD_LEN) dup(0)
 ;=====================================================================
 ; Code proper.  Everything above is a header PM-DOS writes into.
 ;=====================================================================
-        ORG     0100h
+        ORG     RM_ORG + 0100h
 
 ;=====================================================================
 ; rd_entry - the first instruction executed in real mode after the
@@ -128,6 +133,15 @@ h_drives    db  (LASTDRIVE * RMD_LEN) dup(0)
 ;=====================================================================
 rd_entry:
         cli
+IFDEF RMDOS_MARK
+;--- THE ONLY INSTRUMENT AVAILABLE TO CODE THAT MAY NOT HAVE ARRIVED.
+;--- No BIOS, no DOS, no initialised anything - a word into the text
+;--- page, which is at B800:0 whatever else is or is not true.  The
+;--- markers run 1 to 5 across the top right of the screen and between
+;--- them they say which side of the far jump the machine stopped on.
+        mov     al,'2'
+        call    rd_vmark
+ENDIF
         mov     ax,cs
         mov     ds,ax
         mov     es,ax
@@ -145,9 +159,14 @@ rd_entry:
         mov     word ptr [h_why],RMW_NOTOURS
         jmp     rd_goback
 rd_sigok:
+IFDEF RMDOS_MARK
+        mov     al,'3'
+        call    rd_vmark
+ENDIF
         mov     word ptr [h_why],RMW_EXIT
 IFDEF DBG_LPT
-        call    rdbg_saveframe0         ; the frame AS PM-DOS HANDED IT OVER
+        call    rdbg_init               ; somewhere low to write from - see
+        call    rdbg_saveframe0         ; RMDBG.INC, and v0.51
         mov     al,RDBGM_ENTRY
         call    rdbg_mark
 ENDIF
@@ -158,26 +177,47 @@ IFDEF RMDOS_BISECT
 ENDIF
 
         call    rd_vecs                 ; the vectors a DOS owns
+IFDEF RMDOS_MARK
+        mov     al,'4'
+        call    rd_vmark
+ENDIF
 IFDEF DBG_LPT
         mov     al,RDBGM_VECS
         call    rdbg_mark
+        call    rdbg_hookbios           ; count what the extender reflects
 ENDIF
         call    rd_volinit              ; per-drive geometry
+IFDEF RMDOS_MARK
+        mov     al,'5'
+        call    rd_vmark
+ENDIF
 IFDEF DBG_LPT
         mov     al,RDBGM_VOL
         call    rdbg_mark
 ENDIF
         call    rd_sysinit              ; SDA, list of lists, CDS
+IFDEF RMDOS_MARK
+        mov     al,'6'
+        call    rd_vmark
+ENDIF
 IFDEF DBG_LPT
         mov     al,RDBGM_SYS
         call    rdbg_mark
 ENDIF
         call    rd_sftinit              ; the handle table and its devices
+IFDEF RMDOS_MARK
+        mov     al,'7'
+        call    rd_vmark
+ENDIF
 IFDEF DBG_LPT
         mov     al,RDBGM_SFT
         call    rdbg_mark
 ENDIF
         call    rx_init                 ; extended memory, and the A20 gate
+IFDEF RMDOS_MARK
+        mov     al,'8'
+        call    rd_vmark
+ENDIF
 IFDEF DBG_LPT
         mov     al,RDBGM_XMS
         call    rdbg_mark
@@ -239,6 +279,10 @@ rd_go:
 ; and which the program above cannot detect.
 ;---------------------------------------------------------------------
 rd_resume:
+IFDEF RMDOS_MARK
+        mov     al,'9'                  ; every part of RMDOS is up, and
+        call    rd_vmark                ; the next instruction is Windows'
+ENDIF
 IFDEF DBG_LPT
         call    rdbg_saveframe
         mov     al,RDBGM_RESUME
@@ -287,6 +331,10 @@ ENDIF
 ;=====================================================================
 rd_goback:
         cli
+IFDEF RMDOS_MARK
+        mov     al,'4'
+        call    rd_vmark
+ENDIF
 IFDEF DBG_LPT
         mov     al,RDBGM_BACK
         call    rdbg_mark
@@ -302,10 +350,209 @@ ENDIF
         mov     word ptr [rd_back + 1],ax
         mov     ax,[h_unpseg]
         mov     word ptr [rd_back + 3],ax
+IFDEF RMDOS_FREEZE
+        ; STOP HERE INSTEAD, so that whatever the excursion left on the
+        ; screen stays there.  The unpark resets this machine, and a
+        ; standard-mode fault report survives about half a second: a
+        ; once-a-second screen poll caught it ONCE in twelve boot loops,
+        ; which is not an instrument, it is luck.  Everything above has
+        ; already run, so the trace is written and the vectors are back;
+        ; only the jump home is missing, and the machine that is not
+        ; going home does not need it.
+IFDEF XMSPOOLSTAMP
+        ; And with the stamps in place, say what the excursion wrote:
+        ; the count of pages that lost theirs, the first and the last.
+        ; See rx_poolscan in RMXMS.INC.
+        call    rx_poolscan
+        call    rx_psshow
+ENDIF
+rd_freeze:
+        cli
+        hlt
+        jmp     short rd_freeze
+ENDIF
 rd_back:
         db      0EAh                    ; JMP FAR <patched>:<patched>
         dw      0
         dw      0
+
+IFDEF RMDOS_MARK
+;--- AL = a character, onto the screen and nowhere else.  CS overrides
+;--- throughout, because DS is the caller's and the caller may be four
+;--- instructions old.
+;
+;--- BOTH PAGES, BECAUSE THE MODE IS NOT OURS TO KNOW.  PARKWIN leaves
+;--- the machine in text mode and the character lands at B800:xx;
+;--- Windows has already switched to 640x480 and B800 is not on the
+;--- screen at all, so the same marker also goes to A000:xx, where in
+;--- a planar mode it paints eight pixels.  Neither write can fault
+;--- and the wrong one is invisible rather than harmful.  A marker
+;--- that only shows up in the mode you were not debugging is no
+;--- marker: v0.48 lost a week to a prompt drawn where nobody could
+;--- see it.
+rd_vmark:
+        push    ax
+        push    bx
+        push    ds
+        mov     ah,1Fh
+        mov     bx,word ptr cs:[rd_vcol]
+        add     word ptr cs:[rd_vcol],2
+        push    ax
+        mov     ax,0B800h
+        mov     ds,ax
+        pop     ax
+        mov     word ptr [bx],ax
+        push    ax
+        mov     ax,0A000h               ; ...and again where Windows is
+        mov     ds,ax
+        pop     ax
+        shl     bx,3                    ; eight pixels per marker, spread
+        mov     word ptr [bx],0FFFFh    ; far enough apart to count
+        pop     ds
+        pop     bx
+        pop     ax
+        ret
+;=====================================================================
+; rd_vbars / rd_vbarout - three bars in the graphics framebuffer, and
+; the only instrument that works here.
+;
+; The disk sink does not: INT 13h WRITES from the HMA do nothing on
+; this BIOS, though reads into it are fine, so RMDBG.INC's channel
+; went silent the moment RMDOS moved up here.  The screen is the one
+; thing both sides of the handover agree about, and Windows has it in
+; 640x480, so these are painted as PIXELS - a bar AH long, which a
+; script can measure off a screenshot without knowing a font.
+;
+;   y = 400   AH of the DOS call going IN
+;   y = 410   AH of the last one that came back OUT
+;   y = 420   how many calls have been served, modulo 256
+;
+; Equal top two bars and a moving third: Windows is running and
+; talking to DOS.  Top bar alone: it went into that call and did not
+; come out.  All three frozen: it has stopped asking DOS anything,
+; and the fault is not in here.
+;=====================================================================
+RD_VBROW    EQU 460 * 80          ; below the logo box, which is not
+RD_VBOUT    EQU 465 * 80          ; where the first attempt put them
+RD_VBCNT    EQU 470 * 80
+
+rd_vbars:
+        push    ax
+        push    cx
+        push    di
+        push    es
+        mov     ax,0A000h
+        mov     es,ax
+        mov     al,[bp+F_AX+1]          ; AH, out of the frame
+        mov     di,RD_VBROW
+        call    rd_vbar
+        inc     byte ptr cs:[rd_vbn]
+        mov     al,byte ptr cs:[rd_vbn]
+        mov     di,RD_VBCNT
+        call    rd_vbar
+        pop     es
+        pop     di
+        pop     cx
+        pop     ax
+        ret
+
+rd_vbarout:
+        push    ax
+        push    cx
+        push    di
+        push    es
+        mov     ax,0A000h
+        mov     es,ax
+        mov     al,[bp+F_AX+1]
+        mov     di,RD_VBOUT
+        call    rd_vbar
+        pop     es
+        pop     di
+        pop     cx
+        pop     ax
+        ret
+
+;--- AL = the length in bytes, ES:DI = the start of the row.  The row
+;--- is cleared first, or a shorter bar reads as the longer one before
+;--- it - which is the same mistake as a trace that is not cleared.
+rd_vbar:
+        push    ax
+        push    di
+        mov     cx,320                  ; four rows: a bar can be 255 bytes
+        push    ax
+        xor     al,al
+        cld
+        rep     stosb
+        pop     ax
+        pop     di
+        movzx   cx,al
+        or      cx,cx
+        jz      rvb_none
+        mov     al,0FFh
+        rep     stosb
+rvb_none:
+        pop     ax
+        ret
+
+rd_vbn      db  0
+rd_vstg     db  0                  ; the stages so far, one bit each
+
+;--- AL = which stage of EXEC, onto a row of its own.  EXEC is the
+;--- one call that never returns through i21_out, so the two bars
+;--- above cannot say anything about what happens inside it.
+RD_VBSTG    EQU 448 * 80
+;--- THE ROWS ABOVE BELONG TO THE IN/OUT BARS AND TO NOTHING ELSE.
+;--- A probe that borrowed them to show the child's entry bytes read
+;--- 4D 5A - 'MZ' - which was the finding that mattered, and then went
+;--- on reading 4D 5A on a run where it had never executed, because
+;--- those are also plausible values for the bars that own the rows.
+;--- One row, one meaning.
+; AL = ONE BIT, not a number.  Stages that overwrite each other say
+; only where the code got to last, and the branch taken three stages
+; back is exactly what was wanted.  So they accumulate: 3Bh means the
+; .EXE path all the way to the jump, 3Dh means the .COM path did.
+rd_vstage:
+        push    ax
+        push    cx
+        push    di
+        push    es
+        or      byte ptr cs:[rd_vstg],al
+        mov     al,byte ptr cs:[rd_vstg]
+        mov     cx,0A000h
+        mov     es,cx
+        mov     di,RD_VBSTG
+        call    rd_vbar
+        pop     es
+        pop     di
+        pop     cx
+        pop     ax
+        ret
+
+
+;--- AX as four hex digits, through the same channel ----------------
+rd_vhex:
+        push    ax
+        push    cx
+        mov     cx,4
+rvh_one:
+        rol     ax,4
+        push    ax
+        and     al,0Fh
+        add     al,'0'
+        cmp     al,'9'
+        jbe     rvh_dig
+        add     al,'A' - '0' - 10
+rvh_dig:
+        call    rd_vmark
+        pop     ax
+        loop    rvh_one
+        pop     cx
+        pop     ax
+        ret
+
+rd_vcol     dw  40                      ; row 0, column 20 - the only row
+                                        ; PM-DOS's own marker
+ENDIF
 
 ;=====================================================================
 ; rd_vecs - take the vectors a DOS owns.
@@ -425,11 +672,42 @@ i29:
 ; Three levels, and the third is not generosity: a critical-error
 ; handler may call DOS, and the call it makes may raise one.
 ;=====================================================================
+IFDEF RMDOS_EDBG
+;--- DECLARED HERE, AHEAD OF ITS FIRST USE, AND THAT IS THE POINT.
+;--- These two bytes are read by the marker below and written by fn4B
+;--- in RMMEM.INC, which this file INCLUDEs further down - so wherever
+;--- they are declared, one of the two references is a forward one.
+;--- Put them last and the reference that goes forward is the one in
+;--- the instrument, which then cannot be trusted about anything: an
+;--- instrument that may be reading the wrong byte reports a silence
+;--- for "no" and for "I could not tell", and those are the two
+;--- answers it exists to separate.
+ed_post     db  0                   ; 1 once EXEC has jumped: from then
+ed_left     db  8                   ; on, every call is the child's
+ed_sz       dd  0                   ; what sub_read's SFT says the file is
+ed_pos      dd  0                   ; ...and where in it the read starts
+ENDIF
+
 i21:
         cli
         pusha
         push    ds
         push    es
+IFDEF RMDOS_EDBG
+        ; THE FIRST THING AFTER THE PUSHES, and it needs nothing that
+        ; has not already been saved.  ed_i21 below is a long way in -
+        ; past the stack switch and the frame copy - so its silence
+        ; cannot say whether the call ARRIVED.  This can: an 'A' on the
+        ; bottom line means an INT 21h got through the vector and onto
+        ; a stack that could take nine pushes.  ed_post gates it, so
+        ; only calls made after EXEC has jumped are counted.
+        cmp     byte ptr cs:[ed_post],0
+        je      i21_nomarka
+        mov     ax,0B800h
+        mov     es,ax
+        mov     word ptr es:[24*160 + 20],0F41h ; 'A'
+i21_nomarka:
+ENDIF
         mov     bp,sp
         mov     cx,ss                   ; where the caller's frame is
         mov     dx,bp
@@ -463,10 +741,18 @@ i21_cpy:
         loop    i21_cpy
         mov     bp,sp
 
+
         mov     ax,cs
         mov     es,ax
         sti
         cld
+
+IFDEF RMDOS_MARK
+        call    rd_vbars                ; the last call in, and the count
+ENDIF
+IFDEF RMDOS_EDBG
+        call    ed_i21                  ; ...and what arrives after EXEC
+ENDIF
 IFDEF DBG_LPT
         call    rdbg_rec                ; BP is the frame - see RMDBG.INC
 ENDIF
@@ -483,6 +769,12 @@ i21_bad:
 
 i21_out:
         cli
+IFDEF DBG_LPT
+        call    rdbg_ret                ; what the call ANSWERED
+ENDIF
+IFDEF RMDOS_MARK
+        call    rd_vbarout              ; ...and which call came back
+ENDIF
         mov     si,bp                   ; our copy...
         mov     di,[bp+F_OWNOFF]        ; ...back into theirs
         mov     es,[bp+F_OWNSEG]
@@ -546,7 +838,7 @@ i21_tab:
         dw  fn48,      fn49,      fn4A,      fn4B        ; 48-4B
         dw  fn4C,      fn4D,      fn4E,      fn4F        ; 4C-4F
         dw  fn50,      fn51,      fn52,      i21_unsup   ; 50-53
-        dw  fn54,      i21_unsup, fn56,      fn57        ; 54-57
+        dw  fn54,      fn55,      fn56,      fn57        ; 54-57
         dw  fn58,      fn59,      fn5A,      fn5B        ; 58-5B
         dw  fn5C,      fn5D,      i21_unsup, i21_unsup   ; 5C-5F
         dw  i21_unsup, i21_unsup, fn51,      fn63        ; 60-63
