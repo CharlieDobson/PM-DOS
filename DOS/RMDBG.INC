@@ -270,6 +270,35 @@ rf_done:
         popa
         ret
 
+;--- rdbg_term - what a terminating process says about where to go ---
+;
+; Three words out of the PSP that is ending, and they settle a
+; question no screenshot can: whether Windows names ITSELF as the
+; parent of a task - which is DOS's "old-style return", where nothing
+; is freed and control goes to the terminate address on the caller's
+; own stack - and where PSP+0Ah actually points.
+;
+; ES = the PSP that is terminating.
+rdbg_term:
+        pusha
+        push    ds
+        push    cs
+        pop     ds
+        cmp     word ptr [rdbg_tpsp],0  ; the FIRST one, not the last: the
+        jne     rt_done                 ; last is always WIN.COM going home
+        mov     ax,es
+        mov     [rdbg_tpsp],ax
+        mov     ax,es:[16h]
+        mov     [rdbg_tpar],ax
+        mov     ax,word ptr es:[0Ah]
+        mov     [rdbg_tip],ax
+        mov     ax,word ptr es:[0Ch]
+        mov     [rdbg_tcs],ax
+rt_done:
+        pop     ds
+        popa
+        ret
+
 rdbg_low    dw  0                       ; the bounce buffer's segment, or 0
 rdbg_nstr   dw  0                       ; strings captured, ever
 rdbg_lslot  dw  0                       ; the wrapping ring's next slot
@@ -1250,7 +1279,10 @@ rdbg_nfail  dw  0                       ; +90  opens refused for a handle
 rdbg_fpsp   dw  0                       ; +92  the PSP the FIRST one hit
 rdbg_fcnt   dw  0                       ; +94  its table size
 rdbg_fused  dw  0                       ; +96  and how much of it was used
-rdbg_hpad   db  8 dup (0)               ; +98  to the end of the header
+rdbg_tpsp   dw  0                       ; +98  the last PSP to terminate,
+rdbg_tpar   dw  0                       ; +9A  what it says its parent is,
+rdbg_tip    dw  0                       ; +9C  and the terminate address it
+rdbg_tcs    dw  0                       ; +9E  carries at PSP+0Ah
 rdbg_2fax   dw  RDBG_2FN dup (0)        ; +80  the first few of their AX
 rdbg_strs   db  RDBG_STRN * RDBG_STRL dup (0)   ; +C0  what it PRINTED
 rdbg_xms    db  RDBG_XN * RDBG_XL dup (0)       ; and what it asked the XMS

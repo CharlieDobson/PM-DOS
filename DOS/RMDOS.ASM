@@ -716,6 +716,25 @@ ENDIF
         mov     ds,ax
         inc     byte ptr [rd_indos]
 
+        ; THE CALLER'S STACK, IN THE CALLER'S OWN PSP.  DOS writes
+        ; SS:SP into PSP+2Eh on every single call - msdisp.asm does it
+        ; three instructions after raising InDOS - and the only code
+        ; that ever reads it back is process termination: the parent is
+        ; resumed on the stack it was standing on when it made the call
+        ; that started the child.
+        ;
+        ; RMDOS kept ONE copy of that, written by 4Bh.  Windows does
+        ; not EXEC its tasks - it builds a PSP for each of them with
+        ; 55h and starts them itself - so when the first one exited,
+        ; the single copy still described WIN.COM's EXEC of DOSX and
+        ; RMDOS returned there.  Pressing Escape on the Task List
+        ; ended the whole Windows session.
+        push    es
+        mov     es,[rd_psp]
+        mov     word ptr es:[2Eh],dx
+        mov     word ptr es:[30h],cx
+        pop     es
+
         mov     al,[rd_stkdep]
         inc     byte ptr [rd_stkdep]
         cmp     al,RD_STKLVL

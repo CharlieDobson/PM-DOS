@@ -31,6 +31,10 @@ printf "handles: PSP %04X has %d entries at %04X:%04X, %d of them in use%s\n",
    ($jused >= $jcnt ? "   <- FULL" : "");
 printf "         67h asked for a bigger table %d times%s\n", $n67,
    ($n67 ? sprintf(" (first %d, last %d)", $h67a, $h67b) : " - NOBODY ASKED");
+my ($tpsp,$tpar,$tip,$tcs) = unpack("v4", substr($blk,0x98,8));
+printf "first terminate: PSP %04X, parent %04X%s, terminate address %04X:%04X\n",
+   $tpsp, $tpar, ($tpar == $tpsp ? " (ITSELF - DOS returns instead of freeing)" : ""),
+   $tcs, $tip if $tpsp;
 my ($nfail,$fpsp,$fcnt,$fused) = unpack("v4", substr($blk,0x90,8));
 printf "         %d opens refused for want of a handle%s\n", $nfail,
    ($nfail ? sprintf("; the first was PSP %04X, %d of %d entries in use", $fpsp, $fused, $fcnt) : "");

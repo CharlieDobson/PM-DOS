@@ -375,6 +375,15 @@ f26_fits:
         mov     ax,[rd_pspnew]
         mov     word ptr es:[36h],ax
 
+;--- ...and where it will go when it ends.  SETMEM, at the bottom of
+;--- $CREATE_PROCESS_DATA_BLOCK, copies vectors 22h, 23h and 24h out
+;--- of the interrupt table and into the new PSP - so a process built
+;--- by 55h has a terminate address of its own from the moment it
+;--- exists, and it is the one its maker had installed, not the one
+;--- the PSP it was copied from was carrying.
+        call    psp_stamp
+
+
         cmp     byte ptr [rd_pspchild],0
         je      f26_done
 
@@ -498,35 +507,90 @@ term_common:
 term_resident:
         call    rd_flush
 
-        ; Is there a parent to go back to?
-        cmp     word ptr [rd_parseg],0
-        jne     term_toparent
+;---------------------------------------------------------------------
+; WHERE A PROCESS GOES WHEN IT ENDS IS WRITTEN IN ITS OWN PSP.
+;
+; DOS keeps the terminate address at PSP+0Ah, the Ctrl-C and critical
+; error addresses in the eight bytes after it, and the parent's PSP at
+; PSP+16h.  $Abort in DOS6SRC\DOS\msproc.asm copies all twelve of
+; those bytes back into the interrupt table, makes the parent current,
+; takes the parent's stack out of the PARENT's PSP, and leaves through
+; the address it has just restored into vector 22h.  Every one of them
+; is a property of the process that is ending.
+;
+; RMDOS kept them in five words of its own, written by 4Bh.  That is
+; indistinguishable from the real thing as long as every process is
+; started by an EXEC - which was true of everything that had ever run
+; on it, and is not true of Windows.  Windows builds a PSP for each
+; task with 55h and starts the task itself, so the first task to call
+; 4Ch was answered with WIN.COM's EXEC return address: the Task List
+; closing unwound the whole session, and the release build reset the
+; machine on the way out.  See NOTES.TXT, v0.56.
+;---------------------------------------------------------------------
+        mov     ax,[rd_psp]
+        mov     es,ax
+IFDEF DBG_LPT
+        call    rdbg_term               ; who is ending, and where it says
+ENDIF                                   ; it wants to go
+        cmp     ax,[h_psp]              ; the PSP RMDOS was handed - there
+        je      term_home               ; is nothing above it that is ours
+        mov     bx,es:[16h]             ; the parent
+        or      bx,bx
+        jz      term_home
+        cmp     bx,ax                   ; its own parent: DOS returns
+        je      term_home               ; instead of terminating
+        mov     ax,word ptr es:[0Ah]    ; the terminate address
+        mov     dx,word ptr es:[0Ch]
+        mov     cx,ax
+        or      cx,dx
+        jz      term_home
 
-        ; No.  The excursion is over.
-        jmp     rd_goback
-
-term_toparent:
-        ; An EXECed program has ended.  Put back the caller's PSP, its
-        ; stack, and the three vectors DOS saves across an EXEC, then
-        ; return through the far address 4Bh left behind.
         cli
-        mov     ax,[rd_parpsp]
-        mov     [rd_psp],ax
-        call    vec_restore
-        mov     ax,[rd_parseg]
-        mov     bx,[rd_paroff]
-        mov     word ptr [rd_parret + 3],ax
-        mov     word ptr [rd_parret + 1],bx
-        mov     word ptr [rd_parseg],0
-        mov     ax,[rd_parss]
-        mov     bx,[rd_parsp]
-        mov     ss,ax
-        mov     sp,bx
-        sti
-rd_parret:
-        db      0EAh
-        dw      0
-        dw      0
+        call    psp_unstamp             ; 22h, 23h and 24h, back out of
+                                        ; the PSP that is going away
+        mov     [rd_psp],bx
+
+;--- AND THE PARENT IS PUT BACK EXACTLY WHERE IT STOOD.
+;
+; reset_environment does not simply jump to the terminate address.  It
+; loads the parent's stack, restores the parent's registers off it,
+; throws away the three words the parent's own INT 21h pushed, pushes
+; flags and the terminate address in their place, and IRETs.  The
+; parent comes back with its registers as they were when it called,
+; carry clear, interrupts on, and no trace of the call it made - which
+; is why DOS documents EXEC as destroying every register a program
+; owns.
+;
+; So the frame is edited where it lies: the terminate address goes
+; into the frame's own IP and CS and the flags word becomes 0202h,
+; and then the ordinary exit sequence runs.  Arriving at a FOREIGN
+; terminate address with RMDOS's frame still under it is what made
+; DOSX print "Standard Mode: Fault in MS-DOS Extender." the first time
+; a Windows task's 4Ch reached Windows instead of WIN.COM.
+        push    ds
+        mov     es,bx
+        mov     cx,word ptr es:[2Eh]    ; the parent's stack, out of the
+        mov     si,word ptr es:[30h]    ; parent's own PSP
+        mov     ds,si
+        mov     di,cx
+        mov     word ptr [di+F_IP],ax
+        mov     word ptr [di+F_CS],dx
+        mov     word ptr [di+F_FL],0F202h   ; IF on, carry clear - and the
+                                    ; high bits DOS itself pushes
+        pop     ds
+        mov     byte ptr [rd_indos],0   ; the two counters this call
+        mov     byte ptr [rd_stkdep],0  ; raised and will never lower
+        mov     ss,si
+        mov     sp,cx
+        pop     es
+        pop     ds
+        popa
+        iret
+
+term_home:
+        ; Nothing above this one is RMDOS's to return to.  The
+        ; excursion is over; the machine goes back to PM-DOS.
+        jmp     rd_goback
 
 ;--- proc_close - close every handle the current process holds -------
 proc_close:
@@ -1254,15 +1318,13 @@ IFDEF RMDOS_MARK
         call    rd_vstage
         pop     ax
 ENDIF
-        mov     ax,[rd_psp]
-        mov     [rd_parpsp],ax
-        mov     ax,[bp+F_OWNSEG]        ; where to come back to: the frame
-        mov     [rd_parss],ax           ; this call was made through
-        mov     ax,[bp+F_OWNOFF]
-        mov     [rd_parsp],ax
-        mov     word ptr [rd_parseg],cs
-        mov     word ptr [rd_paroff],OFFSET f4B_back
-        call    vec_save
+        ; NOTHING IS SAVED HERE ANY MORE.  This used to copy the
+        ; parent's PSP, stack and return address into five words of
+        ; RMDOS, and vec_save took vectors 22h, 23h and 24h into three
+        ; more.  All eight are in the child's PSP now - put there by
+        ; exec_psp, which is where DOS puts them - so a process that
+        ; nobody EXECed still knows where to go, and two children that
+        ; end out of order do not overwrite each other's way home.
 
         mov     ax,[rd_execpsp]
         mov     [rd_psp],ax
@@ -1273,7 +1335,8 @@ ENDIF
         ;
         ; This 4Bh will never reach i21_out - the whole point of it is
         ; that control leaves through the far jump below and comes
-        ; back, if it ever does, at f4B_back on a different stack.  So
+        ; back, if it ever does, through the terminate address in the
+        ; child's PSP, on a different stack.  So
         ; the two counters i21 raised on the way in are raised for
         ; ever unless they are put down here, and one of them is the
         ; InDOS flag: the byte every well-behaved program in the world
@@ -1352,43 +1415,12 @@ ENDIF
         sti
         jmp     dword ptr cs:[rd_execjmp]
 
-; The child ended and term_toparent came back here.  The frame is
-; where it was; the answer is success.
-f4B_back:
-        mov     ax,cs
-        mov     ds,ax
-IFDEF RMDOS_EDBG
-        push    si
-        mov     si,OFFSET ed_mback
-        call    ed_say
-        pop     si
-ENDIF
-        mov     es,ax
-
-        ; AND NOW ANSWER THE 4Bh, which is what a DOS does.
-        ;
-        ; This used to jmp rd_goback - end the whole excursion and give
-        ; the machine back to PM-DOS - on the reasoning that the frame
-        ; the 4Bh was made through had been unwound with the stack.  It
-        ; had not.  term_toparent has just put SS:SP back to exactly
-        ; where i21 left the caller's own copy of the frame, so the
-        ; frame is under our feet and the call can be returned from the
-        ; ordinary way: fix up the answer in it and IRET.
-        ;
-        ; The difference matters to the only caller there has ever
-        ; been.  A parent whose child ends does not want the machine
-        ; taken away from it - it wants its EXEC to return, so that it
-        ; can ask 4Dh what the child exited with and then get on with
-        ; whatever it EXECs next.  Windows EXECs a chain of them.
-        mov     bp,sp
-        mov     word ptr [bp+F_AX],0
-        and     word ptr [bp+F_FL],NOT 1        ; success: carry clear
-        mov     byte ptr [rd_indos],0           ; the counters this call
-        mov     byte ptr [rd_stkdep],0          ; raised and never lowered
-        pop     es
-        pop     ds
-        popa
-        iret
+; The child ends through term_common, which reads the terminate
+; address out of the child's own PSP - and exec_psp put the parent's
+; own CS:IP there, so the parent resumes at the instruction after its
+; INT 21h with no help from RMDOS at all.  f4B_back, the trampoline
+; that used to stand here and fix up the frame, is gone with the five
+; global words it depended on.
 
 f4B_nofile:
 IFDEF RMDOS_EDBG
@@ -1482,6 +1514,27 @@ ENDIF
         mov     word ptr es:[34h],18h
         mov     ax,[rd_execpsp]
         mov     word ptr es:[36h],ax
+
+        ; AND WHERE THE CHILD GOES WHEN IT ENDS.  SETMEM puts the three
+        ; vectors into the PSP; EXEC then overwrites the first of them
+        ; with the address the parent is to be resumed at, and puts the
+        ; same address in vector 22h.  DOS does both - msproc.asm pops
+        ; the caller's CS:IP into PDB_Exit and into ADDR_INT_TERMINATE
+        ; four instructions apart - and it is what makes a nested EXEC
+        ; return to the right place instead of to the outermost one.
+        call    psp_stamp
+        mov     ax,[bp+F_IP]            ; the instruction after the
+        mov     word ptr es:[0Ah],ax    ; parent's own INT 21h
+        mov     ax,[bp+F_CS]
+        mov     word ptr es:[0Ch],ax
+        push    ds
+        xor     ax,ax
+        mov     ds,ax
+        mov     ax,[bp+F_IP]
+        mov     word ptr ds:[22h*4],ax
+        mov     ax,[bp+F_CS]
+        mov     word ptr ds:[22h*4 + 2],ax
+        pop     ds
 
         ; THE PARENT THROUGH FS, NOT THROUGH DS.  This walked the
         ; parent's table with DS pointing at the parent's PSP - and
@@ -1725,33 +1778,44 @@ ec_done:
 ec_out:
         ret
 
-;--- vec_save / vec_restore - 22h, 23h and 24h across an EXEC --------
-vec_save:
+;--- psp_stamp / psp_unstamp - 22h, 23h and 24h, kept in the PSP -----
+;
+; DOS's SETMEM copies the twelve bytes at 0000:0088 into PSP+0Ah when
+; it builds a process, and $Abort copies them back out when the
+; process ends.  Three vectors, saved by the process that is about to
+; lose them and restored by the process that is going away - and not,
+; as RMDOS had it until v0.56, one global copy taken at EXEC time,
+; which is only ever right if processes end in the order they started.
+;
+; ES = the PSP.  Everything else is preserved.
+psp_stamp:
         pusha
-        push    es
+        push    ds
         xor     ax,ax
-        mov     es,ax
-        mov     eax,dword ptr es:[22h*4]
-        mov     dword ptr [rd_v22],eax
-        mov     eax,dword ptr es:[23h*4]
-        mov     dword ptr [rd_v23],eax
-        mov     eax,dword ptr es:[24h*4]
-        mov     dword ptr [rd_v24],eax
-        pop     es
+        mov     ds,ax
+        mov     si,22h*4
+        mov     di,0Ah
+        mov     cx,6
+        cld
+        rep     movsw
+        pop     ds
         popa
         ret
 
-vec_restore:
+psp_unstamp:
         pusha
         push    es
+        push    ds
+        mov     ax,es
+        mov     ds,ax
         xor     ax,ax
         mov     es,ax
-        mov     eax,dword ptr [rd_v22]
-        mov     dword ptr es:[22h*4],eax
-        mov     eax,dword ptr [rd_v23]
-        mov     dword ptr es:[23h*4],eax
-        mov     eax,dword ptr [rd_v24]
-        mov     dword ptr es:[24h*4],eax
+        mov     si,0Ah
+        mov     di,22h*4
+        mov     cx,6
+        cld
+        rep     movsw
+        pop     ds
         pop     es
         popa
         ret
@@ -1761,16 +1825,6 @@ vec_restore:
 ;=====================================================================
 rd_strat    db  0
 rd_env      dw  0
-
-rd_parpsp   dw  0
-rd_parseg   dw  0
-rd_paroff   dw  0
-rd_parss    dw  0
-rd_parsp    dw  0
-
-rd_v22      dd  0
-rd_v23      dd  0
-rd_v24      dd  0
 
 rd_execmode db  0
 rd_exechnd  dw  0
