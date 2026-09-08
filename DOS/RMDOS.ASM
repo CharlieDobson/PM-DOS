@@ -736,6 +736,17 @@ ENDIF
         pop     es
 
         mov     al,[rd_stkdep]
+        push    ax                      ; the caller's PSP, at this level
+        push    bx
+        movzx   bx,al
+        cmp     bx,RD_STKLVL
+        jae     i21_nopsp
+        shl     bx,1
+        mov     ax,[rd_psp]
+        mov     [rd_stkpsp + bx],ax
+i21_nopsp:
+        pop     bx
+        pop     ax
         inc     byte ptr [rd_stkdep]
         cmp     al,RD_STKLVL
         jae     i21_stacked             ; no level left: stay where we are,
@@ -926,6 +937,14 @@ rd_dtaoff   dw  80h
 msg_hello   db  13,10,'RMDOS is the DOS in this machine now.',13,10,0
 
 rd_stktab   dw  OFFSET rd_stk1, OFFSET rd_stk2, OFFSET rd_stk3
+
+;--- WHO IS WAITING IN WHICH CALL.  One PSP per nesting level, written
+;--- at i21 entry and read by term_common: a process that ends has to
+;--- know whether the parent it names is standing inside a DOS call -
+;--- an EXEC that has not returned - or is simply the PSP written at
+;--- 16h by a 55h that Windows made.  Those two want different stacks
+;--- and there is no other way to tell them apart.  See RMMEM.INC.
+rd_stkpsp   dw  RD_STKLVL dup (0)
 
             db  RD_STKSIZE dup(0)
 rd_stk1:

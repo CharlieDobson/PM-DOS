@@ -1728,6 +1728,13 @@ ATDF_DMA        EQU     08h                     ; the controller moves the
                                                 ; data, not the processor
 ATDF_PIO32      EQU     10h                     ; the data port is read a
                                                 ; doubleword at a time
+ATDF_ATAPI      EQU     20h                     ; a PACKET device - a CD-ROM,
+                                                ; not a disk.  Deliberately
+                                                ; NOT also ATDF_PRESENT: that
+                                                ; flag is what ata_slot counts
+                                                ; to hand out 80h, 81h, and a
+                                                ; CD-ROM taking a number would
+                                                ; renumber the disks behind it
 
 IOS_ATAINFO     EQU     IOSVC + 78h             ; AL = an ATA device index, or
                                                 ; FFh for the controller.  See
@@ -2442,7 +2449,7 @@ SHELLTAIL_MAX   EQU     130             ; length byte + 126 + CR + slack
 ; has a call of its own; these two agree.
 ;---------------------------------------------------------------------
 PMDOS_MAJOR     EQU     0
-PMDOS_MINOR     EQU     56
+PMDOS_MINOR     EQU     57
 
 DOSVER_MAJOR    EQU     6
 DOSVER_MINOR    EQU     22

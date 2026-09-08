@@ -221,6 +221,10 @@ IFDEF ATA_DEBUG
         call    ata_hex16
         mov     ax,word ptr [ata_idbuf+ATA_ID_SPT]
         call    ata_hex16
+        mov     al,'='
+        call    con_out
+        mov     ax,word ptr [ata_pktsig]        ; what a refusal signed
+        call    ata_hex16
         mov     al,' '
         call    con_out
         pop     eax
@@ -266,6 +270,7 @@ ai_notest:
         call    con_out
         mov     al,10
         call    con_out
+        call    atapi_selftest
 ENDIF
         popad
         ret
@@ -357,18 +362,40 @@ ata_identify:
         call    ata_waitbsy
         jc      aid_none
 
-        ; a non-zero LBA1/LBA2 here is a packet device (ATAPI) or a
-        ; SATA bridge answering - not something this driver handles
+        ; A non-zero LBA1/LBA2 here means the drive refused IDENTIFY
+        ; DEVICE and left a signature saying what it is instead.  14h/
+        ; EBh is a packet device and ATAPI.INC takes it from here; a
+        ; SATA bridge or anything else signs differently and is still
+        ; not something this driver handles.
+        ;
+        ; EITHER WAY THIS RETURNS "NOT A HARD DISK", which is what the
+        ; carry means to ata_init - so a CD-ROM does not take a place
+        ; in the 80h, 81h numbering that ata_slot hands out.
         mov     byte ptr [ata_stage],'P'
         push    edx
         add     dx,ATA_LBA1
         in      al,dx
-        mov     ah,al
+        mov     ah,al                   ; AH = LBA1
         inc     dx
-        in      al,dx
+        in      al,dx                   ; AL = LBA2
         pop     edx
+        ; THE SIGNATURE IS TESTED BEFORE THE ZERO TEST, and that order
+        ; is the whole of a bug this cost a boot to find: "or al,ah" is
+        ; how the original asked "are both bytes zero", and it asks by
+        ; WRITING AL.  Comparing AX afterwards compares 14FFh against
+        ; 14EBh and a CD-ROM is not a CD-ROM.  cmp leaves the register
+        ; alone, so it goes first and the destructive test second.
+        mov     word ptr [ata_pktsig],ax
+        cmp     ax,ATAPI_SIG
+        je      aid_ispkt
         or      al,ah
-        jnz     aid_none
+        jz      aid_nosig
+        jmp     aid_none
+aid_ispkt:
+        mov     byte ptr [ata_stage],'K'
+        call    atapi_ident
+        jmp     aid_none
+aid_nosig:
 
         mov     byte ptr [ata_stage],'Q'
         call    ata_waitdrq
@@ -1786,6 +1813,7 @@ acap_bad:
 ata_count   dd  0                       ; usable ATA disks found
 ata_dir     db  0                       ; 0 = read, 1 = write
 ata_stage   db  0                       ; how far probing got (debug)
+ata_pktsig  dw  0                       ; the signature a refused IDENTIFY left
 ata_dbgon   db  0                       ; trace this transfer (debug)
             db  0
 ata_dev     dd  0                       ; device entry in play

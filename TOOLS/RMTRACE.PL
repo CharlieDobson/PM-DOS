@@ -4,7 +4,7 @@ open my $f,'<',$img or die "$img: $!"; binmode $f;
 read $f, my $d, 72*512; close $f;
 my $at = index($d,"RMDBG");
 die "no trace on the image\n" if $at < 0;
-my ($LEN,$HDR,$N2F,$STRN,$STRL,$ENT) = (32*512,160,32,8,128,32);
+my ($LEN,$HDR,$N2F,$STRN,$STRL,$ENT) = (32*512,224,32,8,128,32);
 my ($XN,$XL) = (24,10);   # must match RDBG_XN/RDBG_XL in DOS/RMDBG.INC
 my $SOFF = $HDR + $N2F*2;
 my $XOFF = $SOFF + $STRN*$STRL;
@@ -35,17 +35,22 @@ my ($tpsp,$tpar,$tip,$tcs) = unpack("v4", substr($blk,0x98,8));
 printf "first terminate: PSP %04X, parent %04X%s, terminate address %04X:%04X\n",
    $tpsp, $tpar, ($tpar == $tpsp ? " (ITSELF - DOS returns instead of freeing)" : ""),
    $tcs, $tip if $tpsp;
+my ($tsp,$tss,$tcsp,$tcss,$tnclo,$tnfre,$tfseg,$tflen) = unpack("v8", substr($blk,0xA0,16));
+if ($tpsp) {
+  printf "         resumed on the PARENT's stack %04X:%04X; the 4Ch's own frame was %04X:%04X%s\n",
+     $tss,$tsp,$tcss,$tcsp,
+     (($tss==$tcss && $tsp==$tcsp) ? "   <- the SAME frame" : "   <- A DIFFERENT FRAME");
+  my @f = unpack("v13", substr($blk,0xB0,26));
+  printf "         frame there before patching: es=%04X ds=%04X di=%04X si=%04X bp=%04X sp=%04X bx=%04X dx=%04X cx=%04X ax=%04X  %04X:%04X fl=%04X\n",
+     @f[0..9], $f[11], $f[10], $f[12];
+  printf "         clean-up: %d handle%s closed, %d arena block%s freed%s\n",
+     $tnclo, ($tnclo==1?"":"s"), $tnfre, ($tnfre==1?"":"s"),
+     ($tfseg ? sprintf(" (first %04X, %d paragraphs)", $tfseg, $tflen) : "");
+}
+
 my ($nfail,$fpsp,$fcnt,$fused) = unpack("v4", substr($blk,0x90,8));
 printf "         %d opens refused for want of a handle%s\n", $nfail,
    ($nfail ? sprintf("; the first was PSP %04X, %d of %d entries in use", $fpsp, $fused, $fcnt) : "");
-{ my $t = substr($blk,0xA0,64);
-  my $k = $jcnt < 64 ? $jcnt : 64;
-  printf "         table: %s\n", join(" ", map { my $v=ord(substr($t,$_,1)); $v==0xFF ? "--" : sprintf("%02X",$v) } 0..$k-1);
-  my $o = substr($blk,0xE0,24*12);
-  my @n;
-  for my $i (0..23) { my $s = substr($o,$i*12,11); last if $s =~ /^\x00/; $s =~ s/[^\x20-\x7e]/./g; $s =~ s/ +$//; push @n,$s; }
-  printf "         open in the SFT: %s\n", (@n ? join(", ",@n) : "(none)");
-}
 if ($n2f) { my $k=$n2f<$N2F?$n2f:$N2F;
   printf "INT 2Fh AX: %s\n", join(" ", map {sprintf "%04X",$_} unpack("v$k",substr($blk,$HDR,$k*2))); }
 my %fn=(0x09=>"print",0x3D=>"open",0x4B=>"exec");

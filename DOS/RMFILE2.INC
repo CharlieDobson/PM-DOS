@@ -1383,6 +1383,8 @@ fn4E:
         mov     si,[bp+F_DX]
         call    rd_path
         jc      f4E_bad
+        mov     [rd_ffdrv],al           ; which drive - the DTA records it,
+                                        ; and 4Fh finds the volume by it
         mov     [rd_ffvol],si
         mov     dword ptr [rd_ffdir],ebx
         mov     al,byte ptr [bp+F_CX]
@@ -1421,9 +1423,10 @@ f4E_bad:
         jmp     i21_fail
 
 fn4F:
-        mov     si,[rd_ffvol]
-        or      si,si
-        jz      f4F_none
+        ; THE SEARCH IS IN THE CALLER'S DTA, not in these globals - see
+        ; ff_seek for why that distinction is the whole of this bug.
+        call    ff_seek
+        jc      f4F_none
 f4F_scan:
         mov     si,[rd_ffvol]
         mov     eax,dword ptr [rd_ffsec]
@@ -1521,6 +1524,135 @@ ffm_no:
         stc
         ret
 
+;=====================================================================
+; ff_seek - pick a search up again out of the caller's DTA.
+;
+; DOS keeps a search going in the twenty-one bytes in front of the
+; result, and that is not an implementation detail programs are
+; unaware of: it is the ONLY reason a program can have two searches
+; open at once.  Windows' File Manager reads a directory tree with
+; exactly that - ReadDirLevel enumerates a directory, recurses into
+; each subdirectory it finds, and then carries on with the outer
+; FindNext - and a DOS that keeps the search in one set of globals
+; loses the outer walk the moment the inner one starts.
+;
+; RMDOS did.  ff_fill had written those bytes since the day it was
+; written, and its comment promised 4Fh would carry on from them; 4Fh
+; read the globals instead, so the promise was never kept and the
+; bytes were decoration.  RMFIND.COM's fourth check is that promise
+; made into a test.
+;
+; The layout is DOS's where DOS's is fixed - the drive at 00h, the
+; eleven-byte template at 01h, the search attribute at 0Ch - and this
+; kernel's where it has to be, because RMDOS walks a directory by
+; absolute sector and wants a 32-bit cluster for FAT32:
+;
+;   0Dh word   the entry's offset in its sector
+;   0Fh dword  the cluster the walk is standing in (0 = a fixed root)
+;   13h word   which sector of that cluster
+;
+; Everything else - the absolute LBA, the sectors left in the cluster,
+; whether this is a fixed root - is DERIVED by walking dir_first
+; again, so there is no second copy of it that can go stale.  That
+; also keeps the state inside DOS's twenty-one bytes, which the byte
+; at 15h is the end of: the old code wrote a dword to 12h and put its
+; top byte where the found file's attribute goes, and got away with it
+; only because the attribute was written afterwards.
+;
+; CF set if the DTA does not hold a search this DOS can resume.
+;=====================================================================
+ff_seek:
+        push    es
+        push    ds
+        pusha
+
+        mov     es,[rd_dtaseg]
+        mov     di,[rd_dtaoff]
+
+        mov     al,es:[di]
+        mov     [rd_ffdrv],al
+        call    rd_getvol               ; -> SI, and CF for a drive that
+        jc      ffs_bad                 ; has gone away since 4Eh
+        mov     [rd_ffvol],si
+
+        mov     al,es:[di+0Ch]
+        mov     [rd_ffattr],al
+        mov     ax,es:[di+0Dh]
+        mov     [rd_ffent],ax
+
+        ; the template, out of the caller's segment and into ours
+        mov     bx,es
+        mov     si,di
+        inc     si
+        push    cs
+        pop     es
+        mov     di,OFFSET rd_ffname
+        mov     ds,bx                   ; DS:SI theirs, ES:DI ours
+        mov     cx,11
+        cld
+        rep     movsb
+        push    cs
+        pop     ds
+
+        ; and where the walk had got to
+        mov     es,bx
+        mov     di,[rd_dtaoff]
+        mov     eax,es:[di+0Fh]
+        mov     cx,es:[di+13h]
+
+        mov     si,[rd_ffvol]
+        push    cx
+        call    dir_first               ; the first sector of that cluster
+        pop     cx
+        jc      ffs_bad
+        movzx   eax,cx                  ; ...and CX sectors along it
+        add     dword ptr [rd_dfsec],eax
+        sub     dword ptr [rd_dfleft],eax
+        jbe     ffs_bad                 ; an index past the end of the unit
+
+        mov     eax,dword ptr [rd_dfsec]
+        mov     dword ptr [rd_ffsec],eax
+        mov     eax,dword ptr [rd_dfclus]
+        mov     dword ptr [rd_ffclus],eax
+        mov     eax,dword ptr [rd_dfleft]
+        mov     dword ptr [rd_ffleft],eax
+        mov     al,[rd_dfroot]
+        mov     [rd_ffroot],al
+        popa
+        pop     ds
+        pop     es
+        clc
+        ret
+ffs_bad:
+        popa
+        pop     ds
+        pop     es
+        stc
+        ret
+
+;--- ff_secidx - AX = which sector of the current cluster, or of the
+;--- fixed root, the walk is standing on.  Derived rather than tracked:
+;--- dir_first sets the count for the whole unit and dir_next counts it
+;--- down, so what is left says how far in we are.
+ff_secidx:
+        push    esi
+        push    ebx
+        mov     si,[rd_ffvol]
+        cmp     byte ptr [rd_ffroot],0
+        je      ffx_cluster
+        movzx   eax,word ptr [si+VOL_ROOTENT]
+        shl     eax,5
+        add     eax,SECSIZE - 1
+        shr     eax,9
+        jmp     short ffx_left
+ffx_cluster:
+        movzx   eax,byte ptr [si+VOL_SPC]
+ffx_left:
+        sub     eax,dword ptr [rd_ffleft]
+        pop     ebx
+        pop     esi
+        ret
+
 ;--- ff_fill - BX = the entry.  Write the caller's DTA ---------------
 ff_fill:
         pusha
@@ -1529,10 +1661,11 @@ ff_fill:
         mov     di,[rd_dtaoff]
 
         ; The first 21 bytes are DOS's own place to keep the search
-        ; going, and a program that copies them about is entitled to
-        ; expect 4Fh to carry on from wherever it put them back.
+        ; going, and ff_seek above is the code that carries on from
+        ; them.  They end AT 15h, where the found file starts.
+        push    bx
         push    di
-        mov     al,[rd_drive]
+        mov     al,[rd_ffdrv]
         mov     es:[di],al
         inc     di
         mov     si,OFFSET rd_ffname
@@ -1543,15 +1676,19 @@ ff_fill:
         cld
         rep     movsb
         pop     ds
+        mov     al,[rd_ffattr]
+        mov     es:[di],al              ; 0Ch
+        inc     di
         mov     ax,[rd_ffent]
-        mov     es:[di],ax
+        mov     es:[di],ax              ; 0Dh
         add     di,2
-        mov     eax,dword ptr [rd_ffsec]
-        mov     es:[di],eax
-        add     di,4
         mov     eax,dword ptr [rd_ffclus]
-        mov     es:[di],eax
+        mov     es:[di],eax             ; 0Fh
+        add     di,4
+        call    ff_secidx
+        mov     es:[di],ax              ; 13h, and 15h is the next byte
         pop     di
+        pop     bx
 
         add     di,15h
         mov     al,byte ptr [rd_dirbuf + bx + DE_ATTR]
@@ -2227,6 +2364,7 @@ rd_crdir    dd  0
 rd_tmp      dw  0
 
 rd_ffvol    dw  0
+rd_ffdrv    db  0                       ; the drive the search is on
 rd_ffdir    dd  0
 rd_ffname   db  11 dup(0)
 rd_ffattr   db  0

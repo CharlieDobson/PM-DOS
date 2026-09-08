@@ -466,6 +466,20 @@ rd_flush:
 ; did: "verylongname.text" opens "VERYLONG.TEX".  Refusing would be
 ; more honest and would also mean a program that has always worked
 ; stops working, so it truncates.
+;
+; AN ASTERISK FILLS THE REST OF ITS FIELD WITH QUESTION MARKS, which is
+; the whole of what '*' means to DOS: "*.*" is "???????????" and
+; "A*.T*" is "A???????T??".  Every routine below compares eleven bytes,
+; and '?' is the only wildcard any of them knows - so an asterisk that
+; is not expanded HERE is a literal asterisk down there, and matches a
+; file with an asterisk in its name, of which there are none.
+;
+; That was v0.57's "File Manager lists an empty directory".  4Eh was
+; not broken and neither was the directory walk: the search template
+; every caller passes could not match anything, so every search in
+; RMDOS returned "no more files" on its first call.  It was invisible
+; for as long as it was, because rd_name83's OTHER caller is rd_path
+; resolving a path to open, and a path to open has no wildcards in it.
 ;=====================================================================
 rd_name83:
         push    ax
@@ -488,6 +502,8 @@ n83_base:
         je      n83_done
         cmp     al,'.'
         je      n83_dot
+        cmp     al,'*'
+        je      n83_bstar
         inc     si
         or      cx,cx
         jz      n83_base                ; past eight: swallow it
@@ -495,6 +511,14 @@ n83_base:
         mov     [di],al
         inc     di
         dec     cx
+        jmp     short n83_base
+n83_bstar:
+        ; The rest of the eight, as question marks.  CX comes back zero,
+        ; so the loop swallows whatever else was written before the dot
+        ; - "ab*cd.txt" is "AB??????TXT" on DOS too.
+        inc     si
+        mov     al,'?'
+        rep     stosb
         jmp     short n83_base
 n83_dot:
         inc     si
@@ -510,6 +534,8 @@ n83_ext:
         je      n83_done
         cmp     al,'/'
         je      n83_done
+        cmp     al,'*'
+        je      n83_estar
         inc     si
         or      cx,cx
         jz      n83_ext
@@ -517,6 +543,11 @@ n83_ext:
         mov     [di],al
         inc     di
         dec     cx
+        jmp     short n83_ext
+n83_estar:
+        inc     si
+        mov     al,'?'
+        rep     stosb
         jmp     short n83_ext
 n83_done:
         pop     di

@@ -243,6 +243,7 @@ ENDIF
         INCLUDE RMCALL.INC
         INCLUDE PCI.INC
         INCLUDE ATA.INC
+        INCLUDE ATAPI.INC        ; after ATA.INC: it is built on its transport
         INCLUDE BLOCK.INC
 
 ;=====================================================================

@@ -50,7 +50,7 @@ RDBG_SEC        EQU     32              ; LBA 1 to 32.  Sixteen was not
                                         ; "what did the shell open, in what
                                         ; order, over the last fifty calls"
 RDBG_LEN        EQU     RDBG_SEC * 512
-RDBG_HDR        EQU     160             ; 128 until v0.55, when the handle
+RDBG_HDR        EQU     224             ; 128 until v0.55, when the handle
                                         ; table became the question
 RDBG_ENT        EQU     32
 RDBG_2FN        EQU     32              ; INT 2Fh AX values kept
@@ -294,6 +294,40 @@ rdbg_term:
         mov     [rdbg_tip],ax
         mov     ax,word ptr es:[0Ch]
         mov     [rdbg_tcs],ax
+
+;--- and the handover.  ES is still the PSP that is ending, and
+;--- nothing has patched anything yet: term_common calls this BEFORE
+;--- it writes the terminate address into the parent's frame, which is
+;--- the only reason those twenty-six bytes are worth reading.
+        mov     ax,word ptr es:[2Eh]    ; the 4Ch's own frame - DOS stamps
+        mov     [rdbg_tcsp],ax          ; PSP+2Eh on every call, so this is
+        mov     ax,word ptr es:[30h]    ; where THIS call came from
+        mov     [rdbg_tcss],ax
+        mov     ax,[rdbg_tpar]
+        or      ax,ax
+        jz      rt_done
+        push    es
+        mov     es,ax                   ; the parent
+        mov     ax,word ptr es:[2Eh]
+        mov     [rdbg_tsp],ax
+        mov     ax,word ptr es:[30h]
+        mov     [rdbg_tss],ax
+        pop     es
+        mov     ax,[rdbg_tss]
+        or      ax,ax
+        jz      rt_done
+        push    es
+        mov     es,ax
+        mov     si,[rdbg_tsp]
+        mov     di,OFFSET rdbg_tfrm
+        mov     cx,26
+rt_frm:
+        mov     al,es:[si]
+        mov     [di],al
+        inc     si
+        inc     di
+        loop    rt_frm
+        pop     es
 rt_done:
         pop     ds
         popa
@@ -1283,7 +1317,35 @@ rdbg_tpsp   dw  0                       ; +98  the last PSP to terminate,
 rdbg_tpar   dw  0                       ; +9A  what it says its parent is,
 rdbg_tip    dw  0                       ; +9C  and the terminate address it
 rdbg_tcs    dw  0                       ; +9E  carries at PSP+0Ah
-rdbg_2fax   dw  RDBG_2FN dup (0)        ; +80  the first few of their AX
+;--- +A0: THE HANDOVER ITSELF, which is what v0.56 could not see -----
+; The terminate address said where the parent goes.  These say what it
+; goes back ON: the stack out of the PARENT's PSP, which is what DOS
+; resumes on (msctrlc.asm reset_environment, MOV SS,DS:[PDB_user_stack
+; +2] with DS = CurrentPDB and CurrentPDB already popped to the
+; parent), the stack out of the CHILD's - which is the frame of the
+; 4Ch itself - and the twenty-six bytes actually sitting at the
+; parent's, copied BEFORE the terminate address is patched into them.
+; If those two stacks are the same address the parent is resumed on
+; the 4Ch's own frame and everything is where Windows left it; if they
+; are not, the frame being restored belongs to some older call and the
+; registers Windows comes back with are that call's.
+;
+; And what the clean-up did, which no screenshot can show: how many
+; handles the dying process was holding - which on real DOS is ZERO
+; for a Windows task, because Windows opens every file with mode 80h
+; and DOS does not give a 55h child a no-inherit handle - and how many
+; arena blocks it owned.
+rdbg_tsp    dw  0                       ; +A0  parent's PSP+2Eh - resume SP
+rdbg_tss    dw  0                       ; +A2  parent's PSP+30h - resume SS
+rdbg_tcsp   dw  0                       ; +A4  child's PSP+2Eh - the 4Ch's
+rdbg_tcss   dw  0                       ; +A6  child's PSP+30h - own frame
+rdbg_tnclo  dw  0                       ; +A8  handles proc_close closed
+rdbg_tnfre  dw  0                       ; +AA  blocks proc_free freed
+rdbg_tfseg  dw  0                       ; +AC  the first of them...
+rdbg_tflen  dw  0                       ; +AE  ...and its length
+rdbg_tfrm   db  26 dup (0)              ; +B0  the frame at the parent's SP
+rdbg_tpad   db  22 dup (0)              ; +CA  to RDBG_HDR
+rdbg_2fax   dw  RDBG_2FN dup (0)        ; +E0  the first few of their AX
 rdbg_strs   db  RDBG_STRN * RDBG_STRL dup (0)   ; +C0  what it PRINTED
 rdbg_xms    db  RDBG_XN * RDBG_XL dup (0)       ; and what it asked the XMS
                                                 ; host, which no other channel

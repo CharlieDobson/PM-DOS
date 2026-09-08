@@ -401,11 +401,38 @@ f55_ref:
         mov     al,es:[bx+18h]
         cmp     al,0FFh
         je      f55_refnext
+
+;--- AND DOS ASKS ABOUT EVERY ONE OF THEM BEFORE IT KEEPS IT.
+;
+; CreateCopy's dup loop calls SFFromHandle for each entry it has just
+; copied and stores -1 - not the handle - for anything that is closed,
+; marked sf_no_inherit, or a network FCB; only what is left is
+; DOS_DUPed into the child.  This copied all twenty wholesale and took
+; a reference on every one that was not FFh.
+;
+; That is not a detail on this workload.  WINDOWS OPENS EVERY FILE IT
+; LOADS WITH MODE 80h - the no-inherit bit - so on real DOS a task's
+; PSP inherits the standard handles and nothing else, and when the
+; task ends DOS closes nothing of the shell's.  Measured here at
+; TASKMAN's exit: eighteen handles closed, every one of them Windows'.
+; See misc.asm, $CREATE_PROCESS_DATA_BLOCK, and NOTES.TXT v0.57.
+        cmp     al,SFT_COUNT
+        jae     f55_drop
+        movzx   si,al
+        imul    si,si,SFT_LEN
+        add     si,OFFSET rd_sfts
+        cmp     word ptr [si+SFT_REF],0
+        je      f55_drop                ; not open any more
+        test    byte ptr [si+SFT_MODE],80h
+        jnz     f55_drop                ; opened no-inherit
         push    bx
         push    es
         call    sft_addref
         pop     es
         pop     bx
+        jmp     short f55_refnext
+f55_drop:
+        mov     byte ptr es:[bx+18h],0FFh
 f55_refnext:
         inc     bx
         jmp     short f55_ref
@@ -420,6 +447,8 @@ f26_done:
         jmp     i21_ok
 
 rd_pspnew   dw  0                       ; 26h/55h: the PSP being built
+rd_pspdie   dw  0                       ; ...and the one that is ending
+rd_pspfrm   dw  0                       ; ...and whose frame it goes back on
 rd_pspchild db  0                       ; ...and whether it is a process
 
 ;=====================================================================
@@ -529,6 +558,7 @@ term_resident:
 ;---------------------------------------------------------------------
         mov     ax,[rd_psp]
         mov     es,ax
+        mov     [rd_pspdie],ax
 IFDEF DBG_LPT
         call    rdbg_term               ; who is ending, and where it says
 ENDIF                                   ; it wants to go
@@ -567,10 +597,63 @@ ENDIF                                   ; it wants to go
 ; terminate address with RMDOS's frame still under it is what made
 ; DOSX print "Standard Mode: Fault in MS-DOS Extender." the first time
 ; a Windows task's 4Ch reached Windows instead of WIN.COM.
+;--- AND WHICH FRAME, WHICH IS THE WHOLE OF v0.57.
+;
+; DOS resumes the parent on the stack out of the PARENT's PSP -
+; msctrlc.asm reset_environment, MOV SS,DS:[PDB_user_stack+2] with
+; CurrentPDB already popped to the parent - and PDB_user_stack is
+; stamped on every INT 21h with the caller's SS:SP.  For a child that
+; was EXECed that is exactly right: the parent is standing inside a
+; 4Bh that has never returned, and its stamp IS that call's frame.
+;
+; WINDOWS DOES NOT EXEC ITS TASKS.  It builds a PSP with 55h, sets it
+; current with 50h and calls 4Ch itself, on its own stack, and the
+; parent it names has no outstanding call at all: its stamp is
+; whatever DOS call it last made on its own account, two bytes and one
+; word away from the frame the 4Ch actually pushed.  Measured, v0.57:
+; the parent's stamp was 097A:2320 and the 4Ch's own frame 097A:231E,
+; so every register the task came back with was one slot out of step -
+; SI=0FEC, BP=2332, CX=4C00 are in the extender's fault dump because
+; they are what came off that frame - and DOSX faulted eight DOS calls
+; later at EC=200C, always the same.
+;
+; So the question is not "parent or child", it is WHETHER THE PARENT
+; IS WAITING IN A CALL, and RMDOS is the only thing that knows: it
+; records the PSP of every INT 21h it is still inside, one per nesting
+; level.  If the call enclosing this one was made by the parent, the
+; parent is waiting in it and DOS's rule is right.  If it was not -
+; which for a Windows task means WIN.COM's EXEC of the extender, four
+; levels away and nothing to do with this - then there is nothing to
+; resume and the terminate is a plain return: the process's own frame,
+; its own registers, its own SP, and the terminate address in place of
+; the return address.  With that, Escape on the Task List closes the
+; Task List, and Clipboard Viewer starts and exits.
+        push    ax
+        push    bx
+        push    si
+        mov     [rd_pspfrm],bx          ; the parent, as DOS has it
+        movzx   si,byte ptr [rd_stkdep]
+        cmp     si,2                    ; this call, and one below it
+        jb      tc_ownfrm
+        sub     si,2
+        cmp     si,RD_STKLVL
+        jae     tc_ownfrm
+        shl     si,1
+        mov     ax,[rd_stkpsp + si]
+        cmp     ax,bx
+        je      tc_frmdone              ; the parent is waiting in it
+tc_ownfrm:
+        mov     ax,[rd_pspdie]
+        mov     [rd_pspfrm],ax
+tc_frmdone:
+        pop     si
+        pop     bx
+        pop     ax
+
         push    ds
-        mov     es,bx
-        mov     cx,word ptr es:[2Eh]    ; the parent's stack, out of the
-        mov     si,word ptr es:[30h]    ; parent's own PSP
+        mov     es,[rd_pspfrm]
+        mov     cx,word ptr es:[2Eh]    ; the stack the frame is on, out of
+        mov     si,word ptr es:[30h]    ; whichever PSP is answering
         mov     ds,si
         mov     di,cx
         mov     word ptr [di+F_IP],ax
@@ -612,6 +695,17 @@ pc_loop:
         pop     di
         pop     cx
         pop     bx
+IFDEF DBG_LPT
+        ; Counted only until the first terminate has been recorded, so
+        ; that the number belongs to the same process as the rest of
+        ; the report.  On real DOS this is ZERO for a Windows task:
+        ; Windows opens every file with mode 80h and DOS does not give
+        ; a 55h child a no-inherit handle.
+        cmp     word ptr [rdbg_tpsp],0
+        jne     pc_nocount
+        inc     word ptr [rdbg_tnclo]
+pc_nocount:
+ENDIF
         mov     byte ptr es:[bx+di],0FFh
 pc_next:
         inc     bx
@@ -638,6 +732,18 @@ pf_look:
         cmp     es:[RMCB_OWN],dx
         jne     pf_next
         mov     word ptr es:[RMCB_OWN],0
+IFDEF DBG_LPT
+        cmp     word ptr [rdbg_tpsp],0
+        jne     pf_nocount
+        inc     word ptr [rdbg_tnfre]
+        cmp     word ptr [rdbg_tfseg],0
+        jne     pf_nocount
+        mov     word ptr [rdbg_tfseg],bx
+        mov     ax,es:[RMCB_LEN]
+        mov     word ptr [rdbg_tflen],ax
+pf_nocount:
+ENDIF
+
 pf_next:
         cmp     byte ptr es:[RMCB_SIG],'Z'
         je      pf_done
