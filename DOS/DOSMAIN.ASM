@@ -47,6 +47,12 @@ ENDIF
 
         call    arena_init
         call    fat_init                ; per-drive state, out of the arena
+        call    cache_init              ; ...and the disk cache, before the
+                                        ; first sector is read: CONFIG.SYS
+                                        ; is itself a file on the disk, and
+                                        ; there is no reason for the one
+                                        ; file every boot reads to be the
+                                        ; one file that goes uncached
         call    lm_init                 ; the DOS arena below 1MB
         call    xms_init                ; and the XMS callback in it
         call    vdm_stubs               ; and an IRET for the DOS vectors
@@ -115,6 +121,12 @@ ENDIF
         ; on a BIOS drive number.
         call    disk_scan
 
+        ; ...and the CD-ROM device, if this machine has a drive to put
+        ; behind it.  After disk_scan, because it asks how many packet
+        ; devices there are; after vdm_lolinit, because it links itself
+        ; into the chain NUL anchors.
+        call    cdd_init
+
         mov     al,byte ptr ds:[GV_BOOTDRV]
         call    bios2log                ; the letter the boot disk got
         mov     [cur_vol],al            ; the boot volume owns vol_state
@@ -141,6 +153,9 @@ mount_say:
         call    dword ptr ds:[IOS_CONSTR]
 ENDIF
 no_fs:
+IFDEF ISO_DEBUG
+        call    iso_selftest
+ENDIF
 
 ;=====================================================================
 ; CONFIG.SYS, once, before the interpreter exists - a SHELL= line
@@ -346,7 +361,17 @@ df_notbox:
 ;=====================================================================
         INCLUDE ARENA.INC
         INCLUDE FAT.INC
+        INCLUDE ISO9660.INC             ; after FAT.INC: the second filesystem,
+                                        ; and the first one that is not FAT
+        INCLUDE UDF.INC                 ; and after it: the THIRD, which is
+                                        ; reached only by a disc the second
+                                        ; one refuses, and which answers in
+                                        ; the second one's buffers
         INCLUDE CRITERR.INC
+        INCLUDE CACHE.INC               ; and immediately after it: the disk
+                                        ; cache sits between disk_read and
+                                        ; the drive, and writes back through
+                                        ; CRITERR's own disk_wrsure
         INCLUDE PATH.INC
         INCLUDE INT21.INC
         INCLUDE CONFIG.INC
@@ -357,6 +382,19 @@ df_notbox:
                                         ; halves and read in that order
         INCLUDE XMS.INC
         INCLUDE VDM.INC
+        INCLUDE MSCDEX.INC              ; after VDM.INC: it answers part
+                                        ; of INT 2Fh out of a DOS box and
+                                        ; works on vdm_ctx, and after
+                                        ; INT21.INC because it reports
+                                        ; failure in the guest's carry and
+                                        ; FL_CF is an EQU, which wasm will
+                                        ; not take forward-referenced
+        INCLUDE MSCD001.INC             ; and after it: the DEVICE those
+                                        ; calls hand out.  It is where CD
+                                        ; audio lives, because the audio
+                                        ; API is the device interface and
+                                        ; there was never another route to
+                                        ; it
         INCLUDE WINDOWS.INC             ; after VDM.INC: the 2Fh half of
         INCLUDE PARK.INC                ; and after it: leaving
                                         ; protected mode for good,

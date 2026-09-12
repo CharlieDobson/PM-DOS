@@ -169,6 +169,14 @@ ATA_SPIN        EQU     01000000h
 ata_init:
         pushad
         mov     dword ptr [ata_count],0
+        mov     dword ptr [atapi_count],0       ; the probe is idempotent and
+                                                ; has to STAY so: ata_config
+                                                ; re-runs it whenever a policy
+                                                ; changes, and a count that
+                                                ; only ever went up would give
+                                                ; the machine a second CD-ROM
+                                                ; every time IDEDMA= was
+                                                ; written in CONFIG.SYS
 
         mov     edi,OFFSET ata_devs             ; blank the table
         xor     eax,eax

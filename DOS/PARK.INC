@@ -927,7 +927,16 @@ park_go:
         ; the same disks through the same BIOS, and a cached cluster up
         ; here that has not reached the platter is a write that RMDOS
         ; cannot see and that will land on top of its work afterwards.
-        call    fat_flush
+        ;
+        ; dos_commit AND NOT fat_flush, which is what this was until
+        ; v0.59 and was already half a call: fat_flush empties the
+        ; LOADED volume's FAT cache and says nothing about the other
+        ; letters on the same disk, and since v0.59 there is a sector
+        ; cache underneath all of them holding writes of its own.  A
+        ; park is the one moment in this kernel when another DOS takes
+        ; the disks over, so it is the one place where "everything"
+        ; has to mean everything.
+        call    dos_commit
 
         movzx   eax,word ptr [park_seg]
         mov     word ptr [park_blk + GVP_CS],ax
@@ -1126,6 +1135,15 @@ park_recover:
         ; Every volume, again.  RMDOS has been writing to these disks
         ; and every FAT window and cluster cached up here describes the
         ; disk as it was before it started.
+        ;
+        ; THE SECTOR CACHE GOES FIRST AND THAT ORDER IS THE POINT.
+        ; park_remount MOUNTS, which means it reads, and a read served
+        ; out of blocks describing the disk as RMDOS found it would
+        ; mount the volume that used to be there - the same trap
+        ; iso_chkmedia has with a swapped disc, arrived at from the
+        ; other direction.  Nothing is written back: what RMDOS put on
+        ; those sectors is the truth now.
+        call    cache_dropall
         call    park_remount
 
         popad

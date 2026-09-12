@@ -1499,12 +1499,13 @@ vdm_loop:
 ; address settles it: the callback block is memory we planted and know
 ; the address of, and no ordinary program executes a HLT at all.
 ;---------------------------------------------------------------------
-; Six things can be at the far end of a HLT now.  Four of them are
+; Seven things can be at the far end of a HLT now.  Five of them are
 ; told apart by ADDRESS - the XMS entry, DPMI's mode switch, the pad a
-; simulated real-mode interrupt returns to, and one of the real-mode
-; callback landing pads - and if it is none of those, the guest's own
-; interrupt flag settles the last two: on, and it is a program waiting
-; for an interrupt; off, and it is one that has genuinely stopped.
+; simulated real-mode interrupt returns to, one of the real-mode
+; callback landing pads, and either entry point of the MSCD001 device
+; - and if it is none of those, the guest's own interrupt flag settles
+; the last two: on, and it is a program waiting for an interrupt; off,
+; and it is one that has genuinely stopped.
 vdm_halt:
         call    xms_iscb
         jnc     vh_xms
@@ -1514,6 +1515,8 @@ vdm_halt:
         jnc     vh_dpmiret
         call    dpmi_iscall             ; EAX = which callback, if it is one
         jnc     vh_dpmicb
+        call    cdd_iscb                ; EAX = which entry, if it is one of
+        jnc     vh_cdd                  ; the MSCD001 device's two
 
         ; A SIXTH, and it is not a stopped program at all: a HLT WITH
         ; INTERRUPTS ON is a program waiting for one.  That is the
@@ -1552,6 +1555,9 @@ vh_dpmiret:
         jmp     dpmi_rmdone
 vh_dpmicb:
         jmp     dpmi_docall
+vh_cdd:
+        call    cdd_call
+        jmp     vdm_loop
 
 ;---------------------------------------------------------------------
 ; vdm_abend - the box ends because something went wrong rather than
@@ -1612,6 +1618,17 @@ vdm_i2F:
         call    xms_int2F
         jnc     vdm_loop
         call    dpmi_int2F              ; 1686h/1687h: is there a host?
+        jnc     vdm_loop
+        call    cdx_int2F               ; AH=15h: the MSCDEX API, which
+                                        ; this kernel answers itself - see
+                                        ; MSCDEX.INC for why there is no
+                                        ; MSCDEX.EXE to answer it
+        jnc     vdm_loop
+        call    cache_int2F             ; AX=4A10h: the SMARTDRV API, for
+                                        ; the same reason one level along -
+                                        ; the kernel HAS a disk cache, so
+                                        ; SMARTDRV.EXE must be able to find
+                                        ; out and not load a second one
         jnc     vdm_loop
         call    win_int2F               ; and the 16xx Windows family,
         jc      vdm_reflect             ; which vetoes ENHANCED mode's
@@ -3398,6 +3415,12 @@ vdm_subptr:
         db  0F1h, 06h,  P_DI            ; the volume table
         db  0F1h, 08h,  P_DI            ; and one block of the arena
         db  0F1h, 0Bh,  P_DX            ; the program to run parked
+        db  0F1h, 0Ch,  P_DI            ; one physical disk's description
+        db  0F1h, 0Dh,  P_DI            ; and its raw sectors, read...
+        db  0F1h, 0Eh,  P_DI            ; ...and written.  P_DI ALONE: EBX
+                                        ; is an LBA in both of those and
+                                        ; flattening it would add a slot base
+                                        ; to a sector number
                                         ; F0h converts nothing at all: its
                                         ; DX is a row and a column
         db  0

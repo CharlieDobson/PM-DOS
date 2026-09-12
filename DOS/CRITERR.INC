@@ -37,12 +37,36 @@
 ; to let the call fail.  All registers are preserved: the callers all
 ; sit inside a pushad, and a retry needs the four inputs back anyway.
 ;=====================================================================
+; A MOUNTED CD NEVER COMES DOWN HERE, and the guard is at the top
+; rather than at each caller because the consequence of getting it
+; wrong is not an error but a WRONG DEVICE: fat_drive on an ISO volume
+; holds an ATAPI unit number, and unit 0 is indistinguishable from BIOS
+; drive 0 by the time it reaches the block layer.  It goes to the
+; floppy, which is usually empty, and raises a critical error about a
+; drive the user never mentioned.  Failing quietly here turns a whole
+; class of "this path forgot which filesystem it was on" into a
+; refused call instead of a prompt about drive A.
 disk_read:
+        cmp     byte ptr [vol_fs],FS_ISO
+        je      dio_nocd
         push    eax
         mov     eax,IOS_RDBLK
         mov     byte ptr [dio_wr],0
         jmp     short disk_io
 disk_write:
+        cmp     byte ptr [vol_fs],FS_ISO
+        je      dio_nocd
+
+; disk_wrsure - disk_write for a caller that already knows the drive
+;               number in AL is a block drive and not an ATAPI unit.
+;
+; The guard above is a statement about the volume the FILESYSTEM is
+; standing on, which is the right question for everything that comes
+; down through fat_*, and the wrong one for the disk cache: a commit
+; can perfectly well happen while the current drive is the CD-ROM, and
+; dirty blocks on the hard disk must not stop being written because of
+; where the user last typed a CD command.  See cache_wbloud.
+disk_wrsure:
         push    eax
         mov     eax,IOS_WRBLK
         mov     byte ptr [dio_wr],CE_WRITE
@@ -64,7 +88,10 @@ dio_try:
         mov     cx,[dio_cnt]            ; retry has to start clean
         mov     edi,[dio_buf]
         mov     edx,[dio_svc]
-        call    dio_raw
+        call    cache_io                ; ...which is dio_raw with a cache
+                                        ; in front of it, and is dio_raw
+                                        ; exactly when there is not one -
+                                        ; see CACHE.INC
 dio_done:
         jc      dio_bad
 
@@ -117,6 +144,16 @@ dio_ok:
         pop     ecx
         pop     ebx
         clc
+        ret
+
+; AFTER A RET, NOT BEFORE dio_done, and the difference was a boot loop
+; of stack faults.  This label was first put between "call dio_raw" and
+; dio_done, where nothing jumps to it and everything FALLS INTO it: the
+; transfer returned straight into "stc / ret" with five registers still
+; pushed.  A label is not a barrier, and the only safe place to add one
+; is somewhere control cannot arrive by walking forwards.
+dio_nocd:
+        stc                             ; see the note above disk_read
         ret
 
 ;=====================================================================

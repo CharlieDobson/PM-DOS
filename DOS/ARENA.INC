@@ -91,6 +91,7 @@ arena_alloc:
         push    edx
         push    esi
         push    edi
+        mov     byte ptr [aa_asked],0   ; the cache has not been asked yet
 
         add     ebx,15                  ; round the request up
         and     ebx,NOT 15
@@ -164,6 +165,32 @@ aa_whole:
         jmp     short aa_out
 
 aa_nomem:
+        ; THE CACHE IS THE ONE THING IN THIS MACHINE THAT CAN GIVE
+        ; MEMORY BACK, and this is where it is asked.  It is holding
+        ; sectors, all of which it can write out and forget, and it is
+        ; allowed to grow large in the first place precisely because
+        ; of this call: without it a cache that had taken four
+        ; megabytes of an eight-megabyte machine would be four
+        ; megabytes a program could never have.
+        ;
+        ; ONCE PER REQUEST.  cache_reclaim frees whole chunks down to
+        ; its floor and says how it got on; if it freed anything the
+        ; walk starts again from the bottom of the arena, because the
+        ; free blocks it made may have coalesced with neighbours into
+        ; something that fits.  If it freed nothing, or if this is
+        ; arena_avail's impossible request rather than a real
+        ; allocation, the answer is the honest "no".
+        cmp     byte ptr [aa_probe],0
+        jne     aa_really
+        cmp     byte ptr [aa_asked],0
+        jne     aa_really
+        mov     byte ptr [aa_asked],1
+        push    ebx
+        call    cache_reclaim           ; EBX = what could not be found
+        pop     ebx
+        jc      aa_really
+        jmp     aa_sized
+aa_really:
         mov     eax,edx
         stc
 aa_out:
@@ -334,11 +361,22 @@ arg_out:
 
 ;=====================================================================
 ; arena_avail - EAX = largest single free block in the arena.
+;
+; IT IS A QUESTION AND NOT A REQUEST, and aa_probe is how the failure
+; path is told so.  This routine deliberately asks for more memory
+; than any machine has, so that the "no" comes back carrying the
+; largest block it did find - and without the flag, every caller
+; asking how much memory there is would make the cache give some up
+; to answer.  That includes cache_addchunk, which asks before it
+; grows, so the cache would have shrunk itself in order to decide
+; whether it could expand.
 ;=====================================================================
 arena_avail:
         push    ebx
+        mov     byte ptr [aa_probe],1
         mov     ebx,7FFFFFFFh           ; impossible request
         call    arena_alloc             ; must fail, returns the max
+        mov     byte ptr [aa_probe],0
         jnc     av_oops                 ; (someone has 2G of RAM?)
         pop     ebx
         ret
@@ -350,6 +388,12 @@ av_oops:
         ret
 
 arena_top   dd  0
+aa_asked    db  0                       ; the cache has been asked for
+                                        ; memory back during THIS request
+aa_probe    db  0                       ; ...and this request is
+                                        ; arena_avail's, which is a
+                                        ; question rather than a need
+            db  0,0
 
 ; 21h/58h's allocation strategy: 0 first fit, 1 best fit, 2 last fit.
 ; Global, as it was in DOS - but reset to first fit whenever the shell

@@ -36,6 +36,16 @@ la_entry:
         call    print_asciiz
         mov     edi,OFFSET fsname
         mov     ecx,16
+        mov     edx,OFFSET rootpath     ; THE ROOT PATH IS NOT OPTIONAL.
+                                        ; 71A0h asks about a VOLUME and DS:DX
+                                        ; is which one; this probe used to
+                                        ; leave EDX alone, and the ring-3
+                                        ; translator - which validates every
+                                        ; pointer a call declares - refused
+                                        ; the whole call with "access denied"
+                                        ; on whatever happened to be in the
+                                        ; register.  The kernel was right and
+                                        ; the test was wrong
         mov     ax,71A0h
         int     21h
         jc      p_fail

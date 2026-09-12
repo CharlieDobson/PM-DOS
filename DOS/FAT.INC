@@ -244,6 +244,124 @@ ds_p3:
         cmp     byte ptr [ds_disk],80h + MAX_PHYS
         jb      ds_p3
 
+;--- pass 4: the CD-ROMs, AFTER every hard disk has its letter -------
+; Order matters and this is the only place it can be got right.  A CD
+; taking a letter in the middle would push every partition after it
+; along, so the same machine would name its volumes differently
+; depending on whether a drive was plugged in.  Real DOS put MSCDEX's
+; letters after the disks for the same reason, and CDROM= in
+; CONFIG.SYS moves them further out when the user wants a fixed one.
+        call    drv_addcds
+
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; drv_addcds - give every ATAPI unit a drive letter.
+;
+; DRV_BIOS holds the ATAPI UNIT NUMBER rather than a BIOS drive, which
+; is what DRVF_CDROM means when fat_mount reads it.  The disc is not
+; touched here: a letter exists whether or not there is anything in
+; the drive, exactly as A: does, and the mount is deferred until
+; somebody looks.
+;---------------------------------------------------------------------
+; IT IS IDEMPOTENT ON PURPOSE.  disk_scan runs long before CONFIG.SYS
+; is read, so CDROM= cannot influence the first pass - it sets
+; cd_letter and calls this again.  Clearing the CD slots first is what
+; makes the second call place them rather than duplicate them.
+drv_addcds:
+        pushad
+        xor     ebp,ebp
+dac_clear:
+        cmp     ebp,MAX_DRIVES
+        jae     dac_cleared
+        mov     eax,ebp
+        call    drv_slot
+        test    byte ptr [ebx+DRV_FLAGS],DRVF_CDROM
+        jz      dac_clnext
+        mov     byte ptr [ebx+DRV_FLAGS],0
+        mov     byte ptr [ebx+DRV_BIOS],0
+dac_clnext:
+        inc     ebp
+        jmp     short dac_clear
+dac_cleared:
+        ; ...and drv_count with them, or the second pass would start
+        ; counting from a high-water mark the cleared slots had set
+        xor     ebp,ebp
+        xor     edx,edx                 ; EDX = highest present slot + 1
+dac_recount:
+        cmp     ebp,MAX_DRIVES
+        jae     dac_recounted
+        mov     eax,ebp
+        call    drv_slot
+        test    byte ptr [ebx+DRV_FLAGS],DRVF_PRESENT
+        jz      dac_rcnext
+        lea     edx,[ebp+1]
+dac_rcnext:
+        inc     ebp
+        jmp     short dac_recount
+dac_recounted:
+        mov     [drv_count],dl
+
+        xor     al,al
+        xor     ecx,ecx
+        call    dword ptr ds:[IOS_CDINFO]       ; ECX = units, valid on CF
+        or      ecx,ecx
+        jz      dac_none
+        mov     [cd_units],cl
+
+        xor     ebp,ebp                         ; EBP = the unit
+dac_loop:
+        cmp     ebp,ecx
+        jae     dac_none
+
+        ; CDROM= names the letter the FIRST unit should get; the rest
+        ; follow it.  Zero means "wherever the scan reaches".
+        movzx   eax,byte ptr [cd_letter]
+        or      eax,eax
+        jz      dac_next_free
+        dec     eax                     ; cd_letter is 1 = A; slots are 0 = A
+        add     eax,ebp
+        cmp     eax,MAX_DRIVES
+        jae     dac_none
+        call    drv_slot                        ; EBX = that slot
+        test    byte ptr [ebx+DRV_FLAGS],DRVF_PRESENT
+        jnz     dac_next_free                   ; taken: fall back
+        mov     byte ptr [ebx+DRV_FLAGS],DRVF_PRESENT OR DRVF_CDROM
+        mov     edx,ebp                         ; no bpl in 32-bit code
+        mov     [ebx+DRV_BIOS],dl
+        mov     byte ptr [ebx+DRV_TYPE],0
+        mov     byte ptr [ebx+DRV_PIDX],0FFh
+        mov     dword ptr [ebx+DRV_START],0
+        mov     dword ptr [ebx+DRV_SECS],0
+        ; drv_count is the high-water mark of letters in use, and a
+        ; CDROM= letter can be past it
+        movzx   eax,byte ptr [cd_letter]        ; 1 = A, so this is already
+        add     eax,ebp                         ; the slot index plus one
+        cmp     al,[drv_count]
+        jbe     dac_counted
+        mov     [drv_count],al
+dac_counted:
+        jmp     short dac_step
+
+dac_next_free:
+        movzx   eax,byte ptr [drv_count]
+        cmp     eax,MAX_DRIVES
+        jae     dac_none
+        call    drv_slot
+        mov     byte ptr [ebx+DRV_FLAGS],DRVF_PRESENT OR DRVF_CDROM
+        mov     edx,ebp                         ; no bpl in 32-bit code
+        mov     [ebx+DRV_BIOS],dl
+        mov     byte ptr [ebx+DRV_TYPE],0
+        mov     byte ptr [ebx+DRV_PIDX],0FFh
+        mov     dword ptr [ebx+DRV_START],0
+        mov     dword ptr [ebx+DRV_SECS],0
+        inc     byte ptr [drv_count]
+
+dac_step:
+        inc     ebp
+        jmp     short dac_loop
+dac_none:
         popad
         ret
 
@@ -528,6 +646,24 @@ fm_start:
         call    drv_slot
         test    byte ptr [ebx+DRV_FLAGS],DRVF_PRESENT
         jz      fm_nodrive
+
+        ; A CD-ROM is not a partition on a disk and there is no boot
+        ; record to read.  DRV_BIOS names the ATAPI unit; ISO9660.INC
+        ; does the rest and sets fat_ok itself.
+        test    byte ptr [ebx+DRV_FLAGS],DRVF_CDROM
+        jz      fm_notcd
+        mov     al,[ebx+DRV_BIOS]
+        mov     [fat_drive],al
+        mov     byte ptr [vol_fs],FS_ISO
+        call    iso_mount
+        jc      fm_nodrive
+        call    iso_volstate            ; the figures 36h and 1Ah want
+        mov     byte ptr [fat_ok],1
+        popad
+        clc
+        ret
+fm_notcd:
+        mov     byte ptr [vol_fs],FS_FAT
         mov     al,[ebx+DRV_BIOS]
         mov     [fat_drive],al
         mov     eax,[ebx+DRV_START]
@@ -850,6 +986,19 @@ fm_iofail:
 ;                 that is the whole reason this came out of fn36.
 ;=====================================================================
 fat_freecount:
+        ; A CD HAS NO FREE SPACE AND NO FAT TO COUNT IT IN, and this is
+        ; where saying so matters rather than being pedantry: the walk
+        ; below reads the FAT through disk_read, which addresses
+        ; fat_drive - and on an ISO volume fat_drive is an ATAPI unit
+        ; number, so unit 0 went out as BIOS drive 0 and DIR ended with
+        ; "Not ready reading drive A" on a machine with an empty floppy
+        ; drive.  The listing above it was correct; only the free-space
+        ; line at the bottom was reaching for the wrong device.
+        cmp     byte ptr [vol_fs],FS_ISO
+        jne     fct_fat
+        xor     eax,eax
+        ret
+fct_fat:
         push    ebx
         push    ecx
         push    edx
@@ -977,9 +1126,90 @@ vsw_same:
         popad
         ret
 
+;---------------------------------------------------------------------
+; iso_chkmedia - a mounted CD-ROM is asked whether it is still the
+;                same disc, and forgotten if it is not.  All registers
+;                preserved.
+;
+; WHY THIS HAS TO BE HERE AND NOT IN THE READ PATH, which is where the
+; first version of it was.  The theory then was that a read of the
+; changed disc would fail and the failure would be the notification -
+; and it never fired, because AFTER A SWAP NOTHING READS.  A CD's root
+; directory is one block and it sits in iso_buf; fat_ok still says
+; mounted; so DIR answers out of the cache and the drive is never
+; spoken to at all.  A cache is exactly the thing that stops a change
+; being noticed, and the check therefore belongs where a volume is
+; ENTERED rather than where it is read.
+;
+; The cost is one TEST UNIT READY per DOS call that names a CD letter,
+; which is what MSCDEX paid for the same guarantee: the redirector
+; asked it to check the media on every request.  Reads within one open
+; file do not come through here.
+;---------------------------------------------------------------------
+iso_chkmedia:
+        cmp     byte ptr [vol_fs],FS_ISO
+        jne     icm_out
+        cmp     byte ptr [fat_ok],0     ; nothing mounted, nothing to lose -
+        je      icm_out                 ; and the mount that follows will ask
+        pushad
+
+        ; ONE READER, MANY LETTERS, and this is the first check because
+        ; it costs nothing.  fat_ok and the rest of vol_state are kept
+        ; per letter and swapped; ISO9660.INC's own state - the root
+        ; extent, the volume name, the session base, which of the two
+        ; directory formats the disc carries - is ONE SET OF GLOBALS.
+        ; It therefore describes whichever CD letter was touched last,
+        ; so coming back to a different one has to mount it again.
+        ;
+        ; Nothing showed this until there were two CD-ROM drives in the
+        ; machine to show it with: DIR H:, DIR I:, DIR H: listed the
+        ; SECOND disc under the first letter, with its volume label,
+        ; because fat_ok said H: was mounted and it was - just not by
+        ; the reader that was still loaded.  The cost of the fix is a
+        ; re-mount whenever a program alternates between two discs,
+        ; which is a few block reads.
+        mov     al,[fat_drive]          ; the ATAPI unit this letter is
+        cmp     al,[iso_unit]           ; ...and the one the reader holds
+        jne     icm_moved
+
+        mov     al,[fat_drive]
+        mov     ah,CDL_VOL              ; WHICH LISTENER is asking: the
+                                        ; drive reports a change once and
+                                        ; the asking clears it, so PMIO keeps
+                                        ; a bit per listener; this is the
+                                        ; volume layer's.
+        call    dword ptr ds:[IOS_CDCHG]
+        jnc     icm_same
+
+        ; THE DISC HAS CHANGED, SO THE SECTOR CACHE IS ABOUT A DISC
+        ; THAT HAS LEFT THE BUILDING.  This is the other half of the
+        ; lesson iso_bufok taught in v0.36 and it is the same lesson:
+        ; a cache is exactly the thing that stops a change being
+        ; noticed, and the more blocks it holds the longer the old
+        ; disc goes on answering.  Dropping them here rather than at
+        ; icm_moved below is deliberate - icm_moved is also reached
+        ; when the READER has simply moved to another unit, where
+        ; nothing has changed and throwing away the first drive's
+        ; blocks would make alternating between two discs cost the
+        ; whole cache each time.
+        mov     al,[fat_drive]
+        call    cache_cddrop
+icm_moved:
+        call    iso_forget              ; the cached block is another disc's
+        mov     byte ptr [fat_ok],0
+        mov     dword ptr [sec_lba],-1
+        mov     dword ptr [clusbuf_clus],-1
+        mov     dword ptr [dc_curord],-1
+icm_same:
+        popad
+icm_out:
+        ret
+
 vol_select:
         pushad
         call    vol_swap
+        call    iso_chkmedia            ; the disc may not be the one this
+                                        ; letter was mounted from
         cmp     byte ptr [fat_ok],0
         jne     vs_ok
         call    fat_mount               ; not mounted - try it now.  Which
@@ -1109,6 +1339,17 @@ fsf_fail:
 ;            chain simply appears to end.
 ;---------------------------------------------------------------------
 fat_next:
+        ; AN ISO9660 FILE IS ONE CONTIGUOUS EXTENT, so "the next
+        ; cluster" is the next block and there is no table to consult.
+        ; That is the whole allocation model of the filesystem: a file
+        ; has a start block and a length and occupies everything
+        ; between, which is why a CD needs no FAT and why fat_eoc is
+        ; set to something a walk can never reach.
+        cmp     byte ptr [vol_fs],FS_ISO
+        jne     fn_fat
+        inc     eax
+        ret
+fn_fat:
         push    ebx
         push    ecx
 
@@ -1382,6 +1623,28 @@ vol_syncdrv:
         mov     al,[cur_vol]
         mov     [vsd_back],al
 
+        ; THE SECTOR CACHE IS PART OF THIS AND ITS TWO HALVES SIT AT
+        ; OPPOSITE ENDS OF THE ROUTINE, which is not symmetry for its
+        ; own sake:
+        ;
+        ;   mode 1, forgetting, goes FIRST.  The volume walk below can
+        ;   re-read - vol_forget pulls a whole FAT12 FAT back in - and
+        ;   a read that came out of blocks describing what was there
+        ;   before somebody else's write is the exact staleness this
+        ;   call exists to remove.
+        ;
+        ;   mode 0, flushing, goes LAST.  fat_flush writes the FAT and
+        ;   the directory, and those writes land IN the cache; letting
+        ;   them out before they have been made would leave the very
+        ;   sectors this call is about still held.
+        cmp     byte ptr [vsd_mode],0
+        je      vsd_walk
+        mov     al,[vsd_bios]
+        mov     ebx,[vsd_lba]
+        mov     ecx,[vsd_end]
+        sub     ecx,ebx
+        call    cache_droprange
+vsd_walk:
         movzx   ecx,byte ptr [drv_count]
         or      ecx,ecx
         jz      vsd_done
@@ -1458,6 +1721,15 @@ vsd_next:
 vsd_done:
         mov     al,[vsd_back]                   ; back to the caller's volume,
         call    vol_swap                        ; as it stands and not remounted
+
+        cmp     byte ptr [vsd_mode],0           ; see the note at the top:
+        jne     vsd_out                         ; the flush half goes here,
+        mov     al,[vsd_bios]                   ; after every fat_flush the
+        mov     ebx,[vsd_lba]                   ; walk above performed
+        mov     ecx,[vsd_end]
+        sub     ecx,ebx
+        call    cache_flushrange
+vsd_out:
         popad
         ret
 
@@ -1515,6 +1787,24 @@ clus2lba:
 ;---------------------------------------------------------------------
 fat_readclus:
         pushad
+        ; ON A CD A "CLUSTER" IS AN ISO BLOCK, and the two happen to be
+        ; the same size: fat_spc is 4, so a cluster is 4 * 512 = 2048,
+        ; which is exactly what IOS_CDREAD moves.  That equality is why
+        ; file_chunk above needs no changes at all - it computes an
+        ; offset within a cluster, and the cluster is the block.
+        cmp     byte ptr [vol_fs],FS_ISO
+        jne     frc_fat
+        push    eax
+        mov     ecx,1
+        mov     ebx,eax
+        mov     al,byte ptr [fat_drive] ; the ATAPI unit
+        call    dword ptr ds:[IOS_CDREAD]
+        pop     eax
+        jc      frc_fail
+        popad
+        clc
+        ret
+frc_fat:
         call    clus2lba
         mov     ebx,eax
         mov     ecx,[fat_spc]
@@ -1605,6 +1895,19 @@ de_setclus:                             ; EAX = cluster -> entry at ESI
 ;---------------------------------------------------------------------
 ctx_root:
         push    eax
+        cmp     byte ptr [vol_fs],FS_ISO
+        jne     cr_fat
+        ; An ISO directory is an extent and a byte length, both of
+        ; which the mount already has for the root.
+        mov     byte ptr [dc_isroot],1
+        mov     eax,[iso_rootext]
+        mov     [dc_isoext],eax
+        mov     eax,[iso_rootlen]
+        mov     [dc_isolen],eax
+        mov     dword ptr [dc_curord],-1
+        pop     eax
+        ret
+cr_fat:
         cmp     byte ptr [fat_type],32
         je      cr_32
         mov     byte ptr [dc_isroot],1
@@ -1624,6 +1927,21 @@ cr_done:
 ; ctx_chain - point the context at the chain starting at cluster EAX.
 ;---------------------------------------------------------------------
 ctx_chain:
+        cmp     byte ptr [vol_fs],FS_ISO
+        jne     cc_fat
+        ; ON A CD, EAX IS AN EXTENT RATHER THAN A CLUSTER - it came out
+        ; of a synthesised entry's cluster field, which is where
+        ; iso_entry puts one.  Its LENGTH is not in the entry the
+        ; caller had, so it is read back off the record: a directory's
+        ; own "." record is always the first one in it and carries the
+        ; directory's size.
+        mov     byte ptr [dc_isroot],0
+        mov     [dc_isoext],eax
+        mov     dword ptr [dc_isolen],ISO_BLKSIZE   ; enough for the "."
+        mov     dword ptr [dc_curord],-1
+        call    iso_dirlen                          ; ...then the real one
+        ret
+cc_fat:
         mov     byte ptr [dc_isroot],0
         mov     [dc_start],eax
         mov     dword ptr [dc_curord],-1
@@ -1656,6 +1974,19 @@ dir_seek:
         push    ecx
         push    edx
 
+        cmp     byte ptr [vol_fs],FS_ISO
+        jne     dsk_fat
+        ; ISO9660 answers in FAT's shape - see iso_entry.  Nothing
+        ; above this line finds out which filesystem it is reading.
+        call    iso_entry
+        jc      dsk_fail
+        pop     edx
+        pop     ecx
+        pop     ebx
+        pop     eax
+        clc
+        ret
+dsk_fat:
         cmp     byte ptr [dc_isroot],0
         je      dsk_chain
 
@@ -1936,6 +2267,20 @@ lw_u1:
 lfnw_seal:
         push    eax
         mov     byte ptr [lfn_ok],0
+
+        ; A CD HAS NO FRAGMENTS TO SEAL, and it does not need any: a
+        ; directory record carries its whole name, so iso_dosname has
+        ; already put it in lfn_buf and said in [iso_lname] whether it
+        ; differs from the 8.3 field.  THE QUESTION THE REST OF THE
+        ; KERNEL ASKS IS THE SAME ONE - "has this entry a long name?" -
+        ; so it is answered in the same place, and everything that
+        ; consumes lfn_ok and lfn_buf works on a disc unchanged.
+        cmp     byte ptr [vol_fs],FS_ISO
+        jne     ls_fat
+        mov     al,byte ptr [iso_lname]
+        mov     byte ptr [lfn_ok],al
+        jmp     short ls_out
+ls_fat:
         cmp     byte ptr [lfn_expect],1 ; did the chain run down to 1?
         jne     ls_out
         call    lfn_cksum
@@ -2800,7 +3145,10 @@ fat_drive   db  0                       ; BIOS drive of this volume
 fat_type    db  0                       ; 12, 16 or 32
 fat12_dirty db  0
 fatsec_dirty db 0
-            db  0,0,0                   ; pad to a dword boundary
+vol_fs      db  0                       ; FS_FAT or FS_ISO - out of the pad
+                                        ; that was already here, so
+                                        ; VOL_STATE_SIZE does not move
+            db  0,0                     ; pad to a dword boundary
 
 fat_media   db  0                       ; the BPB's media descriptor
             db  0,0,0
@@ -2856,6 +3204,10 @@ vol_slotp   dd  0
 ; volume IS, so a volume swap must never be able to overwrite it.
 ;---------------------------------------------------------------------
 drv_count   db  0
+cd_units    db  0                       ; ATAPI units the scan found
+cd_letter   db  0                       ; CDROM= in CONFIG.SYS: the letter the
+                                        ; first one takes, 1 = A.  Zero means
+                                        ; "after the disks, wherever that is"
 ds_disk     db  0                       ; the disk disk_scan is walking
 ds_taken    db  MAX_PHYS dup(0)         ; which primary pass 1 claimed
             db  0,0,0,0
@@ -2873,8 +3225,21 @@ vsd_back    db  0
 vsd_lba     dd  0
 vsd_end     dd  0
 
+dc_isoext   dd  0                       ; ISO9660: the directory's extent
+dc_isolen   dd  0                       ; ...and its length in bytes.  Outside
+                                        ; vol_state with the rest of dc_*,
+                                        ; and invalidated by a volume swap
+                                        ; the same way
 dc_isroot   db  0
-            db  0,0,0
+iso_lname   db  0                       ; the entry dir_seek last produced
+                                        ; has a name that its 8.3 field
+                                        ; cannot spell, and lfn_buf holds it.
+                                        ; DECLARED HERE rather than with the
+                                        ; rest of ISO9660.INC's state because
+                                        ; lfnw_seal, which reads it, is in
+                                        ; this file and this file is included
+                                        ; first
+            db  0,0
 dc_start    dd  0
 dc_curord   dd  -1                      ; chain walk cache
 dc_curclus  dd  0

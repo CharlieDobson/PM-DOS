@@ -6,5 +6,6 @@
 *.bin
 BIN/**
 DISK/**
+IMAGES/**
 *.img
 *.txt

@@ -1037,6 +1037,31 @@ ci32_go:
 ; statement, so raising it does not create drives - it says how far a
 ; program should bother looking, which is all it ever said.
 ;---------------------------------------------------------------------
+;---------------------------------------------------------------------
+; CDROM=<letter> - which drive letter the first CD-ROM takes.
+;
+; disk_scan has already run and already given the CD-ROMs letters after
+; the hard disks, so this MOVES them: it records the letter and calls
+; drv_addcds again, which clears the old CD slots and places them
+; afresh.  That is why drv_addcds is idempotent.
+;
+; A letter that is already a hard disk is not stolen - the drive falls
+; back to where the scan would have put it - because a CONFIG.SYS line
+; should not be able to make a partition unreachable.
+;---------------------------------------------------------------------
+cfg_cdrom:
+        mov     al,[esi]
+        or      al,al
+        jz      cfg_badparm
+        call    cfg_upcase
+        sub     al,'A' - 1              ; 1 = A, matching cd_letter
+        jbe     cfg_badparm
+        cmp     al,MAX_DRIVES
+        ja      cfg_badparm
+        mov     byte ptr ds:[cd_letter],al
+        call    drv_addcds
+        ret
+
 cfg_lastdrv:
         mov     al,[esi]
         or      al,al
@@ -1549,6 +1574,219 @@ cfg_badparm:
         call    dword ptr ds:[IOS_CONSTR]
         ret
 
+;---------------------------------------------------------------------
+; CACHE=max[,min[,ON|OFF]] - the disk cache.
+;
+;   CACHE=2048              a ceiling of two megabytes, a floor of a
+;                           quarter of that, lazy writing as it was
+;   CACHE=4096,512          both bounds named
+;   CACHE=4096,512,OFF      ...and no lazy writing: every write goes
+;                           to the disk as it is made, and the cache
+;                           keeps only the read copy
+;   CACHE=ON                on, with whatever bounds it already has
+;   CACHE=OFF               no cache at all
+;
+; SIZES ARE IN KILOBYTES, which is what SMARTDRV's command line took
+; and what anyone typing this line will mean; a K or an M suffix says
+; so explicitly, so CACHE=4M and CACHE=4096 are the same line.
+;
+; THE TWO NUMBERS ARE A RANGE AND NOT A SIZE, and that is the whole
+; design: the cache lives between them and moves, growing on a miss
+; while the arena has memory to spare and handing chunks back when
+; arena_alloc would otherwise fail.  Naming one number - CACHE=2048 -
+; still gives a range, because a cache that cannot shrink is memory a
+; program can never have.  To pin it, name the same number twice.
+;
+; Absent, both bounds come from the size of the arena: an eighth of it
+; for the ceiling, a quarter of that for the floor, and nothing at all
+; on a machine with less than two megabytes of arena to spend.  See
+; cache_init, which makes the argument.
+;---------------------------------------------------------------------
+cfg_cache:
+        mov     edi,OFFSET cfgw_off
+        call    cfg_iskw
+        jnc     cfc_off
+        mov     edi,OFFSET cfgw_no
+        call    cfg_iskw
+        jnc     cfc_off
+        mov     edi,OFFSET cfgw_disable
+        call    cfg_iskw
+        jnc     cfc_off
+
+        ; "CACHE=" and "CACHE=ON" both mean "on, as it stands" - the
+        ; bounds cache_init worked out, which are usually the right
+        ; ones, plus lazy writing.
+        cmp     byte ptr [esi],0
+        je      cfc_plain
+        mov     edi,OFFSET cfgw_on
+        call    cfg_iskw
+        jnc     cfc_plain
+        mov     edi,OFFSET cfgw_enable
+        call    cfg_iskw
+        jnc     cfc_plain
+        mov     edi,OFFSET cfgw_yes
+        call    cfg_iskw
+        jnc     cfc_plain
+
+        call    cfg_size
+        jc      cfg_badparm
+        mov     [cfgc_max],eax
+        shr     eax,2                   ; a floor of a quarter, unless the
+        mov     [cfgc_min],eax          ; line goes on to say otherwise
+        mov     al,[cache_lazy]
+        mov     [cfgc_lazy],al
+
+        call    cfg_blanks
+        cmp     byte ptr [esi],','
+        jne     cfc_done
+        inc     esi
+        call    cfg_blanks
+        cmp     byte ptr [esi],','      ; CACHE=2048,,OFF - the floor left
+        je      cfc_lazy                ; out but the switch still given
+        cmp     byte ptr [esi],0
+        je      cfc_done
+        call    cfg_size
+        jc      cfg_badparm
+        mov     [cfgc_min],eax
+        call    cfg_blanks
+        cmp     byte ptr [esi],','
+        jne     cfc_done
+cfc_lazy:
+        inc     esi
+        call    cfg_blanks
+        mov     edi,OFFSET cfgw_on
+        call    cfg_iskw
+        jnc     cfc_lz1
+        mov     edi,OFFSET cfgw_enable
+        call    cfg_iskw
+        jnc     cfc_lz1
+        mov     edi,OFFSET cfgw_yes
+        call    cfg_iskw
+        jnc     cfc_lz1
+        mov     edi,OFFSET cfgw_off
+        call    cfg_iskw
+        jnc     cfc_lz0
+        mov     edi,OFFSET cfgw_disable
+        call    cfg_iskw
+        jnc     cfc_lz0
+        mov     edi,OFFSET cfgw_no
+        call    cfg_iskw
+        jc      cfg_badparm
+cfc_lz0:
+        mov     byte ptr [cfgc_lazy],0
+        jmp     short cfc_done
+cfc_lz1:
+        mov     byte ptr [cfgc_lazy],1
+
+cfc_done:
+        mov     eax,[cfgc_max]
+        cmp     eax,CC_USERMIN
+        jae     cfc_maxlo
+        mov     eax,CC_USERMIN
+cfc_maxlo:
+        cmp     eax,CC_USERMAX
+        jbe     cfc_maxhi
+        mov     eax,CC_USERMAX
+cfc_maxhi:
+        mov     [cfgc_max],eax
+        mov     edx,[cfgc_min]
+        cmp     edx,CC_USERMIN
+        jae     cfc_minlo
+        mov     edx,CC_USERMIN
+cfc_minlo:
+        cmp     edx,eax                 ; a floor above the ceiling is a
+        jbe     cfc_set                 ; typo, not a request
+        mov     edx,eax
+cfc_set:
+        mov     cl,[cfgc_lazy]
+        mov     ch,0
+        call    cache_setsize
+        ret
+
+cfc_plain:
+        mov     eax,[cache_maxb]
+        mov     [cfgc_max],eax
+        mov     eax,[cache_minb]
+        mov     [cfgc_min],eax
+        mov     byte ptr [cfgc_lazy],1
+        jmp     short cfc_done
+
+cfc_off:
+        xor     eax,eax
+        xor     edx,edx
+        mov     cl,0
+        mov     ch,1                    ; and this one is not a size at all
+        call    cache_setsize
+        ret
+
+;---------------------------------------------------------------------
+; cfg_size - ESI -> a size in kilobytes, with an optional K or M
+;            suffix.  EAX = the value IN BYTES, CF if there is no
+;            number there.  ESI is left on the terminator.
+;
+; Separate from cfg_num because cfg_num stops at ten thousand - which
+; is right for FILES= and wrong by three orders of magnitude for a
+; cache measured in kilobytes.
+;---------------------------------------------------------------------
+cfg_size:
+        push    ebx
+        push    ecx
+        push    edx
+        xor     ebx,ebx                 ; the value so far, in kilobytes
+        xor     ecx,ecx                 ; digits seen
+cz_lp:
+        movzx   edx,byte ptr [esi]
+        cmp     dl,'0'
+        jb      cz_end
+        cmp     dl,'9'
+        ja      cz_end
+        sub     dl,'0'
+        cmp     ebx,00400000h           ; four gigabytes of kilobytes, past
+        ja      cz_bad                  ; which the arithmetic below wraps
+        imul    ebx,10
+        add     ebx,edx
+        inc     esi
+        inc     ecx
+        jmp     short cz_lp
+cz_end:
+        or      ecx,ecx
+        jz      cz_bad
+
+        mov     dl,[esi]                ; K, M, or neither
+        cmp     dl,'a'
+        jb      cz_nolc
+        cmp     dl,'z'
+        ja      cz_nolc
+        sub     dl,20h
+cz_nolc:
+        cmp     dl,'K'
+        jne     cz_notk
+        inc     esi
+        jmp     short cz_kb
+cz_notk:
+        cmp     dl,'M'
+        jne     cz_kb
+        inc     esi
+        cmp     ebx,4096                ; a four-gigabyte cache is a typo
+        ja      cz_bad
+        shl     ebx,10                  ; megabytes -> kilobytes
+cz_kb:
+        cmp     ebx,00400000h
+        ja      cz_bad
+        mov     eax,ebx
+        shl     eax,10                  ; kilobytes -> bytes
+        pop     edx
+        pop     ecx
+        pop     ebx
+        clc
+        ret
+cz_bad:
+        pop     edx
+        pop     ecx
+        pop     ebx
+        stc
+        ret
+
 ;=====================================================================
 ; Helpers
 ;=====================================================================
@@ -1674,6 +1912,8 @@ cfg_table:
         dd      OFFSET cfgn_keyrate, OFFSET cfg_keyrate
         dd      OFFSET cfgn_idedma,  OFFSET cfg_idedma
         dd      OFFSET cfgn_ide32,   OFFSET cfg_ide32
+        dd      OFFSET cfgn_cdrom,   OFFSET cfg_cdrom
+        dd      OFFSET cfgn_cache,   OFFSET cfg_cache
 
 ;--- the inherited set: recognised, and doing nothing ----------------
         dd      OFFSET cfgn_rem,     OFFSET cfg_rem
@@ -1707,6 +1947,8 @@ cfgn_ems      db  'EMS',0
 cfgn_keyrate  db  'KEYRATE',0
 cfgn_idedma   db  'IDEDMA',0
 cfgn_ide32    db  'IDE32',0
+cfgn_cdrom    db  'CDROM',0
+cfgn_cache    db  'CACHE',0
 cfgn_nulltrp  db  'NULLTRAP',0
 cfgn_rem      db  'REM',0
 cfgn_buffers  db  'BUFFERS',0
@@ -1736,6 +1978,8 @@ cfgw_on       db  'ON',0
 cfgw_off      db  'OFF',0
 cfgw_no       db  'NO',0
 cfgw_yes      db  'YES',0
+cfgw_enable   db  'ENABLE',0
+cfgw_disable  db  'DISABLE',0
 cfgw_auto     db  'AUTO',0
 cfgw_umb      db  'UMB',0
 cfgw_noumb    db  'NOUMB',0
@@ -1767,6 +2011,14 @@ cfg_idemodes:
 ;=====================================================================
 cfg_name    db  'A:\CONFIG.SYS',0       ; drive letter patched at boot
 cfg_val     dd  0
+
+; CACHE='s three fields, collected before any of them is acted on -
+; the line can name the ceiling and leave the floor to be derived, and
+; the derivation has to happen after both are known.
+cfgc_max    dd  0
+cfgc_min    dd  0
+cfgc_lazy   db  0
+            db  0,0,0
 cfg_pass    dd  0                       ; which walk over the file this is
 
 MENV_MAX    EQU 1024                    ; the master environment, which is the

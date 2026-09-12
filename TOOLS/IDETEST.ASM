@@ -154,7 +154,10 @@ t3_lp:
         pop     ebx
 
         test    byte ptr [devflags],ATDF_PRESENT
-        jz      t3_next
+        jnz     t3_check
+        test    byte ptr [devflags],ATDF_ATAPI  ; a CD-ROM transfers by the
+        jz      t3_next                         ; same engine and the same
+t3_check:                                       ; rule has to hold for it
         test    byte ptr [devflags],ATDF_DMA
         jz      t3_next
         cmp     dword ptr [devbm],0     ; DMA with no engine
@@ -567,8 +570,23 @@ rd_lp:
         mov     [devsecs],edx
         pop     ebx
         test    byte ptr [devflags],ATDF_PRESENT
-        jz      rd_next
+        jnz     rd_disk
 
+        ; A PACKET DEVICE IS NOT A DISK AND DOES NOT CARRY ATDF_PRESENT
+        ; - see ATAPI.INC, where that flag is withheld on purpose so
+        ; that a CD-ROM cannot renumber the hard disks behind it.  It
+        ; still transfers, though, and by the same engine under the
+        ; same IDEDMA= policy, so it belongs in this report.
+        test    byte ptr [devflags],ATDF_ATAPI
+        jz      rd_next
+        mov     edx,OFFSET msg_pkt
+        mov     eax,ebx
+        add     al,'0'
+        mov     [msg_pkt+11],al
+        call    puts
+        jmp     short rd_mode
+
+rd_disk:
         mov     edx,OFFSET msg_disk
         mov     eax,ebx
         add     al,'0'
@@ -581,6 +599,7 @@ rd_lp:
         mov     edx,OFFSET msg_mb
         call    puts
 
+rd_mode:
         test    byte ptr [devflags],ATDF_DMA
         jz      rd_pio
         mov     edx,OFFSET msg_dma
@@ -773,6 +792,7 @@ msg_bm      db  '    bus-master registers at ','$'
 msg_pol     db  '    IDEDMA policy ','$'
 msg_pol2    db  ', IDE32 policy ','$'
 msg_disk    db  '    disk N: ','$'
+msg_pkt     db  '    packet N: ','$'
 msg_mb      db  'MB, ','$'
 msg_dma     db  'bus-master DMA, mode ','$'
 msg_pio     db  'PIO','$'

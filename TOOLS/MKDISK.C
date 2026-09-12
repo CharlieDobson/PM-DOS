@@ -53,6 +53,12 @@ static unsigned long opt_spc = 0;
 /* ------------------------------------------------------------------ */
 static unsigned char *sec(long lba) { return image + lba * SECSIZE; }
 
+/* How many entries a "-dir" subdirectory is built to hold.  Generous
+   on purpose: the test set is about seventy files and grows every
+   release, and the failure mode of being too small is an image that
+   is quietly missing whichever ones came last. */
+#define SUBDIR_ENTS 256UL
+
 static void put16(unsigned char *p, unsigned v)
 {
     p[0] = (unsigned char)(v & 0xFF);
@@ -177,6 +183,13 @@ static int build_floppy(int argc, char **argv)
     FILE *f;
     long  n;
     int   arg, clus = 2, dirent;
+    /* "-dir NAME" support, the same one build_hd has: subdir is the
+       subdirectory's first cluster, or zero for the root.  A 1.44M
+       floppy has one sector a cluster, so sixteen entries a cluster,
+       and the clusters are allocated contiguously - which is what
+       lets subent index straight across them. */
+    int   subdir = 0, subent = 0, submax = 0;
+    const int ROOTENT = 224;                /* a 1.44M root, exactly */
     const long ROOTLBA = 19, DATALBA = 33, NCLUS = (2880 - 33);
 
     img_secs = 2880;
@@ -208,6 +221,52 @@ static int build_floppy(int argc, char **argv)
         unsigned char *de;
         long size, left;
         int  first = 0, prev = 0;
+
+        if (!strcmp(argv[arg], "-dir")) {
+            int need = (int)((SUBDIR_ENTS + 15) / 16);
+            int dfirst = clus, i;
+            unsigned char *dd;
+
+            if (arg + 1 >= argc) { fprintf(stderr, "-dir needs a name\n"); return 1; }
+            if (dirent >= ROOTENT) { fprintf(stderr, "root full\n"); return 1; }
+            for (i = 0; i < need; i++) {
+                if (clus >= NCLUS + 2) { fprintf(stderr, "disk full\n"); return 1; }
+                memset(sec(DATALBA + (long)(clus - 2)), 0, SECSIZE);
+                fat12_set(fat, clus, (i + 1 < need) ? clus + 1 : 0xFFF);
+                clus++;
+            }
+
+            de = sec(ROOTLBA) + dirent * 32;
+            name83(argv[arg + 1], de);
+            de[11] = 0x10;
+            stamp(de);
+            put16(de + 26, (unsigned)dfirst);
+            put32(de + 28, 0);
+            dirent++;
+
+            dd = sec(DATALBA + (long)(dfirst - 2));
+            memcpy(dd, ".          ", 11);
+            dd[11] = 0x10; stamp(dd);
+            put16(dd + 26, (unsigned)dfirst);
+            memcpy(dd + 32, "..         ", 11);
+            dd[32 + 11] = 0x10; stamp(dd + 32);
+            put16(dd + 32 + 26, 0);      /* ".." to the root is zero */
+
+            subdir = dfirst;
+            subent = 2;
+            submax = need * 16;
+            printf("  [%s]%*s%d cluster(s), room for %d entries\n",
+                   argv[arg + 1], 12 - (int)strlen(argv[arg + 1]), "",
+                   need, submax);
+            arg++;
+            continue;
+        }
+
+        if (subdir) {
+            if (subent >= submax) { fprintf(stderr, "subdirectory full\n"); return 1; }
+        } else {
+            if (dirent >= ROOTENT) { fprintf(stderr, "root full\n"); return 1; }
+        }
 
         f = fopen(argv[arg], "rb");
         if (!f) { perror(argv[arg]); return 1; }
@@ -244,14 +303,16 @@ static int build_floppy(int argc, char **argv)
             }
         }
 
-        de = sec(ROOTLBA) + dirent * 32;
+        de = subdir ? sec(DATALBA + (long)(subdir - 2)) + subent * 32
+                    : sec(ROOTLBA) + dirent * 32;
         name83(argv[arg], de);
         de[11] = (unsigned char)(arg - 3 < 2 ? 0x07 : 0x20);
         stamp(de);
         put16(de + 26, (unsigned)first);
         put32(de + 28, (unsigned long)size);
-        dirent++;
-        printf("  %-14s %7ld bytes, cluster %d..%d\n", argv[arg], size, first, clus - 1);
+        if (subdir) subent++; else dirent++;
+        printf("  %s%-14s %7ld bytes, cluster %d..%d\n",
+               subdir ? "  " : "", argv[arg], size, first, clus - 1);
     }
 
     /* ---- long-file-name test set (v0.11 read side) ----------------
@@ -270,6 +331,8 @@ static int build_floppy(int argc, char **argv)
         fat12_set(fat, cclus, 0xFFF);
         fat12_set(fat, dclus, 0xFFF);
 
+        /* The long-named fixtures stay in the ROOT whatever -dir left
+           set: LFNTEST.BAT looks for them there. */
         de = sec(ROOTLBA) + dirent * 32;
         dirent += lfn_chain(de, "Long File Name.txt",
                             (const unsigned char *)"LONGFI~1TXT");
@@ -329,6 +392,13 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
     unsigned long cyls, total, plba, psec;
     unsigned long spc, rsvd, rootent, rootsecs, spf, nclus, datalba, rootlba;
     unsigned long clus, dirent = 0, bpbsize;
+    /* Where the next directory entry goes.  "-dir NAME" in the file
+       list makes a subdirectory in the root and points subbase at it;
+       everything after it lands there.  ONE LEVEL ONLY - a second
+       -dir starts another directory in the ROOT rather than nesting,
+       because nesting wants a stack and nothing here needs one. */
+    unsigned char *rootbase = NULL, *subbase = NULL;
+    unsigned long  rootmax = 0, subent = 0, submax = 0;
     unsigned long lastfirst = 0;
     long lastsize = 0;
     /* FAT32: clusters of root dir.  8, not 4: at one sector per cluster
@@ -517,8 +587,10 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
     }
 
     /*--- volume label, then the files, into the root -----------------*/
+    rootbase = fat32 ? sec(datalba) : sec(rootlba);
+    rootmax  = fat32 ? rootclus * spc * 16 : rootent;
     {
-        unsigned char *de = fat32 ? sec(datalba) : sec(rootlba);
+        unsigned char *de = rootbase;
         memcpy(de, "PM-DOS     ", 11);
         de[11] = 0x08;
         stamp(de);
@@ -529,11 +601,76 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
     lastfirst = 0; lastsize = 0;
     for (arg = firstfile; arg < argc; arg++) {
         unsigned char *de;
-        unsigned long first = 0, prev = 0, maxent;
+        unsigned long first = 0, prev = 0;
         long size, left;
 
-        maxent = fat32 ? rootclus * spc * 16 : rootent;
-        if (dirent >= maxent) { fprintf(stderr, "root full\n"); return 1; }
+        /* "-dir NAME": start a subdirectory and send what follows
+           into it.  It is allocated CONTIGUOUSLY even under -frag,
+           because -frag exists to make a loader that reads straight
+           through instead of following the chain produce garbage,
+           and a directory is not what that test is about. */
+        if (!strcmp(argv[arg], "-dir")) {
+            unsigned long entper = spc * 16;
+            unsigned long need, dfirst, i;
+            unsigned char *dd, *de;
+
+            if (arg + 1 >= argc) { fprintf(stderr, "-dir needs a name\n"); return 1; }
+            if (dirent >= rootmax) { fprintf(stderr, "root full\n"); return 1; }
+
+            need   = (SUBDIR_ENTS + entper - 1) / entper;
+            dfirst = clus;
+            for (i = 0; i < need; i++) {
+                if (clus >= nclus + 2) { fprintf(stderr, "disk full\n"); return 1; }
+                memset(sec(datalba + (clus - 2) * spc), 0, (size_t)(spc * SECSIZE));
+                if (i + 1 < need) {
+                    if (fat32) put32(fatp + clus * 4, clus + 1);
+                    else       put16(fatp + clus * 2, (unsigned)(clus + 1));
+                } else {
+                    if (fat32) put32(fatp + clus * 4, 0x0FFFFFFFUL);
+                    else       put16(fatp + clus * 2, 0xFFFF);
+                }
+                clus++;
+            }
+
+            de = rootbase + dirent * 32;
+            name83(argv[arg + 1], de);
+            de[11] = 0x10;
+            stamp(de);
+            put16(de + 26, (unsigned)(dfirst & 0xFFFF));
+            put16(de + 20, (unsigned)(dfirst >> 16));
+            put32(de + 28, 0);          /* a directory's size field is 0 */
+            dirent++;
+
+            subbase = sec(datalba + (dfirst - 2) * spc);
+            submax  = need * entper;
+
+            dd = subbase;
+            memcpy(dd, ".          ", 11);
+            dd[11] = 0x10; stamp(dd);
+            put16(dd + 26, (unsigned)(dfirst & 0xFFFF));
+            put16(dd + 20, (unsigned)(dfirst >> 16));
+            memcpy(dd + 32, "..         ", 11);
+            dd[32 + 11] = 0x10; stamp(dd + 32);
+            /* ".." pointing at the ROOT is cluster ZERO, on FAT32 as
+               well as on FAT16: the root is not a numbered cluster as
+               far as a parent pointer is concerned, even when it is
+               physically a chain like any other directory. */
+            put16(dd + 32 + 26, 0);
+            put16(dd + 32 + 20, 0);
+            subent = 2;
+
+            printf("  [%s]%*s%lu cluster(s), room for %lu entries\n",
+                   argv[arg + 1], 12 - (int)strlen(argv[arg + 1]), "",
+                   need, submax);
+            arg++;
+            continue;
+        }
+
+        if (subbase) {
+            if (subent >= submax) { fprintf(stderr, "subdirectory full\n"); return 1; }
+        } else {
+            if (dirent >= rootmax) { fprintf(stderr, "root full\n"); return 1; }
+        }
 
         f = fopen(argv[arg], "rb");
         if (!f) { perror(argv[arg]); return 1; }
@@ -565,7 +702,7 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
             else       put16(fatp + prev * 2, 0xFFFF);
         }
 
-        de = (fat32 ? sec(datalba) : sec(rootlba)) + dirent * 32;
+        de = subbase ? subbase + subent * 32 : rootbase + dirent * 32;
         name83(argv[arg], de);
         /* on a bootable image PMIO.SYS and PMDOS.SYS are system files */
         de[11] = (unsigned char)(vbrfile && sysfiles < 2 ? 0x07 : 0x20);
@@ -574,18 +711,23 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
         put16(de + 26, (unsigned)(first & 0xFFFF));
         put16(de + 20, (unsigned)(first >> 16));
         put32(de + 28, (unsigned long)size);
-        dirent++;
-        printf("  %-14s %7ld bytes, cluster %lu..%lu\n", argv[arg], size, first, clus - 1);
+        if (subbase) subent++; else dirent++;
+        printf("  %s%-14s %7ld bytes, cluster %lu..%lu\n",
+               subbase ? "  " : "", argv[arg], size, first, clus - 1);
         lastfirst = first; lastsize = size;
     }
 
     /* ---- long-file-name test files (v0.11 read side) --------------
        Same two names as the floppy, crosslinked onto the LAST file's
        chain: no new clusters, just directory entries to read. */
+    /* The long-named test files stay in the ROOT even when a -dir was
+       the last thing on the command line: LFNTEST.BAT looks for them
+       there, and they are read-side fixtures for the kernel rather
+       than programs. */
     if (lastfirst) {
-        unsigned long maxent = fat32 ? rootclus * spc * 16 : rootent;
+        unsigned long maxent = rootmax;
         if (dirent + 6 <= maxent) {
-            unsigned char *rb = fat32 ? sec(datalba) : sec(rootlba);
+            unsigned char *rb = rootbase;
             unsigned char *de;
 
             de = rb + dirent * 32;

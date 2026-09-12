@@ -228,6 +228,17 @@ sc_out:
 get_line:
         cmp     dword ptr [bat_cur],0
         jne     bat_getline             ; a batch file is running
+
+        ; NOTHING IS OWED TO A DISK WHEN THE PROMPT APPEARS.  AH=0Dh
+        ; is DOS's disk reset and the kernel's write cache treats it
+        ; as the commit point: every sector held is on the medium
+        ; before the cursor comes back, so the window in which turning
+        ; the machine off loses a write is one command long and never
+        ; includes the time the user spends thinking.  It costs
+        ; nothing when there is nothing dirty, which is most prompts.
+        mov     ah,0Dh
+        int     21h
+
         mov     byte ptr [adv_parse],1  ; the console speaks quotes
         call    put_prompt
 
@@ -677,7 +688,15 @@ vb_noeq:
         jne     not_drive
         mov     dl,[esi]
         sub     dl,'A'
-        cmp     dl,4                    ; A: B: C: D:
+        ; A: TO Z:, AND 21h/0Eh DECIDES WHICH OF THEM THIS MACHINE HAS.
+        ; This used to stop at four, from when four letters was all
+        ; there were - so on a machine with two disks and a CD-ROM,
+        ; typing H: to get to the CD answered "Bad command or file
+        ; name" while DIR H: worked perfectly.  The letter was never
+        ; the thing to check: the two calls below are, and always were.
+        ; 0Eh mounts the volume or leaves the current drive alone, and
+        ; 19h says which of those happened.
+        cmp     dl,26
         jae     bad_command
         mov     bl,dl                   ; remember what we asked for
         mov     ah,0Eh

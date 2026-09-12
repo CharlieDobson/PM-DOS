@@ -1075,9 +1075,24 @@ f0C_empty:
         jmp     i21_ok
 
 ;=====================================================================
-; 0Dh - disk reset (nothing cached that needs it yet)
+; 0Dh - DISK RESET, and it is the function that makes lazy writing
+;       safe rather than a dead entry in the table.
+;
+; It used to do nothing and the comment said "nothing cached that
+; needs it yet", which stopped being true the moment CACHE.INC
+; existed.  DOS has always defined this call as "write out everything
+; the system is holding", it is what SMARTDRV's own commit routine
+; issues - S:\DOS6SRC\c6ers\smartmon\int2f.asm does exactly AH=0Dh -
+; and it is what COMMAND.COM now calls before printing every prompt.
+; That last part is the whole guarantee: the window in which a write
+; exists only in memory is one command long.
+;
+; dos_commit does both layers in order, the filesystem's caches first
+; and the sector cache second, because the first one's flush turns
+; into writes that land in the second.
 ;=====================================================================
 fn0D:
+        call    dos_commit
         jmp     i21_ok
 
 ;=====================================================================
@@ -1086,7 +1101,14 @@ fn0D:
 fn0E:
         mov     al,[ebp+F_EDX]
         cmp     al,MAX_DRIVES
-        jae     f0E_out                 ; A: B: C: D:
+        jae     f0E_out                 ; past LASTDRIVE there is nothing to
+                                        ; select.  This comment used to read
+                                        ; "A: B: C: D:", from when that was
+                                        ; what MAX_DRIVES meant - and
+                                        ; COMMAND.COM had the four written
+                                        ; into it as a number, which is how
+                                        ; a CD-ROM at H: became unreachable
+                                        ; by typing its own letter
         call    vol_select              ; mounts it if needed
         jc      f0E_out                 ; no volume - default unchanged
         mov     [cur_drive],al          ; a LETTER; it used to be turned
@@ -5248,6 +5270,16 @@ f4C_next:
         mov     eax,[cur_own]
         call    arena_freeown
 
+        ; AND EVERYTHING THE PROGRAM WROTE IS ON THE DISK BEFORE IT IS
+        ; CALLED ENDED.  After the handle sweep, because closing a
+        ; file is what gives it its length and its directory entry,
+        ; and those writes have to be in the cache before the cache is
+        ; told to empty itself.  A program that wrote a file and
+        ; exited has therefore written a file, whatever happens next -
+        ; which is the promise the write cache is only allowed to
+        ; exist on.
+        call    dos_commit
+
         ; A HANDLER OF THIS PROGRAM'S MAY BE WHAT CALLED 4Ch, and if so
         ; it is not going back.  COMMAND's INT 23h handler does exactly
         ; this when a ^C arrives with a child running: it terminates the
@@ -7155,6 +7187,12 @@ fF0_size:
 ;       AL = 0Ah: DL = an ATA device index, or FFh for the controller
 ;                 -> how that disk's data is being moved.  Documented
 ;                    where it is answered, at fF1_ide below
+;       AL = 0Ch: DL = a BIOS drive number, EDI -> a DSK_LEN record
+;                 -> that PHYSICAL DISK, and ECX = how many there can
+;                    be.  A disk, not a letter: see fF1_disk
+;       AL = 0Dh: DL = drive, EBX = LBA, ECX = sectors, EDI -> buffer
+;                 -> raw sectors off that disk, LBA 0 included
+;       AL = 0Eh: the same registers, written back
 ;
 ; 30h has to keep lying about being DOS 5 so that ordinary programs
 ; recognise us, which leaves nothing there to report what the kernel
@@ -7191,6 +7229,12 @@ fnF1:
         je      fF1_ide
         cmp     al,0Bh
         je      fF1_park
+        cmp     al,0Ch
+        je      fF1_disk
+        cmp     al,0Dh
+        je      fF1_absrd
+        cmp     al,0Eh
+        je      fF1_abswr
         jmp     i21_unsup
 
 ;--- AL=0Ah: the IDE controller and how its disks are being talked to.
@@ -7540,6 +7584,170 @@ fF1_drv:
 fF1_baddrv:
         mov     ax,ERR_BADDRIVE
         jmp     i21_fail
+
+;=====================================================================
+; AL=0Ch - one PHYSICAL DISK.  DL = a BIOS drive number, EDI -> a
+;          DSK_LEN record.  ECX comes back = how many fixed disks the
+;          block layer has room for, whether or not they are there.
+;
+; AL=0Dh - read raw sectors off one.  DL = the BIOS drive, EBX = the
+;          first LBA, ECX = how many, EDI -> the buffer.
+; AL=0Eh - write them back, same registers.
+;
+; THIS IS THE CALL FDISK IS FOR, and it is deliberately not INT 25h.
+; 25h and 26h address a DRIVE LETTER, which is to say a volume, and a
+; program editing a partition table is asking about the disk the
+; volumes live on: the sector it most needs - LBA 0, the table itself
+; - is outside every letter on the machine and unreachable through an
+; API that starts by naming one.  There is no letter for a disk on
+; purpose, so the disk has to be named directly.
+;
+; A LETTER'S CACHED STATE IS NOT INVALIDATED HERE and must not be.
+; F1h AL=2 already exists for that and takes a letter, which is the
+; right granularity: this call cannot know which volumes a written
+; sector belonged to, and guessing would either throw away every
+; mounted volume on the machine for a write to unallocated space or
+; miss the one that mattered.  FDISK re-mounts what it changed, and
+; tells the user to reboot when it has changed what a letter IS.
+;
+; The count is capped at ABS_MAXSEC because the buffer is a caller's
+; and the length is the hole - see buf_ok, whose whole entry is about
+; a call that pointed somewhere legal and asked for too much of it.
+; cbuf_ok measures the WHOLE transfer rather than its first byte.
+;=====================================================================
+ABS_MAXSEC      EQU     128             ; 64K a call, which is both the
+                                        ; largest useful chunk and small
+                                        ; enough that the multiply below
+                                        ; cannot overflow
+
+fF1_disk:
+        mov     eax,MAX_PHYS
+        mov     [ebp+F_ECX],eax
+
+        mov     al,[ebp+F_EDX]
+        mov     [f1d_drive],al          ; EAX is scratch from here on
+
+        mov     edi,[ebp+F_EDI]
+        mov     eax,edi
+        mov     ecx,DSK_LEN
+        call    cbuf_ok
+        jc      buf_deny
+
+        ; Cleared FIRST, so that a caller which ignores the carry reads
+        ; a disk that is not there as absent rather than as whatever
+        ; its own buffer held a moment ago.
+        push    edi
+        xor     eax,eax
+        mov     ecx,DSK_LEN / 4
+        rep     stosd
+        pop     edi
+
+        mov     al,[f1d_drive]
+        mov     [edi+DSK_BIOS],al
+        cmp     al,80h
+        jb      fF1_nodisk
+        cmp     al,80h + MAX_PHYS
+        jae     fF1_nodisk
+
+        call    dword ptr ds:[IOS_DRVGEO]       ; CX = spt, DX = heads,
+        jc      fF1_nodisk                      ; EBX = C*H*S
+        mov     [edi+DSK_SPT],cx
+        mov     [edi+DSK_HEADS],dx
+        mov     [edi+DSK_CHS],ebx
+
+        ; Cylinders are derived rather than asked for, because 08h does
+        ; not report them as a count: it reports the highest number,
+        ; packed into two registers, and every caller that unpacks that
+        ; by hand gets the off-by-one wrong once.  C*H*S divided by
+        ; H*S is the same answer with nothing to get wrong.
+        push    eax
+        mov     eax,ebx
+        movzx   ebx,cx
+        movzx   ecx,dx
+        imul    ebx,ecx
+        xor     edx,edx
+        or      ebx,ebx
+        jz      fF1_nocyl
+        div     ebx
+        cmp     eax,0FFFFh
+        jbe     fF1_cylok
+        mov     eax,0FFFFh              ; a disk past CHS's reach: say so
+fF1_cylok:                              ; in the field's own units
+        mov     [edi+DSK_CYLS],ax
+fF1_nocyl:
+        pop     eax
+
+        mov     al,[f1d_drive]
+        call    dword ptr ds:[IOS_DRVPARM]      ; EBX = the true capacity
+        jc      fF1_nototal
+        mov     [edi+DSK_TOTAL],ebx
+fF1_nototal:
+        mov     byte ptr [edi+DSK_FLAGS],DSKF_PRESENT
+        jmp     i21_ok
+
+fF1_nodisk:
+        mov     ax,ERR_BADDRIVE
+        jmp     i21_fail
+
+;--- the raw sectors -------------------------------------------------
+; One routine with a flag, because the two differ in exactly one call
+; and every check before it has to be the same check: a write that is
+; validated differently from a read is a write that gets through a
+; hole the read closed.
+fF1_absrd:
+        xor     ah,ah
+        jmp     short fF1_abs
+fF1_abswr:
+        mov     ah,1
+fF1_abs:
+        mov     [f1d_write],ah
+        mov     al,[ebp+F_EDX]
+        mov     [f1d_drive],al
+        cmp     al,80h
+        jb      fF1_nodisk
+        cmp     al,80h + MAX_PHYS
+        jae     fF1_nodisk
+
+        mov     ecx,[ebp+F_ECX]
+        or      ecx,ecx
+        jz      fF1_absnone             ; nothing asked for, nothing done
+        cmp     ecx,ABS_MAXSEC
+        ja      fF1_absmany
+
+        mov     eax,[ebp+F_EDI]
+        push    ecx
+        shl     ecx,9                   ; sectors -> bytes, the WHOLE
+        call    cbuf_ok                 ; transfer and not its first byte
+        pop     ecx
+        jc      buf_deny
+
+        mov     edi,[ebp+F_EDI]
+        mov     ebx,[ebp+F_EBX]         ; the LBA - and NOT a pointer, which
+                                        ; is why 0Dh and 0Eh carry P_DI alone
+                                        ; in vdm_subptr
+        mov     al,[f1d_drive]
+        cmp     byte ptr [f1d_write],0
+        jne     fF1_abswrgo
+        call    dword ptr ds:[IOS_RDBLK]
+        jc      fF1_absbad
+        jmp     i21_ok
+fF1_abswrgo:
+        call    dword ptr ds:[IOS_WRBLK]
+        jc      fF1_absbad
+        jmp     i21_ok
+
+fF1_absnone:
+        jmp     i21_ok
+fF1_absmany:
+        mov     ax,ERR_BADDATA
+        jmp     i21_fail
+fF1_absbad:
+        mov     ax,ERR_GENERAL
+        jmp     i21_fail
+
+f1d_drive       db      0
+f1d_write       db      0
+
 
 ;=====================================================================
 ; 1Bh - allocation information for the default drive

@@ -43,6 +43,11 @@ SIG_END         EQU     'E'
 BLOCKS_MAX      EQU     2000            ; refuse to loop forever on a
                                         ; corrupted chain
 
+; Where the three expanded-memory lines end.  They are a block of
+; their own below the table and reach one right edge, which is what
+; makes two numbers of different widths and a segment line up.
+EMS_EDGE        EQU     52
+
 _MEM    SEGMENT USE32 PUBLIC 'CODE'
         ASSUME  CS:_MEM, DS:_MEM, ES:_MEM, SS:_MEM
         ORG     0
@@ -109,19 +114,6 @@ me_argdone:
         mov     edx,OFFSET msg_head2
         call    print
 
-        ; the kernel and the two program slots: fixed, and all in use
-        mov     edx,OFFSET msg_row_sys
-        call    print
-        mov     eax,ARENA_BASE - HMA_BASE
-        shr     eax,10
-        push    eax
-        call    col_kb                  ; total
-        pop     eax
-        call    col_kb                  ; used - all of it
-        xor     eax,eax
-        call    col_kb                  ; free - none
-        call    crlf
-
         ; conventional memory - what a 16-bit DOS program can have
         mov     edx,OFFSET msg_row_conv
         call    print
@@ -152,6 +144,20 @@ me_argdone:
         call    col_kb
         call    crlf
 no_upper:
+
+        ; the kernel and the two program slots - OS Reserved: fixed,
+        ; and all of it in use
+        mov     edx,OFFSET msg_row_sys
+        call    print
+        mov     eax,ARENA_BASE - HMA_BASE
+        shr     eax,10
+        push    eax
+        call    col_kb                  ; total
+        pop     eax
+        call    col_kb                  ; used - all of it
+        xor     eax,eax
+        call    col_kb                  ; free - none
+        call    crlf
 
         ; the arena, as the block chain actually stands
         mov     edx,OFFSET msg_row_arena
@@ -232,21 +238,35 @@ no_upper:
         mov     [e_frame],ebx
         mov     [e_total],ecx
         mov     [e_free],edx
+        ; THREE LINES TO ONE RIGHT EDGE.  Each number is right-aligned
+        ; in a field EMS_EDGE wide less the label in front of it and the
+        ; suffix behind it, so the edge is arithmetic the assembler
+        ; checks rather than spaces somebody counted.
         mov     edx,OFFSET msg_ems
-        call    print
-        mov     eax,[e_frame]
-        call    puthex16
-        mov     edx,OFFSET msg_emstot
         call    print
         mov     eax,[e_total]
         shl     eax,4                   ; 16K pages, in KB
-        call    pdec_c
-        mov     edx,OFFSET msg_emsfree
+        mov     ebx,EMS_EDGE - 22 - 8   ; 'Expanded Memory (EMS):', 'KB total'
+        call    pdec_cw
+        mov     edx,OFFSET msg_emstot
+        call    print
+
+        mov     edx,OFFSET msg_emsfr
         call    print
         mov     eax,[e_free]
         shl     eax,4
-        call    pdec_c
-        mov     edx,OFFSET msg_kb
+        mov     ebx,EMS_EDGE - 21 - 7   ; 'Free expanded memory:', 'KB free'
+        call    pdec_cw
+        mov     edx,OFFSET msg_emsfree
+        call    print
+
+        ; The frame is a segment and prints as one - four hex digits,
+        ; padded in the message itself because its width never varies.
+        mov     edx,OFFSET msg_emspf
+        call    print
+        mov     eax,[e_frame]
+        call    puthex16
+        mov     edx,OFFSET msg_crlf
         call    print
 me_noems:
 
@@ -738,28 +758,30 @@ hexbuf      db  12 dup(0)
 LABEL_W         EQU     22              ; the row-label field
 NUM_W           EQU     11              ; each number column
 
-msg_head1   db  'Memory Type',(LABEL_W - 11 + 2 + NUM_W - 5) dup(' '),'Total'
-            db  (2 + NUM_W - 4) dup(' '),'Used'
-            db  (2 + NUM_W - 4) dup(' '),'Free',13,10,'$'
+msg_head1   db  'Memory Type',(LABEL_W - 11 + 2 + NUM_W - 8) dup(' '),'Total KB'
+            db  (2 + NUM_W - 7) dup(' '),'Used KB'
+            db  (2 + NUM_W - 7) dup(' '),'Free KB',13,10,'$'
 msg_head2   db  16 dup('-'),(LABEL_W - 16 + 2) dup(' '),NUM_W dup('-')
             db  2 dup(' '),NUM_W dup('-')
             db  2 dup(' '),NUM_W dup('-'),13,10,'$'
 
-msg_row_sys   db 'Kernel and slots',(LABEL_W - 16) dup(' '),'$'
+msg_row_sys   db 'OS Reserved',(LABEL_W - 11) dup(' '),'$'
 msg_row_conv  db 'Conventional',(LABEL_W - 12) dup(' '),'$'
 msg_row_upper db 'Upper',(LABEL_W - 5) dup(' '),'$'
-msg_row_arena db 'DOS arena',(LABEL_W - 9) dup(' '),'$'
+msg_row_arena db 'XMS pool',(LABEL_W - 8) dup(' '),'$'
 msg_row_tot   db 'Total memory',(LABEL_W - 12) dup(' '),'$'
 
 msg_xms     db  13,10,'Extended memory reported by the BIOS: ','$'
-msg_largest db  'Largest free arena block:             ','$'
-msg_blocks  db  'Arena blocks:                         ','$'
+msg_largest db  'Largest free XMS block:               ','$'
+msg_blocks  db  'XMS blocks:                           ','$'
 msg_inuse   db  ' in use, ','$'
 msg_free    db  ' free',13,10,'$'
 msg_kb      db  ' KB',13,10,'$'
-msg_ems     db  'Expanded memory (EMS):  page frame at ','$'
-msg_emstot  db  ', ','$'
-msg_emsfree db  ' KB total, ','$'
+msg_ems     db  13,10,'Expanded Memory (EMS):','$'
+msg_emstot  db  'KB total',13,10,'$'
+msg_emsfr   db  'Free expanded memory:','$'
+msg_emsfree db  'KB free',13,10,'$'
+msg_emspf   db  'Page frame:',(EMS_EDGE - 11 - 4) dup(' '),'$'
 
 ;--- the block list: 8 hex, 2, 15 for the size, 2, 6 for the owner ---
 msg_bhead1  db  'Address',6 dup(' '),'Size (bytes)',3 dup(' '),'Owner'

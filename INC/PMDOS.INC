@@ -1753,6 +1753,74 @@ IOS_UNPARKADDR  EQU     IOSVC + 80h             ; -> EAX = seg:off of the
                                                 ; unpark entry, to hand to the
                                                 ; real-mode side
 
+; THE CD-ROM PAIR, and why they are not IOS_RDBLK.  A packet device is
+; not in the drive numbering that IOS_RDBLK's AL indexes - it has no
+; BIOS drive number by design, see ATAPI.INC - and its block is 2048
+; bytes rather than 512, so a caller that got one down the block path
+; would read a quarter of what it asked for and be told it worked.
+; Two calls of their own, indexed by ATAPI unit, keep the two block
+; sizes from ever meeting.
+IOS_CDREAD      EQU     IOSVC + 84h             ; AL = ATAPI unit, EBX = first
+                                                ; 2048-byte block, ECX = how
+                                                ; many, EDI = buffer.  CF on
+                                                ; a refusal or a short read
+IOS_CDINFO      EQU     IOSVC + 88h             ; AL = unit -> EAX = last block,
+                                                ; EBX = block size, ECX = how
+                                                ; many units exist at all.
+                                                ; CF if AL names no unit, and
+                                                ; ECX is still valid then, so
+                                                ; "how many CD drives" is one
+                                                ; call with AL = 0
+IOS_CDCHG       EQU     IOSVC + 8Ch             ; AL = unit, AH = which
+                                                ; LISTENER is asking - a CDL_
+                                                ; bit.  CF set if the volume
+                                                ; on it must be mounted again:
+                                                ; a disc changed, a tray
+                                                ; opened, a drive gone.
+                                                ; ASKING IS NOT FREE AND IS
+                                                ; NOT IDEMPOTENT: the drive
+                                                ; reports the change once and
+                                                ; the asking clears it.  This
+                                                ; used to say that exactly
+                                                ; one caller may ask and that
+                                                ; it is vol_select, which was
+                                                ; true while the volume layer
+                                                ; was the only thing that
+                                                ; spoke to the drive.  CD
+                                                ; audio ended that: a program
+                                                ; polling the Q channel can
+                                                ; be the command the drive
+                                                ; reports the change on, and
+                                                ; the volume layer would then
+                                                ; never learn that the disc
+                                                ; it has mounted has gone.
+                                                ; So PMIO catches the report
+                                                ; wherever it lands and keeps
+                                                ; ONE BIT PER LISTENER until
+                                                ; that listener asks
+IOS_CDPKT       EQU     IOSVC + 90h             ; AL = unit, AH = 1 if the
+                                                ; data phase SENDS rather
+                                                ; than receives, ESI -> a
+                                                ; twelve-byte SCSI command
+                                                ; block, EDI = the buffer,
+                                                ; ECX = its size.  -> EAX =
+                                                ; bytes moved, EBX = the
+                                                ; sense as key OR ASC shl 8
+                                                ; OR ASCQ shl 16, CF on
+                                                ; failure.  Always PIO, and a
+                                                ; UNIT ATTENTION is retried
+                                                ; once - atapi_svcpkt says
+                                                ; why for both
+
+; WHICH PIECE OF THE KERNEL IS ASKING whether the disc moved.  One bit
+; each, because the drive's answer is destroyed by the asking and two
+; listeners now need it.
+CDL_VOL         EQU     01h                     ; the volume layer, asking
+                                                ; from vol_select
+CDL_CDX         EQU     02h                     ; the MSCD001 device, asking
+                                                ; for the MSCDEX "has the
+                                                ; media changed" call
+
 ;---------------------------------------------------------------------
 ; The three ports the V86 monitor takes away from the guest.  Two of
 ; them are the 8042 keyboard controller, whose "output port" carries
@@ -1968,6 +2036,14 @@ ERR_BADFUNC     EQU     16h                     ; unknown command
 ERR_NOTSAME     EQU     11h                     ; not same device (56h)
 ERR_EXISTS      EQU     80                      ; file already exists
 ERR_DISKFULL    EQU     70h                     ; (PM-DOS: no free clusters)
+ERR_GENERAL     EQU     1Fh                     ; general failure - what DOS
+                                                ; has always called a disk that
+                                                ; would not read or write, and
+                                                ; the only honest answer to a
+                                                ; raw sector call that failed:
+                                                ; the block layer reports a
+                                                ; BIOS status, and a BIOS
+                                                ; status is not a DOS error
 
 ;---------------------------------------------------------------------
 ; INT 24h - the critical-error interface, shared by the kernel that
@@ -2218,11 +2294,43 @@ DRV_LEN         EQU     0Ch
 
 DRVF_PRESENT    EQU     01h                     ; the slot names something
 DRVF_FLOPPY     EQU     02h                     ; removable: re-mount on access
+DRVF_CDROM      EQU     08h                     ; an ATAPI unit reached through
+                                                ; IOS_CDREAD, holding ISO9660.
+                                                ; DRV_BIOS then names the ATAPI
+                                                ; unit, not a BIOS drive
 DRVF_DRIVER     EQU     04h                     ; served by a loaded block driver
                                         ; rather than by the block layer -
                                         ; DRV_BIOS then names a dl_units row
                                         ; rather than a BIOS drive.  See
                                         ; DL_UNIT_BASE
+
+;---------------------------------------------------------------------
+; One PHYSICAL DISK, which is the other half of the sentence above: a
+; letter is a volume, and this is the thing volumes live ON.  Nothing
+; else in the kernel needs the distinction - drv_tbl carries a BIOS
+; drive number and that is enough to read a sector - but FDISK does,
+; because a program that edits a partition table is asking about the
+; DISK, and there is deliberately no drive letter for that answer.
+;
+; DSK_SPT/DSK_HEADS/DSK_CYLS are the BIOS's CHS description, which is
+; what the partition table's own CHS fields have to be rebuilt from
+; and what the 1024-cylinder boot ceiling is measured in.  DSK_TOTAL
+; is the TRUE capacity, and the two disagree on any disk the CHS
+; fields cannot express - that disagreement is the whole reason both
+; are reported rather than one.
+;---------------------------------------------------------------------
+DSK_BIOS        EQU     00h                     ; db - 80h, 81h, ...
+DSK_FLAGS       EQU     01h                     ; db - DSKF_*
+DSK_SPT         EQU     02h                     ; dw - sectors per track
+DSK_HEADS       EQU     04h                     ; dw - heads
+DSK_CYLS        EQU     06h                     ; dw - cylinders, derived
+DSK_TOTAL       EQU     08h                     ; dd - true capacity, sectors
+DSK_CHS         EQU     0Ch                     ; dd - C*H*S: as far as CHS
+                                                ; addressing can reach
+DSK_LEN         EQU     10h
+
+DSKF_PRESENT    EQU     01h                     ; the BIOS or the IDE driver
+                                                ; answered for this drive
 
 ;---------------------------------------------------------------------
 ; How many drive letters exist.  SHARED, and it has to be: COMMAND.COM
@@ -2233,7 +2341,38 @@ DRVF_DRIVER     EQU     04h                     ; served by a loaded block drive
 ; the default drive, which is a wrong answer that looks like a right
 ; one.  21h/0Eh reports this number; nothing should assume it.
 ;---------------------------------------------------------------------
-LASTDRIVE       EQU     8               ; A: to H:
+LASTDRIVE       EQU     16              ; A: to P:
+                                        ;
+                                        ; RAISED FROM 8 WHEN CD-ROMs GOT
+                                        ; LETTERS.  Two disks with a handful of
+                                        ; partitions between them already used
+                                        ; A: to H: exactly, so there was no
+                                        ; letter left for a CD and drv_addcds
+                                        ; silently placed nothing - which is
+                                        ; the correct behaviour for a full
+                                        ; table and a useless one for a machine
+                                        ; with a drive in it.
+                                        ;
+                                        ; What it costs: drv_tbl grows by
+                                        ; 8 * DRV_LEN, the parked volume states
+                                        ; are arena-allocated so they cost
+                                        ; nothing in the image, and RMDOS grows
+                                        ; by 8 * (VOL_LEN + CDS_LEN) - 944
+                                        ; bytes of a 64K HMA, which is the only
+                                        ; one of the three with a hard ceiling.
+
+;---------------------------------------------------------------------
+; WHICH FILESYSTEM A MOUNTED VOLUME IS.  Lives in vol_state, so it
+; swaps with the volume, and is the discriminator every path that used
+; to assume FAT now branches on.  There have only ever been two.
+;---------------------------------------------------------------------
+FS_FAT          EQU     0
+FS_ISO          EQU     1
+
+; A CD-ROM logical block.  HERE rather than in ISO9660.INC because
+; FAT.INC needs it and is included first, and an EQU cannot be used
+; before it is defined - unlike a label, which can.
+ISO_BLKSIZE     EQU     2048
 
 ;---------------------------------------------------------------------
 ; FAT directory attribute bits (also the CX values for 21h/4Eh)

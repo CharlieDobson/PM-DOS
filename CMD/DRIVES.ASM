@@ -12,6 +12,16 @@
 ; FAT16 one inside an 04h that outgrew it.  Anything that decides how
 ; to read a disk from the type byte will eventually read one wrong.
 ;
+; IT IS A DIAGNOSTIC AND IT LIVES IN \TESTS, not in the root with the
+; commands.  PM-DOS ships what DOS shipped and DOS never had a DRIVES;
+; the DISK-side view of the same information is FDISK /L, which prints
+; the partitions and the letter each one became.  What this adds is the
+; LETTER-side view, and the part of it nothing else can give: the
+; letters NO PARTITION TABLE EXPLAINS - a CD-ROM, a RAM disk a block
+; driver created, a floppy - plus what the volume really turned out to
+; be when it was mounted.  Kept for that, and kept out of the
+; distribution.
+;
 ; What it asks:
 ;   21h/F1h AL=6    the volume table entry for drive DL
 ;   21h/F1h AL=1    the FAT type of drive DL, which mounts it
@@ -74,6 +84,8 @@ dv_one:
         jmp     short dv_type           ; printing it as one prints a control
                                         ; character
 dv_notdrv:
+        test    byte ptr [drv_rec+DRV_FLAGS],DRVF_CDROM
+        jnz     dv_cd
         test    byte ptr [drv_rec+DRV_FLAGS],DRVF_FLOPPY
         jz      dv_hd
         mov     edx,OFFSET msg_floppy
@@ -130,6 +142,52 @@ dv_nomount:
         call    puts
 dv_eol:
         call    crlf
+        jmp     dv_next
+
+;--- a CD-ROM, which fits none of the columns above -------------------
+; DRV_BIOS holds an ATAPI UNIT and not a BIOS drive, so it is printed
+; as itself.  There is no partition type byte and no start LBA because
+; a CD-ROM is not a partition on anything.  The one figure it does
+; have is how big the disc in it is, and 36h answering at all is what
+; says there is one.
+dv_cd:
+        mov     edx,OFFSET msg_cd
+        call    puts
+        movzx   eax,byte ptr [drv_rec+DRV_BIOS]
+        add     al,'0'
+        call    putc
+        call    sp2
+        mov     edx,OFFSET msg_cdtype
+        call    puts
+        mov     edx,OFFSET msg_cdstart
+        call    puts
+
+        push    ebx                     ; 36h answers in BX, and BX is
+        mov     edx,ebx                 ; the letter this loop is on
+        inc     edx                     ; ...and counts A: as 1, as F1h does
+        mov     eax,3600h
+        int     21h
+        cmp     ax,0FFFFh
+        je      dv_nodisc
+        movzx   eax,ax                  ; sectors in a cluster
+        movzx   ecx,cx                  ; bytes in a sector
+        imul    eax,ecx                 ; -> bytes in a cluster
+        movzx   ecx,dx                  ; clusters on the volume
+        imul    eax,ecx
+        shr     eax,20                  ; -> MB
+        pop     ebx
+        call    put6
+        mov     edx,OFFSET msg_mb
+        call    puts
+        mov     edx,OFFSET msg_isofs
+        call    puts
+        jmp     short dv_next
+dv_nodisc:
+        pop     ebx
+        mov     edx,OFFSET msg_nosize
+        call    puts
+        mov     edx,OFFSET msg_nodisc
+        call    puts
 
 dv_next:
         inc     ebx
@@ -309,6 +367,12 @@ msg_head    db  13,10,'Drive  Disk    Type            Start     Size  '
 msg_floppy  db  'floppy  $'
 msg_driver  db  'driver  $'
 msg_disk    db  'hd$'
+msg_cd      db  'cd$'
+msg_cdtype  db  '-- CD-ROM   $'         ; the two columns a CD has no
+msg_cdstart db  '         -  $'         ; answer for, kept in their places
+msg_isofs   db  'ISO9660',13,10,'$'
+msg_nodisc  db  '(no disc)',13,10,'$'
+msg_nosize  db  '     -  $'
 msg_mb      db  ' MB  $'
 msg_fat12   db  'FAT12',13,10,'$'
 msg_fat16   db  'FAT16',13,10,'$'

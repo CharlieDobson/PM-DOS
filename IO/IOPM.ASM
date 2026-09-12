@@ -64,6 +64,10 @@ svc_table:
         dd      ata_info                ; IOS_ATAINFO
         dd      rm_park         ; IOS_PARK
         dd      rm_unparkaddr   ; IOS_UNPARKADDR
+        dd      atapi_svcread   ; IOS_CDREAD
+        dd      atapi_svcinfo   ; IOS_CDINFO
+        dd      atapi_svcchg    ; IOS_CDCHG
+        dd      atapi_svcpkt    ; IOS_CDPKT
 
 ;=====================================================================
 ; pm_entry - first instruction executed in 32-bit protected mode.
