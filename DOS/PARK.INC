@@ -110,6 +110,12 @@ pk_keeppsp:
         jc      pk_nomem
 pk_nofill:
 
+        ; THE CACHE'S MEMORY GOES BACK BEFORE THE POOL IS SIZED, and
+        ; the order is the whole of it: park_xmsgrab below measures the
+        ; largest free block in the arena and hands that over, so a
+        ; cache still holding chunks is extended memory Windows never
+        ; sees.  See cache_park, which commits everything first.
+        call    cache_park
         call    park_xmsreclaim         ; what the parking program is holding
         call    park_xmsgrab            ; the extended memory to hand over
         call    park_chaincut           ; ...and the memory that is about to
@@ -137,6 +143,14 @@ pk_nomem:
 pk_out:
         pushfd
         call    park_release
+        ; ...and the cache buys its floor back, AFTER park_release has
+        ; handed the XMS pool to the arena and not before: inside
+        ; park_recover the pool is still allocated, so the arena would
+        ; look full and cache_addchunk would politely refuse.  It is on
+        ; the shared exit so that a park which FAILED gets its cache
+        ; back too.  Inside the pushfd because cache_tomin has flags of
+        ; its own and CF here is the answer this call is about.
+        call    cache_unpark
         popfd
         pop     ebp
         pop     edi
@@ -1136,13 +1150,16 @@ park_recover:
         ; and every FAT window and cluster cached up here describes the
         ; disk as it was before it started.
         ;
-        ; THE SECTOR CACHE GOES FIRST AND THAT ORDER IS THE POINT.
-        ; park_remount MOUNTS, which means it reads, and a read served
-        ; out of blocks describing the disk as RMDOS found it would
-        ; mount the volume that used to be there - the same trap
-        ; iso_chkmedia has with a swapped disc, arrived at from the
-        ; other direction.  Nothing is written back: what RMDOS put on
-        ; those sectors is the truth now.
+        ; THE SECTOR CACHE HOLDS NOTHING HERE, because cache_park gave
+        ; its chunks away on the way down and cache_unpark does not buy
+        ; them back until park_release has run.  This call is therefore
+        ; a no-op today and is kept anyway: what it asserts is that
+        ; park_remount MOUNTS, mounting READS, and a read served out of
+        ; blocks describing the disk as RMDOS found it would mount the
+        ; volume that used to be there - the same trap iso_chkmedia has
+        ; with a swapped disc, arrived at from the other direction.
+        ; Nothing is written back either way: what RMDOS put on those
+        ; sectors is the truth now.
         call    cache_dropall
         call    park_remount
 

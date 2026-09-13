@@ -392,8 +392,27 @@ cache_addchunk:
         call    arena_avail                     ; -> EAX = largest free
         cmp     eax,CC_CHUNKBYTES + CC_RESERVE
         jb      cac_busyno
+
+        ; THE CHUNK BELONGS TO THE KERNEL AND NOT TO WHOEVER HAPPENS TO
+        ; BE RUNNING, and this is not bookkeeping - it is the whole
+        ; lifetime of the block.  arena_alloc stamps every block with
+        ; [cur_own], and 4Ch sweeps the arena for blocks owned by the
+        ; program that is ending; the cache grows on a MISS, which
+        ; happens inside whatever program caused the I/O, so without
+        ; this every chunk bought after boot is freed out from under
+        ; the cache when that program exits.  The cache goes on using
+        ; it - descriptors, payload and all - while the arena hands
+        ; the same memory to somebody else.
+        ;
+        ; The floor bought by cache_init was safe by accident: it is
+        ; taken before the shell exists, when cur_own is still zero.
+        ; That is exactly why this was invisible until a test grew the
+        ; cache and then looked at MEM.
+        push    dword ptr [cur_own]
+        mov     dword ptr [cur_own],0
         mov     ebx,CC_CHUNKBYTES
         call    arena_alloc
+        pop     dword ptr [cur_own]
         mov     byte ptr [cache_busy],0
         jc      cac_no
 
@@ -563,6 +582,52 @@ cfa_lp:
         mov     dword ptr [cache_lru],0
         mov     dword ptr [cache_dirty],0
         pop     eax
+        ret
+
+;=====================================================================
+; cache_park / cache_unpark - the kernel is about to stop running, and
+;                             then it starts again.
+;
+; PARKING HANDS THE WHOLE MACHINE TO ANOTHER DOS.  RMDOS.SYS takes the
+; disks over through the BIOS, this kernel is not executing, and the
+; cache is therefore not merely idle - it is unreachable.  Memory it
+; goes on holding is memory nothing can use.
+;
+; AND THE MEMORY IS THE POINT, not the tidiness.  park_xmsgrab sizes
+; the XMS pool it hands over as "the largest free block in the arena,
+; less 128K", and until this was written the cache's chunks were still
+; sitting in that arena: Windows got less extended memory than it did
+; before there was a cache at all.  Worse than the cache's own size,
+; too, because chunks are bought 64K at a time and land wherever
+; first-fit puts them - so a cache holding half a megabyte can cut the
+; largest CONTIGUOUS run by several times that.  A cache that makes
+; Windows smaller is not paying for itself.
+;
+; So everything is committed and every chunk goes back, and the floor
+; is bought again on the way up.  Nothing is lost but the contents:
+; the blocks describe the disks as RMDOS found them, and park_recover
+; would have thrown them away in any case.
+;
+; cache_get refuses while there are no blocks - it tests cache_nblk
+; before it considers growing - so the cache stays out of the way for
+; the whole excursion without cache_on having to be touched.  That
+; matters: cache_on is the USER'S setting, out of CONFIG.SYS, and a
+; park must not look like a CACHE=OFF that never gets undone.
+;=====================================================================
+cache_park:
+        cmp     byte ptr [cache_on],0
+        je      cprk_out
+        call    dos_commit              ; both layers, while there is still
+                                        ; a kernel to do it with
+        call    cache_freeall
+cprk_out:
+        ret
+
+cache_unpark:
+        cmp     byte ptr [cache_on],0
+        je      cupk_out
+        call    cache_tomin
+cupk_out:
         ret
 
 ;=====================================================================
