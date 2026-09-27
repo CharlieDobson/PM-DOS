@@ -43,11 +43,20 @@ start:
         ; made the host answer 8012h, which is the truthful answer to
         ; a request for memory that has all been given away already.
         mov     ah,4Ah
-        mov     bx,100h                         ; 4K is more than enough
+        mov     bx,200h                         ; 8K: the image is over 4K now
         int     21h
 
         mov     dx,OFFSET msg_hi
         call    puts
+
+        ; For phase 8: where ARGS.COM is - beside us - and where the
+        ; interpreter is, which the kernel says (F1h AL=3).  Worked out
+        ; now, in real mode, where the environment is a segment.
+        call    find_args
+        call    find_hook
+        mov     ax,0F103h
+        mov     dx,OFFSET cmdpath
+        int     21h
 
 ;=====================================================================
 ; Real mode: is there a host, and what is it?
@@ -622,11 +631,159 @@ pm_state:
         jnz     pm_statebad             ; nothing is lost either way
         mov     dx,OFFSET msg_state
         call    ok
-        jmp     done
+        jmp     short pm_exec
 pm_statebad:
         mov     dx,OFFSET msg_statebad
         call    fail
+
+;=====================================================================
+; A child, started the way a DOS extender starts one: INT 21h 4Bh run
+; in real mode through 0300h, with the path, the parameter block and
+; the tail in a buffer below the megabyte.  DOS/4GW and DJGPP spawn
+; exactly so.  A 16-bit child and a 32-bit one - ARGS.COM, whose exit
+; code 4Dh must then report, and CMD.EXE, which goes over the bridge.
+;=====================================================================
+pm_exec:
+        mov     dx,OFFSET msg_p8
+        call    puts
+        mov     ax,0100h
+        mov     bx,16                           ; 256 bytes
+        int     31h
+        jc      pm_xnomem
+        mov     [dos_seg],ax
+        mov     [dos_sel],dx
+
+        mov     si,OFFSET argspath
+        mov     di,OFFSET tail6
+        call    xrun
+        jc      pm_x16bad
+        mov     word ptr [rmcs+1Ch],4D00h       ; and what it exited with
+        call    xsim
+        jc      pm_x16bad
+        cmp     byte ptr [rmcs+1Ch],6
+        jne     pm_x16bad
+        mov     dx,OFFSET msg_x16
+        call    ok
+        jmp     short pm_x32
+pm_x16bad:
+        mov     dx,OFFSET msg_x16bad
+        call    fail
+pm_x32:
+        mov     si,OFFSET cmdpath
+        mov     di,OFFSET tailrem
+        call    xrun
+        jc      pm_x32bad
+        mov     dx,OFFSET msg_x32
+        call    ok
+        jmp     short pm_xcc
+pm_x32bad:
+        mov     dx,OFFSET msg_x32bad
+        call    fail
+
+pm_xcc:
+        ; and one that ^C ends: HOOKTEST /D stuffs a Ctrl+C and reads it,
+        ; with no handler of its own.  It is the child that ends - 4Dh
+        ; says so - and the simulated interrupt comes back to us; ending
+        ; into the box's loop instead took this whole program with it.
+        mov     si,OFFSET hookpath
+        mov     di,OFFSET tailD
+        call    xrun
+        jc      pm_xccbad
+        mov     word ptr [rmcs+1Ch],4D00h
+        call    xsim
+        jc      pm_xccbad
+        cmp     byte ptr [rmcs+1Dh],1           ; AH: ended by ^C
+        jne     pm_xccbad
+        mov     dx,OFFSET msg_xcc
+        call    ok
+        jmp     short pm_xflush
+pm_xccbad:
+        mov     dx,OFFSET msg_xccbad
+        call    fail
+pm_xflush:
+        mov     ah,01h                          ; the N it left for a shell
+        int     16h                             ; that would ask, which we
+        jz      pm_xfree                        ; do not
+        mov     ah,00h
+        int     16h
+        jmp     short pm_xflush
+pm_xfree:
+        mov     ax,0101h
+        mov     dx,[dos_sel]
+        int     31h
+        ; INT 33h from protected mode: the host reflects it into the
+        ; box, where the mouse driver's stub answers it
+        mov     ax,0024h
+        int     33h
+        cmp     bx,0820h
+        jne     pm_msbad
+        mov     dx,OFFSET msg_ms
+        call    ok
         jmp     done
+pm_msbad:
+        mov     dx,OFFSET msg_msbad
+        call    fail
+        jmp     done
+pm_xnomem:
+        mov     dx,OFFSET msg_x16bad
+        call    fail
+        jmp     done
+
+; xrun - 4B00h, through 0300h: the program at DS:SI, the tail at DS:DI.
+;        CF if the 0300h failed or the EXEC did.
+xrun:
+        push    es
+        mov     es,[dos_sel]
+        xor     bx,bx                   ; the path at +0
+xr_path:
+        lodsb
+        mov     es:[bx],al
+        inc     bx
+        or      al,al
+        jnz     xr_path
+        mov     si,di                   ; the tail at +0A0h
+        mov     bx,0A0h
+xr_tail:
+        lodsb
+        mov     es:[bx],al
+        inc     bx
+        cmp     al,0Dh
+        jne     xr_tail
+        mov     ax,[dos_seg]            ; the parameter block at +80h
+        mov     word ptr es:[80h],0     ; environment: ours
+        mov     word ptr es:[82h],0A0h  ; tail
+        mov     es:[84h],ax
+        mov     dword ptr es:[86h],0    ; no FCBs
+        mov     dword ptr es:[8Ah],0
+        pop     es
+        mov     word ptr [rmcs+1Ch],4B00h
+        mov     word ptr [rmcs+10h],80h         ; EBX
+        mov     word ptr [rmcs+14h],0           ; EDX
+        mov     ax,[dos_seg]
+        mov     word ptr [rmcs+22h],ax          ; ES
+        mov     word ptr [rmcs+24h],ax          ; DS
+        call    xsim
+        jc      xr_out
+        test    word ptr [rmcs+20h],1           ; the EXEC's own carry
+        jz      xr_out
+        stc
+xr_out:
+        ret
+
+; xsim - 0300h INT 21h with rmcs as it stands; its own stack
+xsim:
+        push    es
+        push    ds
+        pop     es
+        mov     word ptr [rmcs+2Eh],0           ; SP } the host lends one
+        mov     word ptr [rmcs+30h],0           ; SS }
+        mov     ax,0300h
+        mov     bx,0021h
+        xor     cx,cx
+        mov     di,OFFSET rmcs
+        int     31h
+        pop     es
+        ret
 
 ;---------------------------------------------------------------------
 ; cb_proc - the callback procedure.  PROTECTED MODE, ring 3, entered
@@ -673,6 +830,80 @@ done:
         call    puts
         mov     ax,4C00h
         int     21h
+
+;---------------------------------------------------------------------
+; find_hook - [hookpath]: HOOKTEST.COM, beside ARGS.COM
+;---------------------------------------------------------------------
+find_hook:
+        mov     si,OFFSET argspath
+        mov     di,OFFSET hookpath
+        mov     bx,di                   ; one past the last separator
+fh_cp:
+        lodsb
+        mov     [di],al
+        inc     di
+        or      al,al
+        jz      fh_cpd
+        cmp     al,'\'
+        jne     fh_cp
+        mov     bx,di
+        jmp     short fh_cp
+fh_cpd:
+        mov     di,bx
+        mov     si,OFFSET hookname
+fh_nm:
+        lodsb
+        mov     [di],al
+        inc     di
+        or      al,al
+        jnz     fh_nm
+        ret
+
+;---------------------------------------------------------------------
+; find_args - [argspath]: ARGS.COM, in the directory we were loaded
+;             from, out of the end of our environment.  Real mode.
+;---------------------------------------------------------------------
+find_args:
+        push    ds
+        mov     ax,word ptr ds:[2Ch]
+        mov     di,OFFSET argspath
+        xor     bx,bx
+        or      ax,ax
+        jz      fa_names
+        mov     ds,ax
+        xor     si,si
+fa_var:
+        cmp     byte ptr [si],0
+        je      fa_end
+fa_skip:
+        lodsb
+        or      al,al
+        jnz     fa_skip
+        jmp     short fa_var
+fa_end:
+        add     si,3                    ; the NUL and the string count
+fa_copy:
+        lodsb
+        mov     cs:[di],al
+        inc     di
+        or      al,al
+        jz      fa_names
+        cmp     al,'\'
+        jne     fa_copy
+        mov     bx,di
+        sub     bx,OFFSET argspath
+        jmp     short fa_copy
+fa_names:
+        pop     ds
+        mov     si,OFFSET argsname
+        lea     di,[argspath+bx]
+fa_cat:
+        lodsb
+        mov     [di],al
+        inc     di
+        or      al,al
+        jnz     fa_cat
+        ret
 
 ;=====================================================================
 ; Output.  All of it goes through INT 21h, in whichever mode we happen
@@ -822,7 +1053,16 @@ msg_cbfree  db  'and the callback address freed',13,10,'$'
 msg_cbfreebad db 'the callback address would not free',13,10,'$'
 msg_state   db  '0305h: no state to save across a mode switch',13,10,'$'
 msg_statebad db '0305h answered something unexpected',13,10,'$'
+msg_p8      db  '  0300h INT 21h 4Bh - children, the way an extender starts them:',13,10,'$'
+msg_x16     db  'a 16-bit child ran, and 4Dh says it exited 6',13,10,'$'
+msg_x16bad  db  'a 16-bit child through 0300h did not run and come back',13,10,'$'
+msg_x32     db  'CMD.EXE ran through 0300h, over the bridge, and came back',13,10,'$'
+msg_x32bad  db  'CMD.EXE through 0300h did not run and come back',13,10,'$'
+msg_xcc     db  'a child ^C ended came back to us, and 4Dh says ^C',13,10,'$'
+msg_xccbad  db  'a child ^C ended did not come back to us',13,10,'$'
 msg_done    db  'DPMITEST done',13,10,'$'
+msg_ms      db  'INT 33h from protected mode reached the mouse driver',13,10,'$'
+msg_msbad   db  'INT 33h from protected mode did not reach the mouse driver',13,10,'$'
 msg_ok      db  '    OK   $'
 msg_fail    db  '    FAIL $'
 msg_crlf    db  13,10,'$'
@@ -847,6 +1087,14 @@ mem_hi      dw  0
 mem_lo      dw  0
 mem_hand_hi dw  0
 mem_hand_lo dw  0
+argspath    db  128 dup(0)
+cmdpath     db  128 dup(0)
+argsname    db  'ARGS.COM',0
+tail6       db  2,' 6',0Dh
+tailrem     db  7,' /C REM',0Dh
+tailD       db  3,' /D',0Dh
+hookpath    db  128 dup(0)
+hookname    db  'HOOKTEST.COM',0
 dos_seg     dw  0
 dos_sel     dw  0
 fhandle     dw  0

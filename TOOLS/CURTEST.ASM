@@ -54,6 +54,29 @@ have_cols:
 have_seg:
         mov     [vseg],ax
 
+;--- DOS's output goes to the SCREEN for the probes, whatever standard
+;--- output is.  They print through 21h/02h, which writes handle 1, and
+;--- a run with its output redirected to a file - the regression, every
+;--- time - put the X and the Z in the file and found nothing on the
+;--- screen: four FAILs that were never about the cursor.  So CON goes
+;--- onto handle 1 for the probes and the real one comes back before
+;--- anything is reported.
+        mov     ax,3D01h
+        mov     dx,OFFSET conname
+        int     21h
+        jc      no_con
+        mov     [conhdl],ax
+        mov     bx,1
+        mov     ah,45h                          ; standard output, kept
+        int     21h
+        jc      no_con
+        mov     [outhdl],ax
+        mov     bx,[conhdl]
+        mov     cx,1
+        mov     ah,46h                          ; CON on handle 1
+        int     21h
+no_con:
+
 ;=====================================================================
 ; Probe 1 - the BIOS moves the cursor, DOS writes a character.
 ;=====================================================================
@@ -129,6 +152,21 @@ have_seg:
         int     10h
         mov     [row3],dh
         mov     [col3],dl
+
+        ; the probes are over: standard output back as it was
+        mov     bx,[outhdl]
+        cmp     bx,-1
+        je      out_same
+        mov     cx,1
+        mov     ah,46h
+        int     21h
+        mov     bx,[outhdl]
+        mov     ah,3Eh
+        int     21h
+        mov     bx,[conhdl]
+        mov     ah,3Eh
+        int     21h
+out_same:
 
 ;=====================================================================
 ; Nothing is measured after this point, so it is safe to print.
@@ -333,6 +371,9 @@ msg_fail    db  '    FAIL $'
 msg_crlf    db  13,10,'$'
 
 cols        dw  80
+conname     db  'CON',0
+conhdl      dw  -1
+outhdl      dw  -1
 vseg        dw  0B800h
 got1        db  0
 got2        db  0

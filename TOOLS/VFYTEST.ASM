@@ -98,10 +98,16 @@ t1_next:
         inc     ebx
         jmp     short t1_lp
 t1_no:
-        call    bad
+        ; NOT A FAILURE: there is nothing here to test with.  The run
+        ; that has no DEVICE= line for TESTBLK.SYS is most runs - it is
+        ; commented out in CONFIG.SYS - and a report that says FAILED
+        ; every time teaches whoever reads it to skip the line.
+        mov     edx,OFFSET msg_skip
+        call    puts
         mov     edx,OFFSET msg_nodrv
         call    puts
-        jmp     wrapup
+        mov     ax,4C00h
+        int     21h
 t1_found:
         mov     [tstdrv],ebx
         mov     eax,ebx
@@ -634,8 +640,10 @@ msg_at      db  '    first difference at byte ','$'
 msg_sent    db  ': sent ','$'
 msg_got     db  ', got ','$'
 msg_crit    db  '    (a critical error was raised)',13,10,'$'
-msg_nodrv   db  13,10,'  No drive is served by a loaded block driver.',13,10
-            db  '  Uncomment DEVICE=\TESTBLK.SYS in CONFIG.SYS.',13,10,'$'
+msg_skip    db  'skipped',13,10,'$'
+msg_nodrv   db  '  No drive is served by a loaded block driver, so VERIFY cannot',13,10
+            db  '  be tested: uncomment DEVICE=\TESTS\TESTBLK.SYS in CONFIG.SYS.',13,10
+            db  'VFYTEST: skipped',13,10,'$'
 msg_res     db  13,10,'Result: ','$'
 msg_crlf    db  13,10,'$'
 msg_pass    db  'VFYTEST: all checks passed',13,10,'$'

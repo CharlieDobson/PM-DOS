@@ -345,7 +345,17 @@ pb_tail     dd  0
 pb_fcb1     dd  0
 pb_fcb2     dd  0
 tail        db  2,' C',0Dh
-childpath   db  'C:\ALLOCTST.COM',0
+; THE CHILD IS THIS PROGRAM, AND IT MOVED.  v0.59 split the disk into
+; what SHIPS and what TESTS, and this file went to \TESTS with the
+; rest - but the path here still said the root, so "could not run the
+; child" has been the answer ever since and the second half of the
+; test has not run.  It reported a FAILURE rather than going quiet,
+; which is the only reason it was ever noticed.
+;
+; A test that names its own file by an absolute path has to be edited
+; when the file moves; the alternative is reading the program's own
+; path out of the environment, which is more machinery than one line.
+childpath   db  'C:\TESTS\ALLOCTST.COM',0
 
 msg_hi      db  13,10,'ALLOCTST - does a program''s memory come back?',13,10
             db  '(the leak is silent: it is a largest-free-block that shrinks)'

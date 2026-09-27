@@ -545,6 +545,102 @@ f36_bad:
         jmp     i21_ok                  ; 36h says no with FFFFh, not carry
 
 ;=====================================================================
+; 1Bh / 1Ch - the shape of a drive: 1Bh the current one, 1Ch the one
+; in DL (0 = current).
+;
+;   AL = sectors per cluster    CX = bytes per sector
+;   DX = clusters in all        DS:BX -> the media ID byte
+;
+; AL = FFh for a drive that is not there, and no carry - the CP/M-era
+; way of saying no, which 1Ch kept.  DS:BX points into this DOS, at the
+; volume record's own copy of the byte, as DOS pointed into its DPB.
+;=====================================================================
+fn1B:
+        xor     al,al
+        jmp     short f1C_which
+fn1C:
+        mov     al,byte ptr [bp+F_DX]
+f1C_which:
+        or      al,al
+        jnz     f1C_named
+        mov     al,[rd_drive]
+        inc     al
+f1C_named:
+        dec     al
+        call    rd_getvol
+        jc      f1C_bad
+        mov     al,[si+VOL_SPC]
+        mov     byte ptr [bp+F_AX],al
+        mov     word ptr [bp+F_CX],SECSIZE
+        mov     eax,dword ptr [si+VOL_CLUSTERS]
+        cmp     eax,0FFFFh
+        jbe     f1C_tot
+        mov     eax,0FFFFh
+f1C_tot:
+        mov     [bp+F_DX],ax
+        lea     ax,[si+VOL_MEDIA]
+        mov     [bp+F_BX],ax
+        mov     [bp+F_DS],cs
+        jmp     i21_ok
+f1C_bad:
+        mov     byte ptr [bp+F_AX],0FFh
+        jmp     i21_ok
+
+;=====================================================================
+; 69h - the volume serial number, label and file system name, out of
+; the extended BPB in the boot sector.  AL = 0 get (BL = drive, 0 =
+; current; DS:DX -> info level word, serial dword, eleven-byte label,
+; eight-byte type).  AL = 1, set, is refused: nothing on this side of
+; the handover rewrites a boot sector.
+;=====================================================================
+fn69:
+        cmp     byte ptr [bp+F_AX],0
+        jne     f69_fn
+        mov     al,byte ptr [bp+F_BX]
+        or      al,al
+        jnz     f69_named
+        mov     al,[rd_drive]
+        inc     al
+f69_named:
+        dec     al
+        call    rd_getvol
+        jc      f69_drive
+        mov     eax,dword ptr [si+VOL_START]
+        push    es
+        push    cs
+        pop     es
+        mov     bx,OFFSET rd_datbuf
+        mov     cx,1
+        call    rd_rdsec
+        pop     es
+        jc      f69_access
+        mov     bx,26h                  ; FAT12/16's extended BPB
+        cmp     byte ptr [si+VOL_FATTYPE],32
+        jne     f69_bpb
+        mov     bx,42h                  ; FAT32's
+f69_bpb:
+        cmp     byte ptr [rd_datbuf + bx],29h
+        jne     f69_fn                  ; formatted before DOS 4: none to give
+        mov     es,[bp+F_DS]
+        mov     di,[bp+F_DX]
+        xor     ax,ax
+        cld
+        stosw                           ; info level 0
+        lea     si,[rd_datbuf + bx + 1]
+        mov     cx,4 + 11 + 8           ; serial, label, file system
+        rep     movsb
+        jmp     i21_ok
+f69_drive:
+        mov     ax,ERR_BADDRIVE
+        jmp     i21_fail
+f69_access:
+        mov     ax,ERR_ACCESS
+        jmp     i21_fail
+f69_fn:
+        mov     ax,ERR_FUNC
+        jmp     i21_fail
+
+;=====================================================================
 ; INT 25h / INT 26h - absolute disk read and write.
 ;
 ;   AL = drive, CX = sectors, DX = first sector, DS:BX = buffer

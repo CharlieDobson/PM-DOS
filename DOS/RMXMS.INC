@@ -88,7 +88,9 @@ RX_HMAMIN       EQU     0                       ; HIMEM s /HMAMIN, and zero is
 ; instruction, same untouched memory behind it.  So the page stays,
 ; for the reason it was chosen: the customer is a pager.
 RX_GRAN         EQU     1000h           ; every block starts on a page
-RX_PSLIST       EQU     40              ; dirty pages rx_poolscan names
+RX_PSMAX        EQU     40              ; dirty pages rx_poolscan names - not
+                                        ; RX_PSLIST: wasm folds case, and that
+                                        ; name is the table rx_pslist
 
 RXH_FLAGS       EQU     0               ; dw - 0 free, 1 allocated
 RXH_KB          EQU     2               ; dd - size as the owner asked for it
@@ -1912,11 +1914,11 @@ pf_check:
 pf_bad:
         mov     edi,ebx
         mov     edx,eax
-        jmp     short pf_out
+        jmp     short pfs_out
 pf_ok:
         mov     edi,0FFFFFFFFh
         xor     edx,edx
-pf_out:
+pfs_out:
         pop     ebp                     ; and these put the real-mode
         pop     esi                     ; limits back
         pop     ebx
@@ -1967,7 +1969,7 @@ rx_poolscan:
         ; pointer - there are none spare in there, and DS is flat, so
         ; the loop could not reach this data anyway.
         mov     bx,OFFSET rx_pslist
-        mov     cx,RX_PSLIST
+        mov     cx,RX_PSMAX
         mov     esi,[rx_base]
 psl_loop:
         push    cx
@@ -2074,7 +2076,7 @@ rx_psshow:
 
         ; the map itself, eight to a row, on the three rows above
         mov     si,OFFSET rx_pslist
-        mov     cx,RX_PSLIST
+        mov     cx,RX_PSMAX
         mov     di,19*160
         xor     bp,bp
 pss_loop:
@@ -2215,7 +2217,7 @@ rx_ptflg    db  0                       ; found - see rdbg_xpt
 rx_psn      dd  0                       ; rx_poolscan: pages that lost
 rx_psfirst  dd  0                       ; their stamp, and the first and
 rx_pslast   dd  0                       ; last of them
-rx_pslist   dd  RX_PSLIST dup (0)        ; and where the first of them are
+rx_pslist   dd  RX_PSMAX dup (0)        ; and where the first of them are
 ENDIF
 rx_hmaown   db  0                       ; the HMA, when this image is low
 rx_a20cnt   dw  0                       ; local enables outstanding

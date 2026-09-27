@@ -76,6 +76,19 @@ DBG_BUFLEN      EQU     DBG_BUFSEC * 512
 DBG_LBA         EQU     1               ; between the MBR and the first
                                         ; partition, which starts at 63
 
+; WHERE THE THREE BUFFERS ARE: below the arena, at DBG_MEM, which
+; PMDOS.INC sets aside in a kernel built with DBG_LPT.  They were at
+; the end of this file, as 40,192 zeros in an image the stub blits 64K
+; of, and the day PMIO's own code passed 24K every trace build stopped
+; at the size check.  Nothing loads this memory, so dbg_init clears it.
+DBG_NAMEAT      EQU     DBG_MEM
+DBG_RINGAT      EQU     DBG_NAMEAT + DBG_NAMES * DBG_NAMELEN
+DBG_TEXTAT      EQU     DBG_RINGAT + DBG_RING * DBG_ENT
+DBG_MEMUSED     EQU     DBG_TEXTAT + DBG_BUFLEN - DBG_MEM
+IF DBG_MEMUSED GT DBG_MEMLEN
+        .ERR    DBG_MEMLEN in PMDOS.INC is too small for the trace
+ENDIF
+
 ;---------------------------------------------------------------------
 ; dbg_init - start the buffer.  There is no hardware to find.
 ;---------------------------------------------------------------------
@@ -87,6 +100,11 @@ dbg_init:
         mov     dword ptr ds:[dbg_blen],0
         mov     dword ptr ds:[dbg_age],0
         mov     byte ptr ds:[dbg_dumped],0
+        mov     edi,DBG_MEM
+        xor     eax,eax
+        mov     ecx,DBG_MEMLEN / 4
+        cld
+        rep     stosd
         popad
         ret
 
@@ -101,7 +119,7 @@ dbg_out:
         mov     edi,dword ptr ds:[dbg_blen]
         cmp     edi,DBG_BUFLEN
         jae     dbg_out9
-        add     edi,OFFSET dbg_buf
+        add     edi,DBG_TEXTAT
         mov     [edi],al
         inc     dword ptr ds:[dbg_blen]
 dbg_out9:
@@ -122,7 +140,7 @@ dbg_flush:
         mov     al,80h
         mov     ebx,DBG_LBA
         mov     cx,DBG_BUFSEC
-        mov     edi,OFFSET dbg_buf
+        mov     edi,DBG_TEXTAT
         call    blk_write
         popad
         ret
@@ -215,7 +233,7 @@ dbg_rec:
         mov     edi,dword ptr ds:[dbg_head]
         and     edi,DBG_MASK
         imul    edi,DBG_ENT
-        add     edi,OFFSET dbg_ringbuf
+        add     edi,DBG_RINGAT
         mov     eax,[ebp+FR_EIP]
         mov     word ptr [edi+DBGE_IP],ax
         mov     ebx,[ebp+FR_CS]
@@ -269,7 +287,7 @@ dbg_rec2:
         ; The guest is still asking the machine things, so the
         ; watchdog's clock goes back to zero.  It only fires when this
         ; line has not run for five seconds.
-        mov     dword ptr ds:[v86_watch],0
+        mov     dword ptr ds:[v86_wtick],0
 
         ; ...and if that was EXEC, the name as well.  Rare enough that
         ; reading the guest's own memory here costs nothing over a boot.
@@ -313,7 +331,7 @@ dbg_exec:
         mov     edi,dword ptr ds:[dbg_nhead]
         and     edi,DBG_NAMES - 1
         imul    edi,DBG_NAMELEN
-        add     edi,OFFSET dbg_nametab
+        add     edi,DBG_NAMEAT
         mov     ecx,DBG_NAMELEN - 1
 dbg_ex1:
         lodsb
@@ -365,7 +383,7 @@ dbg_dn1:
         mov     esi,ebx
         and     esi,DBG_NAMES - 1
         imul    esi,DBG_NAMELEN
-        add     esi,OFFSET dbg_nametab
+        add     esi,DBG_NAMEAT
         mov     al,' '
         call    dbg_out
         call    dbg_str
@@ -393,7 +411,7 @@ dbg_dr1:
         mov     esi,ebx
         and     esi,DBG_MASK
         imul    esi,DBG_ENT
-        add     esi,OFFSET dbg_ringbuf
+        add     esi,DBG_RINGAT
         movzx   eax,byte ptr [esi+DBGE_VEC]
         call    dbg_hex8
         mov     al,'/'
@@ -455,9 +473,6 @@ dbg_mage        db      '  ticks ',0
 dbg_mnames      db      'EXEC:',13,10,0
 dbg_mring       db      'RING (vec/cs:ip.ax), oldest first:',13,10,0
 dbg_mtail       db      '== end ==',13,10,0
-dbg_nametab     db      DBG_NAMES * DBG_NAMELEN dup (0)
-dbg_ringbuf     db      DBG_RING * DBG_ENT dup (0)
-dbg_buf         db      DBG_BUFLEN dup (0)
 
 ; AND A GUARD, BECAUSE THIS FILE ALREADY FELL INTO IT ONCE.  The
 ; buffer was called dbg_ring, the count of entries in it was called

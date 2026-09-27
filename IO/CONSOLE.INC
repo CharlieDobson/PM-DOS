@@ -25,6 +25,11 @@
 ; page is live and at what offset, and following it means a guest that
 ; flips to page 1 gets kernel output on the page it is looking at.
 ;
+; THE MOUSE CURSOR is taken off the screen for the length of every call
+; here that touches video memory, and put back after (ms_conhide and
+; ms_conshow in MOUSE.INC).  A program drawing through 21h/F0h therefore
+; never writes over it, reads it back as a character, or scrolls it.
+;
 ; NOT handled, and known: a guest that leaves the screen in a GRAPHICS
 ; mode.  Text written by this driver then goes into the framebuffer as
 ; character cells and comes out as noise.  Doing better means routing
@@ -70,6 +75,7 @@ con_init:
 ;=====================================================================
 con_cls:
         pushad
+        call    ms_conhide              ; the mouse cursor is not a character
         call    con_sync
         mov     edi,[con_vbase]
         mov     ecx,[con_cols]
@@ -81,6 +87,7 @@ con_cls:
         mov     dword ptr [cur_row],0
         mov     dword ptr [cur_col],0
         call    con_curupd
+        call    ms_conshow
         popad
         ret
 
@@ -91,6 +98,7 @@ con_cls:
 con_out:
         pushad
         movzx   ebx,al
+        call    ms_conhide
         call    con_sync                ; where did the BIOS leave it?
 
         cmp     bl,13
@@ -142,6 +150,7 @@ co_tab1:
 co_upd:
         call    con_curupd
 co_out:
+        call    ms_conshow
         popad
         ret
 
@@ -382,6 +391,98 @@ con_getcur:
         call    con_sync
         mov     dh,byte ptr [cur_row]
         mov     dl,byte ptr [cur_col]
+        ret
+
+;=====================================================================
+; con_putcells - IOS_PUTCELLS.  ESI -> ECX character/attribute words,
+;                EBX = the first cell (row * columns + column).
+; con_getcells - IOS_GETCELLS.  The same, the other way: EDI <- cells.
+;
+; For a full-screen program at ring 3, which cannot reach video memory
+; and has no BIOS to ask: EDIT draws a whole screen in memory of its own
+; and hands over the rows that changed.  The cells go into the live
+; page as they are - no cursor movement, no scrolling, no control
+; characters - and the copy stops at the end of the screen rather than
+; running into the next page.  Reading them back is how such a program
+; keeps the screen it started on, to put it back when it leaves.
+;=====================================================================
+con_putcells:
+        pushad
+        call    ms_conhide
+        call    con_sync
+        call    cc_clip
+        jecxz   cpc_out
+        mov     edi,[con_vbase]
+        lea     edi,[edi+ebx*2]
+        cld
+        rep     movsw
+cpc_out:
+        call    ms_conshow
+        popad
+        ret
+
+con_getcells:
+        pushad
+        call    ms_conhide
+        call    con_sync
+        call    cc_clip
+        jecxz   cgc_out
+        mov     esi,[con_vbase]
+        lea     esi,[esi+ebx*2]
+        cld
+        rep     movsw
+cgc_out:
+        call    ms_conshow
+        popad
+        ret
+
+; cc_clip - ECX = as many of the ECX cells from EBX as are on the screen
+cc_clip:
+        push    eax
+        mov     eax,[con_cols]
+        imul    eax,[con_rows]
+        cmp     ebx,eax
+        jb      ccl_in
+        xor     ecx,ecx
+        pop     eax
+        ret
+ccl_in:
+        sub     eax,ebx
+        cmp     ecx,eax
+        jbe     ccl_ok
+        mov     ecx,eax
+ccl_ok:
+        pop     eax
+        ret
+
+;=====================================================================
+; con_curshape - IOS_CURSHAPE.  CH = the first scan line of the cursor
+;                (bit 5 set: no cursor at all), CL = the last, in the
+;                CRT controller's own terms - lines of the character
+;                cell as the current font has them.
+;
+; 40:60 IS LEFT ALONE.  A VGA BIOS keeps the CGA-style shape a program
+; ASKED for there (06h/07h) and emulates it into the real scan lines
+; (0Dh/0Eh on a 16-line font); writing the real ones into 40:60 would
+; hand the next DOS program that reads and restores it a cursor the
+; emulation then scales a second time.  The controller is the screen.
+;=====================================================================
+con_curshape:
+        pushad
+        call    con_sync
+        mov     edx,[con_crtcp]
+        mov     al,0Ah
+        out     dx,al
+        inc     edx
+        mov     al,ch
+        out     dx,al
+        dec     edx
+        mov     al,0Bh
+        out     dx,al
+        inc     edx
+        mov     al,cl
+        out     dx,al
+        popad
         ret
 
 ;=====================================================================

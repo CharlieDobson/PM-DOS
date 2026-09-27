@@ -908,21 +908,31 @@ ckr_have:
 ;   IDEDMA=AUTO     bus-master DMA if, and only if, the drive already
 ;                   has a transfer mode selected.  The default, and
 ;                   what an absent statement means.
-;   IDEDMA=ON       bus-master DMA in the best mode the drive offers,
-;                   selecting it if the BIOS did not.  Stops at UDMA 2.
-;   IDEDMA=UDMA2    that mode exactly, if the drive claims it.  Also
-;                   UDMA0, UDMA1, MWDMA0, MWDMA1 and MWDMA2.
+;   IDEDMA=ON       bus-master DMA in the best mode the drive, the
+;                   host and the cable will all carry, selecting it if
+;                   the BIOS did not.
+;   IDEDMA=UDMA5    that mode, or the nearest one under it that the
+;                   drive, the host and the cable all carry.  UDMA0 to
+;                   UDMA6.
+;   IDEDMA=MWDMA2   that mode exactly, if the drive claims it.  Also
+;                   MWDMA0 and MWDMA1.
 ;
 ; WHY THE DEFAULT IS THE CAUTIOUS ONE, when this kernel's habit is to
 ; do the work rather than ask: a transfer mode is two settings that
 ; must agree, and only one of them is standardised.  SET FEATURES
 ; tells the DRIVE how fast to talk; how fast the CONTROLLER listens is
-; a timing register that every chipset spells differently and that
-; PM-DOS does not know how to write.  The BIOS programmed both at POST
-; and made them match.  AUTO means "use what they agreed on"; ON and a
-; named mode mean "I know my machine", which is a thing a user may
-; well know and the kernel cannot.  See ata_pickdma, which is where
-; the argument is made in full.
+; a timing register that every chipset spells differently, and PM-DOS
+; can write Intel's and VIA's and nobody else's (IO\IDEHOST.INC).  The
+; BIOS programmed both at POST and made them match.  AUTO means "use
+; what they agreed on".  ON means "do better if you can", and on a
+; host whose timing the kernel cannot write that is never faster than
+; the BIOS was seen to go, or Ultra DMA 2.  A named mode on such a
+; host means "I know my machine", which is a thing a user may well
+; know and the kernel cannot.  See ata_pickdma and ata_limit.
+;
+; PAST UDMA2 THE CABLE DECIDES, whatever this line says: 66, 100 and
+; 133 need eighty conductors, and on forty the mode is UDMA2.  See
+; IDECABLE= below.
 ;
 ; A failed bus-master transfer takes that disk off DMA for the rest of
 ; the session and does the transfer again by PIO, so getting this
@@ -973,6 +983,50 @@ cid_auto:
 cid_best:
         mov     ax,0200h
 cid_go:
+        xor     ebx,ebx
+        call    dword ptr ds:[IOS_ATACFG]
+        ret
+
+;---------------------------------------------------------------------
+; IDECABLE=AUTO|40|80 - what the IDE channels are wired with.
+;
+; Ultra DMA past mode 2 needs the 80-conductor cable, and AUTO - the
+; default - finds out which is fitted: from what the BIOS did, from
+; the host adapter, and from the drives.  See ata_cables for who is
+; believed over whom.
+;
+; THE OTHER TWO ARE FOR WHEN IT FINDS OUT WRONG, and it can in either
+; direction.  A board with no capacitor on the detect pin has drives
+; that say 80 to a 40-conductor cable; a BIOS that never filled in
+; the host's register has a host that says 40 to an 80.  IDECABLE=40
+; holds every drive to UDMA2; IDECABLE=80 says the cable is there.
+; It is both channels at once, because a machine with one kind of
+; cable on each is rarer than a line of CONFIG.SYS is worth.
+;
+; Saying 80 to a cable that is not costs speed and not data: a burst
+; that arrives damaged fails its CRC, the drive throws it away, and
+; ata_slower brings the mode down and does the transfer again.
+;---------------------------------------------------------------------
+cfg_idecable:
+        cmp     byte ptr [esi],0        ; a bare "IDECABLE=" is AUTO
+        je      cic_auto
+        mov     edi,OFFSET cfgw_auto
+        call    cfg_iskw
+        jnc     cic_auto
+        mov     edi,OFFSET cfgw_40
+        call    cfg_iskw
+        jnc     cic_40
+        mov     edi,OFFSET cfgw_80
+        call    cfg_iskw
+        jc      cfg_badparm
+        mov     ax,0202h
+        jmp     short cic_go
+cic_40:
+        mov     ax,0102h
+        jmp     short cic_go
+cic_auto:
+        mov     ax,0002h
+cic_go:
         xor     ebx,ebx
         call    dword ptr ds:[IOS_ATACFG]
         ret
@@ -1912,6 +1966,7 @@ cfg_table:
         dd      OFFSET cfgn_keyrate, OFFSET cfg_keyrate
         dd      OFFSET cfgn_idedma,  OFFSET cfg_idedma
         dd      OFFSET cfgn_ide32,   OFFSET cfg_ide32
+        dd      OFFSET cfgn_idecbl,  OFFSET cfg_idecable
         dd      OFFSET cfgn_cdrom,   OFFSET cfg_cdrom
         dd      OFFSET cfgn_cache,   OFFSET cfg_cache
 
@@ -1947,6 +2002,7 @@ cfgn_ems      db  'EMS',0
 cfgn_keyrate  db  'KEYRATE',0
 cfgn_idedma   db  'IDEDMA',0
 cfgn_ide32    db  'IDE32',0
+cfgn_idecbl   db  'IDECABLE',0
 cfgn_cdrom    db  'CDROM',0
 cfgn_cache    db  'CACHE',0
 cfgn_nulltrp  db  'NULLTRAP',0
@@ -1987,20 +2043,30 @@ cfgw_high     db  'HIGH',0
 cfgw_low      db  'LOW',0
 
 ;--- the transfer modes IDEDMA= will name, and the byte SET FEATURES
-;--- takes for each.  UDMA stops at 2 because mode 3 and up need an
-;--- 80-conductor cable, and asking a machine of this era what cable
-;--- it has is a question it answers wrongly often enough to matter.
+;--- takes for each.  UDMA3 and up are 44, 66, 100 and 133 megabytes a
+;--- second and need an 80-conductor cable; naming one does not excuse
+;--- the machine from having it.
 cfgw_udma0    db  'UDMA0',0
 cfgw_udma1    db  'UDMA1',0
 cfgw_udma2    db  'UDMA2',0
+cfgw_udma3    db  'UDMA3',0
+cfgw_udma4    db  'UDMA4',0
+cfgw_udma5    db  'UDMA5',0
+cfgw_udma6    db  'UDMA6',0
 cfgw_mwdma0   db  'MWDMA0',0
 cfgw_mwdma1   db  'MWDMA1',0
 cfgw_mwdma2   db  'MWDMA2',0
+cfgw_40       db  '40',0
+cfgw_80       db  '80',0
 
 cfg_idemodes:
         dd      OFFSET cfgw_udma0,  040h
         dd      OFFSET cfgw_udma1,  041h
         dd      OFFSET cfgw_udma2,  042h
+        dd      OFFSET cfgw_udma3,  043h
+        dd      OFFSET cfgw_udma4,  044h
+        dd      OFFSET cfgw_udma5,  045h
+        dd      OFFSET cfgw_udma6,  046h
         dd      OFFSET cfgw_mwdma0, 020h
         dd      OFFSET cfgw_mwdma1, 021h
         dd      OFFSET cfgw_mwdma2, 022h
@@ -2060,4 +2126,13 @@ cfg_bad     db  0                       ; whether the read failed at all
 cfg_over    db  0                       ; and whether there was more of it
 cfg_extra   db  0                       ; the one byte that answers that
 cfg_line_buf db CFG_LINE_MAX dup(0)
-cfg_buf     db  CFG_BUF_SIZE + 1 dup(0)
+; Below the arena and not in the file - see KBSS_BASE in PMDOS.INC.
+_DOS    ENDS
+_KBSS   SEGMENT
+cfg_buf     db  CFG_BUF_SIZE + 1 dup(?)
+            db  3 dup(?)                ; what follows starts on a dword
+IF ($ - kbss_start) AND 3
+        .ERR    what follows cfg_buf in _KBSS is not on a dword
+ENDIF
+_KBSS   ENDS
+_DOS    SEGMENT

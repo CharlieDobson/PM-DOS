@@ -41,7 +41,10 @@
 ;   2  at least one ATA disk was found - without one there is nothing
 ;      here to test, and the program says so rather than failing
 ;   3  every device's flags are self-consistent: no DMA without an
-;      engine to do it and a mode to do it in
+;      engine to do it and a mode to do it in, no mode the drive does
+;      not offer, none past Ultra DMA 2 without the 80-conductor
+;      cable, and - where PM-DOS chose the mode and can read the
+;      host's timing - a host that was timed to match
 ;   4  a DOS drive letter belongs to one of those disks
 ;   5  INT 25h reads a sector of it
 ;   6  the same sector read twice is the same sector
@@ -134,7 +137,8 @@ t2_done:
 ;
 ; DMA claimed with no engine, or with no mode selected, would mean the
 ; driver had talked itself into something; so would 32-bit PIO on a
-; device that is not there.
+; device that is not there.  mode_ok holds the mode itself to the
+; drive, the cable and the host.
 ;=====================================================================
         mov     edx,OFFSET msg_t3
         call    puts
@@ -162,8 +166,10 @@ t3_check:                                       ; rule has to hold for it
         jz      t3_next
         cmp     dword ptr [devbm],0     ; DMA with no engine
         je      t3_wrong
-        cmp     dword ptr [devmode],0   ; DMA in no mode
+        cmp     byte ptr [devmode],0    ; DMA in no mode
         je      t3_wrong
+        call    mode_ok
+        jc      t3_wrong
         jmp     short t3_next
 t3_wrong:
         mov     byte ptr [t3bad],1
@@ -547,8 +553,100 @@ rep_pol:
         shr     eax,28
         and     eax,0Fh
         call    pdec
+        mov     edx,OFFSET msg_pol3
+        call    puts
+        mov     eax,[ctlflags]
+        shr     eax,18
+        and     eax,03h
+        call    pdec
         mov     edx,OFFSET msg_crlf
         call    puts
+
+        ; whose timing registers these are, if PM-DOS writes them
+        test    dword ptr [ctlflags],00020000h
+        jz      rep_done
+        mov     eax,[ctlflags]
+        shr     eax,8
+        and     eax,0Fh
+        mov     edx,OFFSET msg_hnone
+        jz      rep_host
+        mov     edx,OFFSET msg_hpiix
+        cmp     eax,1
+        je      rep_top
+        mov     edx,OFFSET msg_hich
+        cmp     eax,2
+        je      rep_top
+        mov     edx,OFFSET msg_hvia
+rep_top:
+        call    puts
+        mov     eax,[ctlflags]
+        shr     eax,12
+        and     eax,0Fh
+        mov     edx,OFFSET msg_hnoudma
+        cmp     eax,0Fh
+        je      rep_host
+        mov     edx,OFFSET msg_hupto
+        call    puts
+        call    pdec
+        mov     edx,OFFSET msg_crlf
+rep_host:
+        call    puts
+rep_done:
+        ret
+
+;=====================================================================
+; mode_ok - devflags, devmode and ctlflags describe a device that is
+;           on DMA.  CF set if the mode it is in is one it should not
+;           have been given.
+;
+; The host is only held to a mode PM-DOS chose.  One the BIOS chose
+; is the BIOS's business: it knows its board, and a table in the
+; kernel that disagrees with it is the table's mistake.
+;=====================================================================
+mode_ok:
+        push    eax
+        push    ecx
+        mov     al,byte ptr [devmode]
+        movzx   ecx,al
+        and     ecx,07h                 ; ECX = the mode, as a number
+        and     al,0F8h
+        cmp     al,40h
+        jne     mo_yes                  ; multiword: nothing more to ask
+
+        movzx   eax,byte ptr [devflags+3]
+        bt      eax,ecx
+        jnc     mo_no                   ; the drive never offered it
+
+        cmp     ecx,2
+        jbe     mo_host
+        test    byte ptr [devflags+2],ATC_80
+        jz      mo_no                   ; past 2, on forty conductors
+
+mo_host:
+        test    byte ptr [devflags+1],ATI_OURS
+        jz      mo_yes
+        mov     eax,[ctlflags]
+        shr     eax,8
+        and     eax,0Fh
+        jz      mo_yes                  ; not a host PM-DOS times
+        mov     eax,[ctlflags]
+        shr     eax,12
+        and     eax,0Fh
+        cmp     eax,0Fh
+        je      mo_no                   ; Ultra DMA on a host with none
+        cmp     ecx,eax
+        ja      mo_no                   ; faster than the host goes
+        test    byte ptr [devflags+1],ATI_AGREES
+        jz      mo_no                   ; and the host was not told
+mo_yes:
+        pop     ecx
+        pop     eax
+        clc
+        ret
+mo_no:
+        pop     ecx
+        pop     eax
+        stc
         ret
 
 ;=====================================================================
@@ -618,11 +716,75 @@ rd_wide:
 rd_eol:
         mov     edx,OFFSET msg_crlf
         call    puts
+        call    report_how
 rd_next:
         inc     ebx
         jmp     short rd_lp
 rd_done:
         pop     ebx
+        ret
+
+;=====================================================================
+; report_how - a second line for the device in devflags and devmode:
+;              what went into choosing its mode.  Nothing is printed
+;              for a drive that does not do DMA at all.
+;=====================================================================
+report_how:
+        test    byte ptr [devflags+1],ATI_DMA
+        jz      rh_done
+        mov     edx,OFFSET msg_offers
+        call    puts
+        movzx   eax,byte ptr [devflags+3]
+        or      eax,eax
+        jnz     rh_udma
+        mov     edx,OFFSET msg_noudma
+        call    puts
+        jmp     short rh_bios
+rh_udma:
+        bsr     eax,eax
+        call    pdec
+rh_bios:
+        mov     edx,OFFSET msg_bios
+        call    puts
+        movzx   eax,byte ptr [devmode+1]
+        call    phex2
+
+        mov     edx,OFFSET msg_cbl40
+        test    byte ptr [devflags+2],ATC_80
+        jz      rh_cable
+        mov     edx,OFFSET msg_cbl80
+rh_cable:
+        call    puts
+        mov     al,byte ptr [devflags+2]
+        and     al,ATC_BY
+        mov     edx,OFFSET msg_byuser
+        cmp     al,ATC_BY_USER
+        je      rh_by
+        mov     edx,OFFSET msg_bybios
+        cmp     al,ATC_BY_BIOS
+        je      rh_by
+        mov     edx,OFFSET msg_byhost
+        cmp     al,ATC_BY_HOST
+        je      rh_by
+        mov     edx,OFFSET msg_bydrive
+        cmp     al,ATC_BY_DRIVE
+        je      rh_by
+        mov     edx,OFFSET msg_bynone
+rh_by:
+        call    puts
+
+        test    byte ptr [devflags+1],ATI_OURS
+        jz      rh_eol
+        mov     edx,OFFSET msg_ours
+        call    puts
+        test    byte ptr [devflags+1],ATI_AGREES
+        jz      rh_eol
+        mov     edx,OFFSET msg_agrees
+        call    puts
+rh_eol:
+        mov     edx,OFFSET msg_crlf
+        call    puts
+rh_done:
         ret
 
 which_drive:
@@ -791,6 +953,25 @@ msg_nobm    db  '    PCI, but no bus-master registers',13,10,'$'
 msg_bm      db  '    bus-master registers at ','$'
 msg_pol     db  '    IDEDMA policy ','$'
 msg_pol2    db  ', IDE32 policy ','$'
+msg_pol3    db  ', IDECABLE policy ','$'
+msg_hnone   db  '    host timing: left to the BIOS',13,10,'$'
+msg_hpiix   db  '    host timing: Intel PIIX','$'
+msg_hich    db  '    host timing: Intel ICH','$'
+msg_hvia    db  '    host timing: VIA','$'
+msg_hupto   db  ', up to UDMA ','$'
+msg_hnoudma db  ', no Ultra DMA',13,10,'$'
+msg_offers  db  '            offers UDMA ','$'
+msg_noudma  db  'none','$'
+msg_bios    db  ', BIOS left mode ','$'
+msg_cbl40   db  ', cable 40','$'
+msg_cbl80   db  ', cable 80','$'
+msg_byuser  db  ' (IDECABLE)','$'
+msg_bybios  db  ' (BIOS)','$'
+msg_byhost  db  ' (host)','$'
+msg_bydrive db  ' (drive)','$'
+msg_bynone  db  '$'
+msg_ours    db  ', mode set by PM-DOS','$'
+msg_agrees  db  ', host matches','$'
 msg_disk    db  '    disk N: ','$'
 msg_pkt     db  '    packet N: ','$'
 msg_mb      db  'MB, ','$'

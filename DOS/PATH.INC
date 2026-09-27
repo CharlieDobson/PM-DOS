@@ -402,11 +402,20 @@ rd_out:
 cwd_install:
         pushad
 
-        ; measure the dotted rendering first
+        ; measure the dotted rendering first - the REAL one.  64 bytes
+        ; is what 47h promises its caller, so 63 characters and a NUL
+        ; is the whole of the limit, and it is a limit on the TEXT and
+        ; never on the number of directories.  See names_len.
+        ; EAX IS THE INPUT - the directory's start cluster - and
+        ; names_len answers in it, so it is pushed rather than trusted.
         mov     ecx,[rp_cnt]
-        mov     edx,ecx                 ; separators (n-1, roughly) plus
-        imul    edx,13                  ; 12 chars max per component
-        cmp     edx,63
+        cmp     ecx,MAX_DEPTH
+        ja      ci_toolong
+        push    eax
+        mov     esi,OFFSET rp_names
+        call    names_len
+        cmp     eax,63
+        pop     eax
         ja      ci_toolong
 
         mov     [cwd_clus],eax
@@ -490,6 +499,69 @@ cs_comp_done:
 cs_term:
         mov     byte ptr [edi],0
         popad
+        ret
+
+;=====================================================================
+; names_len - how long names_string's answer WOULD be, in characters,
+;             not counting the NUL.  ESI -> 11-byte names, ECX = how
+;             many.  EAX = the length; everything else preserved.
+;
+; THIS EXISTS BECAUSE THE OLD MEASURE WAS A GUESS AND THE GUESS WAS
+; THE LIMIT.  cwd_install used to refuse a current directory by
+; computing "components times thirteen" and comparing that with 63 -
+; twelve characters plus a separator, the worst a component can be -
+; which made the ceiling FOUR directories deep whatever they were
+; called.  \A\B\C\D\E renders to nine characters and was refused as
+; sixty-five.
+;
+; A worst case is the right measure when the thing being protected is
+; a buffer being written NOW and the contents are not known yet.  Here
+; the contents are known - they are sitting in rp_names - so the only
+; reason to estimate was that nothing had been written to measure
+; them.  MEASURE WHAT YOU HAVE; ESTIMATE ONLY WHAT YOU CANNOT SEE.
+;=====================================================================
+names_len:
+        push    ebx
+        push    ecx
+        push    edx
+        push    esi
+        xor     eax,eax
+        or      ecx,ecx
+        jz      nl_done
+nl_comp:
+        xor     edx,edx                 ; the name part
+nl_n1:
+        cmp     edx,8
+        jae     nl_ext
+        cmp     byte ptr [esi+edx],' '
+        je      nl_ext
+        inc     eax
+        inc     edx
+        jmp     short nl_n1
+nl_ext:
+        cmp     byte ptr [esi+8],' '    ; an extension, and its dot
+        je      nl_sep
+        inc     eax
+        mov     edx,8
+nl_e1:
+        cmp     edx,11
+        jae     nl_sep
+        cmp     byte ptr [esi+edx],' '
+        je      nl_sep
+        inc     eax
+        inc     edx
+        jmp     short nl_e1
+nl_sep:
+        add     esi,11
+        dec     ecx
+        jz      nl_done
+        inc     eax                     ; the backslash between them
+        jmp     short nl_comp
+nl_done:
+        pop     esi
+        pop     edx
+        pop     ecx
+        pop     ebx
         ret
 
 ;=====================================================================

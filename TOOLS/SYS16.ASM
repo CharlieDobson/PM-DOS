@@ -3,7 +3,7 @@
 ;
 ;   SYS16 d:        transfer the PM-DOS system to drive d:
 ;
-; The same three jobs as the native CMD\SYS.ASM - boot sector, stage 2
+; The same three jobs as the native CMD\SYS\SYS.ASM - boot sector, stage 2
 ; and the three system files - done by a real-mode 16-bit .COM, so a
 ; PM-DOS disk can be built on any DOS machine instead of only on a
 ; machine that already has one.
@@ -83,8 +83,12 @@ sy_step:
         dec     cx
         jmp     short sy_skip
 sy_arg:
-        cmp     al,'/'                  ; /? and anything else switch-like
-        je      sy_usage
+        cmp     al,'/'
+        jne     sy_notsw
+        cmp     byte ptr [si+1],'?'     ; /? is a question and gets an
+        je      sy_help                 ; answer and an exit code of 0;
+        jmp     sy_usage                ; any other switch is a mistake
+sy_notsw:
         cmp     cx,2
         jb      sy_usage
         cmp     byte ptr [si+1],':'
@@ -240,8 +244,22 @@ sy_files:
         mov     si,OFFSET name_cmd
         mov     byte ptr [sys_attr],ATTR_ARCHIVE
         call    sy_copy
+        ; COMMAND.COM, the 16-bit interpreter DOS programs get, only if it
+        ; is there: without it the disk still boots and runs everything
+        ; but a DOS program that shells out.  SYS.COM treats it the same.
+        mov     byte ptr [cp_optional],1
+        mov     si,OFFSET name_c16
+        call    sy_copy
+        mov     byte ptr [cp_optional],0
 
         mov     si,OFFSET msg_done
+        call    sy_puts
+        mov     ax,4C00h
+        int     21h
+
+;--- help, which is not an error -------------------------------------
+sy_help:
+        mov     si,OFFSET msg_usage
         call    sy_puts
         mov     ax,4C00h
         int     21h
@@ -707,6 +725,12 @@ sc_nodst:
         int     21h
         jmp     short sc_die
 sc_nosrc:
+        cmp     byte ptr [cp_optional],0
+        je      sc_fatal
+        mov     si,OFFSET msg_skipped   ; an optional file: say so, go on
+        call    sy_puts
+        ret
+sc_fatal:
         mov     [err_ax],ax
         mov     si,OFFSET msg_nosrc
 sc_die:
@@ -897,7 +921,10 @@ sys_attr    db  0
 
 name_io     db  'PMIO.SYS',0
 name_dos    db  'PMDOS.SYS',0
-name_cmd    db  'COMMAND.COM',0
+name_cmd    db  'CMD.EXE',0
+name_c16    db  'COMMAND.COM',0
+cp_optional db  0
+msg_skipped db  '    (not there - skipped)',13,10,0
 tgt_path    db  'A:\'
             db  16 dup(0)
 src_dir     db  100 dup(0)              ; the directory SYS16 came from
@@ -914,9 +941,20 @@ msg_boot    db  '  boot sector',13,10,0
 msg_file    db  '  ',0
 msg_crlf    db  13,10,0
 msg_done    db  'System transferred',13,10,0
-msg_usage   db  'Usage: SYS16 d:',13,10
-            db  'Transfers PM-DOS to drive d: from the directory '
-            db  'SYS16.COM was run from.',13,10,0
+msg_usage   db  'Makes a PM-DOS boot disk from ordinary DOS.',13,10,13,10
+            db  '  SYS16 d:',13,10,13,10
+            db  '  d:   the drive to make bootable - any letter, not just '
+            db  'A: to D:',13,10,13,10
+            db  'PMIO.SYS, PMDOS.SYS, CMD.EXE and COMMAND.COM are taken from the',13,10
+            db  'directory SYS16.COM was run from.  The boot code is built INTO this '
+            db  'program,',13,10
+            db  'so it is only as current as the build that produced it.  The '
+            db  'target',13,10
+            db  'keeps its own BPB and its own FATs: format it first.',13,10,13,10
+            db  'Run it from real DOS.  Writing sector 0 from inside Windows '
+            db  'needs a',13,10
+            db  'volume lock this program does not take, and Windows will '
+            db  'refuse it.',13,10,0
 msg_baddrv  db  'Invalid drive specification',13,10,0
 msg_badbpb  db  'Not a disk this can write to - format it first',13,10,0
 msg_noroom  db  'No room for system on destination disk',13,10,0

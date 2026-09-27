@@ -121,6 +121,7 @@ pk_nofill:
         call    park_chaincut           ; ...and the memory that is about to
                                         ; stop existing
         call    park_fillhdr
+        call    park_savevecs           ; the IVT as the boxes left it
         call    park_go
 
         ; And we are back.
@@ -241,22 +242,34 @@ park_fromv86:
 park_filesopen:
         push    eax
         push    ebx
-        mov     ebx,5                   ; the standard five are devices
+        push    esi
+        ; From 3, and devices do not count.  The standard handles are
+        ; slots 0-2; 3 and 4 are ordinary slots and always were, and a
+        ; DOS box now holds AUX and PRN open in whichever slots they got
+        ; (JFT.INC) - a device has nothing on a disk to go stale while
+        ; Windows has the machine, which is the whole reason a FILE is a
+        ; reason to refuse.
+        mov     ebx,3
 pfo_loop:
         cmp     ebx,20
         jae     pfo_clear
         push    ebx
         call    sft_get                 ; -> ESI, CF if not open
         pop     ebx
-        jnc     pfo_busy
+        jc      pfo_next
+        test    dword ptr [esi+SFT_FLAGS],SFTF_DEVICE
+        jz      pfo_busy
+pfo_next:
         inc     ebx
         jmp     short pfo_loop
 pfo_clear:
+        pop     esi
         pop     ebx
         pop     eax
         clc
         ret
 pfo_busy:
+        pop     esi
         pop     ebx
         pop     eax
         stc
@@ -880,6 +893,12 @@ pfh_drives:
         mov     dword ptr [edi + RMH_XMSBASE],eax
         mov     eax,dword ptr [park_xmslen]
         mov     dword ptr [edi + RMH_XMSLEN],eax
+
+        ; Where the DOS vector stubs are, so that RMDOS can go in under
+        ; a program that hooked one rather than over it - see rd_vecs.
+        movzx   eax,word ptr ds:[dvs_seg]
+        shl     eax,16                  ; offset 0
+        mov     dword ptr [edi + RMH_STUBS],eax
 IFDEF DBG_LPT
         ; The two spare header dwords, carrying the ownership probe.
         ; Largest and total are both known to be 512 bytes in the case
@@ -917,7 +936,22 @@ pfh_flags:
         ; sector RMDOS could find, so it is simply not there on the
         ; other side.  Saying so is better than handing over a number
         ; that names a real disk by accident.
-        test    byte ptr [esi+DRV_FLAGS],DRVF_DRIVER
+        ;
+        ; AND THAT IS TRUE OF A CD-ROM AND OF A MOUNTED IMAGE TOO, and
+        ; for the CD it has been true since the day CDs arrived and
+        ; was not said.  DRV_BIOS on a DRVF_CDROM row holds an ATAPI
+        ; UNIT NUMBER - unit 0 is the first drive in the machine - and
+        ; handing that over as a BIOS drive told RMDOS that the CD's
+        ; letter was drive 00h, which is the FIRST FLOPPY.  Exactly the
+        ; accident this comment was written about, one flag short of
+        ; being caught by it.  A mounted image would have been the
+        ; same: its DRV_BIOS is C0h and means nothing to a real BIOS.
+        ;
+        ; The general form, since this is the second time: A FLAG THAT
+        ; CHANGES WHAT DRV_BIOS MEANS HAS TO BE NAMED EVERYWHERE THAT
+        ; READS DRV_BIOS.  There are four of them now, and three of
+        ; them are exceptions.
+        test    byte ptr [esi+DRV_FLAGS],DRVF_DRIVER OR DRVF_CDROM OR DRVF_IMAGE
         jz      pfh_notdrv
         xor     al,al
 pfh_notdrv:
@@ -1142,9 +1176,14 @@ park_recover:
         pushad
         call    park_chainjoin          ; upper memory exists again
 
-        ; The DOS vectors a guest reflects through.  RMDOS pointed them
-        ; at itself, and itself is about to be freed.
-        call    vdm_stubs
+        ; The DOS vectors, AS THEY WERE: RMDOS took the ones still
+        ; pointing at PM-DOS's stubs and wrote a jump into the stub of
+        ; every one a program had hooked (rd_vecs).  Both halves go
+        ; back - the table from the copy taken before the park, and the
+        ; stubs by planting them again - and a TSR loaded in a box
+        ; before Windows is still hooked after it.  This used to plant
+        ; fresh stubs in the table, which unhooked it.
+        call    park_restvecs
 
         ; Every volume, again.  RMDOS has been writing to these disks
         ; and every FAT window and cluster cached up here describes the
@@ -1163,6 +1202,38 @@ park_recover:
         call    cache_dropall
         call    park_remount
 
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; park_savevecs / park_restvecs - the sixteen DOS vectors, 20h-2Fh,
+; copied aside before the park and put back after it, with the stubs
+; they may point at planted again.
+;---------------------------------------------------------------------
+IF RMS_STUBLEN NE DVS_LEN
+        .ERR    <RMDOS.INC's RMS_STUBLEN and PMDOS.INC's DVS_LEN disagree>
+ENDIF
+
+park_savevecs:
+        pushad
+        xor     al,al                   ; the mouse quiet, and INT 33h an
+        call    dword ptr ds:[IOS_MSPARK]       ; IRET, for the trip down
+        mov     esi,20h * 4
+        mov     edi,OFFSET park_ivt
+        mov     ecx,DVS_COUNT
+        rep     movsd
+        popad
+        ret
+
+park_restvecs:
+        pushad
+        mov     al,1                    ; the mouse started again
+        call    dword ptr ds:[IOS_MSPARK]
+        mov     esi,OFFSET park_ivt
+        mov     edi,20h * 4
+        mov     ecx,DVS_COUNT
+        rep     movsd
+        call    dvs_plant
         popad
         ret
 
@@ -1186,6 +1257,16 @@ park_recover:
 ; and very nearly the same bug, as the 4408 critical error v0.48 found
 ; on the way IN to Windows.  Both ends of the excursion now know that
 ; a drive which is not there is an answer and not a question.
+;
+; AND ONLY WHAT WAS MOUNTED IS MOUNTED AGAIN.  The walk used vol_select
+; to reach each letter, and vol_select MOUNTS one that is not mounted -
+; so an empty floppy drive was read twice on every unpark, every read
+; with the BIOS's retries behind it: ten failed reads in DOSBox-X's
+; log after each PARKTEST, and on a real machine the drive grinding
+; through its recalibrations every time Windows exits.  vol_swap
+; reaches the letter without mounting it.  A volume that was not
+; mounted has nothing cached to be wrong about, and vol_select mounts
+; it the first time anything asks, off whatever disk is there then.
 park_remount:
         push    eax
         push    ecx
@@ -1197,16 +1278,19 @@ pr_loop:
         cmp     cl,MAX_DRIVES
         jae     pr_done
         mov     al,cl
-        call    vol_select
+        call    vol_swap                ; this letter's state, no mount
         mov     byte ptr [fatsec_dirty],0
         mov     byte ptr [fat12_dirty],0
         mov     dword ptr [fatsec_lba],-1
         mov     dword ptr [sec_lba],-1
         mov     dword ptr [clusbuf_clus],-1
         mov     dword ptr [dc_curord],-1
+        cmp     byte ptr [fat_ok],0
+        je      pr_next                 ; never mounted: nothing to redo
         mov     byte ptr [fat_ok],0
         mov     al,cl
         call    vol_select              ; and mount it afresh
+pr_next:
         inc     cl
         jmp     short pr_loop
 pr_done:
@@ -1295,3 +1379,5 @@ park_a20     db  0                      ; the guest's emulated gate, which
                                         ; and then hand back
 park_psp     dw  0                      ; the guest process to resume, and
 park_iret    db  RMI_LEN dup(0)         ; the registers to resume it with
+             db  0,0
+park_ivt     dd  DVS_COUNT dup(0)       ; 20h-2Fh as the boxes left them

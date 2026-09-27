@@ -68,6 +68,22 @@ svc_table:
         dd      atapi_svcinfo   ; IOS_CDINFO
         dd      atapi_svcchg    ; IOS_CDCHG
         dd      atapi_svcpkt    ; IOS_CDPKT
+        dd      con_putcells    ; IOS_PUTCELLS
+        dd      con_getcells    ; IOS_GETCELLS
+        dd      con_curshape    ; IOS_CURSHAPE
+        dd      ms_setup        ; IOS_MSINIT
+        dd      box_hlt         ; IOS_MSHLT
+        dd      ms_exit         ; IOS_MSEXIT
+        dd      ms_r3chk        ; IOS_MSR3
+        dd      ms_wakeq        ; IOS_MSWAKE
+        dd      ms_inject       ; IOS_MSINJECT
+        dd      ms_i15          ; IOS_MSI15
+        dd      box_park        ; IOS_MSPARK
+        dd      bsv_call        ; IOS_BUS
+        dd      irq_hook        ; IOS_IRQHOOK
+        dd      irq_unhook      ; IOS_IRQUNHOOK
+        dd      pg_mapphys      ; IOS_MAPPHYS
+        dd      bsv_init        ; IOS_BUSINIT
 
 ;=====================================================================
 ; pm_entry - first instruction executed in 32-bit protected mode.
@@ -116,6 +132,9 @@ ENDIF
         call    pci_init                ; before blk_init, which probes the
                                         ; disks and asks each one how it
                                         ; would rather be talked to
+        call    irq_init                ; after pci_init: only a machine
+                                        ; with a PCI bus has a register
+                                        ; that says which lines are level
         call    blk_init
 IFDEF PMDOS_DEBUG
         mov     esi,OFFSET msgATA
@@ -128,6 +147,10 @@ IFDEF PMDOS_DEBUG
 ENDIF
 
         sti
+        call    ms_init                 ; the mouse, with the clock running:
+                                        ; a PS/2 one can take a second to
+                                        ; answer a reset, and a serial one
+                                        ; is found by waiting for it to talk
 
 ;--- sanity check PMDOS.SYS before handing over ----------------------
         mov     eax,dword ptr ds:[GV_DOSSIZE]
@@ -199,10 +222,10 @@ pic_init:
         out     PIC2_DATA,al
         call    io_delay
 
-        mov     al,0FCh                 ; leave IRQ0 and IRQ1 enabled
-        out     PIC1_DATA,al
+        mov     al,byte ptr ds:[GV_PICMASK]     ; IRQ 0 and 1: ms_init adds
+        out     PIC1_DATA,al                    ; the mouse to these later
         call    io_delay
-        mov     al,0FFh
+        mov     al,byte ptr ds:[GV_PICMASK+1]
         out     PIC2_DATA,al
         ret
 
@@ -236,6 +259,8 @@ panic_hlt:
 
 ;=====================================================================
         INCLUDE EXCEPT.INC
+        INCLUDE IRQ.INC          ; after EXCEPT.INC: whose interrupt it is
+        INCLUDE VPIC.INC         ; ...and the box, which is last in line
         INCLUDE PAGING.INC
         INCLUDE NULLTRAP.INC
         INCLUDE VM86.INC
@@ -244,11 +269,16 @@ IFDEF DBG_LPT
 ENDIF
         INCLUDE CONSOLE.INC
         INCLUDE KEYBD.INC
+        INCLUDE MOUSE.INC
         INCLUDE RMCALL.INC
         INCLUDE PCI.INC
+        INCLUDE IDEHOST.INC      ; after PCI.INC: a host's timing is in its
+                                 ; configuration space
         INCLUDE ATA.INC
         INCLUDE ATAPI.INC        ; after ATA.INC: it is built on its transport
         INCLUDE BLOCK.INC
+        INCLUDE VDS.INC          ; where a buffer physically is
+        INCLUDE BUS.INC          ; and the way in to all of it
 
 ;=====================================================================
 ; Data

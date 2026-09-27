@@ -316,19 +316,28 @@ static int build_floppy(int argc, char **argv)
     }
 
     /* ---- long-file-name test set (v0.11 read side) ----------------
-       Two long-named files sharing one content cluster, and a long-
-       named directory holding NESTED.TXT (same content again - a
-       read-only test disk can crosslink without a care).  This is
-       what LFNTEST.BAT chews on. */
+       Two long-named files and a long-named directory holding
+       NESTED.TXT, all three with the same content - each in a cluster
+       of its own.  v0.11 had them share one, on the grounds that a
+       read-only test disk can crosslink without a care; the disk is
+       not read-only, CHKDSK reports the cross-links, and deleting one
+       of the three would free the other two.  This is what
+       LFNTEST.BAT chews on. */
     {
         static const char content[] = "This file wears a long name.\r\n";
         int csize = (int)sizeof content - 1;
         int cclus = clus++;
+        int mclus = clus++;
+        int nestclus = clus++;
         int dclus = clus++;
         unsigned char *de, *dd;
 
-        memcpy(sec(DATALBA + (long)(cclus - 2)), content, csize);
-        fat12_set(fat, cclus, 0xFFF);
+        memcpy( sec( DATALBA + (long)( cclus - 2 ) ), content, csize );
+        memcpy( sec( DATALBA + (long)( mclus - 2 ) ), content, csize );
+        memcpy( sec( DATALBA + (long)( nestclus - 2 ) ), content, csize );
+        fat12_set( fat, cclus, 0xFFF );
+        fat12_set( fat, mclus, 0xFFF );
+        fat12_set( fat, nestclus, 0xFFF );
         fat12_set(fat, dclus, 0xFFF);
 
         /* The long-named fixtures stay in the ROOT whatever -dir left
@@ -349,7 +358,7 @@ static int build_floppy(int argc, char **argv)
         de = sec(ROOTLBA) + dirent * 32;
         memcpy(de, "MIXEDC~1TXT", 11);
         de[11] = 0x20; stamp(de);
-        put16(de + 26, (unsigned)cclus);
+        put16(de + 26, (unsigned)mclus);
         put32(de + 28, (unsigned long)csize);
         dirent++;
 
@@ -371,7 +380,7 @@ static int build_floppy(int argc, char **argv)
         dd[32 + 11] = 0x10; stamp(dd + 32);
         memcpy(dd + 64, "NESTED  TXT", 11);
         dd[64 + 11] = 0x20; stamp(dd + 64);
-        put16(dd + 64 + 26, (unsigned)cclus);
+        put16(dd + 64 + 26, (unsigned)nestclus);
         put32(dd + 64 + 28, (unsigned long)csize);
 
         printf("  + LFN test set: 2 long-named files, 1 long-named dir\n");
@@ -718,8 +727,12 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
     }
 
     /* ---- long-file-name test files (v0.11 read side) --------------
-       Same two names as the floppy, crosslinked onto the LAST file's
-       chain: no new clusters, just directory entries to read. */
+       Same two names as the floppy, each holding a copy of the LAST
+       file's data in clusters of its own.  v0.11 pointed both entries
+       at the last file's chain to save the space, which made every
+       disk this tool built one CHKDSK reports three cross-links on -
+       and one where deleting a test fixture frees a real file's
+       clusters, which FATREPL.PL had to learn to step around. */
     /* The long-named test files stay in the ROOT even when a -dir was
        the last thing on the command line: LFNTEST.BAT looks for them
        there, and they are read-side fixtures for the kernel rather
@@ -729,6 +742,41 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
         if (dirent + 6 <= maxent) {
             unsigned char *rb = rootbase;
             unsigned char *de;
+            unsigned long copyfirst[2];
+            int k;
+
+            for ( k = 0; k < 2; k++ ) {
+                unsigned long from = lastfirst, prevcopy = 0, next;
+
+                copyfirst[k] = clus;
+                for ( ;; ) {
+                    if ( clus >= nclus + 2 ) {
+                        fprintf( stderr, "disk full\n" );
+                        return 1;
+                    }
+                    memcpy( sec( datalba + ( clus - 2 ) * spc ),
+                            sec( datalba + ( from - 2 ) * spc ),
+                            (size_t)( spc * SECSIZE ) );
+                    if ( prevcopy && fat32 ) put32( fatp + prevcopy * 4, clus );
+                    if ( prevcopy && !fat32 ) put16( fatp + prevcopy * 2, (unsigned)clus );
+                    prevcopy = clus++;
+                    if ( fat32 ) {
+                        next = ( fatp[from * 4] | ( (unsigned long)fatp[from * 4 + 1] << 8 )
+                               | ( (unsigned long)fatp[from * 4 + 2] << 16 )
+                               | ( (unsigned long)fatp[from * 4 + 3] << 24 ) ) & 0x0FFFFFFFUL;
+                        if ( next >= 0x0FFFFFF8UL ) break;
+                    } else {
+                        next = fatp[from * 2] | ( (unsigned)fatp[from * 2 + 1] << 8 );
+                        if ( next >= 0xFFF8 ) break;
+                    }
+                    from = next;
+                }
+                if ( fat32 ) {
+                    put32( fatp + prevcopy * 4, 0x0FFFFFFFUL );
+                } else {
+                    put16( fatp + prevcopy * 2, 0xFFFF );
+                }
+            }
 
             de = rb + dirent * 32;
             dirent += lfn_chain(de, "Long File Name.txt",
@@ -736,8 +784,8 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
             de = rb + dirent * 32;
             memcpy(de, "LONGFI~1TXT", 11);
             de[11] = 0x20; stamp(de);
-            put16(de + 26, (unsigned)(lastfirst & 0xFFFF));
-            put16(de + 20, (unsigned)(lastfirst >> 16));
+            put16(de + 26, (unsigned)(copyfirst[0] & 0xFFFF));
+            put16(de + 20, (unsigned)(copyfirst[0] >> 16));
             put32(de + 28, (unsigned long)lastsize);
             dirent++;
 
@@ -747,8 +795,8 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
             de = rb + dirent * 32;
             memcpy(de, "MIXEDC~1TXT", 11);
             de[11] = 0x20; stamp(de);
-            put16(de + 26, (unsigned)(lastfirst & 0xFFFF));
-            put16(de + 20, (unsigned)(lastfirst >> 16));
+            put16(de + 26, (unsigned)(copyfirst[1] & 0xFFFF));
+            put16(de + 20, (unsigned)(copyfirst[1] >> 16));
             put32(de + 28, (unsigned long)lastsize);
             dirent++;
 

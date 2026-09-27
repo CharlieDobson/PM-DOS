@@ -49,7 +49,12 @@
 ; transfer is done again.  A machine whose chipset lies gets a slow
 ; disk rather than a wrong one.
 ;
-; Included by IOPM.ASM, after PCI.INC.
+; ULTRA DMA PAST MODE 2 - 66, 100 and 133 - NEEDS TWO THINGS MODE 2
+; DID NOT: a host that can be timed for it, which is IDEHOST.INC, and
+; an 80-conductor cable, which is ata_cables.  Without the cable the
+; mode is 2, whatever was asked for.  See ata_limit.
+;
+; Included by IOPM.ASM, after PCI.INC and IDEHOST.INC.
 ;=====================================================================
 
 ATA_MAXDEV      EQU     4               ; two channels, master + slave
@@ -72,6 +77,9 @@ ATA_ST_DRQ      EQU     08h
 ATA_ST_DF       EQU     20h
 ATA_ST_DRDY     EQU     40h
 ATA_ST_BSY      EQU     80h
+
+; Error register bits
+ATA_ER_ICRC     EQU     80h             ; an Ultra DMA burst failed its CRC
 
 ; Device control register (the separate control port)
 ATA_DC_NIEN     EQU     02h             ; stop the drive asserting IRQ
@@ -107,6 +115,9 @@ ATA_ID_LBA28    EQU     60 * 2          ; dword - LBA28 sector count
 ATA_ID_MWDMA    EQU     63 * 2          ; low byte supported, high selected
 ATA_ID_CMDSET   EQU     83 * 2          ; bit 10 = LBA48 supported
 ATA_ID_UDMA     EQU     88 * 2          ; low byte supported, high selected
+ATA_ID_CABLE    EQU     93 * 2          ; bits 15-14 = 01: the word is used,
+                                        ; and then bit 13 = the drive saw
+                                        ; 80 conductors
 ATA_ID_LBA48    EQU     100 * 2         ; qword - LBA48 sector count
 
 ; Per-device table entry
@@ -121,11 +132,20 @@ ATD_BM          EQU     10              ; word - bus-master base for this
 ATD_TOTAL       EQU     12              ; dword - total sectors
 ATD_DMA         EQU     16              ; byte - the transfer mode in force,
                                         ; as SET FEATURES spells it
-ATD_LEN         EQU     20
+ATD_UOFF        EQU     17              ; byte - the Ultra DMA modes the
+                                        ; drive offers, a bit each
+ATD_MOFF        EQU     18              ; byte - and the multiword ones
+ATD_CUR         EQU     19              ; byte - the mode it has selected
+ATD_ID          EQU     20              ; byte - ATI_*
+ATD_BIOS        EQU     21              ; byte - the mode the BIOS left it
+                                        ; in, which is ATD_CUR as it was
+                                        ; the first time anything looked
+ATD_LEN         EQU     24
 
-; ATDF_* live in PMDOS.INC, because F1h AL=0Ah publishes them: a
-; program asking how its disk is being talked to is told in these
-; bits, so they are an interface rather than a private note.
+; ATDF_*, ATI_* and ATC_* live in PMDOS.INC, because F1h AL=0Ah
+; publishes them: a program asking how its disk is being talked to is
+; told in these bits, so they are an interface rather than a private
+; note.
 ATDF_NODMA      EQU     0F7h            ; ATDF_DMA taken away again
 ATDF_NO32       EQU     0EFh            ; and ATDF_PIO32
 
@@ -245,6 +265,21 @@ ai_next:
         inc     ebx
         jmp     short ai_loop
 ai_done:
+        ; HOW EACH DEVICE WILL MOVE ITS DATA, and it is a second pass
+        ; because of the cable.  A cable belongs to a channel and the
+        ; drives on it are asked one at a time, so the master's mode
+        ; cannot be chosen until the slave has been heard from
+        call    ata_cables
+        mov     esi,OFFSET ata_devs
+        mov     ecx,ATA_MAXDEV
+ai_pick:
+        test    byte ptr [esi+ATD_FLAGS],ATDF_PRESENT OR ATDF_ATAPI
+        jz      ai_picked
+        call    ata_pickdma
+ai_picked:
+        add     esi,ATD_LEN
+        dec     ecx
+        jnz     ai_pick
 IFDEF ATA_DEBUG
         ; self-test: read LBA 0 back and show its signature word
         cmp     dword ptr [ata_count],0
@@ -467,11 +502,12 @@ aid_store:
         mov     byte ptr [ata_stage],'+'
         mov     [esi+ATD_TOTAL],eax
 
-        ; how this device's data will move.  It has to be decided here
-        ; and not in a later pass, because every input is in ata_idbuf
-        ; and the next IDENTIFY overwrites it
+        ; what the choice of a transfer mode will need.  It has to be
+        ; written down here, because every input is in ata_idbuf and
+        ; the next IDENTIFY overwrites it; the choice itself waits for
+        ; ata_init to have heard from the whole channel
+        call    ata_keepid
         call    ata_pickbm
-        call    ata_pickdma
         call    ata_pick32
 
         ; polled driver: tell the drive to keep its interrupt to itself
@@ -795,7 +831,8 @@ ata_bminit:
 
         mov     byte ptr [ata_bmok],1
 abi_none:
-        popad
+        call    ideh_probe                      ; and whether its timing is
+        popad                                   ; one PM-DOS can write
         ret
 
 ;=====================================================================
@@ -849,14 +886,21 @@ pbm_out:
 ;
 ; IDEDMA=ON and IDEDMA=<mode> do issue SET FEATURES, because a user
 ; who writes one of those has said something deliberate about their
-; own machine.  ON stops at UDMA mode 2 - 33 MB/s - which is the last
-; mode a 40-conductor cable carries, and so the last one that can be
-; chosen without asking a cable-detect question that hardware of this
-; era answers unreliably.
+; own machine.  What either may select is ata_limit's to say: the
+; host has a fastest mode and the cable has one, and no statement in
+; CONFIG.SYS outranks a wire.
+;
+; WHERE THE HOST IS ONE IDEHOST.INC KNOWS, ITS TIMING IS WRITTEN TOO,
+; and the two settings agree because the same routine set both.  That
+; is what lets ON go past mode 2.  On any other host the old bargain
+; stands: the drive is told, and the chipset's half is the user's.
+;
+; The drive's own account of itself is in its table entry by now -
+; ata_keepid put it there - and not in ata_idbuf, which by the time
+; this runs holds whichever device answered last.
 ;=====================================================================
 ata_pickdma:
         push    eax
-        push    ebx
         mov     byte ptr [esi+ATD_DMA],0
         and     byte ptr [esi+ATD_FLAGS],ATDF_NODMA
 
@@ -864,7 +908,7 @@ ata_pickdma:
         je      apd_out                 ; IDEDMA=OFF
         cmp     word ptr [esi+ATD_BM],0
         je      apd_out                 ; no engine on this channel
-        test    word ptr [ata_idbuf+ATA_ID_CAPS],0100h
+        test    byte ptr [esi+ATD_ID],ATI_DMA
         jz      apd_out                 ; the drive does not do DMA
 
         cmp     byte ptr [ata_dmapol],1
@@ -874,39 +918,420 @@ ata_pickdma:
 
         call    ata_bestmode            ; IDEDMA=ON
         jc      apd_out
-        jmp     short apd_select
+        jmp     short apd_limit
 apd_forced:
         mov     al,[ata_dmaforce]       ; IDEDMA=<mode>
-        call    ata_hasmode
+        call    ata_isudma              ; an Ultra DMA mode is a ceiling, and
+        jnc     apd_limit               ; ata_limit finds what is under it
+        call    ata_hasmode             ; a multiword one is itself or nothing
         jc      apd_out
-apd_select:
-        mov     bl,al
-        call    ata_setmode
-        jc      apd_out
-        mov     al,bl
-        jmp     short apd_take
+        jmp     short apd_limit
 apd_auto:
-        call    ata_curmode
+        mov     al,[esi+ATD_CUR]
         or      al,al
         jz      apd_out
+apd_limit:
+        call    ata_limit
+        jc      apd_out
+        cmp     al,[esi+ATD_CUR]        ; already there, and whoever put it
+        je      apd_take                ; there timed the host for it
+        call    ata_newmode
+        jc      apd_out
 apd_take:
         mov     [esi+ATD_DMA],al
         or      byte ptr [esi+ATD_FLAGS],ATDF_DMA
+        cmp     al,[esi+ATD_BIOS]       ; a probe after the one that changed
+        je      apd_out                 ; it finds the drive already there,
+        or      byte ptr [esi+ATD_ID],ATI_OURS  ; and it is still ours
 apd_out:
+        pop     eax
+        ret
+
+;=====================================================================
+; ata_limit - ESI = device, AL = the mode that is wanted.  -> AL = the
+;             fastest mode, no faster than that, which the host, the
+;             cable and the drive will all carry.  CF set if there is
+;             none.
+;
+; THE HOST FIRST.  One that IDEHOST.INC knows has a fastest mode and
+; that is the end of it.  One it does not know has been seen doing
+; exactly one thing - whatever the BIOS left selected - so under
+; IDEDMA=ON that, or mode 2, is as far as the kernel goes by itself.
+; A NAMED mode on a strange host is taken at the user's word, which is
+; what naming one has always meant.
+;
+; AUTO SKIPS THE HOST'S LIMIT, because under AUTO the mode wanted is
+; the mode the BIOS selected, and the BIOS knows its own board better
+; than a table does.
+;
+; THEN THE CABLE, AND NOBODY SKIPS THAT.  Past mode 2 the edges are
+; too fast for forty conductors: the forty extra wires of the other
+; cable are grounds, one between every pair of signals, and without
+; them a burst arrives with its CRC wrong.  So without them the mode
+; is 2.
+;
+; AND THE DRIVE LAST: the fastest mode it offers that is still under
+; all of that.  So a mode named in CONFIG.SYS is a ceiling three times
+; over, and IDEDMA=UDMA6 on a drive that stops at 5 is mode 5.
+;
+; A multiword mode is limited by none of them and goes back as it
+; came.
+;=====================================================================
+ata_limit:
+        push    ebx
+        push    ecx
+        push    edx
+        call    ata_isudma
+        jc      alm_ok
+        movzx   ecx,al
+        and     ecx,07h                 ; ECX = the mode, as a number
+
+        cmp     byte ptr [ata_dmapol],1
+        je      alm_cable
+        cmp     byte ptr [ideh_kind],IH_NONE
+        je      alm_stranger
+        movzx   edx,byte ptr [ideh_top]
+        cmp     edx,IH_NOUDMA
+        je      alm_mw
+        jmp     short alm_cap
+alm_stranger:
+        cmp     byte ptr [ata_dmapol],2
+        jne     alm_cable
+        mov     edx,2
+        mov     al,[esi+ATD_BIOS]
+        call    ata_isfast
+        jc      alm_cap
+        movzx   edx,al
+        and     edx,07h
+alm_cap:
+        cmp     ecx,edx
+        jbe     alm_cable
+        mov     ecx,edx
+
+alm_cable:
+        cmp     ecx,2
+        jbe     alm_drive
+        call    ata_chan
+        test    byte ptr [ata_cbl+ebx],ATC_80
+        jnz     alm_drive
+        mov     ecx,2
+
+alm_drive:
+        mov     edx,2
+        shl     edx,cl
+        dec     edx                     ; every mode up to this one
+        movzx   eax,byte ptr [esi+ATD_UOFF]
+        and     eax,edx
+        jz      alm_mw
+        call    ata_topbit
+        or      al,40h
+        jmp     short alm_ok
+alm_mw:
+        movzx   eax,byte ptr [esi+ATD_MOFF]
+        or      al,al
+        jz      alm_none
+        call    ata_topbit
+        or      al,20h
+alm_ok:
+        pop     edx
+        pop     ecx
+        pop     ebx
+        clc
+        ret
+alm_none:
+        pop     edx
+        pop     ecx
+        pop     ebx
+        stc
+        ret
+
+;=====================================================================
+; ata_newmode - ESI = device, AL = a mode.  Put the drive in it, and
+;               the host with it if the host is one that can be told.
+;               CF set if the drive refused, or if it must not be
+;               asked.  AL is preserved.
+;
+; THE ONE THAT MUST NOT BE ASKED is a drive coming down to mode 2 or
+; under, on a host nobody here can retime, which the BIOS timed for a
+; mode past 2.  Nothing comes down that far except for the cable's
+; sake, and the host would go on strobing its writes at the speed the
+; BIOS gave it, down the cable that has just been judged unable to
+; carry them.  The caller takes the refusal as "no DMA", and PIO needs
+; no timing from anybody.
+;
+; "The speed the BIOS gave it" is ATD_BIOS and not ATD_CUR, because on
+; such a host the timing is still whatever the BIOS wrote, however
+; many times the drive has been told otherwise since.
+;=====================================================================
+ata_newmode:
+        push    eax
+        push    ebx
+        mov     bl,al
+        cmp     byte ptr [ideh_kind],IH_NONE
+        jne     anm_go
+        mov     al,[esi+ATD_BIOS]
+        call    ata_isfast
+        jc      anm_go
+        mov     al,bl
+        call    ata_isfast
+        jc      anm_bad
+anm_go:
+        mov     al,bl
+        call    ata_setmode
+        jc      anm_bad
+        mov     [esi+ATD_CUR],bl
+        or      byte ptr [esi+ATD_ID],ATI_OURS
+
+        cmp     byte ptr [ideh_kind],IH_NONE
+        je      anm_ok
+        mov     al,bl
+        and     al,0F8h
+        cmp     al,40h
+        jne     anm_mw
+        mov     al,bl
+        and     al,07h
+        call    ideh_udma
+        jmp     short anm_ok
+anm_mw:
+        call    ideh_noudma
+anm_ok:
+        pop     ebx
+        pop     eax
+        clc
+        ret
+anm_bad:
+        pop     ebx
+        pop     eax
+        stc
+        ret
+
+;=====================================================================
+; ata_slower - ESI = device.  The drive has just thrown a burst away
+;              because its CRC was wrong.  Come down.
+;
+; A CRC ERROR IS THE WIRE'S FAULT AND NOT THE DISK'S, and it is the
+; one error Ultra DMA reports that loses nothing: the burst was
+; discarded, not stored.  It is also what a cable verdict that was
+; wrong looks like from here - a drive-side detect on a board with no
+; capacitor on the pin says 80 to everything.  So a fast mode comes
+; down to 2, where any cable will do, and a device already there
+; comes off DMA altogether; the caller does the transfer again.
+;=====================================================================
+ata_slower:
+        push    eax
+        mov     al,[esi+ATD_DMA]
+        call    ata_isfast
+        jc      asl_pio
+        movzx   eax,byte ptr [esi+ATD_UOFF]
+        and     al,07h
+        jz      asl_pio
+        call    ata_topbit
+        or      al,40h
+        call    ata_newmode
+        jc      asl_pio
+        mov     [esi+ATD_DMA],al
+        pop     eax
+        ret
+asl_pio:
+        and     byte ptr [esi+ATD_FLAGS],ATDF_NODMA
+        mov     byte ptr [esi+ATD_DMA],0
+        pop     eax
+        ret
+
+;=====================================================================
+; ata_cables - what is each channel wired with?  Fills in ata_cbl, a
+;              byte a channel: ATC_80 or not, and who said so.
+;
+; FOUR WITNESSES, IN THE ORDER THEY ARE BELIEVED.
+;
+;   The user, through IDECABLE=.  Every detection below can be wrong
+;   and this is how a machine where it is wrong is put right.
+;
+;   What the BIOS did.  If it left a drive on this channel in a mode
+;   past 2 then it looked at the cable - it is the BIOS's board, and
+;   it knows which pin to read - and it was satisfied.
+;
+;   What the host says, if it is a host with somewhere to say it.
+;   That is the BIOS's finding too, left in a register; a host that
+;   says 40 is believed over a drive that says 80.
+;
+;   What the drives say, in IDENTIFY word 93.  A drive can tell by
+;   timing how long the detect line takes to rise, but only against a
+;   capacitor the board was supposed to fit, so it is asked last.
+;   EITHER drive saying 80 will do: on many channels only one of the
+;   two gives a usable answer.
+;
+; And a channel nobody spoke for has forty conductors.
+;=====================================================================
+ata_cables:
+        pushad
+        xor     ebx,ebx                 ; EBX = channel
+acb_chan:
+        mov     dl,ATC_BY_USER
+        cmp     byte ptr [ata_cblpol],1
+        je      acb_store
+        mov     dl,ATC_BY_USER OR ATC_80
+        cmp     byte ptr [ata_cblpol],2
+        je      acb_store
+
+        mov     esi,ebx
+        imul    esi,ATD_LEN * 2
+        add     esi,OFFSET ata_devs     ; ESI = the channel's master
+
+        mov     dl,ATC_BY_BIOS OR ATC_80
+        mov     al,[esi+ATD_BIOS]
+        call    ata_isfast
+        jnc     acb_store
+        mov     al,[esi+ATD_LEN+ATD_BIOS]
+        call    ata_isfast
+        jnc     acb_store
+
+        mov     al,bl
+        call    ideh_cable
+        mov     dl,ATC_BY_HOST OR ATC_80
+        cmp     al,IHC_80
+        je      acb_store
+        mov     dl,ATC_BY_HOST
+        cmp     al,IHC_40
+        je      acb_store
+
+        mov     dl,ATC_BY_DRIVE OR ATC_80
+        mov     al,[esi+ATD_ID]
+        or      al,[esi+ATD_LEN+ATD_ID]
+        test    al,ATI_CBL80
+        jnz     acb_store
+        xor     dl,dl
+acb_store:
+        mov     [ata_cbl+ebx],dl
+        inc     ebx
+        cmp     ebx,2
+        jb      acb_chan
+        popad
+        ret
+
+;=====================================================================
+; ata_keepid - ESI = device, ata_idbuf = its IDENTIFY block.  Write
+;              down what choosing a transfer mode is going to need.
+;
+; WHAT THE BIOS LEFT IS KEPT THE FIRST TIME ONLY, and outside the
+; device table, which ata_init blanks.  ata_config probes again every
+; time a policy changes, and by the second probe "the mode selected"
+; may well be one PM-DOS selected itself - which says nothing about
+; the cable, or about what the host was timed for at POST.
+;=====================================================================
+ata_keepid:
+        push    eax
+        push    ebx
+        xor     eax,eax
+        mov     [esi+ATD_UOFF],al
+        mov     [esi+ATD_MOFF],al
+        mov     [esi+ATD_ID],al
+
+        test    word ptr [ata_idbuf+ATA_ID_CAPS],0100h
+        jz      aki_nodma
+        or      byte ptr [esi+ATD_ID],ATI_DMA
+aki_nodma:
+        test    word ptr [ata_idbuf+ATA_ID_VALID],4
+        jz      aki_noudma
+        mov     al,byte ptr [ata_idbuf+ATA_ID_UDMA]
+        and     al,7Fh                  ; modes 0 to 6
+        mov     [esi+ATD_UOFF],al
+aki_noudma:
+        test    word ptr [ata_idbuf+ATA_ID_VALID],2
+        jz      aki_nomw
+        mov     al,byte ptr [ata_idbuf+ATA_ID_MWDMA]
+        and     al,07h
+        mov     [esi+ATD_MOFF],al
+aki_nomw:
+        mov     ax,word ptr [ata_idbuf+ATA_ID_CABLE]
+        and     ax,0E000h
+        cmp     ax,6000h
+        jne     aki_nocable
+        or      byte ptr [esi+ATD_ID],ATI_CBL80
+aki_nocable:
+        call    ata_curmode
+        mov     [esi+ATD_CUR],al
+
+        call    ata_index               ; EBX = which of the four it is
+        cmp     byte ptr [ata_seen+ebx],0
+        jne     aki_seen
+        mov     byte ptr [ata_seen+ebx],1
+        mov     [ata_bios+ebx],al
+aki_seen:
+        mov     al,[ata_bios+ebx]
+        mov     [esi+ATD_BIOS],al
         pop     ebx
         pop     eax
         ret
 
 ;=====================================================================
-; ata_curmode - AL = the DMA mode already selected, or 0 for none.
-;               UDMA first: a drive with both selected is answering
-;               about two different things and the faster one wins.
+; ata_index - ESI = device -> EBX = its place in the table, 0 to 3.
+; ata_chan  - ESI = device -> EBX = its channel, 0 or 1.
+;=====================================================================
+ata_index:
+        push    eax
+        push    ecx
+        push    edx
+        mov     eax,esi
+        sub     eax,OFFSET ata_devs
+        xor     edx,edx
+        mov     ecx,ATD_LEN
+        div     ecx
+        mov     ebx,eax
+        pop     edx
+        pop     ecx
+        pop     eax
+        ret
+
+ata_chan:
+        call    ata_index
+        shr     ebx,1
+        ret
+
+;=====================================================================
+; ata_isudma - AL = a mode byte.  CF clear if it is an Ultra DMA mode.
+; ata_isfast - ...and one past 2, which needs the cable.
+;              AL is preserved by both.
+;=====================================================================
+ata_isudma:
+        push    eax
+        and     al,0F8h
+        cmp     al,40h
+        pop     eax
+        je      aiu_yes
+        stc
+        ret
+aiu_yes:
+        clc
+        ret
+
+ata_isfast:
+        push    eax
+        mov     ah,al
+        and     ax,0F807h
+        cmp     ah,40h
+        jne     aif_no
+        cmp     al,3
+        jb      aif_no
+        pop     eax
+        clc
+        ret
+aif_no:
+        pop     eax
+        stc
+        ret
+
+;=====================================================================
+; ata_curmode - AL = the DMA mode ata_idbuf says is selected, or 0 for
+;               none.  UDMA first: a drive with both selected is
+;               answering about two different things and the faster
+;               one wins.
 ;=====================================================================
 ata_curmode:
         test    word ptr [ata_idbuf+ATA_ID_VALID],4
         jz      acm_mw
         movzx   eax,byte ptr [ata_idbuf+ATA_ID_UDMA+1]
-        or      al,al
+        and     al,7Fh
         jz      acm_mw
         call    ata_topbit
         or      al,40h
@@ -915,7 +1340,7 @@ acm_mw:
         test    word ptr [ata_idbuf+ATA_ID_VALID],2
         jz      acm_none
         movzx   eax,byte ptr [ata_idbuf+ATA_ID_MWDMA+1]
-        or      al,al
+        and     al,07h
         jz      acm_none
         call    ata_topbit
         or      al,20h
@@ -925,24 +1350,21 @@ acm_none:
         ret
 
 ;=====================================================================
-; ata_bestmode - AL = the fastest mode the drive OFFERS, capped at
-;                UDMA 2.  CF set if it offers none.
+; ata_bestmode - ESI = device.  AL = the fastest mode the drive
+;                OFFERS, which is for ata_limit to bring down to one
+;                the machine can carry.  CF set if it offers none.
 ;=====================================================================
 ata_bestmode:
-        test    word ptr [ata_idbuf+ATA_ID_VALID],4
-        jz      abm_mw
-        movzx   eax,byte ptr [ata_idbuf+ATA_ID_UDMA]
-        and     al,07h                  ; modes 0, 1 and 2 only
+        movzx   eax,byte ptr [esi+ATD_UOFF]
+        or      al,al
         jz      abm_mw
         call    ata_topbit
         or      al,40h
         clc
         ret
 abm_mw:
-        test    word ptr [ata_idbuf+ATA_ID_VALID],2
-        jz      abm_none
-        movzx   eax,byte ptr [ata_idbuf+ATA_ID_MWDMA]
-        and     al,07h
+        movzx   eax,byte ptr [esi+ATD_MOFF]
+        or      al,al
         jz      abm_none
         call    ata_topbit
         or      al,20h
@@ -953,8 +1375,8 @@ abm_none:
         ret
 
 ;=====================================================================
-; ata_hasmode - AL = a mode byte.  CF clear if the drive says it can
-;               do that one.  AL is preserved.
+; ata_hasmode - ESI = device, AL = a mode byte.  CF clear if the drive
+;               says it can do that one.  AL is preserved.
 ;=====================================================================
 ata_hasmode:
         push    ecx
@@ -967,17 +1389,13 @@ ata_hasmode:
         shl     dl,cl                   ; DL = the bit that would say so
         cmp     ah,40h
         jne     ahm_mw
-        test    word ptr [ata_idbuf+ATA_ID_VALID],4
-        jz      ahm_no
-        test    byte ptr [ata_idbuf+ATA_ID_UDMA],dl
+        test    byte ptr [esi+ATD_UOFF],dl
         jz      ahm_no
         jmp     short ahm_yes
 ahm_mw:
         cmp     ah,20h
         jne     ahm_no
-        test    word ptr [ata_idbuf+ATA_ID_VALID],2
-        jz      ahm_no
-        test    byte ptr [ata_idbuf+ATA_ID_MWDMA],dl
+        test    byte ptr [esi+ATD_MOFF],dl
         jz      ahm_no
 ahm_yes:
         pop     edx
@@ -1317,7 +1735,8 @@ adr_drvfault:
 ;=====================================================================
 ; ata_config - IOS_ATACFG.  AL = 0 sets the DMA policy from AH (with
 ;              the mode byte in BL when AH = 3), AL = 1 sets the
-;              32-bit PIO policy from AH.
+;              32-bit PIO policy from AH, AL = 2 says what the cables
+;              are: AH = 0 find out, 1 forty conductors, 2 eighty.
 ;
 ; IT RE-RUNS THE WHOLE PROBE, and that is deliberate rather than
 ; lazy.  A policy does not change any fact about a device; it changes
@@ -1335,8 +1754,13 @@ ata_config:
         jmp     short acf_redo
 acf_p32:
         cmp     al,1
-        jne     acf_out
+        jne     acf_cable
         mov     [ata_32pol],ah
+        jmp     short acf_redo
+acf_cable:
+        cmp     al,2
+        jne     acf_out
+        mov     [ata_cblpol],ah
 acf_redo:
         call    ata_init
 acf_out:
@@ -1347,11 +1771,20 @@ acf_out:
 ; ata_info - IOS_ATAINFO.  AL = device index, or FFh for the
 ;            controller.
 ;
-;   a device:     EAX = ATDF_* flags, EBX = its engine's base port,
-;                 ECX = the transfer mode in force, EDX = sectors
+;   a device:     EAX = ATDF_* flags, with the ATI_* byte above them,
+;                 its channel's ATC_* cable byte above that and the
+;                 Ultra DMA modes the drive offers on top
+;                 EBX = its engine's base port
+;                 ECX = the transfer mode in force, and in the next
+;                 byte the mode the BIOS left it in
+;                 EDX = sectors
 ;   the whole:    EAX = disks found, EBX = PCI vendor:device,
 ;                 ECX = the engine's base, EDX = the prog-if byte,
+;                 bits 8-11 which host it is (IH_*, 0 = not one whose
+;                 timing PM-DOS writes), bits 12-15 that host's
+;                 fastest Ultra DMA mode or 0Fh for none,
 ;                 bit 16 PCI answered, bit 17 an engine was found,
+;                 bits 18-19 the cable policy,
 ;                 bits 24-27 the DMA policy, 28-31 the 32-bit one
 ;
 ; It exists because the report has to come from inside the kernel:
@@ -1367,8 +1800,33 @@ ata_info:
         jae     ain_bad
         imul    ebx,ATD_LEN
         add     ebx,OFFSET ata_devs
-        movzx   eax,byte ptr [ebx+ATD_FLAGS]
-        movzx   ecx,byte ptr [ebx+ATD_DMA]
+
+        ; does the host say what the drive says?  Asked now and not
+        ; remembered, so that the answer is about the registers
+        and     byte ptr [ebx+ATD_ID],0FFh - ATI_AGREES
+        push    esi
+        mov     esi,ebx
+        mov     al,[ebx+ATD_DMA]
+        call    ideh_agrees
+        jc      ain_differ
+        or      byte ptr [ebx+ATD_ID],ATI_AGREES
+ain_differ:
+        push    ebx
+        call    ata_chan
+        movzx   ecx,byte ptr [ata_cbl+ebx]
+        pop     ebx
+        pop     esi
+
+        movzx   eax,byte ptr [ebx+ATD_UOFF]
+        shl     eax,8
+        or      eax,ecx                 ; the cable
+        shl     eax,8
+        mov     al,[ebx+ATD_ID]
+        shl     eax,8
+        mov     al,[ebx+ATD_FLAGS]
+        movzx   ecx,byte ptr [ebx+ATD_BIOS]
+        shl     ecx,8
+        mov     cl,[ebx+ATD_DMA]
         mov     edx,[ebx+ATD_TOTAL]
         movzx   ebx,word ptr [ebx+ATD_BM]
         ret
@@ -1391,6 +1849,15 @@ ain_nopci:
         je      ain_nobm
         or      edx,00020000h
 ain_nobm:
+        movzx   eax,byte ptr [ideh_kind]
+        shl     eax,8
+        or      edx,eax
+        movzx   eax,byte ptr [ideh_top]
+        shl     eax,12
+        or      edx,eax
+        movzx   eax,byte ptr [ata_cblpol]
+        shl     eax,18
+        or      edx,eax
         movzx   eax,byte ptr [ata_dmapol]
         shl     eax,24
         or      edx,eax
@@ -1667,7 +2134,26 @@ ENDIF
 
 arw_dmabad:
         cmp     byte ptr [ata_bmbad],0
-        je      arw_fail                ; the DRIVE failed: a real error
+        jne     arw_engine
+        ; the DRIVE failed, and that is a real error - unless what it
+        ; is reporting is a burst that arrived with its CRC wrong.
+        ; That one is the wire's, nothing was stored, and ata_slower
+        ; says what is done about it.  Bit 7 meant "bad block" before
+        ; there was Ultra DMA, so it is only read this way in a UDMA
+        ; mode
+        mov     al,[esi+ATD_DMA]
+        and     al,0F8h
+        cmp     al,40h
+        jne     arw_fail
+        push    edx
+        add     dx,ATA_ERROR
+        in      al,dx
+        pop     edx
+        test    al,ATA_ER_ICRC
+        jz      arw_fail
+        call    ata_slower
+        jmp     arw_more
+arw_engine:
         ; the ENGINE failed.  Take this device off DMA for the rest of
         ; the session and do the same chunk again the slow way: nothing
         ; has been advanced, so arw_more starts it over
@@ -1725,13 +2211,16 @@ arw_written:
         je      arw_advance
         call    ata_waitbsy
         jc      arw_fail
+        ; FLUSH CACHE (E7h) on every drive, 48-bit ones included.  It
+        ; empties the whole write cache whatever the drive's size; the
+        ; EXT form (EAh) differs only in reporting a failing LBA in 48
+        ; bits, which nothing here reads - and DOSBox-X advertises the
+        ; 48-bit feature set, refuses EAh ("Unknown IDE/ATA command EA")
+        ; and aborts, so after every write there the flush was simply
+        ; not done.  E7h is the one command both ends agree on.
         push    edx
         add     dx,ATA_COMMAND
         mov     al,ATA_CMD_FLUSH
-        test    byte ptr [esi+ATD_FLAGS],ATDF_LBA48
-        jz      arw_fcmd
-        mov     al,ATA_CMD_FLUSH48
-arw_fcmd:
         out     dx,al
         pop     edx
         call    ata_delay
@@ -1834,6 +2323,12 @@ ata_buf     dd  0
 ata_dmapol   db 1                       ; 0 off, 1 auto, 2 best, 3 forced
 ata_dmaforce db 0                       ; the mode IDEDMA=<mode> named
 ata_32pol    db 1                       ; 0 off, 1 auto, 2 on
+ata_cblpol   db 0                       ; 0 find out, 1 forty, 2 eighty
+ata_cbl      db 0, 0                    ; ATC_*, a channel each
+ata_seen     db ATA_MAXDEV dup(0)       ; this device's first IDENTIFY has
+ata_bios     db ATA_MAXDEV dup(0)       ; been and gone, and the mode it
+                                        ; found selected
+             db 0
 ata_usedma   db 0                       ; this chunk, not this device
 ata_p32      db 0                       ; ditto, for the data port width
 ata_bmok     db 0                       ; a bus-master controller was found

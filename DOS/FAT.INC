@@ -38,7 +38,30 @@ FATBUF_SIZE     EQU     8192            ; whole-FAT cache (FAT12 only)
 ; drive unformatted.  The rule this got wrong: a limit that no test
 ; disk can reach is not tested by having tests.
 CLUSBUF_SIZE    EQU     32768           ; one cluster, up to 64 sectors
-MAX_DEPTH       EQU     8               ; nested directories supported
+
+; HOW DEEP A PATH MAY BE, and it was 8 until v0.60 for no better
+; reason than that eight is a lot of directories to type.  It is not,
+; once a PROGRAM is the one assembling the path - and the thing that
+; found it was not a deep tree at all:
+;
+;   DIR \A\B\C\D\E\F\G\H  failed, because DIR appends its own "*.*"
+;   and the wildcard IS a component.  Eight directories deep is the
+;   last place a user can stand and the first place they cannot look.
+;
+; It is also exactly where ISO9660 puts a relocated directory - the
+; standard allows eight levels and Rock Ridge's CL/RE move the rest -
+; so the one filesystem guaranteed to produce a path this long was the
+; one this kernel had just learnt to read.
+;
+; 32 IS A COUNT AND NOT A LENGTH, which is the other half of the fix.
+; The real limits on a path here are the sizes of the buffers the API
+; promises to fill - 64 bytes for 47h's current directory, 128 for
+; 60h's canonical name - and those are now checked where they apply,
+; by measuring the rendering rather than by assuming twelve characters
+; a component.  A file thirty levels down can be OPENED whatever its
+; name renders to; it is only naming it back to a caller that has a
+; ceiling, and that ceiling is the caller's own.
+MAX_DEPTH       EQU     32              ; nested directories supported
 MAX_DRIVES      EQU     LASTDRIVE       ; shared with COMMAND.COM
 MAX_PHYS        EQU     2               ; hard disks the block layer has
                                         ; slots for: BIOS 80h and 81h
@@ -46,7 +69,10 @@ MAX_PHYS        EQU     2               ; hard disks the block layer has
 ; Size of the swappable per-volume state block.  wasm cannot divide by
 ; a forward-referenced label difference, so this is stated by hand and
 ; asserted against the real vol_state..vol_state_end span below.
-VOL_STATE_SIZE  EQU     8884
+; (MAX_DEPTH 8 -> 32 moved cwd_names from 88 bytes to 352, so this
+;  went 8884 -> 9148.  The assert below is what says so out loud.
+;  7302h's FSInfo and backup-boot fields took it to 9152.)
+VOL_STATE_SIZE  EQU     9152
 
 ; 32-byte directory entry field offsets
 DE_NAME         EQU     0
@@ -584,6 +610,54 @@ dr_done:
         ret
 
 ;---------------------------------------------------------------------
+; fm_scale - EAX = a count of the volume's LOGICAL sectors -> EAX = the
+;            same count in 512-byte units.  CF if it no longer fits in
+;            32 bits, which a BPB can ask for and no disk here can hold.
+;            Everything else preserved.
+;---------------------------------------------------------------------
+fm_scale:
+        push    ecx
+        push    edx
+        mov     edx,eax
+        movzx   ecx,byte ptr [fat_lshift]
+        shl     eax,cl
+        push    eax
+        shr     eax,cl                  ; shifted back, it must be what
+        cmp     eax,edx                 ; went in or bits fell off the top
+        pop     eax
+        pop     edx
+        pop     ecx
+        je      fsc_ok
+        stc
+        ret
+fsc_ok:
+        clc
+        ret
+
+;---------------------------------------------------------------------
+; vol_lgeom - the loaded volume in a PROGRAM's units.
+;             -> EAX = sectors per cluster, ECX = bytes per sector,
+;                     EDX = the logical-sector shift (0 for 512).
+;
+; The one place the conversion back out of 512-byte units is written
+; down, so that 36h, 1Bh, 7302h and 7303h cannot disagree about what
+; a sector on this volume is.  Their product is the cluster size in
+; bytes either way; what changes is which of the two a program sees
+; as the sector, and it should see the one the BPB says.
+;---------------------------------------------------------------------
+vol_lgeom:
+        movzx   edx,byte ptr [fat_lshift]
+        push    edx
+        mov     ecx,edx
+        mov     eax,[fat_spc]
+        shr     eax,cl
+        mov     edx,512
+        shl     edx,cl
+        mov     ecx,edx
+        pop     edx
+        ret
+
+;---------------------------------------------------------------------
 ; bpb_looks - does sec_buf hold something that could be a boot sector?
 ;             CF clear if so.
 ;
@@ -632,12 +706,18 @@ fat_mount:
         pushad
 fm_start:
         mov     byte ptr [fat_ok],0
+        mov     dword ptr [sec_lba],-1          ; sec_buf is about to hold
+                                                ; the boot sector, and a
+                                                ; mount that fails leaves it
         mov     dword ptr [clusbuf_clus],-1
         mov     dword ptr [fatsec_lba],-1
         mov     byte ptr [fatsec_dirty],0
         mov     byte ptr [fat12_dirty],0
         mov     dword ptr [fat_hint],2
         mov     dword ptr [fat_active],0
+        mov     byte ptr [fat_lshift],0         ; a DOS 1 floppy has no BPB
+        mov     word ptr [fat_fsinfo],0FFFFh    ; to say otherwise, and
+        mov     word ptr [fat_bkboot],0FFFFh    ; neither has a CD
 
 ;--- where this letter lives -----------------------------------------
         mov     al,[cur_vol]
@@ -651,7 +731,20 @@ fm_start:
         ; record to read.  DRV_BIOS names the ATAPI unit; ISO9660.INC
         ; does the rest and sets fat_ok itself.
         test    byte ptr [ebx+DRV_FLAGS],DRVF_CDROM
+        jnz     fm_optical
+
+        ; A MOUNTED IMAGE FILE MAY BE EITHER, and only the file knows
+        ; which: an .ISO holds a filesystem of 2048-byte blocks and
+        ; goes down the same path a disc does, an .IMG holds a FAT
+        ; volume and goes down the ordinary one.  img_mount decided
+        ; this by looking at the contents when it mounted the file;
+        ; all that is left here is to ask which answer it got.
+        test    byte ptr [ebx+DRV_FLAGS],DRVF_IMAGE
         jz      fm_notcd
+        mov     al,[ebx+DRV_BIOS]
+        call    img_isiso
+        jc      fm_notcd
+fm_optical:
         mov     al,[ebx+DRV_BIOS]
         mov     [fat_drive],al
         mov     byte ptr [vol_fs],FS_ISO
@@ -680,18 +773,46 @@ fm_notcd:
         jc      fm_iofail
 
 ;--- pull the BPB apart ----------------------------------------------
-; Sector size first, and it is the one field this kernel refuses to
-; adapt to: every buffer here is a whole number of 512-byte sectors
-; and the block layer counts in them.  Media with 1024 or 2048 exist -
-; some 5.25" formats, a few magneto-opticals - and they are rejected
-; honestly rather than mounted and misread.
+; Sector size first.  1024, 2048 and 4096 are LOGICAL sector sizes as
+; far as this kernel is concerned, and that is what they are on every
+; disk it can reach: the block layer, the cache, INT 13h and the ATA
+; driver all move 512-byte sectors, and a FAT volume formatted with
+; 2048-byte ones on such a disk is simply a volume whose every count
+; is in fours.  So the BPB is converted ONCE, here - cluster size,
+; reserved area, FAT length, total and root directory all multiplied
+; out into 512-byte units - and nothing after this line learns that
+; the volume was ever different.  The few calls that speak sectors to
+; a PROGRAM (36h, 1Bh/1Ch, 25h/26h, 7302h, 7303h, 7305h) divide back
+; out through fat_lshift, because a program reading this volume's
+; sector 5 means the fifth 2048-byte sector and not the fifth 512.
+;
+; Until v0.60 anything but 512 was refused.  What that left was the
+; honest case of a PHYSICAL sector that is not 512 bytes - an optical
+; or magneto-optical drive whose unit of transfer is 2048 - and that
+; still is not reachable here: nothing in the block layer asks a
+; device its sector size, because nothing on a PC-standard bus
+; answers with anything else.
+        mov     byte ptr [fat_lshift],0
         movzx   eax,word ptr [sec_buf+BPB_BPS]
+        xor     ecx,ecx
+fm_bpslp:
         cmp     eax,512
-        jne     fm_nobpb
+        je      fm_bpsok
+        test    eax,1                   ; a power of two, halved down to
+        jnz     fm_nobpb                ; 512 in at most three steps
+        shr     eax,1
+        inc     ecx
+        cmp     ecx,3
+        jbe     fm_bpslp
+        jmp     fm_nobpb                ; bigger than 4096, or not a power
+fm_bpsok:                               ; of two at all
+        mov     [fat_lshift],cl
 
         movzx   eax,byte ptr [sec_buf+BPB_SPC]  ; sectors per cluster
         or      eax,eax
         jz      fm_nobpb
+        call    fm_scale
+        jc      fm_fail
         cmp     eax,CLUSBUF_SIZE / 512
         ja      fm_fail
         mov     [fat_spc],eax
@@ -699,6 +820,8 @@ fm_notcd:
         movzx   eax,word ptr [sec_buf+BPB_RSVD] ; reserved sectors
         or      eax,eax                         ; at least the boot sector
         jz      fm_nobpb
+        call    fm_scale
+        jc      fm_fail
         mov     [fat_rsvd],eax
 
         movzx   ecx,byte ptr [sec_buf+BPB_NFATS]
@@ -721,6 +844,8 @@ fm_notcd:
         or      eax,eax
         jz      fm_nobpb
 fm_havespf:
+        call    fm_scale
+        jc      fm_fail
         mov     [fat_spf],eax
 
         movzx   ecx,word ptr [sec_buf+BPB_TOTSEC16]
@@ -730,6 +855,10 @@ fm_havespf:
         or      ecx,ecx
         jz      fm_nobpb
 fm_havetot:
+        mov     eax,ecx
+        call    fm_scale
+        jc      fm_fail
+        mov     ecx,eax
         ; A BPB may describe MORE sectors than the partition entry says
         ; it has, and one of the two is lying.  Believe the smaller: a
         ; volume that reads past its own partition reads the next one.
@@ -757,9 +886,22 @@ fm_layout:
         ; arithmetic and not the same as rootent/16 when the count is
         ; not a multiple of sixteen.  A 1.2M floppy has 224 entries and
         ; divides exactly; a hand-formatted volume need not.
+        ;
+        ; Rounded up to a LOGICAL sector, which is the unit the root
+        ; area is allocated in: 20 entries on a 2048-byte-sector volume
+        ; are one sector of 64 slots, not two 512-byte ones, and the
+        ; data area starts after all of it.
         mov     eax,[fat_rootent]
-        add     eax,15
-        shr     eax,4                   ; * 32, / 512, rounded up
+        shl     eax,5                   ; bytes
+        movzx   ecx,byte ptr [fat_lshift]
+        mov     edx,512
+        shl     edx,cl                  ; bytes in a logical sector
+        dec     edx
+        add     eax,edx
+        add     cl,9
+        shr     eax,cl                  ; logical sectors, rounded up
+        sub     cl,9
+        shl     eax,cl                  ; ...as 512-byte units
         add     eax,[fat_rootlba]
         mov     [fat_datalba],eax
 
@@ -790,6 +932,10 @@ fm_layout:
         cmp     eax,2                   ; a root below cluster 2 is not a
         jb      fm_fail                 ; root, it is a corrupt field
         mov     [fat_rootclus],eax
+        mov     ax,word ptr [sec_buf+BPB_FSINFO]        ; for 7302h, as
+        mov     [fat_fsinfo],ax                         ; the BPB has them
+        mov     ax,word ptr [sec_buf+BPB_BKBOOT]
+        mov     [fat_bkboot],ax
 
         ; MIRRORING.  With bit 7 of ExtFlags set, only one FAT is live
         ; and the others are stale by the volume's own instruction -
@@ -1171,6 +1317,16 @@ iso_chkmedia:
         mov     al,[fat_drive]          ; the ATAPI unit this letter is
         cmp     al,[iso_unit]           ; ...and the one the reader holds
         jne     icm_moved
+
+        ; A MOUNTED .ISO CANNOT BE SWAPPED FOR ANOTHER ONE - there is
+        ; no tray - so there is nothing to ask and nothing to ask
+        ; WITH: IOS_CDCHG indexes ATAPI units and this drive number is
+        ; not one.  The check above is still made, and has to be: the
+        ; reader's globals are shared between discs and files alike,
+        ; so an image and a disc alternating is the same bug two CD
+        ; drives found.
+        cmp     al,IMG_UNIT_BASE
+        jae     icm_same
 
         mov     al,[fat_drive]
         mov     ah,CDL_VOL              ; WHICH LISTENER is asking: the
@@ -1797,8 +1953,8 @@ fat_readclus:
         push    eax
         mov     ecx,1
         mov     ebx,eax
-        mov     al,byte ptr [fat_drive] ; the ATAPI unit
-        call    dword ptr ds:[IOS_CDREAD]
+        mov     al,byte ptr [fat_drive] ; the ATAPI unit, or a mounted
+        call    cd_read                 ; image's: cd_read knows which
         pop     eax
         jc      frc_fail
         popad
@@ -2558,22 +2714,26 @@ la_mbad:
 ;             for the caller's 8.3 entry: EBX = its index, ESI -> its
 ;             32 bytes, freshly dir_seek'd.  CF when the directory can
 ;             neither offer nor grow the run.
+;
+; lfn_storeat - the same, into a run the caller has already chosen:
+;               EBX = its first index.  56h uses it to put a new long
+;               name where the old one was, so a rename in place stays
+;               in place.  The caller answers for the run being free
+;               (or its own) and long enough.
 ;---------------------------------------------------------------------
+lfn_storeat:
+        push    ecx
+        push    edx
+        push    edi
+        call    lst_size
+        mov     [lst_start],ebx
+        jmp     lst_have
+
 lfn_store:
         push    ecx
         push    edx
         push    edi
-        mov     [lst_txt],esi
-        mov     [lst_len],ecx
-
-        mov     eax,ecx                 ; fragments = ceil(len / 13)
-        add     eax,12
-        xor     edx,edx
-        mov     ecx,13
-        div     ecx
-        mov     [lst_frag],eax
-        inc     eax
-        mov     [lst_need],eax          ; plus the 8.3 slot itself
+        call    lst_size
 
         ; hunt for a contiguous run of free entries
         xor     ebx,ebx
@@ -2676,6 +2836,22 @@ lst_fail:
         pop     edx
         pop     ecx
         stc
+        ret
+
+; lst_size - the name at ESI (ECX chars) -> [lst_txt]/[lst_len], and
+;            how many slots it takes: [lst_frag] fragments, [lst_need]
+;            with the 8.3 entry.  Trashes EAX, ECX and EDX.
+lst_size:
+        mov     [lst_txt],esi
+        mov     [lst_len],ecx
+        mov     eax,ecx                 ; fragments = ceil(len / 13)
+        add     eax,12
+        xor     edx,edx
+        mov     ecx,13
+        div     ecx
+        mov     [lst_frag],eax
+        inc     eax
+        mov     [lst_need],eax          ; plus the 8.3 slot itself
         ret
 
 ; lsx_cells - fill ECX UCS-2 cells at EDI: [lst_pos] indexes the name
@@ -3151,7 +3327,13 @@ vol_fs      db  0                       ; FS_FAT or FS_ISO - out of the pad
             db  0,0                     ; pad to a dword boundary
 
 fat_media   db  0                       ; the BPB's media descriptor
-            db  0,0,0
+fat_lshift  db  0                       ; log2(BPB sector size / 512): the
+                                        ; volume's LOGICAL sector is 512 << it.
+                                        ; Everything below counts in 512-byte
+                                        ; units whatever this says - see
+                                        ; fm_bpsok - and only the calls that
+                                        ; speak sectors TO A PROGRAM convert
+            db  0,0
 
 fat_spc     dd  0
 fat_rsvd    dd  0
@@ -3172,12 +3354,16 @@ fat_totclus dd  0
 fat_eoc     dd  0                       ; values >= this end a chain
 fat_eocv    dd  0                       ; the value we write for EOC
 fat_hint    dd  2
+fat_fsinfo  dw  0FFFFh                  ; FAT32: the FSInfo and backup boot
+fat_bkboot  dw  0FFFFh                  ; sectors as the BPB names them, in
+                                        ; LOGICAL sectors - kept for 7302h
+                                        ; and nothing else; FFFFh = none
 
 fatsec_lba  dd  -1                      ; LBA held in fatsec_buf (copy 0)
 
 cwd_cnt     dd  0                       ; current directory (per volume)
 cwd_clus    dd  0                       ; its start cluster (0 = root)
-cwd_names   db  MAX_DEPTH * 11 dup(0)   ; 88 bytes, a dword multiple
+cwd_names   db  MAX_DEPTH * 11 dup(0)   ; 352 bytes, a dword multiple
 
 fatsec_buf  db  512 dup(0)
 fat_buf     db  FATBUF_SIZE dup(0)
@@ -3246,5 +3432,19 @@ dc_curclus  dd  0
 
 sec_lba     dd  -1                      ; LBA held in sec_buf, -1 = none
 
-sec_buf     db  512 dup(0)
-clus_buf    db  CLUSBUF_SIZE dup(0)
+; Below the arena and not in the file - see KBSS_BASE in PMDOS.INC.
+; clus_buf is in _KBSS2, which DOSMAIN.ASM explains.
+_DOS    ENDS
+_KBSS   SEGMENT
+sec_buf     db  512 dup(?)
+IF ($ - kbss_start) AND 3
+        .ERR    what follows sec_buf in _KBSS is not on a dword
+ENDIF
+_KBSS   ENDS
+_KBSS2  SEGMENT
+clus_buf    db  CLUSBUF_SIZE dup(?)
+IF ($ - kbss2_start) AND 3
+        .ERR    what follows clus_buf in _KBSS2 is not on a dword
+ENDIF
+_KBSS2  ENDS
+_DOS    SEGMENT

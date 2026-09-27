@@ -66,7 +66,9 @@ XN_SAVE         EQU     16              ; dd - its parked slot, 0 = none
 XN_INDOS        EQU     20              ; dd - and the InDOS depth it was at
 XN_ESP0         EQU     24              ; dd - and the ring-0 stack it makes
                                         ;      its DOS calls on
-XN_LEN          EQU     28
+XN_HLO          EQU     28              ; dd - and where its 48h heap is:
+XN_HHI          EQU     32              ; dd   r3h_lo and r3h_hi, see 4Bh
+XN_LEN          EQU     36
 
 ;=====================================================================
 ; int21_entry - every DOS call lands here through the IDT gate.
@@ -96,6 +98,18 @@ int21_entry:
         mov     es,ax
         cld
 
+        ; A DPMI CLIENT MAY HAVE A HANDLER OF ITS OWN ON THIS VECTOR,
+        ; and then the call is the handler's before it is ours - what
+        ; it passes on comes back through this gate from the host's
+        ; table of defaults.  Only a client's selectors are in a
+        ; descriptor table of their own.  Before the count below,
+        ; because no call has been made yet.
+        test    byte ptr [ebp+F_CS],4
+        jz      i21_ours
+        call    dpmi_hook21
+        jnc     i21_hooked
+i21_ours:
+
         ; DOS IS NOW BUSY, and 34h hands out the address of the byte
         ; that says so.  It counts rather than flags, because these
         ; calls genuinely nest: a critical-error handler and an INT 23h
@@ -117,6 +131,12 @@ int21_entry:
         je      i21_dpmiexit                    ; box ending, and it unwinds
         call    dpmi_xlat                       ; rather than returns
         jc      i21_badsel
+        ; A DPMI client is a DOS program in protected mode, and its
+        ; handles are its PSP's table's exactly as they were in V86 -
+        ; the child it EXECs inherits that table, so a redirection it
+        ; set up here must be in it.  See JFT.INC.
+        call    jft_pre
+        jc      i21_return              ; done there, answer and all
         jmp     short i21_flat
 
 ;--- a native program -------------------------------------------------
@@ -156,6 +176,7 @@ i21_return:
         je      i21_r0
         cmp     word ptr [ebp+F_CS],SEL_PROG_CS
         je      i21_r3native
+        call    jft_post                ; handles back to the client's
         call    dpmi_unxlat             ; the client's own registers back
         jmp     short i21_r0
 
@@ -167,6 +188,15 @@ i21_r3native:
         call    r3_unxlat
         mov     eax,[r3_esp0]
         mov     dword ptr ds:[TSS_BASE + TSS_ESP0],eax
+        ; A mouse event handler the program is owed runs now, on its way
+        ; back, rather than at the next interrupt that happens to catch
+        ; it at ring 3 - see ms_r3chk.  The registers it will resume with
+        ; are the ones this call is returning, which is what it gets back.
+        push    ebp
+        mov     ebx,ebp
+        add     ebp,F_EIP
+        call    dword ptr ds:[IOS_MSR3]
+        pop     ebp
 i21_r0:
         ; The swappable data area is refreshed HERE, before the count
         ; goes back down, because zero is the moment a TSR is allowed
@@ -179,6 +209,7 @@ i21_r0:
         ; because the bad-selector path skips straight to this label
         ; and would otherwise leave the count one too high for good.
         dec     byte ptr ds:[DOS_INDOS]
+i21_hooked:
         popad
         pop     ebp
         pop     es
@@ -398,12 +429,47 @@ disk_absio:
         jae     dab_bad
         call    vol_select
         jc      dab_bad
-        mov     eax,[ebp+F_EDX]         ; start + count within bounds
-        add     eax,[ebp+F_ECX]
-        jc      dab_range
-        cmp     eax,[fat_totsec]
+
+        ; IN THE VOLUME'S OWN SECTORS, which are 512 << fat_lshift bytes
+        ; - the BPB's, as DOS always counted them for these two calls.
+        ; A count that big is a mistake, and refusing it here keeps
+        ; the byte arithmetic below inside 32 bits.
+        cmp     dword ptr [ebp+F_ECX],100000h
+        jae     dab_range
+        push    ecx
+        movzx   ecx,byte ptr [fat_lshift]
+        mov     eax,[fat_totsec]
+        shr     eax,cl                  ; the volume in logical sectors
+        pop     ecx
+        push    ebx
+        mov     ebx,[ebp+F_EDX]         ; start + count within bounds
+        add     ebx,[ebp+F_ECX]
+        jc      dab_poprange
+        cmp     ebx,eax
+        pop     ebx
         ja      dab_range
+
+        ; AND THE BUFFER, which nothing measured: a 25h read of a whole
+        ; FAT into a buffer at the top of a DOS box's memory is as
+        ; good a way into PMDOS.SYS as 3Fh's was before buf_ok.
+        push    ecx
+        movzx   ecx,byte ptr [fat_lshift]
+        add     ecx,9
+        mov     eax,[ebp+F_ECX]
+        shl     eax,cl                  ; bytes
+        mov     ecx,eax
+        mov     eax,[ebp+F_EBX]         ; flat by now - disk_absptr ran
+        call    cbuf_ok
+        pop     ecx
+        jc      dab_deny
         clc
+        ret
+dab_poprange:
+        pop     ebx
+        jmp     short dab_range
+dab_deny:
+        mov     ax,ERR_ACCESS
+        stc
         ret
 dab_bad:
         mov     ax,ERR_BADDRIVE
@@ -427,9 +493,13 @@ dab_range:
 ; the kernel put the old one back the next time it flushed.
 disk_absgo:
         push    eax
-        mov     ebx,[ebp+F_EDX]         ; logical -> absolute LBA
-        add     ebx,[fat_partlba]
-        mov     ecx,[ebp+F_ECX]
+        movzx   ecx,byte ptr [fat_lshift]
+        mov     ebx,[ebp+F_EDX]         ; logical -> absolute LBA, in the
+        shl     ebx,cl                  ; 512-byte units the block layer
+        add     ebx,[fat_partlba]       ; counts in
+        mov     eax,[ebp+F_ECX]
+        shl     eax,cl
+        mov     ecx,eax
         mov     edi,[ebp+F_EBX]         ; the caller's buffer
         mov     al,[fat_drive]
         pop     edx                     ; the service to call
@@ -481,11 +551,49 @@ dag_ok:
         clc
         ret
 dag_popfail:
-        pop     eax
-dag_fail:
-        mov     ax,0Bh                  ; classic "read/write fault"
+        mov     [abs_stat],ah           ; the driver's status, before the
+        pop     eax                     ; service comes off the stack on
+        mov     ah,[abs_stat]           ; top of it
+        call    abs_err
         stc
         ret
+dag_fail:
+        mov     ah,10h                  ; a read-back that disagreed: what
+        call    abs_err                 ; dio_try calls it too, a CRC error
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; abs_err - AH = a driver status byte (INT 13h's numbering, which the
+;           ATA path, loaded block drivers and image files all speak)
+;           -> AX = INT 25h/26h's error word: AH the status as the BIOS
+;           gave it, AL the INT 24h code it means.  That is DOS's
+;           layout, and it is why a program can say "write protected"
+;           where this used to hand every failure back as 0Bh.
+;
+; abs_xerr - the same status -> AX = the EXTENDED error for it, 13h up
+;            to 1Fh, which is what 7305h returns: the critical-error
+;            code plus 13h, the numbering DOS has used since 3.0.
+;---------------------------------------------------------------------
+abs_err:
+        push    edi
+        mov     [abs_stat],ah
+        movzx   edi,ah
+        call    crit_map                ; -> EDI = the INT 24h code
+        mov     eax,edi                 ; AL = that code...
+        mov     ah,[abs_stat]           ; ...AH = the status it came from
+        pop     edi
+        ret
+abs_xerr:
+        push    edi
+        movzx   edi,ah
+        call    crit_map
+        lea     eax,[edi+13h]
+        pop     edi
+        ret
+
+abs_stat    db  0
+            db  0,0,0
 
 ;=====================================================================
 ; CTRL-C and INT 23h.
@@ -509,6 +617,16 @@ ctrl_break:
         call    dword ptr ds:[IOS_CONOUT]
         mov     al,10
         call    dword ptr ds:[IOS_CONOUT]
+
+        ; A DOS BOX'S ^C IS THE BOX'S, through its own INT 23h vector -
+        ; vdm_ctrlc hands it over and does not come back.  When it
+        ; cannot, it returns, and the INT 23h below ends the program:
+        ; CMD.EXE's handler or the default one call 4Ch, and a 4Ch with
+        ; a box running ends the guest (vdm_killprog).
+        cmp     dword ptr ds:[vdm_busy],0
+        je      cb_ours
+        call    vdm_ctrlc
+cb_ours:
         int     23h
         pop     eax
         ret
@@ -667,7 +785,51 @@ cbo_fine:
         clc
         ret
 cbo_theirs:
+        cmp     word ptr [ebp+F_CS],SEL_PROG_CS
+        jne     cbo_kern
+        call    r3_inslot               ; a native program's buffer ends
+        jc      cbo_out                 ; where its segment does
+cbo_kern:
         jmp     buf_ok                  ; its RET goes to our caller
+cbo_out:
+        ret
+
+;---------------------------------------------------------------------
+; r3_inslot - EAX = a flat buffer, ECX = its length.  CF unless the
+;             whole of it lies in the running program's slot, above
+;             the guard page.  Everything preserved.
+;
+; r3_flat checks where a pointer STARTS; the length is this routine's.
+; A native program can name no byte outside its own segment - the
+; limit sees to that - and the kernel must not name one on its behalf
+; either: a 64-byte answer written at the last byte of the slot lands
+; in whatever the arena put above it, and the call reports success.
+;---------------------------------------------------------------------
+r3_inslot:
+        push    eax
+        push    ecx
+        push    edx
+        add     ecx,eax                 ; one past the end
+        jc      ris_bad                 ; a length that wraps is not one
+        mov     edx,[r3_base]
+        add     edx,SLOT_PSP
+        cmp     eax,edx
+        jb      ris_bad                 ; in the guard page, or below it
+        mov     edx,[r3_base]
+        add     edx,[r3_size]
+        cmp     ecx,edx
+        ja      ris_bad                 ; runs off the top of the slot
+        pop     edx
+        pop     ecx
+        pop     eax
+        clc
+        ret
+ris_bad:
+        pop     edx
+        pop     ecx
+        pop     eax
+        stc
+        ret
 
 buf_deny:
         mov     ax,ERR_ACCESS
@@ -808,9 +970,10 @@ fn06:
         mov     [ebp+F_EAX],al
         jmp     i21_ok
 f06_in:
-        test    dword ptr [sft_tbl+SFT_FLAGS],SFTF_DEVICE
+        mov     ebx,[std_inp]
+        test    dword ptr [ebx+SFT_FLAGS],SFTF_DEVICE
         jz      f06_file
-        cmp     dword ptr [sft_tbl+SFT_DEVID],DEV_CON
+        cmp     dword ptr [ebx+SFT_DEVID],DEV_CON
         jne     f06_other
         cmp     byte ptr [con_pending],0        ; the half of an extended
         jne     f06_pend                        ; key that is still owed
@@ -829,7 +992,7 @@ f06_got:
         and     dword ptr [ebp+F_FLAGS],NOT FL_ZF
         jmp     i21_ok
 f06_other:                              ; NUL or a serial port: whatever it
-        mov     edx,dword ptr [sft_tbl+SFT_DEVID]       ; has, without a wait
+        mov     edx,dword ptr [ebx+SFT_DEVID]   ; has, without a wait
         call    dev_in
         jc      f06_none
         mov     [ebp+F_EAX],ax
@@ -848,10 +1011,19 @@ f06_none:
 
 ;=====================================================================
 ; 07h / 08h - console input without echo -> AL
+;
+; 07h DOES NOT LOOK FOR ^C, and 08h does: that is the whole difference
+; between them, and it is how a program reads Ctrl+C as a key rather
+; than having DOS act on it.  Both came through here and both broke.
 ;=====================================================================
 fn07:
+        mov     byte ptr [sin_raw],1
+        call    con_extin
+        mov     byte ptr [sin_raw],0
+        jmp     short f07_res
 fn08:
         call    con_extin
+f07_res:
         jnc     f07_have
         mov     ax,001Ah                ; end of file reads as ^Z
 f07_have:
@@ -903,9 +1075,10 @@ cei_out:
 ;=====================================================================
 fn09:
         mov     esi,[ebp+F_EDX]
-        test    dword ptr [sft_tbl+SFT_LEN+SFT_FLAGS],SFTF_DEVICE
+        mov     edx,[std_outp]
+        test    dword ptr [edx+SFT_FLAGS],SFTF_DEVICE
         jz      f09_file
-        mov     edx,dword ptr [sft_tbl+SFT_LEN+SFT_DEVID]
+        mov     edx,dword ptr [edx+SFT_DEVID]
 f09_lp:
         mov     al,[esi]
         cmp     al,'$'
@@ -946,9 +1119,10 @@ fn0A:
         jz      f0A_done
         dec     ecx                     ; room for the CR
         xor     ebx,ebx                 ; EBX = count so far
-        test    dword ptr [sft_tbl+SFT_FLAGS],SFTF_DEVICE
+        mov     edx,[std_inp]
+        test    dword ptr [edx+SFT_FLAGS],SFTF_DEVICE
         jz      f0A_file
-        cmp     dword ptr [sft_tbl+SFT_DEVID],DEV_CON
+        cmp     dword ptr [edx+SFT_DEVID],DEV_CON
         jne     f0A_file                ; only the console has line editing;
                                         ; every other device is a byte source
 f0A_key:
@@ -1007,9 +1181,10 @@ f0A_fcr:
         jc      f0A_feol
         cmp     al,10
         je      f0A_feol
-        test    dword ptr [sft_tbl+SFT_FLAGS],SFTF_DEVICE
+        mov     edx,[std_inp]
+        test    dword ptr [edx+SFT_FLAGS],SFTF_DEVICE
         jnz     f0A_feol                ; a device has no position to rewind
-        dec     dword ptr [sft_tbl+SFT_POS]     ; not LF - un-read it
+        dec     dword ptr [edx+SFT_POS] ; not LF - un-read it
 f0A_feol:
         mov     byte ptr [edi+ebx+2],13
         mov     [edi+1],bl
@@ -1020,9 +1195,10 @@ f0A_feol:
 ;       stdin always has one waiting - until it does not.
 ;=====================================================================
 fn0B:
-        test    dword ptr [sft_tbl+SFT_FLAGS],SFTF_DEVICE
+        mov     edx,[std_inp]
+        test    dword ptr [edx+SFT_FLAGS],SFTF_DEVICE
         jz      f0B_file
-        cmp     dword ptr [sft_tbl+SFT_DEVID],DEV_CON
+        cmp     dword ptr [edx+SFT_DEVID],DEV_CON
         jne     f0B_dead                ; NUL and a silent port: nothing, and
         cmp     byte ptr [con_pending],0        ; there never will be
         jne     f0B_yes                 ; a scan code owed IS a key waiting
@@ -1039,8 +1215,8 @@ f0B_dead:
         jmp     short f0B_none
 f0B_file:
         mov     al,0FFh
-        mov     edx,dword ptr [sft_tbl+SFT_POS]
-        cmp     edx,dword ptr [sft_tbl+SFT_SIZE]
+        mov     ecx,dword ptr [edx+SFT_POS]
+        cmp     ecx,dword ptr [edx+SFT_SIZE]
         jb      f0B_none
         mov     al,0
         jmp     short f0B_none
@@ -1050,9 +1226,10 @@ f0B_file:
 ;       flushing - and draining it would eat the input.
 ;=====================================================================
 fn0C:
-        test    dword ptr [sft_tbl+SFT_FLAGS],SFTF_DEVICE
+        mov     edx,[std_inp]
+        test    dword ptr [edx+SFT_FLAGS],SFTF_DEVICE
         jz      f0C_empty
-        cmp     dword ptr [sft_tbl+SFT_DEVID],DEV_CON
+        cmp     dword ptr [edx+SFT_DEVID],DEV_CON
         jne     f0C_empty               ; only the keyboard has a buffer
         mov     byte ptr [con_pending],0        ; including a half-collected
                                                 ; extended key
@@ -1071,6 +1248,8 @@ f0C_empty:
         je      fn07
         cmp     al,08h
         je      fn08
+        cmp     al,0Ah                  ; and buffered input, which DOS
+        je      fn0A                    ; allows here too
         mov     byte ptr [ebp+F_EAX],0
         jmp     i21_ok
 
@@ -1638,9 +1817,9 @@ f36_expl:
 f36_sel:
         call    vol_select
         jc      f36_bad
-        mov     eax,[fat_spc]
+        call    vol_lgeom               ; the BPB's sector, not ours
         mov     [ebp+F_EAX],ax
-        mov     word ptr [ebp+F_ECX],512
+        mov     [ebp+F_ECX],cx
 
         ; DOS returns these in 16-bit registers; huge volumes saturate
         mov     eax,[fat_totclus]
@@ -1739,7 +1918,19 @@ f3C_file:
         cmp     byte ptr [create_new],0
         jne     f3C_exists              ; 5Bh: that is the whole point
 
-        ; exists: truncate in place
+        ; exists: truncate in place - unless it is a drive letter.
+        ; See the note at 41h: freeing the chain of a mounted image
+        ; gives its clusters away while the volume goes on using them.
+        push    eax
+        push    ebx
+        call    de_getclus
+        mov     ebx,eax
+        mov     al,[cur_vol]
+        call    img_locked
+        pop     ebx
+        pop     eax
+        jc      f3C_deny
+
         call    de_getclus
         call    fat_freechain
         xor     eax,eax
@@ -1898,6 +2089,10 @@ f5A_end:
         jmp     short f5A_end
 f5A_haveend:
         mov     [f5a_tail],edi
+        mov     eax,edi                 ; eight digits and a NUL are about
+        mov     ecx,9                   ; to go on the end of the caller's
+        call    cbuf_ok                 ; path, into memory nobody measured
+        jc      buf_deny
 
         ; Seed from the tick count.  It only has to differ from the
         ; last one often enough that the search below usually succeeds
@@ -1988,6 +2183,49 @@ f5A_free:
 ; a missing directory is.
 ;=====================================================================
 fn60:
+        ; A DEVICE IS SPELLED "D:/NAME", as MS-DOS spells it - the
+        ; forward slash is TransPath's way of saying "not a file in any
+        ; directory" (DOS6SRC dos\macro2.asm), and a program comparing
+        ; two answers relies on CON coming back as CON wherever it was
+        ; typed.  Until v0.60 this rendered "CON" as a file in the
+        ; current directory.  dev_find applies DOS's rule: the last
+        ; component, any directory, any extension.
+        mov     esi,[ebp+F_ESI]
+        call    dev_find
+        jc      f60_file
+        mov     eax,[ebp+F_EDI]
+        mov     ecx,3 + 8 + 1
+        call    cbuf_ok
+        jc      buf_deny
+        mov     esi,[ebp+F_ESI]
+        mov     al,[cur_drive]
+        cmp     byte ptr [esi+1],':'
+        jne     f60_devdrv
+        mov     al,[esi]
+        and     al,NOT 20h              ; the letter, upper case
+        sub     al,'A'
+f60_devdrv:
+        mov     edi,[ebp+F_EDI]
+        add     al,'A'
+        mov     [edi],al
+        mov     byte ptr [edi+1],':'
+        mov     byte ptr [edi+2],'/'
+        add     edi,3
+        mov     esi,OFFSET dev_name     ; dev_find left it there, padded
+        mov     ecx,8
+f60_devname:
+        mov     al,[esi]
+        cmp     al,' '
+        je      f60_devend
+        mov     [edi],al
+        inc     esi
+        inc     edi
+        loop    f60_devname
+f60_devend:
+        mov     byte ptr [edi],0
+        jmp     i21_ok
+
+f60_file:
         mov     esi,[ebp+F_ESI]
         call    resolve_core
         jc      f60_bad
@@ -1996,6 +2234,22 @@ fn60:
         mov     ecx,128                 ; on the answer, so it is also the
         call    cbuf_ok                 ; measure of what may be written
         jc      buf_deny
+
+        ; ...AND THE ANSWER HAS TO FIT IN IT.  Until v0.60 it always
+        ; did by accident: paths were eight components deep at most and
+        ; eight times thirteen plus "D:\" is 107.  Raising the depth to
+        ; 32 took that guarantee away, so it is now checked instead of
+        ; inherited - "D:\" is three characters and the NUL is one, so
+        ; 124 is what the rendering may be.  A path too long to NAME is
+        ; refused here and can still be opened, which is the honest
+        ; split: the limit belongs to this call's buffer, not to the
+        ; filesystem.
+        mov     esi,OFFSET rp_names
+        mov     ecx,[rp_cnt]
+        call    names_len
+        cmp     eax,124
+        ja      f60_nopath
+
         mov     edi,[ebp+F_EDI]
         mov     al,[cur_vol]            ; whichever volume it resolved on,
         add     al,'A'                  ; which is not always the default
@@ -2014,6 +2268,100 @@ f60_bad:
         jmp     i21_fail
 f60_nopath:
         mov     ax,ERR_NOPATH
+        jmp     i21_fail
+
+;=====================================================================
+; 66h - the global code page.  There is one, 437 - 65h says the same
+;       and CHCP asks this - so 6601h answers it for both the active
+;       and the system page, and 6602h takes 437 and refuses any other
+;       with 2, which is what DOS says when it has no tables for one.
+;=====================================================================
+fn66:
+        mov     al,[ebp+F_EAX]
+        cmp     al,1
+        je      f66_get
+        cmp     al,2
+        jne     f66_fn
+        cmp     word ptr [ebp+F_EBX],437
+        jne     f66_bad
+        jmp     i21_ok
+f66_get:
+        mov     word ptr [ebp+F_EBX],437
+        mov     word ptr [ebp+F_EDX],437
+        jmp     i21_ok
+f66_bad:
+        mov     ax,ERR_NOFILE
+        jmp     i21_fail
+f66_fn:
+        mov     ax,ERR_FUNC
+        jmp     i21_fail
+
+;=====================================================================
+; 69h - the volume serial number.  AL = 0 gets it: BL = the drive
+;       (0 = current), EDX -> an info-level word, the serial dword,
+;       the eleven-byte label and the eight-byte file system name, all
+;       four out of the extended BPB every boot sector has carried
+;       since DOS 4.  AL = 1 would rewrite that boot sector and is
+;       refused.
+;
+; Until v0.60 there was no 69h, and so no "Volume Serial Number is"
+; under VOL or DIR in the 16-bit COMMAND.COM, which asks this first -
+; MS-DOS 6.22 prints one for every disk it formatted.
+;=====================================================================
+fn69:
+        cmp     byte ptr [ebp+F_EAX],0
+        jne     f66_fn
+        mov     al,[ebp+F_EBX]
+        or      al,al
+        jnz     f69_expl
+        mov     al,[cur_drive]
+        jmp     short f69_sel
+f69_expl:
+        dec     al                      ; 1-based -> logical
+        cmp     al,MAX_DRIVES
+        jae     f69_drive
+f69_sel:
+        call    vol_select
+        jc      f69_drive
+        cmp     byte ptr [vol_fs],FS_FAT
+        jne     f66_fn                  ; a CD has no boot sector to ask
+        mov     eax,[ebp+F_EDX]
+        mov     ecx,2 + 4 + 11 + 8
+        call    cbuf_ok
+        jc      buf_deny
+        ; sec_buf is the DIRECTORY cache, and sec_lba says which sector
+        ; it holds.  Borrowed without saying so, the next entry update
+        ; (fat_dirupdate writes sec_buf to sec_lba) put this boot sector
+        ; over a root directory sector: RMFSTEST's 69h, then the size of
+        ; the file its output was redirected to.  Forget it BEFORE the
+        ; read, so a failed one is covered too.
+        mov     dword ptr [sec_lba],-1
+        mov     al,[fat_drive]
+        mov     ebx,[fat_partlba]
+        mov     cx,1
+        mov     edi,OFFSET sec_buf
+        call    disk_read
+        jc      f69_io
+        mov     esi,OFFSET sec_buf + 26h        ; FAT12/16's extended BPB
+        cmp     byte ptr [fat_type],32
+        jne     f69_bpb
+        mov     esi,OFFSET sec_buf + 42h        ; FAT32's
+f69_bpb:
+        cmp     byte ptr [esi],29h
+        jne     f66_fn                  ; formatted before DOS 4: no serial
+        inc     esi
+        mov     edi,[ebp+F_EDX]
+        mov     word ptr [edi],0        ; info level 0
+        add     edi,2
+        mov     ecx,4 + 11 + 8
+        cld
+        rep     movsb
+        jmp     i21_ok
+f69_drive:
+        mov     ax,ERR_BADDRIVE
+        jmp     i21_fail
+f69_io:
+        mov     ax,ERR_ACCESS
         jmp     i21_fail
 
 ;=====================================================================
@@ -2081,6 +2429,22 @@ fn41:
         jnz     f41_deny                ; that is a directory - use 3Ah
         test    byte ptr [esi+DE_ATTR],ATTR_READONLY
         jnz     f41_deny
+
+        ; ...AND NOT A FILE THAT IS CURRENTLY A DRIVE LETTER.  A
+        ; mounted image is served from a map of where its clusters
+        ; ARE, built once; freeing that chain hands those clusters to
+        ; the next file created, and the image goes on writing to them.
+        ; The damage is silent and it is to the HOST volume, which is
+        ; the one holding everything else.
+        push    eax
+        push    ebx
+        call    de_getclus
+        mov     ebx,eax
+        mov     al,[cur_vol]
+        call    img_locked
+        pop     ebx
+        pop     eax
+        jc      f41_deny
 
         call    lfn_tomb                ; the chain dies with the file
         call    dir_seek                ; back onto OUR sector and entry
@@ -2293,8 +2657,8 @@ fn3A:
         call    de_getclus
         mov     [mk_clus],eax
 
-        cmp     eax,[cwd_clus]          ; not while we stand in it
-        je      f3A_deny
+        cmp     eax,[cwd_clus]          ; not while we stand in it - and
+        je      f3A_curdir              ; DOS says so with its own code
         or      eax,eax
         jz      f3A_deny                ; the root itself
 
@@ -2340,6 +2704,9 @@ f3A_nopath:
         jmp     i21_fail
 f3A_deny:
         mov     ax,ERR_ACCESS
+        jmp     i21_fail
+f3A_curdir:
+        mov     ax,ERR_CURDIR           ; 16, as DOS6SRC dos\path.asm answers
         jmp     i21_fail
 
 ;=====================================================================
@@ -2444,6 +2811,32 @@ f3D_file:
 
         ; ESI -> live directory entry; grab what we need before the
         ; sector cache gets recycled
+        ; A MOUNTED IMAGE MAY BE READ AND MAY NOT BE WRITTEN.  Reading
+        ; is safe and is worth allowing - the image's sectors and the
+        ; file's bytes are the same blocks in the same cache, so a
+        ; TYPE or a COPY of the file sees exactly what the volume
+        ; sees.  Writing is not: the file's own length and cluster
+        ; chain are what the map was built from, and a program that
+        ; opens the image and writes to it is editing the volume's
+        ; geography while the volume is standing on it.
+        ;
+        ; Refused HERE, at the open, rather than at each of the four
+        ; places that could then shorten it.  One check, and file_trunc
+        ; becomes unreachable for a mounted image instead of needing a
+        ; check of its own.
+        cmp     dword ptr [open_mode],0
+        je      f3D_notimg
+        push    eax
+        push    ebx
+        call    de_getclus
+        mov     ebx,eax
+        mov     al,[cur_vol]
+        call    img_locked
+        pop     ebx
+        pop     eax
+        jc      f3D_locked
+f3D_notimg:
+
         mov     eax,[esi+DE_TIME]       ; time and date are adjacent words,
         mov     [open_stamp],eax        ; and 57h will want both
         call    de_getclus
@@ -2474,6 +2867,10 @@ f3D_nofile:
         ret
 f3D_full:
         mov     ax,ERR_NOHANDLES
+        stc
+        ret
+f3D_locked:
+        mov     ax,ERR_ACCESS           ; it is mounted as a drive letter
         stc
         ret
 
@@ -4019,6 +4416,10 @@ f47_expl:
 f47_sel:
         call    vol_select
         jc      f47_bad
+        mov     eax,[ebp+F_ESI]         ; 64 bytes is the promise, so 64
+        mov     ecx,64                  ; is what is measured - see buf_ok
+        call    cbuf_ok
+        jc      buf_deny
         mov     edi,[ebp+F_ESI]
         call    cwd_string
         jmp     i21_ok
@@ -4451,10 +4852,24 @@ fn56:
         mov     edi,OFFSET name_buf
         call    fat_search
         jc      f56_nofile
-        call    lfn_tomb                ; the OLD name's chain: the new
-        call    dir_seek                ; 8.3 name would break its
-        jc      f56_nofile              ; checksum into an orphan anyway
 
+        ; THE SLOTS THE OLD NAME HOLDS: its long-name chain when it has
+        ; one, and the entry after it.  REMEMBERED, NOT ERASED.  This
+        ; used to lfn_tomb the chain right here, before the new name
+        ; had even been looked at - so a rename that then failed,
+        ; because the new name was taken or its directory did not exist
+        ; or it was on another drive, had already stripped the file of
+        ; its long name.  Nothing is written now until everything that
+        ; can refuse has refused or not.
+        mov     byte ptr [ren_keep],0
+        mov     [ren_first],ebx
+        mov     al,[lfn_ok]
+        mov     [ren_haslfn],al
+        or      al,al
+        jz      f56_nochain
+        mov     eax,[lfn_first]
+        mov     [ren_first],eax
+f56_nochain:
         push    esi
         mov     edi,OFFSET ren_entry    ; the 32 bytes, verbatim
         mov     ecx,32
@@ -4464,7 +4879,23 @@ fn56:
         mov     [mk_par_isroot],al
         mov     [mk_par_start],edx
         mov     [mk_slot],ebx
-        mov     al,[fat_drive]          ; and on which volume
+        ; WHICH VOLUME, AND cur_vol IS THE ONE THAT MEANS THAT.  This
+        ; read fat_drive, and fat_drive is the PHYSICAL drive - so two
+        ; partitions on ONE DISK compared EQUAL and a rename between
+        ; them was allowed.  What it then did is worse
+        ; than refusing: the entry was copied into the target volume's
+        ; directory carrying the source's START CLUSTER, which is a
+        ; cluster number in the SOURCE's FAT and means something else
+        ; entirely in the target's, and the tombstone below went to
+        ; whichever volume happened to be loaded by then - the target -
+        ; so the original was left in place and a slot in the target
+        ; was erased instead.  A file that read as zeroes, a source
+        ; that would not go away, and a deleted entry on a volume
+        ; nobody had touched.  Nothing reached it before MOVE.COM: COPY
+        ; does not call 56h and REN takes no drive on its second
+        ; argument, so the only way to ask was a program that builds
+        ; both paths itself.
+        mov     al,[cur_vol]
         mov     [ren_drv],al
 
         ; resolve the new path; its parent may be a different dir
@@ -4472,7 +4903,7 @@ fn56:
         mov     esi,[ebp+F_EDI]
         call    resolve_parent
         jc      f56_nopath
-        mov     al,[fat_drive]
+        mov     al,[cur_vol]
         cmp     al,[ren_drv]
         jne     f56_notsame
         cmp     byte ptr [rp_noname],0
@@ -4485,17 +4916,98 @@ fn56:
         xor     ebx,ebx
         mov     edi,OFFSET name_buf
         call    fat_search
-        jnc     f56_exists
+        jnc     f56_taken
 
-        ; moving a directory would orphan its ".." - rename in place only
-        test    byte ptr [ren_entry+DE_ATTR],ATTR_DIR
-        jz      f56_mv_ok
+        ; SAME DIRECTORY: RENAME IN PLACE, the way DOS does it.  DOS's
+        ; own rename (SIMPLE_RENAME in rename.asm) writes the eleven
+        ; new bytes over the old ones when source and destination
+        ; share a directory; this wrote a new entry in the first free
+        ; slot and erased the old one, so a renamed file jumped to
+        ; wherever the hole was and DIR listed it somewhere else.
         call    ctx_save
         cmp     al,[mk_par_isroot]
-        jne     f56_deny
+        jne     f56_other
         cmp     edx,[mk_par_start]
-        jne     f56_deny
-f56_mv_ok:
+        je      f56_here
+f56_other:
+        ; moving a directory would orphan its ".." - rename in place only
+        test    byte ptr [ren_entry+DE_ATTR],ATTR_DIR
+        jnz     f56_deny
+        jmp     f56_move
+
+f56_taken:
+        ; THE NEW NAME IS TAKEN - BY THIS FILE?  A long name matches
+        ; without regard to case, so "Read Me.txt" to "READ ME.TXT"
+        ; finds the very entry being renamed.  That is a change of
+        ; case, which a long-name DOS allows; the 8.3 alias stays what
+        ; it was and only the long name is written again.  Every other
+        ; hit is another file, and so is an 8.3 name renamed to itself,
+        ; which DOS refuses.
+        cmp     byte ptr [rp_flong],0
+        je      f56_exists
+        cmp     ebx,[mk_slot]
+        jne     f56_exists
+        call    ctx_save
+        cmp     al,[mk_par_isroot]
+        jne     f56_exists
+        cmp     edx,[mk_par_start]
+        jne     f56_exists
+        mov     esi,OFFSET ren_entry
+        mov     edi,OFFSET name_buf
+        mov     ecx,11
+        rep     movsb
+        mov     byte ptr [ren_keep],1
+
+f56_here:
+        cmp     byte ptr [rp_flong],0
+        jne     f56_hlong
+        ; a short new name: the eleven bytes, in the slot it already has
+        call    f56_tomb
+        mov     ebx,[mk_slot]
+        call    dir_seek
+        jc      f56_deny
+        jmp     short f56_setname
+
+f56_hlong:
+        ; a long one stays put only if its chain fits in the slots the
+        ; old name held.  Longer than that, it moves like any other.
+        mov     eax,[rp_flen]           ; slots = ceil(len / 13) + 1
+        add     eax,12
+        xor     edx,edx
+        mov     ecx,13
+        div     ecx
+        inc     eax
+        mov     [ren_need],eax
+        mov     ecx,[mk_slot]
+        sub     ecx,[ren_first]
+        inc     ecx
+        cmp     eax,ecx
+        ja      f56_move
+        cmp     byte ptr [ren_keep],0
+        jne     f56_hl2
+        mov     esi,[rp_fptr]
+        mov     ecx,[rp_flen]
+        call    lfn_alias               ; -> name_buf
+        jc      f56_deny
+f56_hl2:
+        call    f56_tomb
+        mov     ebx,[mk_slot]           ; the run ENDS at the entry
+        sub     ebx,[ren_need]
+        inc     ebx
+        mov     esi,[rp_fptr]
+        mov     ecx,[rp_flen]
+        call    lfn_storeat             ; -> EBX = mk_slot, ESI -> it
+        jc      f56_deny
+f56_setname:
+        mov     edi,esi
+        mov     esi,OFFSET name_buf
+        mov     ecx,11
+        rep     movsb
+        call    fat_dirupdate
+        jc      f56_deny
+        jmp     f56_done
+
+f56_move:
         cmp     byte ptr [rp_flong],0   ; a long NEW name gets a fresh
         je      f56_slot                ; alias and chain in its home
         mov     esi,[rp_fptr]
@@ -4526,19 +5038,38 @@ f56_fill:
         call    fat_dirupdate
         jc      f56_deny
 
-        ; tombstone the original
+        ; tombstone the original, its long name first
         mov     al,[mk_par_isroot]
         mov     edx,[mk_par_start]
         call    ctx_restore
+        call    f56_tomb
         mov     ebx,[mk_slot]
         call    dir_seek
         jc      f56_deny
         mov     byte ptr [esi],0E5h
         call    fat_dirupdate
         jc      f56_deny
+f56_done:
         call    fat_flush               ; a dir may have grown a cluster
         jc      f56_deny
         jmp     i21_ok
+
+; f56_tomb - erase the old name's long-name chain, if it had one.  The
+;            context must be the old name's directory.  lfn_tomb works
+;            from what the last fat_search left, and lfn_alias has run
+;            searches since, so the chain is put back from ren_first.
+f56_tomb:
+        cmp     byte ptr [ren_haslfn],0
+        je      f56_tret
+        push    ebx
+        mov     eax,[ren_first]
+        mov     [lfn_first],eax
+        mov     byte ptr [lfn_ok],1
+        mov     ebx,[mk_slot]
+        call    lfn_tomb
+        pop     ebx
+f56_tret:
+        ret
 
 f56_nofile:
         mov     ax,ERR_NOFILE
@@ -4557,8 +5088,13 @@ f56_deny:
         jmp     i21_fail
 
 ren_entry   db  32 dup(0)
-ren_drv     db  0
-            db  0,0,0
+ren_first   dd  0                       ; first slot the old name holds
+ren_need    dd  0                       ; slots the new name takes
+ren_drv     db  0                       ; the LOGICAL drive - cur_vol,
+                                        ; not fat_drive; see fn56
+ren_haslfn  db  0                       ; the old name had a chain
+ren_keep    db  0                       ; a change of case: keep the alias
+            db  0
 
 ;=====================================================================
 ; 4Bh - EXEC.  AL = 0, EDX -> path of a program, EBX -> a parameter
@@ -4677,6 +5213,22 @@ f4B_noenv:
         mov     [edi+XN_ESP0],eax
         mov     [r3_esp0],ebp
 
+        ; AND WHERE ITS HEAP IS, which the child's load is about to
+        ; describe over the top of.  r3h_lo and r3h_hi are one pair of
+        ; globals and exec_load sets them for every child, so a parent
+        ; came back from its first child with the CHILD'S heap bounds -
+        ; offsets from the end of ATTRIB's image, say, applied to the
+        ; shell's slot, where 48h walked the shell's own code looking
+        ; for block headers, found none, and answered "no memory".
+        ; DIR /O then quietly listed unsorted, which is what it does
+        ; when it cannot get memory, and nothing looked broken.  Found
+        ; when DOSKEY's pool made the shell's FIRST allocation a
+        ; permanent one and every one after it failed.
+        mov     eax,[r3h_lo]
+        mov     [edi+XN_HLO],eax
+        mov     eax,[r3h_hi]
+        mov     [edi+XN_HHI],eax
+
         ; Park the occupant, if there is one.  At depth 0 the caller is
         ; the shell, which lives in its own slot and is not disturbed.
         cmp     dword ptr [exec_depth],0
@@ -4698,8 +5250,18 @@ f4B_nosave:
         ; the child would saw through the branch we are sitting on.
         ; Everything needed from here on is in kernel memory.
         mov     esp,KSTACK_TOP
-        mov     eax,1                   ; the transient slot, whatever the
-        call    r3_useslot              ; depth: nesting parks, not relocates
+        ; The transient slot, whatever the depth - nesting parks, it
+        ; does not relocate - but named by the CHILD'S DEPTH and not by
+        ; the constant 1.  r3_useslot keeps the number as r3_depth, and
+        ; r3_thunk runs a hooked handler only when the depth it was
+        ; hooked at (r3vdep, from exec_depth) is r3_depth.  With a 1
+        ; here, every program two or more levels down - anything a
+        ; batch file ran under CMD /C - had its INT 23h and INT 24h
+        ; handlers ignored: XCOPY's ^C was echoed and then lost, and a
+        ; critical error was answered Fail without the program asked.
+        mov     eax,[exec_depth]
+        inc     eax
+        call    r3_useslot
         mov     edx,OFFSET exec_path
         call    exec_load
         jc      f4B_loadfail            ; AX holds the code
@@ -4735,6 +5297,10 @@ f4B_loadfail:
         mov     edi,[exec_depth]
         imul    edi,XN_LEN
         add     edi,OFFSET exec_stk
+        mov     eax,[edi+XN_HLO]        ; and its heap, which a load that
+        mov     [r3h_lo],eax            ; got as far as r3h_init has laid
+        mov     eax,[edi+XN_HHI]        ; out for a child that will not run
+        mov     [r3h_hi],eax
         mov     esi,[edi+XN_SAVE]
         or      esi,esi
         jz      f4B_lf_done
@@ -5264,6 +5830,7 @@ f4C_sweep:
 f4C_next:
         add     esi,SFT_LEN
         loop    f4C_sweep
+        call    find_freeown            ; ...and its searches: EDX = owner
 
         ; ...and reclaim what it allocated and never freed.  DOS always
         ; did this; PM-DOS used to leak every 48h block until reboot.
@@ -5288,6 +5855,12 @@ f4C_next:
         ; happen goes with everything else this unwind discards.
         call    r3_abandon
 
+        ; Its mouse handlers go with it, and its cursor if it reset the
+        ; driver and left it showing (MOUSE.INC, ms_exit).
+        mov     eax,[exec_depth]
+        inc     eax
+        call    dword ptr ds:[IOS_MSEXIT]
+
         cmp     dword ptr [exec_depth],0
         je      f4C_shell
 
@@ -5309,6 +5882,10 @@ f4C_next:
         mov     esp,KSTACK_TOP
         mov     eax,[exec_depth]        ; the waiting program's slot, and
         call    r3_useslot              ; its descriptors, back
+        mov     eax,[edi+XN_HLO]        ; and its heap - see 4Bh
+        mov     [r3h_lo],eax
+        mov     eax,[edi+XN_HHI]
+        mov     [r3h_hi],eax
         mov     esi,[edi+XN_SAVE]
         or      esi,esi
         jz      f4C_noparked            ; depth 1: the shell's own slot
@@ -5342,13 +5919,20 @@ f4C_noparked:
         jmp     i21_return
 
 f4C_vdm:
-        ; The lock first, for the same reason cmd_gohome clears it: a
-        ; longjmp out of a critical-error handler would carry the
-        ; kernel's "a handler is running" flag away with it, after
-        ; which every critical error quietly answers itself.
-        mov     byte ptr [crit_busy],0
-        mov     byte ptr ds:[DOS_ERRFLG],0
-        jmp     vdm_abort
+        ; THE GUEST THAT IS RUNNING ends, and not the box around it -
+        ; see vdm_killprog, which also clears the critical-error lock
+        ; for cmd_gohome's reason: a longjmp out of a handler would
+        ; carry the kernel's "a handler is running" flag away with it,
+        ; after which every critical error quietly answers itself.
+        ; crit_raise sets that lock before its Abort calls 4Ch, and it
+        ; is the one way to tell an Abort from a ^C here - which 4Dh
+        ; has to, in AH.
+        mov     eax,VDX_CTRLC
+        cmp     byte ptr [crit_busy],0
+        je      f4C_vkill
+        mov     eax,VDX_CRITERR
+f4C_vkill:
+        jmp     vdm_killprog
 
 f4C_shell:
         ; The shell is going away, and with it any redirection it
@@ -5416,7 +6000,7 @@ fn4E:
         jc      buf_deny                ; the DTA is wherever 1Ah left it
         mov     esi,[ebp+F_EDX]
         call    resolve_parent          ; sets the context, fills name_buf
-        jc      f4E_none                ; ([rp_noname] leaves it all-'?')
+        jc      f4E_rpfail              ; ([rp_noname] leaves it all-'?')
         mov     dword ptr [srch_long],0 ; classic find stays pure 8.3 -
         mov     byte ptr [srch_lonly],0 ; the DTA can only carry 8.3
                                         ; state between 4Eh and 4Fh
@@ -5552,6 +6136,19 @@ f4E_none:
 f4E_nf:
         jmp     i21_fail
 
+; THE RESOLVER'S OWN ANSWER, KEPT.  A pattern whose DIRECTORY does not
+; exist is "path not found" (3), and "nothing matched in a directory
+; that does" is "file not found" (2) - two sentences DOS has always had
+; and this call used to collapse into the second, because every
+; failure came through f4E_none and it wrote ERR_NOFILE over whatever
+; resolve_parent had said.  ATTRIB had to work round it by asking
+; about the directory separately.  resolve_parent answers ERR_NOPATH
+; for a missing or non-directory component on the way and
+; ERR_BADDRIVE for a drive that is not there, which is exactly the
+; distinction the caller wanted.
+f4E_rpfail:
+        jmp     i21_fail
+
 ;=====================================================================
 ; 43h - file attributes.  EDX -> path; AL = 0 reads them into CX,
 ;       AL = 1 sets them from CX (read-only, hidden, system, archive -
@@ -5652,8 +6249,10 @@ FH_P83          EQU     5               ; 11 bytes - the 8.3 pattern
 FH_NEXT         EQU     16              ; dd - resume index
 FH_DIR          EQU     20              ; dd - directory start
 FH_PLEN         EQU     24              ; dd - long pattern length
-FH_PLONG        EQU     28              ; the long pattern text
-FH_SIZE         EQU     288             ; = 28 + LFN_MAX
+FH_OWNER        EQU     28              ; dd - cur_own of the program that
+                                        ; opened it, for the 4Ch sweep
+FH_PLONG        EQU     32              ; the long pattern text
+FH_SIZE         EQU     292             ; = 32 + LFN_MAX
 
 fn71:
         cmp     byte ptr [lfn_on],0     ; LFN=OFF in CONFIG.SYS: the
@@ -5711,8 +6310,14 @@ f71_j6C:
 
 ;--- 714Eh find first -------------------------------------------------
 fn714E:
-        mov     ebx,OFFSET find_tbl     ; a free handle first
+        mov     eax,[ebp+F_EDI]         ; the record goes out whole on
+        mov     ecx,318                 ; every step, so it is measured
+        call    cbuf_ok                 ; once here, before a handle is
+        jc      buf_deny                ; spent on it
+        mov     ebx,[find_tblp]         ; a free handle first
         xor     ecx,ecx
+        or      ebx,ebx
+        jz      f7e_none                ; the table was never bought
 f7e_slot:
         cmp     byte ptr [ebx+FH_INUSE],0
         je      f7e_have
@@ -5720,15 +6325,19 @@ f7e_slot:
         inc     ecx
         cmp     ecx,FIND_MAX
         jb      f7e_slot
+f7e_none:
         mov     ax,ERR_NOHANDLES
         jmp     i21_fail
 f7e_have:
         mov     [f71_hdl],ebx
         mov     [f71_hidx],ecx
+        mov     eax,[cur_own]           ; whose it is, so 4Ch can take it
+        mov     [ebx+FH_OWNER],eax      ; back from a program that never
+                                        ; closed it
 
         mov     esi,[ebp+F_EDX]
         call    resolve_parent          ; the walk is LFN-transparent
-        jc      f71_nofile
+        jc      f71_rpfail              ; its AX: path vs drive, as 4Eh
         mov     dword ptr [srch_long],0 ; find matches its own way
         mov     byte ptr [srch_lonly],0
         cmp     byte ptr [rp_noname],0
@@ -5787,11 +6396,13 @@ f7e_plset:
 
 ;--- 714Fh find next --------------------------------------------------
 fn714F:
+        mov     eax,[ebp+F_EDI]
+        mov     ecx,318
+        call    cbuf_ok
+        jc      buf_deny
         movzx   ebx,word ptr [ebp+F_EBX]
-        cmp     ebx,FIND_MAX
-        jae     f71_badh
-        imul    ebx,FH_SIZE
-        add     ebx,OFFSET find_tbl
+        call    find_hptr
+        jc      f71_badh
         cmp     byte ptr [ebx+FH_INUSE],0
         je      f71_badh
         mov     [f71_hdl],ebx
@@ -5936,6 +6547,8 @@ f7s_done:
 f71_nofile:
         mov     ax,ERR_NOFILE
         jmp     i21_fail
+f71_rpfail:
+        jmp     i21_fail                ; AX = resolve_parent's - see f4E_rpfail
 f71_nomore:
         cmp     byte ptr [f71_first],0
         je      f71_nm2
@@ -5953,6 +6566,10 @@ fn71A0:
         mov     edi,[ebp+F_EDI]
         cmp     dword ptr [ebp+F_ECX],4
         jb      f7a0_nofs
+        mov     eax,edi
+        mov     ecx,4
+        call    cbuf_ok
+        jc      buf_deny
         mov     dword ptr [edi],00544146h       ; "FAT",0
 f7a0_nofs:
         mov     word ptr [ebp+F_EBX],4002h      ; LFNs live here, and
@@ -5964,12 +6581,86 @@ f7a0_nofs:
 ;--- 71A1h find close -------------------------------------------------
 fn71A1:
         movzx   ebx,word ptr [ebp+F_EBX]
-        cmp     ebx,FIND_MAX
-        jae     f71_badh
-        imul    ebx,FH_SIZE
-        add     ebx,OFFSET find_tbl
+        call    find_hptr
+        jc      f71_badh
         mov     byte ptr [ebx+FH_INUSE],0
         jmp     i21_ok
+
+;---------------------------------------------------------------------
+; find_hptr - EBX = a find handle -> EBX = its entry.  CF if there is
+;             no such handle.  Nothing else touched.
+;---------------------------------------------------------------------
+find_hptr:
+        cmp     ebx,FIND_MAX
+        jae     fhp_bad
+        cmp     dword ptr [find_tblp],0
+        je      fhp_bad
+        imul    ebx,FH_SIZE
+        add     ebx,[find_tblp]
+        clc
+        ret
+fhp_bad:
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; find_init - the handle table, out of the arena at boot.
+;
+; OUT OF THE ARENA AND NOT THE IMAGE, because the image has a ceiling:
+; PMDOS.SYS must end below DOS_LIMIT and a table of 32 entries is 9K,
+; most of what is left under it.  Four entries in the image was the
+; old answer, and four is the depth of a tree ATTRIB /S can walk.
+;
+; Bought with cur_own ZEROED, for cache_addchunk's reason: arena_alloc
+; stamps every block with [cur_own], 4Ch frees by owner, and owner 0 is
+; the kernel's and is never swept.  No table means every 714Eh says
+; "no handles", which is degraded and honest, not fatal.
+;---------------------------------------------------------------------
+find_init:
+        pushad
+        push    dword ptr [cur_own]
+        mov     dword ptr [cur_own],0
+        mov     ebx,FIND_MAX * FH_SIZE
+        call    arena_alloc
+        pop     dword ptr [cur_own]
+        jc      fin_out
+        mov     [find_tblp],eax
+        mov     edi,eax
+        xor     eax,eax
+        mov     ecx,(FIND_MAX * FH_SIZE) / 4
+        rep     stosd
+fin_out:
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; find_freeown - EDX = an owner id.  Every find handle it left open is
+;                closed.  Everything preserved.
+;
+; A handle is a kernel-side record of a search in progress, and a
+; program that ends without 71A1h - killed by ^C in the middle of a
+; walk, say - would otherwise hold it until the next boot.  With four
+; handles that was four programs; the sweep is what makes the table a
+; resource and not a countdown.
+;---------------------------------------------------------------------
+find_freeown:
+        pushad
+        mov     ebx,[find_tblp]
+        or      ebx,ebx
+        jz      ffo_out
+        mov     ecx,FIND_MAX
+ffo_lp:
+        cmp     byte ptr [ebx+FH_INUSE],0
+        je      ffo_next
+        cmp     [ebx+FH_OWNER],edx
+        jne     ffo_next
+        mov     byte ptr [ebx+FH_INUSE],0
+ffo_next:
+        add     ebx,FH_SIZE
+        loop    ffo_lp
+ffo_out:
+        popad
+        ret
 
 ;--- 7147h get current directory, the long form -----------------------
 ; DL = drive (0 = default, 1 = A:), ESI -> buffer.  47h style: no
@@ -6018,7 +6709,12 @@ f747_zf:
         pop     esi
 
         mov     eax,[ebp+F_ESI]
+        mov     ecx,LFN_MAX
+        call    cbuf_ok
+        jc      buf_deny
         mov     [prd_out],eax
+        add     eax,LFN_MAX-1           ; 260 bytes is what the LFN API
+        mov     [prd_lim],eax           ; promises here, NUL included
         mov     byte ptr [prd_mode],1
         call    path_render
         jc      f747_np
@@ -6044,6 +6740,10 @@ fn7160:
         mov     ah,1
 f760_m:
         mov     [prd_mode],ah
+        mov     eax,[ebp+F_EDI]         ; prd_lim keeps the rendering in
+        mov     ecx,LFN_MAX             ; 260 bytes; this keeps the 260
+        call    cbuf_ok                 ; bytes out of the kernel
+        jc      buf_deny
         mov     esi,[ebp+F_ESI]
         call    resolve_core
         jc      f760_err
@@ -6055,6 +6755,9 @@ f760_m:
         mov     byte ptr [edi+2],'\'
         add     edi,3
         mov     [prd_out],edi
+        mov     eax,[ebp+F_EDI]         ; the drive and backslash came
+        add     eax,LFN_MAX-1           ; out of the same 260 bytes
+        mov     [prd_lim],eax
         call    path_render
         jc      f760_err
         jmp     i21_ok
@@ -6073,8 +6776,27 @@ f760_err:
 ; from what was typed instead.  Intermediates must exist as
 ; directories: CF with AX = ERR_NOPATH otherwise.
 ;---------------------------------------------------------------------
+; [prd_lim] IS ONE PAST THE LAST BYTE THE TEXT MAY OCCUPY, and the
+; terminating NUL is allowed to land exactly on it.  Every caller sets
+; it, and the reason it exists is not the raised MAX_DEPTH - it is that
+; NOTHING HERE HAS EVER CHECKED.  7160h and 7147h render LONG names,
+; up to 259 characters each, into a buffer the LFN API says is 260 for
+; the whole path: eight of those was already four times the buffer, and
+; the only thing that stopped it being found is that nobody nests long
+; names deeply.  Raising the depth to 32 would have made a latent
+; overrun of somebody else's memory into a likely one, so it is closed
+; here rather than made larger.
+;
+; The failure path restores ESP from [prd_sp] because the checks sit at
+; three different stack depths - inside the pushad, inside a "push edi",
+; and inside "push edi / push esi" - and a bound that has to be
+; unwound three different ways is a bound that will be got wrong the
+; next time a branch is added.  path_render already keeps its whole
+; working state in globals and is already not re-entrant, so one saved
+; stack pointer costs nothing it had not already spent.
 path_render:
         pushad
+        mov     [prd_sp],esp
         call    ctx_root
         xor     edx,edx
 prd_lp:
@@ -6083,6 +6805,8 @@ prd_lp:
         or      edx,edx                 ; a separator before every
         jz      prd_nosep               ; component but the first
         mov     edi,[prd_out]
+        cmp     edi,[prd_lim]
+        jae     prd_toolong
         mov     byte ptr [edi],'\'
         inc     edi
         mov     [prd_out],edi
@@ -6127,6 +6851,8 @@ prd_lcp:
         mov     al,[esi]
         or      al,al
         jz      prd_lcpd
+        cmp     edi,[prd_lim]
+        jae     prd_toolong
         mov     [edi],al
         inc     esi
         inc     edi
@@ -6135,7 +6861,8 @@ prd_lcpd:
         pop     esi
         jmp     short prd_app
 prd_as83:
-        call    name83_str              ; ESI = the live entry
+        call    prd_room13              ; name83_str writes up to 12
+        call    name83_str              ; characters and a NUL
 prd_a83:
         cmp     byte ptr [edi],0        ; advance over what it wrote
         je      prd_app
@@ -6175,6 +6902,7 @@ prd_astyped:
         jnz     prd_typed
         mov     esi,edi
         mov     edi,[prd_out]
+        call    prd_room13
         call    name83_str
 prd_pad:
         cmp     byte ptr [edi],0
@@ -6185,6 +6913,10 @@ prd_typed:
         mov     esi,eax
         mov     ecx,[rp_llen+edx*4]
         mov     edi,[prd_out]
+        mov     eax,[prd_lim]           ; the typed text is copied
+        sub     eax,edi                 ; wholesale, so its length is
+        cmp     eax,ecx                 ; checked wholesale too
+        jb      prd_toolong
 prd_tcp:
         or      ecx,ecx
         jz      prd_tfin
@@ -6208,6 +6940,31 @@ prd_np:
         popad
         mov     ax,ERR_NOPATH
         stc
+        ret
+
+;--- the answer will not fit in the buffer the caller promised.  The
+;--- path is not wrong, so this is not ERR_NOPATH in spirit - but it
+;--- is the only error 60h/7160h have ever been able to return, and a
+;--- caller that gets it back and shortens its question is doing the
+;--- right thing.  The alternative is a truncated path, which LOOKS
+;--- like an answer and names a different file.
+prd_toolong:
+        mov     esp,[prd_sp]
+        popad
+        mov     ax,ERR_NOPATH
+        stc
+        ret
+
+;--- prd_room13 - EDI is about to have name83_str written at it, which
+;--- is up to twelve characters and a NUL.  Take the whole thirteen or
+;--- do not start: a check per byte would leave half a name behind.
+prd_room13:
+        push    eax
+        mov     eax,[prd_lim]
+        sub     eax,edi
+        cmp     eax,12
+        pop     eax
+        jb      prd_toolong
         ret
 
 ;--- 716Ch open or create, long-name aware ----------------------------
@@ -6461,7 +7218,8 @@ f71_hidx    dd  0                       ; its index (the AX we hand out)
 f71_first   db  0                       ; this walk is a find-FIRST
             db  0,0,0
 f71_name    db  16 dup(0)               ; short name rendered as text
-find_tbl    db  FIND_MAX * FH_SIZE dup(0)
+find_tblp   dd  0                       ; FIND_MAX entries, in the arena -
+                                        ; see find_init
 
 ; 71h write-side state
 f6c_dx      dd  0                       ; 716Ch: the caller's DX parked
@@ -6469,6 +7227,8 @@ f6c_act     db  0                       ; ...and the action taken
 prd_mode    db  0                       ; path_render: 1 = long names
             db  0,0
 prd_out     dd  0                       ; path_render's output cursor
+prd_lim     dd  0                       ; ...and one past its last byte
+prd_sp      dd  0                       ; ...and the stack to come back to
 
 ;=====================================================================
 ; SFT management
@@ -6560,6 +7320,42 @@ sn_full:
         ret
 
 ;---------------------------------------------------------------------
+; std_set - AL = the slot standard input is, AH = standard output.
+;
+; THE CHARACTER FUNCTIONS - 01h to 0Ch - READ AND WRITE THROUGH THESE
+; TWO POINTERS and not through slots 0 and 1 by name, because in DOS
+; they go through the CALLER'S handles 0 and 1, and a DOS program's
+; handles are its own table's (JFT.INC).  MS-DOS 6.22's COMMAND.COM
+; redirects DIR /B into a pipe by pointing its handle 1 at the pipe
+; file, and then prints each name with 40h and each line break with
+; 02h: the names went into the pipe and the line breaks went to
+; CMD.EXE's standard output.  jft_pre aims these at the guest's 0 and
+; 1 for the length of a character call and jft_post puts them back;
+; for everybody else they are slots 0 and 1, which is what they were.
+;---------------------------------------------------------------------
+std_set:
+        push    edx
+        mov     [std_islot],al
+        mov     [std_oslot],ah
+        movzx   edx,al
+        imul    edx,SFT_LEN
+        add     edx,OFFSET sft_tbl
+        mov     [std_inp],edx
+        movzx   edx,ah
+        imul    edx,SFT_LEN
+        add     edx,OFFSET sft_tbl
+        mov     [std_outp],edx
+        pop     edx
+        ret
+
+std_inp         dd      OFFSET sft_tbl
+std_outp        dd      OFFSET sft_tbl + SFT_LEN
+std_islot       db      0
+std_oslot       db      1
+sin_raw         db      0               ; 07h: a ^C is a key - see fn07
+                db      0
+
+;---------------------------------------------------------------------
 ; std_in - read one byte through handle 0, wherever it points.
 ;          A device slot is the keyboard (blocks; AX comes back as
 ;          IOS_CONIN delivers it).  A file slot - stdin redirected -
@@ -6567,32 +7363,39 @@ sn_full:
 ;          the keyboard never sets it.  All other registers preserved.
 ;---------------------------------------------------------------------
 std_in:
-        test    dword ptr [sft_tbl+SFT_FLAGS],SFTF_DEVICE
-        jz      sin_file
-        cmp     dword ptr [sft_tbl+SFT_DEVID],DEV_CON
+        push    edx
+        mov     edx,[std_inp]
+        test    dword ptr [edx+SFT_FLAGS],SFTF_DEVICE
+        jz      sin_file0
+        cmp     dword ptr [edx+SFT_DEVID],DEV_CON
         jne     sin_dev
+        pop     edx
 sin_key:
         call    dos_conin               ; the wait that lets INT 28h out
-        cmp     al,3                    ; ^C from the keyboard breaks
+        cmp     al,3                    ; ^C from the keyboard breaks,
+        jne     sin_ok                  ; unless it is 07h asking
+        cmp     byte ptr [sin_raw],0
         je      sin_break
+sin_ok:
         clc
         ret
 sin_break:
         call    ctrl_break              ; returning means carry on
         jmp     short sin_key
 sin_dev:                                ; stdin redirected to NUL or a port
-        push    edx
-        mov     edx,dword ptr [sft_tbl+SFT_DEVID]
+        mov     edx,dword ptr [edx+SFT_DEVID]
         call    dev_in
         pop     edx                     ; the pop leaves CF alone
         ret
+sin_file0:
+        pop     edx
 sin_file:
         push    ebx
         push    ecx
         push    edx
         push    esi
         push    edi
-        mov     esi,OFFSET sft_tbl
+        mov     esi,[std_inp]
         call    sft_seldrv
         jc      sin_eof
         mov     eax,[esi+SFT_POS]
@@ -6625,13 +7428,16 @@ sin_out:
 ;           no error path to report one, and never did.
 ;---------------------------------------------------------------------
 std_out:
-        test    dword ptr [sft_tbl+SFT_LEN+SFT_FLAGS],SFTF_DEVICE
-        jz      sout_file
         push    edx
-        mov     edx,dword ptr [sft_tbl+SFT_LEN+SFT_DEVID]
+        mov     edx,[std_outp]
+        test    dword ptr [edx+SFT_FLAGS],SFTF_DEVICE
+        jz      sout_file0
+        mov     edx,dword ptr [edx+SFT_DEVID]
         call    dev_out
         pop     edx
         ret
+sout_file0:
+        pop     edx
 sout_file:
         push    ecx
         push    esi
@@ -6659,7 +7465,7 @@ std_write:
         or      ecx,ecx
         jz      sw_done
         mov     edi,esi                 ; EDI = the caller's bytes
-        mov     esi,OFFSET sft_tbl + SFT_LEN
+        mov     esi,[std_outp]
         call    sft_seldrv
         jc      sw_done
 sw_more:
@@ -6675,7 +7481,8 @@ sw_more:
         sub     ecx,eax
         jmp     short sw_more
 sw_mark:
-        or      dword ptr [sft_tbl+SFT_LEN+SFT_FLAGS],SFTF_DIRTY
+        mov     eax,[std_outp]
+        or      dword ptr [eax+SFT_FLAGS],SFTF_DIRTY
 sw_done:
         pop     edi
         pop     esi
@@ -6689,6 +7496,10 @@ sw_done:
 ; F0h - PM-DOS console extension.
 ;       AL = 0: clear screen    AL = 1: get cursor -> DH,DL
 ;       AL = 2: set cursor from DH,DL
+;       AL = 3: screen size -> DH rows, DL columns, CL character height
+;       AL = 4 to 9: cells, cursor shape, keys and the shift state for a
+;       full-screen native program - see fF0_put
+;       AL = 0Ah: 25 or 43/50 text lines - see fF0_lines
 ;=====================================================================
 ;=====================================================================
 ; 73h - the FAT32 extended calls.  Only 7303h, get extended free
@@ -6733,9 +7544,9 @@ fn73:
         mov     ecx,F73_SIZE / 4
         rep     stosd
 
-        mov     eax,[fat_spc]
+        call    vol_lgeom               ; the volume's own sector size
         mov     dword ptr [f73_rec+F73_SPC],eax
-        mov     dword ptr [f73_rec+F73_BPS],512
+        mov     dword ptr [f73_rec+F73_BPS],ecx
         mov     ebx,eax                 ; EBX = sectors per cluster
 
         mov     eax,[fat_totclus]
@@ -6756,6 +7567,9 @@ fn73:
         mov     ecx,F73_SIZE
 f73_len:
         jecxz   f73_short
+        mov     eax,[ebp+F_EDI]         ; as much of the caller's buffer as
+        call    cbuf_ok                 ; is about to be written - which
+        jc      buf_deny                ; nothing measured before
         mov     esi,OFFSET f73_rec
         mov     edi,[ebp+F_EDI]
         rep     movsb
@@ -6772,8 +7586,9 @@ f73_bad:
 ;              current one if there is no path and no colon in it.
 ;              vol_select is called; CF set if there is no such drive.
 ;
-; Lifted out of 7303h when 7302h and 7304h turned out to name their
-; drive exactly the same way.  The whole 73h family does.
+; 7303h's alone now.  It was lifted out when 7302h and 7304h were
+; believed to name their drive the same way, and they do not: DOS 7
+; gives those two a drive number in DL - see f73_dldrv.
 ;---------------------------------------------------------------------
 f73_seldrv:
         mov     esi,[ebp+F_EDX]
@@ -6796,58 +7611,74 @@ f73s_bad:
         ret
 
 ;=====================================================================
-; 7302h - the extended drive parameter block, into the caller's own
-;         buffer: EDX -> the drive, EDI -> the buffer, ECX = its size.
+; 7302h - DOS 7.1's extended drive parameter block, into the caller's
+;         own buffer: DL = the drive (0 = default, 1 = A:), EDI -> the
+;         buffer, ECX = its size.  The layout is EDPB_* in PMDOS.INC.
 ;
 ; What a program is after here is the SHAPE of the volume - cluster
 ; size, where the data starts, how many clusters there are - which is
 ; what it needs to work in sectors and clusters rather than in files.
-; 7303h answers the free-space half of the same question and has since
-; v0.24; this is the layout half, and the two together are why the
-; FAT32 family exists at all: every field in both is 32 bits wide,
-; because the DOS 4 originals were 16 and a FAT32 volume overflows
-; them.
+; 7303h answers the free-space half of the same question; this is the
+; layout half.
 ;
-; The block is DESCRIBED rather than POINTED AT - see the DPB_* notes
-; in PMDOS.INC for why that distinction is the whole reason this call
-; can be answered honestly when fn52's DPB chain cannot.
+; A DRIVE NUMBER IN DL, AND DOS'S OWN BLOCK, as of v0.60.  The first
+; version named the drive with a path at EDX and returned a layout of
+; PM-DOS's own, and CHKDSK - written for Windows 95's FAT32 calls -
+; passed DL = 3 for C: straight through the ring-3 bridge as a POINTER
+; to slot offset 3, the guard page, where the kernel faulted.  A program
+; written against DOS 7.1 now gets exactly what DOS 7.1 gives it.
+;
+; A SHORT BUFFER IS REFUSED, not half-filled.  DOS 7.1 checks CX
+; against the block's size and answers 18h, bad request length, and a
+; caller that got a partial block would read zeroes as geometry.
 ;=====================================================================
 f7302:
-        call    f73_seldrv              ; AL survives it: vol_select is a
-        jc      f73_bad                 ; pushad round the whole of itself
+        cmp     dword ptr [ebp+F_ECX],F72_SIZE
+        jb      f72_badlen
+        call    f73_dldrv               ; -> AL = the volume, selected
+        jc      f73_nodrv
+        cmp     byte ptr [vol_fs],FS_FAT
+        jne     f73_bad                 ; a CD has no DPB to describe
         mov     [f73_drv],al
 
+        ; EXACTLY F72_SIZE BYTES, not the dwords that cover it.  The
+        ; block is 63 bytes and f73_drv is the byte after it, so a
+        ; rounded-up STOSD zeroed the drive number just stored - and
+        ; every block said drive A:.  The old 47-byte block had the same
+        ; overrun; nothing checked the drive field until F32TEST did it
+        ; on a mounted M:.
         mov     edi,OFFSET f73_dpb
         xor     eax,eax
-        mov     ecx,(F72_SIZE + 3) / 4
-        rep     stosd
+        mov     ecx,F72_SIZE
+        rep     stosb
+        mov     word ptr [f73_dpb+F72_LEN],EDPB_LEN
         mov     edi,OFFSET f73_dpb + F72_DPB
 
         mov     al,[f73_drv]            ; ...whichever one was selected
-        mov     [edi+DPB_DRIVE],al
-        mov     byte ptr [edi+DPB_UNIT],0
-        mov     word ptr [edi+DPB_BPS],512
-
-        mov     eax,[fat_spc]
+        mov     [edi+EDPB_DRIVE],al
+        mov     byte ptr [edi+EDPB_UNIT],0
+        call    vol_lgeom               ; EAX = spc, ECX = bps, in the
+        mov     [edi+EDPB_BPS],cx       ; volume's LOGICAL sectors
+        mov     ecx,eax
         dec     eax
-        mov     [edi+DPB_SPCM1],al
-        mov     eax,[fat_spc]
-        xor     ecx,ecx                 ; and the same number as a SHIFT,
+        mov     [edi+EDPB_SPCM1],al
+        xor     edx,edx                 ; and the same number as a SHIFT,
 f72_shift:                              ; which is the field beside it and
-        cmp     eax,1                   ; is why a cluster is always a
+        cmp     ecx,1                   ; is why a cluster is always a
         jbe     f72_gotshift            ; power of two sectors
-        shr     eax,1
-        inc     ecx
+        shr     ecx,1
+        inc     edx
         jmp     short f72_shift
 f72_gotshift:
-        mov     [edi+DPB_SHIFT],cl
+        mov     [edi+EDPB_SHIFT],dl
 
         mov     eax,[fat_rsvd]
-        mov     [edi+DPB_RSVD],ax
+        call    f72_lsec
+        mov     [edi+EDPB_RSVD],ax
         mov     eax,[fat_nfats]
-        mov     [edi+DPB_NFATS],al
+        mov     [edi+EDPB_NFATS],al
         mov     eax,[fat_rootent]
-        mov     [edi+DPB_ROOTENT],ax
+        mov     [edi+EDPB_ROOTENT],ax
 
         ; The sector numbers are the VOLUME'S, not the disk's.  Every
         ; LBA the kernel holds has the partition folded into it - see
@@ -6855,112 +7686,215 @@ f72_gotshift:
         ; the drive it describes.
         mov     eax,[fat_datalba]
         sub     eax,[fat_partlba]
-        mov     [edi+DPB_DATA],eax
+        call    f72_lsec
+        mov     [edi+EDPB_DATA],eax
+        mov     [edi+EDPB_DATA16],ax
         mov     eax,[fat_totclus]
         inc     eax                     ; the HIGHEST number, and cluster
-        mov     [edi+DPB_MAXCLUS],eax   ; numbering starts at two
+        mov     [edi+EDPB_MAXCLUS],eax  ; numbering starts at two
+        mov     [edi+EDPB_MAXCL16],ax
         mov     eax,[fat_spf]
-        mov     [edi+DPB_SPF],eax
+        call    f72_lsec
+        mov     [edi+EDPB_SPF],eax
 
-        ; The root: a SECTOR on FAT12 and FAT16, a CLUSTER on FAT32,
-        ; which is the same field meaning two things and is exactly
-        ; what the on-disk BPB does with it.
+        ; THE WORD SECTORS-PER-FAT IS WHAT TELLS THE TWO KINDS APART:
+        ; filled in on FAT12 and FAT16, zero on FAT32, and a reader of
+        ; this block decides which half to believe by looking at it.
         cmp     byte ptr [fat_type],32
-        je      f72_root32
+        je      f72_fat32
+        mov     [edi+EDPB_SPF16],ax
         mov     eax,[fat_rootlba]
         sub     eax,[fat_partlba]
-        jmp     short f72_rootset
-f72_root32:
+        call    f72_lsec
+        mov     [edi+EDPB_ROOT16],ax
+        mov     word ptr [edi+EDPB_FSINFO],0FFFFh
+        mov     word ptr [edi+EDPB_BKBOOT],0FFFFh
+        jmp     short f72_common
+f72_fat32:
         mov     eax,[fat_rootclus]
-f72_rootset:
-        mov     [edi+DPB_ROOT],eax
+        mov     [edi+EDPB_ROOTCLUS],eax
+        mov     ax,[fat_fsinfo]
+        mov     [edi+EDPB_FSINFO],ax
+        mov     ax,[fat_bkboot]
+        mov     [edi+EDPB_BKBOOT],ax
+        mov     eax,[fat_active]        ; stored +1, 0 = mirrored: see
+        or      eax,eax                 ; fm_typed
+        jz      f72_ext
+        dec     eax
+        or      eax,EXTF_NOMIRROR
+f72_ext:
+        mov     [edi+EDPB_EXTFLAGS],ax
 
-        mov     dword ptr [edi+DPB_DRIVER],0FFFFFFFFh
+f72_common:
+        mov     dword ptr [edi+EDPB_DRIVER],0FFFFFFFFh
         mov     al,[fat_media]
-        mov     [edi+DPB_MEDIA],al
-        mov     byte ptr [edi+DPB_ACCESS],0     ; it has been read: we read it
-        mov     dword ptr [edi+DPB_NEXT],0FFFFFFFFh
-
+        mov     [edi+EDPB_MEDIA],al
+        mov     byte ptr [edi+EDPB_ACCESS],0    ; it has been read: we read it
+        mov     dword ptr [edi+EDPB_NEXT],0FFFFFFFFh
         mov     eax,[fat_hint]
-        mov     [edi+DPB_NEXTFREE],eax
+        mov     [edi+EDPB_HINT],eax
+        mov     [edi+EDPB_HINT16],ax
         call    fat_freecount
-        mov     [edi+DPB_FREE],eax
+        mov     [edi+EDPB_FREE16],ax
+        shr     eax,16
+        mov     [edi+EDPB_FREEHI],ax
 
-        mov     ecx,[ebp+F_ECX]         ; never more than was offered
-        cmp     ecx,F72_SIZE
-        jbe     f72_len
-        mov     ecx,F72_SIZE
-f72_len:
-        or      ecx,ecx
-        jz      f73_short               ; no room for even the flags word
         mov     eax,[ebp+F_EDI]
-        call    cbuf_ok                 ; ECX bytes into a caller's buffer
+        mov     ecx,F72_SIZE            ; the whole block and not a byte
+        call    cbuf_ok                 ; more: the size was checked above
         jc      buf_deny
         mov     esi,OFFSET f73_dpb
         mov     edi,[ebp+F_EDI]
         rep     movsb
         jmp     i21_ok
 
+f72_badlen:
+        mov     ax,ERR_BADLEN
+        jmp     i21_fail
+f73_nodrv:
+        mov     ax,ERR_BADDRIVE
+        jmp     i21_fail
+
+;--- f72_lsec - EAX in 512-byte units -> the volume's logical sectors
+f72_lsec:
+        push    ecx
+        movzx   ecx,byte ptr [fat_lshift]
+        shr     eax,cl
+        pop     ecx
+        ret
+
+;---------------------------------------------------------------------
+; f73_dldrv - the drive in the caller's DL (0 = default, 1 = A:),
+;             selected with vol_select.  AL = the logical drive; CF if
+;             there is no such drive or it will not mount.
+;---------------------------------------------------------------------
+f73_dldrv:
+        mov     al,[ebp+F_EDX]
+        or      al,al
+        jnz     f73d_named
+        mov     al,[cur_drive]
+        inc     al
+f73d_named:
+        dec     al
+        cmp     al,MAX_DRIVES
+        jae     f73d_bad
+        jmp     vol_select              ; its CF is the answer, AL kept
+f73d_bad:
+        stc
+        ret
+
 ;=====================================================================
-; 7304h - set the drive parameter block, which real DOS offers so that
-;         a formatter can tell it the shape of a disk before there is
-;         a filesystem on it to read the shape out of.
-;
-;         EDX -> the drive, EDI -> a DPB, ECX = its length.
+; 7304h - SET DPB TO USE FOR FORMATTING.  DL = the drive, EDI -> an
+;         SDP_* record (PMDOS.INC), ECX = its size.
 ;
 ; PM-DOS'S NOTION OF A VOLUME'S SHAPE COMES FROM ITS BPB AND CANNOT BE
 ; OVERRULED, and that is a decision rather than an omission: the kernel
-; re-reads the BPB on every mount, FORMAT works from it too (which is
-; why FORMAT here is a structural rebuild and not a low-level format),
-; and 21h/F1h AL=2 exists precisely to say "read it again".  There is
-; nothing here for a caller to set.
+; re-reads the BPB on every mount, FORMAT works from it too, and 21h/F1h
+; AL=2 exists precisely to say "read it again".  So the five requests
+; are answered in those terms:
 ;
-; So there are two truthful answers and this call gives both.  A DPB
-; that AGREES with the volume is accepted - the caller has asked for a
-; state the kernel is already in, and telling it no would be a refusal
-; with nothing behind it.  A DPB that DISAGREES is refused, because
-; success would mean the kernel had adopted a geometry it has not.
-; What is compared is the four fields that describe the layout and
-; would make the difference to a formatter; the free-cluster and
-; search-hint fields are bookkeeping and are not the caller's to state.
+;   1 allocation info   the free-space HINT is taken; the free count is
+;                       not a field this kernel keeps, since it is
+;                       counted off the FAT when asked
+;   2 rebuild from BPB  a remount, which IS re-reading the BPB - the one
+;   3 media changed     thing the formatter needs to have happened after
+;                       it has written a new one
+;   4 active FAT        the old flags come back in VAL2; a set is taken
+;   5 root cluster      only when it asks for what is already there,
+;                       because saying yes to anything else would mean
+;                       the kernel had adopted a layout it has not
 ;
-; This is the one call in the family whose parameters are read from a
-; buffer the caller filled in, so a short one is refused outright
-; rather than compared as far as it goes.
+; The record's layout is from memory of the FAT32 API document rather
+; than from a source, which the header in PMDOS.INC says as well.
 ;=====================================================================
 f7304:
-        call    f73_seldrv
-        jc      f73_bad
-        mov     ecx,[ebp+F_ECX]
-        cmp     ecx,F72_SIZE
-        jb      f74_baddata
-
+        cmp     dword ptr [ebp+F_ECX],SDP_LEN
+        jb      f72_badlen
         mov     eax,[ebp+F_EDI]
-        mov     ecx,F72_SIZE
+        mov     ecx,SDP_LEN
         call    cbuf_ok
         jc      buf_deny
+        call    f73_dldrv
+        jc      f73_nodrv
+        cmp     byte ptr [vol_fs],FS_FAT
+        jne     f73_bad
+        mov     [f73_drv],al
         mov     esi,[ebp+F_EDI]
-        add     esi,F72_DPB
+        mov     eax,[esi+SDP_FUNC]
+        cmp     eax,SDPF_ALLOCINFO
+        je      f74_alloc
+        cmp     eax,SDPF_FROMBPB
+        je      f74_remount
+        cmp     eax,SDPF_MEDIACHG
+        je      f74_remount
+        cmp     eax,SDPF_ACTFAT
+        je      f74_actfat
+        cmp     eax,SDPF_ROOTCLUS
+        je      f74_root
+        jmp     f73_bad
 
-        cmp     word ptr [esi+DPB_BPS],512
-        jne     f74_baddata
-        mov     eax,[fat_spc]
-        dec     eax
-        cmp     [esi+DPB_SPCM1],al
-        jne     f74_baddata
-        mov     eax,[fat_rsvd]
-        cmp     [esi+DPB_RSVD],ax
-        jne     f74_baddata
-        mov     eax,[fat_nfats]
-        cmp     [esi+DPB_NFATS],al
-        jne     f74_baddata
-        mov     eax,[fat_rootent]
-        cmp     [esi+DPB_ROOTENT],ax
-        jne     f74_baddata
-        mov     eax,[fat_spf]
-        cmp     [esi+DPB_SPF],eax
-        jne     f74_baddata
+f74_alloc:
+        mov     eax,[esi+SDP_VAL2]      ; the next-free hint, if one is
+        cmp     eax,0FFFFFFFFh          ; given and names a real cluster
+        je      f74_ok
+        cmp     eax,2
+        jb      f74_baddata
+        mov     edx,[fat_totclus]
+        inc     edx
+        cmp     eax,edx
+        ja      f74_baddata
+        mov     [fat_hint],eax
+f74_ok:
         jmp     i21_ok
+
+f74_remount:
+        ; What F1h AL=2 does, line for line: whatever was held about the
+        ; OLD filesystem is dropped rather than written - a formatter
+        ; asking this has just laid a new one down, and flushing a stale
+        ; FAT sector over it would undo the format - and then the boot
+        ; sector is read afresh.  f73_dldrv already swapped it in.
+        mov     byte ptr [fatsec_dirty],0
+        mov     byte ptr [fat12_dirty],0
+        mov     dword ptr [fatsec_lba],-1
+        mov     dword ptr [sec_lba],-1
+        mov     dword ptr [clusbuf_clus],-1
+        mov     dword ptr [dc_curord],-1
+        mov     byte ptr [fat_ok],0
+        mov     al,[f73_drv]
+        call    vol_select
+        jc      f73_nodrv
+        jmp     i21_ok
+
+f74_actfat:
+        xor     eax,eax                 ; FAT12 and FAT16 have no flags
+        cmp     byte ptr [fat_type],32
+        jne     f74_haveflags
+        mov     eax,[fat_active]
+        or      eax,eax
+        jz      f74_haveflags
+        dec     eax
+        or      eax,EXTF_NOMIRROR
+f74_haveflags:
+        mov     edx,[esi+SDP_VAL1]
+        mov     [esi+SDP_VAL2],eax      ; the old value goes back either way
+        cmp     edx,0FFFFFFFFh
+        je      f74_ok                  ; only asked
+        cmp     edx,eax
+        je      f74_ok                  ; asked for what is there
+        jmp     short f74_baddata
+
+f74_root:
+        xor     eax,eax
+        cmp     byte ptr [fat_type],32
+        jne     f74_haveroot
+        mov     eax,[fat_rootclus]
+f74_haveroot:
+        mov     edx,[esi+SDP_VAL1]
+        mov     [esi+SDP_VAL2],eax
+        cmp     edx,0FFFFFFFFh
+        je      f74_ok
+        cmp     edx,eax
+        je      f74_ok
 
 f74_baddata:
         mov     ax,ERR_BADDATA
@@ -7010,10 +7944,17 @@ f75_named:
         call    cbuf_ok
         jc      buf_deny
 
+        ; The packet counts in the volume's LOGICAL sectors, and both
+        ; numbers are turned into 512-byte units here, once - after
+        ; which the bounds check, the byte count and the transfer below
+        ; are the arithmetic they always were.
         mov     eax,dword ptr [ebx+DSKIO_START]
+        call    fm_scale
+        jc      f75_range
         mov     [f75_lba],eax
         movzx   eax,word ptr [ebx+DSKIO_COUNT]
-        mov     [f75_cnt],eax
+        call    fm_scale                ; a word, shifted at most three:
+        mov     [f75_cnt],eax           ; it cannot overflow
         mov     eax,dword ptr [ebx+DSKIO_BUF]
 
         ; THE POINTER INSIDE THE PACKET IS THE ONE NOTHING ELSE CAN
@@ -7102,7 +8043,7 @@ f75_write:
         mov     ecx,[f75_cnt]
         mov     esi,[f75_buf]
         call    dio_verify
-        jc      f75_ioerr
+        jc      f75_vfyerr
 f75_wrsync:
         mov     al,[fat_drive]
         mov     ah,1
@@ -7116,11 +8057,19 @@ f75_baddrv:
 f75_badptr:
         mov     ax,ERR_ACCESS           ; the packet names memory the caller
         jmp     i21_fail                ; does not have
+; THE EXTENDED ERRORS, 13h TO 1Fh, and not the two classic codes that
+; used to stand for every failure.  A write-protected floppy answered
+; 0Bh, "read/write fault", so LABEL on one said "General failure"
+; where DOS says "Write protect".  AH out of dio_raw is the driver's
+; own status and abs_xerr turns it into the number DOS gives for it.
 f75_range:
-        mov     ax,8                    ; classic "sector not found"
+        mov     ah,04h                  ; INT 13h's "sector not found",
+        call    abs_xerr                ; which is what it is -> 1Bh
         jmp     i21_fail
+f75_vfyerr:
+        mov     ah,10h                  ; read back different: a CRC error
 f75_ioerr:
-        mov     ax,0Bh                  ; classic "read/write fault"
+        call    abs_xerr
         jmp     i21_fail
 
 ;---------------------------------------------------------------------
@@ -7151,6 +8100,22 @@ fnF0:
         je      fF0_set
         cmp     al,3
         je      fF0_size
+        cmp     al,4
+        je      fF0_put
+        cmp     al,5
+        je      fF0_getc
+        cmp     al,6
+        je      fF0_shape
+        cmp     al,7
+        je      fF0_key
+        cmp     al,8
+        je      fF0_wait
+        cmp     al,9
+        je      fF0_shift
+        cmp     al,0Ah
+        je      fF0_lines
+        cmp     al,0Bh
+        je      fF0_mouse
         jmp     i21_unsup
 fF0_cls:
         call    dword ptr ds:[IOS_CLS]
@@ -7170,6 +8135,150 @@ fF0_set:
 fF0_size:
         call    dword ptr ds:[IOS_SCRSIZE]
         mov     [ebp+F_EDX],dx
+        ; CL = scan lines per character as well, which is what a cursor
+        ; shape (AL = 6) is counted in: 16 on a 25-line VGA screen, 8
+        ; on a 50-line one.  Anything implausible is taken as 16.
+        mov     al,byte ptr ds:[BDA_POINTS]
+        cmp     al,4
+        jb      fsz_def
+        cmp     al,32
+        jbe     fsz_pts
+fsz_def:
+        mov     al,16
+fsz_pts:
+        mov     [ebp+F_ECX],al
+        jmp     i21_ok
+
+;---------------------------------------------------------------------
+; AL = 4 to 9: A FULL-SCREEN PROGRAM AT RING 3.
+;
+; A native program cannot reach video memory, the BIOS data area or the
+; BIOS, which is exactly what a full-screen program is made of - EDIT
+; draws with the first, reads the shift state out of the second and its
+; keys through the third.  So the kernel does those three things for it:
+;
+;   AL = 4  ESI -> ECX character/attribute words, EBX = first cell
+;           (row * columns + column): onto the screen as they are
+;   AL = 5  EDI <- ECX cells from EBX: the screen as it is
+;   AL = 6  CH = first cursor scan line (bit 5: no cursor), CL = last,
+;           as the controller counts them - AL = 3 gives the height
+;   AL = 7  wait for a key -> AX (AL = ASCII, AH = scan code, the
+;           classic form: a grey key's E0h is folded to 0), BX = the
+;           shift state (40:17 low, 40:18 high) as it was read
+;   AL = 8  DL = the shift state last seen (40:17's four shift bits),
+;           DH bit 0 set not to wait -> AL = 1 when a key is waiting
+;           (it stays waiting), 0 when there is none, BX = the shift
+;           state.  Waiting ends on a key OR on a change in the shift
+;           keys, which is how a program sees Alt pressed and let go on
+;           its own - EDIT's way into its menus.  DH bit 1 set: the
+;           mouse moving or a button changing ends it too, AL = 2, and
+;           INT 33h says what happened
+;   AL = 9  -> BX = the shift state
+;   AL = 0Bh  the mouse, as if it had moved: BH = 0, BL = buttons, CX
+;           and DX = mickeys across and down (signed); BH = 1, CL, CH
+;           and DL = a PS/2 packet; BH = 2, CL, CH, DL, DH = BL serial
+;           bytes.  BH = 3, a PS/2 packet through the 8042 and
+;           IRQ 12, as the mouse would send it.  For the tests, which run where nobody can move a
+;           mouse (IOS_MSINJECT)
+;
+; Buffers are measured like every other one a native program passes.
+;---------------------------------------------------------------------
+fF0_put:
+        mov     eax,[ebp+F_ESI]
+        mov     ecx,[ebp+F_ECX]
+        shl     ecx,1
+        call    cbuf_ok
+        jc      buf_deny
+        mov     esi,[ebp+F_ESI]
+        mov     ecx,[ebp+F_ECX]
+        mov     ebx,[ebp+F_EBX]
+        call    dword ptr ds:[IOS_PUTCELLS]
+        jmp     i21_ok
+fF0_getc:
+        mov     eax,[ebp+F_EDI]
+        mov     ecx,[ebp+F_ECX]
+        shl     ecx,1
+        call    cbuf_ok
+        jc      buf_deny
+        mov     edi,[ebp+F_EDI]
+        mov     ecx,[ebp+F_ECX]
+        mov     ebx,[ebp+F_EBX]
+        call    dword ptr ds:[IOS_GETCELLS]
+        jmp     i21_ok
+fF0_shape:
+        mov     ecx,[ebp+F_ECX]
+        call    dword ptr ds:[IOS_CURSHAPE]
+        jmp     i21_ok
+fF0_key:
+        call    dos_conin
+        mov     [ebp+F_EAX],ax
+        mov     ax,word ptr ds:[BDA_KBFLAG]
+        mov     [ebp+F_EBX],ax
+        jmp     i21_ok
+fF0_wait:
+        call    dword ptr ds:[IOS_CONSTAT]
+        jnz     fw_key
+        mov     al,byte ptr ds:[BDA_KBFLAG]
+        xor     al,[ebp+F_EDX]
+        test    al,0Fh                  ; Right Shift, Left Shift, Ctrl, Alt
+        jnz     fw_none
+        test    byte ptr [ebp+F_EDX+1],2
+        jz      fw_nomouse
+        call    dword ptr ds:[IOS_MSWAKE]
+        or      al,al
+        jnz     fw_mouse
+fw_nomouse:
+        test    byte ptr [ebp+F_EDX+1],1
+        jnz     fw_none                 ; asked not to wait
+        call    dos_idle
+        jmp     short fF0_wait
+fw_mouse:
+        mov     byte ptr [ebp+F_EAX],2
+        jmp     short fw_flags
+fw_key:
+        mov     byte ptr [ebp+F_EAX],1
+        jmp     short fw_flags
+fw_none:
+        mov     byte ptr [ebp+F_EAX],0
+fw_flags:
+fF0_shift:
+        mov     ax,word ptr ds:[BDA_KBFLAG]
+        mov     [ebp+F_EBX],ax
+        jmp     i21_ok
+
+;---------------------------------------------------------------------
+; AL = 0Ah  BL = the text lines wanted: 25, or more for as many as the
+;           adapter gives with its 8x8 font (43 on EGA, 50 on VGA).
+;           -> DH = rows, DL = columns, as the screen now is.
+;
+; EDIT's /H.  A mode set is the BIOS's business and a native program
+; has no BIOS, so this is INT 10h through the real-mode thunk: mode 3,
+; which is also what 25 lines is, and then 1112h for the small font.
+; The screen is cleared by it, as it is by the BIOS call it stands for.
+;---------------------------------------------------------------------
+fF0_lines:
+        mov     ah,00h                  ; INT 10h/0003h
+        call    rtc_prep
+        mov     byte ptr ds:[RMR_EAX],03h
+        mov     al,10h
+        call    dword ptr ds:[IOS_REALINT]
+        cmp     byte ptr [ebp+F_EBX],25
+        jbe     fl_size
+        mov     ah,11h                  ; INT 10h/1112h, BL = 0: the 8x8
+        call    rtc_prep                ; font into block 0 and the screen
+        mov     byte ptr ds:[RMR_EAX],12h       ; resized to fit it
+        mov     al,10h
+        call    dword ptr ds:[IOS_REALINT]
+fl_size:
+        call    dword ptr ds:[IOS_SCRSIZE]
+        mov     [ebp+F_EDX],dx
+        jmp     i21_ok
+
+fF0_mouse:
+        mov     ebx,[ebp+F_EBX]
+        mov     ecx,[ebp+F_ECX]
+        mov     edx,[ebp+F_EDX]
+        call    dword ptr ds:[IOS_MSINJECT]
         jmp     i21_ok
 
 ;=====================================================================
@@ -7193,6 +8302,16 @@ fF0_size:
 ;       AL = 0Dh: DL = drive, EBX = LBA, ECX = sectors, EDI -> buffer
 ;                 -> raw sectors off that disk, LBA 0 included
 ;       AL = 0Eh: the same registers, written back
+;       AL = 0Fh: EDX -> path, BL = letter (FFh = next free), BH = 1
+;                 for read-only -> mount that FILE as a drive letter,
+;                 AL = the letter it took.  See IMAGE.INC
+;       AL = 10h: BL = letter - unmount it again
+;       AL = 11h: BL = 0..7, EDI -> 100 bytes - describe mount BL
+;       AL = 12h: bits 16-23 of EAX = a BUS_* function - the PCI bus,
+;                 the interrupt lines and where memory physically
+;                 is.  The registers are that function's, listed
+;                 with the equates in PMDOS.INC; PMIO answers
+;                 (IO\BUS.INC)
 ;
 ; 30h has to keep lying about being DOS 5 so that ordinary programs
 ; recognise us, which leaves nothing there to report what the kernel
@@ -7235,22 +8354,101 @@ fnF1:
         je      fF1_absrd
         cmp     al,0Eh
         je      fF1_abswr
+        cmp     al,0Fh
+        je      fF1_imount
+        cmp     al,10h
+        je      fF1_iumount
+        cmp     al,11h
+        je      fF1_ireport
+        cmp     al,12h
+        je      fF1_bus
         jmp     i21_unsup
+
+;--- AL=0Fh: MOUNT AN IMAGE FILE AS A DRIVE LETTER.
+;---   EDX -> the ASCIIZ path of the file
+;---   BL  = the letter to give it, 0 = A:, or FFh for the next free
+;---   BH  = 1 to mount it read-only
+;---   -> AL = the letter it took, or CF with AX = a DOS error.
+;---
+;--- AL=10h: UNMOUNT ONE.  BL = the letter.
+;---
+;--- AL=11h: DESCRIBE ONE.  BL = 0..7, EDI -> 100 bytes.  CF if that
+;--- slot holds nothing.  The layout is at img_report.
+;---
+;--- THE THREE OF THEM ARE A KERNEL CALL RATHER THAN A DEVICE OR A
+;--- CONFIG.SYS LINE because a mount has to happen while the machine
+;--- is running - that is the entire point of it - and because MOUNT
+;--- is a native ring-3 program that cannot reach drv_tbl to do any of
+;--- this for itself.  Same argument as AL=9 and AL=0Ah, one more
+;--- time.
+; The PATH is not measured, and that is deliberate rather than an
+; omission: no other call in this kernel measures one.  3Dh, 3Ch, 41h
+; and 56h all take a pointer and read until the NUL, because the
+; length of a path is not known until it has been read and a caller
+; cannot be asked for one it has not got.  cbuf_ok guards what the
+; kernel WRITES - AL=11h's buffer below is measured for exactly that
+; reason - and being stricter here than everywhere else would only
+; refuse a legal path that happens to sit near the top of a program.
+fF1_imount:
+        mov     esi,[ebp+F_EDX]
+        mov     eax,[ebp+F_EBX]
+        xor     ah,ah                   ; BH is a boolean at the API and
+        cmp     byte ptr [ebp+F_EBX+1],0
+        je      fF1_imro
+        mov     ah,IMF_RO               ; ...IMF_RO inside
+fF1_imro:
+        call    img_mount
+        jc      fF1_imbad
+        movzx   eax,al
+        mov     [ebp+F_EAX],eax
+        jmp     i21_ok
+fF1_imbad:
+        jmp     i21_fail
+
+fF1_iumount:
+        mov     al,[ebp+F_EBX]
+        call    img_umount
+        jc      fF1_imbad
+        jmp     i21_ok
+
+fF1_ireport:
+        mov     eax,[ebp+F_EDI]
+        mov     ecx,100
+        call    cbuf_ok
+        jc      buf_deny
+        movzx   ecx,byte ptr [ebp+F_EBX]
+        mov     edi,[ebp+F_EDI]
+        call    img_report
+        jc      fF1_irno
+        jmp     i21_ok
+fF1_irno:
+        mov     ax,ERR_NOFILE
+        jmp     i21_fail
 
 ;--- AL=0Ah: the IDE controller and how its disks are being talked to.
 ;--- DL = a device index 0-3, or FFh for the controller itself.
 ;---
-;---   a device:    EAX = flags - 01h present, 02h LBA48, 04h LBA,
-;---                08h bus-master DMA, 10h 32-bit PIO
+;---   a device:    AL = flags - 01h present, 02h LBA48, 04h LBA,
+;---                08h bus-master DMA, 10h 32-bit PIO, 20h ATAPI
+;---                AH = what chose its mode, ATI_* in PMDOS.INC
+;---                EAX bits 16-23 = its channel's cable, ATC_*: bit 0
+;---                set for 80 conductors, bits 4-6 who said so
+;---                EAX bits 24-31 = the Ultra DMA modes the drive
+;---                offers, a bit each
 ;---                EBX = its channel's bus-master base port
-;---                ECX = the transfer mode in force, as SET FEATURES
+;---                CL = the transfer mode in force, as SET FEATURES
 ;---                spells it (40h+n UDMA, 20h+n multiword, 0 = PIO)
+;---                CH = the mode the BIOS left it in
 ;---                EDX = total sectors
 ;---   controller:  EAX = disks found, EBX = PCI vendor:device,
 ;---                ECX = the bus-master register block,
-;---                EDX = the prog-if byte, bit 16 set if PCI answered
-;---                at all, bit 17 if an engine was found, bits 24-27
-;---                the IDEDMA= policy and 28-31 the IDE32= one
+;---                EDX = the prog-if byte, bits 8-11 the host family
+;---                if it is one whose timing PM-DOS writes (1 Intel
+;---                PIIX, 2 Intel ICH, 3 VIA, 0 none of them), bits
+;---                12-15 that host's fastest Ultra DMA mode or 0Fh,
+;---                bit 16 set if PCI answered at all, bit 17 if an
+;---                engine was found, bits 18-19 the IDECABLE= policy,
+;---                24-27 the IDEDMA= one and 28-31 the IDE32= one
 ;---
 ;--- SAME ARGUMENT AS AL=9 MAKES FOR EXPANDED MEMORY, and it is worth
 ;--- restating because it is the reason this family keeps growing: a
@@ -7278,6 +8476,30 @@ fF1_park:
         jmp     i21_ok
 fF1_parkbad:
         jmp     i21_fail
+;--- AL=12h: THE BUSES.  Handed to PMIO as it came and handed back as
+;--- it returns, for the reason AL=0Ah gives: a program at ring 3
+;--- cannot look at the hardware even to describe it.
+fF1_bus:
+        mov     eax,[ebp+F_EAX]
+        shr     eax,8                   ; AH = the function: it arrives
+                                        ; above AX, which is F112h
+        mov     ebx,[ebp+F_EBX]
+        mov     ecx,[ebp+F_ECX]
+        mov     edx,[ebp+F_EDX]
+        mov     esi,[ebp+F_ESI]
+        mov     edi,[ebp+F_EDI]
+        call    dword ptr ds:[IOS_BUS]
+        jc      fF1_busbad
+        mov     [ebp+F_EAX],eax
+        mov     [ebp+F_EBX],ebx
+        mov     [ebp+F_ECX],ecx
+        mov     [ebp+F_EDX],edx
+        mov     [ebp+F_ESI],esi
+        mov     [ebp+F_EDI],edi
+        jmp     i21_ok
+fF1_busbad:
+        jmp     i21_fail
+
 fF1_ide:
         mov     al,[ebp+F_EDX]
         call    dword ptr ds:[IOS_ATAINFO]
@@ -7379,6 +8601,10 @@ fF1_rsel:
 ;--- SHELL= line the KERNEL is the only thing that knows which one it
 ;--- loaded - the shell cannot see its own command line's name.
 fF1_shell:
+        mov     eax,[ebp+F_EDX]
+        mov     ecx,SHELLNAME_MAX
+        call    cbuf_ok
+        jc      buf_deny
         mov     edi,[ebp+F_EDX]
         mov     esi,OFFSET shell_name
         mov     ecx,SHELLNAME_MAX - 1
@@ -7516,6 +8742,10 @@ fF1_lsig:
         mov     dword ptr [f8_rec+F8_ADDR],ebx
 
 fF1_mout:
+        mov     eax,[ebp+F_EDI]
+        mov     ecx,F8_LEN
+        call    cbuf_ok
+        jc      buf_deny
         mov     edi,[ebp+F_EDI]
         mov     esi,OFFSET f8_rec
         mov     ecx,F8_LEN / 4
@@ -7575,6 +8805,10 @@ fF1_drv:
         cmp     al,MAX_DRIVES
         jae     fF1_baddrv
         call    drv_slot                ; -> EBX
+        mov     eax,[ebp+F_EDI]
+        mov     ecx,DRV_LEN
+        call    cbuf_ok
+        jc      buf_deny
         mov     edi,[ebp+F_EDI]
         mov     esi,ebx
         mov     ecx,DRV_LEN / 4
@@ -7799,9 +9033,9 @@ f1B_sel:
         add     edx,GLOL_MEDIA
         mov     [ebp+F_EBX],edx
 
-        mov     eax,[fat_spc]
+        call    vol_lgeom
         mov     byte ptr [ebp+F_EAX],al
-        mov     word ptr [ebp+F_ECX],512
+        mov     [ebp+F_ECX],cx
 
         mov     eax,[fat_totclus]       ; 16-bit register, so it saturates
         cmp     eax,0FFFFh              ; exactly as fn36 saturates
@@ -7846,6 +9080,10 @@ f38_get:
         cmp     ax,0FFFFh
         je      f38_set
 
+        mov     eax,[ebp+F_EDX]
+        mov     ecx,CTRY_SIZE
+        call    cbuf_ok
+        jc      buf_deny
         mov     edi,[ebp+F_EDX]
         mov     esi,OFFSET ctry_block
         mov     ecx,CTRY_SIZE
@@ -7987,19 +9225,33 @@ f6C_bad:
 ;
 ; The ones that hand back a TABLE - 02h uppercase, 04h filename
 ; uppercase, 05h filename terminators, 06h collating sequence, 07h
-; DBCS - are refused with "invalid function", and that is a considered
-; answer rather than a gap left open.  Each is a far pointer to a
-; 258-byte table that would have to live in conventional memory for a
-; guest to read it, which is the better part of a kilobyte of the 624K
-; a DOS box gets, spent on tables that for codepage 437 say exactly
-; what the code in 20h/21h/22h already computes.  A program refused
-; one of these falls back to its own, which is the same answer.  When
-; something real asks, the place to put them is the guest block.
+; DBCS - answer a far pointer into the DOS data segment, where
+; vdm_lolinit built them (GNLS_ in PMDOS.INC).  THEY WERE REFUSED
+; UNTIL v0.60, on the belief that a program refused one falls back to
+; its own.  Something real asked, and did not: MS-DOS's FIND follows
+; 6507h's pointer without looking at the carry flag and SORT copies
+; however many bytes 6506h's garbage length said, so FIND matched
+; nothing and SORT hung the box.  The answer is five bytes at ES:DI -
+; the subfunction, and the pointer - and CX = 5.
 ;=====================================================================
 fn65:
         mov     al,[ebp+F_EAX]
         cmp     al,01h
         je      f65_info
+        mov     edx,GNLS_UPCASE
+        cmp     al,02h
+        je      f65_table
+        cmp     al,04h                  ; file names: the same table
+        je      f65_table
+        mov     edx,GNLS_TERM
+        cmp     al,05h
+        je      f65_table
+        mov     edx,GNLS_COLLATE
+        cmp     al,06h
+        je      f65_table
+        mov     edx,GNLS_DBCS           ; NOT GLOL_DBCS - see GNLS_
+        cmp     al,07h
+        je      f65_table
         cmp     al,20h
         je      f65_capchar
         cmp     al,21h
@@ -8024,6 +9276,9 @@ f65_info:
         jbe     f65_fit
         mov     ecx,CTRY_SIZE + 7
 f65_fit:
+        mov     eax,[ebp+F_EDI]         ; ECX is exactly what is written
+        call    cbuf_ok
+        jc      buf_deny
         mov     edi,[ebp+F_EDI]
         push    ecx
 
@@ -8055,6 +9310,24 @@ f65_done:
 f65_small:
         mov     ax,ERR_FUNC
         jmp     i21_fail
+
+;--- 02h/04h/05h/06h/07h: a table - EDX is its offset in the segment --
+f65_table:
+        cmp     word ptr [ebp+F_ECX],5
+        jb      f65_small
+        mov     eax,[ebp+F_EDI]
+        mov     ecx,5
+        call    cbuf_ok
+        jc      buf_deny
+        mov     edi,[ebp+F_EDI]
+        mov     al,[ebp+F_EAX]
+        mov     [edi],al                ; which table this is
+        movzx   eax,word ptr ds:[vdm_lolseg]
+        shl     eax,16
+        mov     ax,dx
+        mov     [edi+1],eax             ; and where
+        mov     word ptr [ebp+F_ECX],5
+        jmp     i21_ok
 
 ;--- 20h: capitalise the character in DL ------------------------------
 ; ASCII only, and that is the whole of codepage 437's case mapping
@@ -8148,8 +9421,8 @@ i21_table:
         dd      fn58,      fn59,      fn5A,      fn5B       ; 58-5B
         dd      fn5C,      fn5D,      i21_unsup, i21_unsup  ; 5C-5F
         dd      fn60,      i21_unsup, fn62,      fn63       ; 60-63
-        dd      i21_unsup, fn65,      i21_unsup, fn67       ; 64-67
-        dd      fn68,      i21_unsup, fn68,      i21_unsup  ; 68-6B
+        dd      i21_unsup, fn65,      fn66,      fn67       ; 64-67
+        dd      fn68,      fn69,      fn68,      i21_unsup  ; 68-6B
                                                             ; 6Ah is 68h under
                                                             ; its DOS 4 name;
                                                             ; 6Bh is the one DOS
@@ -8276,7 +9549,7 @@ exec_stk    db  EXEC_MAX * XN_LEN dup(0)
 
 f73_rec     db  F73_SIZE dup(0)         ; 7303h's answer, built whole
 f73_dpb     db  F72_SIZE dup(0)         ; ...and 7302h's, the same way
-f73_drv     db  0                       ; the drive the path named
+f73_drv     db  0                       ; the drive DL named (7302h, 7304h)
             db  0,0,0
 absbx       dd  0                       ; 25h/26h: the caller's own EBX, to
                                         ; hand back where the flattened one

@@ -472,10 +472,18 @@ rux_done:
 ; and this is the other half of the same guard: a null handed to DOS is
 ; refused rather than turned into a perfectly good address at the foot
 ; of the slot.
+;
+; AND SO IS THE REST OF THE GUARD PAGE, which is what a null USED TO
+; mean and what a small number still does.  Refusing only zero turned
+; offset 1 into a flat address in the slot's first page - the page
+; that is NOT PRESENT - and handed it to a handler, so the program's
+; mistake became the KERNEL'S page fault.  CHKDSK found it by passing
+; a drive number (1 to 26) where 7302h wanted a pointer.  Anything
+; below SLOT_PSP is the guard, and nothing a program owns lives there.
 ;---------------------------------------------------------------------
 r3_flat:
-        or      eax,eax
-        jz      rf_bad
+        cmp     eax,SLOT_PSP
+        jb      rf_bad
         cmp     eax,[r3_size]
         jae     rf_bad
         add     eax,[r3_base]
@@ -701,7 +709,7 @@ r3_thunk:
         cmp     edx,[r3_depth]
         je      rt_here                         ; ours: run it where we are
         or      edx,edx
-        jnz     rt_ignore
+        jnz     rt_parked
 
         ; The interpreter's handler, over a running program.  Its slot
         ; is untouched - the shell has one of its own, which is the
@@ -784,6 +792,21 @@ rt_unwind:
 ;--- choice between retrying for ever and terminating the program.
 ;--- Fail is what int24_default answers, and it is what "nobody was
 ;--- listening" ought to mean.  For 1Bh, 1Ch and 28h nothing reads it.
+;
+;--- A HANDLER WHOSE PROGRAM IS PARKED - a shell two levels up, whose
+;--- vector a child inherited without hooking its own - cannot be run,
+;--- and for INT 23h "nobody answered" is not a safe answer: the read
+;--- that raised it just carries on, and the ^C is swallowed.  DOS would
+;--- have run that shell's handler, and a shell's handler with a child
+;--- running ends the child.  So a ^C does here what int23_default
+;--- does, and ends the program that is running; INT 24h is still
+;--- answered Fail.
+rt_parked:
+        cmp     ebx,23h
+        jne     rt_ignore
+        popad
+        add     esp,4                           ; the vector
+        jmp     int23_default                   ; 4Ch unwinds the rest
 rt_ignore:
         mov     dword ptr ss:[esp+R3_PAEAX],CERR_FAIL
 rt_fromr3:

@@ -15,7 +15,8 @@
 ; This is the unit test for the new one, and it runs on both DOSes:
 ; from the command line it tests PM-DOS's, through PARKTEST it tests
 ; RMDOS's.  It asks for sixty handles, prints what the PSP says
-; afterwards, and then opens the same file until it is refused.  A
+; afterwards, and then opens the same file (C:\AUTOEXEC.BAT, which
+; every disk has) until it is refused.  A
 ; DOS that answers 67h and then still stops at twenty has not
 ; implemented it, it has only stopped saying no.
 ;
@@ -31,6 +32,18 @@ TRIES   EQU     50
 
 start:
         mov     [pspseg],ds             ; a .COM starts with DS on its PSP
+        ; Give back everything past the program and its stack first.  A
+        ; .COM owns every free paragraph when it starts, and a bigger
+        ; table is a block of memory: asked for from there, 67h has
+        ; nowhere to put it (DOS says 8; PM-DOS says yes and leaves the
+        ; table where it is), and the test measured nothing.
+        cli
+        mov     sp,OFFSET stk_top
+        sti
+        mov     bx,OFFSET stk_top + 15
+        shr     bx,4
+        mov     ah,4Ah
+        int     21h
         mov     dx,OFFSET m_hi
         call    puts
 
@@ -196,7 +209,13 @@ m_opened    db  ' files, then error $'
 m_bye       db  'done.',13,10,'$'
 m_crlf      db  13,10,'$'
 
-f_name      db  'C:\WINDOWS\SYSTEM.INI',0
+; Any file will do, as long as every disk has it: this was SYSTEM.INI,
+; which only a Windows graft has, and everywhere else the first open
+; failed with error 2 before one handle was counted.
+f_name      db  'C:\AUTOEXEC.BAT',0
+
+            db  512 dup (0)
+stk_top     LABEL BYTE
 
 _HT     ENDS
         END     start

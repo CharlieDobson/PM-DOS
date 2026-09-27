@@ -89,15 +89,18 @@ atapi_ident:
 
         or      byte ptr [esi+ATD_FLAGS],ATDF_ATAPI
 
-        ; HOW THIS DEVICE WILL MOVE ITS DATA, decided here for the same
-        ; reason a disk's is decided in ata_identify: every input is in
-        ; ata_idbuf and the next IDENTIFY overwrites it.  A packet
-        ; device answers words 49, 63 and 88 exactly as a disk does, so
-        ; the policy IDEDMA= sets applies to a CD-ROM unchanged - which
-        ; is the point.  ata_pick32 is NOT asked: the 32-bit data port
-        ; is a PIO question and the PIO path here is the fallback.
+        ; WHAT CHOOSING THIS DEVICE'S TRANSFER MODE WILL NEED, written
+        ; down here for the same reason a disk's is in ata_identify:
+        ; every input is in ata_idbuf and the next IDENTIFY overwrites
+        ; it.  A packet device answers words 49, 63, 88 and 93 exactly
+        ; as a disk does, so the policy IDEDMA= sets - and the cable
+        ; it is limited by - applies to a CD-ROM unchanged, which is
+        ; the point.  ata_init does the choosing, once the whole
+        ; channel has answered.  ata_pick32 is NOT asked: the 32-bit
+        ; data port is a PIO question and the PIO path here is the
+        ; fallback.
+        call    ata_keepid
         call    ata_pickbm
-        call    ata_pickdma
 
         ; polled driver: this device is to keep its interrupt to itself.
         ; ata_identify does this for a disk and never reaches it for a

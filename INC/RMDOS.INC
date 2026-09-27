@@ -54,8 +54,11 @@
 ;=====================================================================
 
 RMDOS_SIG       EQU     00444D52h               ; 'RMD' as the dword reads in memory
-RMDOS_VER       EQU     0101h                   ; 1.01 - this contract.  1.00 had no
-                                        ; extended memory in it.
+RMDOS_VER       EQU     0102h                   ; 1.02 - this contract.  1.00 had no
+                                        ; extended memory in it, and 1.01 no
+                                        ; RMH_STUBS.  RMDOS checks it: an image
+                                        ; built for another layout would read
+                                        ; the header wrong, and says so instead
 
 ;---------------------------------------------------------------------
 ; WHERE IT LIVES, AND WHY THAT IS THE HARD PART.
@@ -156,13 +159,20 @@ RMH_XMSLEN      EQU     RMH_BASE + 24h  ; dd  bytes, a multiple of 1024
 RMH_RSVD        EQU     RMH_BASE + 28h  ; dd  two spare dwords, so the next
                                         ; dd  field to be wanted does not move
                                         ;     the frame below it again
+RMH_STUBS       EQU     RMH_BASE + 30h  ; dd  PM-DOS's DOS vector stubs, far.
+                                        ;     That was the field wanted - and
+                                        ;     the DBG_LPT build had both spares,
+                                        ;     so the frame moved after all
+RMS_STUBLEN     EQU     5               ; bytes a vector, v at (v - 20h) * 5.
+                                        ; PMDOS.INC's DVS_LEN, which RMDOS.ASM
+                                        ; cannot see - PARK.INC checks they agree
 
 ; The register frame RMDOS IRETs to when RMH_RUNSEG is zero.  This is
 ; how Windows is resumed: WIN386 is already loaded and already running
 ; when it broadcasts 1605h, so there is nothing to start - the handover
 ; is a return from an interrupt that happens to land in a different
 ; processor mode from the one it was taken in.
-RMH_IRET        EQU     RMH_BASE + 30h
+RMH_IRET        EQU     RMH_BASE + 34h
 RMI_EAX         EQU     RMH_IRET + 00h  ; dd
 RMI_EBX         EQU     RMH_IRET + 04h
 RMI_ECX         EQU     RMH_IRET + 08h

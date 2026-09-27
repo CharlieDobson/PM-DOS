@@ -36,6 +36,8 @@ SFT_LEN         EQU 30h
 SFF_DEVICE      EQU 01h                 ; a character device, not a file
 SFF_WRITTEN     EQU 02h                 ; the directory entry needs updating
 SFF_EOF         EQU 04h
+SFF_STAMPED     EQU 08h                 ; 5701h set the time and date: a
+                                        ; write after it does not re-stamp
 
 SFT_COUNT       EQU 80                  ; Windows keeps seventeen files open
                                         ; at once before the shell has even
@@ -176,6 +178,20 @@ fg_16:
         and     edx,1FFh
         mov     di,dx
         movzx   eax,word ptr [rd_fatbuf + di]
+        ; WIDENED LIKE FAT12's, and until v0.60 it was not.  fat_eoc
+        ; tests one number for every FAT type, 0FFFFFF8h, so a FAT16
+        ; end of chain came back as FFFFh - "not the end" - and every
+        ; walker took it for a cluster.  Reads never noticed: they stop
+        ; at the file size.  Everything that FOLLOWS a chain to its end
+        ; did: extending a file hooked the new cluster onto whatever
+        ; FAT entry FFFFh was and wrote the next sector to 131426 of a
+        ; 65520-sector disk (WINOLDAP's swap file, the first write
+        ; Windows ever made through RMDOS that needed a second
+        ; cluster), and freeing a chain zeroed "entry FFFFh", which is
+        ; past the FAT.  TOOLS\RMWRTEST.ASM is the test.
+        cmp     eax,0FFF8h
+        jb      fg_done
+        or      eax,0FFF0000h
         jmp     short fg_done
 
 ;--- FAT12: twelve bits, so the byte offset is cluster + cluster/2 ---
@@ -337,6 +353,12 @@ fa_full:
         ret
 
 ;--- fat_freechain - SI = volume, EAX = the first cluster ------------
+;
+; The end test is made on the NEXT value, the one just read.  Until
+; v0.60 it was made on EAX after fat_put - which preserves EAX, so it
+; was the cluster just freed, a small number that is never an end - and
+; the loop went on to free "cluster 0FFFFFFFh", reading and writing the
+; FAT sector that number lands in: sector 1048647 of a 32MB disk.
 fat_freechain:
         pushad
         mov     ebx,eax
@@ -344,14 +366,16 @@ fc_loop:
         cmp     ebx,2
         jb      fc_done
         mov     eax,ebx
-        call    fat_get
+        call    fat_get                 ; EAX = what comes next
         push    eax
         mov     eax,ebx
         xor     edx,edx
-        call    fat_put
-        pop     ebx
+        call    fat_put                 ; this one is free
+        pop     eax
         call    fat_eoc
-        jnc     fc_loop
+        jc      fc_done                 ; that was the last of it
+        mov     ebx,eax
+        jmp     short fc_loop
 fc_done:
         popad
         ret
@@ -567,6 +591,222 @@ uc_done:
         ret
 
 ;=====================================================================
+; rd_canon - ES:SI -> a path in the CALLER's segment.  Builds the one
+;            true spelling of it in rd_canbuf:
+;
+;               "D:\DIR\SUB\NAME.EXT"
+;
+;            upper case; every component in the 8.3 form rd_name83
+;            makes, so "verylongname.text" is "VERYLONG.TEX" and "*" is
+;            "????????"; "." dropped, and ".." taking the component
+;            before it with it; a relative path put after the drive's
+;            current directory.  NOTHING IS LOOKED UP - this is text,
+;            as DOS's own TRUENAME is, and 60h answers with it as it
+;            stands.
+;
+;            -> AL = drive, CF clear.  CF: AX = ERR_BADDRIVE for a
+;            letter past LASTDRIVE, ERR_NOPATH for an empty string, a
+;            ".." above the root, or a result too long to be a path.
+;            DS must be ours.  Everything but AX is preserved.
+;=====================================================================
+RC_MAX          EQU     80              ; "D:\" + 64 + "\NAME.EXT" + NUL, and some
+rd_canon:
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    es
+
+        ; The string into our own segment first - see rd_path's comment
+        ; history in NOTES.TXT: every routine under this one reads its
+        ; data through DS, and DS stays ours.
+        push    ds
+        push    es
+        pop     ds                      ; DS:SI is the caller's string
+        push    cs
+        pop     es
+        mov     di,OFFSET rd_pathbuf
+        mov     cx,RD_PATHMAX - 1
+        cld
+rc_copy:
+        lodsb
+        stosb
+        or      al,al
+        jz      rc_copied
+        loop    rc_copy
+        mov     byte ptr es:[di],0      ; the loop ran out before the string
+rc_copied:
+        pop     ds
+        mov     si,OFFSET rd_pathbuf
+        cmp     byte ptr [si],0
+        je      rc_nopath               ; "" names nothing, as in DOS
+
+        mov     al,[rd_drive]
+        cmp     byte ptr [si+1],':'
+        jne     rc_nodrive
+        mov     al,[si]
+        call    rd_upcase
+        sub     al,'A'
+        add     si,2
+rc_nodrive:
+        cmp     al,LASTDRIVE
+        jae     rc_baddrive
+        mov     [rc_drv],al
+
+        mov     di,OFFSET rd_canbuf
+        add     al,'A'
+        stosb
+        mov     al,':'
+        stosb
+        mov     al,'\'
+        stosb
+
+        mov     al,[si]
+        cmp     al,'\'
+        je      rc_abs
+        cmp     al,'/'
+        je      rc_abs
+
+        ; Relative: the drive's current directory goes first
+        push    si
+        movzx   ax,byte ptr [rc_drv]
+        mov     cx,CDS_LEN
+        mul     cx
+        mov     si,ax
+        add     si,OFFSET rd_cds + CDS_PATH
+        cmp     byte ptr [si],0
+        je      rc_cdsdone
+rc_cdscopy:
+        lodsb
+        or      al,al
+        jz      rc_cdsend
+        stosb
+        jmp     short rc_cdscopy
+rc_cdsend:
+        mov     al,'\'
+        stosb
+rc_cdsdone:
+        pop     si
+        jmp     short rc_comp
+rc_abs:
+        inc     si
+
+; DI is always just past a '\' here.
+rc_comp:
+        mov     al,[si]
+        or      al,al
+        jz      rc_end
+        cmp     al,'\'
+        je      rc_skip                 ; "\\" is one separator
+        cmp     al,'/'
+        je      rc_skip
+        cmp     al,'.'
+        jne     rc_name
+        mov     ah,[si+1]
+        call    rc_issep
+        jne     rc_notdot
+        inc     si                      ; "." - where we are
+        jmp     short rc_comp
+rc_notdot:
+        cmp     ah,'.'
+        jne     rc_name
+        mov     ah,[si+2]
+        call    rc_issep
+        jne     rc_name
+        add     si,2                    ; ".." - up one
+        cmp     di,OFFSET rd_canbuf + 3
+        je      rc_nopath               ; there is nothing above the root
+        dec     di                      ; onto the '\' that ends the last one
+rc_up:
+        dec     di
+        cmp     byte ptr [di],'\'
+        jne     rc_up
+        inc     di
+        jmp     short rc_comp
+rc_skip:
+        inc     si
+        jmp     short rc_comp
+
+rc_name:
+        mov     ax,di
+        sub     ax,OFFSET rd_canbuf
+        cmp     ax,RC_MAX - 14          ; room for one more 8.3 name and a '\'
+        ja      rc_nopath
+        push    di
+        mov     di,OFFSET rc_n83
+        call    rd_name83               ; SI is left on the separator
+        pop     di
+        push    si
+        mov     si,OFFSET rc_n83        ; the base, without its padding
+        mov     cx,8
+rc_base:
+        lodsb
+        cmp     al,' '
+        je      rc_baseend
+        stosb
+        loop    rc_base
+rc_baseend:
+        mov     si,OFFSET rc_n83 + 8
+        cmp     byte ptr [si],' '
+        je      rc_noext
+        mov     al,'.'
+        stosb
+        mov     cx,3
+rc_ext:
+        lodsb
+        cmp     al,' '
+        je      rc_noext
+        stosb
+        loop    rc_ext
+rc_noext:
+        pop     si
+        mov     al,'\'
+        stosb
+        jmp     rc_comp
+
+rc_end:
+        ; The '\' after the last component goes, unless it is the root's
+        cmp     di,OFFSET rd_canbuf + 3
+        je      rc_term
+        dec     di
+rc_term:
+        mov     byte ptr [di],0
+        mov     al,[rc_drv]
+        pop     es
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        clc
+        ret
+rc_baddrive:
+        mov     ax,ERR_BADDRIVE
+        jmp     short rc_fail
+rc_nopath:
+        mov     ax,ERR_NOPATH
+rc_fail:
+        pop     es
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
+        stc
+        ret
+
+;--- rc_issep - ZF if AH is a NUL or a path separator
+rc_issep:
+        or      ah,ah
+        jz      ris_out
+        cmp     ah,'\'
+        je      ris_out
+        cmp     ah,'/'
+ris_out:
+        ret
+
+;=====================================================================
 ; rd_path - resolve the caller's path.
 ;
 ;   ES:SI -> the path, in the CALLER's segment
@@ -576,6 +816,15 @@ uc_done:
 ;
 ; The last component is NOT looked up - that is the caller's business,
 ; because create and open want different things when it is missing.
+;
+; SINCE v0.60 THE WALK IS OF THE CANONICAL PATH, always from the root.
+; rd_canon turns whatever the caller wrote into "D:\DIR\NAME.EXT" with
+; "." and ".." already resolved, which is the one thing the walk below
+; could never do: rd_name83 has no idea what ".." is, it made it a
+; blank name with a "." extension, and "CD .." was "path not found" on
+; RMDOS for fifteen releases.  Relative paths now start from the text
+; in the CDS, which 3Bh keeps, rather than from a cluster number that
+; had no path beside it.
 ;=====================================================================
 rd_path:
         push    cx
@@ -584,48 +833,10 @@ rd_path:
         push    bp
         push    es
 
-        ; THE PATH IS COPIED IN FIRST, and that is not tidiness.  Every
-        ; routine below this one - rd_getvol, rd_mount, dir_find,
-        ; fat_get - reaches RMDOS's own data through DS.  The first
-        ; version of this routine pointed DS at the CALLER's segment so
-        ; it could read the string, and then called all of them: the
-        ; volume table it read was whatever the caller happened to have
-        ; at that offset.  It failed in exactly one place, on the one
-        ; check that opens a file, and looked like a FAT bug.
-        ;
-        ; With the string in our own segment there is no second segment
-        ; in the routine at all.
-        push    ds
-        push    es
-        pop     ds                      ; DS:SI is the caller's string
-        push    cs
-        pop     es                      ; ES:DI is our own buffer
-        mov     di,OFFSET rd_pathbuf
-        mov     cx,RD_PATHMAX - 1
-        cld
-rp_copy:
-        lodsb
-        stosb
-        or      al,al
-        jz      rp_copied
-        loop    rp_copy
-        mov     byte ptr es:[di],0      ; the loop ran out before the string
-rp_copied:
-        pop     ds
-        push    cs
-        pop     ds
+        call    rd_canon                ; -> rd_canbuf, AL = drive
+        jc      rp_bad
         push    cs
         pop     es
-        mov     bp,OFFSET rd_pathbuf
-
-        mov     al,[rd_drive]
-        cmp     byte ptr [bp+1],':'
-        jne     rp_nodrive
-        mov     al,[bp]
-        call    rd_upcase
-        sub     al,'A'
-        add     bp,2
-rp_nodrive:
         mov     [rp_drv],al
 
         ; Mount it before walking it, so a bad drive letter fails here
@@ -634,19 +845,8 @@ rp_nodrive:
         jc      rp_bad
         mov     [rp_vol],si
 
-        ; Where does the walk start?  A leading separator says the
-        ; root; anything else says wherever this drive is standing.
-        xor     ebx,ebx
-        mov     al,[bp]
-        cmp     al,'\'
-        je      rp_fromroot
-        cmp     al,'/'
-        je      rp_fromroot
-        mov     al,[rp_drv]
-        call    rd_cdsclus              ; -> EBX
-        jmp     short rp_comp
-rp_fromroot:
-        inc     bp
+        xor     ebx,ebx                 ; the root
+        mov     bp,OFFSET rd_canbuf + 3 ; past "D:\"
 
 rp_comp:
         ; One component into rd_fcb.  rd_name83 reads DS:SI and writes
@@ -655,19 +855,10 @@ rp_comp:
         mov     di,OFFSET rd_fcb
         call    rd_name83
         mov     bp,si
+        cmp     byte ptr [bp],'\'
+        jne     rp_last                 ; that was the last of them
 
-        mov     al,[bp]
-        cmp     al,'\'
-        je      rp_descend
-        cmp     al,'/'
-        je      rp_descend
-        jmp     short rp_last
-
-rp_descend:
         inc     bp
-        cmp     byte ptr [bp],0
-        je      rp_last                 ; a trailing separator names the
-                                        ; directory itself
         mov     si,[rp_vol]
         mov     eax,ebx
         mov     di,OFFSET rd_fcb
@@ -954,11 +1145,23 @@ da_fail:
 
 ;--- dir_zero - SI = volume, EAX = cluster.  Fill it with zeroes, which
 ;--- is what makes a fresh directory cluster read as "no more entries".
+;
+; THE LBA LIVES IN EDX, because BX is the buffer.  Until v0.60 it lived
+; in EBX, and the "mov bx,OFFSET rd_datbuf" that sets up each write
+; replaced its low half - so the first sector of the cluster was
+; cleared and every later one was a sector of zeroes written to
+; (LBA AND FFFF0000h) + rd_datbuf + 1: into the FAT, the root or
+; somebody's file, every time a subdirectory grew on a volume with
+; more than one sector to a cluster.
 dir_zero:
         pushad
         push    es
+        ; The directory window may hold a sector of this cluster from
+        ; the last time it was somebody's directory: write out whatever
+        ; is pending, and forget it once the disk has the zeroes.
+        call    dir_flush
         call    clus2lba
-        mov     ebx,eax
+        mov     edx,eax
         movzx   ecx,byte ptr [si+VOL_SPC]
         push    cx
         mov     ax,cs
@@ -970,15 +1173,17 @@ dir_zero:
         rep     stosb
         pop     cx
 dz_loop:
-        mov     eax,ebx
+        mov     eax,edx
         push    cx
         mov     bx,OFFSET rd_datbuf
         mov     cx,1
         call    rd_wrsec
         pop     cx
         jc      dz_bad
-        inc     ebx
+        inc     edx
         loop    dz_loop
+        mov     dword ptr [rd_dirlba],-1
+        mov     word ptr [rd_dirvol],0
         pop     es
         popad
         clc
@@ -1013,6 +1218,9 @@ rd_datbuf   db  SECSIZE dup(0)
 
 RD_PATHMAX  EQU 128
 rd_pathbuf  db  RD_PATHMAX dup(0)
+rd_canbuf   db  RC_MAX dup(0)           ; rd_canon's answer
+rc_n83      db  11 dup(0)               ; one component, 8.3, on its way there
+rc_drv      db  0
 rd_fcb      db  11 dup(0)               ; the component being looked for
 rd_deoff    dw  0                       ; where the found entry is, in buf
 rd_delba    dd  0                       ; and which sector that was
@@ -1040,4 +1248,17 @@ rd_cds      db  (LASTDRIVE * CDS_LEN) dup(0)
 IFDEF RMDOS_PAD
 rd_sftpad   db  1000h dup(0)
 ENDIF
+; THE BLOCK HEADER DOS PUTS IN FRONT OF A FILE TABLE, and the list of
+; lists points here (LL_SFT, RMINFO.INC).  It was FFFF:FFFF there until
+; v0.60 - the same unterminated chain head PM-DOS's own list of lists
+; had until v0.47 - and the Windows kernel, having measured an entry by
+; scanning for "CON ", WALKS the table from that pointer.  From
+; FFFF:FFFF it walked whatever the machine had left at 10FFEFh: on
+; 86Box that happened to end the walk, and under DOSBox-X Windows sat
+; on its splash screen for good, 52h the last DOS call it ever made.
+; One block, terminated the way DOS terminates one, and the entries
+; follow it with nothing in between - a walker takes them to start six
+; bytes in.
+rd_sfthdr   dd  0FFFFFFFFh              ; no next block
+            dw  SFT_COUNT               ; the entries in this one
 rd_sfts     db  (SFT_COUNT * SFT_LEN) dup(0)

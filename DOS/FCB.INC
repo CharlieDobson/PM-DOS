@@ -190,7 +190,16 @@ f11_go:
         rep     movsb
         pop     esi
 
-        ; and the answer, into the DTA
+        ; and the answer, into the DTA - 33 bytes, or 40 behind an
+        ; extended FCB, and measured like any other caller's buffer
+        mov     eax,[dta_ptr]
+        mov     ecx,33
+        cmp     byte ptr [fq_isx],0
+        je      f11_dtalen
+        add     ecx,FCBX_LEN
+f11_dtalen:
+        call    cbuf_ok
+        jc      fcb_deny
         mov     edi,[dta_ptr]
         cmp     byte ptr [fq_isx],0
         je      f11_plain
@@ -763,6 +772,12 @@ fn29:
         mov     [fq_pflag],al
         mov     byte ptr [fq_amb],0
         mov     byte ptr [fq_bad],0
+        mov     dword ptr [p29_adv],0   ; a refused parse got nowhere, and
+                                        ; the bridges add this to SI
+        mov     eax,[ebp+F_EDI]         ; the twelve bytes it fills: the
+        mov     ecx,FCB_EXTENT          ; drive and the eleven of the name,
+        call    cbuf_ok                 ; which end where the extent starts
+        jc      fcb_deny
         mov     esi,[ebp+F_ESI]
         mov     edi,[ebp+F_EDI]
         mov     [fq_pstart],esi         ; where the text began, so that the
@@ -958,8 +973,33 @@ f29_nsep    EQU $ - f29_seps
 ; fcb_get - EDX -> whatever the caller passed.  Sorts out whether it
 ;           is an extended FCB, remembers the attribute byte if it is,
 ;           and leaves the PLAIN FCB in ESI and in [fq_ptr].
+;
+; THE WHOLE FCB IS MEASURED FIRST, because every call here writes into
+; it - the extent, the record, the size, the search state 11h plants -
+; and nothing had asked whether all of it was the caller's.  An FCB at
+; FFFF:FFF0 has its last five bytes inside PMDOS.SYS.  A bad one is
+; answered "access denied" and the call does not happen, which needs
+; this routine to leave its CALLER: every handler calls it first, with
+; nothing of its own on the stack, so dropping the one return address
+; and taking fcb_deny's path returns from the handler itself - with
+; AL = FFh, which is how every FCB call says no.
 ;---------------------------------------------------------------------
 fcb_get:
+        push    eax
+        push    ecx
+        mov     eax,edx
+        mov     ecx,FCB_LEN
+        cmp     byte ptr [edx],FCBX_SIG
+        jne     fg_len
+        mov     ecx,FCBX_LEN + FCB_LEN
+fg_len:
+        call    cbuf_ok
+        pop     ecx
+        pop     eax
+        jnc     fg_ok
+        add     esp,4                   ; the handler's frame, not ours:
+        jmp     fcb_deny                ; see above
+fg_ok:
         mov     [fq_user],edx
         mov     byte ptr [fq_isx],0
         mov     byte ptr [fq_attr],0
@@ -1532,6 +1572,8 @@ fcb_ok:
         mov     byte ptr [ebp+F_EAX],0
         jmp     i21_ok
 
+fcb_deny:                               ; a caller's FCB or DTA that is not
+        mov     ax,ERR_ACCESS           ; all its own - see fcb_get
 fcb_fail:                               ; AX = the reason, for 59h
         mov     word ptr [last_err],ax
         mov     byte ptr [ebp+F_EAX],0FFh

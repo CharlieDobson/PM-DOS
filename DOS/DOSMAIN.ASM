@@ -13,7 +13,20 @@
 ; Everything PMDOS knows about the hardware comes through the PMIO
 ; service table at IOSVC - it never touches ports or the BIOS itself.
 ;
-; Linked with:  wlink form raw bin option offset=0x100000
+; Linked with:  wlink form raw bin ... order clname CODE offset=0x110000
+;               clname KBSS offset=0x269000
+;
+; THREE SEGMENTS, ONE GROUP.  _DOS is the file.  _KBSS is buffers with
+; nothing in them, which the link puts below the arena and does not
+; write - see KBSS_BASE in PMDOS.INC.  A file that has one closes _DOS,
+; declares it in _KBSS with dup(?), and opens _DOS again.
+;
+; _KBSS2 comes straight after _KBSS and holds clus_buf alone.  The
+; cluster buffer is where a bus master is pointed most, a transfer
+; that crosses a 64K line is one the driver has to cut in two, and
+; where the buffer was in the file it crossed none.  Last of all it
+; starts past the line at 270000h and ends short of the next one, and
+; the end of this file will not assemble if that stops being true.
 ;=====================================================================
         .386P
 
@@ -21,14 +34,40 @@
         INCLUDE RMDOS.INC               ; the handover contract, for
                                         ; PARK.INC further down
 
+KGRP    GROUP   _DOS, _KBSS, _KBSS2
+
+_KBSS   SEGMENT USE32 DWORD PUBLIC 'KBSS'
+kbss_start  LABEL BYTE
+_KBSS   ENDS
+
+_KBSS2  SEGMENT USE32 DWORD PUBLIC 'KBSS'
+kbss2_start LABEL BYTE
+_KBSS2  ENDS
+
 _DOS    SEGMENT USE32 PUBLIC 'CODE'
-        ASSUME  CS:_DOS, DS:_DOS, ES:_DOS, SS:_DOS
+        ASSUME  CS:KGRP, DS:KGRP, ES:KGRP, SS:KGRP
         ORG     0
 
 ;=====================================================================
 ; Entry - first instruction of PMDOS.SYS
 ;=====================================================================
 dos_entry:
+        ; The buffers the link left out of the file, before anything
+        ; can read one.  Where they are is the link's to say and what
+        ; is below the arena is PMDOS.INC's, so the two are compared
+        ; and not assumed.
+        mov     edi,OFFSET kbss_start
+        cmp     edi,KBSS_BASE
+        jne     kbss_lost
+        mov     ecx,OFFSET kbss_end
+        sub     ecx,edi
+        cmp     ecx,KBSS_LEN
+        ja      kbss_lost
+        shr     ecx,2
+        xor     eax,eax
+        cld
+        rep     stosd
+
 IFDEF PMDOS_DEBUG
         mov     esi,OFFSET msgBanner
         call    dword ptr ds:[IOS_CONSTR]
@@ -44,9 +83,12 @@ ENDIF
         ; comes first.
         mov     byte ptr ds:[DOS_INDOS],0
         mov     byte ptr ds:[DOS_ERRFLG],0
+        mov     ax,0100h                ; the standard handles are slots
+        call    std_set                 ; 0 and 1 - see std_set
 
         call    arena_init
         call    fat_init                ; per-drive state, out of the arena
+        call    find_init               ; and the 71h find handles, likewise
         call    cache_init              ; ...and the disk cache, before the
                                         ; first sector is read: CONFIG.SYS
                                         ; is itself a file on the disk, and
@@ -57,6 +99,11 @@ ENDIF
         call    xms_init                ; and the XMS callback in it
         call    vdm_stubs               ; and an IRET for the DOS vectors
                                         ; a DOS box reflects through
+        call    mouse_boot              ; and the INT 33h stub, for the
+                                        ; mouse driver PMIO already found
+        call    bus_boot                ; and the INT 4Bh one, for the
+                                        ; driver of a card that moves its
+                                        ; own data
         call    vdm_lolinit             ; and a 52h list of lists a 16-bit
                                         ; program can actually follow
         call    win_sdainit             ; and the swappable data area, in
@@ -127,12 +174,21 @@ ENDIF
         ; into the chain NUL anchors.
         call    cdd_init
 
+        ; No images are mounted, and saying so costs one call.  The
+        ; table is statically zero in PMDOS.SYS and would be right
+        ; without this - but "right because nobody wrote to it yet" is
+        ; the kind of correctness that stops being true the first time
+        ; a warm restart is added.
+        call    img_init
+
         mov     al,byte ptr ds:[GV_BOOTDRV]
         call    bios2log                ; the letter the boot disk got
         mov     [cur_vol],al            ; the boot volume owns vol_state
         mov     [cur_drive],al
         add     al,'A'                  ; the shell reloads off the boot
         mov     [shell_name],al         ; drive no matter where cwd sits
+        mov     [shell_dflt],al
+        mov     [shell_old],al
         call    fat_mount
         jnc     mount_ok
         mov     esi,OFFSET msgNoMount
@@ -184,13 +240,33 @@ shell_restart:
         ; run.  So the depth is not adjusted, it is ASSERTED.
         mov     byte ptr ds:[DOS_INDOS],0
         mov     byte ptr ds:[DOS_ERRFLG],0
+        mov     ax,0100h                ; the standard handles are slots
+        call    std_set                 ; 0 and 1 - see std_set
 
         mov     dword ptr ds:[cur_psp],SHELL_PSP
         xor     eax,eax                 ; depth zero: the interpreter's own
         call    r3_useslot              ; slot, and its two descriptors
         mov     edx,OFFSET shell_name
         call    exec_load
+        jnc     shell_loaded
+
+        ; NOT THERE, OR NOT OURS.  Two more names are tried before the
+        ; machine asks for a system diskette.  CMD.EXE, in case a SHELL=
+        ; line named something this kernel cannot run as its interpreter
+        ; - exec_load takes nothing but a D32 image, and SHELL=COMMAND.COM
+        ; is the line every real CONFIG.SYS has, which here names the
+        ; 16-bit shell the DOS boxes use.  Then COMMAND.COM, which is what
+        ; the interpreter was called until v0.60: a disk SYSed by an older
+        ; release has no CMD.EXE, and its COMMAND.COM is the D32 one.
+        ; Whichever loads becomes shell_name, so that F1h AL=3 - which is
+        ; where the interpreter learns its own path - tells the truth.
+        mov     esi,OFFSET shell_dflt
+        call    shell_try
+        jnc     shell_loaded
+        mov     esi,OFFSET shell_old
+        call    shell_try
         jc      no_shell
+shell_loaded:
 
         ; "/P" marks the permanent shell, exactly as SHELL= does in a
         ; real CONFIG.SYS: it is what tells COMMAND.COM to run
@@ -232,6 +308,26 @@ no_shell:
         call    dword ptr ds:[IOS_CONSTR]
         call    dword ptr ds:[IOS_CONIN]        ; any key ...
         jmp     shell_restart                   ; ... and try again
+
+;---------------------------------------------------------------------
+; shell_try - ESI -> another name for the interpreter.  exec_load it;
+;             if it loads, it is shell_name from now on.  CF if not.
+;---------------------------------------------------------------------
+shell_try:
+        mov     edx,esi
+        push    esi
+        call    exec_load
+        pop     esi
+        jc      st_out
+        mov     edi,OFFSET shell_name
+st_cp:
+        lodsb
+        stosb
+        or      al,al
+        jnz     st_cp
+        clc
+st_out:
+        ret
 
 ;=====================================================================
 ; dos_fault - IOS_EXCHOOK.  A ring-0 fault has happened and PMIO has
@@ -358,6 +454,17 @@ df_notbox:
         mov     dword ptr [ebp+F_EAX],255
         jmp     fn4C
 
+;---------------------------------------------------------------------
+; kbss_lost - the link and PMDOS.INC disagree about where _KBSS is.
+;             Nothing can be trusted to run; say so and stop.
+;---------------------------------------------------------------------
+kbss_lost:
+        mov     esi,OFFSET msgKbss
+        call    dword ptr ds:[IOS_CONSTR]
+kbss_stop:
+        hlt
+        jmp     short kbss_stop
+
 ;=====================================================================
         INCLUDE ARENA.INC
         INCLUDE FAT.INC
@@ -374,6 +481,17 @@ df_notbox:
                                         ; CRITERR's own disk_wrsure
         INCLUDE PATH.INC
         INCLUDE INT21.INC
+        INCLUDE IMAGE.INC               ; after PATH.INC because it resolves
+                                        ; a path, and after INT21.INC
+                                        ; because it reads the SFT to find
+                                        ; out whether anything still has the
+                                        ; volume open.  Everything that
+                                        ; calls INTO it - dio_try, dio_raw,
+                                        ; fat_mount, F1h - calls forwards,
+                                        ; which is what the whole file does
+                                        ; anyway: it sits UNDER the
+                                        ; filesystem and is reached from
+                                        ; above
         INCLUDE CONFIG.INC
         INCLUDE LOWMEM.INC
         INCLUDE UMB.INC                 ; and immediately after it: upper
@@ -382,6 +500,9 @@ df_notbox:
                                         ; halves and read in that order
         INCLUDE XMS.INC
         INCLUDE VDM.INC
+        INCLUDE JFT.INC                 ; after VDM.INC: a DOS program's
+                                        ; own handle table, which the
+                                        ; bridges there and in INT21.INC ask
         INCLUDE MSCDEX.INC              ; after VDM.INC: it answers part
                                         ; of INT 2Fh out of a DOS box and
                                         ; works on vdm_ctx, and after
@@ -436,8 +557,11 @@ fault_frame db  F_ESP3 + 8 dup(0)
 ; the interpreter AND its tail, and "/P" being absent is a meaningful
 ; choice rather than an oversight - it is how you ask for a shell that
 ; skips AUTOEXEC.BAT and that EXIT can terminate.
-shell_name  db  'A:\COMMAND.COM',0      ; drive letter patched at boot
-            db  SHELLNAME_MAX - 15 dup(0)
+shell_name  db  'A:\CMD.EXE',0          ; drive letter patched at boot
+            db  SHELLNAME_MAX - 11 dup(0)
+; The two names shell_restart falls back on - see the comment there.
+shell_dflt  db  'A:\CMD.EXE',0
+shell_old   db  'A:\COMMAND.COM',0
 shell_tail  db  3,' /P',0Dh             ; DOS tail: length, text, CR
             db  SHELLTAIL_MAX - 5 dup(0)
 
@@ -454,6 +578,24 @@ msgNoMount  db  'WARNING: cannot mount the boot volume - no filesystem',13,10,0
 msgNoVolMem db  'no arena for the per-drive volume state',0
 msgNoShell  db  13,10,'Bad or missing command interpreter'
             db  13,10,'Insert a system diskette and press any key',13,10,0
+msgKbss     db  'PMDOS.SYS: linked for the wrong KBSS address',13,10,0
 
 _DOS    ENDS
+
+_KBSS   SEGMENT
+kbss_mid    LABEL BYTE
+_KBSS   ENDS
+
+_KBSS2  SEGMENT
+kbss_end    LABEL BYTE
+_KBSS2  ENDS
+
+KBSS_USED   EQU (kbss_mid - kbss_start) + (kbss_end - kbss2_start)
+KBSS_CLUS   EQU KBSS_BASE + (kbss_mid - kbss_start) + (clus_buf - kbss2_start)
+IF KBSS_USED GT KBSS_LEN
+        .ERR    KBSS_LEN in PMDOS.INC is too small for what is in _KBSS
+ENDIF
+IF (KBSS_CLUS SHR 16) NE ((KBSS_CLUS + CLUSBUF_SIZE - 1) SHR 16)
+        .ERR    clus_buf crosses a 64K line
+ENDIF
         END

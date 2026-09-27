@@ -973,6 +973,7 @@ fn40:
         mov     di,[bp+F_DX]
         test    byte ptr [si+SFT_FLAGS],SFF_DEVICE
         jnz     f40_dev
+        call    sft_touch               ; a written file is dated now
         or      ecx,ecx
         jz      f40_trunc
         mov     byte ptr [rd_iowr],1
@@ -984,6 +985,22 @@ f40_trunc:
         call    file_trunc
         mov     word ptr [bp+F_AX],0
         jmp     i21_ok
+
+;--- sft_touch - SI = an SFT that is about to be written.  As DOS does:
+;--- the file takes the time of its last write, unless 5701h has set
+;--- one, which then stands.  The close puts it in the directory.
+sft_touch:
+        test    byte ptr [si+SFT_FLAGS],SFF_STAMPED
+        jnz     stt_out
+        push    ax
+        push    dx
+        call    rd_stamp
+        mov     [si+SFT_TIME],ax
+        mov     [si+SFT_DATE],dx
+        pop     dx
+        pop     ax
+stt_out:
+        ret
 f40_dev:
         call    dev_write
         mov     [bp+F_AX],cx
@@ -1150,7 +1167,11 @@ fn41:
         jnz     f41_ro
 
         call    rd_declus               ; -> EBX
-        mov     byte ptr [rd_dirbuf + DE_NAME],0E5h
+        ; The entry at rd_deoff and no other.  Until v0.60 a line above
+        ; this one also wrote E5h at rd_dirbuf + DE_NAME - the FIRST
+        ; entry of the sector - so every delete took a second file with
+        ; it: CONFIG.SYS, the first time anything was deleted on RMDOS
+        ; and looked at afterwards.
         push    bx
         mov     bx,[rd_deoff]
         mov     byte ptr [rd_dirbuf + bx + DE_NAME],0E5h
@@ -1227,7 +1248,7 @@ f57_set:
         mov     [si+SFT_TIME],ax
         mov     ax,[bp+F_DX]
         mov     [si+SFT_DATE],ax
-        or      byte ptr [si+SFT_FLAGS],SFF_WRITTEN
+        or      byte ptr [si+SFT_FLAGS],SFF_WRITTEN OR SFF_STAMPED
         jmp     i21_ok
 f57_fn:
         mov     ax,ERR_FUNC
@@ -1295,11 +1316,6 @@ f44_bad:
         jmp     i21_fail
 
 ;--- 39h, 3Ah, 3Bh - directories -------------------------------------
-fn39:
-fn3A:
-        mov     ax,ERR_FUNC
-        jmp     i21_fail
-
 fn3B:
         mov     es,[bp+F_DS]
         mov     si,[bp+F_DX]
@@ -1323,15 +1339,39 @@ fn3B:
         jz      f3B_nopath
         call    rd_declus               ; -> EBX
 f3B_here:
-        push    si
+        ; THE PATH TEXT GOES IN WITH THE CLUSTER.  Until v0.60 only the
+        ; cluster did, so 47h answered the root after every CD and a
+        ; prompt of $P never moved; and since relative paths now start
+        ; from this text (rd_canon), it is the directory, not a label.
+        ; rd_canbuf still holds what rd_path walked: "D:\" and the rest.
+        mov     si,OFFSET rd_canbuf + 3
+        mov     cx,64
+f3B_len:
+        cmp     byte ptr [si],0
+        je      f3B_fits
+        inc     si
+        loop    f3B_len
+        jmp     short f3B_nopath        ; longer than a DOS path may be
+f3B_fits:
         mov     al,byte ptr [rp_drv]
-        movzx   si,al
+        movzx   di,al
         mov     ax,CDS_LEN
-        mul     si
-        mov     si,ax
-        add     si,OFFSET rd_cds
-        mov     dword ptr [si+CDS_CLUS],ebx
-        pop     si
+        mul     di
+        mov     di,ax
+        add     di,OFFSET rd_cds
+        mov     dword ptr [di+CDS_CLUS],ebx
+        add     di,CDS_PATH
+        mov     si,OFFSET rd_canbuf + 3
+        push    es
+        push    cs
+        pop     es
+        cld
+f3B_copy:
+        lodsb
+        stosb
+        or      al,al
+        jnz     f3B_copy
+        pop     es
         jmp     i21_ok
 f3B_nopath:
         mov     ax,ERR_NOPATH
@@ -1735,10 +1775,6 @@ ffl_noext:
         ret
 
 ;--- 56h rename ------------------------------------------------------
-fn56:
-        mov     ax,ERR_FUNC
-        jmp     i21_fail
-
 ;--- 5Ch lock a region.  There is no sharing here, so every lock
 ;--- succeeds and every unlock succeeds, which is what a DOS without
 ;--- SHARE loaded has always done.
@@ -1960,7 +1996,16 @@ so_out:
         ret
 
 ;--- sub_fromdir - the entry found in rd_dirbuf at rd_deoff becomes an
-;--- open file.  BX = the handle.
+;--- open file.  -> BX = the handle, SI = its SFT.  CF: SI unchanged.
+;
+; SI COMES BACK AS THE SFT, and until v0.60 it came back as whatever the
+; caller had in it - the VOLUME RECORD, in sub_create, which then went on
+; to use it as the SFT it had just made.  A create set SFF_WRITTEN in
+; [volume + 5], the top byte of VOL_START, so the next thing to add
+; VOL_START to a sector number (69h, INT 25h/26h, a floppy's re-mount)
+; read 32MB past it.  A create that TRUNCATED zeroed VOL_FATLBA through
+; SFT_POS, then had file_trunc free a chain named by VOL_SPF on the
+; drive named by VOL_SPC - and never truncated the file.
 sub_fromdir:
         push    si
         push    di
@@ -2011,7 +2056,7 @@ sub_fromdir:
         pop     es
         pop     ax
         pop     di
-        pop     si
+        add     sp,2                    ; not SI: it is the answer now
         clc
         ret
 sfd_bad:
@@ -2049,6 +2094,7 @@ sub_create:
         jc      sc2_nohandles
         mov     dword ptr [si+SFT_POS],0
         call    file_trunc
+        call    sft_touch               ; truncated is written
         jmp     short sc2_ok
 
 sc2_new:
@@ -2132,68 +2178,83 @@ sc2_out:
         stc
         ret
 
-;--- rd_stamp - now, in directory-entry form -------------------------
+;--- rd_stamp - now, in directory-entry form -> AX = time, DX = date.
+;--- Every other register is preserved.
+;
+; UNTIL v0.60 IT PRESERVED ONLY CX, and both of the others it lost
+; mattered.  The century was multiplied with a sixteen-bit MUL, which
+; writes DX - where INT 1Ah had just put the month and the day - so
+; every date came out as month 0, day 0.  And BX came back holding the
+; year, while its one caller, sub_create, had the new directory entry's
+; offset in BX and went on to write the time and date through it: into
+; rd_dirbuf + 26 + 16h, and ten zeroes into rd_dirbuf + 26 + 0Ch.  That
+; is the middle of the SECOND entry in the sector.  A file RMDOS
+; created cut that entry's name to six characters and wiped its
+; attribute - AUTOEXEC.BAT, in the run that found it.
 rd_stamp:
+        push    bx
         push    cx
+        push    si
         mov     ah,02h
-        int     1Ah
+        int     1Ah                     ; CH:CL:DH = hours:minutes:seconds, BCD
         jc      rst_none
         mov     al,ch
         call    bcd2bin
-        movzx   ax,al
-        shl     ax,11
-        mov     [rd_tmp],ax
+        movzx   si,al
+        shl     si,11
         mov     al,cl
         call    bcd2bin
         movzx   ax,al
         shl     ax,5
-        or      [rd_tmp],ax
+        or      si,ax
         mov     al,dh
         call    bcd2bin
         shr     al,1
         movzx   ax,al
-        or      ax,[rd_tmp]
-        push    ax
+        or      si,ax                   ; SI = the time
         mov     ah,04h
-        int     1Ah
+        int     1Ah                     ; CH:CL = century:year, DH:DL = month:day
         jc      rst_nodate
         mov     al,ch
         call    bcd2bin
-        movzx   bx,al
+        mov     bl,100
+        mul     bl                      ; EIGHT bits: AX = AL * BL, DX untouched
+        mov     bx,ax
         mov     al,cl
         call    bcd2bin
-        movzx   ax,al
-        push    ax
-        mov     ax,bx
-        mov     cx,100
-        mul     cx
-        pop     bx
+        xor     ah,ah
         add     ax,bx
         sub     ax,1980
         shl     ax,9
-        mov     [rd_tmp],ax
+        mov     bx,ax
         mov     al,dh
         call    bcd2bin
-        movzx   ax,al
+        xor     ah,ah
         shl     ax,5
-        or      [rd_tmp],ax
+        or      bx,ax
         mov     al,dl
         call    bcd2bin
-        movzx   ax,al
-        or      ax,[rd_tmp]
-        mov     dx,ax
-        pop     ax
+        xor     ah,ah
+        or      ax,bx
+        mov     dx,ax                   ; DX = the date
+        mov     ax,si
+        pop     si
         pop     cx
+        pop     bx
         ret
 rst_nodate:
-        pop     ax
-        mov     dx,(1980-1980) SHL 9 OR (1 SHL 5) OR 1
+        mov     ax,si
+        mov     dx,(1 SHL 5) OR 1       ; 1-Jan-1980
+        pop     si
         pop     cx
+        pop     bx
         ret
 rst_none:
         xor     ax,ax
         mov     dx,(1 SHL 5) OR 1
+        pop     si
         pop     cx
+        pop     bx
         ret
 
 ;--- sub_read / sub_write / sub_seek / sub_close ---------------------

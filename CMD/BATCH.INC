@@ -39,13 +39,15 @@ FORNAMES_MAX    EQU     1024
 ; them rather than sliding the array down - which is how MS-DOS lets
 ; SHIFT reach an eleventh argument that %9 could never name.
 BF_ARGC         EQU     32              ; arguments remembered per frame
-BF_HANDLE       EQU     0               ; dd - open file handle
+BF_PATHMAX      EQU     128             ; the file's name, fully qualified
+BF_HANDLE       EQU     0               ; dd - unused: see bat_rawline
 BF_POS          EQU     4               ; dd - offset of the NEXT line
 BF_BASE         EQU     8               ; dd - which argument %0 is now
 BF_ARGV         EQU     12              ; BF_ARGC dd, 0 = absent
 BF_TEXT         EQU     BF_ARGV + BF_ARGC * 4
 BF_CMD          EQU     BF_TEXT + BAT_ATEXT     ; dd - 1 = a .CMD file
-BF_LEN          EQU     BF_CMD + 4
+BF_PATH         EQU     BF_CMD + 4              ; BF_PATHMAX bytes
+BF_LEN          EQU     BF_PATH + BF_PATHMAX
 
 ;=====================================================================
 ; cmd_startup - read our own command tail and act on it.
@@ -65,6 +67,10 @@ cs_lp:
         jne     cs_next
         mov     al,[esi+1]
         call    upcase
+        cmp     al,'?'                  ; the interpreter is a command
+        je      cs_help                 ; too, and answers like one
+        cmp     al,'C'
+        je      cs_once
         cmp     al,'P'
         jne     cs_next
         mov     byte ptr [perm_flag],1
@@ -84,6 +90,45 @@ cs_done:
         call    bat_launch
 cs_out:
         ret
+
+; COMMAND /C string - run the string as a command line, and when it is
+; over, exit with its errorlevel.  It is how a program shells out to
+; run one command, and how FOR /F runs the one in its set.
+;
+; EVERYTHING AFTER THE /C IS THE COMMAND'S.  The scan stops here, or
+; "COMMAND /C DIR /P" would find the /P and take it for the shell's
+; own, and never give the prompt back.  AUTOEXEC.BAT is not run - DOS
+; does not run it for /C either.
+cs_once:
+        add     esi,2                   ; past the "/C"
+        sub     ecx,2
+        jbe     cs_out                  ; nothing after it
+        mov     edi,OFFSET c_line
+        xor     edx,edx
+co_cp:
+        mov     al,[esi]
+        cmp     al,13                   ; the tail ends at its CR
+        je      co_end
+        cmp     edx,CMDLINE_MAX
+        jae     co_end
+        mov     [edi+edx],al
+        inc     edx
+        inc     esi
+        dec     ecx
+        jnz     co_cp
+co_end:
+        mov     byte ptr [edi+edx],0
+        mov     byte ptr [c_once],1
+        ret
+
+; TERMINATE, do not return: a shell that printed its own help and then
+; went on to put up a prompt would have started the nested interpreter
+; the user was asking about instead of being given.
+cs_help:
+        mov     esi,OFFSET hlp_command
+        call    print_asciiz
+        mov     ax,4C00h
+        int     21h
 
 ;=====================================================================
 ; bat_launch - EDX -> the path of a .BAT file, [arg_ptr] -> its
@@ -117,9 +162,48 @@ bl_nochain:
         mov     edi,[bat_lvl]
         imul    edi,BF_LEN
         add     edi,OFFSET bat_stk
-        mov     eax,[bl_handle]
-        mov     [edi+BF_HANDLE],eax
         mov     dword ptr [edi+BF_POS],0
+
+        ; THE FILE IS NOT KEPT OPEN.  Its fully qualified name goes in
+        ; the frame and the handle is closed now: bat_rawline opens it
+        ; again for every line, which is what DOS's COMMAND.COM has
+        ; always done.  Holding it open for the length of the batch
+        ; file meant a file WAS open while every command in it ran -
+        ; and the handover that starts Windows refuses while one is, so
+        ; WIN in AUTOEXEC.BAT could never start it.  The qualified name
+        ; is what a CD inside the file cannot take away from us.
+        push    esi
+        push    edi
+        mov     esi,[bl_path]
+        add     edi,BF_PATH
+        mov     ah,60h                  ; TRUENAME
+        int     21h
+        pop     edi
+        pop     esi
+        jnc     bl_named2
+        push    esi                     ; no answer: the name as given,
+        push    edi                     ; which is right unless the file
+        mov     esi,[bl_path]           ; changes directory
+        add     edi,BF_PATH
+        mov     ecx,BF_PATHMAX - 1
+bl_pcp:
+        mov     al,[esi]
+        mov     [edi],al
+        or      al,al
+        jz      bl_pcpd
+        inc     esi
+        inc     edi
+        loop    bl_pcp
+        mov     byte ptr [edi],0
+bl_pcpd:
+        pop     edi
+        pop     esi
+bl_named2:
+        push    ebx
+        mov     ebx,[bl_handle]
+        mov     ah,3Eh
+        int     21h
+        pop     ebx
 
         ; which batch class is this?  A .CMD file gets the advanced
         ; (quote-aware) parsing on every line it runs; a .BAT keeps
@@ -290,10 +374,7 @@ bat_pop:
         mov     esi,[bat_cur]
         or      esi,esi
         jz      bpop_out
-        mov     ebx,[esi+BF_HANDLE]
-        mov     ah,3Eh
-        int     21h
-        mov     eax,[bat_lvl]
+        mov     eax,[bat_lvl]           ; nothing to close: see bat_launch
         dec     eax
         mov     [bat_lvl],eax
         or      eax,eax
@@ -332,17 +413,29 @@ bpa_out:
 bat_rawline:
         pushad
         mov     esi,[bat_cur]
-        mov     ebx,[esi+BF_HANDLE]
+        lea     edx,[esi+BF_PATH]       ; opened for this line and closed
+        mov     ax,3D00h                ; again before it runs - see
+        int     21h                     ; bat_launch
+        jc      brl_gone
+        movzx   ebx,ax
+        mov     [brl_hdl],ebx
         mov     ecx,[esi+BF_POS]
         mov     ax,4200h
         int     21h
-        jc      brl_eof
+        jc      brl_closeof
 
-        mov     ebx,[esi+BF_HANDLE]
+        mov     ebx,[brl_hdl]
         mov     ecx,BAT_CHUNK
         mov     edx,OFFSET bat_raw
         mov     ah,3Fh
         int     21h
+        pushfd
+        push    eax
+        mov     ebx,[brl_hdl]
+        mov     ah,3Eh
+        int     21h
+        pop     eax
+        popfd
         jc      brl_eof
         or      eax,eax
         jz      brl_eof
@@ -390,11 +483,23 @@ brl_lineend:
         clc
         ret
 
+brl_closeof:
+        mov     ebx,[brl_hdl]
+        mov     ah,3Eh
+        int     21h
+        jmp     short brl_eof
+brl_gone:
+        ; THE FILE HAS GONE since the last line, which reopening every
+        ; line makes possible and DOS answers the way it always has.
+        mov     edx,OFFSET msg_batmiss
+        call    print
 brl_eof:
         mov     byte ptr [line_buf],0
         popad
         stc
         ret
+
+brl_hdl     dd  0
 
 ;=====================================================================
 ; bat_getline - the next command from the running batch file, expanded
@@ -857,6 +962,21 @@ cmd_for:
         jne     for_nested
         mov     esi,[arg_ptr]
         call    skip_blanks
+        cmp     byte ptr [esi],'/'      ; FOR /F: lines and tokens, below
+        jne     fr_classic
+        mov     al,[esi+1]
+        call    upcase
+        cmp     al,'F'
+        jne     for_syntax
+        mov     al,[esi+2]
+        cmp     al,' '
+        je      fr_slashf
+        cmp     al,9
+        jne     for_syntax
+fr_slashf:
+        add     esi,2
+        jmp     ff_start
+fr_classic:
         cmp     byte ptr [esi],'%'
         jne     for_syntax
         inc     esi
@@ -993,11 +1113,13 @@ fr_items_done:
 
 ;--- and now run the body once for each -----------------------------
         mov     byte ptr [for_busy],1
+        mov     dword ptr [for_nv],1    ; one variable: the item
         mov     esi,OFFSET for_names
 fr_run:
         cmp     byte ptr [esi],0
         je      fr_done
         push    esi
+        mov     [for_vp],esi
         call    for_subst
         mov     esi,OFFSET for_line
         call    exec_line
@@ -1042,13 +1164,17 @@ fa_out:
         ret
 
 ;---------------------------------------------------------------------
-; for_subst - for_line = for_body with every %<for_var> replaced by
-;             the item at ESI.  Rebuilt per iteration because running
-;             the body is free to chew up the copy.
+; for_subst - for_line = for_body with every variable replaced by its
+;             value.  Rebuilt per iteration because running the body is
+;             free to chew up the copy.
+;
+; [for_nv] variables, the first named [for_var] and the rest the
+; letters after it - which is how FOR /F's tokens=1,2,3 become %a, %b
+; and %c - with their values at [for_vp].  The ordinary FOR has one.
+; Case sensitive, as MS-DOS has it: %a and %A are two variables.
 ;---------------------------------------------------------------------
 for_subst:
         pushad
-        mov     ebx,esi
         mov     esi,OFFSET for_body
         mov     edi,OFFSET for_line
 fs_lp:
@@ -1057,9 +1183,13 @@ fs_lp:
         jz      fs_end
         cmp     al,'%'
         jne     fs_lit
-        mov     ah,[esi+1]
-        cmp     ah,[for_var]            ; case sensitive, as MS-DOS has it
-        jne     fs_lit
+        movzx   ecx,byte ptr [esi+1]
+        movzx   edx,byte ptr [for_var]
+        sub     ecx,edx                 ; which of them, from the first
+        jb      fs_lit
+        cmp     ecx,[for_nv]
+        jae     fs_lit
+        mov     ebx,[for_vp+ecx*4]
         add     esi,2
         push    ebx
 fs_item:
@@ -1087,6 +1217,855 @@ fs_put:
         mov     [edi],al
         inc     edi
 fsp_out:
+        ret
+
+;=====================================================================
+; FOR /F ["options"] %v IN (set) DO command
+;
+; Windows NT's, which MS-DOS never had: the set is TEXT, taken apart a
+; line at a time and each line cut into tokens.  It is here because a
+; batch file that has to read a file, or the output of a command, had
+; no other way to do it on this system.
+;
+;   (file1 file2 ...)   the lines of those files
+;   ("string")          the one line in the quotes
+;   ('command')         the lines the command writes - run through
+;                       COMSPEC /C with its output in a temporary file,
+;                       which is how NT runs it too, so that a batch file
+;                       or a pipeline there works as it would anywhere
+;
+; and with usebackq the quotes move: "file with spaces", 'string',
+; `command`.
+;
+;   eol=c       a line starting with c is a comment (default ;)
+;   skip=n      the first n lines are skipped
+;   delims=xxx  what separates tokens (default space and tab).  It
+;               runs to the closing quote, or to a blank that another
+;               option follows - so "delims=, tokens=2" is a comma and
+;               "tokens=2 delims=, " is a comma and a space
+;   tokens=x,y,m-n[*]   which tokens, each into the next letter after
+;               %v; a '*' after the last one takes the rest of the
+;               line.  "tokens=*" is the whole line.  Default 1.
+;
+; Blank lines are skipped, and so is a line with no first token in it.
+; Everything else the body sees through for_subst like any FOR.
+;=====================================================================
+FFQ_MAXTOK      EQU     31              ; the most tokens=, as in NT
+FFQ_VBUF        EQU     512             ; one line's token values
+FFQ_TMPMAX      EQU     96              ; the temporary file's path
+FFCLINE_MAX     EQU     256             ; COMSPEC /C command > file
+
+ff_start:
+        call    skip_blanks
+        mov     byte ptr [ff_eol],';'
+        mov     dword ptr [ff_skip],0
+        mov     byte ptr [ff_backq],0
+        mov     dword ptr [ff_tmask],2  ; bit n = token n: token 1
+        mov     dword ptr [ff_tmax],1
+        mov     byte ptr [ff_star],0
+        mov     dword ptr [ff_delims],0920h     ; blank, tab, NUL
+        cmp     byte ptr [esi],'"'
+        jne     ff_var
+        inc     esi
+        call    ff_options
+        jc      for_syntax
+        call    skip_blanks
+ff_var:
+        cmp     byte ptr [esi],'%'
+        jne     for_syntax
+        inc     esi
+        mov     al,[esi]
+        or      al,al
+        jz      for_syntax
+        mov     [for_var],al
+        inc     esi
+        call    skip_blanks
+        mov     edi,OFFSET lit_in
+        call    kw_match
+        jc      for_syntax
+        cmp     byte ptr [esi],'('
+        jne     for_syntax
+        inc     esi
+        call    ff_setend               ; EDI -> the ')' before DO
+        jc      for_syntax
+        mov     ecx,edi
+        sub     ecx,esi
+        cmp     ecx,FORLIST_MAX - 1
+        jb      ff_lcp
+        mov     ecx,FORLIST_MAX - 1
+ff_lcp:
+        push    edi
+        mov     edi,OFFSET for_list
+        rep     movsb
+        mov     byte ptr [edi],0
+        pop     esi
+        inc     esi                     ; past the ')'
+        call    skip_blanks
+        mov     edi,OFFSET lit_do
+        call    kw_match
+        jc      for_syntax
+        cmp     byte ptr [esi],0
+        je      for_syntax
+        mov     edi,OFFSET for_body
+        xor     ecx,ecx
+ff_bod:
+        mov     al,[esi]
+        or      al,al
+        jz      ff_bodend
+        cmp     ecx,FORBODY_MAX - 1
+        jae     ff_bodend
+        mov     [edi+ecx],al
+        inc     ecx
+        inc     esi
+        jmp     short ff_bod
+ff_bodend:
+        mov     byte ptr [edi+ecx],0
+
+        ; how many variables the tokens make: one per token, and one
+        ; more for a '*'
+        mov     eax,[ff_tmask]
+        xor     ecx,ecx
+ff_count:
+        or      eax,eax
+        jz      ff_counted
+        shr     eax,1
+        adc     ecx,0
+        jmp     short ff_count
+ff_counted:
+        movzx   eax,byte ptr [ff_star]
+        add     ecx,eax
+        mov     [ff_nv],ecx
+
+        mov     byte ptr [for_busy],1
+        mov     esi,OFFSET for_list
+        call    skip_blanks
+        mov     al,[esi]
+        cmp     byte ptr [ff_backq],0
+        jne     ff_bq
+        cmp     al,'"'
+        je      ff_string
+        cmp     al,"'"
+        je      ff_command
+        jmp     short ff_files
+ff_bq:
+        cmp     al,"'"
+        je      ff_string
+        cmp     al,'`'
+        je      ff_command
+        jmp     short ff_files
+
+ff_string:
+        call    ff_unquote              ; ESI -> the text, its quote cut off
+        call    ff_text
+        jmp     short ff_end
+ff_command:
+        call    ff_unquote
+        call    ff_runcmd
+        jmp     short ff_end
+ff_files:
+        call    skip_blanks
+        cmp     byte ptr [esi],0
+        je      ff_end
+        mov     edi,OFFSET tok_buf      ; one name, quoted only under
+        xor     ecx,ecx                 ; usebackq
+        xor     ah,ah
+        cmp     byte ptr [ff_backq],0
+        je      ff_fname
+        cmp     byte ptr [esi],'"'
+        jne     ff_fname
+        inc     esi
+        mov     ah,1
+ff_fname:
+        mov     al,[esi]
+        or      al,al
+        jz      ff_fend
+        or      ah,ah
+        jnz     ff_fquoted
+        cmp     al,' '
+        je      ff_fend
+        cmp     al,9
+        je      ff_fend
+        jmp     short ff_fkeep
+ff_fquoted:
+        cmp     al,'"'
+        jne     ff_fkeep
+        inc     esi                     ; the closing quote goes too
+        jmp     short ff_fend
+ff_fkeep:
+        cmp     ecx,TOK_MAX - 1
+        jae     ff_fskip
+        mov     [edi+ecx],al
+        inc     ecx
+ff_fskip:
+        inc     esi
+        jmp     short ff_fname
+ff_fend:
+        mov     byte ptr [edi+ecx],0
+        mov     edx,OFFSET tok_buf
+        call    ff_file                 ; ESI survives: it is for_list
+        jmp     short ff_files
+ff_end:
+        mov     byte ptr [for_busy],0
+        ret
+
+;---------------------------------------------------------------------
+; ff_unquote - ESI -> an opening quote.  ESI comes back on the text
+;              after it, with the matching closing quote (the LAST one,
+;              so a command may quote things inside itself) cut to a
+;              NUL.  No closing quote: to the end.
+;---------------------------------------------------------------------
+ff_unquote:
+        push    eax
+        push    edx
+        push    edi
+        mov     al,[esi]
+        inc     esi
+        mov     edi,esi
+        xor     edx,edx                 ; the last one seen
+fu_lp:
+        cmp     byte ptr [edi],0
+        je      fu_cut
+        cmp     [edi],al
+        jne     fu_next
+        mov     edx,edi
+fu_next:
+        inc     edi
+        jmp     short fu_lp
+fu_cut:
+        or      edx,edx
+        jz      fu_out
+        mov     byte ptr [edx],0
+fu_out:
+        pop     edi
+        pop     edx
+        pop     eax
+        ret
+
+;---------------------------------------------------------------------
+; ff_setend - ESI -> just inside the set's '('.  EDI -> the ')' that
+;             closes it, which is the first one followed by DO: a
+;             command in the set may have brackets of its own.  CF if
+;             there is none.
+;---------------------------------------------------------------------
+ff_setend:
+        push    esi
+        mov     edi,esi
+fse_lp:
+        cmp     byte ptr [edi],0
+        je      fse_none
+        cmp     byte ptr [edi],')'
+        jne     fse_next
+        lea     esi,[edi+1]
+        call    skip_blanks
+        push    edi
+        mov     edi,OFFSET lit_do
+        call    kw_match
+        pop     edi
+        jnc     fse_hit
+fse_next:
+        inc     edi
+        jmp     short fse_lp
+fse_hit:
+        pop     esi
+        clc
+        ret
+fse_none:
+        pop     esi
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; ff_options - ESI -> just inside the options' opening quote.  They are
+;              read into ff_*, and ESI comes back past the closing
+;              quote.  CF on anything that is not an option.
+;---------------------------------------------------------------------
+ff_options:
+fo_lp:
+        call    skip_blanks
+        mov     al,[esi]
+        or      al,al
+        jz      fo_bad
+        cmp     al,'"'
+        je      fo_end
+        mov     edi,OFFSET kwf_eol
+        call    ff_kw
+        jnc     fo_eol
+        mov     edi,OFFSET kwf_skip
+        call    ff_kw
+        jnc     fo_skip
+        mov     edi,OFFSET kwf_delims
+        call    ff_kw
+        jnc     fo_delims
+        mov     edi,OFFSET kwf_tokens
+        call    ff_kw
+        jnc     fo_tokens
+        mov     edi,OFFSET kwf_backq
+        call    ff_kw
+        jnc     fo_backq
+fo_bad:
+        stc
+        ret
+fo_end:
+        inc     esi
+        clc
+        ret
+
+fo_eol:
+        mov     al,[esi]
+        or      al,al
+        jz      fo_bad
+        cmp     al,'"'                  ; "eol=" and nothing: no comments
+        je      fo_eolnone
+        mov     [ff_eol],al
+        inc     esi
+        jmp     short fo_lp
+fo_eolnone:
+        mov     byte ptr [ff_eol],0
+        jmp     short fo_lp
+
+fo_skip:
+        call    parse_num
+        jc      fo_bad
+        mov     [ff_skip],eax
+        jmp     short fo_lp
+
+fo_backq:
+        mov     byte ptr [ff_backq],1
+        jmp     short fo_lp
+
+fo_delims:
+        mov     edi,OFFSET ff_delims
+        xor     ecx,ecx
+fd_lp:
+        mov     al,[esi]
+        or      al,al
+        jz      fd_end
+        cmp     al,'"'
+        je      fd_end
+        cmp     al,' '
+        jne     fd_take
+        call    ff_optnext              ; a blank with another option after
+        jnc     fd_end                  ; it ends the set; any other is in it
+fd_take:
+        cmp     ecx,31
+        jae     fd_skip
+        mov     [edi+ecx],al
+        inc     ecx
+fd_skip:
+        inc     esi
+        jmp     short fd_lp
+fd_end:
+        mov     byte ptr [edi+ecx],0
+        jmp     fo_lp
+
+fo_tokens:
+        mov     dword ptr [ff_tmask],0
+        mov     dword ptr [ff_tmax],0
+        mov     byte ptr [ff_star],0
+ftk_spec:
+        cmp     byte ptr [esi],'*'
+        je      ftk_star
+        call    parse_num
+        jc      fo_bad
+        mov     ebx,eax                 ; from
+        mov     edx,eax                 ; to
+        cmp     byte ptr [esi],'-'
+        jne     ftk_range
+        inc     esi
+        call    parse_num
+        jc      fo_bad
+        mov     edx,eax
+ftk_range:
+        or      ebx,ebx
+        jz      fo_bad
+        cmp     edx,FFQ_MAXTOK
+        ja      fo_bad
+        cmp     ebx,edx
+        ja      fo_bad
+ftk_bit:
+        bts     dword ptr [ff_tmask],ebx
+        cmp     ebx,[ff_tmax]
+        jbe     ftk_nomax
+        mov     [ff_tmax],ebx
+ftk_nomax:
+        inc     ebx
+        cmp     ebx,edx
+        jbe     ftk_bit
+        cmp     byte ptr [esi],','
+        jne     ftk_after
+        inc     esi
+        jmp     short ftk_spec
+ftk_after:
+        cmp     byte ptr [esi],'*'
+        jne     fo_lp
+ftk_star:
+        mov     byte ptr [ff_star],1
+        inc     esi
+        jmp     fo_lp
+
+; ff_kw - is the option word at ESI the one at EDI (upper case)?  An
+;         '=' ends the ones that take a value; "usebackq" must end at a
+;         blank or the quote.  ESI past it and CF clear if so.
+ff_kw:
+        push    eax
+        push    ecx
+        xor     ecx,ecx
+fk_lp:
+        mov     ah,[edi+ecx]
+        or      ah,ah
+        jz      fk_end
+        mov     al,[esi+ecx]
+        call    upcase
+        cmp     al,ah
+        jne     fk_no
+        inc     ecx
+        jmp     short fk_lp
+fk_end:
+        cmp     byte ptr [edi+ecx-1],'='
+        je      fk_yes
+        mov     al,[esi+ecx]
+        cmp     al,' '
+        je      fk_yes
+        cmp     al,'"'
+        je      fk_yes
+        or      al,al
+        jz      fk_yes
+fk_no:
+        pop     ecx
+        pop     eax
+        stc
+        ret
+fk_yes:
+        add     esi,ecx
+        pop     ecx
+        pop     eax
+        clc
+        ret
+
+; ff_optnext - ESI -> a blank inside delims=.  CF clear if, after the
+;              blanks, another option starts - which ends the set.
+;              ESI is left where it was.
+ff_optnext:
+        push    esi
+        push    edi
+        call    skip_blanks
+        mov     edi,OFFSET kwf_eol
+        call    ff_kw
+        jnc     fon_yes
+        mov     edi,OFFSET kwf_skip
+        call    ff_kw
+        jnc     fon_yes
+        mov     edi,OFFSET kwf_delims
+        call    ff_kw
+        jnc     fon_yes
+        mov     edi,OFFSET kwf_tokens
+        call    ff_kw
+        jnc     fon_yes
+        mov     edi,OFFSET kwf_backq
+        call    ff_kw
+        jnc     fon_yes
+        pop     edi
+        pop     esi
+        stc
+        ret
+fon_yes:
+        pop     edi
+        pop     esi
+        clc
+        ret
+
+;---------------------------------------------------------------------
+; ff_file - EDX -> a file name: its lines, through the body.  A file
+;           that will not open is said so and passed over.
+;
+; READ WHOLE FIRST, and then run: the body is free to write to the
+; very file being read - "FOR /F %a IN (LIST) DO ECHO %a >> LIST" - and
+; a file read a line at a time underneath that would never end.  NT
+; reads it first for the same reason.
+;---------------------------------------------------------------------
+ff_file:
+        pushad
+        mov     ax,3D00h
+        int     21h
+        jc      ffl_none
+        movzx   ebx,ax
+        mov     [ff_hdl],ebx
+        xor     ecx,ecx
+        xor     edx,edx
+        mov     ax,4202h                ; how long it is
+        int     21h
+        jc      ffl_close
+        mov     [ff_size],eax
+        mov     ebx,[ff_hdl]
+        xor     ecx,ecx
+        xor     edx,edx
+        mov     ax,4200h
+        int     21h
+        mov     ebx,[ff_size]
+        or      ebx,ebx
+        jz      ffl_close               ; nothing in it: no lines
+        add     ebx,2
+        mov     ah,48h
+        int     21h
+        jc      ffl_nomem
+        mov     [ff_blk],eax
+        mov     edx,eax
+        mov     ecx,[ff_size]
+        mov     ebx,[ff_hdl]
+        mov     ah,3Fh
+        int     21h
+        jc      ffl_free
+        mov     esi,[ff_blk]
+        mov     byte ptr [esi+eax],0    ; what was read, and not a byte more
+        mov     ebx,[ff_hdl]            ; closed BEFORE the body runs: the
+        mov     ah,3Eh                  ; body may want it
+        int     21h
+        mov     dword ptr [ff_hdl],-1
+        call    ff_text
+ffl_free:
+        mov     edx,[ff_blk]
+        mov     ah,49h
+        int     21h
+ffl_close:
+        mov     ebx,[ff_hdl]
+        cmp     ebx,-1
+        je      ffl_out
+        mov     ah,3Eh
+        int     21h
+ffl_out:
+        popad
+        ret
+ffl_none:
+        push    edx
+        mov     edx,OFFSET msg_ffnone
+        call    print
+        pop     esi
+        call    print_asciiz
+        call    put_crlf
+        popad
+        ret
+ffl_nomem:
+        mov     edx,OFFSET msg_ffmem
+        call    print
+        jmp     short ffl_close
+
+;---------------------------------------------------------------------
+; ff_runcmd - ESI -> a command.  It runs through COMSPEC /C with its
+;             standard output in a temporary file, which is then read
+;             like any other and deleted.
+;
+; The file goes where TEMP says, as the pipes' would on DOS, and in the
+; current directory when there is no TEMP - which is where this
+; shell's own pipe files go.
+;---------------------------------------------------------------------
+ff_runcmd:
+        pushad
+        mov     [ff_cmd],esi
+        mov     edi,OFFSET ff_tmp       ; the file: TEMP\%FORF.$$$
+        push    esi
+        mov     esi,OFFSET ffn_temp
+        call    env_find
+        jc      frc_here
+        mov     ecx,FFQ_TMPMAX - 16
+frc_tdir:
+        lodsb
+        or      al,al
+        jz      frc_tend
+        stosb
+        dec     ecx
+        jnz     frc_tdir
+frc_tend:
+        cmp     edi,OFFSET ff_tmp
+        je      frc_here
+        cmp     byte ptr [edi-1],'\'
+        je      frc_here
+        mov     al,'\'
+        stosb
+frc_here:
+        mov     esi,OFFSET ffn_tmpname
+frc_tn:
+        lodsb
+        stosb
+        or      al,al
+        jnz     frc_tn
+        pop     esi
+
+        ; The line: THIS interpreter /C command > the file.  Not COMSPEC,
+        ; which names the 16-bit COMMAND.COM DOS programs get (see
+        ; set_comspec) - FOR /F's command is a CMD.EXE command line, and
+        ; it is the kernel that knows where CMD.EXE is.
+        mov     edi,OFFSET ff_cline
+        mov     edx,edi
+        mov     ax,0F103h
+        int     21h
+        jc      frc_dflt
+        cmp     byte ptr [edi],0
+        je      frc_dflt
+frc_end:
+        cmp     byte ptr [edi],0
+        je      frc_cs
+        inc     edi
+        jmp     short frc_end
+frc_dflt:
+        mov     esi,OFFSET ffn_command  ; an older kernel: the usual name
+        call    ff_cat
+frc_cs:
+        mov     esi,OFFSET ffn_slashc
+        call    ff_cat
+        mov     esi,[ff_cmd]
+        call    ff_cat
+        mov     esi,OFFSET ffn_to
+        call    ff_cat
+        mov     esi,OFFSET ff_tmp
+        call    ff_cat
+        mov     byte ptr [edi],0
+
+        mov     esi,OFFSET ff_cline
+        call    exec_line
+        mov     edx,OFFSET ff_tmp
+        call    ff_file
+        mov     edx,OFFSET ff_tmp
+        mov     ah,41h
+        int     21h
+        popad
+        ret
+
+; ff_cat - the ASCIIZ at ESI onto ff_cline at EDI, while there is room
+ff_cat:
+        lodsb
+        or      al,al
+        jz      fc_out
+        cmp     edi,OFFSET ff_cline + FFCLINE_MAX - 1
+        jae     ff_cat
+        stosb
+        jmp     short ff_cat
+fc_out:
+        ret
+
+;---------------------------------------------------------------------
+; ff_text - ESI -> text, NUL-terminated: each line of it through the
+;           body.  CR LF, a bare LF and a bare CR all end a line, and a
+;           Ctrl+Z ends the text, as it ends a text file.
+;---------------------------------------------------------------------
+ff_text:
+        pushad
+ftx_line:
+        mov     al,[esi]
+        or      al,al
+        jz      ftx_done
+        cmp     al,1Ah
+        je      ftx_done
+        mov     edi,esi
+ftx_end:
+        mov     al,[edi]
+        or      al,al
+        jz      ftx_cut
+        cmp     al,13
+        je      ftx_cut
+        cmp     al,10
+        je      ftx_cut
+        cmp     al,1Ah
+        je      ftx_cut
+        inc     edi
+        jmp     short ftx_end
+ftx_cut:
+        mov     byte ptr [edi],0
+        push    eax
+        push    edi
+        call    ff_line
+        pop     edi
+        pop     eax
+        mov     esi,edi
+        or      al,al
+        jz      ftx_done
+        cmp     al,1Ah
+        je      ftx_done
+        inc     esi
+        cmp     al,13
+        jne     ftx_line
+        cmp     byte ptr [esi],10       ; CR LF is one line end
+        jne     ftx_line
+        inc     esi
+        jmp     short ftx_line
+ftx_done:
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; ff_line - ESI -> one line.  Skipped if it is empty, one of the first
+;           skip= lines, or a comment; otherwise tokenised and run.
+;---------------------------------------------------------------------
+ff_line:
+        pushad
+        cmp     byte ptr [esi],0
+        je      fl_out
+        cmp     dword ptr [ff_skip],0
+        je      fl_noskip
+        dec     dword ptr [ff_skip]
+        jmp     short fl_out
+fl_noskip:
+        mov     al,[ff_eol]
+        or      al,al
+        jz      fl_tok
+        cmp     [esi],al
+        je      fl_out
+fl_tok:
+        call    ff_tokens
+        jc      fl_out                  ; not even its first token
+        call    for_subst
+        mov     esi,OFFSET for_line
+        call    exec_line
+fl_out:
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; ff_tokens - ESI -> a line: the tokens asked for into ff_vbuf, and
+;             for_vp/for_nv pointing at them.  CF if the first variable
+;             got nothing, which is a line the body does not run for.
+;---------------------------------------------------------------------
+ff_tokens:
+        pushad
+        mov     ecx,[ff_nv]             ; every variable starts empty
+        xor     ebx,ebx
+ftk_clr:
+        cmp     ebx,ecx
+        jae     ftk_clred
+        mov     dword ptr [for_vp+ebx*4],OFFSET ff_empty
+        inc     ebx
+        jmp     short ftk_clr
+ftk_clred:
+        mov     [for_nv],ecx
+        mov     dword ptr [ff_vp],OFFSET ff_vbuf
+        xor     ebx,ebx                 ; the next variable to fill
+        cmp     dword ptr [ff_tmask],0
+        jne     ftk_walk
+        call    ff_skipdel              ; "tokens=*": the whole line,
+        jmp     short ftk_rest          ; leading separators dropped
+ftk_walk:
+        mov     edx,1                   ; the token number
+ftk_lp:
+        cmp     edx,FFQ_MAXTOK
+        ja      ftk_done
+        call    ff_skipdel
+        cmp     byte ptr [esi],0
+        je      ftk_done
+        bt      dword ptr [ff_tmask],edx
+        jnc     ftk_pass
+        call    ff_word                 ; into variable EBX, EBX + 1
+        cmp     edx,[ff_tmax]
+        jne     ftk_next
+        cmp     byte ptr [ff_star],0
+        je      ftk_done
+        call    ff_skipdel              ; and the rest, after the last one
+        jmp     short ftk_rest
+ftk_pass:
+        call    ff_skipword
+ftk_next:
+        inc     edx
+        jmp     short ftk_lp
+ftk_rest:
+        cmp     byte ptr [esi],0
+        je      ftk_done
+        mov     edi,[ff_vp]
+        mov     [for_vp+ebx*4],edi
+        inc     ebx
+ftk_rcp:
+        lodsb
+        or      al,al
+        jz      ftk_rend
+        cmp     edi,OFFSET ff_vbuf + FFQ_VBUF - 1
+        jae     ftk_rcp
+        stosb
+        jmp     short ftk_rcp
+ftk_rend:
+        mov     byte ptr [edi],0
+ftk_done:
+        or      ebx,ebx                 ; tokens fill the variables in
+        popad                           ; order, so any at all means the
+        jz      ftk_none                ; first one was filled
+        clc
+        ret
+ftk_none:
+        stc
+        ret
+
+; ff_word - the token at ESI into variable EBX; ESI past it, EBX + 1
+ff_word:
+        push    eax
+        push    edi
+        mov     edi,[ff_vp]
+        mov     [for_vp+ebx*4],edi
+        inc     ebx
+fw_lp:
+        mov     al,[esi]
+        or      al,al
+        jz      fw_end
+        call    ff_isdel
+        je      fw_end
+        cmp     edi,OFFSET ff_vbuf + FFQ_VBUF - 1
+        jae     fw_step
+        mov     [edi],al
+        inc     edi
+fw_step:
+        inc     esi
+        jmp     short fw_lp
+fw_end:
+        mov     byte ptr [edi],0
+        inc     edi
+        mov     [ff_vp],edi
+        pop     edi
+        pop     eax
+        ret
+
+; ff_skipword - ESI past the token it is on
+ff_skipword:
+        push    eax
+fsw_lp:
+        mov     al,[esi]
+        or      al,al
+        jz      fsw_out
+        call    ff_isdel
+        je      fsw_out
+        inc     esi
+        jmp     short fsw_lp
+fsw_out:
+        pop     eax
+        ret
+
+; ff_skipdel - ESI past any separators
+ff_skipdel:
+        push    eax
+fsd_lp:
+        mov     al,[esi]
+        or      al,al
+        jz      fsd_out
+        call    ff_isdel
+        jne     fsd_out
+        inc     esi
+        jmp     short fsd_lp
+fsd_out:
+        pop     eax
+        ret
+
+; ff_isdel - ZF if AL is one of the separators in ff_delims
+ff_isdel:
+        push    esi
+        push    edx
+        mov     esi,OFFSET ff_delims
+fid_lp:
+        mov     dl,[esi]
+        or      dl,dl
+        jz      fid_no
+        cmp     al,dl
+        je      fid_out                 ; ZF set: it is one
+        inc     esi
+        jmp     short fid_lp
+fid_no:
+        or      esi,esi                 ; ZF clear: it is not
+fid_out:
+        pop     edx
+        pop     esi
         ret
 
 ;=====================================================================
@@ -1318,6 +2297,9 @@ fr_lim      dd  0
 
 errorlevel  db  0                       ; last external command's code
 perm_flag   db  0                       ; started with /P
+c_once      db  0                       ; /C: 1 = its command is waiting,
+                                        ; 2 = it has run, so leave
+c_line      db  CMDLINE_MAX + 2 dup(0)  ; ...and what it is
 call_flag   db  0
 if_not      db  0
 for_var     db  0
@@ -1349,6 +2331,7 @@ autoexec_name db '\AUTOEXEC.BAT',0
 msg_syntax  db  'Syntax error',13,10,'$'
 msg_nolabel2 db 'Label not found',13,10,'$'
 msg_batdeep db  'Batch files nested too deeply',13,10,'$'
+msg_batmiss db  'Batch file missing',13,10,'$'
 msg_fornest db  'FOR cannot be nested',13,10,'$'
 msg_noctty  db  'Invalid device',13,10,'$'
 
@@ -1364,4 +2347,41 @@ for_list    db  FORLIST_MAX dup(0)
 for_body    db  FORBODY_MAX dup(0)
 for_line    db  FORLINE_MAX dup(0)
 for_names   db  FORNAMES_MAX dup(0)
+
+; The variables for_subst fills in: how many, and where each value is.
+; An ordinary FOR has one; FOR /F one per token it was asked for.
+for_nv      dd  0
+for_vp      dd  FFQ_MAXTOK + 1 dup(0)
+
+; FOR /F's options and working state
+ff_eol      db  0                       ; eol=, 0 = none
+ff_backq    db  0                       ; usebackq
+ff_star     db  0                       ; tokens= ended with '*'
+ff_empty    db  0                       ; the value of a token not there
+ff_skip     dd  0                       ; skip=, counting down
+ff_tmask    dd  0                       ; tokens=, bit n for token n
+ff_tmax     dd  0                       ; ...and the highest of them
+ff_nv       dd  0                       ; variables they make
+ff_vp       dd  0                       ; where the next value goes
+ff_hdl      dd  0
+ff_size     dd  0
+ff_blk      dd  0
+ff_cmd      dd  0
+ff_delims   db  32 dup(0)               ; delims=, NUL-terminated
+ff_vbuf     db  FFQ_VBUF dup(0)
+ff_tmp      db  FFQ_TMPMAX dup(0)
+ff_cline    db  FFCLINE_MAX dup(0)
+
+kwf_eol     db  'EOL=',0
+kwf_skip    db  'SKIP=',0
+kwf_delims  db  'DELIMS=',0
+kwf_tokens  db  'TOKENS=',0
+kwf_backq   db  'USEBACKQ',0
+ffn_temp    db  'TEMP',0
+ffn_command db  'CMD.EXE',0
+ffn_slashc  db  ' /C ',0
+ffn_to      db  ' > ',0
+ffn_tmpname db  '%FORF.$$$',0
+msg_ffnone  db  'File not found - ','$'
+msg_ffmem   db  'Insufficient memory',13,10,'$'
 bat_stk     db  BAT_MAX * BF_LEN dup(0)

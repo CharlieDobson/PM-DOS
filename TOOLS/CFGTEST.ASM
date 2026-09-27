@@ -35,6 +35,9 @@ WANT_FILES      EQU     30              ; FILES=40, less what is in use.
                                         ; thirty however hard it was asked
 
 start:
+        ; A stack of its own inside the image, so that check 2 can give
+        ; back the rest of the memory a .COM is born owning.
+        mov     sp,OFFSET stk_top
         mov     dx,OFFSET msg_hi
         call    puts
         mov     word ptr [resptr],OFFSET results
@@ -98,6 +101,22 @@ t2:
 ;=====================================================================
         mov     dx,OFFSET msg_t2
         call    puts
+
+        ; A DOS PROGRAM HAS TWENTY HANDLES UNTIL IT ASKS FOR MORE, which
+        ; is DOS's rule and PM-DOS's for a DOS box since v0.60 (see
+        ; DOSJFT.INC) - so this asks, the way a program that means to
+        ; open many files always had to: memory back first, then 67h.
+        ; What is measured after that is the system's table, FILES=.
+        push    cs
+        pop     es
+        mov     bx,OFFSET prog_end
+        add     bx,15
+        shr     bx,4
+        mov     ah,4Ah
+        int     21h
+        mov     bx,MAXH + 8
+        mov     ah,67h
+        int     21h
         xor     si,si                   ; handles taken
 t2_open:
         cmp     si,MAXH
@@ -348,6 +367,9 @@ msg_res     db  13,10,'results: ','$'
 msg_fails   db  '   failures: ','$'
 msg_crlf    db  13,10,'$'
 results     db  16 dup (0)
+stk         db  512 dup (0)
+stk_top     LABEL BYTE
+prog_end    LABEL BYTE
 
 _CF     ENDS
         END     start

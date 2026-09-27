@@ -270,12 +270,20 @@ dsw_16:
 ;--- the descriptor table, and the four the client starts with -------
         call    dpmi_ldtinit
 
+        ; THE CODE SEGMENT IS A 16-BIT ONE WHATEVER THE CLIENT IS.  The
+        ; switch returns to the instruction after a far call made in
+        ; real mode, which is 16-bit code and does not stop being it:
+        ; the specification gives every client a 16-bit CS over its
+        ; real-mode one, and a 32-bit client builds its 32-bit segments
+        ; itself from there.  This one followed the client's size, so
+        ; the first instruction a 32-bit client executed in protected
+        ; mode was decoded as something else.
         mov     ebx,dword ptr ds:[dpmi_cseg]
         shl     ebx,4
         mov     ax,(DPMI_IDX_CS SHL 3) + DPMI_SELBITS
         mov     ecx,0FFFFh
         mov     dl,DACC_CODE
-        mov     dh,byte ptr ds:[dpmi_gran]
+        mov     dh,DGRAN_16
         call    dpmi_setdesc
 
         mov     ebx,dword ptr [vdm_ctx+V86C_DS]
@@ -323,7 +331,35 @@ dsw_16:
         mov     dh,byte ptr ds:[dpmi_gran]
         call    dpmi_setdesc
 
+        ; And the one every vector starts in - see DPMI_IDX_DEFVEC.  It
+        ; is over the host's own image, which costs no memory below
+        ; 1MB, and follows the client's size for what it has to pop:
+        ; a handler that jumps here has left its caller's frame on
+        ; the stack in the width it was given it.
+        mov     ebx,OFFSET dpmi_defstubs
+        mov     ax,DPMI_SEL_DEFVEC
+        mov     ecx,DST_END - 1
+        mov     dl,DACC_CODE
+        mov     dh,byte ptr ds:[dpmi_gran]
+        call    dpmi_setdesc
+
         call    dpmi_cbclr                      ; a new client holds none
+
+        ; ...and no handlers.  The last client's were selectors in a
+        ; table that has just been wiped.
+        mov     edi,OFFSET dpmi_pmvec
+        xor     eax,eax
+        mov     ecx,256 * 2
+        cld
+        rep     stosd
+
+        ; AND 0002h REMEMBERS NOTHING, for the same reason.  It keeps
+        ; the selector it made for a segment, so that asking twice gets
+        ; the same one - and kept it for the next client, which asked
+        ; for the BIOS data area, was given the selector the last one
+        ; had, and faulted loading a descriptor that was eight zeros.
+        ; The second DPMI program run since boot, if both used 0002h.
+        mov     dword ptr ds:[dpmi_segcnt],0
 
 ;--- and go ----------------------------------------------------------
         mov     dword ptr ds:[dpmi_active],1
@@ -549,6 +585,22 @@ dpmi_int31:
         cmp     word ptr [ebp+F_CS],(DPMI_IDX_CBRET SHL 3) + DPMI_SELBITS
         je      dpmi_cbret
 
+        ; A VECTOR'S DEFAULT HANDLER has been reached, by the same
+        ; test: every one of them is an INT 31h in a segment nothing
+        ; else is in.
+        cmp     word ptr [ebp+F_CS],DPMI_SEL_DEFVEC
+        je      dpmi_defvec
+
+        ; And a client may have a handler of its own on INT 31h, which
+        ; an extender that adds functions to it does.  Its handler
+        ; comes first and the host is where that one sends the rest.
+        cmp     word ptr ds:[dpmi_pmvec + 31h * 8 + 4],0
+        je      d31_own
+        lea     esi,[ebp+F_EIP]
+        mov     ebx,OFFSET dpmi_pmvec + 31h * 8
+        call    dpmi_enter
+        jnc     d31_return
+d31_own:
         mov     ax,word ptr [ebp+F_EAX]
         cmp     ax,0000h
         je      d31_alloc
@@ -616,6 +668,10 @@ dpmi_int31:
         je      d31_ok
         cmp     ax,0604h
         je      d31_pagesize
+        cmp     ax,0800h
+        je      d31_physmap
+        cmp     ax,0801h
+        je      d31_ok                          ; nothing is ever unmapped
 
         mov     ax,DPE_UNSUPPORTED
 ;--- the two ways out ------------------------------------------------
@@ -994,18 +1050,28 @@ d31_setrmvec:
 ; 0204h / 0205h - the PROTECTED-MODE vectors, which are ours.  A zero
 ; entry means "reflect to real mode", which is what every one of them
 ; starts as.
+;
+; WHAT 0204h ANSWERS FOR ONE OF THOSE IS AN ADDRESS THAT WORKS.  It
+; answered the client's own code segment and offset zero, which is the
+; first instruction of the client: a handler that passed on what it did
+; not want - and that is what a handler does - restarted the program
+; that had installed it.  It is the vector's place in the table of
+; defaults now (DPMI_IDX_DEFVEC), and 0205h given that address back
+; means what the client meant by it: no handler.
 ;---------------------------------------------------------------------
 d31_getpmvec:
-        movzx   ebx,byte ptr [ebp+F_EBX]
-        shl     ebx,3
-        add     ebx,OFFSET dpmi_pmvec
+        movzx   eax,byte ptr [ebp+F_EBX]
+        lea     ebx,[dpmi_pmvec + eax*8]
+        cmp     word ptr [ebx+4],0
+        jne     dgp_have
+        shl     eax,1                           ; DST_LEN
+        mov     dword ptr [ebp+F_EDX],eax
+        mov     word ptr [ebp+F_ECX],DPMI_SEL_DEFVEC
+        jmp     d31_ok
+dgp_have:
         mov     eax,dword ptr [ebx]
         mov     dword ptr [ebp+F_EDX],eax
-        movzx   eax,word ptr [ebx+4]
-        or      eax,eax
-        jnz     dgp_have
-        mov     eax,(DPMI_IDX_CS SHL 3) + DPMI_SELBITS
-dgp_have:
+        mov     ax,word ptr [ebx+4]
         mov     word ptr [ebp+F_ECX],ax
         jmp     d31_ok
 
@@ -1013,10 +1079,20 @@ d31_setpmvec:
         movzx   ebx,byte ptr [ebp+F_EBX]
         shl     ebx,3
         add     ebx,OFFSET dpmi_pmvec
+        mov     ax,word ptr [ebp+F_ECX]
+        cmp     ax,DPMI_SEL_DEFVEC
+        je      dsp_none
+        call    dpmi_codeok                     ; somewhere an interrupt can go
+        jc      d31_badsel
         mov     eax,dword ptr [ebp+F_EDX]
+        call    dpmi_off
         mov     dword ptr [ebx],eax
         mov     ax,word ptr [ebp+F_ECX]
         mov     word ptr [ebx+4],ax
+        jmp     d31_ok
+dsp_none:
+        mov     dword ptr [ebx],0
+        mov     word ptr [ebx+4],0
         jmp     d31_ok
 
 ;---------------------------------------------------------------------
@@ -1134,9 +1210,13 @@ d31_version:
         ; whole machine, not a window in a multitasker.
         mov     word ptr [ebp+F_EBX],0004h
         mov     byte ptr [ebp+F_ECX],3          ; CL = a 386
-        mov     word ptr [ebp+F_EDX],0FF00h     ; slave PIC base | master
-        mov     byte ptr [ebp+F_EDX],IRQ_BASE
-        mov     byte ptr [ebp+F_EDX+1],IRQ_BASE2
+        ; DH and DL: where the first and the second interrupt
+        ; controller's vectors start - the VIRTUAL ones, which is what
+        ; the specification asks for and what a client hooks.  They
+        ; are where a DOS program has always found them; IRQ_BASE is
+        ; where the kernel keeps the real ones, and a client told that
+        ; would hook vectors nothing is ever delivered to.
+        mov     word ptr [ebp+F_EDX],0870h
         jmp     d31_ok
 
 d31_capab:
@@ -1240,6 +1320,32 @@ d31_memresize:
 d31_pagesize:
         mov     word ptr [ebp+F_EBX],0
         mov     word ptr [ebp+F_ECX],1000h
+        jmp     d31_ok
+
+;---------------------------------------------------------------------
+; 0800h - physical address mapping: BX:CX = where a device's memory
+; is, SI:DI = how much of it.  BX:CX comes back as the linear address
+; to build a descriptor over, and it is the same number - PMIO maps
+; device memory where it is (pg_mapphys).  The first megabyte is
+; refused, as the specification says it must be: that is what 0002h
+; is for.
+;---------------------------------------------------------------------
+d31_physmap:
+        movzx   ebx,word ptr [ebp+F_EBX]
+        shl     ebx,16
+        mov     bx,word ptr [ebp+F_ECX]
+        movzx   ecx,word ptr [ebp+F_ESI]
+        shl     ecx,16
+        mov     cx,word ptr [ebp+F_EDI]
+        cmp     ebx,HMA_BASE
+        jb      d31_badval
+        or      ecx,ecx
+        jz      d31_badval
+        call    dword ptr ds:[IOS_MAPPHYS]
+        jc      d31_nomem
+        mov     word ptr [ebp+F_ECX],ax         ; BX:CX, high then low
+        shr     eax,16
+        mov     word ptr [ebp+F_EBX],ax
         jmp     d31_ok
 
 ;--- the failure exits, named so the code above reads --------------
@@ -1386,7 +1492,16 @@ dpmi_simint:
         mov     dword ptr [vdm_ctx+V86C_FS],eax
         movzx   eax,word ptr [esi+RMCS_GS]
         mov     dword ptr [vdm_ctx+V86C_GS],eax
-        mov     dword ptr [vdm_ctx+V86C_FLAGS],EFL_IF
+        ; THE FLAGS IT GOES IN WITH are nothing, for a call the client
+        ; made through 0300h, and the caller's own for one that is being
+        ; passed on (dpmi_rmreflect): what comes back is then what the
+        ; handler did to them, which for a card's interrupt is nothing
+        ; at all and for a service is its answer.
+        mov     eax,dword ptr ds:[dpmi_rmflags]
+        and     eax,DPMI_ARITH
+        or      eax,EFL_IF
+        mov     dword ptr [vdm_ctx+V86C_FLAGS],eax
+        mov     dword ptr ds:[dpmi_rmflags],0
 
         ; A stack of the caller's, or one of ours if it left the field
         ; zero - which is what the specification tells a client to do
@@ -1431,13 +1546,14 @@ dsi_stack:
 dsi_nocopy:
 
 ;--- and point the guest at an INT instruction of the right number ---
-; NOT at whatever the vector table holds.  The monitor traps INT 21h
-; and never reflects it, so PM-DOS has no reason to put an entry in
-; the table for it and does not - reading one gave 0000:0000, and the
-; guest went off to execute the vector table as code.  Executing the
-; instruction sends the interrupt wherever it would go for any DOS
-; program: to the kernel if the monitor claims it, through the guest's
-; own table if it does not.
+; NOT at whatever the vector table holds.  When the monitor trapped
+; INT 21h the table had no entry for it - reading one gave 0000:0000,
+; and the guest went off to execute the vector table as code - and
+; there are still vectors the monitor claims outright (13h, 67h).
+; Executing the instruction sends the interrupt wherever it would go
+; for any DOS program: to the kernel if the monitor claims it, and
+; through the guest's own table, hooks and all, if it does not - which
+; is where INT 21h goes now (vdm_stubs).
         movzx   edi,word ptr ds:[xms_cbseg]
         shl     edi,4
         mov     al,byte ptr ds:[dpmi_rmint]
@@ -1450,7 +1566,18 @@ dsi_nocopy:
 ;--- and let the DOS box's own loop run it ---------------------------
         mov     dword ptr ds:[dpmi_rmact],1
         mov     dword ptr ds:[dpmi_rmesp],esp
-        jmp     vdm_loop
+        ; AND WHERE RING 3 COMES IN, which the DOS box is about to move:
+        ; v86_run points it at its own frame, below here, and nothing
+        ; pointed it back.  The client's next call in began there, its
+        ; next simulated interrupt put it lower still, and about a
+        ; hundred of them walked the ring-0 stack down into the TSS:
+        ; DPMIVEC on the kernel as it was gets through 80 calls to the
+        ; BIOS and not through 120.
+        mov     eax,dword ptr ds:[TSS_BASE + TSS_ESP0]
+        mov     dword ptr ds:[dpmi_rmesp0],eax
+        mov     eax,dword ptr ds:[vdm_depth]    ; and the level whose code it
+        mov     dword ptr ds:[dpmi_rmdepth],eax ; is: a program deeper than this
+        jmp     vdm_loop                        ; started inside it - vdm_anchor
 
 dsi_undo:
         mov     esi,OFFSET dpmi_savectx
@@ -1473,6 +1600,8 @@ dpmi_rmdone:
 
         mov     esp,dword ptr ds:[dpmi_rmesp]
         mov     dword ptr ds:[dpmi_rmact],0
+        mov     eax,dword ptr ds:[dpmi_rmesp0]
+        mov     dword ptr ds:[TSS_BASE + TSS_ESP0],eax
 
 ;--- the registers, back into the client's structure -----------------
         mov     edi,dword ptr ds:[dpmi_rmcs]
@@ -1856,33 +1985,383 @@ dpmi_reflect:
         mov     es,ax
         cld
 
-        mov     eax,dword ptr [ebp+RF_VEC]
-        mov     byte ptr ds:[dpmi_rmint],al
-
         cmp     dword ptr ds:[dpmi_active],0
         je      dre_nobody
 
-        ; INT 2Fh AX=1686h has to be answered HERE and not reflected.
-        ; It asks "am I in protected mode?", the answer is yes, and
-        ; the real-mode handler this would otherwise go to is in no
-        ; position to say so - it would report the mode it is itself
-        ; running in, which is the opposite one.
-        cmp     al,2Fh
-        jne     dre_pmvec
-        cmp     word ptr [ebp+F_EAX],1686h
-        jne     dre_pmvec
-        mov     word ptr [ebp+F_EAX],0          ; zero: yes, you are
-        jmp     dre_out
+        mov     eax,dword ptr [ebp+RF_VEC]
+        lea     esi,[ebp+RF_EIP]
+        call    dpmi_pmint
 
-dre_pmvec:
-        ; a handler of the client's own?
-        movzx   ebx,al
-        shl     ebx,3
-        add     ebx,OFFSET dpmi_pmvec
+dre_out:
+        popad
+        pop     ebp
+        pop     es
+        pop     ds
+        add     esp,4                           ; the vector the stub pushed
+        iretd
+
+;--- nothing is running: this was a real exception, not a service ----
+dre_nobody:
+        mov     esi,OFFSET msgDpmiStray
+        call    dword ptr ds:[IOS_CONSTR]
+        movzx   eax,byte ptr [ebp+RF_VEC]
+        call    vdm_hex8
+        mov     esi,OFFSET msgDpmiCR
+        call    dword ptr ds:[IOS_CONSTR]
+        jmp     short dre_out
+
+;=====================================================================
+; A CLIENT'S OWN HANDLERS, AND WHAT IS THERE WHEN IT HAS NONE.
+;
+; A client executes INT n.  If it has put a handler on n (0205h) that
+; is where it goes, and if it has not the interrupt is run in real
+; mode.  There are three doors that arrives through and one routine
+; behind all of them:
+;
+;   the gates dpmi_reflect is behind, for the BIOS's vectors;
+;   the gates for INT 21h and INT 31h, which are the host's own calls
+;     and ask dpmi_enter whether the client wants them first;
+;   and A GENERAL PROTECTION FAULT, for every other vector there is.
+;     The table has no gate for them that ring 3 may use, so the
+;     instruction faults, PMIO finds nothing to emulate and the DOS
+;     side is told a client has died (dpmi_fault).  It had not: it had
+;     called INT 60h.
+;
+; THE HANDLER IS GIVEN A FRAME, which is the part that was missing.
+; dre_client changed the address the host was about to return to and
+; nothing else, so the handler began on a stack holding whatever the
+; client had last pushed and its IRET took three words of that for an
+; address and a set of flags.  Nothing here tested a handler on a
+; software interrupt, and nothing was run that installs one.
+;
+; The frame is on the client's stack because there is no other: the
+; specification promises a handler one of the host's, and this host
+; has never had one to give.  It is as wide as the client is, which is
+; the specification's rule and the one the other end keeps: a 32-bit
+; client's handler ends with an IRETD whatever segment it is in.
+;
+; AND A HANDLER PASSES ON WHAT IT DOES NOT WANT, to the address 0204h
+; gave it before it installed itself.  That is dpmi_defvec, further
+; down, and it ends by returning through the frame the handler was
+; given - so the flags the service answered in are put in that frame,
+; and the client's interrupt flag is put back to what the frame says
+; it was.  An IRET of the client's own cannot do the second: at ring 3
+; it leaves the real flag alone, and the one the client believes in
+; is a byte of PMIO's.
+;=====================================================================
+
+;---------------------------------------------------------------------
+; dpmi_pmint - AL = the vector a client has called, EBP -> its
+;              registers (F_EDI to F_EAX), ESI -> the frame it will be
+;              resumed through: EIP, CS, EFLAGS, ESP, SS, with EIP
+;              already past the instruction.  Everything preserved.
+;---------------------------------------------------------------------
+dpmi_pmint:
+        pushad
+        movzx   eax,al
+        lea     ebx,[dpmi_pmvec + eax*8]
         cmp     word ptr [ebx+4],0
-        jne     dre_client
+        je      dpi_real
+        call    dpmi_enter
+        jnc     dpi_out
+dpi_real:
+        mov     edx,dword ptr [esi+8]
+        call    dpmi_rmreflect
+        jc      dpi_out
+        and     eax,DPMI_ARITH
+        and     dword ptr [esi+8],NOT DPMI_ARITH
+        or      dword ptr [esi+8],eax
+dpi_out:
+        popad
+        ret
 
-;--- build a register structure out of the client's registers --------
+;---------------------------------------------------------------------
+; dpmi_swint - from dpmi_fault, which has been told a client faulted.
+;              EBP -> what PMIO's hook is given (HK_*).  CF clear if it
+;              was an INT n, which has been dealt with, and PMIO is to
+;              resume the client; everything preserved either way.
+;
+; The error code of a fault on a gate names the vector and says it was
+; the interrupt table that refused, and the instruction has to agree:
+; an INT n is two bytes, CD and the number.
+;---------------------------------------------------------------------
+dpmi_swint:
+        pushad
+        mov     ax,word ptr [ebp+HK_IRET+4]
+        call    dpmi_base
+        jc      dsw_no
+        mov     eax,dword ptr [ebp+HK_IRET]
+        cmp     byte ptr [ebx+eax],0CDh
+        jne     dsw_no
+        movzx   eax,byte ptr [ebx+eax+1]
+        lea     edx,[eax*8+2]
+        cmp     edx,dword ptr [ebp+HK_ERR]
+        jne     dsw_no
+        add     dword ptr [ebp+HK_IRET],2
+        lea     esi,[ebp+HK_IRET]
+        push    ebp
+        lea     ebp,[ebp+HK_REGS]
+        call    dpmi_pmint
+        pop     ebp
+        popad
+        clc
+        ret
+dsw_no:
+        popad
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; dpmi_codeok - AX = a selector.  CF clear and EDI -> its descriptor if
+;               it is one of the client's, present, and code.
+;---------------------------------------------------------------------
+dpmi_codeok:
+        call    dpmi_slot
+        jc      dco_no
+        push    eax
+        mov     al,byte ptr [edi+5]
+        and     al,98h                          ; present, not a system
+        cmp     al,98h                          ; segment, executable
+        pop     eax
+        jne     dco_no
+        clc
+        ret
+dco_no:
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; dpmi_stack - ESI -> a frame the client will be resumed through.
+;              -> EDX = the flat base of its stack, EDI = its stack
+;              pointer, CH bit 6 set if that is ESP and not SP.  CF if
+;              the selector is not a stack of the client's.
+;---------------------------------------------------------------------
+dpmi_stack:
+        push    eax
+        push    ebx
+        mov     ax,word ptr [esi+16]
+        call    dpmi_slot
+        jc      dsk_no
+        mov     ch,byte ptr [edi+6]
+        call    dpmi_base
+        jc      dsk_no
+        mov     edx,ebx
+        mov     edi,dword ptr [esi+12]
+        test    ch,40h
+        jnz     dsk_big
+        movzx   edi,di
+dsk_big:
+        pop     ebx
+        pop     eax
+        clc
+        ret
+dsk_no:
+        pop     ebx
+        pop     eax
+        stc
+        ret
+
+;--- dpmi_setsp - EDI = the stack pointer, back into the frame at ESI,
+;--- as wide as CH says it is
+dpmi_setsp:
+        test    ch,40h
+        jnz     dss_big
+        mov     word ptr [esi+12],di
+        ret
+dss_big:
+        mov     dword ptr [esi+12],edi
+        ret
+
+;---------------------------------------------------------------------
+; dpmi_enter - EBX -> a vector's entry in dpmi_pmvec, ESI -> the frame
+;              the client will be resumed through.  The frame is
+;              pointed at the handler, and what it held goes on the
+;              client's stack for the handler's IRET.  CF if that
+;              cannot be done, with nothing changed; everything
+;              preserved.
+;
+; The flags that go on the stack carry the client's OWN interrupt flag
+; and not the machine's, which is always set: they are what the
+; default handler puts back, and what a handler that wants to know
+; whether its caller had interrupts off will look at.  The flag itself
+; is left as it is.  This is a software interrupt and the client chose
+; the moment.
+;---------------------------------------------------------------------
+dpmi_enter:
+        pushad
+        mov     ax,word ptr [ebx+4]
+        call    dpmi_codeok
+        jc      den_no
+        call    dpmi_stack
+        jc      den_no
+
+        mov     eax,dword ptr [esi+8]
+        and     eax,NOT EFL_IF
+        mov     ebp,dword ptr ds:[dpmi_pvif]
+        or      ebp,ebp
+        jz      den_if
+        cmp     byte ptr [ebp],0
+        je      den_flags
+den_if:
+        or      eax,EFL_IF
+den_flags:
+        cmp     byte ptr ds:[dpmi_is32],0
+        je      den_16
+        cmp     edi,12
+        jb      den_no
+        sub     edi,12
+        mov     dword ptr [edx+edi+8],eax
+        movzx   eax,word ptr [esi+4]
+        mov     dword ptr [edx+edi+4],eax
+        mov     eax,dword ptr [esi]
+        mov     dword ptr [edx+edi],eax
+        mov     eax,dword ptr [ebx]
+        jmp     short den_go
+den_16:
+        cmp     edi,6
+        jb      den_no
+        sub     edi,6
+        mov     word ptr [edx+edi+4],ax
+        mov     ax,word ptr [esi+4]
+        mov     word ptr [edx+edi+2],ax
+        mov     eax,dword ptr [esi]
+        mov     word ptr [edx+edi],ax
+        movzx   eax,word ptr [ebx]
+den_go:
+        mov     dword ptr [esi],eax
+        movzx   eax,word ptr [ebx+4]
+        mov     dword ptr [esi+4],eax
+        call    dpmi_setsp
+        popad
+        clc
+        ret
+den_no:
+        popad
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; dpmi_image - ESI -> the frame the client will be resumed through.
+;              -> EDX = the flags in the frame on the client's stack,
+;              which is left where it is.  CF if there is no stack to
+;              look on.  Nothing else changed.
+;---------------------------------------------------------------------
+dpmi_image:
+        push    ecx
+        push    edi
+        call    dpmi_stack
+        jc      dim_out
+        cmp     byte ptr ds:[dpmi_is32],0
+        je      dim_16
+        mov     edx,dword ptr [edx+edi+8]
+        jmp     short dim_ok
+dim_16:
+        movzx   edx,word ptr [edx+edi+4]
+dim_ok:
+        clc
+dim_out:
+        pop     edi
+        pop     ecx
+        ret
+
+;---------------------------------------------------------------------
+; dpmi_leave - the other end: an IRET, done for a handler that ended
+;              in the host.  EAX = the flags the service answered in,
+;              ESI -> the frame the client will be resumed through.
+;              The frame on the client's stack is taken off it and the
+;              client goes back to where that says.  CF if what is
+;              there is not a frame, with nothing changed; everything
+;              preserved.
+;
+; The width is the client's, as it was when the frame was made.
+;---------------------------------------------------------------------
+dpmi_leave:
+        pushad
+        mov     ebp,eax
+        and     ebp,DPMI_ARITH
+        call    dpmi_stack
+        jc      dlv_no
+        cmp     byte ptr ds:[dpmi_is32],0
+        je      dlv_16
+        mov     ebx,dword ptr [edx+edi]         ; EIP
+        mov     eax,dword ptr [edx+edi+4]       ; CS
+        mov     edx,dword ptr [edx+edi+8]       ; EFLAGS
+        add     edi,12
+        jmp     short dlv_have
+dlv_16:
+        movzx   ebx,word ptr [edx+edi]
+        movzx   eax,word ptr [edx+edi+2]
+        movzx   edx,word ptr [edx+edi+4]
+        add     edi,6
+dlv_have:
+        push    edi
+        call    dpmi_codeok
+        pop     edi
+        jc      dlv_no
+        mov     dword ptr [esi],ebx
+        movzx   eax,ax
+        mov     dword ptr [esi+4],eax
+        call    dpmi_setsp
+
+        mov     eax,dword ptr [esi+8]
+        and     eax,NOT (DPMI_ARITH OR DPMI_DF)
+        or      eax,ebp
+        mov     ecx,edx
+        and     ecx,DPMI_DF
+        or      eax,ecx
+        mov     dword ptr [esi+8],eax
+
+        mov     ebp,dword ptr ds:[dpmi_pvif]
+        or      ebp,ebp
+        jz      dlv_out
+        mov     byte ptr [ebp],0
+        test    edx,EFL_IF
+        jz      dlv_out
+        mov     byte ptr [ebp],1
+dlv_out:
+        popad
+        clc
+        ret
+dlv_no:
+        popad
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; dpmi_rmreflect - AL = a vector, EDX = the caller's flags, EBP -> the
+;                  client's registers (F_EDI to F_EAX).  The interrupt
+;                  is run in real mode with all of them and they are
+;                  what it left; EAX = the flags it left.  CF if it
+;                  could not be run, and EAX is then the flags it was
+;                  given.  Nothing else changed.
+;
+; THE FLAGS GO IN AS WELL AS COMING OUT, and that is not for a service:
+; it is for an interrupt nobody called.  A handler on a card's vector
+; that passes the interrupt on ends here, the code it interrupted was
+; between a compare and a jump, and the flags it gets back have to be
+; the ones it had.  They are, if real mode is handed them and hands
+; them back; zero going in, which is what this did on the first day,
+; sent a loop waiting for the clock out of the loop.
+;
+; INT 2Fh AX=1686h is answered HERE and not reflected.  It asks "am I
+; in protected mode?", the answer is yes, and the real-mode handler
+; this would otherwise go to is in no position to say so - it would
+; report the mode it is itself running in, which is the opposite one.
+;---------------------------------------------------------------------
+dpmi_rmreflect:
+        push    edi
+        mov     byte ptr ds:[dpmi_rmint],al
+        cmp     al,2Fh
+        jne     drr_run
+        cmp     word ptr [ebp+F_EAX],1686h
+        jne     drr_run
+        mov     word ptr [ebp+F_EAX],0          ; zero: yes, you are
+        mov     eax,edx
+        pop     edi
+        clc
+        ret
+
+drr_run:
         mov     edi,OFFSET dpmi_refcs
         mov     eax,dword ptr [ebp+F_EDI]
         mov     [edi+RMCS_EDI],eax
@@ -1909,9 +2388,14 @@ dre_pmvec:
 
         mov     dword ptr ds:[dpmi_rmcs],edi
         mov     word ptr ds:[dpmi_rmwords],0
+        mov     dword ptr ds:[dpmi_rmflags],edx
         call    dpmi_simint
-        jc      dre_out
-
+        jnc     drr_ran
+        mov     dword ptr ds:[dpmi_rmflags],0
+        mov     eax,edx
+        stc
+        jmp     short drr_out
+drr_ran:
         mov     edi,OFFSET dpmi_refcs
         mov     eax,[edi+RMCS_EDI]
         mov     dword ptr [ebp+F_EDI],eax
@@ -1926,38 +2410,112 @@ dre_pmvec:
         mov     eax,[edi+RMCS_EAX]
         mov     dword ptr [ebp+F_EAX],eax
         movzx   eax,word ptr [edi+RMCS_FLAGS]
-        and     eax,FL_CF
-        and     dword ptr [ebp+RF_FLAGS],NOT FL_CF
-        or      dword ptr [ebp+RF_FLAGS],eax
+        clc
+drr_out:
+        pop     edi
+        ret
 
-dre_out:
-        popad
-        pop     ebp
-        pop     es
-        pop     ds
-        add     esp,4                           ; the vector the stub pushed
-        iretd
+;---------------------------------------------------------------------
+; dpmi_defvec - from dpmi_int31: the INT 31h was one of the defaults'.
+;               EBP -> the frame, which is int21_entry's.  Where it
+;               was called from says which vector, or which of the
+;               three other things behind the table (DST_*).
+;---------------------------------------------------------------------
+dpmi_defvec:
+        mov     eax,dword ptr [ebp+F_EIP]
+        cmp     eax,DST_PASS31
+        je      d31_own                         ; the client's INT 31h, which
+                                                ; its handler has passed on
+        cmp     eax,DST_TAIL21
+        je      ddv_tail
+        cmp     eax,DST_TAIL31
+        je      ddv_tail
+        cmp     eax,DST_VECMAX
+        ja      ddv_bad
+        sub     eax,DST_LEN
+        jb      ddv_bad
+        test    al,1
+        jnz     ddv_bad
+        shr     eax,1
 
-;--- the client installed its own handler: go there ------------------
-; Its handler returns with an IRET, so it needs an IRET frame of its
-; own on the client's stack.  We are still on the ring-0 stack, so the
-; way to arrange that is to rewrite the frame we will IRETD through.
-dre_client:
-        mov     eax,dword ptr [ebx]
-        mov     dword ptr [ebp+RF_EIP],eax
-        movzx   eax,word ptr [ebx+4]
-        mov     dword ptr [ebp+RF_CS],eax
-        jmp     short dre_out
+        ; What the caller's flags were is in the frame the handler was
+        ; given, and whatever is done next is done with those.
+        lea     esi,[ebp+F_EIP]
+        call    dpmi_image                      ; -> EDX
+        jc      ddv_bad
 
-;--- nothing is running: this was a real exception, not a service ----
-dre_nobody:
-        mov     esi,OFFSET msgDpmiStray
-        call    dword ptr ds:[IOS_CONSTR]
-        movzx   eax,byte ptr ds:[dpmi_rmint]
-        call    vdm_hex8
-        mov     esi,OFFSET msgDpmiCR
-        call    dword ptr ds:[IOS_CONSTR]
-        jmp     short dre_out
+        ; The host's own two go round again, from an address that is
+        ; not a vector's: the call is made from the table, by the
+        ; instruction itself, and comes back to the INT 31h after it.
+        cmp     al,21h
+        jne     ddv_not21
+        mov     dword ptr [ebp+F_EIP],DST_DO21
+        jmp     short ddv_again
+ddv_not21:
+        cmp     al,31h
+        jne     ddv_real
+        mov     dword ptr [ebp+F_EIP],DST_DO31
+ddv_again:
+        and     edx,DPMI_ARITH
+        and     dword ptr [ebp+F_FLAGS],NOT DPMI_ARITH
+        or      dword ptr [ebp+F_FLAGS],edx
+        jmp     d31_return
+
+ddv_real:
+        call    dpmi_rmreflect                  ; EAX = the flags, either way
+        jmp     short ddv_pop
+ddv_tail:
+        mov     eax,dword ptr [ebp+F_FLAGS]     ; what the call answered in
+ddv_pop:
+        lea     esi,[ebp+F_EIP]
+        call    dpmi_leave
+        jnc     d31_return
+
+        ; What is on the client's stack is not a frame, so there is
+        ; nowhere to go back to.  It is reported as the fault it would
+        ; have been a moment later.
+ddv_bad:
+        mov     eax,13
+        xor     edx,edx
+        mov     ecx,dword ptr [ebp+F_EIP]
+        movzx   ebx,word ptr [ebp+F_CS]
+        jmp     dfa_real
+
+;---------------------------------------------------------------------
+; dpmi_hook21 - from int21_entry, for a call that came out of a
+;               client's descriptor table.  EBP -> the frame.  CF clear
+;               if the client has a handler of its own on INT 21h: the
+;               frame is pointed at it, and the call has not been made.
+;               Everything preserved.
+;
+; Not for a call made from the table of defaults, which is that
+; handler passing the call on.
+;---------------------------------------------------------------------
+dpmi_hook21:
+        cmp     word ptr [ebp+F_CS],DPMI_SEL_DEFVEC
+        je      dhk_no
+        cmp     word ptr ds:[dpmi_pmvec + 21h * 8 + 4],0
+        je      dhk_no
+        push    ebx
+        push    esi
+        lea     esi,[ebp+F_EIP]
+        mov     ebx,OFFSET dpmi_pmvec + 21h * 8
+        call    dpmi_enter
+        pop     esi
+        pop     ebx
+        ret
+dhk_no:
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; The defaults themselves.  Ring-3 code, in the host's image, reached
+; through DPMI_IDX_DEFVEC and never from here.
+;---------------------------------------------------------------------
+dpmi_defstubs:
+        dw      256 dup (31CDh)                 ; INT 31h, for each vector
+        db      0CDh,21h,0CDh,31h               ; DST_DO21
+        db      0CDh,31h,0CDh,31h               ; DST_DO31
 
 ;---------------------------------------------------------------------
 ; The stubs.  One per vector, because the CPU does not tell a handler
@@ -1983,6 +2541,9 @@ dst_1A: push    1Ah
         jmp     dpmi_reflect
 dst_2F: push    2Fh
         jmp     dpmi_reflect
+; 33h is not in the table below: the gate belongs to PMIO's mouse driver
+; (IO\MOUSE.INC), which serves native programs itself and jumps here
+; for a client - so a client's INT 33h still reaches the box.
 dst_33: push    33h
         jmp     dpmi_reflect
 
@@ -2007,8 +2568,6 @@ dpmi_veclist:
         dd      OFFSET dst_1A
         db      2Fh
         dd      OFFSET dst_2F
-        db      33h
-        dd      OFFSET dst_33
         db      0
 
 ;=====================================================================
@@ -2219,39 +2778,61 @@ dux_done:
 ; dpmi_exit - the client has called 21h/4Ch, or something has killed
 ;             it.  AL = the exit code.
 ;
-; A DPMI client IS the program in the DOS box, so its ending is the
-; box's ending.  We are somewhere inside an IDT handler on the ring-0
-; stack; the way back to the box's own loop is the anchor vdm_run
-; left, which is exactly what a ^C uses.
+; A DPMI client IS a program in the DOS box, so its ending is that
+; program's ending - and ONLY that program's.  This used to go straight
+; to vdm_done, which ends the box: right for a client CMD.EXE started,
+; and wrong for one a 16-bit COMMAND.COM started, whose 4Bh then never
+; returned and whose box was left one level deeper than it thought.
+; We are somewhere inside an IDT handler on the ring-0 stack; the way
+; back to the box's own loop is the anchor vdm_run left.
 ;=====================================================================
 dpmi_exit:
         cli
         movzx   eax,al
         mov     dword ptr ds:[dpmi_exitcode],eax
+        call    dpmi_drop
+        mov     esp,dword ptr ds:[vdm_esp]
+        mov     byte ptr ds:[DOS_INDOS],0       ; the client's own 4Ch frame
+        sti                                     ; went with the stack; at the
+                                                ; top, vdm_done puts the
+                                                ; shell's depth back
+        mov     eax,dword ptr ds:[dpmi_exitcode]
+        mov     dword ptr ds:[vdm_exit],eax
+        mov     dword ptr ds:[vdm_extype],VDX_NORMAL
+        jmp     vdm_exitprog
+
+;---------------------------------------------------------------------
+; dpmi_drop - the client is going: its callbacks, its descriptor table
+;             and the host's idea that there is one.  EAX trashed.
+;---------------------------------------------------------------------
+dpmi_drop:
         call    dpmi_cbclr              ; its callbacks go with it: the
                                         ; addresses stay, and answer nobody
         xor     eax,eax
         lldt    ax                              ; no client, no table
         mov     dword ptr ds:[dpmi_active],0
         mov     dword ptr ds:[dpmi_rmact],0
-        mov     esp,dword ptr ds:[vdm_esp]
-        mov     eax,dword ptr ds:[vdm_indos]    ; the client's own 4Ch frame
-        mov     byte ptr ds:[DOS_INDOS],al      ; went with the stack
-        sti
-        mov     eax,dword ptr ds:[dpmi_exitcode]
-        mov     dword ptr ds:[vdm_exit],eax
-        mov     dword ptr ds:[vdm_extype],VDX_NORMAL
-        jmp     vdm_done
+        ret
 
 ;=====================================================================
 ; dpmi_fault - a ring-3 client faulted on something PMIO could not
 ;              emulate.  EAX = vector, EDX = error code, ECX = CS:EIP's
 ;              offset, EBX = its selector.
 ;
-; Called from pm3_fault with the fault frame still intact, so this
-; never returns: the client is finished either way.
+; Called from pm3_fault with the fault frame still intact.  It returns
+; for one thing, which is not a fault at all: a client's INT n on a
+; vector with no gate it may use (dpmi_swint).  For anything else the
+; client is finished.
 ;=====================================================================
 dpmi_fault:
+        cmp     eax,13
+        jne     dfa_real
+        cmp     dword ptr ds:[dpmi_active],0
+        je      dfa_real
+        call    dpmi_swint
+        jc      dfa_real
+        ret
+dfa_real:
         mov     dword ptr ds:[dpmi_fvec],eax
         mov     dword ptr ds:[dpmi_ferr],edx
         mov     dword ptr ds:[dpmi_feip],ecx
@@ -2311,8 +2892,12 @@ dpmi_rmint      db  0
 dpmi_cds        dw  0                   ; the client's own DS and ES, taken
 dpmi_ces        dw  0                   ; at the door of every INT 31h
 dpmi_active     dd  0                   ; a client is in protected mode
+dpmi_pvif       dd  0                   ; -> its interrupt flag, in PMIO
 dpmi_rmact      dd  0                   ; ...and inside a simulated interrupt
 dpmi_rmesp      dd  0                   ; where dpmi_simint must come back to
+dpmi_rmesp0     dd  0                   ; and where ring 3 was coming in
+dpmi_rmflags    dd  0                   ; the flags a reflected one goes in with
+dpmi_rmdepth    dd  0                   ; the box level it was made from
 dpmi_rmcs       dd  0                   ; the register structure it is using
 dpmi_rmwords    dw  0
 dpmi_stkseg     dw  0                   ; the scratch real-mode stack

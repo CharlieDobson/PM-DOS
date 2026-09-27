@@ -15,10 +15,11 @@
 ;   00000530-00000FFF   Real-mode stack (SS=0000, SP=1000) - 2.7K
 ;   00001000-00001FFF   PMIO.SYS real-mode stub (4K, fixed size)
 ;   00002000-00003FFF   XFER     - transfer buffer for BIOS disk I/O
-;   00004000-000040FF   DOS data segment - the list of lists, the device
-;                       headers and the swappable data area (SDA_OFF),
-;                       BELOW the arena as in real DOS
-;   00004100-0009FFFF   the DOS box's transient program area, ending
+;   00004000-000051FF   DOS data segment - the list of lists, the device
+;                       headers, the swappable data area (SDA_OFF), the
+;                       guest file table (GSFT_) and the country tables
+;                       (GNLS_), BELOW the arena as in real DOS
+;   00005200-0009FFFF   the DOS box's transient program area, ending
 ;                       where the BIOS says conventional memory does
 ;   000A0000-000FFFFF   Video RAM and ROM
 ;   00100000-0013FFFF   PMDOS.SYS (256K reserved)
@@ -130,7 +131,17 @@ PG_DIR          EQU     00220000h               ; page directory, 4K
 PG_TABS         EQU     00221000h               ; the page tables follow it
 PG_MAXTAB       EQU     64                      ; 64 * 4MB = 256MB mappable
 PG_MAXLIN       EQU     PG_MAXTAB * 00400000h
-PG_TOP          EQU     PG_TABS + PG_MAXTAB * 1000h
+; DEVICE MEMORY is the one thing above that ceiling anybody needs: a PCI
+; card's registers and a frame buffer sit wherever the BIOS put them,
+; which is nearly always in the last gigabyte.  It is mapped where it
+; IS - the identity again, so a linear address is still a physical one
+; up there - four megabytes at a time and only when asked (pg_mapphys).
+; A processor with 4MB pages needs a directory entry and nothing else;
+; one without takes a table from this pool, and when the pool is empty
+; the answer is no.
+PG_DEVTAB       EQU     8                       ; 8 * 4MB of device memory
+PG_DEVTABS      EQU     PG_TABS + PG_MAXTAB * 1000h
+PG_TOP          EQU     PG_DEVTABS + PG_DEVTAB * 1000h
 ; Present, writable, and USER.  The user bit is not optional and its
 ; absence is not a security setting: V86 code runs at CPL 3, so a
 ; supervisor-only page is a page a DOS box cannot execute from, and
@@ -142,7 +153,36 @@ PG_TOP          EQU     PG_TABS + PG_MAXTAB * 1000h
 ; of the pointer plus a length, which is what buf_ok below is for.
 PG_PRESENT      EQU     7                       ; present + writable + user
 
-ARENA_BASE      EQU     PG_TOP                  ; start of the DOS memory arena
+; THE KERNEL'S BIG BUFFERS ARE HERE AND NOT IN PMDOS.SYS.  A sector, a
+; cluster, CONFIG.SYS and the CD readers' blocks hold nothing until
+; something is read into them, and as "dup(0)" in a raw binary they
+; were 62K of the 192K there is between DOS_BASE and the shell's slot.
+; They are a segment of their own, _KBSS, which the link puts at
+; KBSS_BASE and leaves out of the file; dos_entry clears it, because
+; nothing loads it.  The labels are still labels and the code that
+; uses them is what it was.
+;
+; KBSS_BASE IS ON BUILD.CMD'S WLINK LINE AS WELL, as a number.
+; dos_entry compares the two and stops the boot if they differ.
+;
+; WHAT MAY NOT GO THERE is anything with a value, which would make the
+; link write a megabyte of file to reach it, and anything that is part
+; of a block copied whole - fat_buf and fatsec_buf are inside vol_state
+; and stay in the image for that reason.
+KBSS_BASE       EQU     PG_TOP
+KBSS_LEN        EQU     00010000h
+
+; THE TRACE'S BUFFERS FOLLOW, in a kernel built to trace, and are not
+; in PMIO: they are 40K of nothing, and assembled into the image they
+; put it over the 64K the stub blits.  Every file that names ARENA_BASE
+; has to be assembled with the same switches, MEM.EXE included.
+IFDEF DBG_LPT
+DBG_MEM         EQU     KBSS_BASE + KBSS_LEN    ; IO\DBGSINK.INC divides it up
+DBG_MEMLEN      EQU     0000A000h
+ARENA_BASE      EQU     DBG_MEM + DBG_MEMLEN    ; start of the DOS memory arena
+ELSE
+ARENA_BASE      EQU     KBSS_BASE + KBSS_LEN    ; start of the DOS memory arena
+ENDIF
 
 ;---------------------------------------------------------------------
 ; WHERE A CALLER'S BUFFER MAY NOT BE.
@@ -179,7 +219,8 @@ KBUF_HI1        EQU     00004000h       ; real-mode stack, the stub, XFER
 KBUF_LO2        EQU     DOS_BASE        ; PMDOS.SYS itself
 KBUF_HI2        EQU     DOS_LIMIT
 KBUF_LO3        EQU     IO_PM_BASE      ; PMIO, the IDT, the kernel stacks,
-KBUF_HI3        EQU     ARENA_BASE      ; the TSS and the page tables
+KBUF_HI3        EQU     ARENA_BASE      ; the TSS, the page tables and the
+                                        ; kernel's buffers at KBSS_BASE
 
 ;---------------------------------------------------------------------
 ; UPPER MEMORY.  The region between the top of conventional memory and
@@ -237,11 +278,10 @@ UMBP_EMPTY      EQU     2               ; nothing decodes it: usable once a
 ;---------------------------------------------------------------------
 XMSCB_ENTRY     EQU     0
 VDMCB_IRET      EQU     2               ; and one spare byte of it holds an
-                                        ; IRET, for the DOS vectors nobody
-                                        ; has hooked - see vdm_stubs.  It is
-                                        ; also how crit_guest tells a box
-                                        ; that hooked INT 24h from one that
-                                        ; did not
+                                        ; IRET, for INT 67h on a machine with
+                                        ; no expanded memory - see vdm_stubs.
+                                        ; The DOS vectors have stubs of their
+                                        ; own now: DVS_, below
 DPMICB_ENTRY    EQU     4               ; DPMI: the real-to-protected switch
 DPMICB_SIM      EQU     8               ; "INT xx", the vector byte patched
                                         ; per call - this is how a simulated
@@ -257,6 +297,34 @@ DPMICB_SIM      EQU     8               ; "INT xx", the vector byte patched
 DPMICB_RET      EQU     10              ; and a bare HLT, which the handler's
                                         ; IRET lands on.  Never called: the
                                         ; monitor recognises the address
+
+;---------------------------------------------------------------------
+; The DOS vector stubs - where the real-mode IVT points for 20h-2Fh.
+;
+; A DOS BOX'S INT 21h GOES THROUGH ITS OWN VECTOR TABLE, as it did on
+; DOS.  The monitor used to trap 20h-2Fh before they reached the table,
+; so a program that hooked INT 21h or 2Fh - a TSR, SETVER, a DOSKEY
+; loaded in the box - was never called: its hook sat in the table and
+; nothing went through it.  Now the table's entry for a vector the
+; kernel serves points at a HLT here, the hooks in front of it run and
+; chain to it as they would to DOS, and the monitor recognises the HLT
+; by its address.  What reaches it is the end of the chain.
+;
+; DVS_LEN BYTES A VECTOR, vector v at (v - 20h) * DVS_LEN, because
+; five is what RMDOS needs: while the machine is parked it writes a
+; JMP FAR to its own handler over the stub of any vector a TSR has
+; hooked, and so goes in UNDER the TSR instead of in place of it.
+; A vector the kernel does not serve is an IRET, as before.
+;
+; DVS_CCPAD is one more HLT, after the sixteen: the return address a
+; guest's INT 23h handler is called with, so that the kernel can see
+; how it came back - IRET to carry on, RETF with the carry set to end
+; the program.  See vdm_ctrlc.
+;---------------------------------------------------------------------
+DVS_LEN         EQU     5
+DVS_COUNT       EQU     16              ; 20h-2Fh
+DVS_CCPAD       EQU     DVS_LEN * DVS_COUNT
+DVS_PARAS       EQU     (DVS_CCPAD + 1 + 15) / 16
 
 ;---------------------------------------------------------------------
 ; Expanded memory - INT 67h, LIM EMS 3.2.  See DOS\EMS.INC.
@@ -461,6 +529,11 @@ PSP_ENV         EQU     2Ch                     ; dd - environment, 0 = none
 PSP_DOSCALL     EQU     50h                     ; INT 21h / RET thunk
 PSP_R3RET       EQU     54h                     ; where a ring-3 handler's IRET
                                                 ; comes back to - see below
+PSP_MSRET       EQU     56h                     ; and where a mouse event
+                                                ; handler's RETF does: an
+                                                ; INT 33h the driver writes
+                                                ; there and knows by its EIP
+                                                ; (IO\MOUSE.INC, ms_r3chk)
 PSP_TAIL        EQU     80h                     ; command tail: len, text, 0Dh
 PSP_SIZE        EQU     100h
 
@@ -580,7 +653,44 @@ DPMI_IDX_PSP    EQU     4
 DPMI_IDX_CBRET  EQU     5
 DPMI_IDX_RMS    EQU     6
 DPMI_IDX_CBSS   EQU     7
-DPMI_IDX_FIRST  EQU     8                       ; the first one 0000h can give
+
+; And one that is where every vector goes until the client says
+; otherwise.  0204h has to answer with an address - a client that hooks
+; a vector asks first where it went, and jumps there for whatever it
+; does not want - so there is one for each of the 256, two bytes apart
+; and each of them an INT 31h, in a code segment of the host's.  The
+; host knows which vector was meant from where it was called.
+;
+; INT 21h and INT 31h are the host's own, and their defaults cannot be
+; a call to the host that the host would take for the default again.
+; They are sent on to the two pairs behind the table: the interrupt
+; itself, executed from here, and an INT 31h after it that gives the
+; answer to whoever was waiting for the handler to return.
+DPMI_IDX_DEFVEC EQU     8
+DPMI_IDX_FIRST  EQU     9                       ; the first one 0000h can give
+DPMI_SEL_DEFVEC EQU     (DPMI_IDX_DEFVEC SHL 3) + DPMI_SELBITS
+
+DST_LEN         EQU     2                       ; bytes to a vector
+DST_DO21        EQU     256 * DST_LEN           ; INT 21h, INT 31h
+DST_DO31        EQU     DST_DO21 + 4            ; INT 31h, INT 31h
+DST_END         EQU     DST_DO31 + 4
+DST_VECMAX      EQU     DST_DO21                ; the last return address that
+                                                ; is a vector's
+DST_TAIL21      EQU     DST_DO21 + 4            ; ...and the three that are not:
+DST_PASS31      EQU     DST_DO31 + 2            ; "that was the call itself",
+DST_TAIL31      EQU     DST_END                 ; twice, and "this is the call"
+
+; The flags a service answers in, which are the ones that go back
+; through a chain of handlers: CF PF AF ZF SF OF.
+DPMI_ARITH      EQU     000008D5h
+DPMI_DF         EQU     00000400h
+
+; What PMIO's hook for a ring-3 fault is called with (IOS_PM3HOOK):
+; EBP -> the vector, the error code and the frame the processor pushed,
+; and the PUSHAD block is the 32 bytes below that.
+HK_REGS         EQU     -32                     ; EDI first, as F_EDI is
+HK_ERR          EQU     4
+HK_IRET         EQU     8                       ; EIP, CS, EFLAGS, ESP, SS
 
 ; Descriptor access bytes.  DPL 3 throughout: there is nothing a
 ; client is allowed to do at ring 0.
@@ -725,9 +835,10 @@ DM_LEN          EQU     16
 ; one.
 DOSDATA         EQU     00004000h
 DOSDATA_SEG     EQU     0400h
-DOSDATA_SIZE    EQU     00001000h       ; four kilobytes, and it was 256 bytes
+DOSDATA_SIZE    EQU     00001200h       ; four and a half kilobytes: 256 bytes
                                         ; until the system file table below
-                                        ; needed somewhere real to be
+                                        ; needed somewhere real to be, 4K
+                                        ; until the country tables (GNLS_)
 
 ;---------------------------------------------------------------------
 ; THE SYSTEM FILE TABLE A GUEST CAN WALK, and it exists because of what
@@ -766,8 +877,38 @@ GSFT_ENTRIES    EQU     64              ; = MAX_HANDLES, guarded where that
                                         ; is defined
 GSFT_SIZE       EQU     GSFT_ENTRY + GSFT_ENTRIES * GSFT_ENTSIZE
 
-V86_TPA         EQU     00005000h
-V86_TPA_SEG     EQU     0500h
+;---------------------------------------------------------------------
+; THE COUNTRY TABLES 65h HANDS OUT - uppercase (02h, and 04h for file
+; names, which is the same table here), filename terminators (05h), the
+; collating sequence (06h) and the DBCS table (07h).  07h IS NOT
+; GLOL_DBCS, which is 63h's answer and looks like the same thing: 6507h's
+; table is a LENGTH and then the ranges, ended by a zero word, and FIND
+; reads past the length whatever it says.  Pointed at GLOL_DBCS it read
+; the CON device header behind it as ranges, took 13h-80h - every letter
+; - for lead bytes, and matched nothing.  Four zero bytes is the table.
+;
+; THEY WERE REFUSED UNTIL v0.60, on the stated belief that a program
+; refused one falls back to its own.  MS-DOS's own utilities do not.
+; FIND asks 6507h and follows the pointer without looking at the carry
+; flag, so it matched nothing in any file; SORT asks 6506h, takes a
+; length out of whatever its buffer held and copies that many bytes,
+; which hung the box.  Four hundred bytes of the DOS data segment is
+; the price of the two commands every pipe in a batch file ends in.
+;
+; Each is a word saying how long it is, then the table - the format
+; 65h's callers read.  Built once, at boot, by vdm_lolinit.
+;---------------------------------------------------------------------
+GNLS_OFF        EQU     00001000h       ; within the DOS data segment
+GNLS_UPCASE     EQU     GNLS_OFF        ; dw 128, then 80h-FFh upper-cased
+GNLS_TERM       EQU     GNLS_OFF + 82h  ; dw 22, then the terminator table
+GNLS_TERMLEN    EQU     24
+GNLS_COLLATE    EQU     GNLS_OFF + 9Ah  ; dw 256, then a weight per character
+GNLS_DBCS       EQU     GNLS_OFF + 19Ch ; dw 0, dw 0: no ranges, and the end
+GNLS_END        EQU     GNLS_OFF + 1A0h
+GNLS_ACCENTS    EQU     26h             ; 80h-A5h, which vdm_nlsacc weighs
+
+V86_TPA         EQU     00005200h
+V86_TPA_SEG     EQU     0520h
 V86_TPA_TOP     EQU     000A0000h       ; THE CEILING, NOT THE TOP.  Where the
                                         ; arena really ends is what the BIOS
                                         ; says at 40:13 and is decided at run
@@ -1127,6 +1268,12 @@ IF GSFT_OFF LT GLOL_SIZE
 ENDIF
 IF GSFT_OFF + GSFT_SIZE GT DOSDATA_SIZE
         .ERR    <GSFT: the file table does not fit in the DOS data segment>
+ENDIF
+IF GNLS_OFF LT GSFT_OFF + GSFT_SIZE
+        .ERR    <GNLS: the country tables start inside the file table>
+ENDIF
+IF GNLS_END GT DOSDATA_SIZE
+        .ERR    <GNLS: the country tables do not fit in the DOS data segment>
 ENDIF
 
 ;---------------------------------------------------------------------
@@ -1615,6 +1762,16 @@ GVO_DAP         EQU     GV_OFF  + 20h
 GV_EDP          EQU     GV_BASE + 40h           ; 32 bytes - AH=48h's answer
 GVO_EDP         EQU     GV_OFF  + 40h
 
+; THE PIC MASKS PROTECTED MODE RUNS WITH.  They used to be a constant in
+; pic_to_pm - timer and keyboard - and every trip into the BIOS put them
+; back to it on the way home.  A mouse is one more interrupt: IRQ 12
+; behind the cascade for a PS/2 one, IRQ 3 or 4 for a serial one, and
+; with the constant it would have been masked again by the first INT 13h
+; the kernel made.  ms_init writes what the machine needs here and
+; pic_to_pm reads it every time.
+GV_PICMASK      EQU     GV_BASE + 70h           ; db master mask, db slave
+GVO_PICMASK     EQU     GV_OFF  + 70h
+
 ;---------------------------------------------------------------------
 ; PMIO service table.  IOPM.BIN begins with a JMP to its entry point,
 ; then a table of near function pointers at IO_PM_BASE+10h.  PMDOS
@@ -1661,12 +1818,13 @@ IOS_PM3HOOK     EQU     IOSVC + 50h             ; EDI = what to call when a
                                                 ; something the monitor cannot
                                                 ; emulate.  PMIO knows how to
                                                 ; catch it; only PMDOS knows
-                                                ; there is a DOS box to end
-                                                ; NOW, which is not always
-                                                ; what XMS last asked for: a
-                                                ; guest can move it itself
-                                                ; through port 92h or the 8042
-IOS_EXCHOOK     EQU     IOSVC + 54h             ; EDI = what to call after a
+                                                ; there is a DOS box to end.
+                                                ; IF IT COMES BACK it was not
+                                                ; a fault - a client's INT n
+                                                ; arrives as one - and the
+                                                ; code is resumed through the
+                                                ; frame it was given (HK_*)
+IOS_EXCHOOK    EQU     IOSVC + 54h             ; EDI = what to call after a
                                                 ; RING-0 fault has been
                                                 ; reported.  Same division of
                                                 ; labour as PM3HOOK: PMIO
@@ -1711,9 +1869,12 @@ IOS_ATACFG      EQU     IOSVC + 74h             ; AL = 0: DMA policy in AH -
                                                 ; mode the drive offers, 3 the
                                                 ; mode in BL.  AL = 1: 32-bit
                                                 ; PIO policy in AH - 0 off,
-                                                ; 1 auto, 2 on.  IDEDMA= and
-                                                ; IDE32= are the only callers,
-                                                ; and setting either re-probes
+                                                ; 1 auto, 2 on.  AL = 2: the
+                                                ; cables, in AH - 0 find out,
+                                                ; 1 forty conductors, 2 eighty.
+                                                ; IDEDMA=, IDE32= and IDECABLE=
+                                                ; are the only callers, and
+                                                ; setting any of them re-probes
 ;---------------------------------------------------------------------
 ; What an ATA device is, in one byte.  ATA.INC keeps them in its own
 ; table and 21h/F1h AL=0Ah hands them to a program unchanged, which is
@@ -1735,6 +1896,29 @@ ATDF_ATAPI      EQU     20h                     ; a PACKET device - a CD-ROM,
                                                 ; to hand out 80h, 81h, and a
                                                 ; CD-ROM taking a number would
                                                 ; renumber the disks behind it
+
+; What went into choosing its transfer mode.  The second byte of the
+; same report.
+ATI_DMA         EQU     01h                     ; the drive does DMA at all
+ATI_CBL80       EQU     02h                     ; the drive saw 80 conductors
+                                                ; (IDENTIFY word 93)
+ATI_OURS        EQU     04h                     ; the mode in force is one
+                                                ; PM-DOS selected, not the BIOS
+ATI_AGREES      EQU     10h                     ; the host's timing registers
+                                                ; say the same mode the drive
+                                                ; is in.  Only ever set on a
+                                                ; host whose registers PM-DOS
+                                                ; can read
+
+; The cable on its channel, which is the third: what it is, and who
+; was believed.  A source of zero is nobody, and forty conductors.
+ATC_80          EQU     01h                     ; eighty conductors
+ATC_BY          EQU     70h                     ; who said so
+ATC_BY_USER     EQU     10h                     ; IDECABLE= in CONFIG.SYS
+ATC_BY_BIOS     EQU     20h                     ; the BIOS left a drive on it
+                                                ; in a mode past Ultra DMA 2
+ATC_BY_HOST     EQU     30h                     ; the host's own register
+ATC_BY_DRIVE    EQU     40h                     ; a drive on it, in word 93
 
 IOS_ATAINFO     EQU     IOSVC + 78h             ; AL = an ATA device index, or
                                                 ; FFh for the controller.  See
@@ -1811,6 +1995,156 @@ IOS_CDPKT       EQU     IOSVC + 90h             ; AL = unit, AH = 1 if the
                                                 ; UNIT ATTENTION is retried
                                                 ; once - atapi_svcpkt says
                                                 ; why for both
+IOS_PUTCELLS    EQU     IOSVC + 94h             ; ESI -> ECX character and
+                                                ; attribute words, EBX = the
+                                                ; first cell (row * columns
+                                                ; + column): straight into
+                                                ; the live page, cut off at
+                                                ; the end of the screen
+IOS_GETCELLS    EQU     IOSVC + 98h             ; the same, out of the screen
+                                                ; into EDI
+IOS_CURSHAPE    EQU     IOSVC + 9Ch             ; CH = first scan line (bit 5
+                                                ; hides the cursor), CL = last
+
+; THE MOUSE (IO\MOUSE.INC).  One driver answering INT 33h the way
+; Microsoft's does, reached two ways: a DOS box's INT 33h goes through
+; a stub below 1MB and stops at a HLT the box's loop hands to IOS_MSHLT,
+; and a native program's is an interrupt gate PMIO owns outright.  The
+; rest are the few things only the DOS side knows - who is running, who
+; has ended, and when the machine is about to be handed away.
+IOS_MSINIT      EQU     IOSVC + 0A0h            ; AX = the stub's segment
+                                                ; (MS_PARAS paragraphs, 0 =
+                                                ; none), EDI = where a DPMI
+                                                ; client's INT 33h goes, ESI
+                                                ; -> r3_depth, EDX ->
+                                                ; r3_calldep
+IOS_MSHLT       EQU     IOSVC + 0A4h            ; ESI -> a box's context
+                                                ; stopped at a HLT, EAX = the
+                                                ; running program's owner
+                                                ; token.  CF clear if the HLT
+                                                ; was the driver's, and served
+IOS_MSEXIT      EQU     IOSVC + 0A8h            ; EAX = the owner token of a
+                                                ; program that has ended: its
+                                                ; handlers go, and its cursor
+IOS_MSR3        EQU     IOSVC + 0ACh            ; EBX -> a native program's
+                                                ; PUSHAD block, EBP -> the
+                                                ; IRETD frame it is going
+                                                ; back through: its event
+                                                ; handler, if one is owed
+IOS_MSWAKE      EQU     IOSVC + 0B0h            ; -> AL = 1 if the mouse has
+                                                ; moved or a button changed
+                                                ; since this was last asked
+IOS_MSINJECT    EQU     IOSVC + 0B4h            ; as if the mouse had sent it:
+                                                ; BH = 0: BL = buttons, CX =
+                                                ; across, DX = down, mickeys;
+                                                ; BH = 1: CL, CH, DL = a PS/2
+                                                ; packet; BH = 2: CL, CH, DL,
+                                                ; DH = BL serial bytes
+                                                ; BH = 3: a PS/2 packet through
+                                                ; the 8042 (D3h) and IRQ 12
+IOS_MSI15       EQU     IOSVC + 0B8h            ; ESI -> a box's context at an
+                                                ; INT 15h.  CF clear if the
+                                                ; driver answered it
+IOS_MSPARK      EQU     IOSVC + 0BCh            ; AL = 0 before a park, 1 after
+
+; THE BUSES (IO\IRQ.INC, VPIC.INC, PCI.INC, VDS.INC, BUS.INC).  What an
+; add-in card needs of a system: its interrupt, its registers found and
+; mapped, and the truth about where a buffer physically is.
+IOS_BUS         EQU     IOSVC + 0C0h            ; AH = a BUS_* function, the
+                                                ; rest as that function says.
+                                                ; CF and AX = a DOS error if
+                                                ; it could not be done.  This
+                                                ; is what 21h/F1h AL=12h calls
+IOS_IRQHOOK     EQU     IOSVC + 0C4h            ; AL = an IRQ, EDI = a handler
+                                                ; to call when it arrives.  A
+                                                ; line can have IRQ_CHAIN of
+                                                ; them; each is called with
+                                                ; EBX = the IRQ, interrupts
+                                                ; off, and answers CF CLEAR if
+                                                ; the interrupt was its own
+                                                ; device's.  CF if the line is
+                                                ; the kernel's own or is full
+IOS_IRQUNHOOK   EQU     IOSVC + 0C8h            ; the same two registers: take
+                                                ; it off again
+IOS_MAPPHYS     EQU     IOSVC + 0CCh            ; EBX = a physical address,
+                                                ; ECX = bytes -> EAX = where
+                                                ; it can be reached, which is
+                                                ; the same number.  CF if it
+                                                ; cannot be mapped
+IOS_BUSINIT     EQU     IOSVC + 0D0h            ; AX = BUS_PARAS paragraphs
+                                                ; below 1MB (0 = none), EBX
+                                                ; -> the DPMI host's table of
+                                                ; protected-mode vectors, ECX
+                                                ; -> its "a client is running",
+                                                ; EDX -> its "and a 32-bit one".
+                                                ; Answers EAX -> the byte that
+                                                ; is a client's interrupt flag
+
+BUS_PARAS       EQU     1                       ; the INT 4Bh stub below 1MB
+
+; IOS_BUS and 21h/F1h AL=12h: the function is in AH.
+BUS_PCIHERE     EQU     00h     ; -> EAX = 1 if there is a PCI bus, EBX =
+                                ;    the last bus number, ECX = functions
+                                ;    found, EDX = the edge/level register
+                                ;    (a bit a line, set = level)
+BUS_PCIENUM     EQU     01h     ; SI = n -> EBX = the nth function's
+                                ;    address, EAX = device:vendor, ECX =
+                                ;    class, subclass, prog-if, revision
+BUS_PCICLASS    EQU     02h     ; ECX = class:subclass:prog-if in the low
+                                ;    24 bits, SI = n -> EBX = the nth one
+BUS_PCIID       EQU     03h     ; CX = vendor, DX = device, SI = n -> EBX
+BUS_PCIREAD     EQU     04h     ; EBX = address, DL = register, DH = 1, 2
+                                ;    or 4 bytes -> EAX
+BUS_PCIWRITE    EQU     05h     ; the same, and ECX = what to write
+BUS_PCIBAR      EQU     06h     ; EBX = address, DL = 0..5 -> EAX = base,
+                                ;    EDI = its high half, ECX = size, EDX
+                                ;    = BARF_* flags
+BUS_PCIIRQ      EQU     07h     ; EBX = address -> AL = the line, AH = the
+                                ;    pin (0 = none), EDX = 1 if that line
+                                ;    is level-triggered
+BUS_MAPPHYS     EQU     10h     ; EBX = physical, ECX = bytes -> EAX
+BUS_PHYSOF      EQU     11h     ; EBX = linear, ECX = bytes -> EAX = the
+                                ;    physical address, ECX = how far it
+                                ;    runs on from there unbroken
+BUS_IRQSTAT     EQU     20h     ; DL = an IRQ -> EAX = IRQF_* flags, EBX =
+                                ;    interrupts taken on it, ECX = how
+                                ;    many went to a DOS box, EDX = how
+                                ;    many nobody claimed
+BUS_SELFTEST    EQU     2Fh     ; only in a kernel built -dIRQ_SELFTEST:
+                                ;    see iqx_report in IO\IRQ.INC
+
+BARF_IO         EQU     01h                     ; ports, not memory
+BARF_64         EQU     02h                     ; a 64-bit one: two registers
+BARF_PREF       EQU     04h                     ; prefetchable
+BARF_LOW        EQU     08h                     ; must be below 1MB
+BARF_NONE       EQU     80h                     ; nothing is decoded there
+
+IRQF_KERNEL     EQU     01h                     ; the kernel's own, never shared
+IRQF_HOOKED     EQU     02h                     ; a driver has a handler on it
+IRQF_BOXWANT    EQU     04h                     ; a DOS box has it unmasked
+IRQF_PENDING    EQU     08h                     ; ...and is owed one
+IRQF_INSERV     EQU     10h                     ; ...and is in its handler
+IRQF_LEVEL      EQU     20h                     ; level-triggered
+IRQF_OPEN       EQU     40h                     ; unmasked at the 8259 now
+IRQF_DEAD       EQU     80h                     ; masked for good: it kept
+                                                ; arriving and nobody took it
+
+IRQ_CHAIN       EQU     4                       ; handlers a line
+; The lines a DOS box may have.  Not the timer, the keyboard or the
+; cascade, which are the kernel's; not the floppy, which the BIOS
+; drives from real mode; not the two ATA channels; not the coprocessor;
+; and not 12, because a mouse byte nobody reads blocks the keyboard
+; behind it (see irq_timer) and the kernel has a driver for it.
+VP_GUEST        EQU     0FB8h                   ; 3, 4, 5, 7, and 8 to 11
+
+MS_PARAS        EQU     8                       ; the INT 33h stub below 1MB
+MS_NONE         EQU     0                       ; what PMIO found: nothing,
+MS_PS2          EQU     1                       ; a PS/2 mouse on IRQ 12,
+MS_SERIAL       EQU     2                       ; a serial one on IRQ 3 or 4
+MSTOK_BOX       EQU     10000h                  ; an owner token: a DOS box's
+                                                ; program is this plus its PSP
+                                                ; segment, a native one its
+                                                ; EXEC depth plus one
 
 ; WHICH PIECE OF THE KERNEL IS ASKING whether the disc moved.  One bit
 ; each, because the drive's answer is destroyed by the asking and two
@@ -1853,9 +2187,22 @@ KBC_PULSE       EQU     0F0h                    ; F0h-FFh pulse the output
                                                 ; lines, and FEh is the one
                                                 ; that resets the CPU
 KBS_OBF         EQU     001h                    ; status: a byte is waiting
+KBS_IBF         EQU     002h                    ; ...the controller is busy
 KBS_AUXB        EQU     020h                    ; ...and it came from the mouse
 KBCB_KBDINT     EQU     001h                    ; command byte: IRQ 1 enabled
+KBCB_AUXINT     EQU     002h                    ; ...IRQ 12 enabled
 KBCB_KBDOFF     EQU     010h                    ; ...and the keyboard disabled
+KBCB_AUXOFF     EQU     020h                    ; ...the mouse's clock stopped
+
+; The auxiliary device's side of the controller, which is the kernel's
+; too once it drives a PS/2 mouse - see vio_o64.
+KBC_RDCMD       EQU     020h                    ; read the command byte
+KBC_AUXOFF      EQU     0A7h                    ; disable the aux interface
+KBC_AUXON       EQU     0A8h                    ; ...and enable it
+KBC_AUXTEST     EQU     0A9h                    ; test it: 00h is working
+KBC_WRAUXOB     EQU     0D3h                    ; put a byte in the output
+                                                ; buffer AS IF the mouse sent
+                                                ; it
 
 ;---------------------------------------------------------------------
 ; 8259A PIC.  Remapped away from the CPU exception range.
@@ -1915,6 +2262,7 @@ TICKS_PER_DAY   EQU     001800B0h               ; 18.2 Hz x 24 hours
 BDA_BASE        EQU     00000400h
 BDA_MOTORST     EQU     BDA_BASE + 3Fh          ; db - floppy motors running
 BDA_MOTORCNT    EQU     BDA_BASE + 40h          ; db - ticks until motor off
+BDA_COM1        EQU     BDA_BASE + 00h          ; 4 dw - COM1-COM4 base ports
 BDA_LPT1        EQU     BDA_BASE + 08h          ; dw - LPT1 base port, 0 if none
 BDA_EQUIP       EQU     BDA_BASE + 10h          ; dw - equipment word
 BDA_DSKSTAT     EQU     BDA_BASE + 41h          ; db - last INT 13h status
@@ -1929,6 +2277,7 @@ BDA_CURSHAPE    EQU     BDA_BASE + 60h          ; dw - end,start scan lines
 BDA_VPAGE       EQU     BDA_BASE + 62h          ; db - the displayed page
 BDA_HDCOUNT     EQU     BDA_BASE + 75h          ; db - hard disks the BIOS found
 BDA_VROWS       EQU     BDA_BASE + 84h          ; db - rows on screen, LESS ONE
+BDA_POINTS      EQU     BDA_BASE + 85h          ; dw - scan lines per character
 
 ; THE KEYBOARD BUFFER, and it belongs to the machine for the same
 ; reason the tick count does.  Owning IRQ 1 means the BIOS's own
@@ -2033,6 +2382,7 @@ ERR_BADMCB      EQU     7                       ; memory control block destroyed
 ERR_EXEFMT      EQU     11                      ; invalid executable format
 ERR_BADDRIVE    EQU     15                      ; invalid drive
 ERR_BADFUNC     EQU     16h                     ; unknown command
+ERR_CURDIR      EQU     10h                     ; the current directory (3Ah)
 ERR_NOTSAME     EQU     11h                     ; not same device (56h)
 ERR_EXISTS      EQU     80                      ; file already exists
 ERR_DISKFULL    EQU     70h                     ; (PM-DOS: no free clusters)
@@ -2108,53 +2458,100 @@ F73_TOTAU       EQU     1Eh             ; dd - total allocation units
 F73_SIZE        EQU     2Ch             ; ...and eight reserved bytes
 
 ;---------------------------------------------------------------------
-; 21h/7302h and 7304h - the DRIVE PARAMETER BLOCK, in the wide form
-; the FAT32 API uses.  Every field that was a word in the DOS 4 DPB is
-; a dword here, which is the whole reason there is a 73h version of the
-; call: a FAT32 volume has more clusters and more sectors per FAT than
-; sixteen bits can count.
+; 21h/7302h - the EXTENDED DRIVE PARAMETER BLOCK, exactly as DOS 7.1
+; lays it out, into the caller's buffer.  DL names the drive (0 = the
+; default, 1 = A:), EDI is the buffer and ECX its size, which must be
+; at least F72_SIZE (3Fh) - a short one is refused with error 18h, "bad
+; request length", and nothing is written.
+;
+; IT IS DOS 7.1'S LAYOUT AND NOT A PM-DOS ONE, as of v0.60.  The first
+; version here named its drive with a PATH, as 7303h does, and returned
+; a block of its own design with every count a dword - a better block,
+; and one no program written for Windows 95 could read.  CHKDSK and
+; LABEL, the first two such programs, had to be taught PM-DOS's
+; dialect; they now speak DOS's, as their DOS/32A builds always did.
+;
+; The DOS 4 DPB is the first 33 bytes and its word fields are still
+; filled in, because on FAT12 and FAT16 they hold every value; FAT32's
+; answers are in the dword fields from 21h on, and the WORD sectors-
+; per-FAT at 0Fh is ZERO on a FAT32 volume, which is how a reader tells
+; the two apart.  Every number is in the volume's own LOGICAL sectors.
 ;
 ; PM-DOS HAS NO DPBs, and says so where it matters: fn52's list of
 ; lists answers FFFF:FFFF for the DPB chain, because a pointer into a
-; structure that does not exist is an invitation to walk it.  This is
-; a different call and the difference is the direction: 7302h COPIES a
-; block into the caller's own buffer, so there is nothing to follow
-; and nothing that outlives the call.  Building one out of the mounted
-; volume is a description, not a fiction - every field below is a fact
-; about the disk that the kernel already knows.
-;
-; The chain pointer is the exception and is the one field that must
-; lie or refuse.  It refuses: FFFF:FFFF, the same sentinel and for the
-; same reason as fn52's.
+; structure that does not exist is an invitation to walk it.  This call
+; COPIES a description into the caller's own memory, so there is
+; nothing to follow and nothing that outlives it.  The two pointer
+; fields - the driver and the next DPB - are the ones that would have
+; to lie, and they say FFFF:FFFF instead.
 ;---------------------------------------------------------------------
-DPB_DRIVE       EQU     00h             ; db - 0 = A:
-DPB_UNIT        EQU     01h             ; db - unit within its driver
-DPB_BPS         EQU     02h             ; dw - bytes per sector
-DPB_SPCM1       EQU     04h             ; db - sectors per cluster, less one
-DPB_SHIFT       EQU     05h             ; db - and the same as a shift
-DPB_RSVD        EQU     06h             ; dw - reserved sectors
-DPB_NFATS       EQU     08h             ; db - FAT copies
-DPB_ROOTENT     EQU     09h             ; dw - root entries (0 on FAT32)
-DPB_DATA        EQU     0Bh             ; dd - first data sector
-DPB_MAXCLUS     EQU     0Fh             ; dd - highest cluster number
-DPB_SPF         EQU     13h             ; dd - sectors per FAT
-DPB_ROOT        EQU     17h             ; dd - root sector, or its cluster
-DPB_DRIVER      EQU     1Bh             ; dd - the block driver's header
-DPB_MEDIA       EQU     1Fh             ; db - media descriptor
-DPB_ACCESS      EQU     20h             ; db - 0 once the drive has been read
-DPB_NEXT        EQU     21h             ; dd - the next DPB, or no such thing
-DPB_NEXTFREE    EQU     25h             ; dd - where to start looking
-DPB_FREE        EQU     29h             ; dd - free clusters, -1 = unknown
-DPB_LEN         EQU     2Dh
+EDPB_DRIVE      EQU     00h             ; db - 0 = A:
+EDPB_UNIT       EQU     01h             ; db - unit within its driver
+EDPB_BPS        EQU     02h             ; dw - bytes per sector
+EDPB_SPCM1      EQU     04h             ; db - sectors per cluster, less one
+EDPB_SHIFT      EQU     05h             ; db - and the same as a shift
+EDPB_RSVD       EQU     06h             ; dw - reserved sectors
+EDPB_NFATS      EQU     08h             ; db - FAT copies
+EDPB_ROOTENT    EQU     09h             ; dw - root entries (0 on FAT32)
+EDPB_DATA16     EQU     0Bh             ; dw - first data sector
+EDPB_MAXCL16    EQU     0Dh             ; dw - highest cluster number
+EDPB_SPF16      EQU     0Fh             ; dw - sectors per FAT; 0 = FAT32
+EDPB_ROOT16     EQU     11h             ; dw - first root directory sector
+EDPB_DRIVER     EQU     13h             ; dd - the block driver's header
+EDPB_MEDIA      EQU     17h             ; db - media descriptor
+EDPB_ACCESS     EQU     18h             ; db - 0 once the drive has been read
+EDPB_NEXT       EQU     19h             ; dd - the next DPB, or no such thing
+EDPB_HINT16     EQU     1Dh             ; dw - where to start looking
+EDPB_FREE16     EQU     1Fh             ; dw - free clusters, FFFFh = unknown
+EDPB_FREEHI     EQU     21h             ; dw - ...and the high word of it
+EDPB_EXTFLAGS   EQU     23h             ; dw - FAT32 mirroring and active FAT
+EDPB_FSINFO     EQU     25h             ; dw - FSInfo sector, FFFFh = none
+EDPB_BKBOOT     EQU     27h             ; dw - backup boot sector, FFFFh = none
+EDPB_DATA       EQU     29h             ; dd - first data sector
+EDPB_MAXCLUS    EQU     2Dh             ; dd - highest cluster number
+EDPB_SPF        EQU     31h             ; dd - sectors per FAT
+EDPB_ROOTCLUS   EQU     35h             ; dd - FAT32 root cluster
+EDPB_HINT       EQU     39h             ; dd - where to start looking
+EDPB_LEN        EQU     3Dh
 
-; ...and the two bytes 7302h puts in front of it.  Real DOS calls this
-; field "special functions" on the way IN to some of the 73h family and
-; there is no reading of it under which a nonzero value here means
-; anything, so it is written as zero and the block behind it is what a
-; caller reads.
-F72_FLAGS       EQU     00h             ; dw - zero
+; ...and the word in front of it, which DOS fills with the size of what
+; follows.  The whole buffer is F72_SIZE.
+F72_LEN         EQU     00h             ; dw - EDPB_LEN
 F72_DPB         EQU     02h
-F72_SIZE        EQU     F72_DPB + DPB_LEN
+F72_SIZE        EQU     F72_DPB + EDPB_LEN      ; 3Fh
+ERR_BADLEN      EQU     18h             ; "bad request structure length"
+
+;---------------------------------------------------------------------
+; 21h/7304h - SET DPB TO USE FOR FORMATTING, which DOS 7.1 gives a
+; formatter so that it can tell the kernel what it has just done to a
+; volume.  DL = drive (1 = A:), EDI -> this record, ECX = its size.
+;
+; THE LAYOUT IS FROM MEMORY OF THE WIN95 OSR2 FAT32 API DOCUMENT, not
+; from a source: nothing on this machine carries it.  Seven dwords,
+; the third saying which of five things is asked.  PM-DOS reads every
+; volume's shape from its BPB at mount and cannot be told a different
+; one, so the answers are: allocation hints are taken, "rebuild from
+; the BPB" and "the medium changed" both REMOUNT (which is precisely
+; re-reading the BPB), and the two get/set pairs answer the get half
+; and accept a set only when it asks for what is already there.
+;---------------------------------------------------------------------
+SDP_SIZE        EQU     00h             ; dd - size of the record
+SDP_LEVEL       EQU     04h             ; dd - structure level, 0
+SDP_FUNC        EQU     08h             ; dd - what is asked, SDPF_*
+SDP_VAL1        EQU     0Ch             ; dd - its arguments...
+SDP_VAL2        EQU     10h             ; dd
+SDP_VAL3        EQU     14h             ; dd
+SDP_VAL4        EQU     18h             ; dd
+SDP_LEN         EQU     1Ch
+
+SDPF_ALLOCINFO  EQU     1               ; VAL1 free clusters, VAL2 next-free
+                                        ; hint; FFFFFFFFh = leave it
+SDPF_FROMBPB    EQU     2               ; re-read the BPB: a remount
+SDPF_MEDIACHG   EQU     3               ; forget the volume: a remount
+SDPF_ACTFAT     EQU     4               ; VAL1 new ExtFlags or FFFFFFFFh to
+                                        ; ask; VAL2 <- the old ExtFlags
+SDPF_ROOTCLUS   EQU     5               ; VAL1 new root cluster or FFFFFFFFh;
+                                        ; VAL2 <- the old one
 
 ;---------------------------------------------------------------------
 ; 21h/7305h - extended absolute disk read and write, the FAT32 form of
@@ -2303,6 +2700,46 @@ DRVF_DRIVER     EQU     04h                     ; served by a loaded block drive
                                         ; DRV_BIOS then names a dl_units row
                                         ; rather than a BIOS drive.  See
                                         ; DL_UNIT_BASE
+DRVF_IMAGE      EQU     10h                     ; the volume's sectors live
+                                        ; inside a FILE on another volume.
+                                        ; DRV_BIOS then names a mount in
+                                        ; IMAGE.INC - IMG_UNIT_BASE upwards
+                                        ; - and DRV_START is where the
+                                        ; volume begins INSIDE the file,
+                                        ; which is how a partitioned image
+                                        ; costs no new machinery at all.
+                                        ; The filesystem inside may be FAT
+                                        ; or may be ISO9660/UDF; img_isiso
+                                        ; is what fat_mount asks
+
+;---------------------------------------------------------------------
+; PSEUDO BIOS DRIVE NUMBERS - every range in use, in one place, which
+; is the only way a scheme like this stays honest.  A number no BIOS
+; ever issues flows through fat_mount, the volume table and the block
+; layer untouched, and exactly one comparison sends the transfer
+; somewhere that is not a disk controller.
+;
+;   00h..01h   floppies
+;   80h..81h   hard disks                   MAX_PHYS
+;   C0h..C7h   mounted image files          IMG_UNIT_BASE  (IMAGE.INC)
+;   E0h..EFh   loaded block driver units    DL_UNIT_BASE   (DEVLOAD.INC)
+;   F0h..F7h   ATAPI units                  CC_CDBASE      (CACHE.INC)
+;
+; The image range is here rather than in IMAGE.INC because three files
+; assembled BEFORE it test a drive number against it, and wasm cannot
+; use an equate it has not read yet.
+;---------------------------------------------------------------------
+IMG_MAX         EQU     8               ; images mounted at once
+IMG_UNIT_BASE   EQU     0C0h
+IMG_UNIT_TOP    EQU     IMG_UNIT_BASE + IMG_MAX
+
+; What a mount is, as 21h/F1h AL=11h reports it.  Here rather than in
+; IMAGE.INC because MOUNT.EXE reads them and MOUNT.EXE is a program:
+; a flag a caller is shown is part of the API, not an internal.
+IMF_USED        EQU     01h             ; the slot names something
+IMF_RO          EQU     02h             ; /R, or an optical filesystem
+IMF_ISO         EQU     04h             ; 2048-byte blocks inside, read by
+                                        ; ISO9660.INC rather than by FAT.INC
 
 ;---------------------------------------------------------------------
 ; One PHYSICAL DISK, which is the other half of the sentence above: a
@@ -2388,7 +2825,9 @@ ATTR_LFN        EQU     0Fh             ; RO+HID+SYS+VOL = an LFN fragment
 ; Long file names (VFAT).  An LFN rides in 32-byte directory entries
 ; of attribute 0Fh placed directly before the 8.3 entry it names.
 LFN_MAX         EQU     260             ; ASCIIZ long name, NUL included
-FIND_MAX        EQU     4               ; concurrent 71h find handles
+FIND_MAX        EQU     32              ; concurrent 71h find handles - out
+                                        ; of the arena, not the image, and
+                                        ; swept by owner at 4Ch: see find_init
 ; Internal flag OR'd into [srch_attr] by 4Eh/4Fh only: apply the DOS
 ; rule that hidden and system files stay out of a directory search
 ; unless asked for.  Lookups by name (open, exec, path walking) leave
@@ -2586,9 +3025,25 @@ SHELLTAIL_MAX   EQU     130             ; length byte + 126 + CR + slack
 ; 6.22 at 30h and 0.31 at 3306h has caught the system contradicting
 ; itself, which is worse than either answer alone.  The honest number
 ; has a call of its own; these two agree.
+;
+; AND IT WENT STALE FOR TWO RELEASES, which is worth a line because it
+; is the failure mode of a version number that only one call reports.
+; v0.58 and v0.59 were written, built, tested and committed while this
+; equate still said 57: NOTES.TXT said 0.59, the banner said 0.59, and
+; VER - the one thing a user can ask - said 0.57.  Nothing broke,
+; nothing tested it, and a bug report from either of those builds would
+; have named the wrong kernel.  THE NUMBER THAT MATTERS IS THE ONE THE
+; MACHINE SAYS, not the one the notes say, and the two are only equal
+; if somebody makes them so.  BUILD.CMD now PRINTS THIS LINE at the
+; top of every build, so the number is in front of whoever is building
+; before anything is assembled.  That is the cheapest guard there is
+; and the only kind that could have caught this: nothing was broken,
+; so no test could have failed.
+;
+; The two numbers live in PMVER.INC, which the 16-bit COMMAND.COM reads
+; as well - it cannot include this file.
 ;---------------------------------------------------------------------
-PMDOS_MAJOR     EQU     0
-PMDOS_MINOR     EQU     57
+        INCLUDE PMVER.INC
 
 DOSVER_MAJOR    EQU     6
 DOSVER_MINOR    EQU     22

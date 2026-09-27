@@ -88,10 +88,25 @@ dio_try:
         mov     cx,[dio_cnt]            ; retry has to start clean
         mov     edi,[dio_buf]
         mov     edx,[dio_svc]
-        call    cache_io                ; ...which is dio_raw with a cache
-                                        ; in front of it, and is dio_raw
-                                        ; exactly when there is not one -
-                                        ; see CACHE.INC
+        call    img_io                  ; ...which is cache_io with a
+                                        ; TRANSLATION in front of it for
+                                        ; the drives whose sectors live
+                                        ; inside a file, and is cache_io
+                                        ; itself for every other drive -
+                                        ; see IMAGE.INC.  cache_io in turn
+                                        ; is dio_raw with a cache in front
+                                        ; of it, and is dio_raw exactly
+                                        ; when there is not one.
+                                        ;
+                                        ; THE TRANSLATION IS ABOVE THE
+                                        ; CACHE ON PURPOSE: an image's
+                                        ; sectors are real sectors on a
+                                        ; real disk, so handing the cache
+                                        ; the host's numbers makes the
+                                        ; image and the file the same
+                                        ; blocks, and the two views cannot
+                                        ; disagree because there is only
+                                        ; one of them
 dio_done:
         jc      dio_bad
 
@@ -176,10 +191,28 @@ dio_nocd:
 ; layer with a drive number no BIOS has ever heard of and failed, and
 ; nothing noticed because nothing has called 25h or 26h since v0.17.
 ;=====================================================================
+; ...AND A MOUNTED IMAGE FILE IS A DRIVE HERE TOO, for the same
+; reason and by the same trick, with one difference worth stating:
+; the image branch is HERE rather than only in dio_try because the
+; callers that come straight to dio_raw are the ones that asked to go
+; round the cache - VERIFY's read-back, which learns nothing from
+; being shown the cached copy of the sector it just wrote, and INT
+; 25h/26h.  Both of those must still reach the right sectors.
+;
+; It cannot recurse: img_raw translates to the HOST's drive number and
+; calls back in with it, and a host is never itself an image (see
+; img_mount, which refuses to stack them - the working variables in
+; IMAGE.INC are single, not a stack).
 dio_raw:
         cmp     al,DL_UNIT_BASE
-        jb      dir_hw
+        jb      dir_notdl
         jmp     dl_blkio                ; its CF and AH are the answer
+dir_notdl:
+        cmp     al,IMG_UNIT_BASE
+        jb      dir_hw
+        cmp     al,IMG_UNIT_TOP
+        jae     dir_hw
+        jmp     img_raw
 dir_hw:
         jmp     dword ptr ds:[edx]
 
@@ -655,14 +688,16 @@ cg_no:
 
 ;---------------------------------------------------------------------
 ; crit_hooked - CF clear if the guest's INT 24h vector points anywhere
-;               other than the IRET vdm_stubs planted.
+;               other than the IRET vdm_stubs planted for it.
 ;---------------------------------------------------------------------
 crit_hooked:
         push    eax
         push    edx
-        movzx   edx,word ptr ds:[xms_cbseg]
+        movzx   edx,word ptr ds:[dvs_seg]
+        or      edx,edx
+        jz      ch_no                           ; no stubs: nobody put one there
         shl     edx,16
-        mov     dx,VDMCB_IRET
+        mov     dx,(24h - 20h) * DVS_LEN
         mov     eax,dword ptr ds:[24h * 4]
         cmp     eax,edx
         je      ch_no                           ; still our stub

@@ -237,8 +237,8 @@ pic_to_rm:
 pic_to_pm:
         mov     bh,IRQ_BASE
         mov     bl,IRQ_BASE2
-        mov     ch,0FCh                 ; timer and keyboard only
-        mov     cl,0FFh
+        mov     ch,byte ptr cs:[GVO_PICMASK]    ; timer and keyboard, and the
+        mov     cl,byte ptr cs:[GVO_PICMASK+1]  ; mouse when ms_init found one
 pic_prog:
         mov     al,11h                  ; ICW1
         out     PIC1_CMD,al
@@ -1091,6 +1091,10 @@ v_memtop   dd  0
 v_dap      db  16 dup(0)                ; AH=42h/43h disk address packet
         ORG     GV_OFF + 40h
 v_edp      db  32 dup(0)                ; AH=48h drive parameters
+
+        ORG     GV_OFF + 70h
+v_picmask  db  0FCh, 0FFh              ; GV_PICMASK: the timer and the
+                                        ; keyboard until a mouse is found
 
 ;=====================================================================
 ; Pad the stub to exactly RMSTUB_SIZE so IOPM.BIN lands at IO_PM_BASE.

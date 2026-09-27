@@ -115,6 +115,7 @@ h_why       dw  0
 h_xmsbase   dd  0
 h_xmslen    dd  0
 h_rsvd      dd  0, 0
+h_stubs     dd  0
 
         ORG     RMH_IRET
 h_frame     db  RMI_LEN dup(0)
@@ -149,7 +150,14 @@ ENDIF
         mov     sp,OFFSET rd_stktop
 
         cmp     dword ptr [h_sig],RMDOS_SIG
+        jne     rd_notsig
+        ; ...and the header in the layout this image was built for.
+        ; A PMDOS.SYS and an RMDOS.SYS from different builds agree on
+        ; the signature and on nothing after it, and a field read out
+        ; of the wrong place is a worse failure than going home.
+        cmp     word ptr [h_ver],RMDOS_VER
         je      rd_sigok
+rd_notsig:
 
         ; No signature means PM-DOS did not fill the header, which
         ; means this image is not the one it thinks it loaded.  There
@@ -199,6 +207,9 @@ ENDIF
 IFDEF RMDOS_MARK
         mov     al,'6'
         call    rd_vmark
+ENDIF
+IFDEF RMDOS_E9
+        call    e9_hook6                ; an invalid opcode says where
 ENDIF
 IFDEF DBG_LPT
         mov     al,RDBGM_SYS
@@ -557,9 +568,17 @@ ENDIF
 ;=====================================================================
 ; rd_vecs - take the vectors a DOS owns.
 ;
-; Every one is set unconditionally.  Whatever was there a moment ago
-; was PM-DOS's V86 monitor reflecting into a guest, and there is no
-; monitor now - so there is nothing to chain to and nothing to save.
+; UNDER WHATEVER A DOS PROGRAM PUT IN FRONT OF PM-DOS, NOT IN ITS
+; PLACE.  A DOS box's INT 21h goes through its own vector table, and
+; each of these vectors points at a stub of PM-DOS's (h_stubs) until
+; somebody hooks it.  A vector still pointing at its stub is simply
+; taken.  One pointing anywhere else has been hooked - a TSR, SETVER,
+; a DOSKEY loaded in the box - and the hook chains to the stub when it
+; is done, so the STUB becomes a JMP FAR to the handler here and the
+; chain runs into this DOS as it ran into that one.  This used to set
+; all sixteen outright, which unhooked every resident program for as
+; long as Windows ran.  PM-DOS puts the table and the stubs back on
+; the way home.
 ;=====================================================================
 rd_vecs:
         push    es
@@ -571,12 +590,46 @@ rv_loop:
         or      al,al
         jz      rv_done
         movzx   di,al
-        shl     di,2
+        shl     di,2                    ; ES:DI = the vector's slot
+        mov     cl,al                   ; CL = the vector
         lodsw
+        mov     dx,ax                   ; DX = the handler here
+        mov     bx,word ptr [h_stubs+2]
+        or      bx,bx
+        jz      rv_take                 ; no stubs: nothing to go under
+        mov     al,cl
+        sub     al,20h
+        mov     ah,RMS_STUBLEN
+        mul     ah
+        add     ax,word ptr [h_stubs]   ; BX:AX = this vector's stub
+
+        ; EVERY STUB JUMPS HERE, whether or not the vector points at it
+        ; now.  Until v0.60 only a hooked vector's stub was rewritten,
+        ; and an unhooked one's kept its HLT - harmless until Windows
+        ; started a DOS program.  To do that it puts back the interrupt
+        ; table it saved when WIN.COM started, and WIN.COM started on
+        ; PM-DOS, where INT 21h IS the stub: so the first DOS call of
+        ; every DOS session was a HLT with no monitor behind it, and the
+        ; CPU ran on from there into bytes that were never code.
+        push    es
+        push    di
+        mov     es,bx
+        mov     di,ax
         cli
-        mov     word ptr es:[di],ax
-        mov     ax,cs
-        mov     word ptr es:[di+2],ax
+        mov     byte ptr es:[di],0EAh   ; JMP FAR cs:handler
+        mov     word ptr es:[di+1],dx
+        mov     word ptr es:[di+3],cs
+        sti
+        pop     di
+        pop     es
+        cmp     word ptr es:[di],ax
+        jne     rv_loop                 ; hooked: the hook reaches the stub
+        cmp     word ptr es:[di+2],bx
+        jne     rv_loop
+rv_take:
+        cli
+        mov     word ptr es:[di],dx
+        mov     word ptr es:[di+2],cs
         sti
         jmp     short rv_loop
 rv_done:
@@ -786,6 +839,9 @@ ENDIF
 IFDEF DBG_LPT
         call    rdbg_rec                ; BP is the frame - see RMDBG.INC
 ENDIF
+IFDEF RMDOS_E9
+        call    e9_i21in                ; ...and a line on port E9h, RME9.INC
+ENDIF
 
         mov     bl,byte ptr [bp+F_AX+1]
         movzx   bx,bl
@@ -799,6 +855,9 @@ i21_bad:
 
 i21_out:
         cli
+IFDEF RMDOS_E9
+        call    e9_i21out               ; the answer, on the same line
+ENDIF
 IFDEF DBG_LPT
         call    rdbg_ret                ; what the call ANSWERED
 ENDIF
@@ -853,11 +912,11 @@ i21_tab:
         dw  fn0C,      fn0D,      fn0E,      i21_unsup   ; 0C-0F
         dw  i21_unsup, i21_unsup, i21_unsup, i21_unsup   ; 10-13
         dw  i21_unsup, i21_unsup, i21_unsup, i21_unsup   ; 14-17
-        dw  i21_unsup, fn19,      fn1A,      i21_unsup   ; 18-1B
-        dw  i21_unsup, i21_unsup, i21_unsup, i21_unsup   ; 1C-1F
+        dw  i21_unsup, fn19,      fn1A,      fn1B        ; 18-1B
+        dw  fn1C,      i21_unsup, i21_unsup, i21_unsup   ; 1C-1F
         dw  i21_unsup, i21_unsup, i21_unsup, i21_unsup   ; 20-23
         dw  i21_unsup, fn25,      fn26,      i21_unsup   ; 24-27
-        dw  i21_unsup, i21_unsup, fn2A,      fn2B        ; 28-2B
+        dw  i21_unsup, fn29,      fn2A,      fn2B        ; 28-2B
         dw  fn2C,      fn2D,      fn2E,      fn2F        ; 2C-2F
         dw  fn30,      fn31,      i21_unsup, fn33        ; 30-33
         dw  fn34,      fn35,      fn36,      fn37        ; 34-37
@@ -871,9 +930,9 @@ i21_tab:
         dw  fn54,      fn55,      fn56,      fn57        ; 54-57
         dw  fn58,      fn59,      fn5A,      fn5B        ; 58-5B
         dw  fn5C,      fn5D,      i21_unsup, i21_unsup   ; 5C-5F
-        dw  i21_unsup, i21_unsup, fn51,      fn63        ; 60-63
-        dw  i21_unsup, fn65,      i21_unsup, fn67        ; 64-67
-        dw  fn68,      i21_unsup, fn68,      i21_unsup   ; 68-6B
+        dw  fn60,      i21_unsup, fn51,      fn63        ; 60-63
+        dw  i21_unsup, fn65,      fn66,      fn67        ; 64-67
+        dw  fn68,      fn69,      fn68,      i21_unsup   ; 68-6B
         dw  fn6C                                         ; 6C
 
 IF ($ - i21_tab) NE I21_MAX * 2
@@ -908,9 +967,13 @@ rs_done:
         INCLUDE RMDISK.INC              ; sectors, BPBs, INT 25h/26h
         INCLUDE RMFILE.INC              ; FAT, directories, handles
         INCLUDE RMFILE2.INC             ; ...and the handles and calls
+        INCLUDE RMNAME.INC              ; MD, RD, rename, TRUENAME, 29h
         INCLUDE RMMEM.INC               ; the arena, EXEC and terminate
         INCLUDE RMINFO.INC              ; everything that only answers
         INCLUDE RMXMS.INC               ; extended memory, A20 and INT 15h
+IFDEF RMDOS_E9
+        INCLUDE RME9.INC                ; the port E9h trace - build "rme9"
+ENDIF
 IFDEF DBG_LPT
         INCLUDE RMDBG.INC               ; and, when the build asks for it, a
                                         ; trace that survives a hang - which

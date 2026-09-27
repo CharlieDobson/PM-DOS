@@ -25,6 +25,8 @@ _EXT    SEGMENT USE16 PUBLIC 'CODE'
         ORG     0
 
 start:
+        call    find_home               ; ARGS.COM and ourselves, by where
+                                        ; WE are - see find_home
 ;--- what were we given? ---------------------------------------------
 ; DS is the PSP on entry to a .COM and stays it, so the tail is just
 ; [80h].  A digit means "you are a level of a recursion test"; a W
@@ -207,16 +209,59 @@ miss_bad:
         call    say_fail
 did_miss:
 
-;--- and so does a function we do not provide ------------------------
+;--- 4Bh AL=3: an overlay, into a block of our own -------------------
+; This used to be "a function we do not provide" and expected a refusal.
+; It has been provided since v0.42, so the refusal it got was really
+; "no such file" - ARGS.COM was looked for in the current directory -
+; and its parameter block, left at zero, named SEGMENT 0: once the file
+; could be found it went over the vector table.  Now it asks properly:
+; a block of ours, and ARGS.COM loaded into it byte for byte.
+        mov     bx,OVL_PARAS
+        mov     ah,48h
+        int     21h
+        jc      ovl_bad
+        mov     [ovl_blk],ax            ; where to load it
+        mov     [ovl_blk+2],ax          ; and the relocation, for an .EXE
         mov     dx,OFFSET child
-        mov     bx,OFFSET pb_env
-        mov     ax,4B03h                        ; overlay load
+        mov     bx,OFFSET ovl_blk
+        mov     ax,4B03h
         int     21h
         push    cs
         pop     ds
         push    cs
         pop     es
-        jnc     ovl_bad
+        jc      ovl_free
+        mov     dx,OFFSET child         ; the file's first bytes, to compare
+        mov     ax,3D00h
+        int     21h
+        jc      ovl_free
+        mov     bx,ax
+        mov     dx,OFFSET ovl_want
+        mov     cx,16
+        mov     ah,3Fh
+        int     21h
+        pushf
+        mov     ah,3Eh
+        int     21h
+        popf
+        jc      ovl_free
+        push    ds
+        mov     ds,[ovl_blk]
+        xor     si,si
+        mov     di,OFFSET ovl_want
+        mov     cx,16
+        repe    cmpsb
+        pop     ds
+        jne     ovl_free
+        mov     byte ptr [ovl_good],1
+ovl_free:
+        mov     es,[ovl_blk]
+        mov     ah,49h
+        int     21h
+        push    cs
+        pop     es
+        cmp     byte ptr [ovl_good],0
+        je      ovl_bad
         mov     dx,OFFSET msg_ovlok
         call    say_ok
         jmp     short did_ovl
@@ -224,6 +269,30 @@ ovl_bad:
         mov     dx,OFFSET msg_ovlbad
         call    say_fail
 did_ovl:
+
+;--- ...and one aimed at the bottom of memory is refused --------------
+; Segment 0 is the vector table, and above it the kernel's own real-mode
+; scaffolding; DOS would have loaded it there and died.
+        mov     word ptr [ovl_blk],0
+        mov     word ptr [ovl_blk+2],0
+        mov     dx,OFFSET child
+        mov     bx,OFFSET ovl_blk
+        mov     ax,4B03h
+        int     21h
+        push    cs
+        pop     ds
+        push    cs
+        pop     es
+        jnc     ovz_bad
+        cmp     ax,5                    ; access denied
+        jne     ovz_bad
+        mov     dx,OFFSET msg_ovzok
+        call    say_ok
+        jmp     short did_ovz
+ovz_bad:
+        mov     dx,OFFSET msg_ovzbad
+        call    say_fail
+did_ovz:
 
 ;=====================================================================
 ; And now depth.  One level of nesting proves the stack is pushed and
@@ -498,6 +567,67 @@ crlf:
         int     21h
         ret
 
+;---------------------------------------------------------------------
+; find_home - [child] and [self]: ARGS.COM and EXECTST.COM with the
+;             directory this program was loaded from in front of them,
+;             out of the end of its environment.
+;
+; EXEC does not search PATH, which is DOS's rule - so the bare names
+; this used to hand it only worked from the directory the tests live
+; in, and the regression runs them from the root with PATH pointing
+; at TESTS.  "EXEC refused to run the child", every time.
+;---------------------------------------------------------------------
+find_home:
+        push    ds
+        mov     ax,word ptr ds:[2Ch]
+        or      ax,ax
+        jz      fh_bare
+        mov     ds,ax
+        xor     si,si
+fh_var:
+        cmp     byte ptr [si],0
+        je      fh_end
+fh_skip:
+        lodsb
+        or      al,al
+        jnz     fh_skip
+        jmp     short fh_var
+fh_end:
+        add     si,3                    ; the NUL and the string count
+        mov     di,OFFSET child
+        xor     bx,bx                   ; where the directory ends
+fh_copy:
+        lodsb
+        mov     cs:[di],al
+        mov     cs:[di+80],al           ; [self] follows [child]
+        inc     di
+        or      al,al
+        jz      fh_copied
+        cmp     al,'\'
+        jne     fh_copy
+        mov     bx,di
+        sub     bx,OFFSET child
+        jmp     short fh_copy
+fh_copied:
+        pop     ds
+        jmp     short fh_names
+fh_bare:
+        pop     ds
+        xor     bx,bx
+fh_names:
+        mov     si,OFFSET argsname
+        lea     di,[child+bx]
+        call    fh_cat
+        mov     si,OFFSET selfname
+        lea     di,[self+bx]
+fh_cat:
+        lodsb
+        mov     [di],al
+        inc     di
+        or      al,al
+        jnz     fh_cat
+        ret
+
 ;--- data -------------------------------------------------------------
 STACK_BYTES     EQU     512
 
@@ -505,8 +635,14 @@ DEEP_CODE       EQU     7               ; what the bottom of the recursion
                                         ; exits with, chosen to be nothing
                                         ; any other path would return
 
-child       db  'ARGS.COM',0
-self        db  'EXECTST.COM',0
+OVL_PARAS       EQU     80              ; 1280 bytes: ARGS.COM is 750
+ovl_blk     dw  0, 0                    ; 4B03h: load segment, relocation
+ovl_want    db  16 dup(0)               ; the file's first bytes
+ovl_good    db  0
+child       db  80 dup(0)               ; ARGS.COM and EXECTST.COM, each
+self        db  80 dup(0)               ; with our own directory in front
+argsname    db  'ARGS.COM',0
+selfname    db  'EXECTST.COM',0
 nochild     db  'NOSUCH.COM',0
 tail        db  2,' 5',0Dh
 emptytail   db  0,0Dh
@@ -535,8 +671,10 @@ msg_againok db  'a second 4Dh reports nothing, as DOS does',13,10,'$'
 msg_againbad db 'a second 4Dh repeated the exit code',13,10,'$'
 msg_missok  db  'a child that does not exist fails with error 2',13,10,'$'
 msg_missbad db  'a missing child did not fail properly',13,10,'$'
-msg_ovlok   db  '4B03h (overlay) is refused rather than half done',13,10,'$'
-msg_ovlbad  db  '4B03h claimed to work',13,10,'$'
+msg_ovlok   db  '4B03h loaded ARGS.COM into a block of ours, byte for byte',13,10,'$'
+msg_ovlbad  db  '4B03h did not load ARGS.COM where it was asked to',13,10,'$'
+msg_ovzok   db  '4B03h at segment 0 is refused, not loaded over the vectors',13,10,'$'
+msg_ovzbad  db  '4B03h at segment 0 was not refused',13,10,'$'
 msg_execbad db  'EXEC refused to run the child',13,10,'$'
 msg_err     db  '  error $'
 msg_deep    db  '  and four levels deep, to test the nesting stack:',13,10,'$'

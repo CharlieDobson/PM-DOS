@@ -230,7 +230,13 @@ DBG_QUIETTICKS  EQU     91              ; five seconds, and deliberately
                                         ; waits until a slow disk read or a
                                         ; long BIOS call cannot be the
                                         ; explanation for the silence.
-v86_watch       dd      0               ; ticks since the monitor last ran
+; NOT v86_watch, WHICH IT WAS.  wasm folds case, so that label was the
+; symbol V86_WATCH, and every IFDEF V86_WATCH below it was true in a
+; build that had only asked for the trace: the loud watchdog went in
+; beside the quiet one and put this counter back to zero on every tick
+; that did not find the guest in V86 mode.  The trace's quiet trigger
+; could not fire, and only the deadline ever wrote one.
+v86_wtick       dd      0               ; ticks since the monitor last ran
 v86_wcs         dd      0
 v86_weip        dd      0
 msgV86Spin      db      'V86: the guest has run 2s without a single trap, at ',0
@@ -292,6 +298,20 @@ irq_master:
         mov     ebp,esp
         add     ebp,36
         call    v86_irqexit
+
+        ; And a NATIVE program's mouse event handler, if one is owed and
+        ; this interrupt stopped that program at ring 3 - the one moment
+        ; its state is all in this frame.  ms_r3chk looks at the CS
+        ; first and does nothing for anybody else.
+        lea     ebx,[esp+8]             ; the PUSHAD block
+        lea     ebp,[esp+44]            ; the IRETD frame
+        call    ms_r3chk
+
+        ; And a DPMI CLIENT, which is a DOS box that happens to be in
+        ; protected mode: an interrupt it has a handler for is its to
+        ; take here.  vpc_pmchk looks at the frame and does nothing for
+        ; anybody else.
+        call    vpc_pmchk
 
         pop     es
         pop     ds
@@ -358,10 +378,10 @@ IFDEF V86_WATCH
 ; makes a DOS call every few milliseconds - never trips it.
         test    dword ptr [esp+56],EFL_VM       ; ret, es, ds, pushad, irq#,
         jz      it_nospin                       ; eip, cs, flags
-        inc     dword ptr ds:[v86_watch]
-        cmp     dword ptr ds:[v86_watch],V86_WATCHTICKS
+        inc     dword ptr ds:[v86_wtick]
+        cmp     dword ptr ds:[v86_wtick],V86_WATCHTICKS
         jb      it_spun
-        mov     dword ptr ds:[v86_watch],0
+        mov     dword ptr ds:[v86_wtick],0
         mov     eax,[esp+48]
         mov     dword ptr ds:[v86_weip],eax
         mov     eax,[esp+52]
@@ -378,7 +398,7 @@ IFDEF V86_WATCH
         call    con_str
         jmp     short it_spun
 it_nospin:
-        mov     dword ptr ds:[v86_watch],0
+        mov     dword ptr ds:[v86_wtick],0
 it_spun:
 ENDIF
 
@@ -416,8 +436,8 @@ IFDEF DBG_LPT
         ; means the guest stopped asking; the deadline means it never
         ; will stop asking and the answer has to be taken anyway.
         inc     dword ptr ds:[dbg_age]
-        inc     dword ptr ds:[v86_watch]
-        cmp     dword ptr ds:[v86_watch],DBG_QUIETTICKS
+        inc     dword ptr ds:[v86_wtick]
+        cmp     dword ptr ds:[v86_wtick],DBG_QUIETTICKS
         jae     itl_fire
         cmp     dword ptr ds:[dbg_age],DBG_DEADLINE
         jb      itl_out
@@ -547,6 +567,15 @@ ENDIF
 ; "still full" for ever would otherwise turn the timer tick into the
 ; hang it was added to prevent, and an interrupt handler is the last
 ; place to write a loop that trusts hardware to stop.
+;
+; ONCE THE KERNEL DRIVES THE MOUSE ITSELF those bytes are packets, and
+; they are handed to the driver rather than thrown away.  The tick still
+; has to take them: a trip into the BIOS masks IRQ 12, and a byte that
+; arrives then is left in the buffer with its interrupt already spent.
+; While the driver is talking to the mouse (ms_probing) its replies are
+; left alone altogether - they are what it is waiting for.
+        cmp     byte ptr ds:[ms_probing],0
+        jne     it_noaux
         mov     ecx,32
 it_aux:
         in      al,PORT_KBCMD
@@ -554,6 +583,10 @@ it_aux:
         cmp     al,KBS_OBF OR KBS_AUXB
         jne     it_noaux
         in      al,PORT_KBDATA
+        cmp     byte ptr ds:[ms_hw],MS_PS2
+        jne     it_auxnext
+        call    ms_ps2byte              ; keeps every register
+it_auxnext:
         loop    it_aux
 it_noaux:
 
@@ -671,19 +704,19 @@ irq_vectors:
         dd      irq_timer               ; 0  - system timer
         dd      irq_keyboard            ; 1  - keyboard
         dd      irq_none                ; 2  - cascade
-        dd      irq_none                ; 3
-        dd      irq_none                ; 4
-        dd      irq_none                ; 5
-        dd      irq_none                ; 6  - floppy (BIOS handles it)
-        dd      irq_none                ; 7
-        dd      irq_none                ; 8  - RTC
-        dd      irq_none                ; 9
-        dd      irq_none                ; 10
-        dd      irq_none                ; 11
-        dd      irq_none                ; 12
-        dd      irq_none                ; 13
-        dd      irq_none                ; 14
-        dd      irq_none                ; 15
+        dd      irq_shared              ; 3  - everything from here on
+        dd      irq_shared              ; 4    is whoever asks for it:
+        dd      irq_shared              ; 5    a driver's handler, or a
+        dd      irq_shared              ; 6    DOS box's.  See IRQ.INC
+        dd      irq_shared              ; 7
+        dd      irq_shared              ; 8  - RTC
+        dd      irq_shared              ; 9
+        dd      irq_shared              ; 10
+        dd      irq_shared              ; 11
+        dd      irq_shared              ; 12 - the mouse's, once found
+        dd      irq_shared              ; 13
+        dd      irq_shared              ; 14
+        dd      irq_shared              ; 15
 
 msgExc      db  13,10,'*** CPU exception ',0
 msgAt       db  ' at ',0

@@ -571,6 +571,8 @@ kb_boxreset:
         mov     byte ptr [vio_kbdcmd],0
         mov     byte ptr [vio_kbdaux],0
         mov     byte ptr [vio_kbdthru],0
+        call    vpc_boxreset            ; nor an interrupt it never
+                                        ; finished
         ret
 
 ;=====================================================================

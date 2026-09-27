@@ -917,4 +917,12 @@ cdx_sysoff  dd  0                       ; 150Fh: where the system use area
 cdx_syslen  dd  0                       ; sits in the record, and its size
 cdx_path    db  CDX_PATHMAX + 8 dup (0) ; a path with a drive letter put
                                         ; on the front of it
-cdx_buf     db  ISO_BLKSIZE dup (0)     ; one descriptor, read for us alone
+; Below the arena and not in the file - see KBSS_BASE in PMDOS.INC.
+_DOS    ENDS
+_KBSS   SEGMENT
+cdx_buf     db  ISO_BLKSIZE dup (?)     ; one descriptor, read for us alone
+IF ($ - kbss_start) AND 3
+        .ERR    what follows cdx_buf in _KBSS is not on a dword
+ENDIF
+_KBSS   ENDS
+_DOS    SEGMENT

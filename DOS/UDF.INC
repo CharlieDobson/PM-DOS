@@ -187,12 +187,21 @@ udf_wok      db 0
 ; always loaded so that the record being read starts inside the first
 ; of the two blocks, and no record is longer than 38 + 255 + 255
 ; bytes, so the second block is always enough to finish it.
-udf_dbuf     db 2 * ISO_BLKSIZE dup (0)
-udf_fbuf     db ISO_BLKSIZE dup (0)     ; one File Entry, read for the
+;
+; Below the arena and not in the file - see KBSS_BASE in PMDOS.INC.
+_DOS    ENDS
+_KBSS   SEGMENT
+udf_dbuf     db 2 * ISO_BLKSIZE dup (?)
+udf_fbuf     db ISO_BLKSIZE dup (?)     ; one File Entry, read for the
                                         ; record being described - and a
                                         ; buffer of its own, because the
                                         ; directory window is what the
                                         ; record is sitting in
+IF ($ - kbss_start) AND 3
+        .ERR    what follows udf_fbuf in _KBSS is not on a dword
+ENDIF
+_KBSS   ENDS
+_DOS    SEGMENT
 
 ;=====================================================================
 ; udf_rdblk - ECX blocks from absolute block EAX into EDI.  CF on
@@ -207,7 +216,8 @@ udf_rdblk:
         push    edi
         mov     ebx,eax
         mov     al,byte ptr [udf_unit]
-        call    dword ptr ds:[IOS_CDREAD]
+        call    cd_read                 ; a disc or a mounted .ISO, and
+                                        ; this reader cannot tell
         pop     edi
         pop     ecx
         pop     ebx

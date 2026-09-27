@@ -98,6 +98,8 @@ pgi_tab:
         jmp     pgi_flush                       ; flush the prefetch queue -
 pgi_flush:                                      ; the manual asks for it and
                                                 ; the 386 means it
+        call    pg_pseinit                      ; and whether device memory
+                                                ; can be mapped 4MB at a time
         popad
         ret
 
@@ -359,3 +361,164 @@ pgu_tno:
         pop     eax
         clc
         ret
+
+;=====================================================================
+; pg_mapphys - IOS_MAPPHYS.  EBX = a physical address, ECX = how many
+;              bytes from there -> EAX = where they can be reached.
+;              CF if they cannot.  Everything else preserved.
+;
+; THE ANSWER IS THE QUESTION.  Device memory is mapped where it is, so
+; the identity holds all the way up and a driver's pointer to its
+; card's registers is still a number that could go on the bus.  What
+; is being asked for is not an address but PERMISSION: until this has
+; been called the directory entries past PG_MAXTAB are absent, and
+; touching a frame buffer at E0000000h is a page fault.
+;
+; FOUR MEGABYTES AT A TIME, because that is what a directory entry
+; covers and nothing finer is worth having: what is next to a card's
+; registers is more of that card, or another one.  A processor that
+; has 4MB pages is given one and the entry is the whole of the cost.
+; One that has not takes a table of a thousand ordinary pages from
+; the pool at PG_DEVTABS, and when the pool has run out the call
+; fails - which a driver can do something about, unlike a fault.
+;
+; Memory below PG_MAXLIN is mapped already, and asking for it again
+; succeeds without changing anything.  Nothing is ever unmapped: an
+; address that was reachable a moment ago going absent is a fault in
+; whoever else was using it, and there is no count of who is.
+;=====================================================================
+pg_mapphys:
+        push    ebx
+        push    ecx
+        push    esi
+        push    edi
+        or      ecx,ecx
+        jz      pgd_done
+        lea     edi,[ebx+ecx-1]                 ; the last byte of it
+        cmp     edi,ebx
+        jb      pgd_no                          ; ...which is past 4GB
+        mov     esi,ebx
+        shr     esi,22
+        shr     edi,22
+pgd_one:
+        test    dword ptr [PG_DIR + esi*4],1
+        jnz     pgd_next
+        call    pgd_add
+        jc      pgd_no
+pgd_next:
+        inc     esi
+        cmp     esi,edi
+        jbe     pgd_one
+        mov     eax,cr3                         ; the 386 has no INVLPG
+        mov     cr3,eax
+pgd_done:
+        mov     eax,ebx
+        pop     edi
+        pop     esi
+        pop     ecx
+        pop     ebx
+        clc
+        ret
+pgd_no:
+        xor     eax,eax
+        pop     edi
+        pop     esi
+        pop     ecx
+        pop     ebx
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; pgd_add - ESI = a directory entry that is absent: make it cover its
+;           own four megabytes.  CF if there is nothing to make it of.
+;---------------------------------------------------------------------
+pgd_add:
+        push    eax
+        cmp     byte ptr ds:[pg_pse],0
+        je      pgd_table
+        mov     eax,esi
+        shl     eax,22
+        or      eax,PG_PRESENT OR 80h           ; ...and the page size bit
+        mov     dword ptr [PG_DIR + esi*4],eax
+        pop     eax
+        clc
+        ret
+pgd_table:
+        mov     eax,dword ptr ds:[pg_devused]
+        cmp     eax,PG_DEVTAB
+        jae     pgd_none
+        inc     dword ptr ds:[pg_devused]
+        shl     eax,12
+        add     eax,PG_DEVTABS
+        push    ecx
+        push    edi
+        pushfd
+        cld
+        mov     edi,eax
+        push    eax
+        mov     eax,esi
+        shl     eax,22
+        or      eax,PG_PRESENT
+        mov     ecx,1024
+pgd_fill:
+        stosd
+        add     eax,1000h
+        loop    pgd_fill
+        pop     eax                             ; the table, now that it
+        or      eax,PG_PRESENT                  ; says something
+        mov     dword ptr [PG_DIR + esi*4],eax
+        popfd
+        pop     edi
+        pop     ecx
+        pop     eax
+        clc
+        ret
+pgd_none:
+        pop     eax
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; pg_pseinit - has this processor 4MB pages?  Called from pg_init.
+;
+; CPUID says, and whether there is a CPUID is said by bit 21 of the
+; flags: a processor that lets it be changed has the instruction.  A
+; 386 and most 486s do not, and they use the pool.  CR4 does not exist
+; on those either, which is why nothing here touches it before the
+; answer is known.  The three instructions are spelled in bytes
+; because the file is assembled for a 386.
+;---------------------------------------------------------------------
+pg_pseinit:
+        pushad
+        pushfd
+        pop     eax
+        mov     ecx,eax
+        xor     eax,00200000h
+        push    eax
+        popfd
+        pushfd
+        pop     eax
+        push    ecx
+        popfd
+        xor     eax,ecx
+        test    eax,00200000h
+        jz      pgp_out
+        xor     eax,eax
+        db      0Fh,0A2h                        ; CPUID
+        or      eax,eax
+        jz      pgp_out
+        mov     eax,1
+        db      0Fh,0A2h
+        test    edx,08h                         ; PSE
+        jz      pgp_out
+        db      0Fh,20h,0E0h                    ; MOV EAX,CR4
+        or      eax,10h
+        db      0Fh,22h,0E0h                    ; MOV CR4,EAX
+        mov     byte ptr ds:[pg_pse],1
+pgp_out:
+        popad
+        ret
+
+pg_pse          db      0                       ; 4MB pages are there to use
+                db      0,0,0
+pg_devused      dd      0                       ; tables taken from the pool

@@ -250,6 +250,7 @@ dlx_run:
         je      dlx_ems
         cmp     ebx,21h
         jne     dlx_lost
+dlx_i21:
         mov     al,byte ptr [vdm_ctx+V86C_EAX+1]
         cmp     al,4Ch                  ; a driver that TERMINATES has gone
         je      dlx_lost                ; wrong: there is no process here
@@ -266,7 +267,45 @@ dlx_ems:
 ;--- the HLT.  WHICH one?  Only the pad ends the excursion; a HLT
 ;--- anywhere else is a driver that has stopped in the middle of
 ;--- itself, and carrying on would run whatever follows it.
+;
+;--- EXCEPT A DOS VECTOR'S STUB.  2Fh, 25h, 26h and 29h go through the
+;--- vector table here as they do in a box (vdm_stubs), and so does an
+;--- INT 21h a driver hooked during its INIT and then chained on; those
+;--- are served as a box's are.  Ending, going resident and ^C are not
+;--- a driver's to do, and are what they always were: lost.
 dlx_halt:
+        call    dvs_which
+        jc      dlx_nodvs
+        cmp     eax,21h
+        je      dlx_s21
+        cmp     eax,2Fh
+        je      dlx_s2F
+        cmp     eax,29h
+        je      dlx_s29
+        xor     edx,edx
+        cmp     eax,25h
+        je      dlx_sabs
+        inc     edx
+        cmp     eax,26h
+        je      dlx_sabs
+        jmp     dlx_lost
+dlx_s21:
+        call    vdm_ciret
+        jmp     dlx_i21
+dlx_s2F:
+        call    vdm_ciret
+        call    dvs_do2F
+        mov     byte ptr ds:[win_parkreq],0     ; nothing parks from an INIT
+        jmp     dlx_run
+dlx_s29:
+        call    vdm_ciret
+        call    dvs_do29
+        jmp     dlx_run
+dlx_sabs:
+        call    vdm_cretf
+        call    dvs_doabs
+        jmp     dlx_run
+dlx_nodvs:
         mov     eax,dword ptr [vdm_ctx+V86C_CS]
         mov     ebx,[dl_seg]
         cmp     eax,ebx
@@ -961,8 +1000,8 @@ dl_units    db  DLU_MAX * DLU_LEN dup (0)
 ;
 ; A STAGING BUFFER.  A driver is 16-bit real-mode code and takes the
 ; address of its transfer as a segment and an offset, and the buffers
-; the filesystem hands down are sec_buf and clus_buf inside PMDOS.SYS
-; at 110000h, which no segment:offset can name.  So every transfer is
+; the filesystem hands down are sec_buf and clus_buf, the kernel's own
+; and above 1MB, which no segment:offset can name.  So every transfer is
 ; copied through a block of conventional memory, in chunks, exactly as
 ; the floppy path has staged through XFER_BUF since v0.9.  It costs a
 ; memcpy per sector and it is the only arrangement that works.

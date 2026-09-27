@@ -73,7 +73,10 @@ rd_sysinit:
         mov     ax,[h_mcbhead]
         mov     word ptr [rd_lol + LL_MCBSEG],ax
         mov     dword ptr [rd_lol + LL_DPB],0FFFFFFFFh
-        mov     dword ptr [rd_lol + LL_SFT],0FFFFFFFFh
+        mov     word ptr [rd_lol + LL_SFT],OFFSET rd_sfthdr
+        mov     word ptr [rd_lol + LL_SFT + 2],cs       ; a chain, and a
+        ; walker follows a chain without checking its head - see
+        ; rd_sfthdr in RMFILE.INC for what FFFF:FFFF here cost
         mov     dword ptr [rd_lol + LL_CLOCK],0FFFFFFFFh
         mov     dword ptr [rd_lol + LL_BUFFERS],0FFFFFFFFh
         mov     dword ptr [rd_lol + LL_CDS],0FFFFFFFFh
@@ -466,6 +469,8 @@ fn63:
 ; 65h - extended country information, and the two subfunctions of it
 ;       that do something rather than hand back a table.
 ;=====================================================================
+F65_INFOLEN     EQU     7 + 34          ; 6501h: header, then 38h's block
+
 fn65:
         mov     al,byte ptr [bp+F_AX]
         cmp     al,20h
@@ -474,7 +479,59 @@ fn65:
         je      f65_upmem
         cmp     al,22h
         je      f65_upasciz
+        cmp     al,23h
+        je      f65_yesno
+        cmp     al,01h
+        je      f65_info
         jmp     i21_unsup
+
+;--- 6501h: the extended country block - ID 1, its length, country,
+;--- code page, then the same 34 bytes 38h hands back.  ES:DI -> the
+;--- caller's buffer, CX its size; as much as fits, and CX says how
+;--- much that was.
+f65_info:
+        mov     cx,[bp+F_CX]
+        cmp     cx,5
+        jb      f65_short
+        cmp     cx,F65_INFOLEN
+        jbe     f65_fits
+        mov     cx,F65_INFOLEN
+f65_fits:
+        mov     [bp+F_CX],cx
+        push    es
+        mov     es,[bp+F_ES]
+        mov     di,[bp+F_DI]
+        mov     si,OFFSET f65_hdr
+        cld
+        push    cx
+        mov     cx,7
+        rep     movsb                   ; ID, length, country, code page
+        pop     cx
+        sub     cx,7
+        jbe     f65_infodone
+        mov     si,OFFSET rd_country
+        rep     movsb
+f65_infodone:
+        pop     es
+        jmp     i21_ok
+f65_short:
+        mov     ax,ERR_FUNC
+        jmp     i21_fail
+
+;--- 6523h: is the character in DL a yes or a no?  AX = 1 yes, 0 no,
+;--- 2 neither.  Y and N, in either case: this is the one country.
+f65_yesno:
+        mov     al,byte ptr [bp+F_DX]
+        call    rd_upcase
+        mov     word ptr [bp+F_AX],1
+        cmp     al,'Y'
+        je      f65_ynout
+        mov     word ptr [bp+F_AX],0
+        cmp     al,'N'
+        je      f65_ynout
+        mov     word ptr [bp+F_AX],2
+f65_ynout:
+        jmp     i21_ok
 f65_upchar:
         mov     al,byte ptr [bp+F_DX]
         call    rd_upcase
@@ -510,6 +567,37 @@ f65_azloop:
 f65_azdone:
         pop     es
         jmp     i21_ok
+
+f65_hdr     db  1                       ; info ID
+            dw  F65_INFOLEN - 3         ; the length after this word
+            dw  1                       ; country: the United States
+            dw  437                     ; code page
+
+;=====================================================================
+; 66h - the global code page.  437 is the only one there is: 6601h
+; says so for both the active and the system page, and 6602h accepts
+; 437 and refuses anything else, as DOS does for a page it has no
+; tables for.
+;=====================================================================
+fn66:
+        mov     al,byte ptr [bp+F_AX]
+        cmp     al,1
+        je      f66_get
+        cmp     al,2
+        jne     f66_fn
+        cmp     word ptr [bp+F_BX],437
+        jne     f66_bad
+        jmp     i21_ok
+f66_get:
+        mov     word ptr [bp+F_BX],437
+        mov     word ptr [bp+F_DX],437
+        jmp     i21_ok
+f66_bad:
+        mov     ax,ERR_NOFILE           ; what DOS says when it cannot load it
+        jmp     i21_fail
+f66_fn:
+        mov     ax,ERR_FUNC
+        jmp     i21_fail
 
 ;=====================================================================
 ; INT 24h - the default critical error handler.

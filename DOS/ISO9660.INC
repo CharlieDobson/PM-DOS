@@ -211,12 +211,20 @@ iso_volid    db 33 dup (0)              ; volume name, NUL terminated
 iso_fatent   db 32 dup (0)              ; an ISO record wearing FAT's shape -
                                         ; see iso_entry, which is the whole
                                         ; reason a CD can be a drive letter
-iso_buf      db ISO_BLKSIZE dup (0)     ; the one cached block
-iso_cebuf    db ISO_BLKSIZE dup (0)     ; a Rock Ridge continuation area.
+; Below the arena and not in the file - see KBSS_BASE in PMDOS.INC.
+_DOS    ENDS
+_KBSS   SEGMENT
+iso_buf      db ISO_BLKSIZE dup (?)     ; the one cached block
+iso_cebuf    db ISO_BLKSIZE dup (?)     ; a Rock Ridge continuation area.
                                         ; It cannot share the cache above:
                                         ; the block being continued FROM is
                                         ; the directory the walk is in the
                                         ; middle of
+IF ($ - kbss_start) AND 3
+        .ERR    what follows iso_cebuf in _KBSS is not on a dword
+ENDIF
+_KBSS   ENDS
+_DOS    SEGMENT
 iso_toc      db ISO_TOCMAX dup (0)      ; the table of contents
 cd_cdb       db 12 dup (0)              ; a command block, built here and
                                         ; run by IOS_CDPKT
@@ -244,7 +252,7 @@ irb_load:
         mov     al,byte ptr [iso_unit]
         mov     ecx,1
         mov     edi,OFFSET iso_buf
-        call    cache_cdread            ; the disk cache, which for an
+        call    cd_read                 ; the disk cache, which for an
                                         ; optical drive is read-only and
                                         ; reads two blocks where one was
                                         ; asked for - see CACHE.INC.  It
@@ -323,7 +331,43 @@ cd_cdbzero:
 ; Format 0, which is every track on the disc: each one says where it
 ; starts and whether it holds data or music.
 ;=====================================================================
+;---------------------------------------------------------------------
+; cd_read - ECX blocks of 2048 bytes, starting at block EBX, from unit
+;           AL, into EDI.  CF on failure; every register preserved.
+;
+; THE ONE DOOR EVERY READER OF A 2048-BYTE VOLUME GOES THROUGH,
+; whether the volume is a disc in a drive or a FILE on another disk.
+; It exists because the second kind arrived after the first: there
+; were five places calling IOS_CDREAD directly, each of them correct,
+; and every one of them would have had to learn what a mounted image
+; is.  One door means one place knows.
+;
+; A single block goes through the cache, which reads two and keeps the
+; one nobody asked for; more than one goes straight to the drive,
+; because the cache's block is two CD blocks and a bigger request
+; would be split up only to be put back together.
+;---------------------------------------------------------------------
+cd_read:
+        cmp     al,IMG_UNIT_BASE
+        jae     img_block               ; a file, not a drive
+        cmp     ecx,1
+        jne     cdr_many
+        jmp     cache_cdread
+cdr_many:
+        jmp     dword ptr ds:[IOS_CDREAD]
+
+;---------------------------------------------------------------------
+; cd_readtoc - the table of contents, into iso_toc.
+;---------------------------------------------------------------------
 cd_readtoc:
+        ; A MOUNTED IMAGE FILE HAS NO TABLE OF CONTENTS, and answering
+        ; so is not a refusal but the right answer: iso_findbase reads
+        ; "no contents" as "it starts at block zero", which is exactly
+        ; what a file holding one session's worth of filesystem does.
+        ; The multi-session walk is skipped without a special case for
+        ; it anywhere.
+        cmp     al,IMG_UNIT_BASE
+        jae     crt_nodisc
         pushad
         push    eax
         call    cd_cdbzero
@@ -343,6 +387,12 @@ cd_readtoc:
         ret
 crt_bad:
         popad
+        stc
+        ret
+; AFTER A RET AND NOT BEFORE THE PUSHAD, for CRITERR's reason: a label
+; put above "pushad" is not a barrier, and control that walks forwards
+; into it arrives with a stack frame it never made.
+crt_nodisc:
         stc
         ret
 
@@ -550,6 +600,14 @@ iso_mount:
                                         ; half of the reader
         call    iso_forget
 
+        ; A MOUNTED IMAGE FILE SKIPS THE WHOLE DRIVE HANDSHAKE.  There
+        ; is no tray to be open, nothing to become ready and no unit
+        ; to ask - the file either has a descriptor at block 16 or it
+        ; does not, and img_mount has already looked.  Both calls
+        ; below index ATAPI units and this drive number is not one.
+        cmp     byte ptr [iso_unit],IMG_UNIT_BASE
+        jae     imo_nodrive
+
         ; ASK WHETHER THERE IS A DISC BEFORE READING ONE, and wait for
         ; it if the answer is "nearly".  IOS_CDINFO is TEST UNIT READY
         ; with retries followed by READ CAPACITY, and the retries are
@@ -571,6 +629,7 @@ iso_mount:
         mov     ah,CDL_VOL
         call    dword ptr ds:[IOS_CDCHG]
 
+imo_nodrive:
         ; WHERE THE DESCRIPTORS ARE.  On a disc with one session that
         ; is block 16 and always was; on a disc with more it is sixteen
         ; blocks into the newest one - see iso_findbase.
@@ -1044,7 +1103,7 @@ isp_done:
         mov     al,byte ptr [iso_unit]
         mov     ecx,1
         mov     edi,OFFSET iso_cebuf
-        call    dword ptr ds:[IOS_CDREAD]
+        call    cd_read
         jc      isp_out
         mov     ebx,[isp_ceoff]
         cmp     ebx,ISO_BLKSIZE

@@ -92,6 +92,20 @@ v86_init:
         mov     ax,PORT_SYSCTL
         call    v86_claim
 
+        ; AND THE TWO INTERRUPT CONTROLLERS, which are four more.  A
+        ; driver in a box unmasks its card's line and ends every
+        ; interrupt with an EOI, and both used to reach the machine's
+        ; own 8259s - whose vectors are somewhere the box has never
+        ; heard of.  See VPIC.INC.
+        mov     ax,PIC1_CMD
+        call    v86_claim
+        mov     ax,PIC1_DATA
+        call    v86_claim
+        mov     ax,PIC2_CMD
+        call    v86_claim
+        mov     ax,PIC2_DATA
+        call    v86_claim
+
         mov     ax,SEL_TSS
         ltr     ax
         popad
@@ -191,7 +205,27 @@ vr_noif:
         mov     byte ptr ds:[v86_vif],0         ; an ISR starts closed, and
                                                 ; v86_intctx has already said
                                                 ; so in the context's flags
+        jmp     short vr_go
 vr_nokey:
+        ; ...and an interrupt from a card the box is driving, the same
+        ; way and through the same table (VPIC.INC, vpc_boxwant)...
+        cmp     byte ptr ds:[v86_vif],0
+        je      vr_go
+        call    vpc_boxwant
+        jc      vr_noirq
+        call    v86_intctx
+        mov     byte ptr ds:[v86_vif],0
+        jmp     short vr_go
+vr_noirq:
+        ; ...and a mouse event its handler is owed, the same way - to the
+        ; stub rather than through the IVT (MOUSE.INC, ms_boxwant).
+        cmp     byte ptr ds:[v86_vif],0
+        je      vr_go
+        call    ms_boxwant
+        jc      vr_go
+        call    v86_ctxto
+        mov     byte ptr ds:[v86_vif],0
+vr_go:
         push    dword ptr [esi+V86C_GS]
         push    dword ptr [esi+V86C_FS]
         push    dword ptr [esi+V86C_DS]
@@ -300,8 +334,21 @@ vl_noif:
 ; v86_run will hand back to the CPU on the next resume.
 ;=====================================================================
 v86_intctx:
+        push    eax
+        movzx   eax,al
+        shl     eax,2                           ; the vector's IVT slot
+        mov     eax,dword ptr ds:[eax]
+        call    v86_ctxto
+        pop     eax
+        ret
+
+;---------------------------------------------------------------------
+; v86_ctxto - the same to an ADDRESS: EAX = seg:off.  The mouse's event
+;             entry is in its stub, not in the IVT.
+;---------------------------------------------------------------------
+v86_ctxto:
         pushad
-        movzx   ebx,al
+        mov     ebx,eax
 
         mov     eax,[esi+V86C_FLAGS]            ; the flags it believes in
         call    vic_push
@@ -312,12 +359,10 @@ v86_intctx:
                                                 ; it decided whose this was
         and     dword ptr [esi+V86C_FLAGS],NOT EFL_IF   ; an ISR starts closed
 
-        shl     ebx,2                           ; the vector's IVT slot
-        mov     eax,dword ptr ds:[ebx]
-        movzx   edx,ax
+        movzx   edx,bx
         mov     [esi+V86C_EIP],edx
-        shr     eax,16
-        mov     [esi+V86C_CS],eax
+        shr     ebx,16
+        mov     [esi+V86C_CS],ebx
         popad
         ret
 
@@ -364,7 +409,7 @@ v86_fault:
         ; not exotic; it is a REP MOVSB with a CALL in the loop.
         cld
 IFDEF V86_WATCH
-        mov     dword ptr ds:[v86_watch],0      ; the guest is still asking
+        mov     dword ptr ds:[v86_wtick],0      ; the guest is still asking
 ENDIF
 IFDEF DBG_LPT
 ; EVERY FAULT INTO THE RING, and nothing else here: no I/O, no
@@ -728,6 +773,8 @@ ENDIF
         je      vio_i60
         cmp     dx,PORT_KBCMD
         je      vio_i64
+        call    vio_ispic
+        je      vpc_in
         in      al,dx
         ret
 
@@ -772,6 +819,11 @@ vio_i60:
         mov     byte ptr ds:[vio_kbdthru],0
         jmp     short vio_ireal
 vio_i60aux:
+        ; ...except when the kernel is driving the mouse itself: then a
+        ; mouse byte is the driver's (irq_mouse), and a guest that read
+        ; it would take one byte out of the middle of a packet.
+        cmp     byte ptr ds:[ms_hw],MS_PS2
+        je      vio_i60kbd
         push    edx
         mov     dx,PORT_KBCMD
         in      al,dx
@@ -779,6 +831,7 @@ vio_i60aux:
         and     al,KBS_OBF OR KBS_AUXB
         cmp     al,KBS_OBF OR KBS_AUXB
         je      vio_ireal               ; the mouse is talking, not us
+vio_i60kbd:
 
         cmp     byte ptr ds:[kb_lvalid],0
         je      vio_ireal
@@ -808,6 +861,14 @@ vio_i64:
         ; Saying the byte is ready is true: it is, and vio_i60 is
         ; holding it.
         in      al,dx
+        ; A mouse byte waiting for the kernel's driver is not a byte the
+        ; guest can have, so the status does not offer it one.
+        cmp     byte ptr ds:[ms_hw],MS_PS2
+        jne     vio_i64kbd
+        test    al,KBS_AUXB
+        jz      vio_i64kbd
+        and     al,NOT (KBS_OBF OR KBS_AUXB)
+vio_i64kbd:
         cmp     byte ptr ds:[vio_kbdrd],0
         jne     vio_i64full
         ; The same is true of a keystroke we delivered.  A handler is
@@ -836,7 +897,22 @@ ENDIF
         je      vio_o64
         cmp     dx,PORT_KBDATA
         je      vio_o60
+        call    vio_ispic
+        je      vpc_out
         out     dx,al
+        ret
+
+;--- vio_ispic - ZF set if DX is one of the four ports of the two
+;--- interrupt controllers.
+vio_ispic:
+        cmp     dx,PIC1_CMD
+        je      vip_yes
+        cmp     dx,PIC1_DATA
+        je      vip_yes
+        cmp     dx,PIC2_CMD
+        je      vip_yes
+        cmp     dx,PIC2_DATA
+vip_yes:
         ret
 
 IFDEF V86_KBIO
@@ -984,6 +1060,28 @@ vio_o64:
         cmp     al,KBC_PULSE
         jae     vio_c_drop
 
+        ; AND THE MOUSE, once the kernel drives it.  It is the same
+        ; argument one device along: a box that disables the aux port,
+        ; fakes a mouse byte, or sends the mouse a reset has taken the
+        ; machine's mouse away from everything else on it.  A command
+        ; for the mouse (D4h) is swallowed WITH its data byte and never
+        ; answered, which is exactly what a machine without a PS/2 port
+        ; does - so a program probing for one concludes there is none,
+        ; and uses INT 33h.
+        cmp     byte ptr ds:[ms_hw],MS_PS2
+        jne     vio_c_notours
+        cmp     al,KBC_AUXOFF
+        je      vio_c_drop
+        cmp     al,KBC_AUXON
+        je      vio_c_drop
+        cmp     al,KBC_WRAUXOB
+        je      vio_c_drop
+        cmp     al,KBC_WRAUX
+        jne     vio_c_notours
+        mov     byte ptr ds:[vio_kbdaux],2
+        ret
+vio_c_notours:
+
         ; ...and the two whose DATA byte decides whose it is
         cmp     al,KBC_WRCMD
         je      vio_c_60
@@ -1058,14 +1156,22 @@ vio_o60c:
         ; it is not welcome to turn IRQ 1 off underneath the machine.
         or      al,KBCB_KBDINT
         and     al,NOT KBCB_KBDOFF
+        cmp     byte ptr ds:[ms_hw],MS_PS2      ; and the mouse's two, when
+        jne     vio_o60cout                     ; it is the kernel's
+        or      al,KBCB_AUXINT
+        and     al,NOT KBCB_AUXOFF
+vio_o60cout:
         out     dx,al
         ret
 vio_o60a:
         cmp     byte ptr ds:[vio_kbdaux],0
         je      vio_o60k
+        cmp     byte ptr ds:[vio_kbdaux],2
         mov     byte ptr ds:[vio_kbdaux],0
+        je      vio_o60swallow          ; a refused D4h's data byte
         out     dx,al                   ; the mouse's, and the mouse is not
-        ret                             ; a device this kernel has taken
+vio_o60swallow:                         ; a device this kernel has taken -
+        ret                             ; unless it is
 vio_o60k:
         mov     al,0FAh                 ; ACK, through the same path a scan
         call    kbq_put                 ; code takes
@@ -1213,7 +1319,15 @@ v86_reflect:
 ; an EBP four bytes low so that the FR_* offsets land on it.
 ;---------------------------------------------------------------------
 v86_deliver:
-        push    eax                     ; vector
+        shl     eax,2                   ; vector * 4 = its IVT slot
+        mov     eax,dword ptr ds:[eax]
+        ; fall through, with the handler's address
+
+;---------------------------------------------------------------------
+; v86_deliverto - the same frame work to an address: EAX = seg:off.
+;---------------------------------------------------------------------
+v86_deliverto:
+        push    eax                     ; where to
 
         mov     eax,[ebp+FR_FLAGS]
         and     eax,V86_UFLAGS
@@ -1231,8 +1345,6 @@ vr_ioff:
         mov     byte ptr ds:[v86_vif],0 ; an ISR starts with IF clear
 
         pop     eax
-        shl     eax,2                   ; vector * 4 = its IVT slot
-        mov     eax,dword ptr ds:[eax]
         movzx   ebx,ax                  ; offset
         mov     [ebp+FR_EIP],ebx
         shr     eax,16                  ; segment
@@ -1281,11 +1393,20 @@ vr_ioff:
 v86_kbwant:
         cmp     byte ptr ds:[v86_vif],0
         je      vkw_no
+        test    byte ptr ds:[vpc_imr],2 ; the box has masked the keyboard,
+        jnz     vkw_no                  ; and means it
         cmp     dword ptr ds:[IVT_INT09],0
         je      vkw_no
         call    kbq_take                ; and it latches the code, because
-        ret                             ; that is what raising the interrupt
-vkw_no:                                 ; does on the real part
+        jc      vkw_ret                 ; that is what raising the interrupt
+                                        ; does on the real part
+        or      byte ptr ds:[vpc_isr],2 ; in service until the handler's
+                                        ; EOI, which is how that EOI is
+                                        ; known not to be some other
+                                        ; line's (OR leaves CF clear)
+vkw_ret:
+        ret
+vkw_no:
         stc
         ret
 
@@ -1299,7 +1420,25 @@ v86_ckkbd:
         jc      vck_no
         mov     eax,9
         call    v86_deliver
+        jmp     short vck_out           ; and the guest is in an ISR now
 vck_no:
+        ; An interrupt from a card the box is driving, through its own
+        ; table like the keystroke.
+        cmp     byte ptr ds:[v86_vif],0
+        je      vck_out
+        call    vpc_boxwant
+        jc      vck_mouse
+        call    v86_deliver
+        jmp     short vck_out
+vck_mouse:
+        ; A mouse event its handler is owed goes the same way, to the
+        ; stub's event entry rather than through the IVT.
+        cmp     byte ptr ds:[v86_vif],0
+        je      vck_out
+        call    ms_boxwant
+        jc      vck_out
+        call    v86_deliverto
+vck_out:
         popad
         ret
 
@@ -1597,7 +1736,21 @@ pm3_real:
         mov     edx,[ebp+P3_ERR]
         mov     ecx,[ebp+P3_EIP]
         movzx   ebx,word ptr [ebp+P3_CS]
-        call    dword ptr ds:[pm3_hook]         ; does not return
+        ; IT COMES BACK FOR ONE THING: an INT n.  A client's software
+        ; interrupt through a gate it may not use is a #GP like any
+        ; other, and the DOS side - which has the client's vectors -
+        ; either points the frame at the client's own handler or runs
+        ; the interrupt in real mode and puts the answers in the
+        ; PUSHAD block.  That second one is a DOS box running, and
+        ; every fault it takes comes through exc_common and leaves ITS
+        ; four segment registers where the client's are being kept.
+        push    dword ptr ds:[exc_sds]          ; ...and exc_ses
+        push    dword ptr ds:[exc_sfs]          ; ...and exc_sgs
+        call    dword ptr ds:[pm3_hook]
+        pop     dword ptr ds:[exc_sfs]
+        pop     dword ptr ds:[exc_sds]
+        xor     ecx,ecx                         ; the DOS side has already
+        jmp     near ptr pm3_done               ; stepped over it
 pm3_dead:
         mov     esi,OFFSET msgPm3
         call    con_str
@@ -1622,7 +1775,7 @@ pm3_inb_i:
         call    vio_in
         mov     byte ptr [ebp+PA_EAX],al
         add     ecx,2
-        jmp     short pm3_done
+        jmp     pm3_done
 pm3_inw_i:
         movzx   edx,byte ptr [esi+1]
         call    pm3_inw
@@ -1684,6 +1837,12 @@ pm3_outw_d:
 ; kernel's either way, which is why the reads are SS-relative.
 pm3_done:
         add     [ebp+P3_EIP],ecx
+        ; An STI is one of the six, and it is the moment a client that
+        ; has been holding an interrupt off can be given it.
+        push    ebp
+        add     ebp,P3_EIP              ; the IRETD frame
+        call    vpc_pmchk
+        pop     ebp
         mov     es,word ptr ss:[exc_ses]
         mov     fs,word ptr ss:[exc_sfs]
         mov     gs,word ptr ss:[exc_sgs]
