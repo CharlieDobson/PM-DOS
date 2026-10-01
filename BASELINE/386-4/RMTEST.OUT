@@ -1,0 +1,14 @@
+
+RMTEST - a DOS program with no PM-DOS underneath it
+  30h says DOS 06.16 ok
+  19h/0Eh current drive C: 10 letters ok
+  5D06h swappable data area at 0409:0000 ok
+  52h first MCB is 0520 ok
+  and the arena walks: 000B blocks, ending in Z ok
+  48h/49h a kilobyte, written and freed FAILED
+  36h free space (spc/free) 0002/7BDD ok
+  3Dh/3Fh PMIO.SYS starts E9B1 ok
+  3Dh/44h CON is a device 80D3 ok
+
+checks failed: 01
+RMTEST done - handing the machine back.

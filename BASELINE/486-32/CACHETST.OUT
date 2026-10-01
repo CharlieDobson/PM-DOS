@@ -1,0 +1,18 @@
+
+CACHETST - the disk cache through INT 2Fh AX=4A10h
+-------------------------------------------------
+4A10/0000 installed?    OK
+          version       04.00
+4A10/0004 element size  1000 bytes x 0080
+OK
+does it really cache?   OK
+21h/0Dh commits         OK
+a write is owed         0004
+OK
+4A10/0001 commits       OK
+C: read+write cached    r+w+ OK
+A: read cached only     r+w- OK
+write caching off on C: r+w- OK
+...and on again         r+w+ OK
+
+CACHETST done, 0 failed

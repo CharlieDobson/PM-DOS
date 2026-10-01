@@ -1,0 +1,6 @@
+VFYTEST - does VERIFY verify?
+
+ 1 a block driver has a drive letter      skipped
+  No drive is served by a loaded block driver, so VERIFY cannot
+  be tested: uncomment DEVICE=\TESTS\TESTBLK.SYS in CONFIG.SYS.
+VFYTEST: skipped

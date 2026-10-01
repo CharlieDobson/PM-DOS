@@ -1,0 +1,12 @@
+
+DEVTEST - devices, InDOS, extended error, file stamps
+  34h InDOS flag at 0409:0001, now 00 ok
+  3Dh open NUL ok
+  40h write 32 bytes to NUL ok
+  3Fh read NUL is end of file ok
+  3Dh open NUL.TXT is the same device ok
+  41h delete NUL is refused ok
+  59h says AX=05 class/action/locus 03/04/02 ok
+  57h stamp survives close and re-open 20C1/8400 ok
+  3Dh open PRN and write to it ok
+DEVTEST done.

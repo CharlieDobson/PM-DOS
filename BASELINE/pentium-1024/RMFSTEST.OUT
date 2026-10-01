@@ -1,0 +1,45 @@
+RMFSTEST - writing, naming, and the questions
+  39h MD C:\RMFSDIR ok
+  C:\RMFSDIR\~WOA100F.TMP
+    40h wrote 16, 8 and 4592 bytes ok
+    it is 4620 bytes long ok
+    and every byte after the first four is what was written ok
+    41h deleted it ok
+  C:\RMFSTEST.TMP
+    40h wrote 16, 8 and 4592 bytes ok
+    it is 4620 bytes long ok
+    and every byte after the first four is what was written ok
+    41h deleted it ok
+  39h MD of a name already there says 5 ok
+  3Bh CD C:\RMFSDIR ok
+  47h says RMFSDIR ok
+  60h TRUENAME x.txt ok
+  60h TRUENAME ..\A\.\B ok
+  60h TRUENAME con ok
+  56h REN F1.TXT F2.TXT ok
+    F2.TXT is there ok
+    F1.TXT is not ok
+  39h MD SUB ok
+  56h REN F2.TXT SUB\F3.TXT, a move ok
+    SUB\F3.TXT is there ok
+    F2.TXT is not ok
+  3Ah RD of a directory with a file in it says 5 ok
+  3Ah RD SUB once it is empty ok
+  3Ah RD of the current directory says 16 ok
+  3Bh CD .. ok
+  47h says the root ok
+  3Ah RD C:\RMFSDIR ok
+    and CD to it says 3 ok
+  29h c:file*.t?t fills 3 FILE???? T?T ok
+    and says it had wildcards ok
+  29h x.y fills 0 X Y ok
+    and says it had none ok
+  29h q:x says FFh - there is no Q: ok
+  1Ch C: - 512-byte sectors, media F8 ok
+  6523h y is yes, N is no, x is neither ok
+  6601h the code page is 437 ok
+  6900h C: - info level 0, FAT16 ok
+    and a file closed after it is still in the directory ok
+  3Ch of a file that is there empties it ok
+    and 69h still reads the volume afterwards ok
+checks failed: 00

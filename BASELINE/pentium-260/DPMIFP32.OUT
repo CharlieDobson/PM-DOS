@@ -1,0 +1,10 @@
+
+DPMIFP32 - the coprocessor's error in a 32-bit DPMI client
+
+ 1 into protected mode                    ok
+ 2 it can add                             ok
+ 3 SSE runs                              no SSE here
+ 4 an error reaches our handler          this coprocessor reports no errors
+
+Result: ..--
+DPMIFP32: all checks passed

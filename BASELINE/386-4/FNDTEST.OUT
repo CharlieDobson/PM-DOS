@@ -1,0 +1,15 @@
+FNDTEST - what the finds say when there is nothing
+
+ 1 4Eh, no such directory: 3             ok
+ 2 4Eh, nothing matches: 2               ok
+ 3 4Eh, no such drive: 0Fh               ok
+ 4 714Eh, no such directory: 3           ok
+ 5 714Eh, nothing matches: 2             ok
+ 6 714Eh, no such drive: 0Fh             ok
+ 7 32 searches open at once              ok
+ 8 ...and no 33rd: 4                     ok
+ 9 71A1h closes them all                 ok
+10 a closed handle is refused: 6         ok
+
+Result: ..........
+FNDTEST: all checks passed

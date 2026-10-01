@@ -1,0 +1,9 @@
+
+UDTEST - does a program get its own exceptions?
+
+  1 INT 06h reached my handler         ok
+  2 ...and was told where: got/want   0144/0144 ok
+  3 INT 00h divide by zero             ok
+  4 INT 04h from INTO                  ok
+
+UDTEST done.

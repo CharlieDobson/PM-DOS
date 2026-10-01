@@ -1,0 +1,9 @@
+HELLOX.EXE here - a relocated 16-bit .EXE.
+  my code segment relocated to 05A1
+  my data segment relocated to 0568
+  my stack segment relocated to 0568
+  a far call inside the image returned
+  INT 21h/62h says my PSP is 0558
+  INT 21h/48h with BX=FFFF says the biggest block is 0000
+  four far pointers followed: one two three four
+HELLOX.EXE exiting through AH=4Ch.

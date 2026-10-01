@@ -1,0 +1,18 @@
+
+APITEST - IOCTL, 5Ah/5Bh, TRUENAME, commit, verify, version
+  30h says DOS 6.22 ok
+  3306h agrees: 6.22 ok
+  4400h device info for stdout 0000 ok
+  4401h skipped: stdout is a file
+  4406h/07h input and output status ok
+  68h commit leaves the handle open ok
+  5Bh refuses to overwrite ok
+  5Bh creates when nothing is there ok
+  5Ah unique name: \######## ok
+  60h TRUENAME of ".\..\": C:\APITEST.COM ok
+  2Eh/54h verify flag ok
+  44h drive subfunctions - fixed ok
+  05h printer output ok
+  25h/35h hook INT 0 (the guarded vector) ok
+  null guard re-armed after the hook ok
+APITEST done.

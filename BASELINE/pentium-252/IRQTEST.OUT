@@ -1,0 +1,7 @@
+IRQTEST - two handlers on one interrupt line
+
+  This kernel was not built with the self-test
+  (BUILD irqtest): there are no handlers to count.
+
+Result: 
+IRQTEST: nothing on this kernel to test

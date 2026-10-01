@@ -1,0 +1,8 @@
+CFGTEST - what CONFIG.SYS actually did
+
+ 1 LASTDRIVE= reaches the list of lists  10 want 05  FAILED
+ 2 FILES= handles opened at once  003A want at least 1E  ok
+ 3 SET= reached a program two levels on    FAILED
+ 4 INSTALL= TSR is still answering         not installed
+
+results: X.X-   failures: 02

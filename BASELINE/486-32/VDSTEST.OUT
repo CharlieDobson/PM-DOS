@@ -1,0 +1,18 @@
+
+VDSTEST - is a driver told where its buffer is?
+
+ 1 40:7Bh says VDS is here               ok
+ 2 8102h: a version, and no buffer       ok
+ 3 8103h: conventional memory is itself  ok
+ 4 ...a 64K line is a line               ok
+ 5 8105h: one piece                      ok
+ 6 ...as page table entries              ok
+ 7 ...and a table too short              ok
+ 8 8107h: no buffer to borrow            ok
+ 9 no such function                      ok
+10 INT 4Bh that is not VDS comes back    ok
+11 8103h: upper memory is elsewhere      0032B010 ok
+12 ...and that is where its contents are ok
+
+Result: ............
+VDSTEST: all checks passed

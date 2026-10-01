@@ -1,0 +1,26 @@
+EXECTST.COM - a DOS program starting a DOS program
+    OK   shrank to our own size, so there is room for a child
+  running ARGS.COM 5 as a child:
+ARGS.COM - what a 16-bit program was handed:
+  tail  [ 5]
+  AX    0000
+  FCB1  00 [           ]
+  FCB2  00 [           ]
+  env   0626
+    COMSPEC=C:\COMMAND.COM
+    PATH=C:\TESTS;C:\
+  path  C:\TESTS\ARGS.COM
+    OK   control came back to us
+  4Dh says (type/code) 00/05
+    OK   the child exited 5, normally
+    OK   a second 4Dh reports nothing, as DOS does
+    OK   a child that does not exist fails with error 2
+    OK   4B03h loaded ARGS.COM into a block of ours, byte for byte
+    OK   4B03h at segment 0 is refused, not loaded over the vectors
+  and four levels deep, to test the nesting stack:
+    level 3
+    level 2
+    level 1
+    level 0
+    OK   the bottom level's code came all the way back up
+EXECTST done

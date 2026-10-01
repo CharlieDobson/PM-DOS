@@ -1,0 +1,46 @@
+
+DPMITEST - a 16-bit DPMI client
+  real mode - is there a host?
+    OK   1686h agrees we are not in protected mode
+    OK   a host answered, with an entry point
+         it reports DPMI 0.90
+         32-bit clients: yes
+  and into protected mode:
+    OK   DOS still answers - printed by PM code
+    OK   and CR0 says PE is set, so it really is
+    OK   1686h agrees, the other way round now
+  INT 31h - descriptors and memory:
+    OK   the host reports version 0.90
+    OK   selectors are 8 apart
+    OK   a descriptor we built addresses what we said
+    OK   4K of extended memory, written at both ends
+    OK   and given back
+  DOS, from protected mode:
+    OK   30h answers with a version
+    OK   a file written and read back, byte for byte
+  0300h - a real-mode interrupt on our behalf:
+and this line came out of real mode.
+    OK   INT 21h ran in real mode and came back
+  and a BIOS call, reflected:
+    OK   INT 10h AH=0Fh answered
+         it says the screen is 80
+  0303h - and a callback, the other way about:
+    OK   real mode called us, in protected mode
+    OK   and the callback address freed
+    OK   0305h: no state to save across a mode switch
+  0300h INT 21h 4Bh - children, the way an extender starts them:
+ARGS.COM - what a 16-bit program was handed:
+  tail  [ 6]
+  AX    0000
+  FCB1  00 [6          ]
+  FCB2  00 [           ]
+  env   076B
+    COMSPEC=C:\COMMAND.COM
+    PATH=C:\TESTS;C:\
+  path  C:\TESTS\ARGS.COM
+    OK   a 16-bit child ran, and 4Dh says it exited 6
+    OK   CMD.EXE ran through 0300h, over the bridge, and came back
+  a child that ^C is about to end
+    OK   a child ^C ended came back to us, and 4Dh says ^C
+    OK   INT 33h from protected mode reached the mouse driver
+DPMITEST done

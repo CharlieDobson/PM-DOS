@@ -1,0 +1,17 @@
+
+I13TEST - the disk BIOS a DOS box sees
+  BIOS drive: 80
+  AH=08h - the geometry:
+    65 x 16 x 63
+  AH=02h - the first sector, by CHS:
+    OK   read, and it ends AA55
+  AH=41h/42h - the extensions:
+    OK   present, and they do extended access
+    OK   LBA 0 and CHS 0/0/1 are the same sector
+  and a CHS triple that does not exist:
+    OK   sector 0 refused
+    OK   head 254 refused
+  and does it agree with the filesystem?
+    OK   a file DOS just closed is on the medium
+    OK   a raw write went through the cache, not round it
+I13TEST done

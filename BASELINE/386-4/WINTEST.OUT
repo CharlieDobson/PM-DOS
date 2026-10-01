@@ -1,0 +1,18 @@
+
+WINTEST - the swappable data area, and the Windows handshake
+  5D06h swappable data area at 0409:0000 ok
+  its length / always-swap 001A/001A ok
+  34h answers its second byte ok
+  and both flags read zero out here ok
+  +02 write-protect drive is FF ok
+  +16h current drive matches 19h: 02 ok
+  +10h current PSP matches 62h: 0774 ok
+  +0Ch DTA matches 2Fh: 000077C0 ok
+  2Fh/1600h enhanced mode running: 00 ok
+  2Fh/160Ah version says not running ok
+  2Fh/4680h 3.0 standard mode not running ok
+  2Fh/1680h release time slice: 80 ok
+  2Fh/1605h Windows/386 startup is vetoed: 0001 ok
+
+all checks passed.
+WINTEST done.

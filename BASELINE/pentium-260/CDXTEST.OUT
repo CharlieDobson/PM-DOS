@@ -1,0 +1,3 @@
+CDXTEST - the MSCDEX API (INT 2Fh AH=15h), from a DOS box
+
+1500h  install check:     BX came back zero: no CD-ROM driver is installed.

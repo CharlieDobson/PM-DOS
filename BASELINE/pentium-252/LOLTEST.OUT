@@ -1,0 +1,22 @@
+
+LOLTEST - the list of lists, and the flags a guest reads back
+  52h list of lists at 0400:0002 ok
+  first MCB at [BX-2] is 0520 ok
+  the arena walks: 000B blocks, ending in Z ok
+  block devices / LASTDRIVE 03/10 ok
+  system file table at 0400:0100, handles 0040 ok
+  device chain: NUL      CON      AUX      PRN      0004 headers, terminated ok
+  1Bh media byte at 0404:000A, which is F8 ok
+  1Bh geometry 02 x 0200 bytes, 7F44 ok
+  38h country separators .- ok
+  67h set handle count is not refused ok
+  5Ch lock and unlock a region ok
+  63h DBCS table at 0404:000C ok
+  6Ch create/open/truncate say 030102 ok
+  65h capitalises 41PM-DOS ok
+  65h knows yes from no ok
+  65h country/codepage 0001/01B5 ok
+  PUSHF/POPF says the CPU is 7000 = 386 or better ok
+  NT reads back after POPF sets it ok
+  and the box survived it ok
+LOLTEST done.

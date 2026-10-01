@@ -1,0 +1,16 @@
+
+MS32TEST - INT 33h from a native program
+  00h reset: EAX 0000FFFFh, two buttons ok
+  24h version 8.20, and the type ok
+  03h after a reset ok
+  movement ok
+  negative positions and counts are 32-bit negative ok
+  pointers are offsets, and the slot ends them ok
+  0Ch handler at ring 3 on the way out of INT 21h ok
+  and the program resumes with its registers ok
+  a second event waits, then comes from a clock tick ok
+  0Ch mask chooses the events ok
+  14h swaps the handler out ok
+  21h/F0h AL=8 wakes for the mouse when asked ok
+  1Fh/20h disable and enable ok
+MS32TEST done.

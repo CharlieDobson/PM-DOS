@@ -1,0 +1,11 @@
+
+Drive  Disk    Type            Start     Size  Filesystem
+-----  ------  ---------  ----------  -------  ----------
+A:  floppy  00 no table          0      0 MB  (will not mount)
+
+B:  floppy  00 no table          0      0 MB  (will not mount)
+
+C:  hd0  06 FAT16B           63     31 MB  FAT16
+
+
+     3 drive letters assigned

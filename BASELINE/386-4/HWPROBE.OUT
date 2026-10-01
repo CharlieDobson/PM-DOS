@@ -1,0 +1,19 @@
+HWPROBE - what the boot probes saw
+Mouse: PS/2
+  stage +  resets 01  equipment 67
+  command byte 65  after A7 65  after A8 45  A9 --
+  reset FA  self-test AA  id 00  enable FA
+
+Plug and Play: no cards
+
+IDE:     stage flags  status           signature
+  1F0 m  +     07     50 50 80 --      0000 err 00  disk
+  1F0 s  Z     00     50 00 00 --      ---- err --
+  170 m  Z     00     00 00 00 --      ---- err --
+  170 s  Z     00     00 00 00 --      ---- err --
+  1E8 m  F     00     FF -- -- --      ---- err --
+  1E8 s  F     00     FF -- -- --      ---- err --
+  168 m  F     00     FF -- -- --      ---- err --
+  168 s  F     00     FF -- -- --      ---- err --
+
+status: before, after select, after IDENTIFY, after IDENTIFY PACKET

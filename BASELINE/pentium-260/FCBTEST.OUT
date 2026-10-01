@@ -1,0 +1,27 @@
+
+FCBTEST - the file control block API
+  29h parse MYFILE.TXT ok
+  29h parse B:PROG.EXE ok
+  29h parse *.* is eleven question marks ok
+  29h a too-long name truncates and SI clears it ok
+  29h a drive that does not exist answers FF ok
+  16h create, and the record size it writes ok
+  15h four sequential writes ok
+  10h close, and the size in the FCB ok
+  0Fh open it again ok
+  14h four sequential reads ok
+  21h random read of record 2 ok
+  22h random write and read back ok
+  27h block read of three records ok
+  28h block write past the end ok
+  23h file size in records ok
+  24h set relative record ok
+  14h a short last record is 3, zero filled ok
+  14h past the end is 1 ok
+  11h/12h find first and find next ok
+  17h rename through a wildcard ok
+  13h delete everything matching ok
+  40 FCBs open at once, and the first still reads ok
+
+tests: ......................  failures: 00
+FCBTEST done.

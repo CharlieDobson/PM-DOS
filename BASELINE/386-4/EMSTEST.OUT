@@ -1,0 +1,5 @@
+EMSTEST - expanded memory, from inside a DOS box
+
+There is no expanded memory on this machine.
+Put EMS=AUTO in CONFIG.SYS and boot again - or EMS= and a
+segment, if this machine needs telling where the frame goes.

@@ -1,0 +1,19 @@
+
+R3TEST - a native program, and where it is standing.
+
+   1  running at ring 3, in SEL_PROG_CS ....... ok
+   2  DS, ES and SS are the slot selector ..... ok
+   3  the PSP is at offset 1000h .............. ok
+   4  and it starts with INT 20h ............... ok
+   5  the parent is out of reach and says 0 .... ok
+   6  memory top is the size of the slot ....... ok
+   7  the DTA starts at PSP+80h ................ ok
+   8  a DTA of ours survives as an offset ...... ok
+   9  a null pointer is refused by DOS ......... ok
+  10  so is one past the end of the slot ....... ok
+  11  48h allocates inside the slot ............ ok
+  12  that memory works, frees and comes back .. ok
+  13  25h and 35h round-trip our handler ....... ok
+  14  INT 24h reaches a handler at ring 3 ...... ok
+
+  passed: 14 of 14

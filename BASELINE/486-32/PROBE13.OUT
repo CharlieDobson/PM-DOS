@@ -1,0 +1,19 @@
+
+PROBE13 - how many BIOS disk calls survive the park?
+
+before the park.  DOS says BX = 0300
+   13/15/76/08/41/46
+   F000:CF60 F000:CBA0 F000:CCA0 F000:FEA5 F000:CF80 F000:CFA0 
+   flags 0290  pic B8/3E  tick ####/####  i15/90 .00
+   ata alt/dev/err 50/E0/00
+   via DOS: open failed AX=0002
+  drive 81
+   pass 0  w CFF  r C01  BAD
+   pass 1  w CFF  r C01  BAD
+   pass 2  w CFF  r C01  BAD
+   pass 3  w CFF  r C01  BAD
+   pass 4  w CFF  r C01  BAD
+   pass 5  w CFF  r C01  BAD
+   -> 00 of 06
+
+broadcasting 1605h, standard mode...

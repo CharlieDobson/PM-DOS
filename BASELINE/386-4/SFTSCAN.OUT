@@ -1,0 +1,26 @@
+
+SFTSCAN - the scan KRNL386 does, where it can be read
+looking for the console name, three with equal gaps
+
+names found: 000A
+  at 00000802
+  at 0000083D  gap 0000003B
+  at 00000878  gap 0000003B
+  at 00000F9A  gap 00000722
+  at 00004058  gap 000030BE
+  at 00005B40  gap 00001AE8
+  at 00017781  gap 00011C41
+  at 000177B1  gap 00000030
+  at 000177E1  gap 00000030
+  at 0001881F  gap 0000103E
+
+a scanner would call an entry 0000003B bytes, table at 00000802
+BUT SFT_LEN IS 30h - it would measure the wrong thing.
+
+real-mode vectors after the park:
+  INT 11h  -> F000:CB20
+  INT 12h  -> F000:CB40
+  INT 15h  -> F000:CBA0
+  INT 1Ah  -> F000:CBE0
+
+SFTSCAN done

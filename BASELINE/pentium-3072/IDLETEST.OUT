@@ -1,0 +1,5 @@
+
+IDLETEST - INT 28h, the hook a resident program waits on
+  /T: not waiting, so the count below will be small
+  INT 28h handler ran 0000 times
+IDLETEST done.

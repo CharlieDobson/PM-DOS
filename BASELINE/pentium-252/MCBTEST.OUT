@@ -1,0 +1,24 @@
+
+MCBTEST - the memory arena, walked the way MEM walks it
+
+  1 52h, and [ES:BX-2] says           0520 ok
+
+      seg sig  owner   paras  name
+      0520 M    0008    0002           
+      0523 M    0008    0007           
+      052B M    0008    0009           
+      0535 M    0008    0002           
+      0538 M    0008    0003           
+      053C M    0008    0011           
+      054E M    0008    0003           
+      0552 M    0559    0005           
+      0558 M    0559    9AA6   MCBTEST 
+      9FFF M    0008    2400   SC      
+      C400 Z    0000    2BFF           
+
+  2 the chain ends in a Z              ok
+  3 every signature was M or Z         ok
+  4 and they tile to the end: got/want F000/9FFF ok
+  5 every owner is free, DOS or a PSP  ok
+
+MCBTEST done.

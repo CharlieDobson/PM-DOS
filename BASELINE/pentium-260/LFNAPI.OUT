@@ -1,0 +1,9 @@
+71A0 volume: fs=FAT flags=4002
+7147 cwd:    Api Long Directory
+7160 long:   C:\Long File Name.txt
+7160 short:  C:\LONGFI~1.TXT
+716C create: ok action=3
+716C reopen: written through 716Ch
+43h  attrs:  0020 +R->0021
+7141 delete: gone
+LFNAPI done

@@ -1,0 +1,8 @@
+
+NICIRQ - a PCI card's interrupt, in a DOS box
+
+ 1 the PCI BIOS answers INT 1Ah           ok
+ 2 a network card, an 8029      no 8029 (skipped)
+
+Result: .-
+NICIRQ: all checks passed
