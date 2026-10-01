@@ -84,6 +84,11 @@ svc_table:
         dd      irq_unhook      ; IOS_IRQUNHOOK
         dd      pg_mapphys      ; IOS_MAPPHYS
         dd      bsv_init        ; IOS_BUSINIT
+        dd      fpu_svc         ; IOS_FPU
+        dd      fpy_svc         ; IOS_FLOPPY
+        dd      plog_get        ; IOS_PROBELOG
+        dd      atapi_svcunit   ; IOS_CDUNIT
+        dd      ata_model       ; IOS_ATAMODEL
 
 ;=====================================================================
 ; pm_entry - first instruction executed in 32-bit protected mode.
@@ -135,6 +140,11 @@ ENDIF
         call    irq_init                ; after pci_init: only a machine
                                         ; with a PCI bus has a register
                                         ; that says which lines are level
+        call    fpu_init                ; after irq_init: on a 386 the
+                                        ; coprocessor's errors are a line
+        call    pnp_init                ; before blk_init: a sound card's
+                                        ; IDE port is not there to be probed
+                                        ; until it has been given an address
         call    blk_init
 IFDEF PMDOS_DEBUG
         mov     esi,OFFSET msgATA
@@ -151,6 +161,7 @@ ENDIF
                                         ; a PS/2 one can take a second to
                                         ; answer a reset, and a serial one
                                         ; is found by waiting for it to talk
+        call    ms_announce             ; and what it is on, if it is there
 
 ;--- sanity check PMDOS.SYS before handing over ----------------------
         mov     eax,dword ptr ds:[GV_DOSSIZE]
@@ -172,6 +183,8 @@ ENDIF
 ;              unprivileged code can INT it once we grow a ring 3.
 ;=====================================================================
 set_vector:
+        cmp     al,16                   ; the one vector that is also an
+        je      fpu_setsoft             ; exception somebody can take
         push    edx
         mov     edx,edi
         mov     ah,0EEh
@@ -261,6 +274,7 @@ panic_hlt:
         INCLUDE EXCEPT.INC
         INCLUDE IRQ.INC          ; after EXCEPT.INC: whose interrupt it is
         INCLUDE VPIC.INC         ; ...and the box, which is last in line
+        INCLUDE FPU.INC          ; the coprocessor, whose errors are one
         INCLUDE PAGING.INC
         INCLUDE NULLTRAP.INC
         INCLUDE VM86.INC
@@ -269,6 +283,8 @@ IFDEF DBG_LPT
 ENDIF
         INCLUDE CONSOLE.INC
         INCLUDE KEYBD.INC
+        INCLUDE PROBELOG.INC     ; before the probes that write it
+        INCLUDE ISAPNP.INC       ; a Plug and Play card's IDE port
         INCLUDE MOUSE.INC
         INCLUDE RMCALL.INC
         INCLUDE PCI.INC
@@ -277,6 +293,7 @@ ENDIF
         INCLUDE ATA.INC
         INCLUDE ATAPI.INC        ; after ATA.INC: it is built on its transport
         INCLUDE BLOCK.INC
+        INCLUDE FLOPPY.INC       ; after BLOCK.INC: they are the same drives
         INCLUDE VDS.INC          ; where a buffer physically is
         INCLUDE BUS.INC          ; and the way in to all of it
 

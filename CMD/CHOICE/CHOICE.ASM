@@ -364,18 +364,14 @@ secs_now:
 ; Data
 ;=====================================================================
 crlf        db  13,10,'$'
-msg_usage   db  'Waits for the user to choose one of a set of keys.',13,10,13,10
-            db  '  CHOICE [/C[:]keys] [/N] [/S] [/T[:]c,nn] [text]',13,10,13,10
-            db  '  /C[:]keys    the keys to accept.  The default is YN.',13,10
-            db  '  /N           do not display the [Y,N]? list',13,10
-            db  '  /S           match the keys case sensitively',13,10
-            db  '  /T[:]c,nn    take key c automatically after nn seconds',13,10
-            db  '  text         the prompt, printed before the list',13,10,13,10
-            db  '  ERRORLEVEL IS THE ANSWER: it comes back as the position of',13,10
-            db  '  the key in the list, counting from 1, which is how a batch',13,10
-            db  '  file reads the reply.  Test the values highest first.',13,10,13,10
-            db  '  A redirected input that has run out counts as the /T key,',13,10
-            db  '  or the first key in the list if there is no /T.',13,10,'$'
+msg_usage   db  'Waits for the user to choose one of a set of choices.',13,10,13,10
+            db  'CHOICE [/C[:]choices] [/N] [/S] [/T[:]c,nn] [text]',13,10,13,10
+            db  '/C[:]choices Specifies allowable keys. Default is YN',13,10
+            db  '/N           Do not display choices and ? at end of prompt string.',13,10
+            db  '/S           Treat choice keys as case sensitive.',13,10
+            db  '/T[:]c,nn    Default choice to c after nn seconds',13,10
+            db  'text         Prompt string to display',13,10,13,10
+            db  'ERRORLEVEL is set to offset of key user presses in choices.',13,10,'$'
 keys        db  'YN',0
             db  KEYS_MAX - 3 dup(0)
 show_list   db  1

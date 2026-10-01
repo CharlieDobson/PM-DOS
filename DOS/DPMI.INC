@@ -2825,12 +2825,68 @@ dpmi_drop:
 ; client is finished.
 ;=====================================================================
 dpmi_fault:
+        cmp     eax,16
+        je      dfa_fperr
         cmp     eax,13
         jne     dfa_real
         cmp     dword ptr ds:[dpmi_active],0
         je      dfa_real
         call    dpmi_swint
         jc      dfa_real
+        ret
+
+        ; THE COPROCESSOR'S ERROR IS THE CLIENT'S INTERRUPT 13, as it
+        ; is a DOS box's (IO\FPU.INC): its handler on INT 75h if it has
+        ; put one there, and the real-mode one if it has not.  It comes
+        ; back to the instruction it was stopped at, which runs once
+        ; the error has been cleared - and if nobody clears it, is
+        ; stopped at again.  That is a client that has stopped, and the
+        ; monitor's rule for a box is this one's for a client
+        ; (vfe_fptime, in PMIO): nothing but this error at this address
+        ; for two seconds, and it is ended while somebody can be told.
+dfa_fperr:
+        cmp     dword ptr ds:[dpmi_active],0
+        je      dfa_real
+        push    eax
+        call    dword ptr ds:[IOS_TICKS]
+        cmp     ecx,dword ptr ds:[dpmi_fpeip]
+        jne     dfp_moved
+        cmp     ebx,dword ptr ds:[dpmi_fpcs]
+        jne     dfp_moved
+        sub     eax,dword ptr ds:[dpmi_fpwhen]
+        js      dfp_moved               ; midnight: the count began again
+        cmp     eax,DPMI_FPTICKS
+        pop     eax
+        jae     dfa_real
+        jmp     short dfp_send
+dfp_moved:
+        call    dword ptr ds:[IOS_TICKS]
+        mov     dword ptr ds:[dpmi_fpwhen],eax
+        mov     dword ptr ds:[dpmi_fpeip],ecx
+        mov     dword ptr ds:[dpmi_fpcs],ebx
+        pop     eax
+dfp_send:
+        pushad
+        lea     esi,[ebp+HK_IRET]
+        lea     ebx,[dpmi_pmvec + FPU_VEC * 8]
+        cmp     word ptr [ebx+4],0
+        je      dfp_rm
+        call    dpmi_enter
+        jc      dfp_rm
+        mov     eax,dword ptr ds:[dpmi_pvif]    ; an interrupt's handler
+        or      eax,eax                         ; starts with them off
+        jz      dfp_out
+        mov     byte ptr [eax],0
+        jmp     short dfp_out
+dfp_rm:
+        ; What an interrupt found in the registers it leaves there, so
+        ; the flags it came back with are not the client's business.
+        mov     edx,dword ptr [esi+8]
+        lea     ebp,[ebp+HK_REGS]
+        mov     al,FPU_VEC
+        call    dpmi_rmreflect
+dfp_out:
+        popad
         ret
 dfa_real:
         mov     dword ptr ds:[dpmi_fvec],eax
@@ -2924,7 +2980,10 @@ dpmi_fvec       dd  0                   ; what the fault reporter was told
 dpmi_ferr       dd  0
 dpmi_feip       dd  0
 dpmi_fcs        dd  0
-dpmi_pf         db  0                   ; the pointer flags of the call in hand
+dpmi_fpeip      dd  -1                  ; the last coprocessor error a client
+dpmi_fpcs       dd  -1                  ; was sent, and the tick the run of
+dpmi_fpwhen     dd  0                   ; them began on - see dfa_fperr
+dpmi_pf         db  0                  ; the pointer flags of the call in hand
                 db  0,0,0
 dpmi_odx        dd  0                   ; and what the client had in those
 dpmi_osi        dd  0                   ; registers before we converted them

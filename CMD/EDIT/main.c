@@ -42,16 +42,17 @@ static int         ui_ready;
 static char        pending[160];    /* a complaint from the command line */
 
 static const char usage[] =
-    "Edits text files.\r\n"
+    "Starts the PM-DOS Editor, which creates and changes ASCII files.\r\n"
     "\r\n"
-    "EDIT [/B] [/H] [/R] [/S] [/nnn] [/?] [file...]\r\n"
+    "EDIT [/B] [/H] [/R] [/S] [/nnn] [[drive:][path]filename]\r\n"
     "\r\n"
-    "  /B     Uses black and white: for a monochrome screen.\r\n"
-    "  /H     Shows as many lines as the display can: 43 or 50.\r\n"
-    "  /R     Opens the files read-only: they can be looked at and not changed.\r\n"
-    "  /S     Shows files by their short (8.3) names.\r\n"
-    "  /nnn   Opens binary files, showing nnn bytes to a line.\r\n"
-    "  file   The files to open - up to nine; wildcards are allowed.\r\n";
+    "  [drive:][path]filename  Specifies the ASCII file to edit.  Wildcards and\r\n"
+    "                          multiple files can be given.\r\n"
+    "  /B     Allows use of a monochrome monitor with a color graphics card.\r\n"
+    "  /H     Displays the maximum number of lines possible for your hardware.\r\n"
+    "  /R     Loads file(s) in read-only mode.\r\n"
+    "  /S     Forces the use of short filenames.\r\n"
+    "  /nnn   Loads binary file(s), wrapping lines to nnn characters wide.\r\n";
 
 /* ------------------------------------------------------------------ */
 /* odds and ends the rest of the program asks for                      */

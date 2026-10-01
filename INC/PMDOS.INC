@@ -170,7 +170,9 @@ PG_PRESENT      EQU     7                       ; present + writable + user
 ; of a block copied whole - fat_buf and fatsec_buf are inside vol_state
 ; and stay in the image for that reason.
 KBSS_BASE       EQU     PG_TOP
-KBSS_LEN        EQU     00010000h
+KBSS_LEN        EQU     00018000h       ; 96K: 31K of buffers, the 32K
+                                        ; cluster buffer, SHARE's 16K of
+                                        ; locks, and room
 
 ; THE TRACE'S BUFFERS FOLLOW, in a kernel built to trace, and are not
 ; in PMIO: they are 40K of nothing, and assembled into the image they
@@ -1772,6 +1774,14 @@ GVO_EDP         EQU     GV_OFF  + 40h
 GV_PICMASK      EQU     GV_BASE + 70h           ; db master mask, db slave
 GVO_PICMASK     EQU     GV_OFF  + 70h
 
+; A DISKETTE PARAMETER TABLE OF OUR OWN, for a BIOS that cannot be asked
+; for one (INT 13h AH=18h).  The BIOS formats a track with the gap and
+; the sector count it finds through vector 1Eh, so the table has to be
+; where a real-mode far pointer can name it - the same reason the two
+; packets above are here.  Sixteen bytes; the table is eleven.
+GV_FDPT         EQU     GV_BASE + 80h
+GVO_FDPT        EQU     GV_OFF  + 80h
+
 ;---------------------------------------------------------------------
 ; PMIO service table.  IOPM.BIN begins with a JMP to its entry point,
 ; then a table of near function pointers at IO_PM_BASE+10h.  PMDOS
@@ -1904,6 +1914,10 @@ ATI_CBL80       EQU     02h                     ; the drive saw 80 conductors
                                                 ; (IDENTIFY word 93)
 ATI_OURS        EQU     04h                     ; the mode in force is one
                                                 ; PM-DOS selected, not the BIOS
+ATI_NO32        EQU     08h                     ; 32-bit PIO was on offer, was
+                                                ; tried on the IDENTIFY block,
+                                                ; and did not bring back the
+                                                ; same block: see ata_prove32
 ATI_AGREES      EQU     10h                     ; the host's timing registers
                                                 ; say the same mode the drive
                                                 ; is in.  Only ever set on a
@@ -2079,6 +2093,143 @@ IOS_BUSINIT     EQU     IOSVC + 0D0h            ; AX = BUS_PARAS paragraphs
                                                 ; EDX -> its "and a 32-bit one".
                                                 ; Answers EAX -> the byte that
                                                 ; is a client's interrupt flag
+
+; THE COPROCESSOR, MMX AND SSE (IO\FPU.INC).  A program's floating-
+; point state is its own, and EXEC is the only thing here that puts one
+; program in front of another - so that is where it is kept and put
+; back, a level at a time.
+IOS_FPU         EQU     IOSVC + 0D4h            ; AL = an FPU_* function
+
+; THE DISKETTE DRIVE (IO\FLOPPY.INC).  Sectors go through IOS_RDBLK
+; like any others; this is what a sector count cannot say - which
+; drive it is, what is in it, and laying down a track.  21h/F1h AL=14h
+; hands a program the same functions.
+IOS_FLOPPY      EQU     IOSVC + 0D8h            ; AL = drive 0 or 1, AH = an
+                                                ; FDF_* function.  CF and AH =
+                                                ; the BIOS's status if it
+                                                ; could not be done
+
+FDF_TYPE        EQU     0       ; -> BL = the drive, FDT_*; CL = its sectors
+                                ;    a track, CH = cylinders, DH = heads
+FDF_SETGEO      EQU     1       ; CX = sectors a track, DX = heads, EBX =
+                                ;    sectors in all: what is in the drive now
+FDF_BEGIN       EQU     2       ; CL = sectors a track, CH = cylinders, BL =
+                                ;    the medium, FDM_*: a format starts
+FDF_TRACK       EQU     3       ; CH = cylinder, DH = head, CL = sectors a
+                                ;    track: format it, and read it back
+FDF_END         EQU     4       ; the format is over
+FDF_FORGET      EQU     5       ; ask the BIOS again what the drive holds
+
+FDT_NONE        EQU     0       ; what CMOS calls them
+FDT_360         EQU     1
+FDT_1200        EQU     2
+FDT_720         EQU     3
+FDT_1440        EQU     4
+FDT_2880        EQU     5
+
+FDM_360         EQU     1       ; 160K to 360K: forty tracks, double density
+FDM_1200        EQU     2
+FDM_720         EQU     3
+FDM_1440        EQU     4
+FDM_2880        EQU     5
+
+; WHAT THE BOOT-TIME PROBES SAW (IO\PROBELOG.INC), which is a report
+; and has to come from inside the kernel for the reason F1h AL=0Ah
+; gives.  A mouse or a CD-ROM that was not found has left nothing to
+; ask about, so how far each probe got is written down as it goes.
+; 21h/F1h AL=15h is the same call.
+IOS_PROBELOG    EQU     IOSVC + 0DCh            ; EDI -> PLOG_LEN bytes
+
+PLOG_LEN        EQU     128
+
+IOS_CDUNIT      EQU     IOSVC + 0E0h            ; AL = ATAPI unit -> EDX = its
+                                                ; ATA device index (the one
+                                                ; IOS_ATAINFO takes), EBX = its
+                                                ; channel's base port, ECX =
+                                                ; units there are.  CF if AL
+                                                ; names none, ECX still valid.
+                                                ; Asks the drive nothing, so
+                                                ; it answers with the tray
+                                                ; open - IOS_CDINFO does not
+IOS_ATAMODEL    EQU     IOSVC + 0E4h            ; AL = ATA device index, EDI ->
+                                                ; ATA_MODEL_LEN bytes: what
+                                                ; IDENTIFY called it, space
+                                                ; padded, blank for an empty
+                                                ; slot.  CF if AL is no index
+
+ATA_MODEL_LEN   EQU     40                      ; IDENTIFY words 27-46
+
+PLM_STAGE       EQU     0       ; db - the PS/2 probe: the last step it
+                                ;      began, a letter (MOUSE.INC)
+PLM_SEEN        EQU     1       ; db - which of the bytes below were read,
+                                ;      bit 0 for PLM_CMD0 upwards
+PLM_CMD0        EQU     2       ; db - the 8042's command byte as found
+PLM_CMDOFF      EQU     3       ; db - ...after A7h
+PLM_CMDON       EQU     4       ; db - ...after A8h
+PLM_TEST        EQU     5       ; db - what A9h answered
+PLM_ACK         EQU     6       ; db - what the reset was answered with
+PLM_BAT         EQU     7       ; db - the self-test byte
+PLM_ID          EQU     8       ; db - the device's ID
+PLM_ENABLE      EQU     9       ; db - what F4h was answered with
+PLM_EQUIP       EQU     10      ; db - the BIOS's equipment byte: bit 2 is
+                                ;      its own opinion about a mouse
+PLM_HW          EQU     11      ; db - what was found, MS_*
+PLM_TRIES       EQU     12      ; db - resets sent
+
+PLI_FIRST       EQU     16      ; eight devices from here, PLI_LEN each:
+PLI_LEN         EQU     12      ; two to a channel, master first
+PLI_BASE        EQU     0       ; dw - the channel's port
+PLI_STAGE       EQU     2       ; db - how far ata_identify got, a letter
+PLI_FLAGS       EQU     3       ; db - ATDF_* as it ended
+PLI_ST0         EQU     4       ; db - status before anything was written
+PLI_ST1         EQU     5       ; db - after the select
+PLI_ST2         EQU     6       ; db - after IDENTIFY DEVICE
+PLI_ST3         EQU     7       ; db - after IDENTIFY PACKET DEVICE
+PLI_SIG         EQU     8       ; dw - LBA1 above LBA2, after IDENTIFY
+PLI_ERR         EQU     10      ; db - the error register, after it
+PLI_SEEN        EQU     11      ; db - which were read, bit 0 for PLI_ST0
+
+PLP_FIRST       EQU     112     ; ISA Plug and Play (ISAPNP.INC):
+PLP_STAGE       EQU     0       ; db - how it ended, a letter
+PLP_CARDS       EQU     1       ; db - cards that answered
+PLP_RDP         EQU     2       ; dw - the port they were read at
+PLP_VENDOR      EQU     4       ; dd - the ID of the card with the IDE
+                                ;      controller, as its four bytes
+PLP_CSN         EQU     8       ; db - that card's number
+PLP_LD          EQU     9       ; db - and the controller's device number
+PLP_OLD         EQU     10      ; dw - where it was found switched on,
+                                ;      0 = it was off
+PLP_BASE        EQU     12      ; dw - its command block now
+PLP_CTL         EQU     14      ; dw - its control port now
+
+FPU_INFO        EQU     0       ; -> EAX = FPUF_* flags, EBX = FPU_AREA
+FPU_KEEP        EQU     1       ; EDI -> FPU_AREA bytes, on a 16-byte
+                                ;    boundary: the state as it stands goes
+                                ;    there, and what is left is a fresh one
+FPU_BACK        EQU     2       ; ESI -> what FPU_KEEP filled in
+FPU_FRESH       EQU     3       ; as the processor's reset leaves it, with
+                                ;    every exception masked
+
+FPU_AREA        EQU     512                     ; what FXSAVE writes; FNSAVE
+                                                ; uses the first 108 of it
+
+; FPU_INFO's answer, which is also 21h/F1h AL=13h's.
+FPUF_X87        EQU     01h                     ; there is a coprocessor
+FPUF_FXSR       EQU     02h                     ; states are kept with FXSAVE
+FPUF_SSE        EQU     04h                     ; SSE instructions may be used
+FPUF_SSE2       EQU     08h                     ; ...and the processor has SSE2
+FPUF_MMX        EQU     10h                     ; ...and MMX
+FPUF_NE         EQU     20h                     ; a coprocessor error arrives as
+                                                ; exception 16
+FPUF_IRQ13      EQU     40h                     ; ...or on interrupt line 13
+
+FPU_IRQ         EQU     13                      ; the line, and the vector a DOS
+FPU_VEC         EQU     75h                     ; program knows it by
+FPU_STUCK       EQU     36                      ; ticks: two seconds of the same
+                                                ; error at the same address and
+                                                ; nothing else is a program that
+                                                ; has stopped
+DPMI_FPTICKS    EQU     FPU_STUCK
 
 BUS_PARAS       EQU     1                       ; the INT 4Bh stub below 1MB
 
@@ -2386,6 +2537,10 @@ ERR_CURDIR      EQU     10h                     ; the current directory (3Ah)
 ERR_NOTSAME     EQU     11h                     ; not same device (56h)
 ERR_EXISTS      EQU     80                      ; file already exists
 ERR_DISKFULL    EQU     70h                     ; (PM-DOS: no free clusters)
+ERR_SHARING     EQU     20h                     ; sharing violation (SHARE)
+ERR_LOCKVIOL    EQU     21h                     ; lock violation
+ERR_SHAREBUF    EQU     24h                     ; sharing buffer exceeded:
+                                                ; SHARE= has no lock left
 ERR_GENERAL     EQU     1Fh                     ; general failure - what DOS
                                                 ; has always called a disk that
                                                 ; would not read or write, and
@@ -2433,7 +2588,31 @@ CERR_PAPER      EQU     09h             ; printer out of paper
 CERR_WRFAULT    EQU     0Ah             ; write fault
 CERR_RDFAULT    EQU     0Bh             ; read fault
 CERR_GENERAL    EQU     0Ch             ; general failure
-CERR_MAXCODE    EQU     0Ch
+CERR_SHARING    EQU     0Dh             ; sharing violation (DOS 3+)
+CERR_LOCK       EQU     0Eh             ; lock violation
+CERR_MAXCODE    EQU     0Eh
+
+;---------------------------------------------------------------------
+; The open mode byte, as 3Dh and 6Ch take it: bits 0-2 the access,
+; bits 4-6 the sharing mode, bit 7 no-inherit.  SHARE.INC judges the
+; sharing bits; the rest of the kernel reads only the access.
+;---------------------------------------------------------------------
+OM_ACCESS       EQU     07h
+OM_READ         EQU     00h
+OM_WRITE        EQU     01h
+OM_RDWR         EQU     02h
+OM_SHARE        EQU     70h
+OM_COMPAT       EQU     00h             ; compatibility mode
+OM_DENYRW       EQU     10h
+OM_DENYWR       EQU     20h
+OM_DENYRD       EQU     30h
+OM_DENYNONE     EQU     40h
+OM_NETFCB       EQU     70h             ; a network FCB, which is compat
+OM_NOINHERIT    EQU     80h
+
+SHARE_MAXLK     EQU     1024            ; locks the table holds (SHARE.INC)
+SHARE_DFLTLK    EQU     20              ; SHARE.EXE's /L: default, and the
+                                        ; kernel's with no SHARE= line
 
 ;---------------------------------------------------------------------
 ; 21h/7303h - extended free space.  The caller passes EDX -> a path
@@ -2770,6 +2949,163 @@ DSKF_PRESENT    EQU     01h                     ; the BIOS or the IDE driver
                                                 ; answered for this drive
 
 ;---------------------------------------------------------------------
+; THE DISK CACHE, as 21h/F1h AL=16h shows it to a program.  Bits 16-23
+; of EAX say which of these is wanted:
+;
+;   CCF_STATUS   EDI -> CST_LEN bytes, the cache as it stands
+;   CCF_COMMIT   everything owed goes to the disks now (the same
+;                thing as AH=0Dh, named here so the set is complete)
+;   CCF_RESET    ...and then every block is forgotten
+;   CCF_DRIVE    DL = a drive letter (0 = A:), DH = a CCD_* request
+;                -> AL = the CCM_* bits that letter actually gets.
+;                CF and ERR_BADDRIVE if the letter names nothing the
+;                cache keys on
+;
+; They are the INT 2Fh AX=4A10h calls a SMARTDRV-aware program makes
+; from a DOS box, in registers a native program can reach - the 2Fh
+; chain is the V86 monitor's and a ring 3 program has no INT 2Fh.
+; CACHE.EXE is the caller.  The CCD_* values are SMARTDRV's own
+; for its subfunction 3, so a program that knows one knows the other.
+;---------------------------------------------------------------------
+CCF_STATUS      EQU     0
+CCF_COMMIT      EQU     1
+CCF_RESET       EQU     2
+CCF_DRIVE       EQU     3
+
+CCD_GET         EQU     0                       ; ask, change nothing
+CCD_RDON        EQU     1                       ; read caching on
+CCD_RDOFF       EQU     2                       ; no caching at all
+CCD_WRON        EQU     3                       ; write caching on
+CCD_WROFF       EQU     4                       ; write caching off
+
+CCM_READ        EQU     01h                     ; the answer: reads are cached
+CCM_WRITE       EQU     02h                     ; ...and writes are held
+
+CST_FLAGS       EQU     00h                     ; dd - CSTF_*
+CST_ELSIZE      EQU     04h                     ; dd - bytes in one element
+CST_NBLK        EQU     08h                     ; dd - elements there is room for
+CST_USED        EQU     0Ch                     ; dd - ...of which hold sectors
+CST_DIRTY       EQU     10h                     ; dd - ...of which owe a write
+CST_SIZE        EQU     14h                     ; dd - payload bytes right now
+CST_MIN         EQU     18h                     ; dd - the floor it will not
+                                                ; shrink below
+CST_MAX         EQU     1Ch                     ; dd - the ceiling it may grow to
+CST_HITS        EQU     20h                     ; dq - reads answered from memory
+CST_MISSES      EQU     28h                     ; dq - reads that went to a disk
+CST_LEN         EQU     30h
+
+CSTF_ON         EQU     01h                     ; there is a cache
+CSTF_LAZY       EQU     02h                     ; writes to fixed disks are held
+CSTF_ERROR      EQU     04h                     ; a write-back failed and the
+                                                ; block is still owed
+
+;---------------------------------------------------------------------
+; ONE CD-ROM DRIVE, as 21h/F1h AL=17h describes it: DL = an ATAPI unit
+; (0 = the first found, which is the unit number MSCD001 and INT 2Fh
+; AH=15h count in), EDI -> CDU_LEN bytes, and ECX = how many units
+; there are, valid even when DL names none (CF, ERR_BADDRIVE).  The
+; DRIVE and not the disc: it answers with the tray open.  CDEX.EXE is
+; the caller; the letter comes from the volume table (AL=6), where a
+; DRVF_CDROM entry's DRV_BIOS is this unit number.
+;---------------------------------------------------------------------
+CDU_UNIT        EQU     00h                     ; db - the unit asked about
+CDU_DEV         EQU     01h                     ; db - its ATA device index:
+                                                ; channel * 2 + 1 for a slave
+CDU_FLAGS       EQU     02h                     ; db - ATDF_*, as AL=0Ah has them
+CDU_MODE        EQU     03h                     ; db - the transfer mode in force
+CDU_BASE        EQU     04h                     ; dw - the channel's base port
+CDU_MODEL       EQU     08h                     ; ATA_MODEL_LEN bytes, space
+                                                ; padded: what IDENTIFY said
+CDU_LEN         EQU     CDU_MODEL + ATA_MODEL_LEN
+
+;---------------------------------------------------------------------
+; DELETE PROTECTION - UNDELETE=ON|OFF in CONFIG.SYS, DOS\RECYCLE.INC in
+; the kernel, UNDELETE.EXE to get files back.
+;
+; A protected delete does not free the file's clusters.  It MOVES the
+; directory entry into X:\RECYCLED (hidden and system, made on the
+; first delete a volume sees) under a name of its own, and writes a
+; record into X:\RECYCLED\UNDELETE.DAT saying where the file was and
+; what it was called.  Getting it back is a rename; nothing is copied
+; either way.
+;
+; UNDELETE.DAT is an array of UDR_LEN-byte records.  Record 0 is the
+; header; the rest are files, used or free, in no particular order -
+; UDR_SEQ is the order they were deleted in.
+;
+; The kept files may hold UNDEL_PCT percent of the space that would be
+; free if there were none: the oldest go for good to make room, and a
+; file bigger than the whole allowance is not kept at all.  So are
+; *.TMP and *.$$$ (the shells' pipe files are %PIPEn.$$$), anything
+; deleted from inside \RECYCLED, and anything on a CD.
+;
+;   21h/F1h AL=18h   -> EAX = UNDF_* bits, ECX = UNDEL_PCT
+;   21h/F1h AL=19h   EDX -> a path: delete it and do NOT keep it.  For
+;                    the programs that delete what they have just
+;                    copied somewhere else (MOVE, XCOPY's half-written
+;                    file), where keeping a copy only wastes the space
+;---------------------------------------------------------------------
+UNDEL_PCT       EQU     10
+
+UNDF_ON         EQU     01h                     ; UNDELETE=ON
+
+UDH_MAGIC       EQU     00h                     ; 8 bytes, 'PMUNDEL',1Ah
+UDH_VERSION     EQU     08h                     ; dw - 1
+UDH_RECLEN      EQU     0Ah                     ; dw - UDR_LEN
+UDH_NEXTSEQ     EQU     0Ch                     ; dd - the next UDR_SEQ
+
+UDR_FLAGS       EQU     00h                     ; db - UDRF_*
+UDR_ATTR        EQU     01h                     ; db - the attributes it had
+UDR_SEQ         EQU     04h                     ; dd - smallest = deleted first
+UDR_SIZE        EQU     08h                     ; dd - bytes
+UDR_CLUS        EQU     0Ch                     ; dd - its first cluster
+UDR_DTIME       EQU     10h                     ; dw - when it was deleted,
+UDR_DDATE       EQU     12h                     ; dw   DOS time and date
+UDR_STORED      EQU     14h                     ; 11 bytes: its name in
+                                                ; \RECYCLED, as a directory
+                                                ; entry spells it
+UDR_SHORT       EQU     20h                     ; its 8.3 name, "NAME.EXT",0
+UDR_DIR         EQU     40h                     ; the directory it was in,
+                                                ; "\DIR\SUB",0 - no drive
+                                                ; letter: that is wherever
+                                                ; \RECYCLED is
+UDR_DIRMAX      EQU     260
+UDR_LONG        EQU     UDR_DIR + UDR_DIRMAX    ; its long name, or "" if it
+UDR_LONGMAX     EQU     268                     ; had none
+UDR_LEN         EQU     UDR_LONG + UDR_LONGMAX  ; 592
+
+UDRF_USED       EQU     01h                     ; a kept file, not a free slot
+
+;---------------------------------------------------------------------
+; EXTENDED MEMORY FOR A NATIVE PROGRAM - 21h/F1h AL=1Ah, the function
+; in bits 16-23 of EAX.  A native program's segment is its slot and
+; nothing else, 512K of it, which is less than one diskette: DISKCOPY
+; and DISKCOMP hold a whole disk to do it in one pass.  So a program
+; may own blocks of the arena it cannot address, and have the kernel
+; copy in and out of them - XMS's function 0Bh, which is what a DOS
+; box gets for the same reason, and the blocks are XMS handles: one
+; table, one pool, and MEM counts them.  4Ch frees what a program
+; left, as it does its 48h blocks.  Native programs only; a DOS box
+; has XMS itself and a DPMI client has 0501h.
+;
+;   XMF_ALLOC   ECX = bytes -> EDX = a handle.  CF: AX = ERR_NOMEM
+;               (ECX = the most there is in one piece) or ERR_NOHANDLES
+;   XMF_FREE    EDX = the handle
+;   XMF_GET     EDX = handle, EBX = offset in the block, ECX = bytes,
+;               EDI -> where in the program they go
+;   XMF_PUT     the same, ESI -> where in the program they come from
+;   XMF_AVAIL   -> ECX = the most there is in one piece
+;
+; A range that runs past either end - the block's or the slot's - is
+; refused with ERR_ACCESS and nothing moves.
+;---------------------------------------------------------------------
+XMF_ALLOC       EQU     0
+XMF_FREE        EQU     1
+XMF_GET         EQU     2
+XMF_PUT         EQU     3
+XMF_AVAIL       EQU     4
+
+;---------------------------------------------------------------------
 ; How many drive letters exist.  SHARED, and it has to be: COMMAND.COM
 ; had its own copy of this as a "cmp al,4" with the comment "A: B: C:
 ; D:", so raising the kernel's limit gave the shell four volumes it
@@ -2879,7 +3215,12 @@ SFT_DATE        EQU     50                      ; dw - opened or as 57h set it
 ;   the name it is still carrying; see fcb_bind.
 SFT_STAMP       EQU     52                      ; dd - unique claim id
 SFT_FCBLRU      EQU     56                      ; dd - 0 = not an FCB's
-SFT_LEN         EQU     60
+SFT_SHARE       EQU     60                      ; dd - the open mode byte as
+                                                ; the program gave it, sharing
+                                                ; bits and all; SFT_MODE keeps
+                                                ; only the access.  SHARE.INC
+                                                ; reads it and nothing else
+SFT_LEN         EQU     64
 
 SFTF_INUSE      EQU     0001h
 SFTF_DEVICE     EQU     0002h                   ; a character device, not a file

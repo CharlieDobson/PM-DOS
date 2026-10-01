@@ -335,10 +335,44 @@ mi_serial:
         out     dx,al
 mi_found:
 mi_none:
+        mov     al,byte ptr [ms_hw]
+        mov     byte ptr [plog+PLM_HW],al
         mov     dword ptr [msr_tok],0
         call    ms_softreset
         popad
         ret
+
+;---------------------------------------------------------------------
+; ms_announce - say what the mouse is on, if there is one.  All
+;               registers kept.
+;
+; A RELEASE BOOT SAYS ONE LINE AND THIS IS A SECOND, on a machine with
+; a mouse and on no other.  It is here because the driver is in the
+; kernel: there is no MOUSE.COM to load and so no banner to say that
+; one was found, and "is there a mouse" was a question the machine
+; could only be asked by running something.  A machine without one
+; boots exactly as it did.
+;---------------------------------------------------------------------
+ms_announce:
+        push    esi
+        cmp     byte ptr [ms_hw],MS_NONE
+        je      man_out
+        mov     esi,OFFSET msgMouse
+        call    con_str
+        mov     esi,OFFSET msgMsPs2
+        cmp     byte ptr [ms_hw],MS_PS2
+        je      man_say
+        mov     esi,OFFSET msgMsCom
+man_say:
+        call    con_str
+man_out:
+        pop     esi
+        ret
+
+msgMouse    db  'Mouse detected on ',0
+msgMsPs2    db  'PS/2',13,10,0
+msgMsCom    db  'COM'
+msgMsComN   db  '1',13,10,0             ; ms_serfind's
 
 ;---------------------------------------------------------------------
 ; ms_irqon - ECX = an IRQ the mouse uses.  What the 8259s are told is
@@ -372,61 +406,209 @@ ms_irqon:
 ; ms_ps2start - the controller's aux interface on, the mouse reset and
 ;               told to report.  CF if there is no PS/2 mouse.
 ;---------------------------------------------------------------------
+;
+; WHAT A REAL MACHINE TAUGHT IT.  The first version was written against
+; two emulators and found the mouse on both, and then did not find the
+; one on a 486.  Three things in it were the emulators' manners and not
+; the hardware's:
+;
+;   A9h, the interface test, was the gate, and its answer had to be
+;   zero.  Real controllers answer it with an error on a port that is
+;   working - often enough that Linux asks it only as a last resort -
+;   so a good mouse was turned away before it had been spoken to.  The
+;   gate is now whether the port's disable bit FOLLOWS A7h and A8h,
+;   which is what tells a controller with a second port from one
+;   without; see ms_kbcaux.
+;
+;   A mouse was given a second to test itself, and one reset.  A real
+;   one can take longer than that from cold, and the first reset after
+;   power-on is the one most often lost.  It gets two and a half
+;   seconds, and a second reset if the first comes to nothing.
+;
+;   And nothing was written down.  PROBELOG.INC is what each step read.
+;---------------------------------------------------------------------
+MS_NRESETS       EQU     2
+MS_BATTICKS     EQU     46              ; two and a half seconds
+MS_IDTICKS      EQU     4
+MS_ACKTICKS     EQU     6               ; a third of a second for an FAh
+
 ms_ps2start:
         pushad
         mov     byte ptr [ms_probing],1
+        mov     al,byte ptr ds:[BDA_EQUIP]
+        mov     byte ptr [plog+PLM_EQUIP],al
+        mov     byte ptr [plog+PLM_SEEN],0
+        mov     byte ptr [plog+PLM_TRIES],0
+        mov     byte ptr [plog+PLM_STAGE],'C'
         call    ms_auxdrain
         call    ms_kbcaux               ; the port exists, and is on
         jc      mps_no
+
+        mov     byte ptr [ms_resets],MS_NRESETS
+mps_reset:
+        inc     byte ptr [plog+PLM_TRIES]
+        mov     byte ptr [plog+PLM_STAGE],'R'
+        call    ms_auxdrain
         mov     al,0FFh                 ; reset
         call    ms_auxcmd
-        jc      mps_no
-        mov     ecx,20                  ; its self-test: a second at most
+        mov     ah,10h
+        mov     edi,PLM_ACK
+        call    ms_plogcmd
+        jc      mps_again
+
+        mov     byte ptr [plog+PLM_STAGE],'T'
+        mov     ecx,MS_BATTICKS         ; its self-test
         call    ms_auxread
-        jc      mps_no
+        mov     ah,20h
+        mov     edi,PLM_BAT
+        call    ms_plog
+        jc      mps_again
         cmp     al,0AAh
-        jne     mps_no
-        mov     ecx,3
-        call    ms_auxread              ; its ID, 00h for a plain mouse
-        jc      mps_no
+        jne     mps_again
+
+        ; its ID, 00h for a plain mouse.  Not waited on for long and not
+        ; insisted on: a mouse that passed its self-test is a mouse
+        mov     byte ptr [plog+PLM_STAGE],'I'
+        mov     ecx,MS_IDTICKS
+        call    ms_auxread
+        mov     ah,40h
+        mov     edi,PLM_ID
+        call    ms_plog
+
+        mov     byte ptr [plog+PLM_STAGE],'E'
         mov     byte ptr [ms_nbtn],2
         mov     al,0F4h                 ; and start sending
         call    ms_auxcmd
-        jc      mps_no
-        mov     byte ptr [ms_pktn],0
-        mov     byte ptr [ms_probing],0
-        popad
-        clc
-        ret
+        mov     ah,80h
+        mov     edi,PLM_ENABLE
+        call    ms_plogcmd
+        jnc     mps_yes
+mps_again:
+        dec     byte ptr [ms_resets]
+        jnz     mps_reset
 mps_no:
         mov     byte ptr [ms_probing],0
         popad
         stc
         ret
+mps_yes:
+        mov     byte ptr [plog+PLM_STAGE],'+'
+        mov     byte ptr [ms_pktn],0
+        mov     byte ptr [ms_probing],0
+        popad
+        clc
+        ret
+
+ms_resets       db      0
+ms_lastrx       db      0               ; the last byte ms_auxcmd read...
+ms_gotrx        db      0               ; ...if it read one
+
+;--- ms_plog - AL = a byte that was read unless CF is set, AH = its bit
+;--- in PLM_SEEN, EDI = its place in the log.  Everything kept, the
+;--- carry included.
+ms_plog:
+        jc      mpl_out
+        mov     byte ptr [plog+edi],al
+        or      byte ptr [plog+PLM_SEEN],ah
+        clc
+mpl_out:
+        ret
+
+;--- ms_plogcmd - the same after ms_auxcmd, which is worth writing down
+;--- when it FAILED: what the mouse said instead of FAh is the finding.
+ms_plogcmd:
+        pushfd
+        cmp     byte ptr [ms_gotrx],0
+        je      mpc_out
+        push    eax
+        mov     al,byte ptr [ms_lastrx]
+        mov     byte ptr [plog+edi],al
+        pop     eax
+        or      byte ptr [plog+PLM_SEEN],ah
+mpc_out:
+        popfd
+        ret
 
 ;---------------------------------------------------------------------
-; ms_kbcaux - the controller's side: A9h must say the interface works,
-;             then A8h enables it and the command byte gets IRQ 12 on
-;             and the mouse's clock running.  CF if the controller has
+; ms_kbcaux - the controller's side: is there a second port, and if
+;             there is, it is enabled, IRQ 12 is turned on and the
+;             mouse's clock is set running.  CF if the controller has
 ;             no aux port, or does not answer.  Interrupts off.
+;
+; THE BIT THAT FOLLOWS.  Bit 5 of the command byte is the aux port's
+; disable, A7h sets it and A8h clears it, and on a controller with no
+; second port the two commands mean nothing and the bit stays where it
+; was.  So the port is there if the bit is up after A7h and down after
+; A8h.  The mouse cannot speak while this is asked - A7h stops its
+; clock - so every answer read here is the controller's own, whichever
+; way the status register flags it.
+;
+; A9h IS ASKED ONLY IF THE BIT DID NOT FOLLOW, and FAh is taken for
+; "working" along with zero: some controllers answer every command
+; with an acknowledge.
 ;---------------------------------------------------------------------
 ms_kbcaux:
         pushfd
         cli
         push    eax
         push    ebx
-        mov     al,KBC_AUXTEST
+        push    edi
+        call    ms_kbcflush
+        mov     al,KBC_RDCMD            ; as the BIOS left it, for the log
         call    ms_kbccmd
-        call    ms_kbcreply
+        call    ms_kbcany
+        mov     ah,01h
+        mov     edi,PLM_CMD0
+        call    ms_plog
+
+        mov     byte ptr [plog+PLM_STAGE],'7'
+        mov     al,KBC_AUXOFF
+        call    ms_kbccmd
+        call    ms_kbcflush
+        mov     al,KBC_RDCMD
+        call    ms_kbccmd
+        call    ms_kbcany
+        mov     ah,02h
+        mov     edi,PLM_CMDOFF
+        call    ms_plog
         jc      mka_fail
-        or      al,al
-        jnz     mka_fail                ; 01h-04h: a line is stuck
+        mov     bh,al
+
+        mov     byte ptr [plog+PLM_STAGE],'8'
         mov     al,KBC_AUXON
         call    ms_kbccmd
         mov     al,KBC_RDCMD
         call    ms_kbccmd
-        call    ms_kbcreply
+        call    ms_kbcany
+        mov     ah,04h
+        mov     edi,PLM_CMDON
+        call    ms_plog
         jc      mka_fail
+        mov     bl,al
+
+        test    bh,KBCB_AUXOFF
+        jz      mka_ask
+        test    bl,KBCB_AUXOFF
+        jz      mka_have
+mka_ask:
+        mov     byte ptr [plog+PLM_STAGE],'9'
+        mov     al,KBC_AUXTEST
+        call    ms_kbccmd
+        call    ms_kbcany
+        mov     ah,08h
+        mov     edi,PLM_TEST
+        call    ms_plog
+        jc      mka_fail
+        or      al,al
+        jz      mka_on
+        cmp     al,0FAh
+        jne     mka_fail                ; 01h-04h: a line is stuck
+mka_on:
+        mov     al,KBC_AUXON            ; the test leaves it as it likes
+        call    ms_kbccmd
+mka_have:
+        mov     byte ptr [plog+PLM_STAGE],'W'
+        mov     al,bl
         or      al,KBCB_AUXINT
         and     al,NOT KBCB_AUXOFF
         mov     bl,al
@@ -435,16 +617,60 @@ ms_kbcaux:
         call    ms_kbcwait
         mov     al,bl
         out     PORT_KBDATA,al
+        call    ms_kbcwait
+        pop     edi
         pop     ebx
         pop     eax
         popfd
         clc
         ret
 mka_fail:
+        mov     al,KBC_AUXON            ; as it was found, as near as can
+        call    ms_kbccmd               ; be told: a BIOS that uses the
+        pop     edi                     ; port left it on
         pop     ebx
         pop     eax
         popfd
         stc
+        ret
+
+;--- ms_kbcflush - whatever is in the output buffer goes, whoever sent
+;--- it.  Interrupts off.
+ms_kbcflush:
+        push    eax
+        push    ecx
+        mov     ecx,16
+mkf_lp:
+        in      al,PORT_KBCMD
+        test    al,KBS_OBF
+        jz      mkf_out
+        in      al,PORT_KBDATA
+        call    io_delay
+        loop    mkf_lp
+mkf_out:
+        pop     ecx
+        pop     eax
+        ret
+
+;--- ms_kbcany - the next byte in the output buffer -> AL, CF if none
+;--- came.  For the conversation above, where the mouse is switched off
+;--- and the byte can only be the controller's.  Interrupts off.
+ms_kbcany:
+        push    ecx
+        mov     ecx,200000
+mky_lp:
+        in      al,PORT_KBCMD
+        test    al,KBS_OBF
+        jnz     mky_have
+        dec     ecx
+        jnz     mky_lp
+        pop     ecx
+        stc
+        ret
+mky_have:
+        in      al,PORT_KBDATA
+        pop     ecx
+        clc
         ret
 
 ;--- ms_kbcwait - until the controller will take a byte.  Gives up
@@ -544,6 +770,7 @@ mar_have:
 ms_auxcmd:
         push    ecx
         push    edx
+        mov     byte ptr [ms_gotrx],0
         mov     dl,al
         mov     dh,2
 mac_send:
@@ -552,10 +779,12 @@ mac_send:
         mov     ecx,8
 mac_read:
         push    ecx
-        mov     ecx,3
+        mov     ecx,MS_ACKTICKS
         call    ms_auxread
         pop     ecx
         jc      mac_fail
+        mov     byte ptr [ms_lastrx],al
+        mov     byte ptr [ms_gotrx],1
         cmp     al,0FAh
         je      mac_ok
         cmp     al,0FEh
@@ -696,6 +925,11 @@ sfd_next:
         ret
 sfd_have:
         mov     dword ptr [ms_port],edx
+        mov     eax,esi                 ; which of the BIOS's ports it
+        sub     eax,BDA_COM1            ; was, for ms_announce: COM1 is
+        shr     eax,1                   ; the first word there
+        add     al,'1'
+        mov     byte ptr [msgMsComN],al
         ; 3F8h and 3E8h are IRQ 4, 2F8h and 2E8h IRQ 3: the two differ
         ; in bit 8 and nowhere else that matters
         mov     byte ptr [ms_irq],4

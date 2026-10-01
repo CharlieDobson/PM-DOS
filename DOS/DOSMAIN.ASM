@@ -89,7 +89,9 @@ ENDIF
         call    arena_init
         call    fat_init                ; per-drive state, out of the arena
         call    find_init               ; and the 71h find handles, likewise
-        call    cache_init              ; ...and the disk cache, before the
+        call    fps_boot                ; and somewhere to keep a waiting
+                                        ; program's floating-point state
+        call    cache_init             ; ...and the disk cache, before the
                                         ; first sector is read: CONFIG.SYS
                                         ; is itself a file on the disk, and
                                         ; there is no reason for the one
@@ -225,6 +227,9 @@ IFDEF VDM_TEST
         call    vdm_selftest
 ENDIF
         call    config_run
+        call    cd_announce             ; the CD-ROM drives and their
+                                        ; letters, now that CONFIG.SYS
+                                        ; has had its say about both
 
 ;=====================================================================
 ; shell_restart - (re)load the command interpreter into the shell slot
@@ -242,6 +247,8 @@ shell_restart:
         mov     byte ptr ds:[DOS_ERRFLG],0
         mov     ax,0100h                ; the standard handles are slots
         call    std_set                 ; 0 and 1 - see std_set
+        call    fps_reset               ; and no program's floating-point
+                                        ; state is waiting for it back
 
         mov     dword ptr ds:[cur_psp],SHELL_PSP
         xor     eax,eax                 ; depth zero: the interpreter's own
@@ -481,6 +488,9 @@ kbss_stop:
                                         ; CRITERR's own disk_wrsure
         INCLUDE PATH.INC
         INCLUDE INT21.INC
+        INCLUDE RECYCLE.INC             ; after INT21.INC: every delete goes
+                                        ; through it, and it opens its index
+                                        ; with INT21.INC's own file routines
         INCLUDE IMAGE.INC               ; after PATH.INC because it resolves
                                         ; a path, and after INT21.INC
                                         ; because it reads the SFT to find
@@ -503,7 +513,12 @@ kbss_stop:
         INCLUDE JFT.INC                 ; after VDM.INC: a DOS program's
                                         ; own handle table, which the
                                         ; bridges there and in INT21.INC ask
-        INCLUDE MSCDEX.INC              ; after VDM.INC: it answers part
+        INCLUDE SHARE.INC               ; after JFT.INC and VDM.INC: SHARE,
+                                        ; which walks sft_tbl, raises
+                                        ; INT 24h and answers 2Fh/1000h
+        INCLUDE FPSTATE.INC             ; after INT21.INC and VDM.INC: its
+                                        ; slots are their nesting levels
+        INCLUDE MSCDEX.INC             ; after VDM.INC: it answers part
                                         ; of INT 2Fh out of a DOS box and
                                         ; works on vdm_ctx, and after
                                         ; INT21.INC because it reports

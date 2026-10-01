@@ -145,7 +145,7 @@ t2_done:
         xor     ebx,ebx                 ; EBX = device index
         mov     byte ptr [t3bad],0
 t3_lp:
-        cmp     ebx,4
+        cmp     ebx,8                   ; four channels, two on each
         jae     t3_done
         push    ebx
         mov     eax,0F10Ah
@@ -656,7 +656,7 @@ report_disks:
         push    ebx
         xor     ebx,ebx
 rd_lp:
-        cmp     ebx,4
+        cmp     ebx,8
         jae     rd_done
         push    ebx
         mov     eax,0F10Ah
@@ -709,6 +709,11 @@ rd_pio:
         mov     edx,OFFSET msg_pio
         call    puts
 rd_wide:
+        test    byte ptr [devflags+1],ATI_NO32
+        jz      rd_is32
+        mov     edx,OFFSET msg_no32
+        call    puts
+rd_is32:
         test    byte ptr [devflags],ATDF_PIO32
         jz      rd_eol
         mov     edx,OFFSET msg_32
@@ -978,6 +983,7 @@ msg_mb      db  'MB, ','$'
 msg_dma     db  'bus-master DMA, mode ','$'
 msg_pio     db  'PIO','$'
 msg_32      db  ' + 32-bit','$'
+msg_no32    db  ' (32-bit tried, host cannot)','$'
 msg_which   db  '    (it is X:)',13,10,'$'
 msg_sum     db  13,10,'Checksum of the first 32 sectors: ','$'
 msg_noide   db  13,10,'  No ATA disk was found.  This machine reaches its',13,10

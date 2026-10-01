@@ -1617,31 +1617,18 @@ msg_toolong db  'Path too long to name - $'
 msg_deep    db  'Directory tree too deep to search',13,10,'$'
 msg_pool    db  'Too many subdirectories on one path to search',13,10,'$'
 
-msg_usage   db  13,10,'ATTRIB - show or change the attributes of a file',13,10,13,10
-            db  '  ATTRIB [+R|-R] [+A|-A] [+S|-S] [+H|-H] '
-            db  '[[d:][path]filename] [/S]',13,10,13,10
-            db  '  +     set an attribute        R   read-only',13,10
-            db  '  -     clear one               A   archive',13,10
-            db  '  /S    and every directory     S   system',13,10
-            db  '        below this one          H   hidden',13,10,13,10
-            db  '  ATTRIB                  every file here, and what it is',13,10
-            db  '  ATTRIB \DOS\*.*         ...somewhere else',13,10
-            db  '  ATTRIB +R READ.ME       make it read-only',13,10
-            db  '  ATTRIB -H -S IO.SYS     take those two bits off',13,10
-            db  '  ATTRIB +A *.TXT /S      and everything below here',13,10,13,10
-            db  'With no filename, "*.*".  A name in quotes may contain '
-            db  'spaces.',13,10,13,10
-            db  'A CHANGE THAT DOES NOT NAME THE HIDDEN OR SYSTEM BIT WILL '
-            db  'NOT',13,10
-            db  'TOUCH A FILE THAT HAS ONE, so "ATTRIB -R *.*" in a root '
-            db  'leaves',13,10
-            db  'the system files alone and says which ones it left.  Name '
-            db  'the bit',13,10
-            db  '- "-R -H" - and it is taken as meaning it.',13,10,13,10
-            db  'An explicit name means what it says, so a named directory '
-            db  'is',13,10
-            db  'changed.  A wildcard means the ordinary files, and so does '
-            db  '/S.',13,10,'$'
+msg_usage   db  'Displays or changes file attributes.',13,10,13,10
+            db  'ATTRIB [+R | -R] [+A | -A] [+S | -S] [+H | -H] '
+            db  '[drive:][path][filename] [/S]',13,10,13,10
+            db  '  +   Sets an attribute.',13,10
+            db  '  -   Clears an attribute.',13,10
+            db  '  R   Read-only file attribute.',13,10
+            db  '  A   Archive file attribute.',13,10
+            db  '  S   System file attribute.',13,10
+            db  '  H   Hidden file attribute.',13,10
+            db  '  [drive:][path][filename]',13,10
+            db  '      Specifies file(s) or directory for ATTRIB to process.',13,10
+            db  '  /S  Processes files in all directories in the specified path.',13,10,'$'
 
 img_end:                                ; the BSS begins here
 

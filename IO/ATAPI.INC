@@ -76,7 +76,15 @@ atapi_ident:
         out     dx,al
         pop     edx
         call    ata_delay
-        call    ata_waitdrq
+        call    ata_wake                ; AL = the status, once it has one
+        mov     ah,10h
+        mov     edi,PLI_ST3
+        call    ata_plogb
+
+        ; ata_probedrq and not ata_waitdrq: since a device that signed
+        ; nothing is asked this too, the question can be put to one
+        ; that will never answer it
+        call    ata_probedrq
         jc      apid_no
 
         push    edx
@@ -87,7 +95,21 @@ atapi_ident:
         rep     insw
         pop     edx
 
+        ; A PACKET DEVICE SAYS SO IN WORD 0: bits 15 and 14 are 10.  A
+        ; drive that signed itself is not asked - it has said what it
+        ; is already.  One that did not is, because a disk that failed
+        ; IDENTIFY DEVICE gets here as well now, and 512 bytes of
+        ; whatever it had to say are not a CD-ROM
+        cmp     byte ptr [ata_stage],'K'
+        je      apid_is
+        mov     ax,word ptr [ata_idbuf]
+        and     ax,0C000h
+        cmp     ax,8000h
+        jne     apid_no
+apid_is:
+
         or      byte ptr [esi+ATD_FLAGS],ATDF_ATAPI
+        mov     byte ptr [ata_stage],'A'
 
         ; WHAT CHOOSING THIS DEVICE'S TRANSFER MODE WILL NEED, written
         ; down here for the same reason a disk's is in ata_identify:
@@ -931,6 +953,39 @@ asi_bad:
         xor     ebx,ebx
         pop     edx
         pop     esi
+        stc
+        ret
+
+;=====================================================================
+; atapi_svcunit - IOS_CDUNIT.  AL = unit -> EDX = its ATA device index,
+;                 EBX = its channel's base port, ECX = units present.
+;                 CF if there is no such unit.
+;
+; THE DRIVE IS NOT SPOKEN TO.  IOS_CDINFO is TEST UNIT READY and a
+; capacity read, and fails with the tray open - which is right for a
+; caller about to read the disc and wrong for one that wants to say
+; which drive letter D: is.  This is the table lookup alone, so that a
+; report can name a drive with nothing in it.
+;=====================================================================
+atapi_svcunit:
+        push    eax
+        push    esi
+        call    atapi_slot              ; AL -> ESI
+        jc      asu_bad
+        call    atapi_idx               ; ESI -> EAX
+        mov     edx,eax
+        movzx   ebx,word ptr [esi+ATD_BASE]
+        mov     ecx,[atapi_count]
+        pop     esi
+        pop     eax
+        clc
+        ret
+asu_bad:
+        mov     ecx,[atapi_count]
+        mov     edx,-1
+        xor     ebx,ebx
+        pop     esi
+        pop     eax
         stc
         ret
 

@@ -622,11 +622,55 @@ e820end:
 ;=====================================================================
 ; get_extmem - extended memory size in KB into v_memkb, and the
 ;              usable top of memory into v_memtop.
+;
+; THREE WAYS OF ASKING, NEWEST FIRST, and the carry flag is cleared
+; before each because a BIOS is entitled to leave it alone.  A 486's
+; Award BIOS answers AH=88h with the right count and the caller's own
+; CF handed back untouched; this routine used to arrive there with CF
+; still set from the E801h call that BIOS refuses, took the answer for
+; a failure, and sized an 18MB machine at 0K extended - the arena was
+; then the slack under the kernel and MEM showed 763K free.
+;
+; E820 is asked first when the BIOS gave a map, and the answer is the
+; end of the USABLE region that 1MB is in.  That is the only one of
+; the three that knows about a hole at 15MB: E801h reports the memory
+; either side of it as two numbers this routine would have to add,
+; and the arena is one block that cannot skip a megabyte.
 ;=====================================================================
 get_extmem:
         push    es
+        cmp     dword ptr [v_e820cnt],0
+        je      ext_e801
+        xor     ax,ax
+        mov     es,ax
+        mov     di,MEMMAP
+        mov     ecx,[v_e820cnt]
+ext_maplp:
+        cmp     dword ptr es:[di+16],1          ; usable RAM?
+        jne     ext_mapnext
+        cmp     dword ptr es:[di+4],0           ; below 4GB, whole entry
+        jne     ext_mapnext
+        cmp     dword ptr es:[di+12],0
+        jne     ext_mapnext
+        mov     eax,es:[di]                     ; base
+        cmp     eax,HMA_BASE
+        ja      ext_mapnext                     ; starts above 1MB
+        add     eax,es:[di+8]                   ; end
+        jc      ext_mapnext                     ; wraps past 4GB
+        cmp     eax,HMA_BASE
+        jbe     ext_mapnext                     ; ends at or below 1MB
+        sub     eax,HMA_BASE
+        shr     eax,10                          ; -> KB above 1MB
+        jmp     short ext_store
+ext_mapnext:
+        add     di,24
+        loop    ext_maplp
+        ; a map with no usable region at 1MB is no map at all
+
+ext_e801:
         xor     ecx,ecx
         xor     edx,edx
+        clc
         mov     ax,0E801h
         int     15h
         jc      ext_88
@@ -639,12 +683,24 @@ ext_ax:
         movzx   ebx,bx                  ; 64K blocks above 16M
         shl     ebx,6                   ; -> KB
         add     eax,ebx
-        jmp     short ext_store
+        jnz     ext_store               ; CF clear and nothing counted is
+                                        ; a BIOS that never heard of it
 
 ext_88:
+        xor     ax,ax
+        clc
         mov     ah,88h                  ; ancient fallback, caps at 64M
         int     15h
-        jc      ext_none
+        jc      ext_88cf
+        movzx   eax,ax
+        jmp     short ext_store
+ext_88cf:
+        ; CF set: an error only if AH says so (80h invalid, 86h not
+        ; supported) - otherwise it is the caller's own flag coming back
+        cmp     ah,80h
+        je      ext_none
+        cmp     ah,86h
+        je      ext_none
         movzx   eax,ax
         jmp     short ext_store
 ext_none:
@@ -1095,6 +1151,10 @@ v_edp      db  32 dup(0)                ; AH=48h drive parameters
         ORG     GV_OFF + 70h
 v_picmask  db  0FCh, 0FFh              ; GV_PICMASK: the timer and the
                                         ; keyboard until a mouse is found
+
+        ORG     GV_OFF + 80h
+v_fdpt     db  16 dup(0)                ; GV_FDPT: a diskette parameter
+                                        ; table for a format
 
 ;=====================================================================
 ; Pad the stub to exactly RMSTUB_SIZE so IOPM.BIN lands at IO_PM_BASE.

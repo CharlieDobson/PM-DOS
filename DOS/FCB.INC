@@ -260,17 +260,41 @@ f13_lp:
         test    byte ptr [esi+DE_ATTR],ATTR_READONLY
         jnz     f13_next
 
-        call    lfn_tomb                ; the long name dies with the file
-        call    dir_seek                ; and lfn_tomb moved the cache
-        jc      f13_end
+        ; NOR A FILE THAT IS A DRIVE LETTER - 41h's refusal, which this
+        ; never had: "DEL *.IMG" through an FCB freed the chain of a
+        ; mounted image while the volume went on writing to it.
+        push    ebx
         call    de_getclus
-        call    fat_freechain
-        mov     byte ptr [esi],0E5h
-        call    fat_dirupdate
+        mov     ebx,eax
+        mov     al,[cur_vol]
+        call    img_locked
+        pop     ebx
+        jc      f13_next
+        call    dir_seek                ; ESI -> the entry again
         jc      f13_end
-        call    fat_flush
+
+        ; The delete, or the keeping - RECYCLE.INC.  It works in other
+        ; directories and changes the search filter, so the scan's
+        ; place is put back afterwards.  The directory's path is the
+        ; volume's current one, which is where fcb_setdir put us.
+        mov     byte ptr [rcy_perm],0
+        mov     dword ptr [rcy_pnames],OFFSET cwd_names
+        mov     eax,[cwd_cnt]
+        mov     [rcy_pcnt],eax
+        push    ebx
+        call    ctx_save
+        push    eax
+        push    edx
+        movzx   eax,byte ptr [srch_attr]
+        push    eax
+        call    rcy_delete
+        pop     eax
+        mov     [srch_attr],al
+        pop     edx
+        pop     eax                     ; flags survive the pops and the
+        call    ctx_restore             ; restore: it sets no flags
+        pop     ebx
         jc      f13_end
-        mov     dword ptr [clusbuf_clus],-1     ; cached data now stale
         mov     byte ptr [fq_hit],1
 f13_next:
         inc     ebx                     ; the entry is E5h now, so the scan
@@ -1394,7 +1418,8 @@ fcb_bbad:
 fcb_openx:
         mov     [fq_opath],esi
         mov     [fq_omode],eax
-        call    open_core
+        mov     dword ptr [open_share],OM_COMPAT OR OM_RDWR   ; as SHARE judged
+        call    open_core                                      ; every FCB open
         jnc     fcb_oxout
         cmp     ax,ERR_NOHANDLES
         jne     fcb_oxout
@@ -1402,6 +1427,7 @@ fcb_openx:
         jc      fcb_oxfull
         mov     esi,[fq_opath]
         mov     eax,[fq_omode]
+        mov     dword ptr [open_share],OM_COMPAT OR OM_RDWR
         call    open_core
 fcb_oxout:
         ret

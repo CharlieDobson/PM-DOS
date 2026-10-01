@@ -1617,6 +1617,12 @@ vdm_push:
         mov     ax,word ptr ds:[vdm_parpsp]
         mov     [edi+VF_PARPSP],ax
 
+        ; And its floating-point state, which is in the registers the
+        ; next program is about to have (FPSTATE.INC).
+        mov     eax,dword ptr ds:[vdm_depth]
+        add     eax,FPS_BOX
+        call    fps_keep
+
         inc     dword ptr ds:[vdm_depth]
         popad
         clc
@@ -1659,6 +1665,10 @@ vdm_pop:
         mov     word ptr ds:[vdm_curpsp],ax
         mov     ax,[esi+VF_PARPSP]
         mov     word ptr ds:[vdm_parpsp],ax
+
+        mov     eax,dword ptr ds:[vdm_depth]    ; and its floating-point
+        add     eax,FPS_BOX                     ; state, whatever the one
+        call    fps_back                        ; that is leaving left
         popad
         ret
 
@@ -2004,6 +2014,9 @@ dvs_do2F:
                                         ; the kernel HAS a disk cache, so
                                         ; SMARTDRV.EXE must be able to find
                                         ; out and not load a second one
+        jnc     d2f_out
+        call    share_int2F             ; AX=1000h: SHARE is installed, and
+                                        ; SHARE.EXE must be told so
         jnc     d2f_out
         call    win_int2F               ; and the 16xx Windows family, which
                                         ; vetoes ENHANCED mode's 1605h - and
@@ -4067,6 +4080,13 @@ vdm_toparent:
 ; print it.
 ;---------------------------------------------------------------------
 vdm_fltloop:
+        ; The coprocessor's error is exception 16 to the processor and
+        ; INT 75h to the program, and it is the program's handler that
+        ; is being named.  "Vector 10" would be the video BIOS.
+        cmp     ebx,16
+        jne     vfl_say
+        mov     ebx,FPU_VEC
+vfl_say:
         push    ebx
         mov     esi,OFFSET msgVdmLoop
         call    dword ptr ds:[IOS_CONSTR]
@@ -4847,7 +4867,19 @@ vdm_subptr:
                                         ; otherwise assume is an address
                                         ; (10h takes BL alone and needs no row)
         db  0F1h, 11h,  P_DI            ; the mount report's buffer
-        db  0F0h, 04h,  P_SI            ; cells onto the screen - EBX is a
+        db  0F1h, 15h,  P_DI            ; and the probe log's.  14h has no
+                                        ; row: a drive, a track and a head
+                                        ; are all numbers
+        db  0F1h, 16h,  P_DI            ; the cache's status record - for
+                                        ; CCF_STATUS only; the other three
+                                        ; carry numbers, and r3_pflags
+                                        ; answers this one by hand so that
+                                        ; a stray EDI on one of them is not
+                                        ; refused as a bad pointer
+        db  0F1h, 17h,  P_DI            ; one CD-ROM drive's record
+        db  0F1h, 19h,  P_DX            ; a file to delete and not keep
+                                        ; (18h carries nothing)
+        db  0F0h, 04h,  P_SI           ; cells onto the screen - EBX is a
                                         ; CELL NUMBER, not a pointer
         db  0F0h, 05h,  P_DI            ; and back off it
                                         ; F0h's other calls convert nothing:

@@ -393,15 +393,18 @@ rev_flag    db  0
 
 crlf        db  13,10
 msg_nofile  db  'File not found',13,10,'$'
-msg_usage   db  'Sorts text and writes it to standard output.',13,10,13,10
-            db  '  SORT [/R] [/+n] [[drive:][path]filename]',13,10
-            db  '  command | SORT [/R] [/+n]',13,10
-            db  '  SORT [/R] [/+n] < [drive:][path]filename',13,10,13,10
-            db  '  /R    reverse: Z to A',13,10
-            db  '  /+n   start comparing at column n, counting from 1',13,10,13,10
-            db  '  Lines are compared without regard to case, as DOS has always',13,10
-            db  '  sorted them.  Up to 8192 lines and 256K of text - the',13,10
-            db  '  original managed 64K.',13,10,'$'
+msg_usage   db  'Sorts input and writes results to the screen, a file, or another device.',13,10,13,10
+            db  'SORT [/R] [/+n] [[drive1:][path1]filename1] [> [drive2:][path2]filename2]',13,10
+            db  'SORT [/R] [/+n] < [drive1:][path1]filename1 [> [drive2:][path2]filename2]',13,10
+            db  '[command |] SORT [/R] [/+n] [> [drive2:][path2]filename2]',13,10,13,10
+            db  '  /R                         Reverses the sort order; that is, sorts Z to A,',13,10
+            db  '                             then 9 to 0.',13,10
+            db  '  /+n                        Sorts the file according to characters in',13,10
+            db  '                             column n.',13,10
+            db  '  [drive1:][path1]filename1  Specifies a file to be sorted.',13,10
+            db  '  [drive2:][path2]filename2  Specifies a file where the sorted input is to be',13,10
+            db  '                             stored.',13,10
+            db  '  command                    Specifies a command whose output is to be sorted.',13,10,'$'
 fname       db  FNAME_MAX dup(0)
 
 img_end:                                ; the BSS begins here

@@ -370,6 +370,47 @@ vpm_out:
         popad
         ret
 
+;=====================================================================
+; THE COPROCESSOR'S LINE, which is not one of the lines a box may have
+; and does not come from the 8259 at all: the processor reports the
+; error itself (FPU.INC) and the monitor puts it where line 13 would
+; have.  Two pieces, because the monitor looks at the vector before it
+; commits to delivering.
+;
+; vpc_fpvec  - -> EAX = the vector the box knows that line by.
+; vpc_fptake - it is being handed over.  Everything preserved.
+;
+; IN SERVICE ONLY IF SOMEBODY HAS HOOKED IT.  A handler of a program's
+; own ends with an EOI to each controller, as it had to on the machine
+; it was written for, and those have to find line 13 and the cascade
+; in service or they end some other line's interrupt instead.  The
+; ROM's handler is another matter: a real one sends them too, an
+; emulator's may be a bare IRET - and a line left in service for ever
+; shuts out every line below it.
+;=====================================================================
+vpc_fpvec:
+        movzx   eax,byte ptr [vpc_base + 1]
+        add     eax,FPU_IRQ - 8
+        ret
+
+vpc_fptake:
+        push    eax
+        push    edx
+        inc     dword ptr [vpc_seen + FPU_IRQ * 4]
+        call    vpc_fpvec
+        mov     edx,eax
+        call    vpc_pmhas               ; a client's own, in protected mode
+        jnc     vft_serve
+        mov     eax,dword ptr ds:[edx*4]
+        cmp     eax,dword ptr [vpc_boot + FPU_IRQ * 4]
+        je      vft_out
+vft_serve:
+        or      dword ptr [vpc_isr],(1 SHL FPU_IRQ) OR 4
+vft_out:
+        pop     edx
+        pop     eax
+        ret
+
 ;---------------------------------------------------------------------
 ; vpc_desc - AX = one of a client's selectors -> EDI -> its descriptor.
 ;            CF if it is not in the LDT, or is not present.

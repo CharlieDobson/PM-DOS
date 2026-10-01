@@ -70,6 +70,14 @@ XN_HLO          EQU     28              ; dd - and where its 48h heap is:
 XN_HHI          EQU     32              ; dd   r3h_lo and r3h_hi, see 4Bh
 XN_LEN          EQU     36
 
+; Where a waiting program's floating-point state is kept: a slot a
+; nesting level, these levels first and a DOS box's after them.  Here
+; and not in FPSTATE.INC because VDM.INC is assembled before that and
+; an equate cannot be used ahead of itself.
+FPS_NATIVE      EQU     0                       ; slots 0 to EXEC_MAX-1
+FPS_BOX         EQU     EXEC_MAX                ; ...and a DOS box's
+FPS_SLOTS       EQU     EXEC_MAX + VDM_MAXNEST
+
 ;=====================================================================
 ; int21_entry - every DOS call lands here through the IDT gate.
 ;=====================================================================
@@ -1865,6 +1873,8 @@ fn3C:
 fn5B:
         mov     byte ptr [create_new],1
 f3C_go:
+        mov     dword ptr [open_share],OM_COMPAT OR OM_RDWR
+f3C_go2:                                ; 716C, which set open_share itself
         mov     esi,[ebp+F_EDX]
         mov     ecx,[ebp+F_ECX]         ; requested attributes
         call    create_core
@@ -1917,6 +1927,14 @@ f3C_file:
         jnz     f3C_deny                ; a directory wears that name
         cmp     byte ptr [create_new],0
         jne     f3C_exists              ; 5Bh: that is the whole point
+
+        ; SHARE, before the file is truncated: a create is an open in
+        ; compatibility mode for reading and writing, and somebody
+        ; holding the file in a deny mode is about to lose it.
+        mov     al,byte ptr [open_share]
+        mov     dl,[esi+DE_ATTR]
+        call    share_check
+        jc      f3C_share
 
         ; exists: truncate in place - unless it is a drive letter.
         ; See the note at 41h: freeing the chain of a mounted image
@@ -2051,6 +2069,9 @@ f3C_full:
         ret
 f3C_exists:
         mov     ax,ERR_EXISTS
+        stc
+        ret
+f3C_share:                              ; AX = ERR_SHARING, INT 24h done
         stc
         ret
 
@@ -2397,8 +2418,14 @@ f68_bad:
 
 ;=====================================================================
 ; 41h - delete file.  EDX -> path (no wildcards at this level).
+;
+; With UNDELETE=ON the file is kept rather than freed - see
+; RECYCLE.INC, which does the deleting either way.  F1h AL=19h comes
+; in at f41_go with [rcy_perm] set, for a delete that must not be kept.
 ;=====================================================================
 fn41:
+        mov     byte ptr [rcy_perm],0
+f41_go:
         mov     esi,[ebp+F_EDX]
         call    dev_deny                ; "DEL NUL" deletes nothing, ever
         jnc     i21_fail
@@ -2446,18 +2473,17 @@ fn41:
         pop     eax
         jc      f41_deny
 
-        call    lfn_tomb                ; the chain dies with the file
-        call    dir_seek                ; back onto OUR sector and entry
-        jc      f41_nofile
-
-        call    de_getclus
-        call    fat_freechain
-        mov     byte ptr [esi],0E5h     ; tombstone the entry
-        call    fat_dirupdate
-        jc      f41_deny
-        call    fat_flush
-        jc      f41_deny
-        mov     dword ptr [clusbuf_clus],-1     ; cached data now stale
+        ; The directory's path is the resolver's components bar the
+        ; last, which walk_to has already turned into the entries' own
+        ; 8.3 names - so they are what the recycler records.
+        mov     dword ptr [rcy_pnames],OFFSET rp_names
+        mov     eax,[rp_cnt]
+        dec     eax
+        mov     [rcy_pcnt],eax
+        call    dir_seek                ; ESI -> the entry again: img_locked
+        jc      f41_nofile              ; may have moved the cache
+        call    rcy_delete              ; the long name, the chain, the
+        jc      i21_fail                ; entry - or all of it kept
         jmp     i21_ok
 
 f41_nofile:
@@ -2472,9 +2498,26 @@ f41_deny:
 ;=====================================================================
 fn39:
         mov     esi,[ebp+F_EDX]
+        mov     byte ptr [mk_attr],ATTR_DIR
+        call    mkdir_core
+        jc      i21_fail
+        jmp     i21_ok
+
+;---------------------------------------------------------------------
+; mkdir_core - make the directory the path at ESI names.  [mk_attr] =
+;              the attribute byte its entry gets, which is ATTR_DIR for
+;              39h and ATTR_DIR plus hidden and system for \RECYCLED.
+;              CF with AX = the error.
+;
+; Lifted out of 39h for the recycler (RECYCLE.INC), which makes its
+; directory on the first delete a volume sees and has no INT 21h
+; frame to make it through.
+;---------------------------------------------------------------------
+mkdir_core:
+        push    esi
         call    dev_deny                ; no directory may be called NUL
-        jnc     i21_fail
-        mov     esi,[ebp+F_EDX]
+        pop     esi
+        jnc     f39_ret                 ; AX = the error already
         call    resolve_parent
         jc      f39_nopath
         cmp     byte ptr [rp_noname],0
@@ -2598,7 +2641,8 @@ f39_ddclus:
         rep     movsb
         pop     esi
         pop     esi
-        mov     byte ptr [esi+DE_ATTR],ATTR_DIR
+        mov     al,[mk_attr]
+        mov     [esi+DE_ATTR],al
         mov     eax,[mk_clus]
         call    de_setclus
         call    get_dostime
@@ -2610,17 +2654,25 @@ f39_ddclus:
         jc      f39_deny
         call    fat_flush
         jc      f39_deny
-        jmp     i21_ok
+        clc
+        ret
 
 f39_nopath:
         mov     ax,ERR_NOPATH
-        jmp     i21_fail
+        stc
+        ret
 f39_full:
         mov     ax,ERR_DISKFULL
-        jmp     i21_fail
+        stc
+        ret
 f39_deny:
         mov     ax,ERR_ACCESS
-        jmp     i21_fail
+f39_ret:
+        stc
+        ret
+
+mk_attr     db  ATTR_DIR                ; what mkdir_core's entry wears
+            db  0,0,0
 
 ;=====================================================================
 ; 3Ah - RMDIR.  EDX -> path.  The directory must be empty and must
@@ -2750,7 +2802,8 @@ mk_clus       dd 0
 ;       -> AX = handle
 ;=====================================================================
 fn3D:
-        mov     al,[ebp+F_EAX]
+        movzx   eax,byte ptr [ebp+F_EAX]
+        mov     [open_share],eax        ; the sharing bits, for SHARE.INC
         and     al,3
         cmp     al,3
         je      f3D_deny                ; 3 is not a valid access mode
@@ -2789,6 +2842,8 @@ open_core:
         mov     dword ptr [esi+SFT_FLAGS],SFTF_INUSE OR SFTF_DEVICE
         mov     ecx,[open_mode]
         mov     [esi+SFT_MODE],ecx
+        mov     ecx,[open_share]
+        mov     [esi+SFT_SHARE],ecx
         mov     [esi+SFT_DEVID],edx
         clc
         ret
@@ -2803,11 +2858,23 @@ f3D_file:
         call    chk_wild
         jc      f3D_nofile
 
+        mov     eax,[srch_long]         ; the long name resolve_parent
+        mov     [oc_long],eax           ; armed, kept for a second look:
+        mov     eax,[srch_llen]         ; the search uses it up
+        mov     [oc_llen],eax
         mov     byte ptr [srch_attr],0
         xor     ebx,ebx
         mov     edi,OFFSET name_buf
         call    fat_search
-        jc      f3D_nofile
+        jc      f3D_isdir
+
+        ; SHARE, before anything is committed: the entry is known and
+        ; so is every open of it.  A refusal has been through INT 24h
+        ; by the time it comes back here.
+        mov     al,byte ptr [open_share]
+        mov     dl,[esi+DE_ATTR]
+        call    share_check
+        jc      f3D_share
 
         ; ESI -> live directory entry; grab what we need before the
         ; sector cache gets recycled
@@ -2853,6 +2920,8 @@ f3D_notimg:
         mov     dword ptr [esi+SFT_POS],0
         mov     ecx,[open_mode]
         mov     [esi+SFT_MODE],ecx
+        mov     ecx,[open_share]
+        mov     [esi+SFT_SHARE],ecx
         mov     ecx,[open_stamp]
         mov     [esi+SFT_TIME],ecx      ; ...both, in the one dword
         mov     [esi+SFT_DIRENT],edi
@@ -2861,6 +2930,25 @@ f3D_notimg:
         clc
         ret
 
+; A DIRECTORY OF THAT NAME IS NOT "FILE NOT FOUND".  DOS found the
+; entry and refused to open it, so a program trying a directory heard
+; "access denied" - FIND says "Access denied - C:\DOS" and FC "cannot
+; open C:\DOS - Permission denied", and both said "not found" here.
+; The search above leaves directories out, so a miss looks again for
+; one; nothing else changes.
+f3D_isdir:
+        mov     eax,[oc_long]
+        mov     [srch_long],eax
+        mov     eax,[oc_llen]
+        mov     [srch_llen],eax
+        mov     byte ptr [srch_attr],ATTR_DIR
+        xor     ebx,ebx
+        mov     edi,OFFSET name_buf
+        call    fat_search              ; no file matched: a hit now is
+        jc      f3D_nofile              ; a directory
+        mov     ax,ERR_ACCESS
+        stc
+        ret
 f3D_nofile:
         mov     ax,ERR_NOFILE
         stc
@@ -2873,10 +2961,16 @@ f3D_locked:
         mov     ax,ERR_ACCESS           ; it is mounted as a drive letter
         stc
         ret
+f3D_share:                              ; AX = ERR_SHARING already, and
+        stc                             ; INT 24h has had its say
+        ret
 
 f3D_deny:
         mov     ax,ERR_ACCESS
         jmp     i21_fail
+
+oc_long     dd  0                       ; srch_long and srch_llen, as
+oc_llen     dd  0                       ; open_core's search found them
 
 ;=====================================================================
 ; WAITING FOR A KEY, AND INT 28h
@@ -3436,6 +3530,7 @@ sc_clear:
         popad
         ret
 sc_free:
+        call    share_release           ; its locks go with it
         mov     dword ptr [esi+SFT_FLAGS],0
         popad
         ret
@@ -3463,6 +3558,8 @@ fn3F:
 
 ;--- plain file -------------------------------------------------------
         mov     ecx,[ebp+F_ECX]         ; bytes wanted
+        call    share_iochk             ; a lock in the way is INT 24h and
+        jc      f3F_lock                ; then error 21h
         mov     edi,[ebp+F_EDX]         ; destination
         call    file_read
         jc      f3F_ioerr
@@ -3517,6 +3614,8 @@ f3F_rioerr:
 f3F_ioerr:
         mov     ax,ERR_ACCESS
         jmp     i21_fail
+f3F_lock:
+        jmp     i21_fail                ; AX = ERR_LOCKVIOL
 f3F_bad:
         mov     ax,ERR_BADHANDLE
         jmp     i21_fail
@@ -3775,6 +3874,8 @@ f40_file:
         mov     ecx,[ebp+F_ECX]
         or      ecx,ecx
         jz      f40_trunc0
+        call    share_iochk             ; a lock in the way: see 3Fh
+        jc      f40_lock
 
         mov     edi,[ebp+F_EDX]         ; source data
         call    file_write
@@ -3886,6 +3987,8 @@ f40_setsz:
 f40_ioerr:
         mov     ax,ERR_ACCESS
         jmp     i21_fail
+f40_lock:
+        jmp     i21_fail                ; AX = ERR_LOCKVIOL
 f40_bad:
         mov     ax,ERR_BADHANDLE
         jmp     i21_fail
@@ -5245,6 +5348,12 @@ f4B_noenv:
         pop     edi
 
 f4B_nosave:
+        ; AND ITS FLOATING-POINT STATE, which the child is about to be
+        ; running in.  The child starts with a fresh one (FPSTATE.INC).
+        mov     eax,[exec_depth]
+        add     eax,FPS_NATIVE
+        call    fps_keep
+
         ; Onto the kernel stack before the slot is written: at depth 1
         ; and beyond the caller's own stack is INSIDE it, and loading
         ; the child would saw through the branch we are sitting on.
@@ -5294,6 +5403,8 @@ f4B_loadfail:
         mov     [exec_err],eax
         mov     eax,[exec_depth]        ; the caller's slot back under its
         call    r3_useslot              ; feet before it is resumed
+        mov     eax,[exec_depth]        ; and its floating-point state in
+        call    fps_back                ; the registers
         mov     edi,[exec_depth]
         imul    edi,XN_LEN
         add     edi,OFFSET exec_stk
@@ -5830,12 +5941,17 @@ f4C_sweep:
 f4C_next:
         add     esi,SFT_LEN
         loop    f4C_sweep
+        call    share_relown            ; ...and its locks, wherever they
+                                        ; were taken: EDX = the owner
         call    find_freeown            ; ...and its searches: EDX = owner
 
         ; ...and reclaim what it allocated and never freed.  DOS always
         ; did this; PM-DOS used to leak every 48h block until reboot.
+        ; The XMS table after the memory, as vdm_cleanup has it: a
+        ; native program's F1h/1Ah blocks are handles (XMS.INC).
         mov     eax,[cur_own]
         call    arena_freeown
+        call    xms_relown
 
         ; AND EVERYTHING THE PROGRAM WROTE IS ON THE DISK BEFORE IT IS
         ; CALLED ENDED.  After the handle sweep, because closing a
@@ -5909,6 +6025,8 @@ f4C_noparked:
                                         ; lands where it should
         mov     eax,[edi+XN_ESP0]       ; and the ring-0 stack level it was
         mov     [r3_esp0],eax           ; making its DOS calls on
+        mov     eax,[exec_depth]        ; and the floating-point state it
+        call    fps_back                ; had, whatever the child left
         call    term_vectors
         mov     byte ptr [crit_busy],0  ; an abort has finished unwinding
         mov     byte ptr ds:[DOS_ERRFLG],0
@@ -6993,9 +7111,8 @@ fn716C:
         call    dev_find
         jc      f6c_look
         mov     byte ptr [f6c_act],1
-        mov     al,[ebp+F_EBX]
-        and     al,3
-        mov     [ebp+F_EAX],al
+        mov     al,[ebp+F_EBX]          ; the whole byte: 3Dh keeps the
+        mov     [ebp+F_EAX],al          ; sharing bits for SHARE.INC
         mov     eax,[ebp+F_ESI]
         mov     [ebp+F_EDX],eax
         call    fn3D
@@ -7023,9 +7140,8 @@ f6c_look:
         test    byte ptr [ebp+F_EDX],1
         jz      f6c_exists
         mov     byte ptr [f6c_act],1    ; open in place: 3Dh wants the
-        mov     al,[ebp+F_EBX]          ; mode in AL, the path in EDX
-        and     al,3
-        mov     [ebp+F_EAX],al
+        mov     al,[ebp+F_EBX]          ; mode in AL, the path in EDX -
+        mov     [ebp+F_EAX],al          ; sharing bits included
         mov     eax,[ebp+F_ESI]
         mov     [ebp+F_EDX],eax
         call    fn3D
@@ -7038,9 +7154,12 @@ f6c_miss:
         jz      f6c_nofile
         mov     byte ptr [f6c_act],3
 f6c_creat:
+        movzx   eax,byte ptr [ebp+F_EBX]
+        mov     [open_share],eax        ; a create in the mode asked for
+        mov     byte ptr [create_new],0
         mov     eax,[ebp+F_ESI]         ; 3Ch takes the path from EDX;
         mov     [ebp+F_EDX],eax         ; F_ECX already holds our CX,
-        call    fn3C                    ; which IS the attributes
+        call    f3C_go2                 ; which IS the attributes
 f6c_fin:
         mov     eax,[f6c_dx]            ; the caller's DX, back in place
         mov     [ebp+F_EDX],eax
@@ -7054,6 +7173,7 @@ f6c_fin:
         call    sft_get
         jc      f6c_out
         movzx   eax,byte ptr [ebp+F_EBX]
+        mov     [esi+SFT_SHARE],eax
         and     eax,3
         mov     [esi+SFT_MODE],eax
 f6c_out:
@@ -7289,6 +7409,7 @@ sn_lp:
         inc     ebx
         jmp     short sn_lp
 sn_have:
+        call    share_release           ; nothing may still name this slot
         ; stamp the owner NOW, at the one place a handle is ever
         ; claimed, so that termination can tell whose it was
         mov     eax,[cur_own]
@@ -8312,6 +8433,26 @@ fF0_mouse:
 ;                 is.  The registers are that function's, listed
 ;                 with the equates in PMDOS.INC; PMIO answers
 ;                 (IO\BUS.INC)
+;       AL = 13h: -> EAX = FPUF_* flags: the coprocessor, MMX and SSE
+;                 as the kernel has set them up (IO\FPU.INC)
+;       AL = 14h: bits 16-23 of EAX = an FDF_* function, DL = a
+;                 diskette drive - what it is, what is in it, and
+;                 formatting a track (IO\FLOPPY.INC)
+;       AL = 15h: EDI -> PLOG_LEN bytes - what the mouse and IDE
+;                 probes read at boot (IO\PROBELOG.INC)
+;       AL = 16h: bits 16-23 of EAX = a CCF_* function - the disk
+;                 cache: its status into a CST_LEN record at EDI, a
+;                 commit, a reset, and one letter's caching (DL, DH).
+;                 INT 2Fh 4A10h for a native program (CACHE.INC)
+;       AL = 17h: DL = an ATAPI unit, EDI -> a CDU_LEN record - that
+;                 CD-ROM DRIVE, disc or no disc, and ECX = how many
+;                 there are.  The letter is in the volume table
+;       AL = 18h: -> EAX = UNDF_* (UNDELETE=ON|OFF), ECX = UNDEL_PCT
+;       AL = 19h: EDX -> a path - delete it and do not keep it
+;                 (RECYCLE.INC)
+;       AL = 1Ah: bits 16-23 of EAX = an XMF_* function - blocks of
+;                 extended memory a native program owns and copies
+;                 into and out of (XMS.INC, xmn_call)
 ;
 ; 30h has to keep lying about being DOS 5 so that ordinary programs
 ; recognise us, which leaves nothing there to report what the kernel
@@ -8362,7 +8503,190 @@ fnF1:
         je      fF1_ireport
         cmp     al,12h
         je      fF1_bus
+        cmp     al,13h
+        je      fF1_fpu
+        cmp     al,14h
+        je      fF1_floppy
+        cmp     al,15h
+        je      fF1_plog
+        cmp     al,16h
+        je      fF1_cache
+        cmp     al,17h
+        je      fF1_cdunit
+        cmp     al,18h
+        je      fF1_undel
+        cmp     al,19h
+        je      fF1_delperm
+        cmp     al,1Ah
+        je      xmn_call
         jmp     i21_unsup
+
+;--- AL=18h: DELETE PROTECTION'S STATE.  EAX = UNDF_* bits, ECX = the
+;--- share of the free space kept files may hold.  UNDELETE.EXE asks,
+;--- so that it can say why nothing is being kept.
+fF1_undel:
+        movzx   eax,byte ptr [undel_on] ; 1 = UNDF_ON
+        mov     [ebp+F_EAX],eax
+        mov     dword ptr [ebp+F_ECX],UNDEL_PCT
+        jmp     i21_ok
+
+;--- AL=19h: EDX -> a path.  41h, except that the file is not kept.
+;--- For a program deleting a copy it has just made safe elsewhere.
+fF1_delperm:
+        mov     byte ptr [rcy_perm],1
+        jmp     f41_go
+
+;--- AL=17h: ONE CD-ROM DRIVE.  DL = the ATAPI unit, EDI -> CDU_LEN
+;--- bytes, ECX = the units there are.  Two PMIO calls that ask the
+;--- drive nothing - the unit's place in the ATA table, and the name
+;--- IDENTIFY gave it - so the record is the same with the tray open.
+;--- The record is cleared first for fF1_disk's reason: a caller that
+;--- ignores the carry reads an absent unit as absent.
+fF1_cdunit:
+        mov     eax,[ebp+F_EDI]
+        mov     ecx,CDU_LEN
+        call    cbuf_ok
+        jc      buf_deny
+        mov     edi,[ebp+F_EDI]
+        push    edi
+        xor     eax,eax
+        mov     ecx,CDU_LEN / 4
+        rep     stosd
+        pop     edi
+        mov     al,[ebp+F_EDX]
+        mov     [edi+CDU_UNIT],al
+        call    dword ptr ds:[IOS_CDUNIT]       ; -> EDX = device, EBX = its
+        mov     [ebp+F_ECX],ecx                 ; channel's port, ECX = units
+        jc      fF1_nodisk
+        mov     [edi+CDU_DEV],dl
+        mov     [edi+CDU_BASE],bx
+        mov     al,dl
+        push    edi
+        add     edi,CDU_MODEL
+        call    dword ptr ds:[IOS_ATAMODEL]
+        pop     edi
+        call    dword ptr ds:[IOS_ATAINFO]      ; AL = the device still:
+        mov     [edi+CDU_FLAGS],al              ; ata_model keeps it.  Its
+        mov     [edi+CDU_MODE],cl               ; EBX is the bus-master
+        jmp     i21_ok                          ; engine, not the channel
+
+;--- AL=16h: THE DISK CACHE.  Bits 16-23 of EAX = a CCF_* function,
+;--- documented with the equates in PMDOS.INC.  The status record is
+;--- filled by CACHE.INC, which is where the names of the counters
+;--- stay; the drive call is the same routine INT 2Fh 4A10h/3 runs.
+;---
+;--- A COMMIT WITH NO CACHE IS NOT AN ERROR.  dos_commit flushes the
+;--- filesystem's own buffers whether or not there is a sector cache
+;--- under them, which is what AH=0Dh has always done, so the call
+;--- means the same thing on a CACHE=OFF machine; CCF_DRIVE on one
+;--- answers "nothing is cached" for every real letter, and the
+;--- program reads CSTF_ON first in any case.
+fF1_cache:
+        mov     ah,[ebp+F_EAX+2]
+        cmp     ah,CCF_STATUS
+        je      fF1_cstat
+        cmp     ah,CCF_COMMIT
+        je      fF1_ccommit
+        cmp     ah,CCF_RESET
+        je      fF1_creset
+        cmp     ah,CCF_DRIVE
+        je      fF1_cdrive
+        jmp     i21_unsup
+fF1_cstat:
+        mov     eax,[ebp+F_EDI]
+        mov     ecx,CST_LEN
+        call    cbuf_ok
+        jc      buf_deny
+        mov     edi,[ebp+F_EDI]
+        call    cache_status
+        jmp     i21_ok
+fF1_creset:
+        call    cache_reset
+        jmp     i21_ok
+fF1_ccommit:
+        call    dos_commit
+        jmp     i21_ok
+fF1_cdrive:
+        mov     al,[ebp+F_EDX]
+        mov     dl,[ebp+F_EDX+1]
+        call    cache_drvctl                    ; -> AL = the CCM_* bits
+        jc      fF1_baddrv
+        movzx   eax,al
+        mov     [ebp+F_EAX],eax
+        jmp     i21_ok
+
+;--- AL=14h: THE DISKETTE DRIVE.  Bits 16-23 of EAX = an FDF_* function
+;--- (PMDOS.INC), DL = the drive, 0 or 1, and the rest as that function
+;--- says - except that DL is taken, so where PMIO's call wants a count
+;--- of heads in DX this one wants it in DH.  CF and AL = the BIOS's
+;--- status if it could not be done.
+;---
+;--- FORMAT is what it is for.  Laying down a track is INT 13h AH=05h,
+;--- a native program has no INT 13h, and a volume with no boot sector
+;--- has no letter that INT 26h could be pointed at either.
+;---
+;--- WHATEVER THE KERNEL HOLDS ABOUT THAT DISK GOES FIRST, flushed and
+;--- then forgotten, for the reason INT13.INC gives at i13_reflect: the
+;--- medium is about to become a different disk.
+fF1_floppy:
+        mov     al,[ebp+F_EDX]
+        cmp     al,2
+        jae     fF1_nodisk
+        mov     ah,[ebp+F_EAX+2]
+        cmp     ah,FDF_TYPE
+        je      fF1_fdgo
+        cmp     ah,FDF_END
+        je      fF1_fdgo
+        push    eax
+        mov     ah,0
+        xor     ebx,ebx
+        mov     ecx,0FFFFFFFFh
+        call    vol_syncdrv
+        mov     ah,1
+        xor     ebx,ebx
+        mov     ecx,0FFFFFFFFh
+        call    vol_syncdrv
+        pop     eax
+fF1_fdgo:
+        mov     ebx,[ebp+F_EBX]
+        mov     ecx,[ebp+F_ECX]
+        mov     edx,[ebp+F_EDX]
+        cmp     ah,FDF_SETGEO
+        jne     fF1_fdcall
+        movzx   edx,dh                  ; PMIO takes the heads in DX, and
+        movzx   ecx,cl                  ; a program's DL was the drive
+fF1_fdcall:
+        call    dword ptr ds:[IOS_FLOPPY]
+        jc      fF1_fdbad
+        cmp     byte ptr [ebp+F_EAX+2],FDF_TYPE
+        jne     fF1_fddone              ; the one that answers in registers
+        mov     [ebp+F_EBX],ebx
+        mov     [ebp+F_ECX],ecx
+        mov     [ebp+F_EDX],edx
+fF1_fddone:
+        jmp     i21_ok
+fF1_fdbad:
+        movzx   eax,ah
+        jmp     i21_fail
+
+;--- AL=15h: what the boot-time probes saw.  EDI -> PLOG_LEN bytes, laid
+;--- out by the PLM_ and PLI_ equates.  \TESTS\HWPROBE prints them.
+fF1_plog:
+        mov     eax,[ebp+F_EDI]
+        mov     ecx,PLOG_LEN
+        call    cbuf_ok
+        jc      buf_deny
+        mov     edi,[ebp+F_EDI]
+        call    dword ptr ds:[IOS_PROBELOG]
+        jmp     i21_ok
+
+;--- AL=13h: the coprocessor.  -> EAX = FPUF_* flags (PMDOS.INC): is
+;--- there one, may SSE be used, and how its errors arrive.  CR0 and
+;--- CR4 say all of it and ring 3 can read neither.
+fF1_fpu:
+        mov     eax,[fps_flags]
+        mov     [ebp+F_EAX],eax
+        jmp     i21_ok
 
 ;--- AL=0Fh: MOUNT AN IMAGE FILE AS A DRIVE LETTER.
 ;---   EDX -> the ASCIIZ path of the file
@@ -8426,7 +8750,7 @@ fF1_irno:
         jmp     i21_fail
 
 ;--- AL=0Ah: the IDE controller and how its disks are being talked to.
-;--- DL = a device index 0-3, or FFh for the controller itself.
+;--- DL = a device index 0-7, or FFh for the controller itself.
 ;---
 ;---   a device:    AL = flags - 01h present, 02h LBA48, 04h LBA,
 ;---                08h bus-master DMA, 10h 32-bit PIO, 20h ATAPI
@@ -8937,10 +9261,13 @@ fF1_abs:
         mov     [f1d_write],ah
         mov     al,[ebp+F_EDX]
         mov     [f1d_drive],al
+        cmp     al,2                    ; a diskette: FORMAT, on a disk
+        jb      fF1_absdrv              ; with no boot sector to mount
         cmp     al,80h
         jb      fF1_nodisk
         cmp     al,80h + MAX_PHYS
         jae     fF1_nodisk
+fF1_absdrv:
 
         mov     ecx,[ebp+F_ECX]
         or      ecx,ecx
@@ -8975,8 +9302,18 @@ fF1_absnone:
 fF1_absmany:
         mov     ax,ERR_BADDATA
         jmp     i21_fail
+
+; WHICH failure, as DOS numbers it: the BIOS's status goes through the
+; table INT 24h is shown codes from, and a critical-error code plus 19
+; is DOS's own extended error for it - 13h write protected, 15h not
+; ready, 17h CRC, 1Bh sector not found, 1Fh anything else.  It was
+; always 1Fh, which was enough for FORMAT and FDISK (they test the
+; carry), and not enough for DISKCOPY, which has to tell a disk that
+; wants a format from one that wants its tab moved or its door shut.
 fF1_absbad:
-        mov     ax,ERR_GENERAL
+        movzx   edi,ah
+        call    crit_map                ; -> EDI = CERR_*
+        lea     eax,[edi+13h]
         jmp     i21_fail
 
 f1d_drive       db      0
@@ -9114,17 +9451,22 @@ f38_wrong:
         jmp     i21_fail                ; has no table for
 
 ;=====================================================================
-; 5Ch - lock and unlock a region of a file.  AL = 0 lock, 1 unlock.
+; 5Ch - lock and unlock a region of a file.  AL = 0 lock, 1 unlock,
+;       BX = the handle, CX:DX = the first byte, SI:DI = how many.
 ;
-; A STUB THAT SUCCEEDS, AND IT IS NOT A LIE.  Locking exists so two
-; programs cannot write the same record at once; PM-DOS runs one
-; program at a time, so there is no second party for a lock to exclude
-; and every lock would be granted anyway.  What the call must NOT do
-; is fail: a database that asks to lock a record and is refused stops,
-; and it stops for a conflict that cannot exist here.
+; SHARE.INC KEEPS THE LOCKS, since v0.60, and refuses one that
+; overlaps another on the same file - which is what SHARE.EXE did
+; and what a database that locks a record is relying on when it
+; then writes it.  This used to be a stub that succeeded, on the
+; argument that a single-tasking machine has no second party to
+; exclude; it does have a second HANDLE, and a program that opens a
+; file twice and locks through one is told about the other now.
+; With SHARE=OFF it is the stub again, because a DOS without
+; SHARE.EXE granted everything and a program written for one stops
+; if it is refused.
 ;
-; The handle is still checked.  Succeeding on a handle the program
-; never opened would hide a real bug in it.
+; The handle is checked either way.  Succeeding on a handle the
+; program never opened would hide a real bug in it.
 ;=====================================================================
 fn5C:
         mov     al,[ebp+F_EAX]
@@ -9133,7 +9475,21 @@ fn5C:
         movzx   ebx,word ptr [ebp+F_EBX]
         call    sft_get                 ; CF set = not an open handle
         jc      f5C_handle
+        test    dword ptr [esi+SFT_FLAGS],SFTF_DEVICE
+        jnz     f5C_ok                  ; a device has no records
+        movzx   ebx,word ptr [ebp+F_ECX]
+        shl     ebx,16
+        mov     bx,word ptr [ebp+F_EDX] ; EBX = the first byte
+        movzx   ecx,word ptr [ebp+F_ESI]
+        shl     ecx,16
+        mov     cx,word ptr [ebp+F_EDI] ; ECX = how many
+        mov     al,[ebp+F_EAX]          ; lock or unlock
+        call    share_lock
+        jc      f5C_refused
+f5C_ok:
         jmp     i21_ok
+f5C_refused:
+        jmp     i21_fail                ; AX = 21h or 24h, as SHARE said
 f5C_handle:
         mov     ax,ERR_BADHANDLE
         jmp     i21_fail
@@ -9345,6 +9701,9 @@ f65_capchar:
 f65_capstr:
         movzx   ecx,word ptr [ebp+F_ECX]
         jecxz   f65_strdone
+        mov     eax,[ebp+F_EDX]         ; all CX bytes are written, so all
+        call    cbuf_ok                 ; of them are measured, not just
+        jc      buf_deny                ; the first (r3_flat's share)
         mov     esi,[ebp+F_EDX]
 f65_strloop:
         mov     al,[esi]
@@ -9467,6 +9826,12 @@ exit_code   db  0
 name_buf    db  11 dup(0)
 name2_buf   db  11 dup(0)
 open_mode   dd  0
+open_share  dd  OM_COMPAT OR OM_RDWR    ; the whole mode byte of the open
+                                        ; in progress, sharing bits and
+                                        ; all: 3Dh and 6Ch set it from the
+                                        ; caller, a create or an FCB open
+                                        ; is compat read/write, as SHARE
+                                        ; judged those.  SHARE.INC reads it
 open_stamp  dd  0                       ; the opened file's time and date
 sft_nextstamp dd 1                      ; the next SFT claim id.  Never 0.
 

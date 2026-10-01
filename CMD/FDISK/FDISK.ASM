@@ -44,7 +44,6 @@ FDC_DELETE      EQU     5
 FDC_ACTIVE      EQU     6
 FDC_MBR         EQU     7
 FDC_MENU        EQU     8
-FM_INMAX        EQU     80              ; what the menu will read in one go
 
 RL_NAMELEN      EQU     56              ; one row of rl_stname, and the
                                         ; refusals are long because each
@@ -148,19 +147,39 @@ NB_MAX          EQU     EBR_MAX + 4     ; every link of a chain, or every
                                         ; extra a logical drive always has:
                                         ; its own boot record
 
+; TWO SEGMENTS, ONE GROUP, as PMDOS.SYS is laid out: _FDK is the file
+; and _FDB is the BSS behind it, which the link places after the code
+; and the raw output does not write.  The screen's sixteen kilobytes
+; of buffers used to be zeros in the file, and the floppy is full.
+FDG     GROUP   _FDK, _FDB
+
+_FDB    SEGMENT USE32 DWORD PUBLIC 'BSS'
+bss_start   LABEL BYTE
+_FDB    ENDS
+
 _FDK    SEGMENT USE32 PUBLIC 'CODE'
-        ASSUME  CS:_FDK, DS:_FDK, ES:_FDK, SS:_FDK
+        ASSUME  CS:FDG, DS:FDG, ES:FDG, SS:FDG
         ORG     0
+
+;--- what the BSS holds; the equates that size it are all above -----
+FD_BSS_LEN      EQU     SEC_BYTES*4 + 65536 + CH_LEN*EBR_MAX
+                                        ; four sectors, the 64K the relocator
+                                        ; copies through, and the chain table
+TUI_BSS_LEN     EQU     82 + 69*32 + 512*4 + 8192 + 4000
+                                        ; the screen's buffers, as the end of
+                                        ; this file lays them out - and the
+                                        ; end of this file checks the sum
 
 ;=====================================================================
 ; D32 header.  The buffers live in the BSS: four sectors and the
 ; 64K block the relocator will copy through.
 ;=====================================================================
-        D32_HEAD SLOT_IMAGE,<OFFSET fd_entry>,<SEC_BYTES*4 + 65536 + CH_LEN*EBR_MAX>,4096
+        D32_HEAD SLOT_IMAGE,<OFFSET fd_entry>,<FD_BSS_LEN + TUI_BSS_LEN + 16>,4096
+                                        ; +16: the BSS segment is aligned
 
 ;=====================================================================
 fd_entry:
-        mov     eax,OFFSET img_end      ; carve up the BSS
+        mov     eax,OFFSET bss_start    ; carve up the BSS
         mov     [mbr_buf],eax
         add     eax,SEC_BYTES
         mov     [ebr_buf],eax
@@ -203,7 +222,7 @@ fd_entry:
         cmp     byte ptr [fd_cmd],FDC_MBR
         je      fd_mbr
         cmp     byte ptr [fd_cmd],FDC_MENU
-        je      fd_menugo
+        je      fd_tui
         jmp     fd_usage
 
 ;---------------------------------------------------------------------
@@ -231,6 +250,7 @@ fu_menu:
         jmp     short fd_fail
 
 fd_done:
+        mov     byte ptr [fd_rc],0
         cmp     byte ptr [fd_menu],0
         jne     fd_back
         mov     eax,4C00h
@@ -238,23 +258,25 @@ fd_done:
 
 ;--- an error that has already said what it was ----------------------
 fd_fail:
+        mov     byte ptr [fd_rc],1
         cmp     byte ptr [fd_menu],0
         jne     fd_back
         mov     eax,4C01h
         int     21h
 
-;--- and back to the menu, from wherever the verb happened to be -----
+;--- and back to the screen, from wherever the verb happened to be ---
 ; THE STACK IS DISCARDED, NOT UNWOUND.  Every verb in this program
 ; ends by jumping to fd_done or fd_fail, and it can do that from four
-; calls deep - so what sits above the menu loop's frame is saved
-; registers belonging to frames that will never return.  There is
-; nothing in any of them that has to be put back: this program owns
-; no handles, holds no locks, and allocates nothing.  So the honest
-; thing is to say so and set ESP where the loop left it, which is a
-; longjmp written out in the two instructions it actually is.
+; calls deep - so what sits above tui_run's frame is saved registers
+; belonging to frames that will never return.  There is nothing in
+; any of them that has to be put back: this program owns no handles,
+; holds no locks, and allocates nothing.  So the honest thing is to
+; say so and set ESP where tui_run left it, which is a longjmp written
+; out in the two instructions it actually is - and tui_after is a RET,
+; so the verb "returns" to whoever called tui_run.
 fd_back:
         mov     esp,[fd_mstack]
-        jmp     fm_loop
+        jmp     tui_after
 
 ;=====================================================================
 ; The command tail.
@@ -267,7 +289,11 @@ fd_back:
 ; argument whose meaning depends on where it was written.
 ;=====================================================================
 fd_parse:
-        mov     byte ptr [fd_cmd],FDC_REPORT
+        ; NOTHING AFTER THE NAME IS THE SCREEN, as it has been for every
+        ; FDISK since 5.0; the report those used to print is /STATUS,
+        ; which is what MS-DOS calls it, and /L still prints it with
+        ; the chain walked.
+        mov     byte ptr [fd_cmd],FDC_MENU
         mov     dword ptr [fd_sw],0
         mov     dword ptr [fd_nargs],0
 
@@ -337,6 +363,10 @@ fp_swhelp:
         jmp     fd_help
 fp_sw_l:
         or      dword ptr [fd_sw],FDS_LOGICAL
+        cmp     byte ptr [fd_cmd],FDC_MENU
+        jne     fp_sw_lnext             ; /L on its own is the report
+        mov     byte ptr [fd_cmd],FDC_REPORT
+fp_sw_lnext:
         inc     esi
         dec     ecx
         jmp     fp_next
@@ -370,10 +400,37 @@ fp_sw_m:
         add     esi,2
         sub     ecx,2
         jmp     fp_next
+; /S IS A RESIZE AND /STATUS IS THE REPORT, told apart the way /M and
+; /MBR are: the one other switch longer than a letter, and the one
+; MS-DOS's own FDISK takes, so a batch file written for that one
+; gets the same answer here.
 fp_sw_s:
         mov     byte ptr [fd_cmd],FDC_SIZE
         inc     esi
         dec     ecx
+        cmp     ecx,5
+        jb      fp_next
+        push    esi
+        push    ecx
+        mov     edi,OFFSET msg_status
+fp_sw_st:
+        mov     al,[esi]
+        call    fd_upper
+        cmp     al,[edi]
+        jne     fp_sw_snot
+        inc     esi
+        inc     edi
+        cmp     byte ptr [edi],0
+        jne     fp_sw_st
+        pop     ecx
+        pop     esi
+        mov     byte ptr [fd_cmd],FDC_REPORT
+        add     esi,5
+        sub     ecx,5
+        jmp     fp_next
+fp_sw_snot:
+        pop     ecx
+        pop     esi
         jmp     fp_next
 fp_sw_c:
         mov     byte ptr [fd_cmd],FDC_CREATE
@@ -5534,360 +5591,7 @@ fas_bad:
         stc
         ret
 
-;=====================================================================
-; /I - THE MENU.
-;
-; What every FDISK since 5.0 opens with, and the last thing this one
-; grew - which is the right way round, and worth saying why.  A menu
-; is a way of ASKING, and everything it can ask for had to exist as
-; something that could be TOLD first: the command line is what a test
-; harness drives, and driving it is how every number this program
-; prints was proved.  A menu written first would have been a menu
-; over an engine nothing had ever tested.
-;
-; SO IT IS A SHELL AND NOT A SECOND IMPLEMENTATION.  Each choice
-; gathers the arguments the command line already takes, writes them
-; into the same fd_args, and jumps to the same verb.  There is
-; nothing here that the command line cannot do - and the line it just
-; built is echoed before it runs, so somebody who used the menu once
-; can put that line in a batch file the second time.
-;
-; IT DOES NOT CLEAR THE SCREEN and it does not draw a box.  What a
-; verb printed stays above the menu that comes back, which is what
-; makes the transcript of a session readable afterwards - and it
-; means the whole program still works down a serial console, which a
-; program that addressed the screen directly would not.
-;
-; WRITES ARE STILL ARMED SEPARATELY.  Being interactive is not
-; consent: W toggles the arming, the menu says which way it is set,
-; and an unarmed menu is one where every key is safe to press.
-;=====================================================================
-fd_menugo:
-        mov     byte ptr [fd_menu],1
-        ; THE LOOP'S OWN STACK POINTER, remembered once.  See fd_back.
-        mov     [fd_mstack],esp
-fm_loop:
-        call    fm_draw
-        mov     edx,OFFSET msg_mchoice
-        mov     edi,OFFSET fd_args
-        call    fm_ask
-        ; AN EMPTY CHOICE LEAVES, and that is not only a convenience.
-        ; 0Ah reads a redirected stdin one line at a time and answers
-        ; a file that has run out with an empty line, every time - so
-        ; a menu that re-prompted on blank would spin forever the
-        ; moment anybody drove it from a file.  Being drivable from a
-        ; file is how this menu is tested, which makes it the same
-        ; argument the command line was built on.
-        jc      fm_quit
-        mov     dword ptr [fd_nargs],0
-        mov     al,[fd_args]
-        call    fd_upper
-
-        cmp     al,'1'
-        je      fm_report
-        cmp     al,'2'
-        je      fm_plan
-        cmp     al,'3'
-        je      fm_create
-        cmp     al,'4'
-        je      fm_delete
-        cmp     al,'5'
-        je      fm_active
-        cmp     al,'6'
-        je      fm_move
-        cmp     al,'7'
-        je      fm_size
-        cmp     al,'8'
-        je      fm_mbr
-        cmp     al,'W'
-        je      fm_arm
-        cmp     al,'Q'
-        je      fm_quit
-        mov     edx,OFFSET msg_mhuh
-        call    puts
-        jmp     fm_loop
-
-fm_quit:
-        mov     byte ptr [fd_menu],0
-        jmp     fd_done
-
-;--- W: arm or disarm, which is the one thing the menu owns ----------
-fm_arm:
-        cmp     byte ptr [dk_armed],0
-        jne     fm_disarm
-        call    dk_arm
-        mov     edx,OFFSET msg_marmed
-        call    puts
-        jmp     fm_loop
-fm_disarm:
-        mov     byte ptr [dk_armed],0
-        mov     edx,OFFSET msg_mdisarm
-        call    puts
-        jmp     fm_loop
-
-;--- the verbs, each one given exactly what its command line takes ---
-fm_report:
-        mov     byte ptr [fd_cmd],FDC_REPORT
-        or      dword ptr [fd_sw],FDS_LOGICAL
-        mov     edx,OFFSET msg_msw_l
-        call    fm_echo
-        jmp     fd_report
-
-fm_plan:
-        call    fm_whichpart
-        jc      fm_loop
-        mov     byte ptr [fd_cmd],FDC_PLAN
-        mov     edx,OFFSET msg_msw_p
-        call    fm_echo
-        jmp     fd_plan
-
-fm_delete:
-        call    fm_whichpart
-        jc      fm_loop
-        mov     byte ptr [fd_cmd],FDC_DELETE
-        mov     edx,OFFSET msg_msw_d
-        call    fm_echo
-        jmp     fd_delete
-
-fm_active:
-        call    fm_whichpart
-        jc      fm_loop
-        mov     byte ptr [fd_cmd],FDC_ACTIVE
-        mov     edx,OFFSET msg_msw_a
-        call    fm_echo
-        jmp     fd_active
-
-fm_move:
-        call    fm_whichpart
-        jc      fm_loop
-        mov     edx,OFFSET msg_askstart
-        mov     edi,OFFSET fd_args + FD_ARGLEN
-        call    fm_ask
-        jc      fm_loop                 ; no sector, no move
-        mov     dword ptr [fd_nargs],2
-        mov     byte ptr [fd_cmd],FDC_MOVE
-        mov     edx,OFFSET msg_msw_m
-        call    fm_echo
-        jmp     fd_change
-
-fm_size:
-        call    fm_whichpart
-        jc      fm_loop
-        mov     edx,OFFSET msg_asklen
-        mov     edi,OFFSET fd_args + FD_ARGLEN
-        call    fm_ask
-        jc      fm_loop
-        mov     dword ptr [fd_nargs],2
-        mov     byte ptr [fd_cmd],FDC_SIZE
-        mov     edx,OFFSET msg_msw_s
-        call    fm_echo
-        jmp     fd_change
-
-;--- create, whose two extra arguments are both optional -------------
-; AN EMPTY ANSWER IS THE ANSWER "you decide", and it has to be,
-; because that is what leaving the argument off the command line
-; means and this is the same verb.  So a blank size takes the whole
-; aligned gap and a blank type is the one fd_newtype works out.
-fm_create:
-        call    fm_whichpart
-        jc      fm_loop
-        mov     edx,OFFSET msg_asksize
-        mov     edi,OFFSET fd_args + FD_ARGLEN
-        call    fm_ask
-        jc      fm_crgo
-        mov     dword ptr [fd_nargs],2
-        mov     edx,OFFSET msg_asktype
-        mov     edi,OFFSET fd_args + FD_ARGLEN*2
-        call    fm_ask
-        jc      fm_crgo
-        mov     dword ptr [fd_nargs],3
-fm_crgo:
-        mov     byte ptr [fd_cmd],FDC_CREATE
-        mov     edx,OFFSET msg_msw_c
-        call    fm_echo
-        jmp     fd_create
-
-fm_mbr:
-        mov     edx,OFFSET msg_askdisk
-        mov     edi,OFFSET fd_args
-        call    fm_ask
-        jc      fm_loop
-        mov     dword ptr [fd_nargs],1
-        mov     byte ptr [fd_cmd],FDC_MBR
-        mov     edx,OFFSET msg_msw_mbr
-        call    fm_echo
-        jmp     fd_mbr
-
-;--- fm_whichpart - the d:p every verb but /MBR starts with ----------
-fm_whichpart:
-        mov     edx,OFFSET msg_askpart
-        mov     edi,OFFSET fd_args
-        call    fm_ask
-        jc      fmw_none
-        mov     dword ptr [fd_nargs],1
-        clc
-        ret
-fmw_none:
-        stc
-        ret
-
-;---------------------------------------------------------------------
-; fm_draw - the menu itself, and what the machine looks like now.
-;---------------------------------------------------------------------
-fm_draw:
-        pushad
-        mov     edx,OFFSET msg_mmenu
-        call    puts
-        cmp     byte ptr [dk_armed],0
-        jne     fmd_armed
-        mov     edx,OFFSET msg_mnotarm
-        jmp     short fmd_say
-fmd_armed:
-        mov     edx,OFFSET msg_misarm
-fmd_say:
-        call    puts
-        popad
-        ret
-
-;---------------------------------------------------------------------
-; fm_ask - EDX -> a prompt, EDI -> FD_ARGLEN bytes for the answer.
-;          CF set when the answer was empty, which every caller reads
-;          as "leave it out" or "never mind".
-;
-; ONE WORD IS TAKEN and the rest of the line is dropped, because every
-; argument this program has is one word - and somebody who types
-; "1:3 40M" at the partition prompt has answered the next question
-; early rather than made a mistake worth a complaint.
-;---------------------------------------------------------------------
-fm_ask:
-        push    eax
-        push    ecx
-        push    esi
-        push    edi
-        call    puts
-        mov     byte ptr [fm_inbuf],FM_INMAX
-        mov     edx,OFFSET fm_inbuf
-        mov     eax,0A00h
-        int     21h
-        call    crlf
-
-        movzx   ecx,byte ptr [fm_inbuf+1]
-        mov     esi,OFFSET fm_inbuf + 2
-fma_lead:
-        or      ecx,ecx
-        jz      fma_empty
-        mov     al,[esi]
-        cmp     al,' '
-        je      fma_skip
-        cmp     al,9
-        jne     fma_copy
-fma_skip:
-        inc     esi
-        dec     ecx
-        jmp     short fma_lead
-
-fma_copy:
-        xor     eax,eax                 ; EAX = how much was taken
-fma_ch:
-        or      ecx,ecx
-        jz      fma_end
-        mov     dl,[esi]
-        cmp     dl,' '
-        je      fma_end
-        cmp     dl,9
-        je      fma_end
-        cmp     dl,13
-        je      fma_end
-        cmp     eax,FD_ARGLEN - 1
-        jae     fma_end
-        mov     [edi],dl
-        inc     edi
-        inc     eax
-        inc     esi
-        dec     ecx
-        jmp     short fma_ch
-fma_end:
-        mov     byte ptr [edi],0
-        or      eax,eax
-        jz      fma_empty
-        pop     edi
-        pop     esi
-        pop     ecx
-        pop     eax
-        clc
-        ret
-fma_empty:
-        mov     byte ptr [edi],0
-        pop     edi
-        pop     esi
-        pop     ecx
-        pop     eax
-        stc
-        ret
-
-;---------------------------------------------------------------------
-; fm_echo - the command line the choice just built.
-;           EDX -> the switch, as text.
-;
-; THE POINT OF THE MENU IS THAT IT TEACHES THE COMMAND LINE.  Anybody
-; can be shown a list and pick from it; what is worth knowing is what
-; to type the second time, and the second time is usually in a batch
-; file where there is no menu at all.
-;---------------------------------------------------------------------
-fm_echo:
-        pushad
-        push    edx
-        mov     edx,OFFSET msg_mcmd
-        call    puts
-        pop     edx
-        call    puts
-        xor     ebp,ebp
-fme_one:
-        cmp     ebp,[fd_nargs]
-        jae     fme_arm
-        call    sp1
-        imul    edx,ebp,FD_ARGLEN
-        add     edx,OFFSET fd_args
-        call    fm_putsz
-        inc     ebp
-        jmp     short fme_one
-fme_arm:
-        cmp     byte ptr [dk_armed],0
-        je      fme_out
-        ; /W ON A REPORT IS NOISE.  The two verbs that only read say
-        ; the same thing armed or not, and printing a switch they
-        ; ignore would teach a line with a word too many in it - on
-        ; the one screen whose whole purpose is to teach the line.
-        cmp     byte ptr [fd_cmd],FDC_REPORT
-        je      fme_out
-        cmp     byte ptr [fd_cmd],FDC_PLAN
-        je      fme_out
-        mov     edx,OFFSET msg_mslashw
-        call    puts
-fme_out:
-        call    crlf
-        call    crlf
-        popad
-        ret
-
-;--- fm_putsz - EDX -> a string ending in a zero, not in a dollar.
-;--- The command tail is stored that way and printing it is the one
-;--- place this program has to read it back.
-fm_putsz:
-        push    eax
-        push    esi
-        mov     esi,edx
-fmz_one:
-        mov     al,[esi]
-        or      al,al
-        jz      fmz_out
-        call    putc
-        inc     esi
-        jmp     short fmz_one
-fmz_out:
-        pop     esi
-        pop     eax
-        ret
+        INCLUDE FDTUI.INC
 
 ;=====================================================================
 ; The critical-error handler: fail everything, silently.
@@ -5906,6 +5610,12 @@ fd_crit:
 ; half the disk is no use to the person deciding what to do about it.
 ;=====================================================================
 typename:
+        call    tn_find
+        call    puts
+        ret
+
+;--- tn_find - AL = a type byte -> EDX -> its name, nine wide ---------
+tn_find:
         push    ebx
         mov     ebx,OFFSET tn_tbl
 tn_look:
@@ -5917,12 +5627,10 @@ tn_look:
         jmp     short tn_look
 tn_found:
         lea     edx,[ebx+1]
-        call    puts
         pop     ebx
         ret
 tn_unknown:
         mov     edx,OFFSET msg_unknown
-        call    puts
         pop     ebx
         ret
 
@@ -5975,18 +5683,54 @@ sec2mb:
 ;=====================================================================
 puts:
         push    eax
+        cmp     byte ptr [tui_on],0
+        jne     puts_cap
         mov     eax,0900h
         int     21h
+        pop     eax
+        ret
+; WHILE THE SCREEN IS UP EVERYTHING A VERB SAYS GOES INTO cap_buf, and
+; the screen shows it in its panel.  The verbs do not know.
+puts_cap:
+        push    esi
+        mov     esi,edx
+pc_one:
+        mov     al,[esi]
+        cmp     al,'$'
+        je      pc_done
+        call    cap_put
+        inc     esi
+        jmp     short pc_one
+pc_done:
+        pop     esi
         pop     eax
         ret
 putc:
         push    eax
         push    edx
+        cmp     byte ptr [tui_on],0
+        jne     putc_cap
         movzx   edx,al
         mov     eax,0200h
         int     21h
         pop     edx
         pop     eax
+        ret
+putc_cap:
+        call    cap_put
+        pop     edx
+        pop     eax
+        ret
+; cap_put - AL onto the end of cap_buf; a full buffer keeps its start
+cap_put:
+        push    edi
+        mov     edi,[cap_len]
+        cmp     edi,CAP_MAX
+        jae     cap_full
+        mov     [cap_buf+edi],al
+        inc     dword ptr [cap_len]
+cap_full:
+        pop     edi
         ret
 sp1:
         push    eax
@@ -6073,9 +5817,18 @@ put12:
         push    ebx
         mov     ebx,12
 put_n:
+        push    edx
+        call    fmt_n
+        call    puts
+        pop     edx
+        pop     ebx
+        ret
+
+;--- fmt_n - EAX in decimal, right-aligned in EBX, as EDX -> a '$'
+;--- string in num_buf.  Everything but EDX comes back as it was.
+fmt_n:
         push    eax
         push    ecx
-        push    edx
         push    edi
         mov     edi,OFFSET num_buf + 19
         mov     byte ptr [edi],'$'
@@ -6101,12 +5854,9 @@ pn_pad:
         jmp     short pn_pad
 pn_out:
         mov     edx,edi
-        call    puts
         pop     edi
-        pop     edx
         pop     ecx
         pop     eax
-        pop     ebx
         ret
 
 ;=====================================================================
@@ -6242,11 +5992,12 @@ rzf_dst     dd  0
 vol_tbl     db  LASTDRIVE * DRV_LEN dup(0)
 fd_args     db  FD_MAXARGS * FD_ARGLEN dup(0)
 num_buf     db  20 dup(0)
-fm_inbuf    db  FM_INMAX + 3 dup(0)     ; room, count, the text and its CR
 
-msg_usage   db  13,10,'FDISK - the PM-DOS partition editor',13,10,13,10
-            db  '  FDISK       report every disk',27h,'s partition table',13,10
-            db  '  FDISK /L    ...and the logical drives in the extended '
+msg_usage   db  'Configures a hard disk for use with PM-DOS.',13,10,13,10
+            db  '  FDISK           the full-screen editor: the disk as a bar, and',13,10
+            db  '                  what a change would look like before it is made',13,10
+            db  '  FDISK /STATUS   report every disk',27h,'s partition table',13,10
+            db  '  FDISK /L        ...and the logical drives in the extended '
             db  'container',13,10
             db  '  FDISK /P d:p    what one partition is, and how far it '
             db  'can move',13,10
@@ -6262,8 +6013,6 @@ msg_usage   db  13,10,'FDISK - the PM-DOS partition editor',13,10,13,10
             db  '  FDISK /A d:p    make it the active - bootable - one',13,10
             db  '  FDISK /MBR d    put the boot code back, table '
             db  'untouched',13,10
-            db  '  FDISK /I        a menu, which builds those lines for '
-            db  'you',13,10
             db  '  ...add /W       and it happens.  Without it, every one '
             db  'of those',13,10
             db  '                  says what it would have done and '
@@ -6276,6 +6025,7 @@ msg_usage   db  13,10,'FDISK - the PM-DOS partition editor',13,10,13,10
             db  '  drives in the extended container, in the order FDISK '
             db  '/L lists them.',13,10
             db  13,10,'$'
+msg_status  db  'TATUS',0               ; what follows /S to make /STATUS
 msg_disk    db  'Disk $'
 msg_sp2     db  '   $'
 msg_cyls    db  ' cylinders, $'
@@ -6491,47 +6241,9 @@ msg_mbrwarn db  13,10,'  WHATEVER ELSE LIVES IN THOSE BYTES GOES.  A boot '
             db  'offering the choice.',13,10,'$'
 msg_mbrdone db  13,10,'  Written.  The partition table was not touched.',13,10,'$'
 
-;--- the menu --------------------------------------------------------
-msg_mmenu   db  13,10,'FDISK',13,10,13,10
-            db  '  1  every disk, and the logical drives in it',13,10
-            db  '  2  one partition in detail, and how far it can go',13,10
-            db  '  3  create a partition',13,10
-            db  '  4  delete one',13,10
-            db  '  5  make one the active, bootable one',13,10
-            db  '  6  move one',13,10
-            db  '  7  resize one',13,10
-            db  '  8  put the standard boot code back',13,10
-            db  '  W  arm or disarm writing',13,10
-            db  '  Q  leave - and so does a blank line, or a file that'
-            db  ' has run out',13,10,13,10,'$'
-msg_mnotarm db  '  Writes are NOT ARMED: everything below says what it '
-            db  'would have done',13,10,'  and cannot touch a sector.',13,10
-            db  13,10,'$'
-msg_misarm  db  '  Writes are ARMED.  What you choose below will HAPPEN.',13,10
-            db  13,10,'$'
-msg_marmed  db  13,10,'  Armed.  From here on, what you choose happens.',13,10,'$'
-msg_mdisarm db  13,10,'  Disarmed.  From here on, nothing is written.',13,10,'$'
-msg_mchoice db  '  Choose: $'
-msg_mhuh    db  13,10,'  Not one of the choices.',13,10,'$'
 msg_mbadarg db  13,10,'  That is not a partition this program can name.  '
             db  'A disk and a',13,10,'  partition, written 1:3 - and FDISK '
             db  '/L lists them.',13,10,'$'
-msg_askpart db  13,10,'  Which partition, as disk:number (1:3)? $'
-msg_askdisk db  13,10,'  Which disk (0)? $'
-msg_asksize db  '  How big, in sectors or 40M (blank = all of it)? $'
-msg_asktype db  '  Type byte in hex (blank = work it out)? $'
-msg_askstart db 13,10,'  Start it at which sector? $'
-msg_asklen  db  13,10,'  How big, in sectors or 40M? $'
-msg_mcmd    db  13,10,'  ... which is: FDISK $'
-msg_mslashw db  ' /W$'
-msg_msw_l   db  '/L$'
-msg_msw_p   db  '/P$'
-msg_msw_c   db  '/C$'
-msg_msw_d   db  '/D$'
-msg_msw_a   db  '/A$'
-msg_msw_m   db  '/M$'
-msg_msw_s   db  '/S$'
-msg_msw_mbr db  '/MBR$'
 
 ;--- the master boot record this disk should have, carried inside ----
 ; GENERATED BY BIN2INC FROM BIN\MBRBOOT.BIN, which is the same 512
@@ -6541,7 +6253,21 @@ msg_msw_mbr db  '/MBR$'
 ; from.  Only MBRW_LEN of it is ever written; the rest of the file is
 ; the placeholder table, which is exactly what must NOT be copied.
         INCLUDE MBRCODE.INC
-img_end:                                ; the BSS begins here
-
+img_end:                                ; the file ends here
 _FDK    ENDS
+
+; THE CARVED BUFFERS FIRST - fd_entry hands out FD_BSS_LEN bytes from
+; bss_start - and then the screen's, which are addressed by name.
+_FDB    SEGMENT
+        db      FD_BSS_LEN dup(?)
+kt_line     db  TUI_COLS + 2 dup(?)
+tr_tbl      db  TR_MAX * TR_LEN dup(?)
+vw_starts   dd  VW_MAXLINES dup(?)
+cap_buf     db  CAP_MAX dup(?)
+scr_buf     dw  TUI_CELLS dup(?)
+bss_end     LABEL BYTE
+_FDB    ENDS
+IF (bss_end - bss_start) NE (FD_BSS_LEN + TUI_BSS_LEN)
+        .ERR    TUI_BSS_LEN does not match what _FDB holds
+ENDIF
         END

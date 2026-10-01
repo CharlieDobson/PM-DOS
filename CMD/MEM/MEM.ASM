@@ -43,11 +43,6 @@ SIG_END         EQU     'E'
 BLOCKS_MAX      EQU     2000            ; refuse to loop forever on a
                                         ; corrupted chain
 
-; Where the three expanded-memory lines end.  They are a block of
-; their own below the table and reach one right edge, which is what
-; makes two numbers of different widths and a segment line up.
-EMS_EDGE        EQU     52
-
 _MEM    SEGMENT USE32 PUBLIC 'CODE'
         ASSUME  CS:_MEM, DS:_MEM, ES:_MEM, SS:_MEM
         ORG     0
@@ -199,34 +194,35 @@ no_upper:
         call    crlf
         call    crlf
 
-        ; The BIOS's own figure, which is not the same number and is
-        ; not supposed to be: it counts every byte above 1M, including
-        ; the megabyte the kernel and the slots are sitting in.
+        ; THE LINES UNDER THE TABLE SHARE ITS RIGHT EDGE.  Each is a
+        ; label padded to LINE_W, a number right-aligned in NUM_W, and
+        ; a unit after it, so every figure on the screen ends in the
+        ; same column as the table's Free column and the unit hangs
+        ; off it.  They used to be three blocks with three edges - the
+        ; numbers left-aligned after a padded label here, right-aligned
+        ; to a column of their own for EMS, and the frame somewhere
+        ; else again - which made the report hard to read on a real
+        ; screen.
+        ;
+        ; The BIOS's own figure is not the table's total and is not
+        ; supposed to be: it counts every byte above 1M, including the
+        ; megabyte the kernel and the slots are sitting in.
         mov     edx,OFFSET msg_xms
-        call    print
         mov     eax,[x_memkb]
-        call    pdec_c
-        mov     edx,OFFSET msg_kb
-        call    print
+        call    line_kb
 
         mov     edx,OFFSET msg_largest
-        call    print
         mov     eax,[a_largest]
         shr     eax,10
-        call    pdec_c
-        mov     edx,OFFSET msg_kb
-        call    print
+        call    line_kb
 
         mov     edx,OFFSET msg_blocks
-        call    print
         mov     eax,[n_used]
-        call    pdec_c
-        mov     edx,OFFSET msg_inuse
-        call    print
+        call    line_num
+
+        mov     edx,OFFSET msg_bfree
         mov     eax,[n_free]
-        call    pdec_c
-        mov     edx,OFFSET msg_free
-        call    print
+        call    line_num
 
         ; Expanded memory, and only when there is any.  MEM.EXE is a
         ; native program at ring 3 and cannot make an INT 67h call, so
@@ -238,36 +234,26 @@ no_upper:
         mov     [e_frame],ebx
         mov     [e_total],ecx
         mov     [e_free],edx
-        ; THREE LINES TO ONE RIGHT EDGE.  Each number is right-aligned
-        ; in a field EMS_EDGE wide less the label in front of it and the
-        ; suffix behind it, so the edge is arithmetic the assembler
-        ; checks rather than spaces somebody counted.
+        call    crlf
         mov     edx,OFFSET msg_ems
-        call    print
         mov     eax,[e_total]
         shl     eax,4                   ; 16K pages, in KB
-        mov     ebx,EMS_EDGE - 22 - 8   ; 'Expanded Memory (EMS):', 'KB total'
-        call    pdec_cw
-        mov     edx,OFFSET msg_emstot
-        call    print
+        call    line_kb
 
         mov     edx,OFFSET msg_emsfr
-        call    print
         mov     eax,[e_free]
         shl     eax,4
-        mov     ebx,EMS_EDGE - 21 - 7   ; 'Free expanded memory:', 'KB free'
-        call    pdec_cw
-        mov     edx,OFFSET msg_emsfree
-        call    print
+        call    line_kb
 
         ; The frame is a segment and prints as one - four hex digits,
-        ; padded in the message itself because its width never varies.
+        ; right-aligned to the same edge as the numbers above it.
         mov     edx,OFFSET msg_emspf
+        call    print
+        mov     edx,OFFSET msg_hexpad
         call    print
         mov     eax,[e_frame]
         call    puthex16
-        mov     edx,OFFSET msg_crlf
-        call    print
+        call    crlf
 me_noems:
 
         cmp     byte ptr [want_list],0
@@ -654,6 +640,26 @@ col_kb:
         call    pdec_cw
         ret
 
+; line_kb  - the label at EDX (LINE_W wide), EAX right-aligned in
+;            NUM_W, ' KB' and a new line
+; line_num - the same without the unit
+line_kb:
+        call    line_fig
+        mov     edx,OFFSET msg_kb
+        call    print
+        ret
+line_num:
+        call    line_fig
+        call    crlf
+        ret
+line_fig:
+        push    eax
+        call    print
+        pop     eax
+        mov     ebx,NUM_W
+        call    pdec_cw
+        ret
+
 ;---------------------------------------------------------------------
 ; pdec_c  - EAX in decimal with thousands commas
 ; pdec_cw - the same, right-aligned in a field EBX wide
@@ -766,6 +772,11 @@ hexbuf      db  12 dup(0)
 LABEL_W         EQU     22              ; the row-label field
 NUM_W           EQU     11              ; each number column
 
+; The lines under the table: a label this wide puts a NUM_W number
+; flush with the table's last column, which is where every figure on
+; the screen ends.
+LINE_W          EQU     LABEL_W + 2 * (2 + NUM_W) + 2
+
 msg_head1   db  'Memory Type',(LABEL_W - 11 + 2 + NUM_W - 8) dup(' '),'Total KB'
             db  (2 + NUM_W - 7) dup(' '),'Used KB'
             db  (2 + NUM_W - 7) dup(' '),'Free KB',13,10,'$'
@@ -779,17 +790,15 @@ msg_row_upper db 'Upper',(LABEL_W - 5) dup(' '),'$'
 msg_row_arena db 'XMS pool',(LABEL_W - 8) dup(' '),'$'
 msg_row_tot   db 'Total memory',(LABEL_W - 12) dup(' '),'$'
 
-msg_xms     db  13,10,'Extended memory reported by the BIOS: ','$'
-msg_largest db  'Largest free XMS block:               ','$'
-msg_blocks  db  'XMS blocks:                           ','$'
-msg_inuse   db  ' in use, ','$'
-msg_free    db  ' free',13,10,'$'
+msg_xms     db  'Extended memory reported by the BIOS',(LINE_W - 36) dup(' '),'$'
+msg_largest db  'Largest free XMS block',(LINE_W - 22) dup(' '),'$'
+msg_blocks  db  'XMS blocks in use',(LINE_W - 17) dup(' '),'$'
+msg_bfree   db  'XMS blocks free',(LINE_W - 15) dup(' '),'$'
 msg_kb      db  ' KB',13,10,'$'
-msg_ems     db  13,10,'Expanded Memory (EMS):','$'
-msg_emstot  db  'KB total',13,10,'$'
-msg_emsfr   db  'Free expanded memory:','$'
-msg_emsfree db  'KB free',13,10,'$'
-msg_emspf   db  'Page frame:',(EMS_EDGE - 11 - 4) dup(' '),'$'
+msg_ems     db  'Expanded memory (EMS)',(LINE_W - 21) dup(' '),'$'
+msg_emsfr   db  'Free expanded memory',(LINE_W - 20) dup(' '),'$'
+msg_emspf   db  'EMS page frame',(LINE_W - 14) dup(' '),'$'
+msg_hexpad  db  (NUM_W - 4) dup(' '),'$'
 
 ;--- the block list: 8 hex, 2, 15 for the size, 2, 6 for the owner ---
 msg_bhead1  db  'Address',6 dup(' '),'Size (bytes)',3 dup(' '),'Owner'
@@ -810,10 +819,11 @@ msg_2sp     db  '  ','$'
 msg_crlf    db  13,10,'$'
 
 msg_badsw   db  'Invalid switch',13,10,'$'
-msg_usage   db  'Displays the amount of used and free memory.',13,10,13,10
-            db  '  MEM [/D | /F]',13,10,13,10
-            db  '  /D   list every block, in both arenas',13,10
-            db  '  /F   list the free blocks only',13,10,'$'
+msg_usage   db  'Displays the amount of used and free memory in your system.',13,10,13,10
+            db  'MEM [/DEBUG | /FREE]',13,10,13,10
+            db  '  /DEBUG or /D     Displays every memory block in both arenas, with',13,10
+            db  '                   its owner and status.',13,10
+            db  '  /FREE or /F      Displays only the free memory blocks.',13,10,'$'
 
 _MEM    ENDS
         END

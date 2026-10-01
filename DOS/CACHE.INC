@@ -208,9 +208,9 @@ CCHK_LEN        EQU     10h
 
 CC_CHUNKBYTES   EQU     CCHK_LEN + CC_CHUNKBLKS * CBLK_LEN + CC_CHUNKDATA
 
-; Per-unit permission, which the SMARTDRV API can narrow.
-CCM_READ        EQU     01h
-CCM_WRITE       EQU     02h
+; Per-unit permission, which the SMARTDRV API can narrow, is a pair of
+; CCM_* bits; they are in PMDOS.INC because 21h/F1h AL=16h hands them
+; to programs.
 
 ;=====================================================================
 ; cache_init - defaults out of the size of the arena, and the first
@@ -2284,84 +2284,28 @@ c2f_info:
 ;--- BX=3 and BX=6: one drive's caching ------------------------------
 ; BP is the unit.  SMARTDRV counted block-device units; the only
 ; numbering a program on THIS machine can obtain is the drive letter,
-; and drv_tbl turns one into the physical drive the cache keys on.  DL
-; comes back in SMARTDRV's own spelling - bit 7 set means read caching
-; is off, bit 6 set means write caching is off, FFh means there is no
-; such drive - so a program that knows the interface reads the answer
-; correctly without knowing anything about PM-DOS.
+; and cache_drvctl turns one into the physical drive the cache keys
+; on.  DL comes back in SMARTDRV's own spelling - bit 7 set means read
+; caching is off, bit 6 set means write caching is off, FFh means
+; there is no such drive - so a program that knows the interface reads
+; the answer correctly without knowing anything about PM-DOS.
 c2f_nocache:
-        mov     dl,2                            ; "disable read caching",
+        mov     dl,CCD_RDOFF                    ; "disable read caching",
         jmp     short c2f_drv2                  ; which disables both
 c2f_drive:
         mov     dl,byte ptr [vdm_ctx+V86C_EDX]
 c2f_drv2:
-        movzx   ebp,word ptr [vdm_ctx+V86C_EBP]
-        cmp     ebp,MAX_DRIVES
+        movzx   eax,word ptr [vdm_ctx+V86C_EBP]
+        cmp     eax,MAX_DRIVES
         jae     c2f_nodrv
-        mov     eax,ebp
-        imul    eax,DRV_LEN
-        add     eax,OFFSET drv_tbl
-        test    byte ptr [eax+DRV_FLAGS],DRVF_PRESENT
-        jz      c2f_nodrv
-        test    byte ptr [eax+DRV_FLAGS],DRVF_CDROM
-        jz      c2f_notcd
-        movzx   eax,byte ptr [eax+DRV_BIOS]     ; an ATAPI unit number, which
-        add     eax,CC_CDBASE                   ; is not a drive number
-        jmp     short c2f_haveid
-c2f_notcd:
-        movzx   eax,byte ptr [eax+DRV_BIOS]
-c2f_haveid:
-        mov     [c2f_id],al
-        push    edx
-        call    cache_unitof                    ; -> EBX = the cache_drvst row
-        pop     edx
+        call    cache_drvctl                    ; -> AL = the CCM_* bits
         jc      c2f_nodrv
-
-        cmp     dl,1
-        je      c2f_rdon
-        cmp     dl,2
-        je      c2f_rdoff
-        cmp     dl,3
-        je      c2f_wron
-        cmp     dl,4
-        je      c2f_wroff
-        jmp     short c2f_drvst                 ; 0, or anything else: report
-c2f_rdon:
-        or      byte ptr [cache_drvst+ebx],CCM_READ
-        jmp     short c2f_drvst
-c2f_rdoff:
-        call    dos_commit                      ; what is owed goes out before
-        mov     byte ptr [cache_drvst+ebx],0    ; the drive stops being cached
-        jmp     short c2f_drvst
-c2f_wron:
-        or      byte ptr [cache_drvst+ebx],CCM_WRITE
-        jmp     short c2f_drvst
-c2f_wroff:
-        call    dos_commit
-        and     byte ptr [cache_drvst+ebx],NOT CCM_WRITE
-
-c2f_drvst:
-        ; THE ANSWER IS THE EFFECTIVE ONE AND NOT THE PERMISSION.
-        ; cache_drvst is what the API has been TOLD about this unit;
-        ; cache_mode is what actually happens to it, which also
-        ; depends on what kind of drive it is and on whether lazy
-        ; writing is on at all.  A program asking whether A: is
-        ; write-cached wants to hear no, and hearing yes because
-        ; nobody has explicitly disabled it would be a lie it acts on.
-        mov     al,[c2f_id]
-        call    cache_mode
-        jc      c2f_nobits
-        mov     ah,al
-        jmp     short c2f_bits
-c2f_nobits:
-        xor     ah,ah
-c2f_bits:
         xor     edx,edx
-        test    ah,CCM_READ
+        test    al,CCM_READ
         jnz     c2f_rdis
         or      dl,80h
 c2f_rdis:
-        test    ah,CCM_WRITE
+        test    al,CCM_WRITE
         jnz     c2f_wdis
         or      dl,40h
 c2f_wdis:
@@ -2373,6 +2317,163 @@ c2f_sig:
         mov     word ptr [vdm_ctx+V86C_EAX],CC_SIG
         mov     byte ptr [c2f_ours],1
         jmp     c2f_out
+
+;=====================================================================
+; cache_drvctl - AL = a drive letter (0 = A:), DL = a CCD_* request.
+;                -> AL = the CCM_* bits that letter actually gets, CF
+;                set if it names nothing the cache keys on.  Every
+;                other register comes back.
+;
+; The body of INT 2Fh 4A10h/3, shared with 21h/F1h AL=16h: the two
+; are the same request in two register conventions, and a native
+; program has no INT 2Fh to make the first with.
+;
+; A letter is turned into the physical drive the cache keys on the
+; way fat_mount does it: DRV_BIOS, except for a CD-ROM, whose DRV_BIOS
+; is an ATAPI unit number and not a drive number.  A letter served
+; out of an image FILE has no row in cache_drvst and is refused; its
+; sectors are cached under the disk the file lives on.
+;=====================================================================
+cache_drvctl:
+        push    ebx
+        push    edx
+        cmp     al,MAX_DRIVES
+        jae     cdrv_no
+        movzx   eax,al
+        imul    eax,DRV_LEN
+        add     eax,OFFSET drv_tbl
+        test    byte ptr [eax+DRV_FLAGS],DRVF_PRESENT
+        jz      cdrv_no
+        test    byte ptr [eax+DRV_FLAGS],DRVF_CDROM
+        jz      cdrv_notcd
+        movzx   eax,byte ptr [eax+DRV_BIOS]     ; an ATAPI unit number, which
+        add     eax,CC_CDBASE                   ; is not a drive number
+        jmp     short cdrv_haveid
+cdrv_notcd:
+        movzx   eax,byte ptr [eax+DRV_BIOS]
+cdrv_haveid:
+        mov     [c2f_id],al
+        call    cache_unitof                    ; -> EBX = the cache_drvst row
+        jc      cdrv_no
+        cmp     byte ptr [cache_on],0
+        je      cdrv_off                         ; no cache: nothing is cached,
+                                                ; and nothing can be changed
+        cmp     dl,CCD_RDON
+        je      cdrv_rdon
+        cmp     dl,CCD_RDOFF
+        je      cdrv_rdoff
+        cmp     dl,CCD_WRON
+        je      cdrv_wron
+        cmp     dl,CCD_WROFF
+        je      cdrv_wroff
+        jmp     short cdrv_drvst                 ; CCD_GET, or anything else:
+                                                ; report
+cdrv_rdon:
+        or      byte ptr [cache_drvst+ebx],CCM_READ
+        jmp     short cdrv_drvst
+cdrv_rdoff:
+        call    dos_commit                      ; what is owed goes out before
+        mov     byte ptr [cache_drvst+ebx],0    ; the drive stops being cached
+        jmp     short cdrv_drvst
+cdrv_wron:
+        or      byte ptr [cache_drvst+ebx],CCM_READ OR CCM_WRITE
+        jmp     short cdrv_drvst                ; write caching implies read
+                                                ; caching - SMARTDRV's rule,
+                                                ; and cache_mode tests the
+                                                ; read bit first
+cdrv_wroff:
+        call    dos_commit
+        and     byte ptr [cache_drvst+ebx],NOT CCM_WRITE
+
+cdrv_drvst:
+        ; THE ANSWER IS THE EFFECTIVE ONE AND NOT THE PERMISSION.
+        ; cache_drvst is what the API has been TOLD about this unit;
+        ; cache_mode is what actually happens to it, which also
+        ; depends on what kind of drive it is and on whether lazy
+        ; writing is on at all.  A program asking whether A: is
+        ; write-cached wants to hear no, and hearing yes because
+        ; nobody has explicitly disabled it would be a lie it acts on.
+        mov     al,[c2f_id]
+        call    cache_mode
+        jnc     cdrv_out
+cdrv_off:
+        xor     al,al
+cdrv_out:
+        pop     edx
+        pop     ebx
+        clc
+        ret
+cdrv_no:
+        pop     edx
+        pop     ebx
+        stc
+        ret
+
+;=====================================================================
+; cache_reset - CACHE /R: everything owed written, every block
+;               forgotten, and the counters back to zero - which is
+;               what SMARTDRV /R meant by "restart", since it unloaded
+;               and loaded again.  The 2Fh BX=2 call is NOT this: a
+;               program reinitialising the cache is not a user asking
+;               for a fresh count.
+;=====================================================================
+cache_reset:
+        call    dos_commit
+        call    cache_dropall
+        mov     dword ptr [cache_hitl],0
+        mov     dword ptr [cache_hith],0
+        mov     dword ptr [cache_missl],0
+        mov     dword ptr [cache_missh],0
+        ret
+
+;=====================================================================
+; cache_status - EDI -> CST_LEN bytes: the cache as it stands, in the
+;                shape 21h/F1h AL=16h publishes.  Preserves all.
+;
+; The counters are the ones the 2Fh interface hands back in register
+; pairs, and the three sizes are the ones CACHE= sets and MEM cannot
+; see: what the cache holds now, the floor a reclaim will not cross
+; and the ceiling a miss will not grow past.
+;=====================================================================
+cache_status:
+        push    eax
+        xor     eax,eax
+        cmp     byte ptr [cache_on],0
+        je      csta_lazy
+        or      al,CSTF_ON
+csta_lazy:
+        cmp     byte ptr [cache_lazy],0
+        je      csta_err
+        or      al,CSTF_LAZY
+csta_err:
+        cmp     byte ptr [cache_error],0
+        je      csta_flags
+        or      al,CSTF_ERROR
+csta_flags:
+        mov     [edi+CST_FLAGS],eax
+        mov     dword ptr [edi+CST_ELSIZE],CC_BLKSIZE
+        mov     eax,[cache_nblk]
+        mov     [edi+CST_NBLK],eax
+        mov     eax,[cache_used]
+        mov     [edi+CST_USED],eax
+        mov     eax,[cache_dirty]
+        mov     [edi+CST_DIRTY],eax
+        mov     eax,[cache_curb]
+        mov     [edi+CST_SIZE],eax
+        mov     eax,[cache_minb]
+        mov     [edi+CST_MIN],eax
+        mov     eax,[cache_maxb]
+        mov     [edi+CST_MAX],eax
+        mov     eax,[cache_hitl]
+        mov     [edi+CST_HITS],eax
+        mov     eax,[cache_hith]
+        mov     [edi+CST_HITS+4],eax
+        mov     eax,[cache_missl]
+        mov     [edi+CST_MISSES],eax
+        mov     eax,[cache_missh]
+        mov     [edi+CST_MISSES+4],eax
+        pop     eax
+        ret
 
 ;=====================================================================
 ; Data

@@ -19,7 +19,7 @@ const char M_HELP[] =
     "  /F              Fixes errors on the disk.\n"
     "  /V              Displays the full path and name of every file on the disk.\n"
     "\n"
-    "Type CHKDSK without parameters to check the current drive.\n";
+    "Type CHKDSK without parameters to check the current disk.\n";
 
 /* command line and drive validation */
 const char M_BADSW[]      = "Invalid switch - %1";

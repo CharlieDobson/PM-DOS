@@ -333,6 +333,12 @@ rxl_bad:
 ;   no pointer at all.  One flag byte keyed on the function has to be
 ;   wrong for at least two of those.
 ;
+;   F1h/16h, the disk cache, is the same shape one level down: its
+;   function is in bits 16-23 of EAX, and only CCF_STATUS carries a
+;   pointer.  The others carry a drive letter and a request in DX, and
+;   EDI is whatever the program left there - which a blanket P_DI
+;   would try to flatten and, when it is not inside the slot, refuse.
+;
 ; BOTH DIRECTIONS ASK THE SAME QUESTION, which is why this is a routine
 ; and not two copies: a register converted on the way in and not
 ; converted back on the way out is a program that finds its own pointer
@@ -345,7 +351,32 @@ r3_pflags:
         je      rpf_country
         cmp     al,65h
         je      rpf_ctryext
+        cmp     ax,16h * 256 + 0F1h
+        je      rpf_cache
+        cmp     ax,1Ah * 256 + 0F1h
+        je      rpf_xmem
         call    vdm_flags
+        ret
+
+rpf_cache:
+        mov     bl,P_DI
+        cmp     byte ptr [ebp+F_EAX+2],CCF_STATUS
+        je      rpf_out
+        xor     bl,bl                           ; a number in DX, nothing
+        ret                                     ; in EDI
+
+; F1h/1Ah, extended memory: XMF_GET writes through EDI and XMF_PUT
+; reads through ESI.  Everything else is a size or a handle, and EBX
+; is an offset in a block the program cannot address - flattening it
+; would add the slot's base to a number that is not in the slot.
+rpf_xmem:
+        mov     bl,P_DI
+        cmp     byte ptr [ebp+F_EAX+2],XMF_GET
+        je      rpf_out
+        mov     bl,P_SI
+        cmp     byte ptr [ebp+F_EAX+2],XMF_PUT
+        je      rpf_out
+        xor     bl,bl
         ret
 
 rpf_country:
@@ -1269,6 +1300,16 @@ r3f_notnull:
         sub     eax,[r3_base]
         call    vdm_hex32
 r3f_nopf:
+        ; Exception 16 is the coprocessor's and 19 is SSE's: an error
+        ; the program unmasked and has no way here to be handed.
+        cmp     dword ptr [r3_fvec],16
+        je      r3f_float
+        cmp     dword ptr [r3_fvec],19
+        jne     r3f_nofp
+r3f_float:
+        mov     esi,OFFSET msgR3Float
+        call    dword ptr ds:[IOS_CONSTR]
+r3f_nofp:
         mov     esi,OFFSET msgR3CR
         call    dword ptr ds:[IOS_CONSTR]
 
@@ -1316,4 +1357,5 @@ msgR3At         db  ' at ',0
 msgR3Err        db  ' err ',0
 msgR3Addr       db  ' addr ',0
 msgR3Null       db  ' - through a null pointer',0
+msgR3Float      db  ' - floating point',0
 msgR3CR         db  13,10,0

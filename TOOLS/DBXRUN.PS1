@@ -1,5 +1,7 @@
 param(
-    [Parameter(Mandatory=$true)][string]$Hd,     # boot disk image (C:)
+    [string]$Hd = '',                            # hard disk image (C:), and the
+                                                 # boot disk unless -Floppy is given
+    [string]$Floppy = '',                        # boot from this floppy image instead
     [string]$Multi = '',                         # optional second disk (D:...)
     [int]$Seconds = 240,                         # DOSBox-X's -time-limit
     [string]$Cap = '',                           # record the screen here (emptied first)
@@ -12,6 +14,12 @@ param(
 #
 #   powershell -File TOOLS\DBXRUN.PS1 -Hd X.IMG [-Multi M.IMG] [-Seconds n]
 #              [-Cap DIR] [-Lpt FILE] [-E9] [-Log type,type...]
+#   powershell -File TOOLS\DBXRUN.PS1 -Floppy A.IMG [-Hd X.IMG] ...
+#
+# -Floppy boots from A: with the hard disk, if there is one, as the
+# machine's C: - which is how a real machine meets PM-DOS for the first
+# time and was the one boot nothing here had ever made.  What the guest
+# writes to A: is read back with FLOPGET.PL.
 #
 # WHY IT EXISTS.  86Box and DOSBox 0.74 both put a window on the screen
 # of the person at the machine; DOSBox-X with the SDL dummy driver puts
@@ -42,7 +50,9 @@ function Get-Cylinders( [string]$image ) {
     return [int][math]::Floor( (Get-Item $image).Length / ( 512 * 63 * 16 ) )
 }
 
-$dir = if ( $Cap -ne '' ) { $Cap } else { Split-Path -Parent ( Resolve-Path $Hd ) }
+if ( $Hd -eq '' -and $Floppy -eq '' ) { throw 'Give -Hd, -Floppy or both.' }
+$boot = if ( $Floppy -ne '' ) { $Floppy } else { $Hd }
+$dir = if ( $Cap -ne '' ) { $Cap } else { Split-Path -Parent ( Resolve-Path $boot ) }
 if ( $Cap -ne '' ) {
     New-Item -ItemType Directory -Force $Cap | Out-Null
     Get-ChildItem $Cap | Remove-Item -Force
@@ -61,9 +71,10 @@ if ( $Log.Count -gt 0 -or $E9 ) {
 if ( $Lpt -ne '' ) { $lines += '[parallel]', "parallel1=file append:$Lpt" }
 $lines += '[autoexec]'
 if ( $Cap -ne '' ) { $lines += 'config -avistart' }
-$lines += "imgmount 2 `"$Hd`" -size 512,63,16,$( Get-Cylinders $Hd ) -fs none"
+if ( $Floppy -ne '' ) { $lines += "imgmount a: `"$Floppy`" -t floppy" }
+if ( $Hd -ne '' ) { $lines += "imgmount 2 `"$Hd`" -size 512,63,16,$( Get-Cylinders $Hd ) -fs none" }
 if ( $Multi -ne '' ) { $lines += "imgmount 3 `"$Multi`" -size 512,63,16,$( Get-Cylinders $Multi ) -fs none" }
-$lines += 'boot -l c'
+$lines += if ( $Floppy -ne '' ) { 'boot -l a' } else { 'boot -l c' }
 Set-Content -Path $conf -Value $lines -Encoding ascii
 
 $env:SDL_VIDEODRIVER = 'dummy'

@@ -3,6 +3,9 @@ use strict; use warnings;
 #
 #     perl TOOLS\FATREPL.PL <image> [-dir NAME] <hostfile>... [-dir NAME <hostfile>...]
 #
+# -del NAME anywhere in the list deletes that file from the directory
+# the last -dir named (the root until one is).
+#
 # Each host file goes into the root (or into the directory the last -dir
 # named, which must already exist there) under its own 8.3 name,
 # upper-cased.  A file of that name already there has its clusters
@@ -163,6 +166,18 @@ while (@ARGV) {
         die "$n83 is not a directory\n" unless ord(substr($d, $hit + 11, 1)) & 0x10;
         $dirclus = unpack('v', substr($d, $hit + 26, 2));
         ($dirname = "\\$n83\\") =~ s/ +(?=\\)//; $dirname =~ s/ +/./;
+        next;
+    }
+    if ($arg eq '-del') {
+        # delete a file the way DOS does: chain freed, first byte of the
+        # entry E5h, the rest left for an undelete to find
+        my $n83 = name83(shift @ARGV);
+        my ($hit) = find_entry($dirclus, $n83);
+        if (!defined $hit) { printf "  %-12s           not there  %s\n", $n83, $dirname; next }
+        die "$n83 is a directory\n" if ord(substr($d, $hit + 11, 1)) & 0x10;
+        free_chain(unpack('v', substr($d, $hit + 26, 2)), claimed($hit));
+        substr($d, $hit, 1) = "\xE5";
+        printf "  %-12s           deleted    %s\n", $n83, $dirname;
         next;
     }
     open(my $in, '<', $arg) or die "$arg: $!";

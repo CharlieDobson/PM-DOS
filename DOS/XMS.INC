@@ -790,12 +790,25 @@ xfd_bad:
 ;---------------------------------------------------------------------
 ; xms_handleno - ESI -> a slot.  AX = the handle number for it.
 ;---------------------------------------------------------------------
+;
+; A DIVIDE, AND SAVED ROUND IT.  This was a shift by four with the
+; comment "XH_LEN is 16" - and XH_LEN has been 20 since XH_OWN was
+; added, so the fifth handle open at once came back numbered 6, which
+; xms_find takes to be the sixth slot: a program freed, moved into or
+; locked a block that was not the one it had been given.  Four live
+; handles had always been enough to hide it.
 xms_handleno:
+        push    ecx
+        push    edx
         mov     eax,esi
         sub     eax,OFFSET xms_handles
-        shr     eax,4                           ; XH_LEN is 16, and a shift
-        inc     eax                             ; leaves EDX and ECX alone
-        ret                                     ; where a DIV would not
+        xor     edx,edx
+        mov     ecx,XH_LEN
+        div     ecx
+        inc     eax
+        pop     edx
+        pop     ecx
+        ret
 
 ;---------------------------------------------------------------------
 ; xms_freeh - AL = how many handles are still free, saturated at 255.
@@ -1024,3 +1037,165 @@ xr_next:
         loop    xr_one
         popad
         ret
+
+;=====================================================================
+; xmn_call - 21h/F1h AL=1Ah: extended memory for a NATIVE program.
+;            Bits 16-23 of EAX say which XMF_* (PMDOS.INC has them
+;            and the registers).
+;
+; A native program's segment is its slot, and a slot is 512K - less
+; than one diskette.  A block of the arena is somewhere it can keep
+; more than that without being able to address it, and these are the
+; copies in and out: XMS's 0Bh, in the shape a flat program wants.
+;
+; THE BLOCKS ARE XMS HANDLES, not a table of their own, for the reason
+; this file gives about UMBs: two doors onto one pool.  The memory is
+; arena_alloc's, stamped with cur_own, so fn4C's arena sweep takes it
+; back from a program that ends holding some, and fn4C calls
+; xms_relown after it for the table - the same pair vdm_cleanup runs.
+;
+; ONLY THE PROGRAM THAT TOOK A HANDLE MAY USE IT.  The handle numbers
+; are XMS's, so a native program could otherwise name a DOS box TSR's
+; block and read it or write over it, and a native program reaching
+; nothing but its own slot is what RING3.INC exists to promise.  A
+; handle that is not the caller's is "invalid handle", the same answer
+; as one that is not live.
+;
+; Nobody but a native program gets here: a DOS box has the real XMS,
+; a DPMI client has 0501h, and the pointer this takes is converted by
+; r3_pflags, which only a native program's calls go through.
+;=====================================================================
+xmn_call:
+        cmp     word ptr [ebp+F_CS],SEL_PROG_CS
+        jne     i21_unsup
+        movzx   eax,byte ptr [ebp+F_EAX+2]
+        cmp     eax,XMF_ALLOC
+        je      xmn_alloc
+        cmp     eax,XMF_FREE
+        je      xmn_free
+        cmp     eax,XMF_GET
+        je      xmn_get
+        cmp     eax,XMF_PUT
+        je      xmn_put
+        cmp     eax,XMF_AVAIL
+        je      xmn_avail
+        jmp     i21_unsup
+
+;--- XMF_AVAIL: ECX = the largest block there is ---------------------
+xmn_avail:
+        call    arena_avail
+        mov     [ebp+F_ECX],eax
+        jmp     i21_ok
+
+;--- XMF_ALLOC: ECX = bytes -> EDX = handle --------------------------
+; Whole kilobytes, because XH_KB is what the table keeps and what the
+; bounds below are checked against: a block is exactly as big as its
+; handle says.  A handle first, for xf_09's reason.
+xmn_alloc:
+        mov     ebx,[ebp+F_ECX]
+        add     ebx,3FFh
+        jc      xmn_huge
+        and     ebx,NOT 3FFh
+        jnz     xmn_asize
+        mov     ebx,400h                        ; nothing is a kilobyte
+xmn_asize:
+        push    ebx
+        call    xms_newh                        ; ESI -> a free slot
+        pop     ebx
+        jc      xmn_nohandle
+        call    arena_alloc                     ; -> EAX, owned by cur_own
+        jc      xmn_nomem
+        mov     dword ptr [esi+XH_FLAGS],1
+        mov     [esi+XH_ADDR],eax
+        shr     ebx,10
+        mov     [esi+XH_KB],ebx
+        mov     dword ptr [esi+XH_LOCK],0
+        mov     eax,[cur_own]
+        mov     [esi+XH_OWN],eax
+        call    xms_handleno                    ; -> EAX
+        mov     [ebp+F_EDX],eax
+        jmp     i21_ok
+xmn_huge:
+        call    arena_avail
+xmn_nomem:
+        mov     [ebp+F_ECX],eax                 ; the most there is
+        mov     ax,ERR_NOMEM
+        jmp     i21_fail
+xmn_nohandle:
+        mov     ax,ERR_NOHANDLES
+        jmp     i21_fail
+
+;--- XMF_FREE: EDX = handle ------------------------------------------
+xmn_free:
+        call    xmn_mine                        ; -> ESI
+        jc      xmn_badh
+        mov     edx,[esi+XH_ADDR]
+        call    arena_free
+        mov     dword ptr [esi+XH_FLAGS],0
+        jmp     i21_ok
+
+;--- XMF_GET / XMF_PUT: EDX = handle, EBX = offset, ECX = bytes, and
+;--- EDI (get) or ESI (put) in the program.  Both ends are measured
+;--- before a byte moves: the program's by cbuf_ok, which keeps it to
+;--- the slot, and the block's here.
+xmn_get:
+        mov     byte ptr [xmn_put1],0
+        mov     eax,[ebp+F_EDI]
+        jmp     short xmn_move
+xmn_put:
+        mov     byte ptr [xmn_put1],1
+        mov     eax,[ebp+F_ESI]
+xmn_move:
+        mov     ecx,[ebp+F_ECX]
+        call    cbuf_ok
+        jc      buf_deny
+        mov     [xmn_prog],eax
+        call    xmn_mine                        ; -> ESI
+        jc      xmn_badh
+        mov     edx,[esi+XH_KB]
+        shl     edx,10                          ; the block's size
+        mov     ebx,[ebp+F_EBX]
+        mov     ecx,[ebp+F_ECX]
+        cmp     ebx,edx
+        ja      xmn_range
+        sub     edx,ebx                         ; what lies past the offset
+        cmp     ecx,edx
+        ja      xmn_range
+        add     ebx,[esi+XH_ADDR]               ; the block's end, flat
+        mov     esi,ebx
+        mov     edi,[xmn_prog]
+        cmp     byte ptr [xmn_put1],0
+        je      xmn_copy
+        xchg    esi,edi                         ; the program's end is
+xmn_copy:                                       ; the source for a put
+        mov     eax,ecx
+        shr     ecx,2
+        rep     movsd
+        mov     ecx,eax
+        and     ecx,3
+        rep     movsb
+        jmp     i21_ok
+
+xmn_badh:
+        mov     ax,ERR_BADHANDLE
+        jmp     i21_fail
+xmn_range:
+        mov     ax,ERR_ACCESS
+        jmp     i21_fail
+
+;--- xmn_mine - the frame's EDX as a handle of the caller's: ESI -> its
+;--- slot, CF if it is not live or not this program's.
+xmn_mine:
+        mov     eax,[ebp+F_EDX]
+        call    xms_find
+        jc      xmm_out
+        mov     eax,[cur_own]
+        cmp     [esi+XH_OWN],eax
+        je      xmm_out                         ; equal: CF is clear
+        stc
+xmm_out:
+        ret
+
+xmn_prog    dd  0                       ; the program's end of a move
+xmn_put1    db  0                       ; 1: into the block, 0: out of it
+            db  0,0,0

@@ -282,6 +282,154 @@ ds_p3:
         popad
         ret
 
+;=====================================================================
+; disk_rescan - the hard disks again, if the scan found no volume on
+;               any of them.  Called when CONFIG.SYS has changed how a
+;               disk is read.
+;
+; IDE32=OFF AND IDEDMA=OFF ARE THE ESCAPE HATCHES, AND THEY OPENED ONTO
+; NOTHING.  They are for the machine that reads a disk wrongly, and on
+; that machine the scan above has already read the partition table
+; wrongly, found no volume in it and given out no letter - before
+; CONFIG.SYS was opened.  The line then changed how the disk is read
+; and nothing looked at the disk again, so the one statement meant for
+; that machine could not give it a C:.
+;
+; ONLY WHEN THERE IS NOTHING TO DISTURB.  A table with a partition in
+; it is left exactly as it is: letters that exist are letters something
+; may already be standing on.  With none, the passes run as they did at
+; boot - and the CD-ROMs step aside first and are placed again after,
+; because they were given the letters the disks should have had.
+;=====================================================================
+disk_rescan:
+        pushad
+        xor     ebp,ebp
+drs_look:
+        cmp     ebp,MAX_DRIVES
+        jae     drs_go
+        mov     eax,ebp
+        call    drv_slot
+        mov     al,[ebx+DRV_FLAGS]
+        test    al,DRVF_PRESENT
+        jz      drs_next
+        test    al,DRVF_FLOPPY OR DRVF_CDROM OR DRVF_DRIVER OR DRVF_IMAGE
+        jz      drs_out                 ; a partition: leave it all alone
+drs_next:
+        inc     ebp
+        jmp     short drs_look
+
+drs_go:
+        call    drv_dropcds
+
+        mov     byte ptr [ds_disk],80h
+drs_p1:
+        call    ds_primary
+        inc     byte ptr [ds_disk]
+        cmp     byte ptr [ds_disk],80h + MAX_PHYS
+        jb      drs_p1
+
+        mov     byte ptr [ds_disk],80h
+drs_p2:
+        call    ds_logicals
+        inc     byte ptr [ds_disk]
+        cmp     byte ptr [ds_disk],80h + MAX_PHYS
+        jb      drs_p2
+
+        mov     byte ptr [ds_disk],80h
+drs_p3:
+        call    ds_restprim
+        inc     byte ptr [ds_disk]
+        cmp     byte ptr [ds_disk],80h + MAX_PHYS
+        jb      drs_p3
+
+        call    drv_addcds
+        mov     dword ptr [sec_lba],-1  ; the passes read into sec_buf, and
+                                        ; this time a volume is mounted:
+                                        ; what it had cached there is gone
+drs_out:
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; cd_announce - a line for each CD-ROM drive, saying its letter.  All
+;               registers kept.
+;
+; Called once, AFTER CONFIG.SYS: CDROM= moves the letters and so can
+; an IDE statement that finds the hard disks the first scan missed,
+; and a letter announced before either would be the wrong one.  It is
+; the drive that is announced and not a disc - the letter is there
+; with the tray empty.  A machine with no CD-ROM drive says nothing.
+;---------------------------------------------------------------------
+cd_announce:
+        pushad
+        xor     ebp,ebp
+cda_lp:
+        cmp     ebp,MAX_DRIVES
+        jae     cda_out
+        mov     eax,ebp
+        call    drv_slot
+        mov     al,[ebx+DRV_FLAGS]
+        test    al,DRVF_PRESENT
+        jz      cda_next
+        test    al,DRVF_CDROM
+        jz      cda_next
+        test    al,DRVF_IMAGE           ; an .ISO somebody mounted is a
+        jnz     cda_next                ; file, not a drive
+        mov     eax,ebp
+        add     al,'A'
+        mov     [msgCdLetter],al
+        mov     esi,OFFSET msgCdDrive
+        call    dword ptr ds:[IOS_CONSTR]
+cda_next:
+        inc     ebp
+        jmp     short cda_lp
+cda_out:
+        popad
+        ret
+
+msgCdDrive  db  'CD-ROM drive detected as '
+msgCdLetter db  'D:',13,10,0
+
+;---------------------------------------------------------------------
+; drv_dropcds - take the letters back from the CD-ROMs, and drv_count
+;               down to the highest letter still in use.
+;---------------------------------------------------------------------
+drv_dropcds:
+        pushad
+        xor     ebp,ebp
+ddc_clear:
+        cmp     ebp,MAX_DRIVES
+        jae     ddc_cleared
+        mov     eax,ebp
+        call    drv_slot
+        test    byte ptr [ebx+DRV_FLAGS],DRVF_CDROM
+        jz      ddc_clnext
+        mov     byte ptr [ebx+DRV_FLAGS],0
+        mov     byte ptr [ebx+DRV_BIOS],0
+ddc_clnext:
+        inc     ebp
+        jmp     short ddc_clear
+ddc_cleared:
+        ; ...and drv_count with them, or the second pass would start
+        ; counting from a high-water mark the cleared slots had set
+        xor     ebp,ebp
+        xor     edx,edx                 ; EDX = highest present slot + 1
+ddc_recount:
+        cmp     ebp,MAX_DRIVES
+        jae     ddc_recounted
+        mov     eax,ebp
+        call    drv_slot
+        test    byte ptr [ebx+DRV_FLAGS],DRVF_PRESENT
+        jz      ddc_rcnext
+        lea     edx,[ebp+1]
+ddc_rcnext:
+        inc     ebp
+        jmp     short ddc_recount
+ddc_recounted:
+        mov     [drv_count],dl
+        popad
+        ret
+
 ;---------------------------------------------------------------------
 ; drv_addcds - give every ATAPI unit a drive letter.
 ;
@@ -297,37 +445,7 @@ ds_p3:
 ; makes the second call place them rather than duplicate them.
 drv_addcds:
         pushad
-        xor     ebp,ebp
-dac_clear:
-        cmp     ebp,MAX_DRIVES
-        jae     dac_cleared
-        mov     eax,ebp
-        call    drv_slot
-        test    byte ptr [ebx+DRV_FLAGS],DRVF_CDROM
-        jz      dac_clnext
-        mov     byte ptr [ebx+DRV_FLAGS],0
-        mov     byte ptr [ebx+DRV_BIOS],0
-dac_clnext:
-        inc     ebp
-        jmp     short dac_clear
-dac_cleared:
-        ; ...and drv_count with them, or the second pass would start
-        ; counting from a high-water mark the cleared slots had set
-        xor     ebp,ebp
-        xor     edx,edx                 ; EDX = highest present slot + 1
-dac_recount:
-        cmp     ebp,MAX_DRIVES
-        jae     dac_recounted
-        mov     eax,ebp
-        call    drv_slot
-        test    byte ptr [ebx+DRV_FLAGS],DRVF_PRESENT
-        jz      dac_rcnext
-        lea     edx,[ebp+1]
-dac_rcnext:
-        inc     ebp
-        jmp     short dac_recount
-dac_recounted:
-        mov     [drv_count],dl
+        call    drv_dropcds
 
         xor     al,al
         xor     ecx,ecx
@@ -793,6 +911,7 @@ fm_notcd:
 ; device its sector size, because nothing on a PC-standard bus
 ; answers with anything else.
         mov     byte ptr [fat_lshift],0
+        mov     byte ptr [fm_hasbpb],1
         movzx   eax,word ptr [sec_buf+BPB_BPS]
         xor     ecx,ecx
 fm_bpslp:
@@ -872,6 +991,52 @@ fm_havetot2:
         mov     [fat_totsec],ecx
 
 fm_layout:
+;--- a diskette's geometry is the DISK's, not the drive's ------------
+; The block layer turns a sector number into a cylinder, a head and a
+; sector with figures it had from the BIOS, and a real BIOS describes
+; the drive: eighteen sectors a track for a 1.44M drive with a 720K
+; disk in it.  The boot sector says what the disk is.  It is only
+; taken at its word when the three figures agree with each other - so
+; many sectors a track, on so many sides, making a whole number of
+; tracks - and a disk that reached here through fm_nobpb has no such
+; figures and is left to the BIOS.
+        cmp     byte ptr [fat_drive],2
+        jae     fm_geodone
+        cmp     dword ptr [fat_partlba],0
+        jne     fm_geodone
+        mov     al,[cur_vol]
+        call    drv_slot
+        test    byte ptr [ebx+DRV_FLAGS],DRVF_DRIVER OR DRVF_IMAGE OR DRVF_CDROM
+        jnz     fm_geodone
+        cmp     byte ptr [fm_hasbpb],0
+        je      fm_geodone
+        cmp     byte ptr [fat_lshift],0
+        jne     fm_geodone
+        movzx   ecx,word ptr [sec_buf+BPB_SECPERTRK]
+        movzx   ebx,word ptr [sec_buf+BPB_NUMHEADS]
+        mov     eax,ecx
+        imul    eax,ebx
+        or      eax,eax
+        jz      fm_geodone
+        push    ecx
+        mov     ecx,eax
+        mov     eax,[fat_totsec]
+        xor     edx,edx
+        div     ecx
+        pop     ecx
+        or      edx,edx
+        jnz     fm_geodone              ; not a whole number of tracks
+        cmp     eax,40
+        jb      fm_geodone
+        cmp     eax,84
+        ja      fm_geodone
+        mov     edx,ebx
+        mov     ebx,[fat_totsec]
+        mov     al,[fat_drive]
+        mov     ah,FDF_SETGEO
+        call    dword ptr ds:[IOS_FLOPPY]
+fm_geodone:
+
 ;--- derived layout (all LBAs absolute, partition folded in) ---------
         mov     eax,[fat_rsvd]
         add     eax,[fat_partlba]
@@ -998,6 +1163,7 @@ fm_typed:
 fm_nobpb:
         cmp     byte ptr [fat_drive],80h
         jae     fm_fail
+        mov     byte ptr [fm_hasbpb],0
 
         mov     al,[fat_drive]                  ; FAT[0] - every one of
         mov     ebx,[fat_partlba]               ; these formats puts the
@@ -1046,6 +1212,9 @@ fm_media_tbl:
         dw  64, 2, 360                  ; 180K, one side, 9 sectors
         db  MEDIA_FD, 2
         dw  112, 2, 720                 ; 360K, two sides, 9 sectors
+
+fm_hasbpb   db  0                       ; sec_buf holds a boot sector with
+                                        ; a BPB in it, for fm_layout
 
 ;=====================================================================
 ; fat_checkmedia - is FAT[0] the shape a FAT[0] has to be?

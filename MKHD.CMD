@@ -1,0 +1,191 @@
+@echo off
+rem ===================================================================
+rem MKHD.CMD - build the bootable FAT16 and FAT32 hard-disk images
+rem
+rem   IMAGES\HD16.IMG   32MB FAT16, bootable
+rem   IMAGES\HD32.IMG   40MB FAT32, bootable
+rem
+rem Both get the MBR, a stage-1 volume boot record, stage 2 in the
+rem reserved sectors, and the system files.  Pass FRAG to scatter
+rem every file across alternate clusters - a loader that reads
+rem straight through instead of walking the FAT will not survive it:
+rem
+rem   MKHD          normal images
+rem   MKHD frag     deliberately fragmented images
+rem
+rem Kept out of BUILD.CMD because they are 32MB and 40MB of test
+rem artifact, not part of the shipping floppy.  They live in IMAGES\
+rem with every other piece of finished media, and not in BIN\, which
+rem holds what a disk is MADE OF.  Mount them with:
+rem
+rem   imgmount 2 IMAGES\HD16.IMG -size 512,63,16,65 -t hdd -fs none
+rem   imgmount 3 IMAGES\HD32.IMG -size 512,63,16,81 -t hdd -fs none
+rem
+rem then "boot -l c" for the FAT16 disk, or swap the mount indexes to
+rem boot the FAT32 one; "boot -l a" with the floppy leaves both as
+rem plain C: and D: volumes to chew on.
+rem ===================================================================
+rem NT 3.51's cmd.exe has no %~dp0.  Win32 folds "<file>\.." lexically, so
+rem "%0\.." is this script's own directory, and pushd - unlike cd - changes
+rem the drive as well.
+pushd "%0\.."
+if not exist MKHD.CMD goto nohome
+set FRAG=
+rem NT 3.51's cmd.exe has no IF /I either.  Bracketing both sides anchors the
+rem comparison at each end, so this stays an exact, case-insensitive match and
+rem does not turn into a substring one.
+echo [%1]| find /i "[frag]" > nul
+if not errorlevel 1 set FRAG=-frag
+if not exist TOOLS\MKDISK.EXE goto nobuild
+if not exist BIN\BOOT2.BIN    goto nobuild
+rem MKDISK.EXE and MKMULTI.EXE write the file they are told to and do
+rem not create the directory first.  BUILD.CMD makes IMAGES\ as well,
+rem but MKHD can be run on its own after a clone.
+if not exist IMAGES mkdir IMAGES
+
+rem THE BIG 16-BIT GUESTS, and none of them is built here or belongs to
+rem PM-DOS.  They are copied into BIN\ by hand off this machine: two of
+rem the Dobson Utilities' DOS builds, and four of the DOS tools that
+rem came with MASM 6.11 and MSVC.  They earn their place by being what
+rem no guest in TOOLS\ is - REAL 16-bit programs.  Tens to hundreds of
+rem kilobytes, large model, hundreds of relocations each, and MSD in
+rem particular asks the machine every question a system-information
+rem program asks, which is precisely what fell over on the 486 at
+rem v0.33 while every test here passed.
+rem
+rem Every 16-bit test WRITTEN for this kernel was written to exercise
+rem one thing and is a few hundred bytes long.  A suite of those
+rem passing says nothing about whether a program somebody would
+rem actually run still works.  That is the v0.32 lesson - a limit no
+rem test can reach is not covered by having tests - arriving a second
+rem time, from the direction of what the tests are made OF.
+rem
+rem Missing is not an error: the images build without any of them, and
+rem DISK\BIG16.BAT simply reports the ones that are not there as bad
+rem commands.  Nothing here is redistributed - these images are local
+rem test artifacts and are not part of a release.
+set BIG16=
+if exist BIN\TESTS\REVEAL.EXE   set BIG16=%BIG16% BIN\TESTS\REVEAL.EXE
+if exist BIN\TESTS\DISKSTAT.EXE set BIG16=%BIG16% BIN\TESTS\DISKSTAT.EXE
+if exist BIN\TESTS\MSD.EXE      set BIG16=%BIG16% BIN\TESTS\MSD.EXE
+if exist BIN\TESTS\EXEHDR.EXE   set BIG16=%BIG16% BIN\TESTS\EXEHDR.EXE
+if exist BIN\TESTS\NMAKE.EXE    set BIG16=%BIG16% BIN\TESTS\NMAKE.EXE
+rem MEM622.EXE is MS-DOS 6.22's own MEM.EXE under a name that does not
+rem collide with ours, and it earns its place: it is the program that
+rem LOCKED THE 486 UP at v0.34.  It asks for the list of lists and then
+rem walks the MCB chain by hand, which is the one path PM-DOS's own MEM
+rem cannot test - that MEM is a D32 program and asks 21h/F1h instead.
+if exist BIN\TESTS\MEM622.EXE   set BIG16=%BIG16% BIN\TESTS\MEM622.EXE
+if "%BIG16%"=="" echo NOTE: no big 16-bit guest in BIN - see the comment above
+
+rem A HARD DISK'S AUTOEXEC.BAT IS THE DISKETTE'S WITH ITS OWN PATH.  The
+rem diskette's names A:\ and nothing else, which on a machine started
+rem from C: would send every command typed to look in an empty drive.
+rem So the line is taken out and C:'s is put at the end, where it does
+rem as well: everything between is a rem.  FIND rather than anything
+rem cleverer, because NT 3.51 has it.
+if not exist BIN\HD\NUL md BIN\HD
+find /v "PATH A:\" < DISK\AUTOEXEC.BAT > BIN\HD\AUTOEXEC.BAT
+echo PATH C:\WINDOWS;C:\WINDOWS\SYSTEM;C:\TESTS;C:\>> BIN\HD\AUTOEXEC.BAT
+
+TOOLS\MKDISK.EXE -hd16 32 IMAGES\HD16.IMG %FRAG% -mbr BIN\MBRBOOT.BIN -vbr BIN\BOOT16.BIN -s2 ^
+    BIN\BOOT2.BIN BIN\PMIO.SYS BIN\PMDOS.SYS BIN\CMD.EXE BIN\COMMAND.COM BIN\CHOICE.COM BIN\MORE.COM ^
+    BIN\SORT.COM BIN\SYS.COM BIN\FORMAT.COM BIN\MEM.EXE BIN\FDISK.EXE BIN\MOUNT.EXE BIN\CACHE.EXE BIN\UNDELETE.EXE BIN\CDEX.EXE BIN\MOVE.EXE BIN\ATTRIB.EXE ^
+    BIN\CHKDSK.EXE BIN\LABEL.EXE BIN\XCOPY.EXE BIN\EDIT.EXE BIN\FC.EXE BIN\FIND.EXE BIN\DISKCOPY.COM BIN\DISKCOMP.COM ^
+    BIN\RMDOS.SYS README.TXT DISK\CONFIG.SYS BIN\HD\AUTOEXEC.BAT -dir TESTS BIN\TESTS\DRIVES.EXE BIN\TESTS\LFNAPI.COM ^
+    BIN\TESTS\HELLO.COM BIN\TESTS\HELLOX.EXE BIN\TESTS\ARGS.COM BIN\TESTS\XMSTEST.COM ^
+    BIN\TESTS\A20TEST.COM BIN\TESTS\MEMPROBE.COM BIN\TESTS\EXECTST.COM BIN\TESTS\TSRTEST.COM BIN\TESTS\I13TEST.COM ^
+    BIN\TESTS\CURTEST.COM BIN\TESTS\DPMITEST.COM BIN\TESTS\DEVTEST.COM BIN\TESTS\APITEST.COM ^
+    BIN\TESTS\IDLETEST.COM BIN\TESTS\CRASH.EXE BIN\TESTS\R3TEST.EXE BIN\TESTS\LOLTEST.COM ^
+    BIN\TESTS\RMTEST.COM BIN\TESTS\RMFIND.COM BIN\TESTS\PARKTEST.EXE BIN\TESTS\WINTEST.COM ^
+    BIN\TESTS\PARKWIN.COM BIN\TESTS\PARKEXEC.COM BIN\TESTS\PEKID.COM BIN\TESTS\PROBE13.COM ^
+    BIN\TESTS\LPTTEST.COM BIN\TESTS\RMSPEED.COM BIN\TESTS\HNDTEST.COM BIN\TESTS\SFTSCAN.COM ^
+    BIN\TESTS\XMSREPT.COM BIN\TESTS\CDXTEST.COM BIN\TESTS\CDATEST.COM ^
+    BIN\TESTS\KBTEST.COM BIN\TESTS\INT9TEST.COM ^
+    BIN\TESTS\UDTEST.COM BIN\TESTS\ALLOCTST.COM BIN\TESTS\MCBTEST.COM BIN\TESTS\FCBTEST.COM ^
+    BIN\TESTS\BUFTEST.COM BIN\TESTS\UMBTEST.COM BIN\TESTS\EMSTEST.COM BIN\TESTS\DEVCRIT.EXE ^
+    BIN\TESTS\I24TEST.COM BIN\TESTS\VFYTEST.EXE BIN\TESTS\IDETEST.EXE BIN\TESTS\HWPROBE.EXE BIN\TESTS\F32TEST.COM BIN\TESTS\FNDTEST.EXE ^
+    BIN\TESTS\CFGTEST.COM BIN\TESTS\CACHETST.COM BIN\TESTS\SHARETST.COM BIN\TESTS\TESTDEV.SYS BIN\TESTS\TESTBLK.SYS BIN\TESTS\CTRYDMP.COM ^
+    BIN\TESTS\HOOKTEST.COM BIN\TESTS\MSTEST.COM BIN\TESTS\MS32TEST.EXE BIN\TESTS\VPICTEST.COM BIN\TESTS\DPMIIRQ.COM BIN\TESTS\DPMII32.COM BIN\TESTS\DPMIVEC.COM BIN\TESTS\DPMIV32.COM BIN\TESTS\VDSTEST.COM BIN\TESTS\NICIRQ.COM BIN\TESTS\PCITEST.EXE BIN\TESTS\IRQTEST.EXE BIN\TESTS\FPUTEST.COM BIN\TESTS\FPU32.EXE BIN\TESTS\DPMIFPU.COM BIN\TESTS\DPMIFP32.COM BIN\TESTS\RMFSTEST.COM BIN\TESTS\WINDRV.EXE BIN\TESTS\CTRYTEST.COM BIN\TESTS\TESTIMG.IMG%BIG16% DISK\BATTEST.BAT DISK\SUB.BAT DISK\CHTEST.BAT ^
+    DISK\GOTOTEST.BAT DISK\LOOPTEST.BAT DISK\REDTEST.BAT DISK\LFNTEST.BAT DISK\CMDTEST.CMD ^
+    DISK\SUBQ.CMD DISK\BATQ.BAT DISK\CTRLC.BAT DISK\CHAIN1.BAT DISK\CHAIN2.BAT DISK\NOLABEL.BAT ^
+    DISK\SHIFT12.BAT DISK\VDMTEST.BAT DISK\NESTTEST.BAT DISK\DISKTEST.BAT DISK\IMGTEST.BAT DISK\DEEPTEST.BAT DISK\FDTEST.BAT DISK\FDRTEST.BAT DISK\FD32TEST.BAT DISK\FDMTEST.BAT DISK\FDLTEST.BAT DISK\MVTEST.BAT DISK\ATTRTEST.BAT DISK\NULTEST.BAT ^
+    DISK\CRASHTST.BAT DISK\UDTEST.BAT DISK\UNDTEST.BAT DISK\APITEST.BAT DISK\R3TEST.BAT DISK\LOLTEST.BAT DISK\HELPTEST.BAT ^
+    DISK\PARK.BAT DISK\PARKXMS.BAT DISK\SWTEST.BAT DISK\BIG16.BAT ^
+    DISK\DIRTEST.BAT DISK\GLUETEST.BAT DISK\FMTTEST.BAT DISK\FMT1.KEY DISK\FMT2.KEY DISK\RENTEST.BAT DISK\FORFTEST.BAT DISK\KEYTEST.BAT DISK\KEYTEST.KEY DISK\C16TEST.BAT DISK\C16SUB.BAT ^
+    DISK\BOXTEST.BAT DISK\CCALIVE.BAT DISK\CCFOR.BAT DISK\CCONE.BAT DISK\D32TEST.BAT DISK\WINDOS.BAT DISK\XCTEST.CMD DISK\XCEL.BAT ^
+    DISK\BUSTEST.BAT DISK\FPUTEST.BAT DISK\MSTEST.BAT DISK\EDTEST.BAT DISK\FDM1.KEY DISK\ED1.KEY DISK\ED2.KEY DISK\ED3.KEY DISK\ED4.KEY DISK\ED5.KEY DISK\ED6.KEY DISK\ED7.KEY DISK\ED8.KEY DISK\ED9.KEY DISK\ED10.KEY DISK\ED11.KEY DISK\ED12.KEY DISK\ED13.KEY DISK\ED14.KEY DISK\ED15.KEY DISK\ED16.KEY DISK\ED17.KEY DISK\EDBIN.DAT DISK\EDTABS.DAT DISK\EDLF.DAT || goto fail
+TOOLS\MKDISK.EXE -hd32 40 IMAGES\HD32.IMG %FRAG% -mbr BIN\MBRBOOT.BIN -vbr BIN\BOOT32.BIN -s2 ^
+    BIN\BOOT2.BIN BIN\PMIO.SYS BIN\PMDOS.SYS BIN\CMD.EXE BIN\COMMAND.COM BIN\CHOICE.COM BIN\MORE.COM ^
+    BIN\SORT.COM BIN\SYS.COM BIN\FORMAT.COM BIN\MEM.EXE BIN\FDISK.EXE BIN\MOUNT.EXE BIN\CACHE.EXE BIN\UNDELETE.EXE BIN\CDEX.EXE BIN\MOVE.EXE BIN\ATTRIB.EXE ^
+    BIN\CHKDSK.EXE BIN\LABEL.EXE BIN\XCOPY.EXE BIN\EDIT.EXE BIN\FC.EXE BIN\FIND.EXE BIN\DISKCOPY.COM BIN\DISKCOMP.COM ^
+    BIN\RMDOS.SYS README.TXT DISK\CONFIG.SYS BIN\HD\AUTOEXEC.BAT -dir TESTS BIN\TESTS\DRIVES.EXE BIN\TESTS\LFNAPI.COM ^
+    BIN\TESTS\HELLO.COM BIN\TESTS\HELLOX.EXE BIN\TESTS\ARGS.COM BIN\TESTS\XMSTEST.COM ^
+    BIN\TESTS\A20TEST.COM BIN\TESTS\MEMPROBE.COM BIN\TESTS\EXECTST.COM BIN\TESTS\TSRTEST.COM BIN\TESTS\I13TEST.COM ^
+    BIN\TESTS\CURTEST.COM BIN\TESTS\DPMITEST.COM BIN\TESTS\DEVTEST.COM BIN\TESTS\APITEST.COM ^
+    BIN\TESTS\IDLETEST.COM BIN\TESTS\CRASH.EXE BIN\TESTS\R3TEST.EXE BIN\TESTS\LOLTEST.COM ^
+    BIN\TESTS\RMTEST.COM BIN\TESTS\RMFIND.COM BIN\TESTS\PARKTEST.EXE BIN\TESTS\WINTEST.COM ^
+    BIN\TESTS\PARKWIN.COM BIN\TESTS\PARKEXEC.COM BIN\TESTS\PEKID.COM BIN\TESTS\PROBE13.COM ^
+    BIN\TESTS\LPTTEST.COM BIN\TESTS\RMSPEED.COM BIN\TESTS\HNDTEST.COM BIN\TESTS\SFTSCAN.COM ^
+    BIN\TESTS\XMSREPT.COM BIN\TESTS\CDXTEST.COM BIN\TESTS\CDATEST.COM ^
+    BIN\TESTS\KBTEST.COM BIN\TESTS\INT9TEST.COM ^
+    BIN\TESTS\UDTEST.COM BIN\TESTS\ALLOCTST.COM BIN\TESTS\MCBTEST.COM BIN\TESTS\FCBTEST.COM ^
+    BIN\TESTS\BUFTEST.COM BIN\TESTS\UMBTEST.COM BIN\TESTS\EMSTEST.COM BIN\TESTS\DEVCRIT.EXE ^
+    BIN\TESTS\I24TEST.COM BIN\TESTS\VFYTEST.EXE BIN\TESTS\IDETEST.EXE BIN\TESTS\HWPROBE.EXE BIN\TESTS\F32TEST.COM BIN\TESTS\FNDTEST.EXE ^
+    BIN\TESTS\CFGTEST.COM BIN\TESTS\CACHETST.COM BIN\TESTS\SHARETST.COM BIN\TESTS\TESTDEV.SYS BIN\TESTS\TESTBLK.SYS BIN\TESTS\CTRYDMP.COM ^
+    BIN\TESTS\HOOKTEST.COM BIN\TESTS\MSTEST.COM BIN\TESTS\MS32TEST.EXE BIN\TESTS\VPICTEST.COM BIN\TESTS\DPMIIRQ.COM BIN\TESTS\DPMII32.COM BIN\TESTS\DPMIVEC.COM BIN\TESTS\DPMIV32.COM BIN\TESTS\VDSTEST.COM BIN\TESTS\NICIRQ.COM BIN\TESTS\PCITEST.EXE BIN\TESTS\IRQTEST.EXE BIN\TESTS\FPUTEST.COM BIN\TESTS\FPU32.EXE BIN\TESTS\DPMIFPU.COM BIN\TESTS\DPMIFP32.COM BIN\TESTS\RMFSTEST.COM BIN\TESTS\WINDRV.EXE BIN\TESTS\CTRYTEST.COM BIN\TESTS\TESTIMG.IMG%BIG16% DISK\BATTEST.BAT DISK\SUB.BAT DISK\CHTEST.BAT ^
+    DISK\GOTOTEST.BAT DISK\LOOPTEST.BAT DISK\REDTEST.BAT DISK\LFNTEST.BAT DISK\CMDTEST.CMD ^
+    DISK\SUBQ.CMD DISK\BATQ.BAT DISK\CTRLC.BAT DISK\CHAIN1.BAT DISK\CHAIN2.BAT DISK\NOLABEL.BAT ^
+    DISK\SHIFT12.BAT DISK\VDMTEST.BAT DISK\NESTTEST.BAT DISK\DISKTEST.BAT DISK\IMGTEST.BAT DISK\DEEPTEST.BAT DISK\FDTEST.BAT DISK\FDRTEST.BAT DISK\FD32TEST.BAT DISK\FDMTEST.BAT DISK\FDLTEST.BAT DISK\MVTEST.BAT DISK\ATTRTEST.BAT DISK\NULTEST.BAT ^
+    DISK\CRASHTST.BAT DISK\UDTEST.BAT DISK\UNDTEST.BAT DISK\APITEST.BAT DISK\R3TEST.BAT DISK\LOLTEST.BAT DISK\HELPTEST.BAT ^
+    DISK\PARK.BAT DISK\PARKXMS.BAT DISK\SWTEST.BAT DISK\BIG16.BAT ^
+    DISK\DIRTEST.BAT DISK\GLUETEST.BAT DISK\FMTTEST.BAT DISK\FMT1.KEY DISK\FMT2.KEY DISK\RENTEST.BAT DISK\FORFTEST.BAT DISK\KEYTEST.BAT DISK\KEYTEST.KEY DISK\C16TEST.BAT DISK\C16SUB.BAT ^
+    DISK\BOXTEST.BAT DISK\CCALIVE.BAT DISK\CCFOR.BAT DISK\CCONE.BAT DISK\D32TEST.BAT DISK\WINDOS.BAT DISK\XCTEST.CMD DISK\XCEL.BAT ^
+    DISK\BUSTEST.BAT DISK\FPUTEST.BAT DISK\MSTEST.BAT DISK\EDTEST.BAT DISK\FDM1.KEY DISK\ED1.KEY DISK\ED2.KEY DISK\ED3.KEY DISK\ED4.KEY DISK\ED5.KEY DISK\ED6.KEY DISK\ED7.KEY DISK\ED8.KEY DISK\ED9.KEY DISK\ED10.KEY DISK\ED11.KEY DISK\ED12.KEY DISK\ED13.KEY DISK\ED14.KEY DISK\ED15.KEY DISK\ED16.KEY DISK\ED17.KEY DISK\EDBIN.DAT DISK\EDTABS.DAT DISK\EDLF.DAT || goto fail
+echo IMAGES\HD16.IMG and IMAGES\HD32.IMG ready (both bootable). %FRAG%
+
+
+
+
+rem A multi-partition test disk: two primaries, a non-FAT partition,
+rem and an extended chain with two logical drives and a hidden one.
+rem It is the only image that exercises the extended-partition walk.
+rem
+rem NO -mbr, AND THAT IS DELIBERATE.  This disk is never booted - it
+rem is always the SECOND one - so the code area of its master boot
+rem record is free to be the one thing no other image here can be: a
+rem table with no loader in front of it, which is exactly the disk
+rem FDISK /MBR exists to repair.  With MBRBOOT.BIN written into it,
+rem /MBR would answer "the code in it is already this one" and the
+rem write path would never run.  FDLTEST.BAT tests both answers.
+wcl386 -q -bt=nt -fe=TOOLS\mkmulti.exe TOOLS\mkmulti.c || goto fail
+TOOLS\mkmulti.exe IMAGES\MULTI.IMG || goto fail
+
+echo.
+echo IMAGES\MULTI.IMG ready.
+popd
+goto end
+
+:nobuild
+echo Run BUILD.CMD first
+popd
+goto failrc
+
+:nohome
+echo *** Could not switch to the directory holding MKHD.CMD.
+echo *** Run MKHD.CMD from that directory; a path with spaces in it
+echo *** cannot be found this way on NT 3.51.
+goto failrc
+
+:fail
+echo.
+echo *** MKHD FAILED ***
+popd
+
+:failrc
+rem NT 3.51's cmd.exe has no EXIT /B, and its EXIT ignores an exit code.
+rem A FIND that matches nothing is how this script hands ERRORLEVEL 1 back
+rem to whoever called it, so it must be the LAST thing run.
+ver | find "@@" > nul
+
+:end

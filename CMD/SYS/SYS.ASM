@@ -376,16 +376,14 @@ src_path    db  'A:\'
 tgt_path    db  'A:\'
             db  16 dup(0)
 
-msg_usage   db  'Makes a disk bootable, by copying the system to it.',13,10,13,10
-            db  '  SYS d:',13,10,13,10
-            db  '  d:   the drive to make bootable - A: to D:',13,10,13,10
-            db  '  The CURRENT drive is the source, and it has to be a system',13,10
-            db  '  disk itself: SYS carries no boot image of its own, it reads',13,10
-            db  '  the one it is running from.  Source and target must hold the',13,10
-            db  '  same kind of FAT, because the boot code is written for one.',13,10,13,10
-            db  "  Copied: the boot sector (with the target's own BPB kept),",13,10
-            db  '  the stage-2 loader on a hard disk, then PMIO.SYS, PMDOS.SYS,',13,10
-            db  '  CMD.EXE and COMMAND.COM as ordinary files.',13,10,'$'
+; ONE ARGUMENT, and it is the target: the source is the current drive,
+; which has to be a system disk itself.  A help screen that showed
+; MS-DOS's "SYS [drive1:][path] drive2:" would have a user typing
+; SYS C: A: and making C: the target.
+msg_usage   db  'Copies PM-DOS system files and command interpreter to a disk you specify.',13,10,13,10
+            db  'SYS drive:',13,10,13,10
+            db  '  drive:  Specifies the drive the files are to be copied to.',13,10
+            db  '          The current drive is the source, and must be a system disk.',13,10,'$'
 msg_baddrv  db  'Invalid drive specification',13,10,'$'
 msg_same    db  'Source and target are the same drive',13,10,'$'
 msg_mismatch db 'Source and target filesystems differ',13,10,'$'

@@ -134,6 +134,11 @@ rm_park:
         mov     dword ptr ds:[RMRET],OFFSET rmp_back
         mov     word ptr ds:[RMRET+4],SEL_CODE32
 
+        ; What is about to own the machine expects the coprocessor the
+        ; way the BIOS left it - its errors on interrupt line 13, where
+        ; every DOS extender and Windows itself look for them.
+        call    fpu_park
+
         db      0EAh                    ; JMP FAR SEL_CODE16:RMT_PARK
         dd      RMT_PARK
         dw      SEL_CODE16
@@ -149,6 +154,7 @@ rmp_back:
         mov     ss,ax
         mov     esp,dword ptr ds:[RMSAVE_ESP]
         cld
+        call    fpu_unpark
         push    eax
         mov     al,1
         call    nt_arm

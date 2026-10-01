@@ -54,10 +54,10 @@ static unsigned long opt_spc = 0;
 static unsigned char *sec(long lba) { return image + lba * SECSIZE; }
 
 /* How many entries a "-dir" subdirectory is built to hold.  Generous
-   on purpose: the test set is about seventy files and grows every
+   on purpose: the test set passed 250 files in v0.60 and grows every
    release, and the failure mode of being too small is an image that
    is quietly missing whichever ones came last. */
-#define SUBDIR_ENTS 256UL
+#define SUBDIR_ENTS 384UL
 
 static void put16(unsigned char *p, unsigned v)
 {

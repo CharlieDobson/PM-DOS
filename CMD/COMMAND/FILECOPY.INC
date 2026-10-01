@@ -670,12 +670,37 @@ cpf_full:
         call    cp_closesrc
         cmp     byte ptr [cp_dstdev],0
         jne     cpf_fullmsg
-        mov     dx,OFFSET cp_to         ; half a file is not a copy
-        mov     ah,41h
-        int     21h
+        mov     dx,OFFSET cp_to         ; half a file is not a copy, and
+        call    del_nokeep              ; not worth keeping either
 cpf_fullmsg:
         mov     si,OFFSET msg_diskfull
         call    puts_err
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; del_nokeep - delete DS:DX so that PM-DOS does not keep it for
+;              UNDELETE (21h/F1h AL=19h).  Any other DOS, or a PM-DOS
+;              without that call, gets a plain 41h.  Trashes AX-CX.
+;---------------------------------------------------------------------
+del_nokeep:
+        push    dx
+        mov     ah,30h
+        int     21h
+        pop     dx
+        cmp     bh,03h                  ; PMDOS_OEM - F1h is ours alone
+        jne     dnk_plain
+        mov     ax,0F119h
+        int     21h
+        jnc     dnk_out
+        cmp     ax,1                    ; "invalid function": an older kernel
+        jne     dnk_fail
+dnk_plain:
+        mov     ah,41h
+        int     21h
+dnk_out:
+        ret
+dnk_fail:
         stc
         ret
 

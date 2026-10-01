@@ -732,6 +732,7 @@ ch_no:
 crit_raise:
         cmp     byte ptr [crit_busy],0
         je      cr_go
+        inc     dword ptr [crit_nfail]
         mov     al,CERR_FAIL
         ret
 cr_go:
@@ -771,6 +772,10 @@ cr_answered:
         mov     al,[crit_resp]
         cmp     al,CERR_ABORT
         je      cr_abort
+        cmp     al,CERR_FAIL
+        jne     crr_out
+        inc     dword ptr [crit_nfail]  ; for RECYCLE.INC: see crit_nfail
+crr_out:
         ret
 
 cr_abort:
@@ -832,6 +837,16 @@ cg_ok       db  0                       ; pushad that builds the guest's
 
 crit_busy   db  0                       ; a handler is running
 crit_resp   db  CERR_FAIL
+            db  0,0
+crit_nfail  dd  0                       ; critical errors answered Fail,
+                                        ; ever.  The recycler compares it
+                                        ; before and after trying to keep
+                                        ; a file: if the disk has refused
+                                        ; a write and the user has said
+                                        ; Fail, the plain delete is not
+                                        ; tried as well - one question
+                                        ; for one DEL on a write-protected
+                                        ; floppy, not two
 
 dio_drv     db  0                       ; the transfer in progress, kept
 dio_wr      db  0                       ; whole so a retry can repeat it

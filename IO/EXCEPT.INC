@@ -316,8 +316,30 @@ irq_master:
         pop     es
         pop     ds
         popad
+        cmp     byte ptr ss:[fpu_owed],0
+        jne     short irq_fperr
+irq_away:
         add     esp,4                   ; discard the IRQ number
         iretd
+
+        ; THE COPROCESSOR'S ERROR, ON A MACHINE WHERE IT IS AN INTERRUPT
+        ; (fpu_line, FPU.INC).  It belongs to the program that was
+        ; running, and from here on it is dealt with exactly as the
+        ; exception would have been: the frame an interrupt leaves is an
+        ; exception's without its error code, which the IRQ number's
+        ; slot becomes.  If what was interrupted is the kernel, the
+        ; program is inside a call and this waits for an interrupt that
+        ; finds it outside one.
+irq_fperr:
+        test    dword ptr [esp+12],EFL_VM
+        jnz     short irq_fpnow
+        test    byte ptr [esp+8],3
+        jz      irq_away
+irq_fpnow:
+        mov     byte ptr ss:[fpu_owed],0
+        mov     dword ptr [esp],0
+        push    16
+        jmp     exc_common
 
 ;---------------------------------------------------------------------
 ; irq_timer - IRQ 0, 18.2 Hz.

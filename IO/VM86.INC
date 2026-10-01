@@ -574,6 +574,8 @@ ENDIF
         mov     eax,[ebp+FR_VEC]
         cmp     eax,13
         je      vf_isgp                 ; only #GP means "emulate me"
+        cmp     eax,16                  ; the coprocessor's error, which a
+        je      vf_exc                  ; DOS program knows as an interrupt
         cmp     eax,7                   ; ...but some of the rest are the
         ja      vf_notgp                ; GUEST'S, and always were
         mov     ebx,1
@@ -1275,13 +1277,33 @@ vf_exc:
         mov     eax,[ebp+FR_VEC]
         cmp     eax,dword ptr ds:[v86_fltvec]
         jne     vfe_moved
+        cmp     eax,16
+        je      vfe_fptime
         inc     dword ptr ds:[v86_fltn]
         cmp     dword ptr ds:[v86_fltn],V86_FLTMAX
         jb      vfe_ivt
+vfe_stuck:
         mov     eax,V86R_FLTLOOP        ; stuck: the caller says so and ends
         mov     ebx,[ebp+FR_VEC]        ; the box
         jmp     v86_leave
+
+        ; THE COPROCESSOR'S ERROR IS TIMED, NOT COUNTED.  It is reported
+        ; at the instruction AFTER the one that caused it, so a loop
+        ; that overflows on every turn and has a handler that deals
+        ; with each one faults at one address as often as it likes and
+        ; is getting somewhere.  What a stuck one looks like is nothing
+        ; else happening at all: two seconds of this fault at this
+        ; address, and not one call to DOS in them.
+vfe_fptime:
+        mov     eax,dword ptr ds:[BDA_TICKS]
+        sub     eax,dword ptr ds:[v86_fltwhen]
+        js      vfe_moved               ; midnight: the count began again
+        cmp     eax,FPU_STUCK
+        jb      vfe_ivt
+        jmp     short vfe_stuck
 vfe_moved:
+        mov     eax,dword ptr ds:[BDA_TICKS]
+        mov     dword ptr ds:[v86_fltwhen],eax
         mov     eax,[ebp+FR_EIP]
         mov     dword ptr ds:[v86_flteip],eax
         mov     eax,[ebp+FR_CS]
@@ -1291,10 +1313,27 @@ vfe_moved:
         mov     dword ptr ds:[v86_fltn],1
 vfe_ivt:
         mov     eax,[ebp+FR_VEC]
+        cmp     eax,16
+        je      vfe_fperr
         shl     eax,2
         cmp     dword ptr ds:[eax],0
         je      vf_notgp                ; nothing there: it really is a crash
         mov     eax,[ebp+FR_VEC]
+        jmp     short v86_reflect
+
+        ; EXCEPTION 16 IS NOT INT 10h.  On the machine a DOS program
+        ; was written for, the coprocessor's error comes in on
+        ; interrupt line 13 and the vector is 75h - and 10h is the
+        ; video BIOS.  So it goes in where the line would have put it,
+        ; at once and whatever the box's interrupt flag and mask say:
+        ; the instruction it stands on cannot be run until somebody has
+        ; dealt with the error, so there is nothing to go back to and
+        ; wait in.  See FPU.INC.
+vfe_fperr:
+        call    vpc_fpvec
+        cmp     dword ptr ds:[eax*4],0
+        je      vf_notgp
+        call    vpc_fptake
         jmp     short v86_reflect
 
 ;---------------------------------------------------------------------
@@ -1607,6 +1646,7 @@ v86_fltcs       dd      -1              ; the last exception reflected into the
 v86_flteip      dd      -1              ; guest, and how many times running -
 v86_fltvec      dd      -1              ; see vf_exc.  -1 so that the first one
 v86_fltn        dd      0               ; can never match a real CS:IP
+v86_fltwhen     dd      0               ; the tick that run of them began on
 v86_vif         db      0               ; the guest's virtual interrupt flag
 v86_active      db      0               ; a guest is executing, as opposed to
                                         ; merely loaded: set on the way into
@@ -1677,7 +1717,19 @@ pm3_fault:
         add     ebp,32                  ; EBP -> the vector, as v86_fault does
 
         cmp     dword ptr [ebp+P3_VEC],13       ; only #GP is ever emulable
+        je      pm3_gp
+
+        ; The coprocessor's error in a DPMI client is its interrupt 13,
+        ; as it is a DOS box's, and the DOS side - which has the
+        ; client's vectors - delivers it.  What is kept here is the
+        ; interrupt controller the client believes in.
+        cmp     dword ptr [ebp+P3_VEC],16
         jne     pm3_real
+        test    byte ptr [ebp+P3_CS],4          ; its selectors are in the LDT
+        jz      pm3_real
+        call    vpc_fptake
+        jmp     pm3_real
+pm3_gp:
 
 ;--- where is the instruction? ---------------------------------------
 ; CS is one of the client's own selectors, so its base comes out of

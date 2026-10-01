@@ -57,7 +57,10 @@
 ; Included by IOPM.ASM, after PCI.INC and IDEHOST.INC.
 ;=====================================================================
 
-ATA_MAXDEV      EQU     4               ; two channels, master + slave
+ATA_MAXCHAN     EQU     4               ; the two on the board, and the two
+                                        ; a sound card or an add-in card
+                                        ; answers at
+ATA_MAXDEV      EQU     ATA_MAXCHAN * 2 ; master + slave on each
 
 ; Command block registers, as offsets from the channel's base port
 ATA_DATA        EQU     0
@@ -118,6 +121,8 @@ ATA_ID_UDMA     EQU     88 * 2          ; low byte supported, high selected
 ATA_ID_CABLE    EQU     93 * 2          ; bits 15-14 = 01: the word is used,
                                         ; and then bit 13 = the drive saw
                                         ; 80 conductors
+ATA_ID_MODEL    EQU     27 * 2          ; 40 bytes - the model, in words
+                                        ; whose two bytes are swapped
 ATA_ID_LBA48    EQU     100 * 2         ; qword - LBA48 sector count
 
 ; Per-device table entry
@@ -140,7 +145,13 @@ ATD_ID          EQU     20              ; byte - ATI_*
 ATD_BIOS        EQU     21              ; byte - the mode the BIOS left it
                                         ; in, which is ATD_CUR as it was
                                         ; the first time anything looked
-ATD_LEN         EQU     24
+ATD_MODEL       EQU     24              ; ATA_MODEL_LEN bytes - the model
+                                        ; string out of IDENTIFY words
+                                        ; 27-46, byte-swapped into reading
+                                        ; order, space padded.  Kept so a
+                                        ; report can NAME a drive; see
+                                        ; ata_model
+ATD_LEN         EQU     ATD_MODEL + ATA_MODEL_LEN
 
 ; ATDF_*, ATI_* and ATC_* live in PMDOS.INC, because F1h AL=0Ah
 ; publishes them: a program asking how its disk is being talked to is
@@ -218,18 +229,25 @@ ai_loop:
         imul    esi,ATD_LEN
         add     esi,OFFSET ata_devs
 
-        ; channel 0 -> 1F0h/3F6h, channel 1 -> 170h/376h
+        ; where each channel answers: ata_ports, two words a channel
         mov     eax,ebx
         shr     eax,1                           ; EAX = channel
-        mov     dx,1F0h
-        mov     cx,3F6h
-        or      eax,eax
-        jz      ai_chan
-        mov     dx,170h
-        mov     cx,376h
-ai_chan:
+        mov     dx,word ptr [ata_ports+eax*4]
+        mov     cx,word ptr [ata_ports+eax*4+2]
         mov     [esi+ATD_BASE],dx
         mov     [esi+ATD_CTRL],cx
+
+        call    plog_ide                        ; EDI = this device's record
+        push    ecx
+        push    edi
+        xor     eax,eax
+        mov     ecx,PLI_LEN / 4
+        cld
+        rep     stosd
+        pop     edi
+        pop     ecx
+        mov     word ptr [edi+PLI_BASE],dx
+        mov     dword ptr [ata_plog],edi
         mov     al,bl                           ; odd index = slave
         and     al,1
         shl     al,4
@@ -249,6 +267,13 @@ IFDEF ATA_DEBUG
         call    ata_hex16
         mov     ax,word ptr [ata_idbuf+ATA_ID_SPT]
         call    ata_hex16
+        mov     al,'/'                          ; word 48, and then what
+        call    con_out                         ; was made of it: ATD_ID
+        mov     ax,word ptr [ata_idbuf+ATA_ID_DWIO]     ; above ATD_FLAGS
+        call    ata_hex16
+        mov     ah,[esi+ATD_ID]
+        mov     al,[esi+ATD_FLAGS]
+        call    ata_hex16
         mov     al,'='
         call    con_out
         mov     ax,word ptr [ata_pktsig]        ; what a refusal signed
@@ -262,8 +287,13 @@ ENDIF
         or      byte ptr [esi+ATD_FLAGS],ATDF_PRESENT
         inc     dword ptr [ata_count]
 ai_next:
+        mov     edi,dword ptr [ata_plog]        ; and how it ended
+        mov     al,byte ptr [ata_stage]
+        mov     byte ptr [edi+PLI_STAGE],al
+        mov     al,byte ptr [esi+ATD_FLAGS]
+        mov     byte ptr [edi+PLI_FLAGS],al
         inc     ebx
-        jmp     short ai_loop
+        jmp     ai_loop
 ai_done:
         ; HOW EACH DEVICE WILL MOVE ITS DATA, and it is a second pass
         ; because of the cable.  A cable belongs to a channel and the
@@ -364,6 +394,9 @@ ata_identify:
         mov     byte ptr [ata_stage],'F'
         add     dx,ATA_STATUS
         in      al,dx
+        mov     ah,01h
+        mov     edi,PLI_ST0
+        call    ata_plogb
         cmp     al,0FFh
         je      aid_none
         sub     dx,ATA_STATUS
@@ -371,6 +404,13 @@ ata_identify:
         mov     byte ptr [ata_stage],'S'
         call    ata_select
         jc      aid_none
+        push    edx
+        add     dx,ATA_STATUS
+        in      al,dx
+        pop     edx
+        mov     ah,02h
+        mov     edi,PLI_ST1
+        call    ata_plogb
 
         ; zero the address registers, then IDENTIFY
         push    edx
@@ -392,12 +432,18 @@ ata_identify:
         pop     edx
         call    ata_delay
 
-        ; a status of zero means "no device"
+        ; A STATUS OF ZERO MEANS "NO DEVICE" - IF IT STAYS ZERO.  A disk
+        ; has BSY up before the command register has finished being
+        ; written.  A CD-ROM drive is a processor reading a register,
+        ; and an old one can be asked about a command it has not seen
+        ; yet: its status then is the zero it idles at, and taking that
+        ; for an empty position is how a drive that was there was not
+        ; found.  So zero is given a moment to become something else
         mov     byte ptr [ata_stage],'Z'
-        push    edx
-        add     dx,ATA_STATUS
-        in      al,dx
-        pop     edx
+        call    ata_wake
+        mov     ah,04h
+        mov     edi,PLI_ST2
+        call    ata_plogb
         or      al,al
         jz      aid_none
 
@@ -429,6 +475,18 @@ ata_identify:
         ; 14EBh and a CD-ROM is not a CD-ROM.  cmp leaves the register
         ; alone, so it goes first and the destructive test second.
         mov     word ptr [ata_pktsig],ax
+        push    eax
+        push    edi
+        mov     edi,dword ptr [ata_plog]
+        mov     word ptr [edi+PLI_SIG],ax
+        push    edx
+        add     dx,ATA_ERROR
+        in      al,dx
+        pop     edx
+        mov     byte ptr [edi+PLI_ERR],al
+        or      byte ptr [edi+PLI_SEEN],08h
+        pop     edi
+        pop     eax
         cmp     ax,ATAPI_SIG
         je      aid_ispkt
         or      al,ah
@@ -440,9 +498,20 @@ aid_ispkt:
         jmp     aid_none
 aid_nosig:
 
+        ; NO SIGNATURE IS NOT THE SAME AS NOT A PACKET DEVICE.  The
+        ; signature after a refused IDENTIFY DEVICE is what the
+        ; standard asks of a drive, and drives older than the standard
+        ; refuse the command and sign nothing.  So a device that
+        ; refuses this one is asked the other question before it is
+        ; given up on: a disk refuses IDENTIFY PACKET DEVICE at once,
+        ; and nothing is lost by having asked
         mov     byte ptr [ata_stage],'Q'
         call    ata_waitdrq
-        jc      aid_none
+        jnc     aid_isdisk
+        mov     byte ptr [ata_stage],'k'
+        call    atapi_ident
+        jmp     aid_none
+aid_isdisk:
 
         ; pull the 256-word block into the scratch buffer
         push    edx
@@ -509,6 +578,7 @@ aid_store:
         call    ata_keepid
         call    ata_pickbm
         call    ata_pick32
+        call    ata_prove32
 
         ; polled driver: tell the drive to keep its interrupt to itself
         movzx   edx,word ptr [esi+ATD_CTRL]
@@ -528,6 +598,93 @@ aid_none:
         pop     ecx
         pop     eax
         stc
+        ret
+
+;---------------------------------------------------------------------
+; ata_plogb - AL = a register that was read, AH = its bit in PLI_SEEN,
+;             EDI = its place in this device's record.  All kept.
+;---------------------------------------------------------------------
+ata_plogb:
+        push    edi
+        add     edi,dword ptr [ata_plog]
+        mov     byte ptr [edi],al
+        mov     edi,dword ptr [ata_plog]
+        or      byte ptr [edi+PLI_SEEN],ah
+        pop     edi
+        ret
+
+;---------------------------------------------------------------------
+; ata_wake - DX = base port -> AL = the status register, read until it
+;            is something other than zero or ATA_WAKESPIN reads have
+;            all been zero.  Everything else kept.
+;---------------------------------------------------------------------
+ATA_WAKESPIN    EQU     20000           ; a fiftieth of a second on the
+                                        ; slowest bus there is, and an
+                                        ; empty position costs no more
+ata_wake:
+        push    ecx
+        push    edx
+        add     dx,ATA_STATUS
+        mov     ecx,ATA_WAKESPIN
+awk_lp:
+        in      al,dx
+        or      al,al
+        jnz     awk_out
+        dec     ecx
+        jnz     awk_lp
+awk_out:
+        pop     edx
+        pop     ecx
+        ret
+
+;---------------------------------------------------------------------
+; ata_probedrq - ata_waitdrq for a question that may have nobody to
+;                answer it: the same test, given up on sooner, and at
+;                once if the status register reads zero throughout.
+;                DX = base port.  CF set if no data was offered.
+;---------------------------------------------------------------------
+ATA_PROBESPIN   EQU     00200000h
+ata_probedrq:
+        push    eax
+        push    ebx
+        push    ecx
+        push    edx
+        add     dx,ATA_STATUS
+        mov     ecx,ATA_PROBESPIN
+        mov     ebx,ATA_WAKESPIN
+apq_lp:
+        in      al,dx
+        cmp     al,0FFh
+        je      apq_fail
+        or      al,al
+        jnz     apq_live
+        dec     ebx
+        jz      apq_fail
+        jmp     short apq_next
+apq_live:
+        mov     ebx,ATA_WAKESPIN
+        test    al,ATA_ST_BSY
+        jnz     apq_next
+        test    al,ATA_ST_ERR OR ATA_ST_DF
+        jnz     apq_fail
+        test    al,ATA_ST_DRQ
+        jnz     apq_ok
+apq_next:
+        dec     ecx
+        jnz     apq_lp
+apq_fail:
+        pop     edx
+        pop     ecx
+        pop     ebx
+        pop     eax
+        stc
+        ret
+apq_ok:
+        pop     edx
+        pop     ecx
+        pop     ebx
+        pop     eax
+        clc
         ret
 
 ;=====================================================================
@@ -848,8 +1005,10 @@ ata_pickbm:
         or      eax,eax
         jz      pbm_out
         mov     dl,[ata_progif]
+        cmp     word ptr [esi+ATD_BASE],170h
+        je      pbm_second
         cmp     word ptr [esi+ATD_BASE],1F0h
-        jne     pbm_second
+        jne     pbm_out                 ; not one of the host's channels
         test    dl,1                    ; primary in native mode
         jnz     pbm_out
         jmp     short pbm_have
@@ -1186,6 +1345,8 @@ acb_chan:
         call    ata_isfast
         jnc     acb_store
 
+        cmp     ebx,2                   ; a host has two channels, and
+        jae     acb_drive               ; the other two are not on it
         mov     al,bl
         call    ideh_cable
         mov     dl,ATC_BY_HOST OR ATC_80
@@ -1194,6 +1355,7 @@ acb_chan:
         mov     dl,ATC_BY_HOST
         cmp     al,IHC_40
         je      acb_store
+acb_drive:
 
         mov     dl,ATC_BY_DRIVE OR ATC_80
         mov     al,[esi+ATD_ID]
@@ -1204,7 +1366,7 @@ acb_chan:
 acb_store:
         mov     [ata_cbl+ebx],dl
         inc     ebx
-        cmp     ebx,2
+        cmp     ebx,ATA_MAXCHAN
         jb      acb_chan
         popad
         ret
@@ -1260,13 +1422,36 @@ aki_nocable:
 aki_seen:
         mov     al,[ata_bios+ebx]
         mov     [esi+ATD_BIOS],al
+
+        ; THE NAME, so that a report can say which drive it is talking
+        ; about rather than "the one at 170h".  IDENTIFY hands it over
+        ; a word at a time with the two bytes of each word the wrong
+        ; way round - "eMTA" for "MATE" - which is how the standard
+        ; has it and has to be undone here, once.  Both disks and
+        ; packet devices come through this routine, so both get one.
+        push    ecx
+        push    edx
+        push    edi
+        lea     edi,[esi+ATD_MODEL]
+        mov     ebx,OFFSET ata_idbuf + ATA_ID_MODEL
+        mov     ecx,ATA_MODEL_LEN / 2
+aki_model:
+        mov     dx,[ebx]
+        mov     [edi],dh
+        mov     [edi+1],dl
+        add     ebx,2
+        add     edi,2
+        loop    aki_model
+        pop     edi
+        pop     edx
+        pop     ecx
         pop     ebx
         pop     eax
         ret
 
 ;=====================================================================
-; ata_index - ESI = device -> EBX = its place in the table, 0 to 3.
-; ata_chan  - ESI = device -> EBX = its channel, 0 or 1.
+; ata_index - ESI = device -> EBX = its place in the table, 0 to 7.
+; ata_chan  - ESI = device -> EBX = its channel, 0 to 3.
 ;=====================================================================
 ata_index:
         push    eax
@@ -1481,9 +1666,10 @@ asm_bad:
 ;
 ; Two independent reasons to say yes and each covers an era the other
 ; does not; the file header argues it at length.  Neither is a
-; measurement, because there is no way to measure this: a host adapter
-; that cannot latch two words does not report an error, it returns
-; half the data.
+; measurement - a host adapter that cannot latch two words does not
+; report an error, it returns half the data - so under AUTO what is
+; decided here is only who is a CANDIDATE.  ata_prove32 is the
+; measurement, and has the last word.
 ;=====================================================================
 ata_pick32:
         and     byte ptr [esi+ATD_FLAGS],ATDF_NO32
@@ -1491,6 +1677,9 @@ ata_pick32:
         je      p32_out                 ; IDE32=OFF
         cmp     byte ptr [ata_32pol],2
         je      p32_yes                 ; IDE32=ON
+IFDEF IDE32_EAGER
+        jmp     short p32_yes           ; every drive says so: see BUILD.CMD
+ENDIF
         test    word ptr [ata_idbuf+ATA_ID_DWIO],1
         jnz     p32_yes                 ; the drive says so (ATA-1/2)
         cmp     byte ptr [ata_bmok],0
@@ -1498,6 +1687,104 @@ ata_pick32:
 p32_yes:                                ; or it is on a PCI controller
         or      byte ptr [esi+ATD_FLAGS],ATDF_PIO32
 p32_out:
+        ret
+
+;=====================================================================
+; ata_prove32 - ESI = device, ata_idbuf = its IDENTIFY block as it came
+;               a word at a time.  Under IDE32=AUTO, ask for the block
+;               again, take it a doubleword at a time, and keep
+;               ATDF_PIO32 only if the two are the same 512 bytes.
+;
+; ata_pick32 SAYS THERE IS NO WAY TO MEASURE THIS, AND THERE IS.  What
+; cannot be measured is a transfer nobody has another copy of.  The
+; IDENTIFY block is one the probe has just read the narrow way, which
+; every host can do, and the drive will hand it over as often as it is
+; asked.
+;
+; WORD 48 IS THE DRIVE'S ACCOUNT OF ITSELF AND THE QUESTION IS ABOUT
+; THE HOST.  A drive that says it does doubleword I/O says so on an ISA
+; card as well, where a doubleword read of 1F0h is two word reads - of
+; 1F0h and of 1F2h.  Every other word of the sector is then the sector
+; count register, no error is reported, and the first thing read that
+; way is the partition table: the machine comes up with no C: and
+; nothing on the screen to say why.  A real machine did.
+;
+; A host that halved the block leaves the drive holding the other
+; half out, so what is left is taken and thrown away; the next command
+; would otherwise be written to a drive still waiting to be read.
+;
+; IDE32=ON is not measured.  It is an instruction, and the user who
+; wrote it is the one who knows.
+;=====================================================================
+ata_prove32:
+        push    eax
+        push    ecx
+        push    edx
+        push    edi
+        test    byte ptr [esi+ATD_FLAGS],ATDF_PIO32
+        jz      p3v_out
+        cmp     byte ptr [ata_32pol],1
+        jne     p3v_out
+IFDEF IDE32_TRUST
+        jmp     p3v_out                 ; and is believed: see BUILD.CMD
+ENDIF
+
+        movzx   edx,word ptr [esi+ATD_BASE]
+        call    ata_select
+        jc      p3v_no
+        push    edx
+        add     dx,ATA_COMMAND
+        mov     al,ATA_CMD_IDENT
+        out     dx,al
+        pop     edx
+        call    ata_delay
+        call    ata_waitdrq
+        jc      p3v_no
+
+        push    edx
+        add     dx,ATA_DATA
+        mov     edi,OFFSET ata_id32
+        mov     ecx,128
+        rep     insd
+        pop     edx
+        call    ata_delay
+
+        mov     ecx,256                 ; no block has more words in it
+p3v_drain:
+        push    edx
+        add     dx,ATA_STATUS
+        in      al,dx
+        pop     edx
+        test    al,ATA_ST_BSY
+        jnz     p3v_next
+        test    al,ATA_ST_DRQ
+        jz      p3v_cmp
+        mov     byte ptr [ata_id32],0FFh        ; it had more to give: that
+        mov     byte ptr [ata_id32+1],0FFh      ; is a no whatever arrived,
+        push    edx                             ; and word 0 is never FFFFh
+        add     dx,ATA_DATA
+        in      ax,dx
+        pop     edx
+p3v_next:
+        dec     ecx
+        jnz     p3v_drain
+
+p3v_cmp:
+        push    esi
+        mov     esi,OFFSET ata_idbuf
+        mov     edi,OFFSET ata_id32
+        mov     ecx,128
+        repe    cmpsd
+        pop     esi
+        je      p3v_out
+p3v_no:
+        and     byte ptr [esi+ATD_FLAGS],ATDF_NO32
+        or      byte ptr [esi+ATD_ID],ATI_NO32  ; and IDETEST says so
+p3v_out:
+        pop     edi
+        pop     edx
+        pop     ecx
+        pop     eax
         ret
 
 ;=====================================================================
@@ -1792,6 +2079,38 @@ acf_out:
 ; privilege, so a native program cannot look at a controller even to
 ; describe it.  Same argument as F1h AL=9 makes for expanded memory.
 ;=====================================================================
+;=====================================================================
+; ata_model - IOS_ATAMODEL.  AL = device index, EDI -> ATA_MODEL_LEN
+;             bytes.  CF if there is no such index.  A slot nothing
+;             answered in is blank, because ata_init blanks the table
+;             and nothing has written a name into it.  All kept.
+;=====================================================================
+ata_model:
+        push    eax
+        push    ecx
+        push    esi
+        push    edi
+        movzx   esi,al
+        cmp     esi,ATA_MAXDEV
+        jae     amd_bad
+        imul    esi,ATD_LEN
+        add     esi,OFFSET ata_devs + ATD_MODEL
+        mov     ecx,ATA_MODEL_LEN / 4
+        rep     movsd
+        pop     edi
+        pop     esi
+        pop     ecx
+        pop     eax
+        clc
+        ret
+amd_bad:
+        pop     edi
+        pop     esi
+        pop     ecx
+        pop     eax
+        stc
+        ret
+
 ata_info:
         cmp     al,0FFh
         je      ain_whole
@@ -2324,7 +2643,7 @@ ata_dmapol   db 1                       ; 0 off, 1 auto, 2 best, 3 forced
 ata_dmaforce db 0                       ; the mode IDEDMA=<mode> named
 ata_32pol    db 1                       ; 0 off, 1 auto, 2 on
 ata_cblpol   db 0                       ; 0 find out, 1 forty, 2 eighty
-ata_cbl      db 0, 0                    ; ATC_*, a channel each
+ata_cbl      db ATA_MAXCHAN dup(0)      ; ATC_*, a channel each
 ata_seen     db ATA_MAXDEV dup(0)       ; this device's first IDENTIFY has
 ata_bios     db ATA_MAXDEV dup(0)       ; been and gone, and the mode it
                                         ; found selected
@@ -2345,8 +2664,20 @@ ata_pciid   dd  0                       ; and what it says it is
 ata_prdaddr dd  0                       ; the descriptor table, placed by
                                         ; ata_prdinit rather than declared
 
+ata_plog    dd  OFFSET plog + PLI_FIRST ; the record being written
+
+; Where a channel answers: its command block, then its control port.
+; The first two are the ones on the board.  The second two are where
+; an add-in card or a sound card's CD-ROM connector is jumpered to
+; when the first two are taken
+ata_ports   dw  1F0h, 3F6h
+            dw  170h, 376h
+            dw  1E8h, 3EEh
+            dw  168h, 36Eh
+
 ata_devs    db  ATA_MAXDEV * ATD_LEN dup(0)
 ata_idbuf   db  512 dup(0)
+ata_id32    db  512 dup(0)              ; the same block, read the wide way
 
 ; Twice the room the table needs, so that a start which does not cross
 ; a 64K boundary can always be found inside it.

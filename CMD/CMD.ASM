@@ -69,6 +69,9 @@ CMDE_SIZE       EQU     16
 
 CF_HELPALONE    EQU     00000001h       ; /? only when it is the whole
                                         ; argument (see help_wanted)
+CF_PREFIX       EQU     00000002h       ; "CD..", "CD\DOS", "DIR\TESTS":
+                                        ; the verb may run straight into
+                                        ; a '.' or a '\' (see tbl_prefix)
 
 DIR_PAGE        EQU     SCR_ROWS - 2    ; listing lines between /P stops
 DIR_MAXKEY      EQU     8               ; sort keys in one /O
@@ -620,7 +623,7 @@ ce_msgtbl:
         dd      OFFSET ce_m00, OFFSET ce_m01, OFFSET ce_m02, OFFSET ce_m03
         dd      OFFSET ce_m04, OFFSET ce_m05, OFFSET ce_m06, OFFSET ce_m07
         dd      OFFSET ce_m08, OFFSET ce_m09, OFFSET ce_m0A, OFFSET ce_m0B
-        dd      OFFSET ce_m0C
+        dd      OFFSET ce_m0C, OFFSET ce_m0D, OFFSET ce_m0E
 
 ce_m00      db  'Write protect error',0
 ce_m01      db  'Invalid unit',0
@@ -635,6 +638,8 @@ ce_m09      db  'Printer out of paper',0
 ce_m0A      db  'Write fault',0
 ce_m0B      db  'Read fault',0
 ce_m0C      db  'General failure',0
+ce_m0D      db  'Sharing violation',0
+ce_m0E      db  'Lock violation',0
 
 ce_reading  db  ' reading drive ',0
 ce_writing  db  ' writing drive ',0
@@ -706,6 +711,9 @@ el_ed_no:
 ; shell had it), so the table and the drive-change forms are skipped.
 ; Advanced parsing only: to a .BAT file a quote is just a character.
         mov     byte ptr [verb_quoted],0
+        mov     dword ptr [verb_slash],0
+        mov     byte ptr [tail_glued],0
+        mov     [verb_start],esi
         cmp     byte ptr [adv_parse],0
         je      vb_plain
         cmp     byte ptr [esi],'"'
@@ -769,10 +777,21 @@ vb_lp:
         ; verb is a path as often as it is a name, and a shell that
         ; splits "C:/TESTS/APITEST.COM" has broken something nobody
         ; asked it to look at in order to fix a help switch.
+        ;
+        ; "DIR/W" IS THE SAME FORM AND WAS A BAD COMMAND, which a real
+        ; machine said the first time somebody typed it.  The scan
+        ; still goes on past a '/', for the path's sake, but where the
+        ; FIRST one stood is kept: that is where DOS ends the verb, and
+        ; tbl_prefix and ext_fail go back to it when the whole word
+        ; turns out to be nothing.
         cmp     al,'/'
         jne     vb_noqm
         cmp     byte ptr [esi+1],'?'
         je      vb_end
+        cmp     dword ptr [verb_slash],0
+        jne     vb_noqm
+        jecxz   vb_noqm                 ; a verb has to have a name
+        mov     [verb_slash],esi
 vb_noqm:
         call    upcase
 
@@ -847,7 +866,7 @@ not_drive:
 tbl_lp:
         mov     esi,[ebx]
         or      esi,esi
-        jz      external               ; table exhausted
+        jz      tbl_prefix             ; table exhausted
         mov     edi,OFFSET verb_buf
 tbl_cmp:
         mov     al,[esi]
@@ -884,6 +903,50 @@ tbl_run:
         call    dword ptr [ebx+CMDE_FUNC]
 el_done:
         ret
+
+;--- no row IS the verb.  Is one the front of it? --------------------
+; "DIR/W", "CD..", "CD\DOS" and "DIR\TESTS" are one word to the scanner
+; above and a command with its argument to DOS.  A '/' ends any
+; command's name.  A '.' or a '\' ends only the ones flagged CF_PREFIX,
+; which are the ones COMMAND.COM allows it to: "CLS.BAT" is a batch
+; file and not CLS.  The arguments then start AT that character, in
+; the line as it was typed - the verb was copied one for one, so the
+; same offset is the same place.
+tbl_prefix:
+        mov     ebx,OFFSET cmd_table
+tpx_lp:
+        mov     esi,[ebx]
+        or      esi,esi
+        jz      external               ; nor that: a program, then
+        mov     edi,OFFSET verb_buf
+tpx_cmp:
+        mov     al,[esi]
+        or      al,al
+        jz      tpx_nameend
+        cmp     al,[edi]
+        jne     tpx_miss
+        inc     esi
+        inc     edi
+        jmp     short tpx_cmp
+tpx_nameend:
+        mov     al,[edi]
+        cmp     al,'/'
+        je      tpx_hit
+        test    dword ptr [ebx+CMDE_FLAGS],CF_PREFIX
+        jz      tpx_miss
+        cmp     al,'.'
+        je      tpx_hit
+        cmp     al,'\'
+        je      tpx_hit
+tpx_miss:
+        add     ebx,CMDE_SIZE
+        jmp     short tpx_lp
+tpx_hit:
+        sub     edi,OFFSET verb_buf
+        add     edi,[verb_start]
+        mov     [arg_raw],edi
+        mov     [arg_ptr],edi
+        jmp     tbl_hit
 
 ;---------------------------------------------------------------------
 ; help_wanted - EBX -> the matched command table row.  CF set if this
@@ -969,6 +1032,8 @@ external:
         xor     ecx,ecx
         cmp     byte ptr [esi],0
         je      ext_tail_done
+        cmp     byte ptr [tail_glued],0 ; "MEM/C": the tail is "/C", as
+        jne     ext_tail_cp             ; DOS hands it over
         mov     byte ptr [edi+1],' '
         inc     ecx
 ext_tail_cp:
@@ -1088,7 +1153,25 @@ ext_pnosl:
         jmp     short ext_pdir
 
 ext_fail:
-        jmp     bad_command
+        ; "MEM/C" - AND NOTHING IS CALLED THAT, as a path or as a name.
+        ; DOS ends a verb at its first '/', so what DOS would have run
+        ; is tried before giving up: the name in front of the slash,
+        ; and the rest as its arguments.  Once - verb_slash is spent
+        ; here - and only for a verb short enough to be in verb_buf
+        ; whole.
+        mov     esi,[verb_slash]
+        or      esi,esi
+        jz      bad_command
+        mov     dword ptr [verb_slash],0
+        mov     edi,esi
+        sub     edi,[verb_start]
+        cmp     edi,QVERB_MAX - 1
+        jae     bad_command
+        mov     byte ptr [verb_buf+edi],0
+        mov     [arg_raw],esi
+        mov     [arg_ptr],esi
+        mov     byte ptr [tail_glued],1
+        jmp     external
 ext_ran:
         ret
 
@@ -6098,6 +6181,35 @@ sws_cut:
         jmp     short sws_trim
 sws_end:
         mov     byte ptr [edi],0
+
+        ; ...AND AT THE FRONT, which the trim above never looked at.
+        ; "DIR /W *.TXT" left " *.TXT", and a pattern that begins with
+        ; a blank matches nothing: a switch in FRONT of the name - where
+        ; most people type it - found no files, and one after it
+        ; worked.  The text moves down, because the caller's pointer
+        ; is to where it starts.
+        mov     edi,[sw_start]
+        mov     esi,edi
+sws_lead:
+        mov     al,[esi]
+        cmp     al,' '
+        je      sws_lskip
+        cmp     al,9
+        jne     sws_shift
+sws_lskip:
+        inc     esi
+        jmp     short sws_lead
+sws_shift:
+        cmp     esi,edi
+        je      sws_out
+sws_mv:
+        mov     al,[esi]
+        mov     [edi],al
+        inc     esi
+        inc     edi
+        or      al,al
+        jnz     sws_mv
+sws_out:
         mov     eax,ebx
         pop     edi
         pop     esi
@@ -6355,7 +6467,7 @@ lh_bare:
 ; command means writing its help, in the same edit, in front of the
 ; reader who is choosing its name.
 cmd_table:
-        dd      OFFSET cn_dir,    OFFSET cmd_dir,      OFFSET hlp_dir,    0
+        dd      OFFSET cn_dir,    OFFSET cmd_dir,      OFFSET hlp_dir,    CF_PREFIX
         dd      OFFSET cn_type,   OFFSET cmd_type,     OFFSET hlp_type,   0
         dd      OFFSET cn_copy,   OFFSET cmd_copy,     OFFSET hlp_copy,   0
         dd      OFFSET cn_del,    OFFSET cmd_del,      OFFSET hlp_del,    0
@@ -6376,12 +6488,12 @@ cmd_table:
         dd      OFFSET cn_set,    OFFSET cmd_set,      OFFSET hlp_set,    CF_HELPALONE
         dd      OFFSET cn_path,   OFFSET cmd_path,     OFFSET hlp_path,   0
         dd      OFFSET cn_prompt, OFFSET cmd_prompt,   OFFSET hlp_prompt, CF_HELPALONE
-        dd      OFFSET cn_md,     OFFSET cmd_md,       OFFSET hlp_md,     0
-        dd      OFFSET cn_mkdir,  OFFSET cmd_md,       OFFSET hlp_md,     0
-        dd      OFFSET cn_cd,     OFFSET cmd_cd,       OFFSET hlp_cd,     0
-        dd      OFFSET cn_chdir,  OFFSET cmd_cd,       OFFSET hlp_cd,     0
-        dd      OFFSET cn_rd,     OFFSET cmd_rd,       OFFSET hlp_rd,     0
-        dd      OFFSET cn_rmdir,  OFFSET cmd_rd,       OFFSET hlp_rd,     0
+        dd      OFFSET cn_md,     OFFSET cmd_md,       OFFSET hlp_md,     CF_PREFIX
+        dd      OFFSET cn_mkdir,  OFFSET cmd_md,       OFFSET hlp_md,     CF_PREFIX
+        dd      OFFSET cn_cd,     OFFSET cmd_cd,       OFFSET hlp_cd,     CF_PREFIX
+        dd      OFFSET cn_chdir,  OFFSET cmd_cd,       OFFSET hlp_cd,     CF_PREFIX
+        dd      OFFSET cn_rd,     OFFSET cmd_rd,       OFFSET hlp_rd,     CF_PREFIX
+        dd      OFFSET cn_rmdir,  OFFSET cmd_rd,       OFFSET hlp_rd,     CF_PREFIX
         dd      OFFSET cn_goto,   OFFSET cmd_goto,     OFFSET hlp_goto,   CF_HELPALONE
         dd      OFFSET cn_if,     OFFSET cmd_if,       OFFSET hlp_if,     CF_HELPALONE
         dd      OFFSET cn_for,    OFFSET cmd_for,      OFFSET hlp_for,    CF_HELPALONE
@@ -6459,253 +6571,232 @@ hlp_command db  'Starts a new copy of the PM-DOS command interpreter, CMD.EXE.',
             db  '  COMMAND.COM is the 16-bit interpreter DOS programs get, the one',13,10
             db  '  COMSPEC names; COMMAND /? says what it takes.',13,10,0
 
-hlp_dir     db  'Lists the files and subdirectories in a directory.',13,10,13,10
-            db  '  DIR [drive:][path][filename] [/P] [/W] [/A[[:]attributes]]',13,10
-            db  '      [/O[[:]sortorder]] [/S] [/B] [/L] [/C[H]] [/4]',13,10,13,10
-            db  '  /P          pause after each screenful',13,10
-            db  '  /W          wide list, names only',13,10
-            db  '  /A[[:]att]  by attribute: H hidden, S system, D directory,',13,10
-            db  '              A archive, R read-only; "-" before one means',13,10
-            db  '              "not".  /A alone lists every file there is.',13,10
-            db  '  /O[[:]ord]  sort: N name, E extension, D date, S size,',13,10
-            db  '              G directories first, C compression; "-" before',13,10
-            db  '              one reverses it.  A bare /O is /OGN.',13,10
-            db  '  /S          this directory and every one below it',13,10
-            db  '  /B          bare: names only, no heading or totals - and',13,10
-            db  '              with /S, the whole path of each',13,10
-            db  '  /L          names in lower case',13,10
-            db  '  /C, /CH     compression ratios.  Nothing here is compressed,',13,10
-            db  '              so the listing is the same without them.',13,10
-            db  '  /4          four-digit years, which this DIR always shows',13,10,13,10
-            db  '  DIR,        list hidden and system files too (the comma is the',13,10
-            db  '              whole argument; it does not combine with anything).',13,10
-            db  '  /-x         cancel switch x for this listing only, which is how',13,10
-            db  '              a DIRCMD variable is overridden.  DIRCMD holds the',13,10
-            db  '              switches you want on every listing.',13,10,0
+hlp_dir     db  'Displays a list of files and subdirectories in a directory.',13,10,13,10
+            db  'DIR [drive:][path][filename] [/P] [/W] [/A[[:]attribs]] [/O[[:]sortord]]',13,10
+            db  '    [/S] [/B] [/L] [/C[H]] [/4]',13,10,13,10
+            db  '  [drive:][path][filename]   Specifies drive, directory, and/or files to list.',13,10
+            db  '  /P       Pauses after each screenful of information.',13,10
+            db  '  /W       Uses wide list format.',13,10
+            db  '  /A       Displays files with specified attributes.',13,10
+            db  '  attribs    D  Directory     R  Read-only files         H  Hidden files',13,10
+            db  '             S  System files  A  Files ready to archive  -  Prefix meaning "not"',13,10
+            db  '  /O       List by files in sorted order.',13,10
+            db  '  sortord    N  By name (alphabetic)       S  By size (smallest first)',13,10
+            db  '             E  By extension (alphabetic)  D  By date & time (earliest first)',13,10
+            db  '             G  Group directories first    -  Prefix to reverse order',13,10
+            db  '  /S       Displays files in specified directory and all subdirectories.',13,10
+            db  '  /B       Uses bare format (no heading information or summary).',13,10
+            db  '  /L       Uses lowercase.',13,10
+            db  '  /C[H]    Displays file compression ratio; /CH uses host allocation unit size.',13,10
+            db  '  /4       Displays four-digit years.',13,10,13,10
+            db  'Switches may be preset in the DIRCMD environment variable.  Override',13,10
+            db  'preset switches by prefixing any switch with - (hyphen)--for example, /-W.',13,10,13,10,0
 
-hlp_type    db  'Displays the contents of a file.',13,10,13,10
-            db  '  TYPE [drive:][path]filename',13,10,13,10
-            db  '  One file, named in full: TYPE takes no wildcards.  Pipe it',13,10
-            db  '  through MORE to page a long one.',13,10,0
+hlp_type    db  'Displays the contents of a text file.',13,10,13,10
+            db  'TYPE [drive:][path]filename',13,10,13,10,0
 
-hlp_copy    db  'Copies files, and joins them together.',13,10,13,10
-            db  '  COPY [/A|/B] source [/A|/B] [+ source [/A|/B] ...]',13,10
-            db  '       [destination [/A|/B]] [/V] [/Y|/-Y]',13,10,13,10
-            db  '  /A   treat what follows as text: a copy stops at the first',13,10
-            db  '       Ctrl+Z, and a Ctrl+Z is written at the end',13,10
-            db  '  /B   treat what follows as binary - the whole file, byte for',13,10
-            db  '       byte.  This is the default for a plain file-to-file copy.',13,10
-            db  '  /V   read each file back after writing it',13,10
-            db  '  /Y   replace an existing file without asking',13,10
-            db  '  /-Y  ask before replacing one: Yes, No, or All the rest',13,10,13,10
-            db  '  At the prompt COPY asks; in a batch file it does not.  Set',13,10
-            db  '  COPYCMD=/Y or /-Y to change that everywhere, and /Y or /-Y',13,10
-            db  '  on the command line overrides COPYCMD.',13,10,13,10
-            db  '  /A and /B are POSITIONAL: each one governs the file in front',13,10
-            db  '  of it and every file after it until the next one.  A "+"',13,10
-            db  '  between sources concatenates them into the destination.',13,10,0
+hlp_copy    db  'Copies one or more files to another location.',13,10,13,10
+
+            db  'COPY [/A|/B] source [/A|/B] [+ source [/A|/B] [+ ...]] [destination',13,10
+            db  '       [/A|/B]] [/V] [/Y|/-Y]',13,10,13,10
+            db  '  source       Specifies the file or files to be copied.',13,10
+            db  '  /A           Indicates an ASCII text file.',13,10
+            db  '  /B           Indicates a binary file.',13,10
+            db  '  destination  Specifies the directory and/or filename for the new file(s).',13,10
+            db  '  /V           Verifies that new files are written correctly.',13,10
+            db  '  /Y           Suppresses prompting to confirm you want to overwrite an',13,10
+            db  '               existing destination file.',13,10
+            db  '  /-Y          Causes prompting to confirm you want to overwrite an',13,10
+            db  '               existing destination file.',13,10,13,10
+            db  'The switch /Y may be preset in the COPYCMD environment variable.',13,10
+            db  'To append files, specify a single file for destination, but multiple files',13,10
+            db  'for source (using wildcards or file1+file2+file3 format).',13,10,13,10,0
 
 hlp_del     db  'Deletes one or more files.',13,10,13,10
-            db  '  DEL [drive:][path]filename [/P] [/S]',13,10
-            db  '  ERASE [drive:][path]filename [/P] [/S]',13,10,13,10
-            db  '  /P   ask about each file before deleting it',13,10
-            db  '  /S   the named files in this directory and every one below it',13,10,13,10
-            db  '  Without /P, a pattern that matches everything asks once first.',13,10,0
+            db  'DEL [drive:][path]filename [/P] [/S]',13,10
+            db  'ERASE [drive:][path]filename [/P] [/S]',13,10,13,10
+            db  '  [drive:][path]filename   Specifies the file(s) to delete.  Specify multiple',13,10
+            db  '                           files by using wildcards.',13,10
+            db  '  /P                       Prompts for confirmation before deleting each file.',13,10
+            db  '  /S                       Deletes the specified file(s) in this directory',13,10
+            db  '                           and every one below it.',13,10,13,10,0
 
 hlp_ren     db  'Renames a file or a directory.',13,10,13,10
-            db  '  REN [drive:][path]oldname newname',13,10
-            db  '  RENAME [drive:][path]oldname newname',13,10,13,10
-            db  "  The new name is only a name: it stays in the old one's",13,10
-            db  '  directory, and a drive or a path in it is refused - MOVE is',13,10
-            db  '  what moves things.  Wildcards work in both: REN *.TXT *.BAK.',13,10
-            db  '  A "?" keeps the character in its place and a "*" the rest of',13,10
-            db  '  the name or the extension.  A directory is renamed by naming',13,10
-            db  '  it; a wildcard matches files only.',13,10,0
+            db  'RENAME [drive:][path]filename1 filename2',13,10
+            db  'REN [drive:][path]filename1 filename2',13,10,13,10
+            db  'Note that you cannot specify a new drive or path for your destination file.',13,10,13,10,0
 
 hlp_cls     db  'Clears the screen.',13,10,13,10
-            db  '  CLS',13,10,0
+            db  'CLS',13,10,0
 
-hlp_ver     db  'Displays the version of PM-DOS this machine is running.',13,10,13,10
-            db  '  VER',13,10,13,10
-            db  "  The KERNEL is asked, so the number is the system's and not",13,10
-            db  "  the shell's.  It is not the version INT 21h/30h reports to a",13,10
-            db  '  program, which is a compatibility answer and a different',13,10
-            db  '  question.',13,10,0
+hlp_ver     db  'Displays the PM-DOS version.',13,10,13,10
+            db  'VER',13,10,13,10,0
 
-hlp_vol     db  'Displays a disk volume label.',13,10,13,10
-            db  '  VOL [drive:]',13,10,13,10
-            db  '  Without a drive, the current one.',13,10,0
+hlp_vol     db  'Displays the disk volume label and serial number, if they exist.',13,10,13,10
+            db  'VOL [drive:]',13,10,13,10,0
 
 hlp_date    db  'Displays or sets the date.',13,10,13,10
-            db  '  DATE [mm-dd-yyyy]',13,10,13,10
-            db  '  Without a date, DATE shows the current one and asks for a new',13,10
-            db  '  one; an empty reply leaves it alone.',13,10,0
+            db  'DATE [mm-dd-yyyy]',13,10,13,10
+            db  '  mm-dd-yyyy    Sets the date you specify.',13,10,13,10
+            db  'Type DATE without parameters to display the current date setting and',13,10
+            db  'a prompt for a new one.  Press ENTER to keep the same date.',13,10,13,10,0
 
 hlp_time    db  'Displays or sets the time.',13,10,13,10
-            db  '  TIME [hh:mm:ss]',13,10,13,10
-            db  '  Without a time, TIME shows the current one and asks for a new',13,10
-            db  '  one; an empty reply leaves it alone.',13,10,0
+            db  'TIME [time]',13,10,13,10
+            db  'Type TIME without parameters to display the current time setting and',13,10
+            db  'a prompt for a new one.  Press ENTER to keep the same time.',13,10,13,10,0
 
-hlp_pause   db  'Waits, in a batch file, until a key is pressed.',13,10,13,10
-            db  '  PAUSE',13,10,13,10
-            db  '  Prints "Press any key to continue . . ." first.',13,10,0
+hlp_pause   db  'Suspends processing of a batch program and displays the message "Press any',13,10
+            db  'key to continue...."',13,10,13,10
+            db  'PAUSE',13,10,13,10,0
 
-hlp_rem     db  'Records a comment in a batch file.',13,10,13,10
-            db  '  REM [comment]',13,10,13,10
-            db  '  The line does nothing.  With ECHO ON it is still displayed,',13,10
-            db  '  which is what makes REM worth having in a batch file that',13,10
-            db  '  somebody is watching run.',13,10,0
+hlp_rem     db  'Records comments (remarks) in a batch file or CONFIG.SYS.',13,10,13,10
+            db  'REM [comment]',13,10,13,10,0
 
-hlp_exit    db  'Ends this command interpreter.',13,10,13,10
-            db  '  EXIT',13,10,13,10
-            db  '  From a shell started by a program, control goes back to that',13,10
-            db  '  program.  From the top-level shell the kernel simply loads a',13,10
-            db  '  fresh one: there is nothing underneath it to return to.',13,10,0
+hlp_exit    db  'Quits the command interpreter.',13,10,13,10
+            db  'EXIT',13,10,13,10,0
 
-hlp_echo    db  'Displays messages, and turns command echoing on or off.',13,10,13,10
-            db  '  ECHO [ON | OFF]',13,10
-            db  '  ECHO [message]',13,10
-            db  '  ECHO.',13,10,13,10
-            db  '  ECHO with nothing after it reports which way echoing is set.',13,10
-            db  '  ECHO. prints an empty line - the dot is not displayed, and it',13,10
-            db  '  is the only way to print one, since ECHO alone reports instead.',13,10,0
+hlp_echo    db  'Displays messages, or turns command-echoing on or off.',13,10,13,10
+            db  'ECHO [ON | OFF]',13,10
+            db  'ECHO [message]',13,10,13,10
+            db  'Type ECHO without parameters to display the current echo setting.',13,10,13,10,0
 
 hlp_break   db  'Sets or clears extended Ctrl+C checking.',13,10,13,10
-            db  '  BREAK [ON | OFF]',13,10,13,10
-            db  '  ON looks for Ctrl+C during any DOS call rather than only',13,10
-            db  '  during console, printer and communications ones.  Without an',13,10
-            db  '  argument, BREAK reports the current setting.',13,10,0
+            db  'BREAK [ON | OFF]',13,10,13,10
+            db  'Type BREAK without a parameter to display the current BREAK setting.',13,10,13,10,0
 
-hlp_verify  db  'Sets whether written data is read back and checked.',13,10,13,10
-            db  '  VERIFY [ON | OFF]',13,10,13,10
-            db  '  Without an argument, VERIFY reports the current setting.',13,10,0
+hlp_verify  db  'Tells PM-DOS whether to verify that your files are written correctly to a',13,10
+            db  'disk.',13,10,13,10
+            db  'VERIFY [ON | OFF]',13,10,13,10
+            db  'Type VERIFY without a parameter to display the current VERIFY setting.',13,10,13,10,0
 
-hlp_set     db  'Displays, sets or removes an environment variable.',13,10,13,10
-            db  '  SET [name=[value]]',13,10,13,10
-            db  '  SET alone lists the environment.  "SET name=" with nothing',13,10
-            db  '  after the "=" removes the variable.  A name is stored in',13,10
-            db  '  upper case and matched without regard to case.',13,10,0
+hlp_set     db  'Displays, sets, or removes PM-DOS environment variables.',13,10,13,10
+            db  'SET [variable=[string]]',13,10,13,10
+            db  '  variable  Specifies the environment-variable name.',13,10
+            db  '  string    Specifies a series of characters to assign to the variable.',13,10,13,10
+            db  'Type SET without parameters to display the current environment variables.',13,10,13,10,0
 
-hlp_path    db  'Displays or sets the directories the shell searches for',13,10
-            db  'external commands.',13,10,13,10
-            db  '  PATH [[drive:]path[;[drive:]path]...]',13,10
-            db  '  PATH ;',13,10,13,10
-            db  '  PATH alone displays the current search path; "PATH ;" clears',13,10
-            db  '  it, after which only the current directory is searched.  PATH',13,10
-            db  '  is an environment variable, so SET PATH= does the same thing.',13,10,0
+hlp_path    db  'Displays or sets a search path for executable files.',13,10,13,10
+            db  'PATH [[drive:]path[;...]]',13,10
+            db  'PATH ;',13,10,13,10
+            db  'Type PATH ; to clear all search-path settings and direct PM-DOS to search',13,10
+            db  'only in the current directory.',13,10
+            db  'Type PATH without parameters to display the current path.',13,10,13,10,0
 
-hlp_prompt  db  'Changes the command prompt.',13,10,13,10
-            db  '  PROMPT [text]',13,10,13,10
-            db  '  $P  current drive and directory    $N  current drive',13,10
-            db  '  $G  >                              $L  <',13,10
-            db  '  $B  |                              $Q  =',13,10
-            db  '  $D  date                           $T  time',13,10
-            db  '  $V  PM-DOS version                 $_  new line',13,10
-            db  '  $E  escape (1Bh)                   $H  backspace, erasing',13,10
-            db  '  $$  a dollar sign',13,10,13,10
-            db  '  PROMPT alone restores the default, which is $P$G.',13,10,0
+hlp_prompt  db  'Changes the PM-DOS command prompt.',13,10,13,10
+            db  'PROMPT [text]',13,10,13,10
+            db  '  text    Specifies a new command prompt.',13,10,13,10
+            db  'Prompt can be made up of normal characters and the following special codes:',13,10,13,10
+            db  '  $Q   = (equal sign)',13,10
+            db  '  $$   $ (dollar sign)',13,10
+            db  '  $T   Current time',13,10
+            db  '  $D   Current date',13,10
+            db  '  $P   Current drive and path',13,10
+            db  '  $V   PM-DOS version number',13,10
+            db  '  $N   Current drive',13,10
+            db  '  $G   > (greater-than sign)',13,10
+            db  '  $L   < (less-than sign)',13,10
+            db  '  $B   | (pipe)',13,10
+            db  '  $H   Backspace (erases previous character)',13,10
+            db  '  $E   Escape code (ASCII code 27)',13,10
+            db  '  $_   Carriage return and linefeed',13,10,13,10
+            db  'Type PROMPT without parameters to reset the prompt to the default setting.',13,10,13,10,0
 
 hlp_md      db  'Creates a directory.',13,10,13,10
-            db  '  MD [drive:]path',13,10
-            db  '  MKDIR [drive:]path',13,10,13,10
-            db  '  One level at a time: the parent has to exist already.',13,10,0
+            db  'MKDIR [drive:]path',13,10
+            db  'MD [drive:]path',13,10,13,10,0
 
-hlp_cd      db  'Displays the current directory, or changes to another one.',13,10,13,10
-            db  '  CD [drive:][path]',13,10
-            db  '  CHDIR [drive:][path]',13,10,13,10
-            db  '  CD ..     the parent directory',13,10
-            db  '  CD \      the root of the current drive',13,10,13,10
-            db  '  CD alone displays the current drive and directory.  Every',13,10
-            db  '  drive keeps its own current directory; type the letter and a',13,10
-            db  '  colon on its own to move between them.',13,10,0
+hlp_cd      db  'Displays the name of or changes the current directory.',13,10,13,10
+            db  'CHDIR [drive:][path]',13,10
+            db  'CHDIR[..]',13,10 
+            db  'CD [drive:][path]',13,10
+            db  'CD[..]',13,10,13,10
+            db  '  ..   Specifies that you want to change to the parent directory.',13,10,13,10
+            db  'Type CD drive: to display the current directory in the specified drive.',13,10
+            db  'Type CD without parameters to display the current drive and directory.',13,10,13,10,0
 
-hlp_rd      db  'Removes a directory.',13,10,13,10
-            db  '  RD [drive:]path',13,10
-            db  '  RMDIR [drive:]path',13,10,13,10
-            db  '  The directory has to be empty, and it cannot be the current',13,10
-            db  '  directory of any drive or the root.',13,10,0
+hlp_rd      db  'Removes (deletes) a directory.',13,10,13,10
+            db  'RMDIR [drive:]path',13,10
+            db  'RD [drive:]path',13,10,13,10,0
 
-hlp_goto    db  'Continues a batch file at a labelled line.',13,10,13,10
-            db  '  GOTO label',13,10,13,10
-            db  '  The label is written on a line of its own with a colon in',13,10
-            db  '  front of it - ":label" - and is matched without regard to',13,10
-            db  '  case.  GOTO with no such label ends the batch file.',13,10,0
+hlp_goto    db  'Directs PM-DOS to a labelled line in a batch program.',13,10,13,10
+            db  'GOTO label',13,10,13,10
+            db  '  label   Specifies a text string used in the batch program as a label.',13,10,13,10
+            db  'You type a label on a line by itself, beginning with a colon.',13,10,13,10,0
 
-hlp_if      db  'Runs a command in a batch file when a condition holds.',13,10,13,10
-            db  '  IF [NOT] ERRORLEVEL number command',13,10
-            db  '  IF [NOT] string1==string2 command',13,10
-            db  '  IF [NOT] EXIST filename command',13,10,13,10
-            db  '  ERRORLEVEL n is true when the last program exited with a code',13,10
-            db  '  of n OR MORE, which is why the tests are written highest',
-            db  ' first.',13,10
-            db  '  The == comparison is literal and case sensitive; quote both',13,10
-            db  '  sides if either might be empty.',13,10,0
+hlp_if      db  'Performs conditional processing in batch programs.',13,10,13,10
+            db  'IF [NOT] ERRORLEVEL number command',13,10
+            db  'IF [NOT] string1==string2 command',13,10
+            db  'IF [NOT] EXIST filename command',13,10,13,10
+            db  '  NOT               Specifies that PM-DOS should carry out the command only',13,10
+            db  '                    if the condition is false.',13,10
+            db  '  ERRORLEVEL number Specifies a true condition if the last program run returned',13,10
+            db  '                    an exit code equal to or greater than the number specified.',13,10
+            db  '  command           Specifies the command to carry out if the condition is',13,10
+            db  '                    met.',13,10
+            db  '  string1==string2  Specifies a true condition if the specified text strings',13,10
+            db  '                    match.',13,10
+            db  '  EXIST filename    Specifies a true condition if the specified filename',13,10
+            db  '                    exists.',13,10,13,10,0
 
-hlp_for     db  'Runs a command once for each item in a set.',13,10,13,10
-            db  '  FOR %variable IN (set) DO command [parameters]',13,10
-            db  '  FOR /F ["options"] %variable IN (source) DO command',13,10,13,10
-            db  '  %variable   a single letter.  In a batch file write it with',13,10
-            db  '              two percent signs: %%v',13,10
-            db  '  (set)       items separated by spaces or commas.  An item',13,10
-            db  '              containing a wildcard is expanded to the files it',13,10
-            db  '              matches.',13,10,13,10
-            db  '  /F reads LINES: (file ...) the lines of files, ("text") one',13,10
-            db  "  line, ('command') what the command prints.  Each line is cut",13,10
-            db  '  into tokens and the ones asked for go into %variable and the',13,10
-            db  '  letters after it.  Options, together inside one pair of quotes:',13,10
-            db  '    eol=c         a line starting with c is skipped (;)',13,10
-            db  '    skip=n        skip the first n lines',13,10
-            db  '    delims=xxx    what separates tokens (space and tab)',13,10
-            db  '    tokens=x,y,m-n[*]   which tokens (1); * the rest of the line',13,10
-            db  "    usebackq      then (`command`), ('text'), and (",'"file"',")",13,10,13,10
-            db  '  The variable stands for the current item in the command.',13,10,0
+hlp_for     db  'Runs a specified command for each file in a set of files.',13,10,13,10
+            db  'FOR %variable IN (set) DO command [command-parameters]',13,10
+            db  'FOR /F ["options"] %variable IN (source) DO command',13,10,13,10
+            db  '  %variable       Specifies a replaceable parameter.',13,10
+            db  '  (set)           Specifies a set of one or more files.  Wildcards may be used.',13,10
+            db  '  /F ["options"]  Specifies that the command should read the lines of files.',13,10
+            db  '                  Options, together inside one pair of quotes:',13,10
+            db  '                  eol=c         a line starting with c is skipped (;)',13,10
+            db  '                  skip=n        skip the first n lines',13,10
+            db  '                  delims=xxx    what separates tokens (space and tab)',13,10
+            db  '                  tokens=x,y,m-n[*]   which tokens (1); * the rest of the line',13,10
+            db  "                  usebackq      then (`command`), ('text'), and (",'"file"',")",13,10,13,10
+            db  '  command         Specifies the command to carry out for each file.',13,10
+            db  '  command-parameters',13,10
+            db  '                  Specifies parameters or switches for the specified command.',13,10,13,10
+            db  'To use the FOR command in a batch program, specify %%variable instead of',13,10
+            db  '%variable.',13,10,13,10,0
 
-hlp_shift   db  'Moves the replaceable parameters of a batch file down one.',13,10,13,10
-            db  '  SHIFT',13,10,13,10
-            db  '  %1 becomes %0, %2 becomes %1, and so on - which is how a batch',13,10
-            db  '  file reaches an eleventh argument that %9 could never name.',13,10,0
+hlp_shift   db  'Changes the position of replaceable parameters in a batch file.',13,10,13,10
+            db  'SHIFT',13,10,13,10,0
 
-hlp_call    db  'Runs one batch file from another and comes back.',13,10,13,10
-            db  '  CALL [drive:][path]filename [batch-parameters]',13,10,13,10
-            db  '  Without CALL, one batch file running another does not return:',13,10
-            db  '  the second replaces the first.',13,10,0
+hlp_call    db  'Calls one batch program from another.',13,10,13,10
+            db  'CALL [drive:][path]filename [batch-parameters]',13,10,13,10
+            db  '  batch-parameters   Specifies any command-line information required by the',13,10
+            db  '                     batch program.',13,10,13,10,0
 
-hlp_ctty    db  'Moves the console to another character device.',13,10,13,10
-            db  '  CTTY device',13,10,13,10
-            db  '  CTTY AUX sends the prompt to the serial port and takes',13,10
-            db  '  commands from it; CTTY CON brings it back.  It moves handles',13,10
-            db  '  0, 1 and 2 only, so a program that opens CON by name, or',13,10
-            db  '  writes to the screen itself, is unaffected - and on a machine',13,10
-            db  '  with nothing at the other end there is then no way to type',13,10
-            db  '  CTTY CON.',13,10,0
+hlp_ctty    db  'Changes the terminal device used to control your system.',13,10,13,10
+            db  'CTTY device',13,10,13,10
+            db  '  device   The terminal device you want to use, such as COM1.',13,10,13,10,0
 
-hlp_lh      db  'Runs a program with its memory taken from upper memory.',13,10,13,10
-            db  '  LH [drive:][path]filename [parameters]',13,10
-            db  '  LOADHIGH [drive:][path]filename [parameters]',13,10,13,10
-            db  '  UPPER FIRST AND NOT UPPER ONLY: a program too big for what is',13,10
-            db  '  free up there loads low and runs, so this is a preference and',13,10
-            db  '  not a demand, and it is not an error when it cannot be met.',13,10
-            db  '  MEM /D shows where a resident program actually ended up.',13,10,0
+hlp_lh      db  'Loads a program into the upper memory area.',13,10,13,10
+            db  'LOADHIGH [drive:][path]filename [parameters]',13,10
+            db  'LH [drive:][path]filename [parameters]',13,10,13,10
+            db  '[drive:][path]filename',13,10
+            db  '            Specifies the location and name of the program.',13,10,13,10
+            db  'parameters  Specifies any command-line information required by',13,10
+            db  '            the program.',13,10,13,10,0
 
-hlp_doskey  db  'Edits command lines, recalls them, and makes macros.',13,10,13,10
-            db  '  DOSKEY [/REINSTALL] [/BUFSIZE=size] [/MACROS] [/HISTORY]',13,10
-            db  '         [/INSERT | /OVERSTRIKE] [macroname=[text]]',13,10,13,10
-            db  '  /REINSTALL    forget every macro and every remembered line',13,10
-            db  '  /BUFSIZE=n    the bytes kept for macros and history (512)',13,10
-            db  '  /MACROS, /M   list the macros',13,10
-            db  '  /HISTORY, /H  list the remembered lines',13,10
-            db  '  /INSERT       typing inserts; Ins switches for one line',13,10
-            db  '  /OVERSTRIKE   typing overwrites (the default)',13,10
-            db  '  name=text     a macro.  $1-$9 and $* stand for what is typed',13,10
-            db  '                after its name, $T separates commands, $G $L $B',13,10
-            db  '                are > < |, and $$ is $.  "name=" deletes it.',13,10,13,10
-            db  '  DOSKEY is part of this shell and always on at the prompt:',13,10
-            db  '  Up/Down, PgUp/PgDn recall lines; Left/Right, Home/End,',13,10
-            db  '  Ctrl+Left/Right move; Del, Backspace, Ctrl+Home/Ctrl+End',13,10
-            db  '  delete; Esc clears; F7 lists, F8 searches, F9 picks by',13,10
-            db  '  number; Alt+F7 and Alt+F10 forget history and macros.',13,10
-            db  '  F1-F6 work on the last line as they always did, and Ctrl+T',13,10
-            db  '  separates two commands typed on one line.',13,10,0
+hlp_doskey  db  'Edits command lines, recalls PM-DOS commands, and creates macros.',13,10,13,10
+            db  'DOSKEY [/REINSTALL] [/BUFSIZE=size] [/MACROS] [/HISTORY]',13,10
+            db  '  [/INSERT | /OVERSTRIKE] [macroname=[text]]',13,10,13,10
+            db  '  /REINSTALL    Installs a new copy of the DosKey.',13,10
+            db  '  /BUFSIZE=size Sets the size of command history buffer.',13,10
+            db  '  /MACROS       Displays all DosKey macros.',13,10
+            db  '  /HISTORY      Displays all commands stored in memory.',13,10
+            db  '  /INSERT       Specifies that new text you type is inserted in old text.',13,10
+            db  '  /OVERSTRIKE   Specifies that new text overwrites old text.',13,10
+            db  '  macroname     Specifies a name for a macro you create.',13,10
+            db  '  text          Specifies the commands you want to record.',13,10,13,10
+
+            db  'DOSKEY is part of CMD and is always on at the prompt.',13,10
+            db  'UP and DOWN ARROWS recall commands; ESC clears command line; F7 displays',13,10
+            db  'command history; ALT+F7 clears command history; F8 search command',13,10
+            db  'history; F9 selects a command by number; ALT+F10 clears macro definitions.',13,10,13,10
+            db  'The following are some special codes in DosKey macro definitions:',13,10
+            db  '$T     Command separator.  Allows multiple commands in a macro.',13,10
+            db  '$1=$9  Batch parameters.  Equivalent to %1-%9 in batch programs.',13,10
+            db  '$*     Symbol replaced by everything following macro name on command line.',13,10,13,10,0
 
 ;=====================================================================
 ; Messages
@@ -6912,7 +7003,11 @@ verb_buf    db  QVERB_MAX + 2 dup(0)    ; a verb is a PATH, not a name:
                                         ; see the cap in vb_lp
 qverb_buf   db  QVERB_MAX + 2 dup(0)    ; a quoted verb, as typed
 verb_quoted db  0                       ; this command's verb was quoted
-            db  0,0,0
+tail_glued  db  0                       ; the arguments began at a '/' with
+                                        ; no blank before it: see ext_fail
+            db  0,0
+verb_start  dd  0                       ; where the verb began in the line
+verb_slash  dd  0                       ; -> its first '/', 0 if it has none
 verb_src    dd  0                       ; -> verb_buf or qverb_buf
 ext_at      dd  0                       ; where try_exts writes ".XXX"
 ext_lit     db  0                       ; 1: the verb has its own extension

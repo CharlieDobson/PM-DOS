@@ -971,7 +971,7 @@ cid_scan:
 cid_named:
         mov     ebx,[ebx+4]             ; BL = the mode byte itself
         mov     ax,0300h                ; policy 3: this mode and no other
-        call    dword ptr ds:[IOS_ATACFG]
+        call    cfg_atacfg
         ret
 
 cid_off:
@@ -984,7 +984,21 @@ cid_best:
         mov     ax,0200h
 cid_go:
         xor     ebx,ebx
+        call    cfg_atacfg
+        ret
+
+;---------------------------------------------------------------------
+; cfg_atacfg - IOS_ATACFG, and then the partition tables again if the
+;              scan at boot found no volume in any of them.  AX and EBX
+;              are IOS_ATACFG's.
+;
+; The three statements around this change how a disk is READ, and two
+; of them exist for the machine that reads one wrongly.  See
+; disk_rescan for why that machine needs the second look.
+;---------------------------------------------------------------------
+cfg_atacfg:
         call    dword ptr ds:[IOS_ATACFG]
+        call    disk_rescan
         ret
 
 ;---------------------------------------------------------------------
@@ -1028,7 +1042,7 @@ cic_auto:
         mov     ax,0002h
 cic_go:
         xor     ebx,ebx
-        call    dword ptr ds:[IOS_ATACFG]
+        call    cfg_atacfg
         ret
 
 ;---------------------------------------------------------------------
@@ -1039,7 +1053,9 @@ cic_go:
 ; (which is an ATA-1 and ATA-2 thing, and those are the drives on the
 ; VLB machines where it matters most) or when the controller is on the
 ; PCI bus (which is the machines where the drive stopped reporting
-; it).  OFF is the escape hatch, and it is a real one: an adapter that
+; it) - and then only if the drive's IDENTIFY block comes back the
+; same read that way as it did a word at a time (ata_prove32).
+; OFF is the escape hatch, and it is a real one: an adapter that
 ; cannot latch two words does not report an error, it returns half the
 ; data - so if a machine reads rubbish off a disk that a real DOS
 ; reads perfectly, this is the line to try first.
@@ -1074,7 +1090,7 @@ ci32_auto:
         mov     ax,0101h
 ci32_go:
         xor     ebx,ebx
-        call    dword ptr ds:[IOS_ATACFG]
+        call    cfg_atacfg
         ret
 
 ;---------------------------------------------------------------------
@@ -1402,6 +1418,25 @@ cfg_lfn:
         ret
 clf_on:
         mov     byte ptr [lfn_on],1
+        ret
+
+;---------------------------------------------------------------------
+; UNDELETE=ON|OFF - delete protection.  ON is the default: a deleted
+; file is moved into a hidden \RECYCLED on its drive instead of being
+; freed, and UNDELETE.EXE brings it back.  OFF deletes as DOS always
+; has.  See RECYCLE.INC.
+;---------------------------------------------------------------------
+cfg_undelete:
+        mov     edi,OFFSET cfgw_on
+        call    cfg_iskw
+        jnc     cud_on
+        mov     edi,OFFSET cfgw_off
+        call    cfg_iskw
+        jc      cfg_badparm
+        mov     byte ptr [undel_on],0
+        ret
+cud_on:
+        mov     byte ptr [undel_on],1
         ret
 
 ;---------------------------------------------------------------------
@@ -1774,6 +1809,59 @@ cfc_off:
         ret
 
 ;---------------------------------------------------------------------
+; SHARE=locks[,space] | ON | OFF - file sharing and record locking,
+; which SHARE.EXE was and SHARE.INC is.
+;
+;   SHARE=10        ten locks may be held at once: SHARE.EXE's /L:
+;   SHARE=10,2048   ...and its /F:, the space for file names, which
+;                   is accepted so that a line carried over from a
+;                   real DOS is not an error and means nothing here:
+;                   no names are stored
+;   SHARE=ON        on, with SHARE_DFLTLK locks - the default, so the
+;                   line only documents it
+;   SHARE=OFF       as a DOS with no SHARE.EXE: every open succeeds,
+;                   every lock is granted, 2Fh/1000h is unanswered
+;---------------------------------------------------------------------
+cfg_share:
+        mov     edi,OFFSET cfgw_off
+        call    cfg_iskw
+        jnc     cfs_off
+        mov     edi,OFFSET cfgw_no
+        call    cfg_iskw
+        jnc     cfs_off
+        mov     edi,OFFSET cfgw_disable
+        call    cfg_iskw
+        jnc     cfs_off
+
+        cmp     byte ptr [esi],0
+        je      cfs_on
+        mov     edi,OFFSET cfgw_on
+        call    cfg_iskw
+        jnc     cfs_on
+        mov     edi,OFFSET cfgw_enable
+        call    cfg_iskw
+        jnc     cfs_on
+        mov     edi,OFFSET cfgw_yes
+        call    cfg_iskw
+        jnc     cfs_on
+
+        call    cfg_num                 ; the lock count; the comma and
+        jc      cfg_badparm             ; whatever follows it are ignored
+        or      eax,eax
+        jz      cfg_badparm             ; no locks is SHARE=OFF, and says so
+        cmp     eax,SHARE_MAXLK
+        jbe     cfs_count
+        mov     eax,SHARE_MAXLK
+cfs_count:
+        mov     [share_nlk],eax
+cfs_on:
+        mov     byte ptr [share_on],1
+        ret
+cfs_off:
+        mov     byte ptr [share_on],0
+        ret
+
+;---------------------------------------------------------------------
 ; cfg_size - ESI -> a size in kilobytes, with an optional K or M
 ;            suffix.  EAX = the value IN BYTES, CF if there is no
 ;            number there.  ESI is left on the terminator.
@@ -1969,6 +2057,8 @@ cfg_table:
         dd      OFFSET cfgn_idecbl,  OFFSET cfg_idecable
         dd      OFFSET cfgn_cdrom,   OFFSET cfg_cdrom
         dd      OFFSET cfgn_cache,   OFFSET cfg_cache
+        dd      OFFSET cfgn_share,   OFFSET cfg_share
+        dd      OFFSET cfgn_undel,   OFFSET cfg_undelete
 
 ;--- the inherited set: recognised, and doing nothing ----------------
         dd      OFFSET cfgn_rem,     OFFSET cfg_rem
@@ -2005,6 +2095,8 @@ cfgn_ide32    db  'IDE32',0
 cfgn_idecbl   db  'IDECABLE',0
 cfgn_cdrom    db  'CDROM',0
 cfgn_cache    db  'CACHE',0
+cfgn_share    db  'SHARE',0
+cfgn_undel    db  'UNDELETE',0
 cfgn_nulltrp  db  'NULLTRAP',0
 cfgn_rem      db  'REM',0
 cfgn_buffers  db  'BUFFERS',0

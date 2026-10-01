@@ -1,5 +1,5 @@
 ;=====================================================================
-; MOVE.ASM - MOVE.COM, move files, and rename a file or a directory
+; MOVE.ASM - MOVE.EXE, move files, and rename a file or a directory
 ;
 ;   MOVE [/Y | /-Y] source[,source...] destination
 ;
@@ -783,12 +783,32 @@ mva_end:
         mov     eax,4301h
         int     21h
         mov     edx,OFFSET src_path
-        mov     eax,4100h
-        int     21h
-        jc      mva_delerr
+        call    del_perm                ; not kept: it is safe at the
+        jc      mva_delerr              ; other end
 
         popad
         clc
+        ret
+
+;---------------------------------------------------------------------
+; del_perm - delete the file at EDX and do not let the kernel keep it
+;            (UNDELETE=ON).  What MOVE deletes is either at the other
+;            end already or was never whole, so a kept copy would only
+;            take up space.  A kernel with no F1h AL=19h says "invalid
+;            function" and gets a plain 41h.  CF with AX as 41h gives.
+;---------------------------------------------------------------------
+del_perm:
+        push    edx
+        mov     eax,0F119h
+        int     21h
+        pop     edx
+        jnc     dpm_out
+        cmp     ax,ERR_FUNC
+        stc
+        jne     dpm_out
+        mov     eax,4100h
+        int     21h
+dpm_out:
         ret
 
 ;--- everything below leaves the source where it was -----------------
@@ -812,8 +832,7 @@ mva_fail:
         mov     eax,3E00h
         int     21h
         mov     edx,OFFSET tgt_path     ; ...and take the half-written
-        mov     eax,4100h               ; destination away with it
-        int     21h
+        call    del_perm                ; destination away with it
 mva_f2:
         mov     ebx,[src_h]
         cmp     ebx,-1
@@ -1566,30 +1585,26 @@ msg_emoved  db  'a directory can be RENAMED but not moved to another '
 msg_elong   db  'the resulting path would be too long$'
 msg_enum    db  'error $'
 
-msg_usage   db  'Moves files, and renames a file or a directory.',13,10,13,10
-            db  '  MOVE [/Y | /-Y] source[,source...] destination',13,10,13,10
-            db  '  /Y    replace a file at the destination without asking',13,10
-            db  '  /-Y   ask first, which is what happens anyway',13,10,13,10
-            db  '  MOVE A.TXT B.TXT        rename it',13,10
-            db  '  MOVE *.TXT \DOCS        move them into a directory',13,10
-            db  '  MOVE A.TXT B.TXT \DOCS  two sources, one destination',13,10
-            db  '  MOVE OLDDIR NEWDIR      rename a directory',13,10,13,10
-            db  'WITHIN ONE VOLUME NOTHING IS COPIED: the directory entry '
-            db  'moves and',13,10
-            db  'the file itself is never read, so a large file moves in no '
-            db  'time at',13,10
-            db  'all.  Between volumes the bytes have to travel, and the '
-            db  'source is',13,10
-            db  'deleted only once the copy is written, stamped and closed.',13,10,13,10
-            db  'A DIRECTORY CAN BE RENAMED BUT NOT MOVED into another '
-            db  'directory or',13,10
-            db  'onto another drive: its ".." would be left pointing at the '
-            db  'old',13,10
-            db  'parent.  Copying a tree is XCOPY, not MOVE.',13,10,13,10
-            db  'An explicit name means what it says, so a named directory, '
-            db  'hidden',13,10
-            db  'file or system file is moved.  A wildcard means the '
-            db  'ordinary files.',13,10,'$'
+msg_usage   db  'Moves files and renames files and directories.',13,10,13,10
+            db  'To move one or more files:',13,10
+            db  'MOVE [/Y | /-Y] [drive:][path]filename1[,...] destination',13,10,13,10
+            db  'To rename a directory:',13,10
+            db  'MOVE [/Y | /-Y] [drive:][path]dirname1 dirname2',13,10,13,10
+            db  '  [drive:][path]filename1 Specifies the location and name of the file',13,10
+            db  '                          or files you want to move.',13,10
+            db  '  destination             Specifies the new location of the file. Destination',13,10
+            db  '                          can consist of a drive letter and colon, a directory',13,10
+            db  '                          name, or a combination. If you are moving only one',13,10
+            db  '                          file, you can also include a filename if you want',13,10
+            db  '                          to rename the file when you move it.',13,10
+            db  '  [drive:][path]dirname1  Specifies the directory you want to rename.',13,10
+            db  '  dirname2                Specifies the new name of the directory.',13,10,13,10
+            db  '  /Y                      Suppresses prompting to confirm creation of a directory',13,10
+            db  '                          or overwriting of the destination.',13,10
+            db  '  /-Y                     Causes prompting to confirm creation of a directory',13,10
+            db  '                          or overwriting of the destination.',13,10,13,10
+            db  'The switch /Y may be present in the COPYCMD environment variable.',13,10
+            db  'This may be overridden with /-Y on the command line.',13,10,'$'
 
 img_end:                                ; the BSS begins here
 

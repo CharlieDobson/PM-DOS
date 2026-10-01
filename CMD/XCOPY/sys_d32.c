@@ -374,6 +374,17 @@ int sys_delete( const char *path )
 {
     REGS regs;
 
+    /* The only thing XCOPY deletes is a copy it could not finish, and
+       PM-DOS would keep that (UNDELETE=ON).  F1h AL=19h deletes without
+       keeping; a kernel that has no such call says "invalid function"
+       and the ordinary calls below are made instead. */
+    clear( &regs );
+    regs.edx = (u32)path;
+    call21( &regs, 0xF119 );
+    if ( !CF( regs ) || AX( regs ) != 0x0001 ) {
+        return result( &regs );
+    }
+
     if ( lfn_ok ) {
         clear( &regs );
         regs.edx = (u32)path;

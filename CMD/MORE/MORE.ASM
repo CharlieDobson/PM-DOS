@@ -249,15 +249,12 @@ key_ch      db  0                       ; the keystroke that turns a page
 con_name    db  'CON',0
 fname       db  FNAME_MAX dup(0)
 msg_nofile  db  'File not found',13,10,'$'
-msg_usage   db  'Displays output one screenful at a time.',13,10,13,10
-            db  '  MORE [drive:][path]filename',13,10
-            db  '  command | MORE',13,10
-            db  '  MORE < [drive:][path]filename',13,10,13,10
-            db  '  Pauses every 24 lines with "-- More --" and waits for a key.',13,10
-            db  '  That key is read from CON directly, not from standard input -',13,10
-            db  '  standard input is the thing being paged.',13,10,13,10
-            db  '  The filename form is a convenience the original MORE never',13,10
-            db  '  had; quotes around a long name are fine.',13,10,'$'
+msg_usage   db  'Displays output one screen at a time.',13,10,13,10
+            db  'MORE [drive:][path][filename]',13,10
+            db  'MORE < [drive:][path]filename',13,10
+            db  'command-name | MORE [drive:][path][filename]',13,10,13,10
+            db  '  [drive:][path]filename  Specifies a file to display one screen at a time.',13,10
+            db  '  command-name            Specifies a command whose output will be displayed.',13,10,'$'
 msg_more    db  '-- More --'
 more_len    EQU $ - msg_more
 msg_wipe    db  13,'            ',13

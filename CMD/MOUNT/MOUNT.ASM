@@ -573,18 +573,14 @@ msg_e70     db  'the file is in too many pieces - defragment the volume$'
 msg_e80     db  'that file already has a drive letter$'
 msg_enum    db  'error $'
 
-msg_usage   db  13,10,'MOUNT - give a file a drive letter of its own',13,10,13,10
-            db  '  MOUNT                 list what is mounted',13,10
-            db  '  MOUNT d: file         mount that file as drive d:',13,10
-            db  '  MOUNT file            ...on the next free letter',13,10
-            db  '  MOUNT d: file /R      mount it read-only',13,10
-            db  '  MOUNT /U d:           unmount drive d:',13,10,13,10
+msg_usage   db  13,10,'MOUNT - Mount a file as a drive',13,10,13,10
+            db  '  MOUNT                 List currently mounted drives.',13,10
+            db  '  MOUNT d: file         Mount file as drive d:.',13,10
+            db  '  MOUNT file            Mount file as next available drive.',13,10
+            db  '  MOUNT d: file /R      Mount file as read-only.',13,10
+            db  '  MOUNT /U d:           Unmount drive d:',13,10,13,10
             db  'An .ISO is read as ISO9660 or UDF and an .IMG, .IMA or',13,10
-            db  '.DSK as FAT - decided by what is IN the file, not by what',13,10
-            db  'it is called.  A file holding a whole disk becomes its',13,10
-            db  'first FAT partition.',13,10,13,10
-            db  'While a file is mounted it cannot be deleted, truncated or',13,10
-            db  'opened for writing: the volume is standing on it.',13,10,'$'
+            db  '.DSK as FAT.',13,10,13,10,'$'
 
 _MNT    ENDS
         END
