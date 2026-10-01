@@ -3141,6 +3141,12 @@ vdm_child:
         je      vc_load1
         cmp     byte ptr [vdm_ctx+V86C_EAX],0
         jne     vc_badfn
+
+        ; EVERYTHING WRITTEN SO FAR GOES OUT BEFORE A PROGRAM STARTS -
+        ; see fn4B, which says why.  Load-only and overlays run nothing
+        ; and are left alone.
+        call    dos_commit
+
         cmp     dword ptr ds:[vdm_depth],VDM_MAXNEST
         jae     vc_deep
         call    vc_args
@@ -4628,6 +4634,16 @@ vt_nomem:
                                         ; drops the windows and the rows
                                         ; and deliberately frees nothing
 vt_resident:
+        ; AND WHAT IT WROTE IS ON THE DISK, as fn4C makes sure of for a
+        ; D32 program - and a guest never goes through fn4C, so until
+        ; this line a DOS program that wrote a file and exited had only
+        ; written it into the cache, and a program after it that hung
+        ; or was switched off took the file with it.  After the handle
+        ; sweep, for fn4C's reason: closing is what writes a file's
+        ; length and its directory entry.  A program going resident
+        ; comes here too, and is committed as well - it has ended as
+        ; far as anybody waiting for its output is concerned.
+        call    dos_commit
         popad
         ret
 

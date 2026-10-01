@@ -5228,6 +5228,19 @@ fn4B:
         cmp     byte ptr [ebp+F_EAX],0
         jne     f4B_badfn
 
+        ; EVERYTHING WRITTEN SO FAR GOES OUT BEFORE A PROGRAM STARTS.
+        ; The lazy write cache commits when a program ends, and a batch
+        ; file's own lines - ECHO into a file, MD, COPY - are not
+        ; programs: what they wrote waits for the next program to end.
+        ; If that program hangs, or waits for a key while the machine
+        ; is switched off, it takes them with it.  Committing here
+        ; closes that: whatever the caller wrote is on the disk before
+        ; anything else gets to run.  For the caller it is the 0Dh it
+        ; would have issued itself; COMMAND issues one before every
+        ; prompt, and this is the same promise kept between the lines
+        ; of a batch file.
+        call    dos_commit
+
         ; Copy the path and the tail out of the caller NOW.  Both are
         ; pointers into the caller's own memory, and for a nested EXEC
         ; that memory is the slot this call is about to load over.

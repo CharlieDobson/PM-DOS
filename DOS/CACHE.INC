@@ -50,13 +50,23 @@
 ; Lazy writing is on by default for FIXED DISKS ONLY, and the deal is
 ; that every dirty sector is on the medium before the user can type
 ; the next command.  dos_commit is what makes that true, and it is
-; called from three places: INT 21h AH=0Dh, which is the function DOS
+; called from these places: INT 21h AH=0Dh, which is the function DOS
 ; has always had for exactly this and which COMMAND.COM now calls
-; before it prints a prompt; INT 21h AH=4Ch, a program ending; and
-; INT 2Fh AX=4A10h BX=1, which is what a SMARTDRV-aware program calls.
-; So the window in which unwritten data exists is one command long.
-; Turning the machine off in the middle of a command can lose that
-; command's writes; turning it off at the prompt cannot.
+; before it prints a prompt; a program ending, which is fn4C for a D32
+; program and vdm_cleanup for a DOS one; a program STARTING, in 4Bh
+; from either kind, which is what keeps a batch file's own writes from
+; waiting on the next program to end; and INT 2Fh AX=4A10h BX=1,
+; which is what a SMARTDRV-aware program calls.  So the window in
+; which unwritten data exists is one command long, and inside a batch
+; file one line long.  Turning the machine off in the middle of a
+; command can lose that command's writes; turning it off at the prompt
+; cannot.
+;
+; A DOS program's exit was not always on that list - only fn4C was,
+; and a guest never goes through fn4C - so a DOS program that
+; wrote a file and exited had written it into this cache and no
+; further, and the next program hanging lost it.  RUNTESTS.PS1 found
+; it: a batch of tests lost every answer when one of them hung.
 ;
 ; FLOPPIES, CD-ROMS AND LOADED BLOCK DRIVERS ARE READ-CACHED ONLY.
 ; The argument is the same for all three and it is about what the
@@ -2103,8 +2113,10 @@ cache_stmiss:
 ; which is the same bug one layer down.
 ;
 ; It runs before every command prompt, which is the promise made at
-; the top of this file, and from 4Ch, which is where a program that
-; wrote a file and exited becomes a file on the disk.
+; the top of this file; from fn4C and vdm_cleanup, which is where a
+; program that wrote a file and exited becomes a file on the disk; and
+; from both 4Bh paths, so that nothing a program's parent wrote is
+; still owed when the program starts.
 ;=====================================================================
 dos_commit:
         pushad
