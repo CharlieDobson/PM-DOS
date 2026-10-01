@@ -1782,6 +1782,20 @@ GVO_PICMASK     EQU     GV_OFF  + 70h
 GV_FDPT         EQU     GV_BASE + 80h
 GVO_FDPT        EQU     GV_OFF  + 80h
 
+; THE HANG REPORTER'S MAILBOX, in a kernel built with HANG_E9 (BUILD
+; hang) and in no other.  PMDOS writes it at every INT 21h and PMIO's
+; v86_fault at every trap a DOS box takes; PMIO's timer tick counts
+; the silence, and once nothing has written it for five seconds says
+; where the processor is, on port E9h - see irq_timer.  It is here
+; because this is the one block both files address.
+IFDEF HANG_E9
+GV_HANGT        EQU     GV_BASE + 90h           ; dd - ticks since the last call or trap
+GV_HANGAX       EQU     GV_BASE + 94h           ; dd - EAX of the last INT 21h
+GV_HANGCS       EQU     GV_BASE + 98h           ; dd - ...its caller's CS
+GV_HANGIP       EQU     GV_BASE + 9Ch           ; dd - ...and EIP
+GV_HANGN        EQU     GV_BASE + 0A0h          ; dd - reports made so far
+ENDIF
+
 ;---------------------------------------------------------------------
 ; PMIO service table.  IOPM.BIN begins with a JMP to its entry point,
 ; then a table of near function pointers at IO_PM_BASE+10h.  PMDOS

@@ -411,6 +411,9 @@ v86_fault:
 IFDEF V86_WATCH
         mov     dword ptr ds:[v86_wtick],0      ; the guest is still asking
 ENDIF
+IFDEF HANG_E9
+        mov     dword ptr ds:[GV_HANGT],0       ; and so is anybody in a box
+ENDIF
 IFDEF DBG_LPT
 ; EVERY FAULT INTO THE RING, and nothing else here: no I/O, no
 ; formatting, no decisions.  What this costs is what the guest pays

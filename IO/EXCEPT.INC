@@ -54,6 +54,149 @@ irq&n:
 ;=====================================================================
 exc_common:
         cli
+IFDEF HANG_E9
+        ; EVERY EXCEPTION BUT THE TWO A BOX TAKES ALL DAY, said on E9h
+        ; before anything below can take a second one: registers, the
+        ; stack and OUT, and nothing through DS, which out of V86 is a
+        ; null selector.  A #GP is how every guest INT arrives and a
+        ; #NM is the coprocessor changing hands, so those two would
+        ; bury the line that matters - and slow the machine enough to
+        ; move it.
+        push    eax
+        push    ebx
+        push    ecx
+        mov     eax,[esp+12]                    ; three pushes, then the vector
+        cmp     eax,13
+        je      exe9_out
+        cmp     eax,7
+        je      exe9_out
+        mov     al,'E'
+        out     0E9h,al
+        mov     al,'X'
+        out     0E9h,al
+        mov     al,' '
+        out     0E9h,al
+        mov     eax,[esp+12]
+        call    e9_hex32
+        mov     al,' '
+        out     0E9h,al
+        mov     eax,[esp+24]                    ; CS
+        call    e9_hex32
+        mov     al,':'
+        out     0E9h,al
+        mov     eax,[esp+20]                    ; EIP
+        call    e9_hex32
+        mov     al,' '
+        out     0E9h,al
+        mov     eax,[esp+16]                    ; the error code
+        call    e9_hex32
+        mov     al,' '
+        out     0E9h,al
+        mov     eax,[esp+28]                    ; EFLAGS
+        call    e9_hex32
+        ; Where the CPU put this frame - TSS ESP0, for anything out of
+        ; ring 3 or a box - and for a page fault the address it wanted.
+        mov     al,' '
+        out     0E9h,al
+        mov     al,'0'
+        out     0E9h,al
+        mov     al,'='
+        out     0E9h,al
+        mov     eax,dword ptr ss:[TSS_BASE + TSS_ESP0]
+        call    e9_hex32
+        cmp     dword ptr [esp+12],14
+        jne     exe9_nocr2
+        mov     al,' '
+        out     0E9h,al
+        mov     al,'2'
+        out     0E9h,al
+        mov     al,'='
+        out     0E9h,al
+        mov     eax,cr2
+        call    e9_hex32
+exe9_nocr2:
+        ; FROM RING 0 there is no stack switch, so the frame sits on the
+        ; stack the kernel was using: say where that is, and the eight
+        ; dwords above the frame, which is where its return addresses are.
+        test    dword ptr [esp+28],EFL_VM
+        jnz     exe9_nostk
+        test    byte ptr [esp+24],3
+        jnz     exe9_nostk
+        mov     al,' '
+        out     0E9h,al
+        mov     al,'s'
+        out     0E9h,al
+        mov     al,'='
+        out     0E9h,al
+        lea     ebx,[esp+32]                    ; the faulting code's ESP
+        mov     eax,ebx
+        call    e9_hex32
+        mov     ecx,8
+exe9_stk:
+        push    ecx
+        mov     al,' '
+        out     0E9h,al
+        mov     eax,dword ptr ss:[ebx]
+        call    e9_hex32
+        add     ebx,4
+        pop     ecx
+        loop    exe9_stk
+exe9_nostk:
+        ; AN INVALID OPCODE IN A BOX: is it the program's own code, or
+        ; memory that was something else when the program was loaded?
+        ; The sixteen bytes at CS:IP, and the name in the arena header a
+        ; paragraph below CS, which owns them when the program is a .COM.
+        ; Read through SS, which is flat, because DS out of V86 is null.
+        test    dword ptr [esp+28],EFL_VM
+        jz      exe9_eol
+        cmp     dword ptr [esp+12],6
+        jne     exe9_eol
+        mov     ebx,[esp+24]
+        and     ebx,0FFFFh
+        shl     ebx,4
+        mov     eax,[esp+20]
+        and     eax,0FFFFh
+        add     ebx,eax                         ; EBX = linear CS:IP
+        mov     al,' '
+        out     0E9h,al
+        mov     ecx,16
+exe9_byte:
+        push    ecx
+        mov     al,byte ptr ss:[ebx]
+        call    e9_hex8
+        inc     ebx
+        pop     ecx
+        loop    exe9_byte
+        mov     ebx,[esp+24]
+        and     ebx,0FFFFh
+        dec     ebx
+        shl     ebx,4                           ; EBX = the header below CS
+        mov     al,byte ptr ss:[ebx]
+        cmp     al,'M'
+        je      exe9_name
+        cmp     al,'Z'
+        jne     exe9_eol
+exe9_name:
+        mov     al,' '
+        out     0E9h,al
+        mov     ecx,8
+exe9_nch:
+        mov     al,byte ptr ss:[ebx+8]
+        or      al,al
+        jz      exe9_eol
+        out     0E9h,al
+        inc     ebx
+        loop    exe9_nch
+exe9_eol:
+        mov     al,13
+        out     0E9h,al
+        mov     al,10
+        out     0E9h,al
+exe9_out:
+        pop     ecx
+        pop     ebx
+        pop     eax
+ENDIF
 
         ; A FAULT OUT OF V86 MODE ARRIVES WITH DS, ES, FS AND GS SET TO
         ; NULL SELECTORS.  The CPU does that deliberately on the way to
@@ -243,6 +386,231 @@ msgV86Spin      db      'V86: the guest has run 2s without a single trap, at ',0
 msgV86SpinCR    db      13,10,0
 ENDIF
 
+IFDEF HANG_E9
+;---------------------------------------------------------------------
+; The hang reporter's half in PMIO - see irq_timer, and GV_HANGT in
+; PMDOS.INC for the mailbox.  Port E9h is the Bochs debug port: one OUT
+; a character, no handshake, and nothing the machine has to be in the
+; right state for, which is the whole requirement of a channel that
+; reports on a machine in the wrong one.  DOSBox-X with "bochs debug
+; port e9=true" writes what arrives into its log (DBXRUN.PS1 -E9); on
+; real iron nothing answers at E9h and the OUTs go nowhere.
+;---------------------------------------------------------------------
+HANG_TICKS      EQU     91              ; five seconds of nobody asking,
+HANG_EVERY      EQU     18              ; then a sample a second,
+HANG_MAX        EQU     8               ; eight of them
+
+HANG_STUBDW     EQU     ( ( exc_common - exc0 ) + 64 ) / 4  ; the stubs and
+                                        ; exc_common's first instructions
+
+hang_eip        dd      0
+hang_cs         dd      0
+hang_fl         dd      0
+hang_esp        dd      0
+hang_ss         dd      0
+hang_armed      db      0
+hang_idtr       dw      0               ; what SIDT said last tick...
+                dd      0
+hang_idtrnow    dw      0               ; ...and this one
+                dd      0
+hang_idtsum     dd      0
+hang_stubsum    dd      0
+hang_idtsnow    dd      0
+hang_stubsnow   dd      0
+hang_nchg       dd      0
+msgChg          db      'CHG idtr ',0
+msgChgIdt       db      ' idt ',0
+msgChgStub      db      ' stubs ',0
+msgChgWas       db      ' (was ',0
+msgChgClose     db      ')',0
+msgChgAt        db      ' | at ',0
+
+; ESI -> the first dword, ECX = how many.  EAX = their sum.
+hang_sum:
+        xor     eax,eax
+hs_lp:
+        add     eax,dword ptr ds:[esi]
+        add     esi,4
+        loop    hs_lp
+        ret
+
+; The fault path moved: what it is now, what it was, who was running.
+hang_chgreport:
+        mov     esi,OFFSET msgChg
+        call    e9_str
+        movzx   eax,word ptr ds:[hang_idtrnow]
+        call    e9_hex32
+        mov     al,' '
+        out     0E9h,al
+        mov     eax,dword ptr ds:[hang_idtrnow+2]
+        call    e9_hex32
+        mov     esi,OFFSET msgChgIdt
+        call    e9_str
+        mov     eax,dword ptr ds:[hang_idtsnow]
+        call    e9_hex32
+        mov     esi,OFFSET msgChgStub
+        call    e9_str
+        mov     eax,dword ptr ds:[hang_stubsnow]
+        call    e9_hex32
+        mov     esi,OFFSET msgChgWas
+        call    e9_str
+        movzx   eax,word ptr ds:[hang_idtr]
+        call    e9_hex32
+        mov     al,' '
+        out     0E9h,al
+        mov     eax,dword ptr ds:[hang_idtr+2]
+        call    e9_hex32
+        mov     al,' '
+        out     0E9h,al
+        mov     eax,dword ptr ds:[hang_idtsum]
+        call    e9_hex32
+        mov     al,' '
+        out     0E9h,al
+        mov     eax,dword ptr ds:[hang_stubsum]
+        call    e9_hex32
+        mov     esi,OFFSET msgChgClose
+        call    e9_str
+        mov     esi,OFFSET msgChgAt
+        call    e9_str
+        mov     eax,dword ptr ds:[hang_cs]
+        call    e9_hex32
+        mov     al,':'
+        out     0E9h,al
+        mov     eax,dword ptr ds:[hang_eip]
+        call    e9_hex32
+        mov     esi,OFFSET msgHang21
+        call    e9_str
+        mov     eax,dword ptr ds:[GV_HANGAX]
+        call    e9_hex32
+        mov     esi,OFFSET msgHangFrom
+        call    e9_str
+        mov     eax,dword ptr ds:[GV_HANGCS]
+        call    e9_hex32
+        mov     al,':'
+        out     0E9h,al
+        mov     eax,dword ptr ds:[GV_HANGIP]
+        call    e9_hex32
+        mov     esi,OFFSET msgHangCR
+        call    e9_str
+        ret
+msgHang         db      'HANG ',0
+msgHangAt       db      ': at ',0
+msgHangFl       db      ' fl ',0
+msgHangSp       db      ' ss:esp ',0
+msgHang21       db      ' | last 21h ax ',0
+msgHangFrom     db      ' from ',0
+msgHangIn       db      ' indos ',0
+msgHangCR       db      13,10,0
+
+; One line: the sample, then the last INT 21h and whether DOS is in one.
+hang_report:
+        mov     esi,OFFSET msgHang
+        call    e9_str
+        mov     eax,dword ptr ds:[GV_HANGN]
+        call    e9_hex32
+        mov     esi,OFFSET msgHangAt
+        call    e9_str
+        mov     eax,dword ptr ds:[hang_cs]
+        call    e9_hex32
+        mov     al,':'
+        out     0E9h,al
+        mov     eax,dword ptr ds:[hang_eip]
+        call    e9_hex32
+        mov     esi,OFFSET msgHangFl
+        call    e9_str
+        mov     eax,dword ptr ds:[hang_fl]
+        call    e9_hex32
+        ; Only a frame from ring 3 or a box has a stack of its own in it;
+        ; from ring 0 those two dwords are somebody else's.
+        test    dword ptr ds:[hang_fl],EFL_VM
+        jnz     hr_stack
+        test    byte ptr ds:[hang_cs],3
+        jz      hr_nostack
+hr_stack:
+        mov     esi,OFFSET msgHangSp
+        call    e9_str
+        mov     eax,dword ptr ds:[hang_ss]
+        call    e9_hex32
+        mov     al,':'
+        out     0E9h,al
+        mov     eax,dword ptr ds:[hang_esp]
+        call    e9_hex32
+hr_nostack:
+        mov     esi,OFFSET msgHang21
+        call    e9_str
+        mov     eax,dword ptr ds:[GV_HANGAX]
+        call    e9_hex32
+        mov     esi,OFFSET msgHangFrom
+        call    e9_str
+        mov     eax,dword ptr ds:[GV_HANGCS]
+        call    e9_hex32
+        mov     al,':'
+        out     0E9h,al
+        mov     eax,dword ptr ds:[GV_HANGIP]
+        call    e9_hex32
+        mov     esi,OFFSET msgHangIn
+        call    e9_str
+        movzx   eax,byte ptr ds:[DOS_INDOS]
+        call    e9_hex32
+        mov     esi,OFFSET msgHangCR
+        call    e9_str
+        ret
+
+; ESI -> ASCIIZ, out through E9h.  AL and ESI are not kept.
+e9_str:
+        lodsb
+        or      al,al
+        jz      e9s_out
+        out     0E9h,al
+        jmp     short e9_str
+e9s_out:
+        ret
+
+; AL as two hex digits through E9h.  AL is not kept.
+e9_hex8:
+        push    ebx
+        mov     ebx,eax
+        rol     bl,4
+        mov     al,bl
+        and     al,0Fh
+        add     al,'0'
+        cmp     al,'9'
+        jbe     e9b_hi
+        add     al,7
+e9b_hi:
+        out     0E9h,al
+        rol     bl,4
+        mov     al,bl
+        and     al,0Fh
+        add     al,'0'
+        cmp     al,'9'
+        jbe     e9b_lo
+        add     al,7
+e9b_lo:
+        out     0E9h,al
+        pop     ebx
+        ret
+
+; EAX as eight hex digits through E9h.  AL and ECX are not kept.
+e9_hex32:
+        push    ebx
+        mov     ebx,eax
+        mov     ecx,8
+e9h_lp:
+        rol     ebx,4
+        mov     al,bl
+        and     al,0Fh
+        add     al,'0'
+        cmp     al,'9'
+        jbe     e9h_dig
+        add     al,7
+e9h_dig:
+        out     0E9h,al
+        loop    e9h_lp
+        pop     ebx
+        ret
+ENDIF
+
 ; The segment registers the faulting code was holding, kept by
 ; exc_common and put back by pm3_fault when it resumes ring-3 code.
 ; Not a stack, because a fault taken inside this handler is fatal
@@ -378,6 +746,92 @@ irq_timer:
         mov     byte ptr ds:[BDA_TICKROLL],1    ; flag INT 1Ah/00h reads
 it_noroll:
         mov     dword ptr ds:[BDA_TICKS],eax
+
+IFDEF HANG_E9
+;--- the hang reporter (BUILD hang) ----------------------------------
+; Nothing has called INT 21h and no box has trapped for five seconds,
+; so say where the processor is - once a second, HANG_MAX times, so
+; that a loop shows as one address or a few and a stop as the same one
+; over and over.  The kernel, a native program and a box are all
+; reported, because which of them it is is the first thing a hang has
+; to be told.  A machine stopped with interrupts off never gets here,
+; and says so by saying nothing at all.
+;
+; PUSHAD first, so nothing below this block sees a register it did not
+; set; the frame is 32 bytes further up for the same reason.
+        pushad
+        mov     eax,[esp+80]                    ; pushad, ret, es, ds, pushad,
+        mov     dword ptr ds:[hang_eip],eax     ; irq#, then eip, cs, flags -
+        mov     eax,[esp+84]                    ; and esp, ss from ring 3 or
+        mov     dword ptr ds:[hang_cs],eax      ; a box
+        mov     eax,[esp+88]
+        mov     dword ptr ds:[hang_fl],eax
+        mov     eax,[esp+92]
+        mov     dword ptr ds:[hang_esp],eax
+        mov     eax,[esp+96]
+        mov     dword ptr ds:[hang_ss],eax
+
+        ; AND THE FAULT PATH ITSELF, EVERY TICK: the IDT register, the
+        ; IDT, and the stubs its exception gates point at.  A machine
+        ; that triple-faults without ever reaching exc_common has had
+        ; one of the three changed under it, and this says when - with
+        ; the last INT 21h beside it, which says by whom.
+        sidt    fword ptr ds:[hang_idtrnow]
+        mov     esi,IDT_BASE
+        mov     ecx,( IDT_LIMIT + 1 ) / 4
+        call    hang_sum
+        mov     ebx,eax                         ; EBX = the IDT's sum
+        mov     esi,OFFSET exc0
+        mov     ecx,HANG_STUBDW
+        call    hang_sum
+        mov     edx,eax                         ; EDX = the stubs' sum
+        cmp     byte ptr ds:[hang_armed],0
+        je      ihc_keep                        ; the first tick sets the baseline
+        mov     eax,dword ptr ds:[hang_idtrnow+2]
+        cmp     eax,dword ptr ds:[hang_idtr+2]
+        jne     ihc_changed
+        mov     ax,word ptr ds:[hang_idtrnow]
+        cmp     ax,word ptr ds:[hang_idtr]
+        jne     ihc_changed
+        cmp     ebx,dword ptr ds:[hang_idtsum]
+        jne     ihc_changed
+        cmp     edx,dword ptr ds:[hang_stubsum]
+        je      ihc_same
+ihc_changed:
+        cmp     dword ptr ds:[hang_nchg],HANG_MAX * 2
+        jae     ihc_keep
+        inc     dword ptr ds:[hang_nchg]
+        mov     dword ptr ds:[hang_idtsnow],ebx
+        mov     dword ptr ds:[hang_stubsnow],edx
+        call    hang_chgreport
+        mov     ebx,dword ptr ds:[hang_idtsnow]
+        mov     edx,dword ptr ds:[hang_stubsnow]
+ihc_keep:
+        mov     byte ptr ds:[hang_armed],1
+        mov     eax,dword ptr ds:[hang_idtrnow]
+        mov     dword ptr ds:[hang_idtr],eax
+        mov     ax,word ptr ds:[hang_idtrnow+4]
+        mov     word ptr ds:[hang_idtr+4],ax
+        mov     dword ptr ds:[hang_idtsum],ebx
+        mov     dword ptr ds:[hang_stubsum],edx
+ihc_same:
+
+        inc     dword ptr ds:[GV_HANGT]
+        mov     eax,dword ptr ds:[GV_HANGT]
+        sub     eax,HANG_TICKS
+        jb      ith_out
+        xor     edx,edx
+        mov     ecx,HANG_EVERY
+        div     ecx
+        or      edx,edx
+        jnz     ith_out
+        cmp     dword ptr ds:[GV_HANGN],HANG_MAX
+        jae     ith_out
+        inc     dword ptr ds:[GV_HANGN]
+        call    hang_report
+ith_out:
+        popad
+ENDIF
 
 IFDEF V86_WATCH
 ;--- the spinning-guest sampler --------------------------------------

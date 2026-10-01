@@ -1155,6 +1155,11 @@ v_picmask  db  0FCh, 0FFh              ; GV_PICMASK: the timer and the
         ORG     GV_OFF + 80h
 v_fdpt     db  16 dup(0)                ; GV_FDPT: a diskette parameter
                                         ; table for a format
+IFDEF HANG_E9
+        ORG     GV_OFF + 90h
+v_hang     db  20 dup(0)                ; GV_HANGT..GV_HANGN: the hang
+                                        ; reporter's mailbox
+ENDIF
 
 ;=====================================================================
 ; Pad the stub to exactly RMSTUB_SIZE so IOPM.BIN lands at IO_PM_BASE.

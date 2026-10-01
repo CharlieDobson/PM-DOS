@@ -123,6 +123,19 @@ i21_ours:
         ; calls genuinely nest: a critical-error handler and an INT 23h
         ; handler both run with their caller's INT 21h still open.
         inc     byte ptr ds:[DOS_INDOS]
+IFDEF HANG_E9
+        ; Somebody is still asking: the silence starts again, and the
+        ; call is kept so that a report can say what the last one was.
+        push    eax
+        mov     dword ptr ds:[GV_HANGT],0
+        mov     eax,[ebp+F_EAX]
+        mov     dword ptr ds:[GV_HANGAX],eax
+        mov     eax,[ebp+F_CS]
+        mov     dword ptr ds:[GV_HANGCS],eax
+        mov     eax,[ebp+F_EIP]
+        mov     dword ptr ds:[GV_HANGIP],eax
+        pop     eax
+ENDIF
 
         ; WHOSE CALL IS THIS?  Three kinds of caller reach this label
         ; and the CS says which.  The kernel's own is already flat and

@@ -65,7 +65,7 @@ if "%TGT%"=="" goto :gottgt
 for %%T in (debug ata ataq nohost iso fdd img move i13 vfy rmbisect rmmark rmexec rmlow rmhigh cap16 ^
   lptcap lpthigh lptpad rmlowm vdm vdmdbg v86 trace watch watchq nomode ^
   tracenm watchnm lpt stamp freeze stampfrz lptfrz lptfz lptq lpt0 lptnm ^
-  lptlow kbionm calls kbio rme9 irqtest fpuirq eager32 trust32) do echo [%TGT%]| find /i "[%%T]" > nul && set TGT=%%T
+  lptlow kbionm calls kbio rme9 irqtest fpuirq eager32 trust32 hang) do echo [%TGT%]| find /i "[%%T]" > nul && set TGT=%%T
 :gottgt
 if "%TGT%"=="debug" set DEFS=-dPMDOS_DEBUG
 if "%TGT%"=="ata"   set DEFS=-dPMDOS_DEBUG -dATA_DEBUG
@@ -207,6 +207,21 @@ rem call at all lately, and prints where it is if it has not.  A guest
 rem that spins causes no faults, so the fault trace goes quiet at
 rem exactly the moment there is something to see.
 if "%TGT%"=="watch" set DEFS=-dV86_WATCH
+rem "hang" is the same question asked of the WHOLE machine, and two more
+rem with it, all on port E9h, which DOSBox-X puts in its log
+rem (TOOLS\DBXRUN.PS1 -E9):
+rem   - once five seconds pass with no INT 21h from anybody and no trap
+rem     from any box, where the processor is - kernel, native program or
+rem     box - and what the last INT 21h was, once a second, eight times;
+rem   - every exception but a #GP and a #NM, as it arrives, with TSS ESP0,
+rem     CR2 for a page fault, and the stack it landed on from ring 0;
+rem   - the IDT register, the IDT and the exception stubs, summed every
+rem     tick, and any change said once with who was running.
+rem Nothing goes to the screen or the disk, so it moves the timing as
+rem little as anything here can.  It is what found the 64 bytes every
+rem failed EXEC left on the kernel stack.  A machine that says nothing
+rem at all stopped with interrupts off.
+if "%TGT%"=="hang" set DEFS=-dHANG_E9
 rem "watchq" is the same sampler with the console taken out of it: it
 rem pokes the guest's CS:IP into the top right of the text page instead
 rem of printing, which is nine instructions in the timer interrupt
