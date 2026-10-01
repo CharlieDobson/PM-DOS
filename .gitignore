@@ -1,5 +1,4 @@
 *.bat
-*.cmd
 *.exe
 *.com
 *.obj
@@ -9,3 +8,5 @@ DISK/**
 IMAGES/**
 *.img
 *.txt
+!*.CMD
+*.png
