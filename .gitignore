@@ -4,10 +4,11 @@
 *.obj
 *.bin
 BIN/**
-DISK/**
 IMAGES/**
 *.img
 *.txt
 !*.CMD
 *.png
 *.err
+!NOTES.TXT
+!README.TXT
