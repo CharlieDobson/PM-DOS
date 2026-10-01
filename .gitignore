@@ -10,3 +10,4 @@ IMAGES/**
 *.txt
 !*.CMD
 *.png
+*.err
