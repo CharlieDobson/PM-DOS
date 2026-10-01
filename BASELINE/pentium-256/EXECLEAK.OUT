@@ -1,0 +1,7 @@
+EXECLEAK - does a failed EXEC give its stack back?
+
+ 1 a thousand EXECs of nothing all fail  ok
+ 2 ...and a real child still runs: 42    ok
+
+Result: ..
+EXECLEAK: all checks passed

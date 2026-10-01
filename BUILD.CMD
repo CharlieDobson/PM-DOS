@@ -1102,6 +1102,12 @@ wasm -q -i=..\INC fndtest.asm                    || goto :fail
 wlink form raw bin option offset=0x2000 name ..\BIN\TESTS\FNDTEST.EXE file fndtest.obj || goto :fail
 cd ..
 
+echo === EXECLEAK.EXE (a failed EXEC gives the kernel stack back) ===
+cd TOOLS
+wasm -q -i=..\INC execleak.asm                   || goto :fail
+wlink form raw bin option offset=0x2000 name ..\BIN\TESTS\EXECLEAK.EXE file execleak.obj || goto :fail
+cd ..
+
 echo === TESTBLK.SYS (a BLOCK device driver: a 32K RAM disk) ===
 rem The block half of DEVICE= is a different job from the character
 rem half - a unit is a drive letter, not a name - and this is what it

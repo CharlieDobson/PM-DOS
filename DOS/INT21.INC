@@ -5364,7 +5364,7 @@ f4B_noenv:
         je      f4B_nosave
         mov     ebx,SLOT_SIZE
         call    arena_alloc
-        jc      f4B_deep                ; no room to park it: no EXEC
+        jc      f4B_noroom              ; no room to park it: no EXEC
         mov     [edi+XN_SAVE],eax
         push    edi
         mov     esi,PROG_PSP
@@ -5450,6 +5450,20 @@ f4B_loadfail:
         call    arena_free
         mov     dword ptr [edi+XN_SAVE],0
 f4B_lf_done:
+        ; AND ITS RING-0 STACK LEVEL.  r3_esp0 was moved down to this
+        ; call's frame so that the child would start below it, and a
+        ; child that ran gives it back in 4Ch.  A child that never ran
+        ; gives nothing back, so the caller went on with its kernel
+        ; stack one INT 21h frame - 64 bytes - lower than before, and
+        ; every failed EXEC after that took another 64.  A shell
+        ; looking a command up along PATH fails two or three EXECs for
+        ; every one it finds, so the stack walked down over the DPMI
+        ; client's LDT and into the DPMI ring-0 stack beneath it, and
+        ; the machine triple-faulted on whichever exception arrived
+        ; there first: RUNTESTS.PS1, at around the hundred-and-fiftieth
+        ; program, every time.
+        mov     eax,[edi+XN_ESP0]
+        mov     [r3_esp0],eax
         mov     esp,[edi+XN_EBP]        ; back onto the caller's stack,
         mov     ebp,esp                 ; whose frame is intact again
         mov     eax,[exec_err]
@@ -5474,6 +5488,11 @@ f4B_lf_done:
 f4B_badfn:
         mov     ax,ERR_FUNC
         jmp     i21_fail
+f4B_noroom:
+        ; No room to park the caller - and r3_esp0 has already been
+        ; moved for a child that will not exist.  See f4B_lf_done.
+        mov     eax,[edi+XN_ESP0]
+        mov     [r3_esp0],eax
 f4B_deep:
         mov     ax,ERR_NOMEM
         jmp     i21_fail

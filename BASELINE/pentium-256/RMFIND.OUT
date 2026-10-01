@@ -2,7 +2,7 @@
 RMFIND - 4Eh and 4Fh, asked what File Manager asks
   4Eh/4Fh the root holds 0040 entries 0000 at the end, first is CMD.EXE ok
   the attribute rule: 00 directories in a plain search ok
-  4Eh in a subdirectory \TESTS\*.* 004D entries  ok
+  4Eh in a subdirectory \TESTS\*.* 004E entries  ok
   two searches at once
       the third entry should be ATTRIB.EXE and 4Fh gave ATTRIB.EXE ok
 
