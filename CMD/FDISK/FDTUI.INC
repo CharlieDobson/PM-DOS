@@ -175,9 +175,12 @@ CMD_ACTIVE      EQU     11
 CMD_DETAILS     EQU     12
 CMD_HELP        EQU     13
 CMD_ABOUT       EQU     14
-CMD_SEP         EQU     15              ; a line between menu items
-CMD_MENU0       EQU     16              ; open menu 0..3
-CMD_MENU3       EQU     19
+CMD_COMMIT      EQU     15
+CMD_UNDO        EQU     16
+CMD_FORMAT      EQU     17
+CMD_SEP         EQU     18              ; a line between menu items
+CMD_MENU0       EQU     19              ; open menu 0..3
+CMD_MENU3       EQU     22
 CMD_DISK0       EQU     32              ; look at disk 0, 1, ...
 
 ;--- the menus (FDDLG.INC) -------------------------------------------
@@ -413,11 +416,10 @@ tcl_bar:
         js      tcl_list
         mov     [tr_sel],eax
         call    tui_selrow
-        cmp     dword ptr [esi+TR_KIND],TK_PRIMARY
-        je      tcl_drag
-        cmp     dword ptr [esi+TR_KIND],TK_LOGICAL
-        jne     tcl_none
-tcl_drag:
+        cmp     dword ptr [esi+TR_KIND],TK_FREE
+        je      tcl_none                ; everything else can be dragged:
+tcl_drag:                               ; the free space inside the extended
+                                        ; partition drags the partition
         call    tu_drag
         jmp     short tcl_none
 tcl_list:
@@ -449,9 +451,23 @@ tdc_row:
 ; every cell the mouse crosses moves a copy of the block along the bar,
 ; snapped to a cylinder and held inside the free space either side of
 ; it, and letting go is the move - asked about first, like every other.
+;
+; WHAT IS PRESSED IS NOT ALWAYS WHAT MOVES.  The free space inside the
+; extended partition is the extended partition on the bar, and a drag
+; that starts there takes the extended partition with it - but a click
+; there still selects the free space, which is what C creates in.  So
+; the selection goes to what moves only once the mouse does.
 ;=====================================================================
 tu_drag:
         pushad
+        mov     eax,[tr_sel]
+        mov     [dr_press],eax
+        call    tui_selrow
+        cmp     dword ptr [esi+TR_KIND],TK_LFREE
+        jne     tdg_target
+        call    tu_controw
+        mov     [tr_sel],eax
+tdg_target:
         call    tui_selrow
         mov     eax,[esi+TR_START]
         mov     [dr_start0],eax
@@ -461,6 +477,10 @@ tu_drag:
         mov     [dr_col0],eax
         mov     byte ptr [dr_moved],0
         call    tu_room                 ; mv_lo..mv_hi: the room it has
+        mov     eax,[tr_sel]
+        mov     [dr_target],eax
+        mov     eax,[dr_press]          ; until the mouse moves, a click
+        mov     [tr_sel],eax
 tdg_loop:
         call    tui_draw
         call    ev_get
@@ -476,13 +496,17 @@ tdg_loop:
         jne     tdg_loop
 tdg_cancel:
         mov     dword ptr [tu_stat],OFFSET msg_tleft
-        jmp     short tdg_out
+        jmp     tdg_out
 tdg_drag:
         mov     ecx,[ev_col]
         cmp     byte ptr [dr_moved],0
         jne     tdg_track
         cmp     ecx,[dr_col0]
         je      tdg_loop                ; the same cell: still only a click
+        mov     eax,[dr_target]
+        mov     [tr_sel],eax
+        call    tu_locked               ; a move or resize waiting: it stays
+        jc      tdg_held                ; put, and the status line says why
         mov     byte ptr [dr_moved],1
 tdg_track:
         call    dr_ghost
@@ -503,9 +527,64 @@ tdg_up:
 tdg_notfat:
         mov     dword ptr [pl_status],RL_NOTFAT
         call    tu_refusal
+        jmp     short tdg_out
+tdg_held:
+        mov     eax,[dg_lines]          ; the first line of what tu_locked
+        mov     [tu_stat],eax           ; built, until the button comes up
+tdg_hloop:
+        call    tui_draw
+        call    ev_get
+        cmp     eax,EV_UP
+        je      tdg_hdone
+        cmp     eax,EV_EOF
+        je      tdg_hdone
+        cmp     eax,EV_KEY
+        jne     tdg_hloop
+        cmp     byte ptr [ev_kcode],1Bh
+        jne     tdg_hloop
+tdg_hdone:
+        mov     eax,[dr_press]
+        mov     [tr_sel],eax
 tdg_out:
         mov     dword ptr [pv_mode],PV_NONE
         popad
+        ret
+
+;--- tu_controw - EAX = the extended partition's row, or the selected
+;--- row when there is none
+tu_controw:
+        push    esi
+        xor     eax,eax
+        mov     esi,OFFSET tr_tbl
+tcw_find:
+        cmp     eax,[tr_n]
+        jae     tcw_none
+        cmp     dword ptr [esi+TR_KIND],TK_CONTAINER
+        je      tcw_out
+        add     esi,TR_LEN
+        inc     eax
+        jmp     short tcw_find
+tcw_none:
+        mov     eax,[tr_sel]
+tcw_out:
+        pop     esi
+        ret
+
+;--- tu_tocont - the free space inside the extended partition is the
+;--- extended partition to M, S and D, as it is to a drag, so the
+;--- selection goes to the extended partition.  On the bar there is
+;--- nothing else to click: its drives and its free space cover it.
+tu_tocont:
+        push    eax
+        push    esi
+        call    tui_selrow
+        cmp     dword ptr [esi+TR_KIND],TK_LFREE
+        jne     ttc_out
+        call    tu_controw
+        mov     [tr_sel],eax
+ttc_out:
+        pop     esi
+        pop     eax
         ret
 
 ;--- dr_ghost - ECX = the mouse's column -> pv_* -----------------------
@@ -743,8 +822,14 @@ tfi_no:
 ;           record, or the first one a track into the disk, keeps that
 ;           shape - and then the whole is held inside mv_lo..mv_hi.
 ;           When it cannot be, the answer is mv_cur: where it is now.
+;           The extended partition goes to cx_snap instead.
 ;---------------------------------------------------------------------
 mv_snap:
+        push    esi
+        call    tui_selrow
+        cmp     dword ptr [esi+TR_KIND],TK_CONTAINER
+        pop     esi
+        je      cx_snap
         push    ebx
         push    ecx
         push    edx
@@ -791,6 +876,87 @@ mvs_out:
         pop     ebx
         ret
 
+;---------------------------------------------------------------------
+; cx_snap - mv_snap for the extended partition.  EAX = where it should
+;           start, more or less, ECX = its length -> EAX = where it will.
+;
+; IT MOVES BY WHOLE CYLINDERS, from where it is, and not to a boundary:
+; every record and every drive inside it moves by the same amount, and
+; a whole number of cylinders is the amount that leaves each of them
+; on the boundary it was on.  Then it is held inside mv_lo..mv_hi a
+; cylinder at a time, which always ends somewhere legal - where it is
+; now is one such place, and is a whole number of cylinders away.
+;---------------------------------------------------------------------
+cx_snap:
+        push    ebx
+        push    ecx
+        push    edx
+        push    esi
+        push    edi
+        mov     esi,ecx                 ; ESI = the length
+        mov     edi,eax                 ; EDI = the start asked for
+        call    fd_spcyl
+        mov     ebx,ecx                 ; EBX = a cylinder
+        or      ebx,ebx
+        jnz     cxs_cyl
+        inc     ebx                     ; no geometry: a sector at a time
+cxs_cyl:
+        mov     eax,edi
+        cmp     eax,[mv_cur]
+        jb      cxs_back
+        sub     eax,[mv_cur]            ; this far on,
+        call    cxs_round               ; in whole cylinders
+        add     eax,[mv_cur]
+        jnc     cxs_lo
+        mov     eax,[mv_cur]
+        jmp     short cxs_lo
+cxs_back:
+        mov     eax,[mv_cur]
+        sub     eax,edi                 ; this far back,
+        call    cxs_round
+        cmp     eax,[mv_cur]
+        jbe     cxs_backok
+        sub     eax,ebx                 ; rounded past the start of the disk
+cxs_backok:
+        neg     eax
+        add     eax,[mv_cur]
+cxs_lo:
+        cmp     eax,[mv_lo]
+        jae     cxs_hi
+        add     eax,ebx
+        jmp     short cxs_lo
+cxs_hi:
+        lea     edx,[eax+esi]
+        cmp     edx,[mv_hi]
+        jbe     cxs_out
+        sub     eax,ebx
+        jmp     short cxs_hi
+cxs_out:
+        pop     edi
+        pop     esi
+        pop     edx
+        pop     ecx
+        pop     ebx
+        ret
+
+;--- cxs_round - EAX = a distance -> EAX to the nearest whole number of
+;--- EBX, the cylinder
+cxs_round:
+        push    ecx
+        push    edx
+        mov     ecx,ebx
+        shr     ecx,1
+        add     eax,ecx
+        jnc     cxr_div
+        sub     eax,ecx                 ; too far to round: down will do
+cxr_div:
+        xor     edx,edx
+        div     ebx
+        mul     ebx
+        pop     edx
+        pop     ecx
+        ret
+
 ;--- cyl_near - EAX to the nearest multiple of ECX; ECX = 0 leaves it -
 cyl_near:
         or      ecx,ecx
@@ -813,16 +979,25 @@ cyn_pop:
 cyn_out:
         ret
 
-;--- tu_canmove - CF clear if the selected partition holds a volume the
-;--- engine moves and resizes: FAT12, FAT16 or FAT32.
+;--- tu_canmove - CF clear if the selected partition is one the engine
+;--- moves and resizes: FAT12, FAT16 or FAT32, or one of those types not
+;--- formatted yet, or the extended partition.  The type byte is all
+;--- this looks at; the engine reads the rest and refuses what it must.
 tu_canmove:
         push    eax
         push    esi
         call    tui_selrow
+        cmp     dword ptr [esi+TR_KIND],TK_CONTAINER
+        je      tcm_yes
         mov     eax,[esi+TR_TYPE]
         call    rl_isfat
         pop     esi
         pop     eax
+        ret
+tcm_yes:
+        pop     esi
+        pop     eax
+        clc
         ret
 
 ;=====================================================================
@@ -831,10 +1006,14 @@ tu_canmove:
 ;=====================================================================
 tu_move:
         pushad
+        call    tu_tocont
         call    tui_selvol
         jc      tmo_out
         call    tu_canmove
         jc      tmo_notfat
+        mov     edx,OFFSET msg_tmove    ; one with a move or resize waiting
+        call    tu_lockbox              ; is not where its volume is
+        jc      tmo_out
         call    tu_room                 ; for the line about the room...
         mov     eax,[mv_lo]
         mov     [mo_rlo],eax
@@ -899,10 +1078,6 @@ mo_build:
         call    lb_puts
         mov     eax,[mo_rhi]
         call    lb_mb
-        call    ln_new
-        call    ln_new
-        mov     edx,OFFSET msg_ldrag
-        call    lb_puts
         mov     dword ptr [dg_flabel],OFFSET msg_fstart
         mov     dword ptr [dg_pvfn],OFFSET mo_preview
         jmp     tu_okcancel
@@ -965,7 +1140,19 @@ tu_trymove:
         mov     al,'?'
         call    lb_putc
         call    ln_new
-        mov     edx,OFFSET msg_qmove2
+        mov     edx,OFFSET msg_qmove2   ; the dry run's plan says which
+        cmp     byte ptr [pl_cont],0
+        je      ttm_notcx
+        mov     edx,OFFSET msg_qmovecx
+        cmp     dword ptr [pl_cxn],0
+        jne     ttm_copied
+        mov     edx,OFFSET msg_qmovecx0
+        jmp     short ttm_copied
+ttm_notcx:
+        cmp     byte ptr [pl_raw],0
+        je      ttm_copied
+        mov     edx,OFFSET msg_qmoveraw
+ttm_copied:
         call    lb_puts
         mov     edx,OFFSET msg_tmove
         mov     bl,A_DLG
@@ -976,7 +1163,7 @@ tu_trymove:
         mov     [rs_start],eax
         call    tm_args
         mov     eax,OFFSET fd_change
-        call    tu_write
+        call    tu_stage
 ttm_done:
         popad
         clc
@@ -1004,10 +1191,14 @@ tm_args:
 ;=====================================================================
 tu_size:
         pushad
+        call    tu_tocont
         call    tui_selvol
         jc      tsz_out
         call    tu_canmove
         jc      tsz_notfat
+        mov     edx,OFFSET msg_tsize
+        call    tu_lockbox
+        jc      tsz_out
         mov     dword ptr [cap_len],0
         mov     dword ptr [pl_status],-1
         mov     dword ptr [pl_minsz],0
@@ -1028,7 +1219,20 @@ tu_size:
         mov     [sz_start],eax
         mov     eax,[esi+TR_SECS]
         mov     [sz_cur],eax
+        ; THE SMALLEST THE BOX OFFERS IS ONE IT CAN MAKE.  Every size ends
+        ; on a cylinder (sz_snap), and with FAT12 to fall back on, /P's
+        ; floor can be a few dozen sectors - "0.0 MB" is not a size
+        mov     eax,[sz_min]
+        or      eax,eax
+        jz      tsz_floor
+        add     eax,[sz_start]
+        call    fd_spcyl
+        call    fd_cylup
+        sub     eax,[sz_start]
+        mov     [sz_min],eax
+tsz_floor:
         mov     edi,OFFSET dg_fbuf
+        mov     eax,[sz_cur]
         call    mb_text                 ; the size it has, as the first offer
 tsz_ask:
         call    sz_build
@@ -1070,7 +1274,8 @@ tsz_ask:
         call    lb_mb
         mov     al,'?'
         call    lb_putc
-        mov     edx,OFFSET msg_tsize
+        call    lb_rmsay                ; and what changes inside, if the
+        mov     edx,OFFSET msg_tsize    ; clusters or the FAT do
         mov     bl,A_DLG
         xor     ecx,ecx
         call    tu_ask
@@ -1079,7 +1284,7 @@ tsz_ask:
         mov     [rs_start],eax
         call    sz_args
         mov     eax,OFFSET fd_change
-        call    tu_write
+        call    tu_stage
         jmp     short tsz_out
 tsz_refused:
         call    tu_refusal
@@ -1102,6 +1307,50 @@ tsz_cant:
         call    tu_refusal
 tsz_out:
         mov     dword ptr [pv_mode],PV_NONE
+        popad
+        ret
+
+;--- lb_rmsay - under a resize's question, what the dry run's plan does
+;--- to the clusters or the FAT, when it does anything
+lb_rmsay:
+        pushad
+        cmp     byte ptr [rm_mode],RM_NONE
+        je      lrs_out
+        call    ln_new
+        cmp     byte ptr [rm_mode],RM_WIDTH
+        jne     lrs_clus
+        mov     edx,OFFSET msg_qrmwidth
+        call    lb_puts
+        mov     eax,dword ptr [fg_exec+FG_BITS]
+        call    lb_num
+        mov     al,'.'
+        call    lb_putc
+        jmp     short lrs_out
+lrs_clus:
+        mov     edx,OFFSET msg_qrmclus
+        call    lb_puts
+        mov     eax,dword ptr [fg_exec+FG_SPC]
+        cmp     eax,1
+        jne     lrs_kb
+        mov     edx,OFFSET msg_qrm512
+        call    lb_puts
+        jmp     short lrs_size
+lrs_kb:
+        shr     eax,1
+        call    lb_num
+        mov     edx,OFFSET msg_qrmkb
+        call    lb_puts
+lrs_size:
+        mov     edx,OFFSET msg_qrmsplit
+        cmp     byte ptr [rm_mode],RM_SPLIT
+        je      lrs_say
+        mov     edx,OFFSET msg_qrmmerge
+lrs_say:
+        call    lb_puts
+        call    ln_new
+        mov     edx,OFFSET msg_qrmwarn
+        call    lb_puts
+lrs_out:
         popad
         ret
 
@@ -1319,7 +1568,7 @@ tcr_question:
         mov     [rs_start],eax
         call    cr_args
         mov     eax,OFFSET fd_create
-        call    tu_write
+        call    tu_stage
         jmp     short tcr_out
 tcr_refused:
         call    tu_captail
@@ -1568,6 +1817,7 @@ crp_out:
 ;=====================================================================
 tu_delete:
         pushad
+        call    tu_tocont
         call    tui_selrow
         mov     eax,[esi+TR_KIND]
         cmp     eax,TK_PRIMARY
@@ -1612,7 +1862,7 @@ tdl_lost:
         mov     [rs_start],eax
         call    dl_args
         mov     eax,OFFSET fd_delete
-        call    tu_write
+        call    tu_stage
         jmp     short tdl_out
 tdl_refused:
         call    tu_captail
@@ -1669,7 +1919,7 @@ tac_ok:
         mov     [rs_start],eax
         call    ac_args
         mov     eax,OFFSET fd_active
-        call    tu_write
+        call    tu_stage
         jmp     short tac_out
 tac_refused:
         call    tu_captail
@@ -1737,7 +1987,7 @@ tbo_ask:
         jc      tbo_out
         call    bo_args
         mov     eax,OFFSET fd_mbr
-        call    tu_write
+        call    tu_stage
         jmp     short tbo_out
 tbo_refused:
         call    tu_captail
@@ -1755,6 +2005,99 @@ bo_args:
         ret
 
 ;=====================================================================
+; F - format the selected partition: a new, empty FAT volume in it
+;     (fd_format).  Only when nothing is waiting, so that what is
+;     formatted is what is on the disk, and written at once - after a
+;     red question whose Enter is No, as a delete's is.
+;=====================================================================
+tu_format:
+        pushad
+        call    tui_selrow
+        mov     eax,[esi+TR_KIND]
+        cmp     eax,TK_PRIMARY
+        je      tfm_vol
+        cmp     eax,TK_LOGICAL
+        je      tfm_vol
+        mov     dword ptr [tu_stat],OFFSET msg_tnofmt
+        jmp     tfm_out
+tfm_vol:
+        cmp     dword ptr [jn_n],0
+        je      tfm_none
+        call    dg_reset
+        call    ln_new
+        mov     edx,OFFSET msg_xfmtwait
+        call    lb_puts
+        mov     edx,OFFSET msg_tformat
+        mov     bl,A_DLGERR
+        call    tu_box
+        jmp     tfm_out
+tfm_none:
+        call    fm_args
+        mov     eax,OFFSET fd_format
+        call    tui_dryrun
+        cmp     byte ptr [fd_rc],0
+        jne     tfm_refused
+        call    dg_reset
+        call    ln_new
+        mov     edx,OFFSET msg_qformat
+        call    lb_puts
+        call    lb_name
+        mov     edx,OFFSET msg_qfmtas
+        call    lb_puts
+        mov     eax,dword ptr [fg_exec+FG_BITS]
+        call    lb_num
+        mov     al,'?'
+        call    lb_putc
+        call    ln_new
+        mov     edx,OFFSET msg_qfmtlost
+        call    lb_puts
+        call    lb_name
+        mov     edx,OFFSET msg_qfmtlost2
+        call    lb_puts
+        ; THE DRIVE THE SYSTEM CAME FROM is worth a line of its own:
+        ; formatting it leaves nothing to start from
+        mov     eax,3305h
+        int     21h
+        movzx   eax,dl
+        or      eax,eax
+        jz      tfm_ask
+        add     eax,'A' - 1
+        call    tui_selrow
+        cmp     eax,[esi+TR_LETTER]
+        jne     tfm_ask
+        call    ln_new
+        mov     edx,OFFSET msg_qfmtboot
+        call    lb_puts
+        call    lb_putc
+        mov     edx,OFFSET msg_qfmtboot2
+        call    lb_puts
+tfm_ask:
+        mov     edx,OFFSET msg_tformat
+        mov     bl,A_DLGERR
+        mov     ecx,1                   ; Enter is No
+        call    tu_ask
+        jc      tfm_out
+        call    tui_selrow
+        mov     eax,[esi+TR_START]
+        mov     [rs_start],eax
+        call    fm_args
+        mov     eax,OFFSET fd_format
+        call    tu_write
+        jmp     short tfm_out
+tfm_refused:
+        call    tu_captail
+tfm_out:
+        popad
+        ret
+
+fm_args:
+        mov     dword ptr [cap_len],0
+        call    tui_setdp
+        mov     dword ptr [fd_nargs],1
+        mov     byte ptr [fd_cmd],FDC_FORMAT
+        ret
+
+;=====================================================================
 ; Enter, P, or a double click: what /P says about a partition, in the
 ; viewer.  On free space it is a create.
 ;=====================================================================
@@ -1766,17 +2109,17 @@ tu_details:
         cmp     eax,TK_LFREE
         je      tu_create
         cmp     eax,TK_CONTAINER
-        je      tde_cont
-        cmp     eax,TK_PRIMARY
+        je      tde_vol                 ; /P says what it holds, and how far
+        cmp     eax,TK_PRIMARY          ; it can grow and shrink
         je      tde_vol
         cmp     eax,TK_LOGICAL
         je      tde_vol
         ret
-tde_cont:
-        mov     dword ptr [tu_stat],OFFSET msg_tpickvol
-        ret
 tde_vol:
         pushad
+        mov     edx,OFFSET msg_tdetails ; /P reads the volume, and one with
+        call    tu_lockbox              ; a move or resize waiting is not
+        jc      tde_out                 ; where it says yet
         mov     dword ptr [cap_len],0
         call    tui_setdp
         mov     dword ptr [fd_nargs],1
@@ -1793,6 +2136,7 @@ tde_vol:
         call    lb_num
         mov     edx,OFFSET vt_buf
         call    vw_show
+tde_out:
         popad
         ret
 
@@ -1806,12 +2150,11 @@ tlg_show:
         mov     edx,OFFSET msg_vlog
         jmp     vw_show
 
-;--- F1: the keys, and the command line ------------------------------
+;--- F1: the keys.  The command line's switches are /? and the usage
+;--- screen's business, not the screen's
 tu_help:
         mov     dword ptr [cap_len],0
         mov     edx,OFFSET msg_tkeys
-        call    puts
-        mov     edx,OFFSET msg_usage
         call    puts
         mov     edx,OFFSET msg_vhelp
         jmp     vw_show
@@ -1853,6 +2196,28 @@ tu_reread:
         ret
 
 tu_quit:
+        ; CHANGES WAITING ARE ASKED ABOUT: committed, thrown away, or the
+        ; screen kept.  A key file that has run out has nobody to ask,
+        ; and its changes go - a test that wanted them would have
+        ; pressed W.
+        cmp     dword ptr [jn_n],0
+        je      tqu_written
+        cmp     byte ptr [kt_eof],0
+        jne     tqu_discard
+        call    pd_askquit              ; -> EAX: 0 commit, 1 discard, 2 stay
+        cmp     eax,1
+        ja      tqu_stay
+        je      tqu_discard
+        call    pd_commit
+        jmp     short tqu_written
+tqu_discard:
+        mov     dword ptr [jn_n],0
+        call    ov_clear
+tqu_written:
+        cmp     byte ptr [tu_changed],0
+        je      tqu_leave
+        call    tu_restart              ; back only if the machine is not
+tqu_leave:                              ; restarting
         call    ev_done
         mov     byte ptr [tui_on],0
         mov     byte ptr [fd_menu],0
@@ -1860,8 +2225,87 @@ tu_quit:
         mov     eax,0F000h              ; clear the screen
         int     21h
         jmp     fd_done
+tqu_stay:
+        ret
 
 tu_ignore:
+        ret
+
+;=====================================================================
+; tu_restart - the way out after a change the running system cannot
+;              see (tu_write says which those are): a box saying so,
+;              three seconds to read it, and the machine restarted by
+;              the kernel, which writes every cache first (21h/F1h
+;              AL=1Bh).  Comes back only when the machine is staying
+;              up, and tu_quit then goes on as it always has.
+;
+; A TEST RESTARTS ONLY WHEN IT ASKS TO.  With FDTEST set the box goes
+; into the log like any other picture and the log is closed, so that
+; all of it is on the disk whatever happens next - but most scripts
+; change a disk and quit, and a batch file running them would start
+; again from the top each time one ended.  FDBOOT=anything as well
+; lets the restart happen.
+;=====================================================================
+tu_restart:
+        pushad
+        call    dg_reset
+        call    ln_new
+        mov     edx,OFFSET msg_reboot
+        call    lb_puts
+        mov     dword ptr [dg_title],OFFSET msg_trestart
+        call    dg_layout
+        call    dg_draw
+        call    tui_dump
+        mov     ecx,300                 ; three seconds, in hundredths
+        call    tu_pause
+        xor     ebp,ebp                 ; EBP = 1 in a test
+        cmp     dword ptr [kt_h],0
+        je      trt_go
+        inc     ebp
+        mov     ebx,[kt_h]
+        mov     eax,3E00h
+        int     21h
+        mov     dword ptr [kt_h],0
+        mov     byte ptr [kt_on],0
+        cmp     byte ptr [kt_boot],0
+        je      trt_out
+trt_go:
+        mov     eax,0F11Bh
+        int     21h
+        ; Still here: a write would not go, and the kernel will not
+        ; restart over the top of it - or the kernel is older than the
+        ; call.  A test has nobody to press OK.
+        or      ebp,ebp
+        jnz     trt_out
+        call    dg_reset
+        call    ln_new
+        mov     edx,OFFSET msg_rebootno
+        call    lb_puts
+        call    ln_new
+        mov     edx,OFFSET msg_rebootno2
+        call    lb_puts
+        mov     edx,OFFSET msg_tfailed
+        mov     bl,A_DLGERR
+        call    tu_box
+trt_out:
+        popad
+        ret
+
+;--- tu_pause - ECX = hundredths of a second, spent doing nothing.  The
+;--- clock is ev_now's, which goes back to nought at midnight.
+tu_pause:
+        pushad
+        call    ev_now
+        mov     ebx,eax
+tpa_lp:
+        call    ev_now
+        sub     eax,ebx
+        jns     tpa_cmp
+        add     eax,8640000             ; a day, in hundredths
+tpa_cmp:
+        cmp     eax,ecx
+        jb      tpa_lp
+        popad
         ret
 
 ;=====================================================================
@@ -1874,7 +2318,7 @@ tu_ignore:
 tu_refusal:
         pushad
         mov     eax,[pl_status]
-        cmp     eax,RL_FATTYPE
+        cmp     eax,RL_LAST
         ja      tu_captail_in           ; -1: it never got as far as a plan
         call    dg_reset
         call    ln_new
@@ -1989,7 +2433,9 @@ lb_what:
 ; tui_dryrun - the same with the writes held off, which is what makes a
 ;              verb safe to run to find out what it would do
 ; tu_write   - the same with the writes on, then the table read again
-;              and what the verb said in a box
+;              and what the verb said in a box - unless it was a create
+;              or a delete, and it worked.  Only a format comes this way
+;              now: every other change waits for Commit (tu_stage)
 ;=====================================================================
 tui_run:
         mov     [fd_mstack],esp
@@ -2017,14 +2463,39 @@ tu_write:
         movzx   ebx,byte ptr [dk_armed]
         push    ebx
         mov     byte ptr [dk_armed],1
+        mov     byte ptr [dk_wrote],0
         mov     eax,[wr_verb]
         call    tui_run
         pop     ebx
         mov     [dk_armed],bl
+        ; WHAT THE RUNNING SYSTEM CANNOT SEE.  A partition made, removed,
+        ; moved or resized changes what the drive letters are, and only a
+        ; fresh start reads them again - so quitting restarts the machine
+        ; (tu_restart), whether the verb finished or stopped half way.
+        ; The active flag and the boot code are read only AT a start, and
+        ; nothing running depends on them.
+        cmp     byte ptr [dk_wrote],0
+        je      twr_seen
+        cmp     dword ptr [wr_verb],OFFSET fd_active
+        je      twr_seen
+        cmp     dword ptr [wr_verb],OFFSET fd_mbr
+        je      twr_seen
+        mov     byte ptr [tu_changed],1
+twr_seen:
         mov     dword ptr [tu_stat],0
         mov     dword ptr [pv_mode],PV_NONE
         call    tui_load
         call    tu_reselect
+        ; A PARTITION CREATED OR DELETED SHOWS ON THE BAR, so a create
+        ; or a delete that worked gets no box after it; V still shows
+        ; the log.  One that failed still says why.
+        cmp     byte ptr [fd_rc],0
+        jne     twr_say
+        cmp     dword ptr [wr_verb],OFFSET fd_create
+        je      twr_out
+        cmp     dword ptr [wr_verb],OFFSET fd_delete
+        je      twr_out
+twr_say:
         call    dg_reset
         mov     ecx,6
         call    ln_captail
@@ -2036,6 +2507,7 @@ tu_write:
         mov     bl,A_DLGERR
 twr_box:
         call    tu_box
+twr_out:
         popad
         ret
 
@@ -2089,12 +2561,14 @@ tui_selrow:                             ; -> ESI
         add     esi,OFFSET tr_tbl
         ret
 
-tui_selvol:                             ; CF clear if it holds a volume
-        push    esi
+tui_selvol:                             ; CF clear if it is a partition:
+        push    esi                     ; primary, logical, or extended
         call    tui_selrow
         cmp     dword ptr [esi+TR_KIND],TK_PRIMARY
         je      tsv_yes
         cmp     dword ptr [esi+TR_KIND],TK_LOGICAL
+        je      tsv_yes
+        cmp     dword ptr [esi+TR_KIND],TK_CONTAINER
         je      tsv_yes
         mov     dword ptr [tu_stat],OFFSET msg_tnotvol
         pop     esi
@@ -2630,6 +3104,7 @@ tco_done:
         INCLUDE FDDRAW.INC
         INCLUDE FDDLG.INC
         INCLUDE FDEVENT.INC
+        INCLUDE FDPEND.INC
 
 ;=====================================================================
 ; Data for the screen.
@@ -2649,11 +3124,15 @@ cmd_tbl     dd  tu_ignore               ; CMD_NONE
             dd  tu_details
             dd  tu_help
             dd  tu_about
+            dd  tu_commit
+            dd  tu_undo
+            dd  tu_format
 
 key_tbl     db  'Q',CMD_EXIT,    'M',CMD_MOVE,     'S',CMD_SIZE
             db  'C',CMD_CREATE,  'D',CMD_DELETE,   'A',CMD_ACTIVE
             db  'B',CMD_BOOT,    'P',CMD_DETAILS,  'V',CMD_LOG
             db  'R',CMD_REREAD,  'N',CMD_NEXTDISK, '?',CMD_HELP
+            db  'W',CMD_COMMIT,  'U',CMD_UNDO,     'F',CMD_FORMAT
             db  0
 gkey_tbl    db  SC_DEL,CMD_DELETE,       SC_F1,CMD_HELP
             db  SC_F5,CMD_REREAD,        SC_SHTAB,CMD_PREVDISK
@@ -2665,6 +3144,8 @@ gkey_tbl    db  SC_DEL,CMD_DELETE,       SC_F1,CMD_HELP
 rf_tbl      dd  msg_rfnone, msg_rfsame, msg_rfnotfat, msg_rfread
             dd  msg_rfwrite, msg_rftoosmall, msg_rfoverlap, msg_rfbounds
             dd  msg_rfgeom, msg_rfarmed, msg_rfremap, msg_rffattype
+            dd  msg_rfholds, msg_rfchain, msg_rfbadclus, msg_rfdamaged
+            dd  msg_rfnomem
 
 tui_on      db  0                       ; puts and putc go to cap_buf
 tui_dstate  db  0                       ; 0 fine, 1 no disk, 2 unreadable,
@@ -2674,7 +3155,9 @@ pv_attr     db  A_PVOK
 tu_hascont  db  0                       ; the disk has an extended partition
 tu_chok     db  0                       ; and its chain read cleanly
 dr_moved    db  0
-            db  0
+tu_changed  db  0                       ; a write only a restart will show
+dr_press    dd  0                       ; the drag: the row pressed,
+dr_target   dd  0                       ; and the row that moves
 tui_disk    dd  0
 tui_ndisks  dd  0
 tr_n        dd  0
@@ -2739,7 +3222,6 @@ msg_shints  db  'F1 Help  F10 Menus  Tab Disk  M Move  S Resize  C Create  '
 msg_tnokey  db  'Not a key FDISK uses.  F1 lists them.$'
 msg_tnotvol db  'Select a partition first.$'
 msg_tpickfree db 'Select free space first - click it on the bar.$'
-msg_tpickvol db 'Select one of the logical drives inside it.$'
 msg_tnothing db 'Select a partition to delete.$'
 msg_tnotprim db 'Only a primary partition can be the active one.$'
 msg_talready db 'It is the active partition already.$'
@@ -2762,10 +3244,13 @@ msg_tcreate db  'Create Partition$'
 msg_tdelete db  'Delete Partition$'
 msg_tactive db  'Active Partition$'
 msg_tboot   db  'Boot Code$'
+msg_tformat db  'Format Partition$'
+msg_tdetails db 'Details$'
 msg_tabout  db  'About FDISK$'
 msg_tdone   db  'Done$'
 msg_tfailed db  'Not Done$'
-msg_trefused db 'Not Possible$'
+msg_trestart db 'Restart$'
+msg_trefused db 'Error$'
 msg_tbadmb  db  'Size$'
 
 msg_bok     db  'OK$'
@@ -2776,13 +3261,12 @@ msg_bno     db  'No$'
 msg_lstarts db  'Starts at   $'
 msg_lroom   db  'Free room   $'
 msg_lroomto db  ' to $'
-msg_ldrag   db  'Dragging it along the bar does the same.$'
 msg_lnow    db  'Size now    $'
 msg_lsmall  db  'Smallest    $'
 msg_llarge  db  'Largest     $'
 msg_lfree   db  'Free space  $'
 msg_lfrom   db  'From        $'
-msg_linext  db  'It goes inside the extended partition.$'
+msg_linext  db  'New drive in extended partition.$'
 msg_fstart  db  'New start in MB:$'
 msg_fsize   db  'New size in MB:$'
 msg_fcrsize db  'Size in MB:$'
@@ -2790,14 +3274,24 @@ msg_cext    db  'Extended partition, to hold logical drives$'
 
 msg_qmove   db  'Move $'
 msg_qsize   db  'Resize $'
+msg_qrmwidth db 'The volume becomes FAT$'
+msg_qrmclus db  'The clusters become $'
+msg_qrm512  db  '512 bytes$'
+msg_qrmkb   db  ' KB$'
+msg_qrmsplit db '.  No file has to move.$'
+msg_qrmmerge db ', and every file is moved.$'
+msg_qrmwarn db  'This can take a while.  Do not turn the machine off.$'
 msg_qfrom   db  ' from $'
 msg_qto     db  ' to $'
 msg_qmove2  db  'All of it is copied, which can take a while.$'
+msg_qmoveraw db 'The partition is not formatted, so there is nothing to copy.$'
+msg_qmovecx db  'The logical drives inside are copied too, which can take a while.$'
+msg_qmovecx0 db 'The partition holds no logical drives, so there is nothing to copy.$'
 msg_qcreate db  'Create a $'
 msg_qcrpart db  ' partition at $'
 msg_qcrext  db  ' extended partition at $'
 msg_qcrlog  db  ' logical drive at $'
-msg_qcreate2 db 'It needs FORMAT, after a restart, before it holds files.$'
+msg_qcreate2 db 'Once committed, the new partition can be formatted with F.$'
 msg_qdelete db  'Delete $'
 msg_qdelete2 db 'Everything stored on it will be lost.$'
 msg_qdelext db  'It holds no logical drives.$'
@@ -2807,6 +3301,14 @@ msg_qactive3 db 'The computer starts from the active partition.$'
 msg_qboot   db  'Replace the boot code on disk $'
 msg_qboot2  db  'The partition table is kept as it is.$'
 msg_qboot3  db  'A boot manager kept in the boot code is lost.$'
+msg_qformat db  'Format $'
+msg_qfmtas  db  ' as FAT$'
+msg_qfmtlost db 'Everything stored on $'
+msg_qfmtlost2 db ' will be lost.$'
+msg_qfmtboot db 'PM-DOS was started from $'
+msg_qfmtboot2 db ':.$'
+msg_tnofmt  db  'Select a primary partition or a logical drive to format.$'
+msg_xfmtwait db 'Commit or undo the changes waiting before formatting.$'
 
 msg_xthere  db  'It is there already.$'
 msg_xsize   db  'It is that size already.$'
@@ -2814,44 +3316,56 @@ msg_xbadmb  db  'Type a number of megabytes, such as 40 or 40.5.$'
 msg_xnoslot db  'All four primary partition slots are in use.$'
 msg_xnolink db  'The extended partition cannot take another logical drive.$'
 msg_xbootsame db 'The boot code on this disk is FDISK',27h,'s already.$'
+msg_reboot  db  'Changes require a reboot.  Restarting the system now...$'
+msg_rebootno db 'FDISK could not restart the system.$'
+msg_rebootno2 db 'Restart the system before using the disk.$'
 
 msg_rfnone  db  'The engine did not say why.$'
 msg_rfsame  db  'Nothing would change.$'
 msg_rfnotfat db 'There is no FAT12, FAT16 or FAT32 volume in it to move or resize.$'
-msg_rfread  db  'A sector would not read.$'
-msg_rfwrite db  'A sector would not write.  The disk may be damaged.$'
+msg_rfread  db  'A sector could not be read.$'
+msg_rfwrite db  'A sector could not be written.  The disk may be damaged.$'
 msg_rftoosmall db 'Files are stored past that point, so it cannot be that small.$'
-msg_rfoverlap db 'It would run into the partition next to it.$'
+msg_rfoverlap db 'Partitions cannot overlap.$'
 msg_rfbounds db 'That is outside the space it may use.$'
 msg_rfgeom  db  'No FAT layout fits that size.$'
 msg_rfarmed db  'Writing is turned off.$'
-msg_rfremap db  'The cluster size would have to change.  FDISK does not do that.$'
-msg_rffattype db 'The FAT type would have to change.  FDISK does not do that.$'
+msg_rfremap db  'No cluster size FDISK can use fits that size.$'
+msg_rffattype db 'That size needs a FAT16-FAT32 conversion.  FDISK does not do that.$'
+msg_rfholds db  'A logical drive inside lies past that point.$'
+msg_rfchain db  'The logical drives inside do not read as a chain.$'
+msg_rfbadclus db 'Clusters marked bad stop FDISK from making the clusters larger.$'
+msg_rfdamaged db 'The volume has errors.  Run CHKDSK on the drive, then try again.$'
+msg_rfnomem db  'There is not enough memory to renumber the clusters.$'
 
 msg_vpart   db  'Partition $'
 msg_vlog    db  'Output Log$'
 msg_vhelp   db  'FDISK Help$'
 msg_about1  db  'FDISK, the PM-DOS partition editor$'
-msg_about2  db  'Moves and resizes FAT partitions$'
+msg_about2  db  'Full-featured FAT partition management$'
 
 msg_tenv    db  'FDTEST=',0
 msg_thold   db  'FDHOLD=',0
+msg_tbootenv db 'FDBOOT=',0
 msg_tdumpend db '----',13,10
-msg_tkeys   db  13,10,'  ON THE SCREEN',13,10,13,10
-            db  '  Drag a block along the bar to move the partition.',13,10,13,10
-            db  '    M        Move it, to a start typed in megabytes',13,10
-            db  '    S        Resize it, to a size in megabytes',13,10
-            db  '    C        Create a partition in the free space selected',13,10
-            db  '    Del, D   Delete it',13,10
-            db  '    A        Mark partition as active',13,10
-            db  '    P,       Enter how far the partition can grow or shrink',13,10
-            db  '    B        Write Master Boot Record',13,10
-            db  '    V        Show the output of the last change',13,10
-            db  '    Tab      Move to next disk',13,10
-            db  '    F5, R    Read the disk again',13,10
-            db  '    F10, Alt Access menus',13,10
-            db  '    Q, Esc   End FDISK',13,10,13,10
-            db  '  Only FAT12, FAT16 and FAT32 partitions can be moved or '
+msg_tkeys   db  13,10
+            db  '  Drag a block along the bar to move the partition.',13,10
+            db  '  Changes wait until W commits them, and U undoes the last one.',13,10,13,10
+            db  '    M          Move partition, to a start typed in megabytes',13,10
+            db  '    S          Resize partition, to a size in megabytes',13,10
+            db  '    C          Create a partition in the free space selected',13,10
+            db  '    Del, D     Delete partition',13,10
+            db  '    A          Mark partition as active',13,10
+            db  '    F          Format partition, once nothing is waiting',13,10
+            db  '    P,         Enter how far the partition can grow or shrink',13,10
+            db  '    B          Write Master Boot Record',13,10
+            db  '    W          Commit: write the changes waiting to the disk',13,10
+            db  '    U          Undo the last change waiting',13,10
+            db  '    V          Show the output of the last change',13,10
+            db  '    Tab        Move to next disk',13,10
+            db  '    F5, R      Read the disk again',13,10
+            db  '    F10, Alt   Access menus',13,10
+            db  '    Q, Esc     End FDISK',13,10,13,10
+            db  '  FAT12, FAT16, FAT32 and extended partitions can be moved or '
             db  'resized.',13,10
-            db  '  Restart after a change before using the disk.',13,10
-            db  13,10,'  FROM THE COMMAND LINE',13,10,13,10,'$'
+            db  '  Quitting after a commit or a format restarts the system.',13,10,'$'

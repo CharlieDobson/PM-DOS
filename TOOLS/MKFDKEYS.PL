@@ -23,45 +23,51 @@
 #   press 5,35, drag 3      partition 3 is right behind it, so the block
 #   right, picture, let go  cannot go anywhere; let go, it stays
 #   click list row 14, D    partition 3 selected in the list and the
-#   picture, Y, picture,    delete asked about and answered yes,
-#   Enter, picture          done, and the free space it left
+#   picture, Y, picture     delete asked about and answered yes, and
+#                           the free space it left - a create or a
+#                           delete that works has no box after it
 #   press 5,35, drag 5,39   partition 2 dragged four cells right into
 #   picture, let go,        that space: it stops at the container and
 #   picture, Y, picture,    ends on a cylinder (start 75600); the move
-#   Enter                   asked about and made
+#   W, picture, Y,          asked about, and with the delete committed:
+#   picture, Enter          W lists the two, Y writes them, a Done box
 #   click 5,34, C, picture  the free space it left selected; C, the size
 #   Enter, picture, Y,      offered taken as it is, the question, made:
-#   picture, Enter          a new slot 3 at 68544 + 7056
+#   picture                 a new slot 3 at 68544 + 7056
 #   click list row 16, S,   partition 5 (16 MB FAT16) resized: 8 typed,
 #   picture, 8, picture,    the bar showing it, the question, made -
 #   Enter, picture, Y,      ending on the cylinder nearest 8 MB
-#   picture, Enter          (91854 + 16002)
+#   picture, W, Y, Enter    (91854 + 16002) - and committed, with the
+#                           create, so that it can be moved again
 #   press 5,45, drag 5,50   partition 5 dragged five cells right inside
 #   picture, let go,        its own link, which now has room: 102942
-#   picture, Y, picture,
-#   Enter
+#   picture, Y, picture,    and committed
+#   W, Y, Enter
 #   click 1,15, picture,    the Partition menu, from the mouse
 #   Esc
 #   Alt+H, picture, Esc     the Help menu, from the keyboard
 #   F1, picture, Esc        the help, in the viewer
 #   M, 46, picture, Enter,  partition 5 moved by typing: 46 MB, ending
-#   picture, Y, picture,    on the nearest cylinder - 93870
-#   Enter
+#   picture, Y, picture,    on the nearest cylinder - 93870, and
+#   W, Y, Enter             committed
 #   Enter, picture, Esc     partition 5's details (/P) in the viewer
 #   X, picture              not a key: the status line says so
-#   rows 19, 18, 16: D, Y,  logical drives 7, 6 and 5 deleted, which
-#   Enter each              empties the extended partition...
-#   row 15: D, Y, Enter,    ...so it can be deleted too
-#   picture
+#   rows 19, 18, 16: D, Y   logical drives 7, 6 and 5 deleted, which
+#                           empties the extended partition...
+#   row 15: D, Y, picture   ...so it can be deleted too
 #   row 15: C, space,       the free space it left, the box's check box
 #   picture, Enter,         ticked: an extended partition, in slot 4, at
-#   picture, Y, picture,    91728 + 73584
-#   Enter
+#   picture, Y, picture     91728 + 73584
 #   row 16: C, Enter,       the free space inside it: a logical drive in
-#   picture, Y, picture,    an empty container, its record where the
-#   Enter, picture          container starts (91728) and the volume a
+#   picture, Y, picture     an empty container, its record where the
+#                           container starts (91728) and the volume a
 #                           track on: 91791 + 73521
-#   Q                       leave
+#   W, picture, Y,          the six changes since the last commit,
+#   picture, Enter          listed (four lines and "...and 2 more")
+#                           and written
+#   Q                       leave, with the Restart box as the last
+#                           picture.  A test does not restart unless
+#                           FDBOOT is set too
 use strict; use warnings;
 
 my $out = shift or die "usage: mkfdkeys.pl OUTDIR\n";
@@ -114,21 +120,21 @@ my %script = (
     FDM1 => '{TAB}{DUMP}'
           . '{CLICK 5,34}{DUMP}'
           . '{PRESS 5,35}{DRAG 5,38}{DUMP}{RELEASE 5,38}{DUMP}'
-          . '{CLICK 14,10}D{DUMP}Y{DUMP}{ENTER}{DUMP}'
-          . '{PRESS 5,35}{DRAG 5,39}{DUMP}{RELEASE 5,39}{DUMP}Y{DUMP}{ENTER}'
-          . '{CLICK 5,34}C{DUMP}{ENTER}{DUMP}Y{DUMP}{ENTER}'
-          . '{CLICK 16,10}S{DUMP}8{DUMP}{ENTER}{DUMP}Y{DUMP}{ENTER}'
-          . '{PRESS 5,45}{DRAG 5,50}{DUMP}{RELEASE 5,50}{DUMP}Y{DUMP}{ENTER}'
+          . '{CLICK 14,10}D{DUMP}Y{DUMP}'
+          . '{PRESS 5,35}{DRAG 5,39}{DUMP}{RELEASE 5,39}{DUMP}Y{DUMP}W{DUMP}Y{DUMP}{ENTER}'
+          . '{CLICK 5,34}C{DUMP}{ENTER}{DUMP}Y{DUMP}'
+          . '{CLICK 16,10}S{DUMP}8{DUMP}{ENTER}{DUMP}Y{DUMP}WY{ENTER}'
+          . '{PRESS 5,45}{DRAG 5,50}{DUMP}{RELEASE 5,50}{DUMP}Y{DUMP}WY{ENTER}'
           . '{CLICK 1,15}{DUMP}{ESC}'
           . '{ALT+H}{DUMP}{ESC}'
           . '{F1}{DUMP}{ESC}'
-          . 'M46{DUMP}{ENTER}{DUMP}Y{DUMP}{ENTER}'
+          . 'M46{DUMP}{ENTER}{DUMP}Y{DUMP}WY{ENTER}'
           . '{ENTER}{DUMP}{ESC}'
           . 'X{DUMP}'
-          . '{CLICK 19,10}DY{ENTER}{CLICK 18,10}DY{ENTER}{CLICK 16,10}DY{ENTER}'
-          . '{CLICK 15,10}DY{ENTER}{DUMP}'
-          . '{CLICK 15,10}C {DUMP}{ENTER}{DUMP}Y{DUMP}{ENTER}'
-          . '{CLICK 16,10}C{ENTER}{DUMP}Y{DUMP}{ENTER}{DUMP}Q',
+          . '{CLICK 19,10}DY{CLICK 18,10}DY{CLICK 16,10}DY'
+          . '{CLICK 15,10}DY{DUMP}'
+          . '{CLICK 15,10}C {DUMP}{ENTER}{DUMP}Y{DUMP}'
+          . '{CLICK 16,10}C{ENTER}{DUMP}Y{DUMP}W{DUMP}Y{DUMP}{ENTER}Q',
 );
 
 for my $name (sort keys %script) {

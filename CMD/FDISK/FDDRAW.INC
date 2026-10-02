@@ -168,10 +168,25 @@ dpd_say:
 ;
 ; While a change is being considered (pv_mode) the selected partition's
 ; old place is drawn as the space it would leave and the change is drawn
-; over everything, green where it fits and red where it does not.
+; over everything, green where it fits and red where it does not.  For
+; the extended partition the old place is everything in it, and the
+; change is drawn shaded, with its logical drives where they would go.
 ;=====================================================================
 br_draw:
         pushad
+        mov     byte ptr [br_cxgone],0
+        cmp     dword ptr [pv_mode],PV_REPLACE
+        je      brd_cx
+        cmp     dword ptr [pv_mode],PV_OMIT
+        jne     brd_bar
+brd_cx:
+        cmp     dword ptr [tr_n],0
+        je      brd_bar
+        call    tui_selrow
+        cmp     dword ptr [esi+TR_KIND],TK_CONTAINER
+        jne     brd_bar
+        mov     byte ptr [br_cxgone],1
+brd_bar:
         mov     byte ptr [scr_cattr],A_FREE
         mov     ebx,ROW_BAR
 brd_rows:
@@ -231,6 +246,16 @@ brp_take:
         pop     ecx
         pop     eax
         mov     edx,[esi+TR_ATTR]       ; DL = its colour
+        cmp     byte ptr [br_cxgone],0  ; the extended partition being moved:
+        je      brp_kind                ; it and all it holds are the space
+        cmp     dword ptr [esi+TR_KIND],TK_FREE     ; it would leave
+        je      brp_kind
+        cmp     dword ptr [esi+TR_KIND],TK_PRIMARY
+        je      brp_kind
+        mov     dl,A_FREE
+        mov     dh,GL_FREE
+        jmp     short brp_paint
+brp_kind:
         mov     dh,GL_FREE
         cmp     dword ptr [esi+TR_KIND],TK_FREE
         je      brp_paint
@@ -357,11 +382,20 @@ brg_show:
         call    br_cells
         mov     dl,[pv_attr]
         mov     dh,' '
+        cmp     byte ptr [br_cxgone],0
+        je      brg_block
+        mov     dh,GL_CONT              ; the extended partition, shaded
+brg_block:
         call    br_block
         cmp     dword ptr [pv_mode],PV_ADD
         je      brg_new
+        cmp     byte ptr [br_cxgone],0
+        jne     brg_inside
         call    tui_selrow
         call    br_label
+        jmp     short brg_out
+brg_inside:
+        call    br_cxin
         jmp     short brg_out
 brg_new:
         ; a partition that does not exist yet: a plus where its number
@@ -379,6 +413,37 @@ brg_new:
         mov     al,'+'
         call    scr_putc
 brg_out:
+        popad
+        ret
+
+;--- br_cxin - the logical drives, moved as far as the extended
+;--- partition they are in is being moved: not at all, for a resize
+br_cxin:
+        pushad
+        call    tui_selrow
+        mov     eax,[pv_start]
+        sub     eax,[esi+TR_START]
+        mov     [br_shift],eax
+        xor     ebp,ebp
+bci_one:
+        cmp     ebp,[tr_n]
+        jae     bci_out
+        imul    esi,ebp,TR_LEN
+        add     esi,OFFSET tr_tbl
+        cmp     dword ptr [esi+TR_KIND],TK_LOGICAL
+        jne     bci_next
+        mov     eax,[esi+TR_START]
+        add     eax,[br_shift]
+        mov     ecx,[esi+TR_SECS]
+        call    br_cells
+        mov     edx,[esi+TR_ATTR]
+        mov     dh,' '
+        call    br_block
+        call    br_label
+bci_next:
+        inc     ebp
+        jmp     short bci_one
+bci_out:
         popad
         ret
 
@@ -1012,6 +1077,9 @@ st_draw:
         or      edx,edx
         jnz     std_say
         mov     edx,OFFSET msg_shints
+        cmp     dword ptr [jn_n],0      ; with changes waiting, how many,
+        je      std_say                 ; and the keys that commit and
+        call    pd_hints                ; undo them
 std_say:
         call    scr_puts
         popad
@@ -1312,6 +1380,7 @@ scr_pos     dd  0
 bp_kind     dd  0
 bl_first    dd  0
 bl_count    dd  0
+br_shift    dd  0                       ; how far a moved container's drives go
 ip_row      dd  0
 ss_thumb    dd  0
 ss_pos      dd  0
@@ -1322,7 +1391,7 @@ bx_right    dd  0
 scr_cattr   db  A_PANE
 bl_attr     db  0
 lr_attr     db  0
-            db  0
+br_cxgone   db  0                       ; the container is what is changing
 bar_map     db  BAR_W + 2 dup(0)
 lb_text     db  16 dup(0)
 mb_buf      db  24 dup(0)
@@ -1356,9 +1425,9 @@ msg_iyes    db  'yes$'
 msg_ino     db  'no$'
 msg_ilogs   db  ' logical$'
 ; two lines each, the second straight after the first
-msg_hvol    db  'Drag it along the bar to$','move it.  S resizes it.$'
-msg_hnofat  db  'FDISK cannot move or$','resize this one.$'
-msg_hcont   db  'Its logical drives are$','the blocks inside it.$'
+msg_hvol    db  'Drag a partition to$','move it.  S to resize.$'
+msg_hnofat  db  'FDISK cannot move or$','resize non-FAT drives.$'
+msg_hcont   db  'Logical drives are$','the blocks inside it.$'
 msg_hfree   db  'Press C to create a$','partition here.$'
 msg_hnoslot db  'All four primary slots$','are in use.$'
 msg_hlfree  db  'Press C to create a$','logical drive here.$'

@@ -183,6 +183,7 @@ ktn_mouse:
 ktn_eof:
         cmp     byte ptr [kt_hold],0
         jne     ktn_hold
+        mov     byte ptr [kt_eof],1     ; nobody left to ask (tu_quit)
         mov     eax,EV_EOF
         ret
 ktn_hold:
@@ -521,7 +522,9 @@ tkb_eof:
 ;--- tui_ktinit - FDTEST=path in the environment turns the file on, and
 ;--- FDHOLD=anything keeps the last screen up when it runs out: the
 ;--- keyboard takes over, which nobody is typing at, so a capture of
-;--- the screen ends on whatever the file left showing
+;--- the screen ends on whatever the file left showing.  FDBOOT=anything
+;--- lets quitting after a change restart the machine, which a test
+;--- otherwise stops just short of (tu_restart)
 tui_ktinit:
         pushad
         mov     edi,OFFSET msg_tenv
@@ -536,8 +539,13 @@ tui_ktinit:
         mov     byte ptr [kt_on],1
         mov     edi,OFFSET msg_thold
         call    env_find
-        jc      tki_out
+        jc      tki_boot
         mov     byte ptr [kt_hold],1
+tki_boot:
+        mov     edi,OFFSET msg_tbootenv
+        call    env_find
+        jc      tki_out
+        mov     byte ptr [kt_boot],1
 tki_out:
         popad
         ret
@@ -681,7 +689,8 @@ ev_shift    db  0
 kt_btn      db  0
 kt_row      db  0
 kt_col      db  0
-            db  0
+kt_boot     db  0                       ; a test may restart the machine
+kt_eof      db  0                       ; the key file has run out
 ev_kcode      dw  0
             dw  0
 ev_row      dd  0

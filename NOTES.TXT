@@ -5833,6 +5833,225 @@ RMDOS's XMS 2.0 answers still cap at 64MB, so it should see what it
 saw, but it has not been run.  A DPMI client given all of a large
 machine, beyond XMSTEST.  Real hardware.
 
+FDISK: THE EXTENDED PARTITION MOVES, AND A RESIZE CAN CHANGE THE
+CLUSTER SIZE (2026-10-02)
+---------------------------------------------------------------------
+
+A day of changes to the screen and the engine under it, each asked for
+by Charlie after trying the one before.  Each round was checked
+against a model of the screen written in JavaScript, compared picture
+for picture with FDTEST's dumps of the real program in DOSBox-X: 167
+pictures alike by the end of this entry, 255 by the end of the next.
+The model and the harness that ran it are not in the repository.
+Still v0.61.
+
+NO BOX AFTER A CREATE OR A DELETE THAT WORKED: the bar shows it, and V
+still shows the log.  One that failed still says why.  (Overtaken the
+same day - see the next entry, where nothing is written until W.)
+
+A PARTITION WITH NO FAT VOLUME IN IT MOVES AND RESIZES.  fv_read calls
+a volume raw (fv_raw) when its first sector has no 55AAh or does not
+start with a jump (EBh or E9h), and the plan marks it (pl_raw): a move
+or a resize of one writes the table entry and nothing else, since
+nothing in it is anything FDISK knows how to carry.  The question says
+"not formatted, so only the partition table entry changes", and /P
+says the same.  A partition created again where a deleted one started
+finds the old boot sector still there, and is a FAT volume again.
+
+THE EXTENDED PARTITION MOVES AND RESIZES.  A move carries the whole
+chain in one copy, from the head record to the end of the last link
+(rl_cxmove).  Every start in the chain is an offset from a record, so
+the copy is already a correct chain; what is not relative is put right
+after it - the CHS fields, the LBA spelling of a type that now ends
+past CHS's reach, and the hidden sectors of each volume.  A resize
+cannot cut a logical drive off (RL_HOLDS), and a chain that does not
+read cleanly is not touched (RL_CHAIN).  On the bar, a press on the
+free space inside the container drags the container, a whole cylinder
+at a time (cx_snap).
+
+TWO BUGS THAT WERE THE BAR.  An extended partition with a drive in it
+could not be resized, and an emptied one could not be deleted: "select
+a drive first".  No cell of the bar is the container itself - its
+drives and its free space cover all of it.  M, S and D on free space
+inside the container now act on the container (tu_tocont).  From the
+list both had always worked.  Delete still refuses a container with
+drives in it.
+
+/W IS GONE.  The command line writes what it is asked to: dk_armed
+starts at 1, and /W is an unknown switch now - the usage, and exit
+code 1.  The screen still runs its dry runs with the writes held off
+(tui_dryrun).  The "proposed:" line for a move or a resize is gone
+from fd_change, with rl_opname, msg_prop, msg_from and msg_arrow;
+create, delete, active and /MBR still print theirs.
+
+F1 IS THE KEYS.  The command line's usage is no longer in the help,
+and Help > Keys... is the menu item.
+
+A RESIZE CAN CHANGE THE CLUSTER SIZE (FDREMAP.INC).  A new size that
+the volume's cluster size cannot make a legal volume of - or not at
+its FAT width - used to stop at RL_REMAP or RL_FATTYPE.  Charlie's
+choices: every FAT type, a change only when one is needed, and FAT12
+and FAT16 trading places.  rm_choose takes the nearest of three:
+  - RM_WIDTH: the same cluster size at the other width, FAT12 <->
+    FAT16.  Cluster numbers survive; only the FAT is written again.
+  - RM_SPLIT: smaller clusters.  Each old cluster becomes k new ones
+    in the same sectors, so no data moves, but every chain and every
+    directory entry's first cluster is renumbered.
+  - RM_MERGE: larger clusters.  One new cluster cannot hold two
+    files, so every chain is packed from the front of the data area,
+    by a permutation that follows its cycles.
+FAT32 stays FAT32: going between FAT16 and FAT32 moves the root
+directory into or out of the data area, which is a conversion and not
+a resize.  Before anything is written, rm_prepare reads the FAT into a
+table of 32-bit entries in 48h memory - which grows the slot, since
+FAT32 needs megabytes - and the volume has to hold together: every
+chain ending, none looping, no cluster in two chains, every directory
+entry naming the start of a chain of its own.  Three new refusals:
+RL_BADCLUS (the clusters would have to grow, and some are marked bad),
+RL_DAMAGED ("Run CHKDSK first.") and RL_NOMEM.
+
+TESTED on a 267MB image built for it, of four volumes - FAT16 at one
+sector a cluster, FAT12, FAT16 at eight, FAT32 at four - holding 755
+files in 32 directories, with long names and fragmented files.  The
+first FAT16 grew twice (to two sectors a cluster, then four), the
+FAT12 became FAT16 and back, the second FAT16 became FAT12 and back,
+and the FAT32 shrank to one sector a cluster.  After every pass each
+file's MD5 and each directory were the same, and a checker that does
+what CHKDSK does found nothing wrong.  The same image with a cluster
+marked bad in the first volume and a headless chain in the fourth is
+refused for each, from the command line, with exit code 1.
+
+AND A BUG IN MOVE, older than all of this.  A move wrote the FAT size
+FDISK would CHOOSE for the volume's size into the boot sector it
+moved, not the one the volume has.  A volume that FORMAT had given a
+longer FAT came out of a move with its second FAT, its root and its
+data in the wrong place: no files, and every cluster lost.  A move now
+keeps the volume's own layout (rp_keep).
+
+FDISK: CHANGES WAIT FOR W, F FORMATS, AND QUITTING RESTARTS THE
+MACHINE (2026-10-02)
+---------------------------------------------------------------------
+
+QUITTING RESTARTS THE MACHINE after a change the running system cannot
+see.  Drive letters are dealt out at the start, so a partition made,
+removed, moved or resized leaves the volume table describing a disk
+that is not there any more.  A new kernel call does the restart: INT
+21h F1h AL=1Bh (fF1_reboot) runs dos_commit and then, if a cache block
+is still dirty, returns CF and ERR_WRFAULT (1Dh) with the machine left
+up, since a restart over a write that would not go loses the write.
+Otherwise IOS_REBOOT (IOSVC+0F0h, sys_reboot in KEYBD.INC) puts 1234h
+at 40:72h so that the BIOS skips its memory test, waits for the 8042
+to take a command, and goes the way Ctrl-Alt-Del goes (kb_reboot).
+FDISK shows "Changes require a reboot.  Restarting the system now..."
+for three seconds first, and says so if the kernel came back.  The
+active flag and the boot code do not count: they are read only at a
+start.  Under FDTEST the box goes into the log and the log is closed;
+the machine restarts only if FDBOOT= is set as well, or a batch file
+of key files would start again from the top after every script.
+
+CHANGES WAIT FOR W.  Charlie asked for an undo and a commit.  On the
+screen nothing is written when a change is asked for: it is STAGED
+(FDPEND.INC).  The verb runs exactly as the command line would run it,
+with dk_armed at DK_STAGE, and every sector it writes goes into an
+overlay in the BSS (ov_*) instead of to the disk.  dk_read lays the
+overlay over whatever it reads, so every verb after it, and the table
+the bar is drawn from, sees the disk as it will be.  The change goes
+into a journal (jn_tbl): the verb, its arguments as the command line
+would have had them, the free run a create meant (gp_want), and the
+question the screen asked.  The status line counts them: "2 changes
+waiting.   W Commit  U Undo  F1 Help  F10 Menus  Q Quit".
+
+W COMMITS.  A box lists the changes - five, then "...and N more." -
+asks "Write these changes to the disk?", and adds "This can take a
+while.  Do not turn the machine off." when one of them moves data.
+Yes throws the overlay away and runs the journal again with the writes
+on, "Writing change 2 of 3..." on the status line.  Each verb plans
+afresh against the real disk, which by then is what the one before it
+left: the state it was staged against.  A change that fails stops the
+commit there, and the box says which, why, and that the ones before it
+were written.  U UNDOES the last change ("Undone: " and its question)
+by staging the rest again.  Both are on the File menu.  V shows what a
+commit ran; a staged run's log is thrown away.
+
+A MOVE OR A RESIZE STAGES ITS TABLE ENTRY AND NOTHING ELSE.  The data
+it would move is far more than can be held, and nothing on the screen
+reads it - but a second change to the same volume would plan against a
+boot sector and a FAT that are still where they were.  So the volume
+is LOCKED until the commit (pd_locked): a second move or resize,
+Details and a drag on it get "Partition 5 (E:) moves or resizes when
+the changes are committed." and "Commit or undo the changes waiting
+first."  A container move carries its records and its volumes' boot
+sectors into the overlay (rcm_carry), because the chain is what the
+bar draws, and the drives in it are locked all the same.  A partition
+that is not formatted is not locked, nor is a container resize, and
+deleting a locked partition ends its lock.
+
+QUITTING WITH CHANGES WAITING asks "Commit the changes before
+quitting?" - Yes commits and quits, No quits and writes nothing,
+Cancel and Esc stay.  A key file that has run out has nobody to ask
+(kt_eof), and its changes go: a test that wanted them would have
+pressed W.
+
+THE LIMITS are 256 staged sectors (128K of BSS) and 32 changes.  A
+change past either is refused: "Too many changes are waiting.  Commit
+them first."  A change that will not stage again after an undo is
+dropped, with the ones after it, and the screen says so.
+
+F FORMATS, ON THE SCREEN ONLY.  Charlie: "drive formatting should only
+be done from within the TUI.  The command line is free to use FORMAT
+instead."  fd_format has no switch; FDC_FORMAT is set by the screen
+alone.  It is a quick format - a boot sector, the FATs, an empty root
+- laid out the way Microsoft's FORMAT lays one out: FAT12 up to 8,400
+sectors, FAT16 up to FAT16_MAXSECS, FAT32 above that or where the type
+byte already says FAT32 and there are 66,600 sectors or more, with
+Microsoft's cluster size for each size.  The root holds 512 entries;
+FAT32 gets 32 reserved sectors, FSInfo in sector 1, a backup boot
+sector in 6 and its root in cluster 2.  The boot code only says "No
+system on this volume."  The type byte is set to match (rl_typebyte).
+A format is NOT staged: it writes a volume, not a table, and only when
+nothing is waiting ("Commit or undo the changes waiting before
+formatting."), so what it formats is what is on the disk.  The
+question is red and its Enter is No: "Format partition 3 as FAT12?",
+"Everything stored on partition 3 will be lost.", and for the drive
+PM-DOS started from, "PM-DOS was started from C:."
+
+THE CACHE.  Charlie asked: "Should we only flush the cache on a commit
+so that FDISK can benefit from cache at startup, and also if no
+changes are made the existing cache doesn't get ejected?"  That is
+what already happens.  Nothing ejects the cache: 4Bh's commit writes
+the dirty blocks and keeps every block.  A session with nothing
+committed or formatted does not restart, so the cache is left alone;
+the only flush FDISK causes is fF1_reboot's, before a restart.  And
+FDISK never reads through the cache: F1h AL=0Dh and 0Eh go to the
+driver, around CACHE.INC, and FDISK's big reads - a FAT, 64K at a time
+- are the size the cache lets past anyway (CC_BIGXFER).
+
+TESTED in DOSBox-X with FDTEST key files.  Staging, undo, the lock and
+the commit; growing a FAT12 volume into the room a waiting delete
+made, committed as FAT16 with its file whole; a container move staged
+and committed, every record and boot sector right; No at the quit
+question leaving the disk as it was; a format of each width, CHKDSK
+clean after the restart - FAT12 at two sectors a cluster, FAT16 at
+four, FAT32 at one.  /D, /S and /M on the command line still write at
+once.  DISK\FDM1.KEY now commits after its moves and resizes and at
+the end (TOOLS\MKFDKEYS.PL; 256 bytes).  FDISK.EXE 61,673 bytes;
+PMIO.SYS 44,954; PMDOS.SYS 136,410.  The floppy's files, less the 42
+batch files .gitignore keeps out of the repository, come to 1,599 of
+its 2,847 clusters.
+
+NOT DONE.  FORMAT.COM reformats a volume that has a BPB and cannot lay
+the first one down on a hard disk, so a partition the command line
+makes cannot be given a file system from the command line yet.  F1h
+AL=0Dh and 0Eh do not keep the cache honest: a sector written around
+the cache leaves a stale clean copy in it until the restart, which
+matters to the command line, since the screen restarts anyway.  Two
+volumes formatted in the same second get the same serial number
+(ff_serial is the date plus the time, as DOS's is); it happened to
+the FAT16 and the FAT32 of the format test.
+
+NOT VERIFIED.  MASM.  Real hardware.  A commit that fails half way;
+changes on two disks in one commit; reaching either limit.
+
 v0.61 - THE NUMBER CAUGHT UP (2026-09-30)
 ---------------------------------------------------------------------
 

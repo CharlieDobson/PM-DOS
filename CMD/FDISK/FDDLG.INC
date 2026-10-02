@@ -868,9 +868,14 @@ dgl_wok:
         add     eax,ebp
         inc     eax
         mov     [dg_right],eax
-        ; how tall
+        ; how tall - and a box with no buttons, which only says something
+        ; on the way out (tu_restart), has no row for them
         mov     eax,[dg_n]
         add     eax,5
+        cmp     dword ptr [dg_nb],0
+        jne     dgl_hfield
+        dec     eax
+dgl_hfield:
         cmp     dword ptr [dg_flabel],0
         je      dgl_hcheck
         add     eax,2
@@ -915,8 +920,11 @@ dgl_rcrow:
         mov     [dg_crow],eax
         inc     eax
 dgl_rbtn:
+        cmp     dword ptr [dg_nb],0
+        je      dgl_rbot
         inc     eax
         mov     [dg_brow],eax
+dgl_rbot:
         inc     eax
         mov     [dg_bot],eax
         ; the buttons, in the middle of their row
@@ -1559,17 +1567,21 @@ vwb_yes:
 ;=====================================================================
 ; Data for the menus, the boxes and the viewer.
 ;=====================================================================
-mu_tbl      dd  msg_mtfile, 1, SC_ALTF, mi_file, 2, 22
+mu_tbl      dd  msg_mtfile, 1, SC_ALTF, mi_file, 5, 22
             dd  msg_mtdisk, 7, SC_ALTD, mi_disk, 0, DM_W + 2
-            dd  msg_mtpart, 13, SC_ALTP, mi_part, 6, 23
+            dd  msg_mtpart, 13, SC_ALTP, mi_part, 7, 23
             dd  msg_mthelp, 24, SC_ALTH, mi_help, 2, 23
 
-mi_file     dd  CMD_LOG, msg_milog, 'O'
+mi_file     dd  CMD_COMMIT, msg_micommit, 'C'
+            dd  CMD_UNDO, msg_miundo, 'U'
+            dd  CMD_SEP, msg_misep, 0
+            dd  CMD_LOG, msg_milog, 'O'
             dd  CMD_EXIT, msg_miexit, 'X'
 mi_part     dd  CMD_MOVE, msg_mimove, 'M'
             dd  CMD_SIZE, msg_misize, 'S'
             dd  CMD_CREATE, msg_micreate, 'C'
             dd  CMD_DELETE, msg_midelete, 'D'
+            dd  CMD_FORMAT, msg_miformat, 'F'
             dd  CMD_ACTIVE, msg_miactive, 'A'
             dd  CMD_DETAILS, msg_midetails, 'P'
 mi_help     dd  CMD_HELP, msg_mikeys, 'K'
@@ -1632,18 +1644,21 @@ msg_mtpart  db  'Partition$'
 msg_mthelp  db  'Help$'
 msg_milog   db  'Output log         V$'
 msg_miexit  db  'Exit               Q$'
+msg_micommit db 'Commit changes     W$'
+msg_miundo  db  'Undo last change   U$'
+msg_miformat db 'Format...           F$'
 msg_mimove  db  'Move...             M$'
 msg_misize  db  'Resize...           S$'
 msg_micreate db 'Create...           C$'
 msg_midelete db 'Delete...         Del$'
 msg_miactive db 'Make active         A$'
 msg_midetails db 'Details...          P$'
-msg_mikeys  db  'Keys and switches  F1$'
+msg_mikeys  db  'Keys...            F1$'
 msg_miabout db  'About FDISK          $'
 msg_misep   db  '$'
 msg_minext  db  'Next disk         Tab$'
 msg_mireread db 'Re-read disk       F5$'
-msg_miboot  db  'Write boot code...  B$'
+msg_miboot  db  'Write MBR...        B$'
 msg_mdiskn  db  '  Disk $'
 msg_mnone   db  '   (none)$'
 
