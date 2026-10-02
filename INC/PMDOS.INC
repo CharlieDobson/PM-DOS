@@ -2245,6 +2245,12 @@ IOS_USRWOK      EQU     IOSVC + 0ECh            ; EAX = linear, ECX = bytes:
                                                 ; write all of it itself.
                                                 ; Ask before writing for a
                                                 ; program (PAGING.INC)
+IOS_REBOOT      EQU     IOSVC + 0F0h            ; never returns: a warm start
+                                                ; through the 8042's reset
+                                                ; line, or a triple fault.
+                                                ; The caches are the caller's
+                                                ; to write first - 21h/F1h
+                                                ; AL=1Bh does (KEYBD.INC)
 
 PLM_STAGE       EQU     0       ; db - the PS/2 probe: the last step it
                                 ;      began, a letter (MOUSE.INC)
@@ -2506,6 +2512,9 @@ BDA_EQUIP       EQU     BDA_BASE + 10h          ; dw - equipment word
 BDA_DSKSTAT     EQU     BDA_BASE + 41h          ; db - last INT 13h status
 BDA_TICKS       EQU     BDA_BASE + 6Ch          ; dd - 18.2 Hz since midnight
 BDA_TICKROLL    EQU     BDA_BASE + 70h          ; db - and its 24-hour flag
+BDA_WARMBOOT    EQU     BDA_BASE + 72h          ; dw - 1234h makes the next
+                                                ; start a warm one: the BIOS
+                                                ; skips its memory test
 BDA_VMODE       EQU     BDA_BASE + 49h          ; db - current video mode
 BDA_VCOLS       EQU     BDA_BASE + 4Ah          ; dw - columns on screen
 BDA_VPGSZ       EQU     BDA_BASE + 4Ch          ; dw - bytes per video page
@@ -2628,6 +2637,9 @@ ERR_SHARING     EQU     20h                     ; sharing violation (SHARE)
 ERR_LOCKVIOL    EQU     21h                     ; lock violation
 ERR_SHAREBUF    EQU     24h                     ; sharing buffer exceeded:
                                                 ; SHARE= has no lock left
+ERR_WRFAULT     EQU     1Dh                     ; write fault: F1h AL=1Bh, when
+                                                ; the cache would not all write
+                                                ; and the machine was left up
 ERR_GENERAL     EQU     1Fh                     ; general failure - what DOS
                                                 ; has always called a disk that
                                                 ; would not read or write, and

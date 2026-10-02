@@ -455,6 +455,32 @@ kbr_hang:
         jmp     kbr_hang
 
 ;=====================================================================
+; sys_reboot - IOS_REBOOT.  Ctrl-Alt-Del without the keys, for a
+;              program that has changed something only a fresh start
+;              will see - FDISK, through 21h/F1h AL=1Bh, which has
+;              written the caches before it gets here.
+;
+; Two things the keys' path does not do.  The BIOS is told this is a
+; WARM start, so it skips the memory test as it would for the keys at
+; a DOS prompt.  And the 8042 is given the command only once it is
+; listening: from the keyboard's own interrupt it has just handed over
+; a byte and is idle, but from here it can be in the middle of
+; anything, and a command written while its input is full is ignored.
+; The wait is bounded, and kb_reboot's triple fault is behind it.
+;=====================================================================
+sys_reboot:
+        cli
+        mov     word ptr ds:[BDA_WARMBOOT],1234h
+        mov     ecx,100000h
+srb_wait:
+        in      al,KB_CMD               ; the status port: bit 1 set while
+        test    al,2                    ; the controller's input is full
+        jz      kb_reboot
+        dec     ecx
+        jnz     srb_wait
+        jmp     kb_reboot
+
+;=====================================================================
 ; kb_put - append AX (AL = ASCII, AH = scan code) to the BIOS ring at
 ;          40:1E.  Silently drops the key if it is full, which is what
 ;          the ROM does apart from the beep.

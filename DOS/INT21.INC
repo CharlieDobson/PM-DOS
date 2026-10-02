@@ -8615,6 +8615,10 @@ fF0_mouse:
 ;       AL = 1Ah: bits 16-23 of EAX = an XMF_* function - blocks of
 ;                 extended memory a native program owns and copies
 ;                 into and out of (XMS.INC, xmn_call)
+;       AL = 1Bh: restart the machine, every cache written first.
+;                 Does not return - unless something would not
+;                 write, and then CF, AX = ERR_WRFAULT, and the
+;                 machine is still up (fF1_reboot)
 ;
 ; 30h has to keep lying about being DOS 5 so that ordinary programs
 ; recognise us, which leaves nothing there to report what the kernel
@@ -8681,6 +8685,8 @@ fnF1:
         je      fF1_delperm
         cmp     al,1Ah
         je      xmn_call
+        cmp     al,1Bh
+        je      fF1_reboot
         jmp     i21_unsup
 
 ;--- AL=18h: DELETE PROTECTION'S STATE.  EAX = UNDF_* bits, ECX = the
@@ -8961,6 +8967,24 @@ fF1_park:
         mov     [ebp+F_EAX],eax
         jmp     i21_ok
 fF1_parkbad:
+        jmp     i21_fail
+
+;--- AL=1Bh: RESTART THE MACHINE, for a program that has changed what
+;--- the drive letters are - FDISK, at the end of a session that wrote
+;--- a partition table.  Ctrl-Alt-Del restarts it too, but from inside
+;--- the keyboard's interrupt and with nothing written, which is safe
+;--- at a prompt (the prompt has just committed) and not in the middle
+;--- of a program.  So this commits first, as the prompt does, and
+;--- restarts only when nothing is left owing: a block still dirty
+;--- afterwards is a write that failed, and restarting would throw
+;--- away the only copy of it.
+fF1_reboot:
+        call    dos_commit
+        cmp     dword ptr [cache_dirty],0
+        jne     fF1_rbfail
+        call    dword ptr ds:[IOS_REBOOT]       ; and nothing after it runs
+fF1_rbfail:
+        mov     ax,ERR_WRFAULT
         jmp     i21_fail
 ;--- AL=12h: THE BUSES.  Handed to PMIO as it came and handed back as
 ;--- it returns, for the reason AL=0Ah gives: a program at ring 3

@@ -91,6 +91,7 @@ svc_table:
         dd      ata_model       ; IOS_ATAMODEL
         dd      pg_guard        ; IOS_PGPRES
         dd      usr_wok         ; IOS_USRWOK
+        dd      sys_reboot      ; IOS_REBOOT
 
 ;=====================================================================
 ; pm_entry - first instruction executed in 32-bit protected mode.
