@@ -6033,37 +6033,19 @@ fd_args     db  FD_MAXARGS * FD_ARGLEN dup(0)
 num_buf     db  20 dup(0)
 
 msg_usage   db  'Configures a hard disk for use with PM-DOS.',13,10,13,10
-            db  '  FDISK           the full-screen editor: the disk as a bar, the',13,10
-            db  '                  partitions on it dragged with the mouse to move',13,10
-            db  '  FDISK /STATUS   report every disk',27h,'s partition table',13,10
-            db  '  FDISK /L        ...and the logical drives in the extended '
-            db  'container',13,10
-            db  '  FDISK /P d:p    what one partition is, and how far it '
-            db  'can move',13,10
-            db  '  FDISK /M d:p n  move it so that it starts at sector n',13,10
-            db  '  FDISK /S d:p n  resize it to n sectors - or n MB, '
-            db  'written 40M',13,10
-            db  '  FDISK /C d:p    create one, filling the largest free '
-            db  'gap',13,10
-            db  '  FDISK /C d:p n     ...only n sectors of it, or n MB, '
-            db  'and',13,10
-            db  '  FDISK /C d:p n tt  ...tt as the type byte, in hex',13,10
-            db  '  FDISK /D d:p    delete it',13,10
-            db  '  FDISK /A d:p    make it the active - bootable - one',13,10
-            db  '  FDISK /MBR d    put the boot code back, table '
-            db  'untouched',13,10
-            db  '  ...add /W       and it happens.  Without it, every one '
-            db  'of those',13,10
-            db  '                  says what it would have done and '
-            db  'writes nothing.',13,10
-            db  13,10
-            db  '  d:p is a DISK and a PARTITION - 0:1 is the first slot '
-            db  'of the first',13,10
-            db  '  disk.  1 to 4 are the primary slots; 5 and up are the '
-            db  'logical',13,10
-            db  '  drives in the extended container, in the order FDISK '
-            db  '/L lists them.',13,10
-            db  13,10,'$'
+            db  'FDISK [/C d:p n tt] [/D d:p] [/A d:p] [/M d:p n] [/S d:p n]',13,10
+            db  '       [/STATUS] [/L] [/MBR d]',13,10
+            db  '  /STATUS      Provide a report of the current layout',13,10
+            db  '  /L           Show logical drives in the extended container',13,10
+            db  '  /P d:p       Work with partition p on disk d',13,10
+            db  '  /M d:p n     Move partition so that it starts at sector n',13,10
+            db  '  /S d:p n     Resize partition to n sectors or n MB, written 40M',13,10
+            db  '  /C d:p       Create partition, filling the largest free gap',13,10
+            db  '  /C d:p n      ...only n sectors of it, or n MB, and',13,10
+            db  '  /C d:p n tt   ...tt as the type byte, in hex',13,10
+            db  '  /D d:p       Delete partition',13,10
+            db  '  /A d:p       Mark partition as active',13,10
+            db  '  /MBR d       Restore Master Boot Record.',13,10,13,10,'$'
 msg_status  db  'TATUS',0               ; what follows /S to make /STATUS
 msg_disk    db  'Disk $'
 msg_sp2     db  '   $'

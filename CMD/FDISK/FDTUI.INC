@@ -1825,9 +1825,6 @@ tu_about:
         call    ln_new
         mov     edx,OFFSET msg_about2
         call    lb_puts
-        call    ln_new
-        mov     edx,OFFSET msg_about3
-        call    lb_puts
         mov     edx,OFFSET msg_tabout
         mov     bl,A_DLG
         jmp     tu_box
@@ -2835,33 +2832,25 @@ msg_vpart   db  'Partition $'
 msg_vlog    db  'Output Log$'
 msg_vhelp   db  'FDISK Help$'
 msg_about1  db  'FDISK, the PM-DOS partition editor$'
-msg_about2  db  'It moves and resizes FAT partitions$'
-msg_about3  db  'without losing the files on them.$'
+msg_about2  db  'Moves and resizes FAT partitions$'
 
 msg_tenv    db  'FDTEST=',0
 msg_thold   db  'FDHOLD=',0
 msg_tdumpend db '----',13,10
 msg_tkeys   db  13,10,'  ON THE SCREEN',13,10,13,10
-            db  '  The disk is the bar at the top, each partition a block on '
-            db  'it.  Click a',13,10
-            db  '  block or a row of the list to select it, or use the arrow '
-            db  'keys.',13,10,13,10
-            db  '  Drag a block along the bar to move the partition.  It '
-            db  'turns green',13,10
-            db  '  where it fits, and letting go asks before anything is '
-            db  'written.',13,10,13,10
-            db  '    M        move it, to a start typed in megabytes',13,10
-            db  '    S        resize it, to a size in megabytes',13,10
-            db  '    C        create a partition in the free space selected',13,10
-            db  '    Del, D   delete it',13,10
-            db  '    A        make it the active partition',13,10
-            db  '    P, Enter what it holds, and how far it can grow or shrink',13,10
-            db  '    B        put FDISK',27h,'s boot code back on the disk',13,10
-            db  '    V        the output of the last change',13,10
-            db  '    Tab      the next disk',13,10
-            db  '    F5, R    read the disk again',13,10
-            db  '    F10, Alt the menus',13,10
-            db  '    Q, Esc   leave',13,10,13,10
+            db  '  Drag a block along the bar to move the partition.',13,10,13,10
+            db  '    M        Move it, to a start typed in megabytes',13,10
+            db  '    S        Resize it, to a size in megabytes',13,10
+            db  '    C        Create a partition in the free space selected',13,10
+            db  '    Del, D   Delete it',13,10
+            db  '    A        Mark partition as active',13,10
+            db  '    P,       Enter how far the partition can grow or shrink',13,10
+            db  '    B        Write Master Boot Record',13,10
+            db  '    V        Show the output of the last change',13,10
+            db  '    Tab      Move to next disk',13,10
+            db  '    F5, R    Read the disk again',13,10
+            db  '    F10, Alt Access menus',13,10
+            db  '    Q, Esc   End FDISK',13,10,13,10
             db  '  Only FAT12, FAT16 and FAT32 partitions can be moved or '
             db  'resized.',13,10
             db  '  Restart after a change before using the disk.',13,10
