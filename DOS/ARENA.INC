@@ -39,10 +39,18 @@ arena_init:
         ; CAP IT AT WHAT THE PAGE TABLES REACH.  The arena is the only
         ; thing that hands out addresses this high, and an address
         ; nothing maps is a page fault taken somewhere unrelated with
-        ; the reason long gone.  A machine with more memory than
-        ; PG_MAXLIN simply does not get to use the rest.
+        ; the reason long gone.  pg_hiram maps everything up to
+        ; GV_MEMTOP, so on its own this test never fires - but a
+        ; PMIO.SYS from before pg_hiram maps PG_MAXLIN and leaves
+        ; GV_MEMTOP alone, and the two files are not always shipped
+        ; together.  So the directory is asked about the last byte,
+        ; rather than the number being believed.
         cmp     eax,PG_MAXLIN
         jbe     ai_mapped
+        lea     edx,[eax-1]
+        shr     edx,22
+        test    dword ptr [PG_DIR + edx*4],1
+        jnz     ai_mapped
         mov     eax,PG_MAXLIN
         mov     [arena_top],eax
 ai_mapped:
@@ -78,13 +86,31 @@ ai_sane:
 ;                  candidate, so it is also the cheapest.
 ;   1  best fit  - the SMALLEST block big enough, which leaves the big
 ;                  ones whole at the cost of walking the whole arena.
-;   2  last fit  - the highest block big enough.
+;   2  last fit  - the highest block big enough, and the TOP of it.
 ;
 ; DOS offered exactly these three and PM-DOS honours them for real
 ; rather than storing the setting and ignoring it, because a program
 ; that asks for best fit is usually about to allocate a great many
 ; small blocks and has a reason.
+;
+; AND A FOURTH THAT 58h CANNOT SET, because it is the kernel's: AF_LARGEST,
+; the bottom of the BIGGEST free block.  That is where a program's slot
+; goes (RING3.INC, slot_new), since a slot grows upward into whatever is
+; free above it and the biggest block is the most there is.  The cache
+; buys its chunks last fit for the other half of the same reason: from
+; the top down, out of a growing slot's way.  Both set alloc_strat for
+; the one call and put it back.
+;
+; LAST FIT TAKES THE TOP OF THE BLOCK, which it did not until v0.62 -
+; it carved the bottom of the highest block, and with one big free
+; block in the arena that is the same place first fit chooses.  DOS's
+; last fit took the top, and so does this.
 ;=====================================================================
+AF_FIRST        EQU     0
+AF_BEST         EQU     1
+AF_LAST         EQU     2
+AF_LARGEST      EQU     3
+
 arena_alloc:
         push    ebx
         push    ecx
@@ -92,8 +118,20 @@ arena_alloc:
         push    esi
         push    edi
         mov     byte ptr [aa_asked],0   ; the cache has not been asked yet
+        mov     eax,[alloc_strat]       ; the fit, without the upper memory
+        and     eax,3                   ; bits 58h keeps beside it
+        mov     [aa_fit],eax
 
-        add     ebx,15                  ; round the request up
+        ; ROUND THE REQUEST UP - AND A REQUEST WITHIN 15 OF 4GB WRAPS
+        ; TO NOTHING.  It came out as zero, which the line below turns
+        ; into a sixteen-byte block, so asking for FFFFFFFFh bytes - a
+        ; DPMI client's 0501h does it to see what there is - was
+        ; answered yes.  It is the largest request there is instead,
+        ; which no block can meet.
+        add     ebx,15
+        jnc     aa_round
+        mov     ebx,0FFFFFFFFh
+aa_round:
         and     ebx,NOT 15
         or      ebx,ebx
         jnz     aa_sized
@@ -122,14 +160,20 @@ aa_szok:
 
         or      edi,edi
         jz      aa_pick                 ; nothing to beat yet
-        cmp     dword ptr [alloc_strat],2
+        cmp     dword ptr [aa_fit],AF_LAST
         je      aa_pick                 ; last fit: the higher one wins
+        cmp     dword ptr [aa_fit],AF_LARGEST
+        je      aa_bigger
         cmp     ecx,[edi+MCB_SIZE]      ; best fit: only if tighter
         jb      aa_pick
         jmp     short aa_next
+aa_bigger:
+        cmp     ecx,[edi+MCB_SIZE]      ; largest: only if bigger
+        ja      aa_pick
+        jmp     short aa_next
 aa_pick:
         mov     edi,esi
-        cmp     dword ptr [alloc_strat],0
+        cmp     dword ptr [aa_fit],AF_FIRST
         je      aa_chosen               ; first fit: stop looking
 aa_next:
         add     esi,[esi+MCB_SIZE]
@@ -148,6 +192,8 @@ aa_chosen:
         sub     ecx,ebx
         cmp     ecx,MCB_LEN + 16        ; enough left to be worth splitting?
         jb      aa_whole
+        cmp     dword ptr [aa_fit],AF_LAST
+        je      aa_top
 
         ; split: new free header right after our payload
         lea     eax,[esi+MCB_LEN+ebx]
@@ -155,6 +201,14 @@ aa_chosen:
         sub     ecx,MCB_LEN
         mov     [eax+MCB_SIZE],ecx
         mov     dword ptr [eax+MCB_OWNER],0
+        mov     [esi+MCB_SIZE],ebx
+        jmp     short aa_whole
+
+        ; last fit: the free block keeps the bottom, ours is the top
+aa_top:
+        sub     ecx,MCB_LEN
+        mov     [esi+MCB_SIZE],ecx      ; what is left below, still free
+        lea     esi,[esi+MCB_LEN+ecx]   ; and ours starts where that ends
         mov     [esi+MCB_SIZE],ebx
 aa_whole:
         mov     dword ptr [esi+MCB_SIG],SIG_USED
@@ -295,7 +349,10 @@ arena_resize:
         push    ebx
         push    edx
 
-        add     ebx,15
+        add     ebx,15                  ; within 15 of 4GB wraps to nothing,
+        jnc     ar_round                ; which here would SHRINK the block
+        mov     ebx,0FFFFFFFFh          ; away - see arena_alloc
+ar_round:
         and     ebx,NOT 15
         lea     esi,[edx-MCB_LEN]
         cmp     dword ptr [esi+MCB_SIG],SIG_USED
@@ -374,10 +431,15 @@ arg_out:
 arena_avail:
         push    ebx
         mov     byte ptr [aa_probe],1
-        mov     ebx,7FFFFFFFh           ; impossible request
+        ; IMPOSSIBLE, AND IT HAS TO BE IMPOSSIBLE ON ANY MACHINE.  It
+        ; was 7FFFFFFFh, which a 3GB arena meets: two gigabytes were
+        ; allocated, given straight back, and reported as the largest
+        ; block there was.  The arena ends below 4GB and starts above
+        ; ARENA_BASE, so no block is ever this big.
+        mov     ebx,0FFFFFFF0h
         call    arena_alloc             ; must fail, returns the max
         mov     byte ptr [aa_probe],0
-        jnc     av_oops                 ; (someone has 2G of RAM?)
+        jnc     av_oops                 ; cannot happen - see above
         pop     ebx
         ret
 av_oops:
@@ -394,6 +456,7 @@ aa_probe    db  0                       ; ...and this request is
                                         ; arena_avail's, which is a
                                         ; question rather than a need
             db  0,0
+aa_fit      dd  0                       ; this request's AF_*
 
 ; 21h/58h's allocation strategy: 0 first fit, 1 best fit, 2 last fit.
 ; Global, as it was in DOS - but reset to first fit whenever the shell

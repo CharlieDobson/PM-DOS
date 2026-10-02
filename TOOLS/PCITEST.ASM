@@ -52,9 +52,9 @@ CFG_ADDR        EQU     0CF8h
 CFG_DATA        EQU     0CFCh
 MAXLIST         EQU     64
 NOWHERE         EQU     3FC00000h       ; the last 4MB of the first
-                                        ; gigabyte: past any memory this
-                                        ; kernel maps, and below where a
-                                        ; BIOS puts a card
+                                        ; gigabyte, on a machine whose
+                                        ; memory ends below it - see
+                                        ; check 10 for the others
 
 ; The function goes in the third byte of EAX: AH is F1h and AL is 12h
 BUS     MACRO   fn
@@ -476,7 +476,23 @@ t10:
         jne     t10_bad
         cmp     ecx,8000h
         jne     t10_bad
+
+        ; AND AN ADDRESS NOTHING MAPS IS NOT ANYWHERE.  Which address
+        ; that is depends on the machine now that every byte of memory
+        ; is mapped: NOWHERE on one that ends below it, and otherwise
+        ; the first 4MB past the end of memory.  The tables for memory
+        ; above 256MB sit just above the arena and are less than 4MB,
+        ; so 8MB past the arena's end, rounded down, is past them.
+        mov     ax,0F104h               ; EBX = the first byte past the arena
+        int     21h
+        jc      t10_bad
+        add     ebx,00800000h
+        jc      t10_bad
+        and     ebx,NOT 003FFFFFh
+        cmp     ebx,NOWHERE
+        jae     t10_past
         mov     ebx,NOWHERE
+t10_past:
         mov     ecx,1000h
         BUS     BUS_PHYSOF
         jnc     t10_bad

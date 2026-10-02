@@ -22,16 +22,20 @@
 ;   00005200-0009FFFF   the DOS box's transient program area, ending
 ;                       where the BIOS says conventional memory does
 ;   000A0000-000FFFFF   Video RAM and ROM
-;   00100000-0013FFFF   PMDOS.SYS (256K reserved)
-;   00140000-0017FFFF   shell slot: PSP at 140000, image at 141000,
-;                       stack grows down from 180000 (COMMAND.COM)
-;   00180000-001FFFFF   program slot: PSP at 180000, image at 181000,
-;                       stack grows down from 200000 (EXEC'd programs)
+;   00100000-0010FFEF   the HMA, left empty for the A20 wrap
+;   00110000-0013FFFF   PMDOS.SYS (192K reserved)
+;   00140000-0017FFFF   shell slot: guard page, PSP at 141000, image at
+;                       142000, stack grows down from 180000 (CMD.EXE)
+;   00180000-001C8FFF   page directory, 64 page tables, 8 device tables
+;   001C9000-001E0FFF   the kernel's buffers (_KBSS), and a trace's after
 ;   00200000-0020FFFF   PMIO.SYS protected-mode body (64K reserved)
 ;   00210000-002107FF   IDT (256 gates)
 ;   00212000-00213FFF   Kernel stack (top = 00214000)
 ;   00214000-0021606B   TSS and its I/O permission bitmap
-;   00220000-....       DOS arena (allocated by INT 21h/48h)
+;   00218000-0021BFFF   a DPMI client's LDT, and the native ring-0 stack
+;   00220000-....       DOS arena: every other program's slot, 48h for
+;                       the kernel, XMS, DPMI, EMS, the disk cache
+;   top of memory       page tables for memory above 256MB, if any
 ;
 ; WHY THE FIRST MEGABYTE LOOKS LIKE THIS.  Everything that does not
 ; have to be below 1MB has been moved above it, because every byte
@@ -123,13 +127,22 @@ DOS_LIMIT       EQU     00140000h               ; and it must end below this -
 ; free and every DOS program written before 1985 relied on.  Sixteen
 ; page table entries is the entire emulation.
 ;
-; PG_MAXTAB tables of 4MB each is the ceiling on memory this kernel
-; will map; arena_init is capped to it, because handing out an address
-; nothing maps is a page fault with the return address already lost.
+; PG_MAXTAB tables of 4MB each live here, at a fixed address, and map
+; the first 256MB.  Memory above that is mapped by tables pg_hiram
+; puts at the top of memory, below which GV_MEMTOP is lowered, so the
+; arena reaches the whole machine (below 4GB) and never a table.
+;
+; THEY ARE WHERE THE TRANSIENT SLOT USED TO BE.  Until v0.62 a native
+; program ran in a fixed 512K slot at 180000h and these sat above PMIO
+; at 220000h, with the arena after them; every program has a slot out
+; of the arena now, so that half megabyte was nobody's.  The directory,
+; the tables and the kernel's buffers below are 388K of it, and the
+; arena starts at 220000h - which is 388K more arena, and on a 4MB
+; machine the difference between one nested program and two.
 ;---------------------------------------------------------------------
-PG_DIR          EQU     00220000h               ; page directory, 4K
-PG_TABS         EQU     00221000h               ; the page tables follow it
-PG_MAXTAB       EQU     64                      ; 64 * 4MB = 256MB mappable
+PG_DIR          EQU     00180000h               ; page directory, 4K
+PG_TABS         EQU     00181000h               ; the page tables follow it
+PG_MAXTAB       EQU     64                      ; 64 * 4MB = 256MB in fixed tables
 PG_MAXLIN       EQU     PG_MAXTAB * 00400000h
 ; DEVICE MEMORY is the one thing above that ceiling anybody needs: a PCI
 ; card's registers and a frame buffer sit wherever the BIOS put them,
@@ -146,12 +159,32 @@ PG_TOP          EQU     PG_DEVTABS + PG_DEVTAB * 1000h
 ; absence is not a security setting: V86 code runs at CPL 3, so a
 ; supervisor-only page is a page a DOS box cannot execute from, and
 ; the first guest instruction after paging went in took a page fault
-; on its own entry point.  Nothing is given away by it either - a
-; 16-bit segment:offset cannot reach past 10FFEFh whatever the page
-; tables say, so the guest is already confined by arithmetic that no
-; permission bit could tighten.  That is true of the POINTER and not
-; of the pointer plus a length, which is what buf_ok below is for.
+; on its own entry point.
 PG_PRESENT      EQU     7                       ; present + writable + user
+
+; BUT THE KERNEL'S OWN PAGES ARE NOT WRITABLE FROM RING 3.  The guest's
+; arithmetic stops at 10FFEFh and a native program's segment stops at
+; its slot, but a DPMI client builds its own descriptors - base 0 and
+; a 4GB limit is how every flat-model extender runs - and nothing about
+; a descriptor can be refused without refusing those.  So the page
+; says it instead: pg_protect clears this bit on every page the kernel
+; lives in (KPROT_* below), and a ring-3 write to one is a page fault
+; in the program that made it.  Ring 0 is not affected - CR0.WP is
+; clear, so a supervisor write ignores the bit - and neither are the
+; processor's own accesses to the GDT, the IDT, the TSS and the ring-0
+; stacks, which are supervisor accesses whatever CPL is running.
+;
+; READ-ONLY AND NOT SUPERVISOR-ONLY, because reading the kernel harms
+; nothing and some things must: the floppy table vector 1Eh points at
+; (GV_FDPT) is read by the BIOS, a DPMI client executes the host's
+; default vector stubs in PMDOS.SYS, and a DOS memory scanner reads
+; every byte of the first megabyte.
+;
+; THE KERNEL WRITING ON A PROGRAM'S BEHALF IS NOT STOPPED BY THIS, for
+; the same reason ring 0 is not: an interrupt frame the monitor pushes
+; onto a guest's stack is a supervisor write.  usr_wok (PAGING.INC) is
+; the question every such write has to ask first.
+PG_WRITABLE     EQU     2
 
 ; THE KERNEL'S BIG BUFFERS ARE HERE AND NOT IN PMDOS.SYS.  A sector, a
 ; cluster, CONFIG.SYS and the CD readers' blocks hold nothing until
@@ -176,15 +209,17 @@ KBSS_LEN        EQU     00018000h       ; 96K: 31K of buffers, the 32K
 
 ; THE TRACE'S BUFFERS FOLLOW, in a kernel built to trace, and are not
 ; in PMIO: they are 40K of nothing, and assembled into the image they
-; put it over the 64K the stub blits.  Every file that names ARENA_BASE
-; has to be assembled with the same switches, MEM.EXE included.
+; put it over the 64K the stub blits.
 IFDEF DBG_LPT
 DBG_MEM         EQU     KBSS_BASE + KBSS_LEN    ; IO\DBGSINK.INC divides it up
 DBG_MEMLEN      EQU     0000A000h
-ARENA_BASE      EQU     DBG_MEM + DBG_MEMLEN    ; start of the DOS memory arena
-ELSE
-ARENA_BASE      EQU     KBSS_BASE + KBSS_LEN    ; start of the DOS memory arena
 ENDIF
+
+; ALL OF THAT HAS TO END BELOW IO_PM_BASE, and does with 84K to spare
+; (1EB000h with the trace's buffers).  The arena starts above PMIO, the
+; IDT, the TSS and the two ring-0 stacks, which end at 220000h - the
+; same for every build now, so nothing has to be assembled to agree.
+ARENA_BASE      EQU     00220000h               ; start of the DOS memory arena
 
 ;---------------------------------------------------------------------
 ; WHERE A CALLER'S BUFFER MAY NOT BE.
@@ -210,19 +245,37 @@ ENDIF
 ; Three ranges, and the gaps between them are deliberate.  The IVT and
 ; the BIOS data area below 4E8h are the guest's to ruin, as they are
 ; on a real machine; so is the DOS data segment at 4000h, which holds
-; the list of lists and which a program is invited to read.  The slots
-; at 140000h-1FFFFFh are a PROGRAM's memory and not the kernel's, and
-; their owner passes pointers into them all day - r3_xlat bounds
-; those, and it is the only thing that can, since one slot's pointer
-; is the other slot's trespass.
+; the list of lists and which a program is invited to read.  The shell's
+; slot at 140000h-17FFFFh is a PROGRAM's memory and not the kernel's,
+; and its owner passes pointers into it all day - r3_xlat bounds those,
+; and it is the only thing that can, since one slot's pointer is
+; another slot's trespass.  So are the slots out of the arena.
+;
+; buf_ok asks the page tables as well (IOS_USRWOK), which is what
+; covers the A20 alias of these, guard pages, and the page tables
+; pg_hiram puts at the top of a machine with more than 256MB.
 ;---------------------------------------------------------------------
 KBUF_LO1        EQU     000004E8h       ; the thunk's register frame, the
 KBUF_HI1        EQU     00004000h       ; real-mode stack, the stub, XFER
 KBUF_LO2        EQU     DOS_BASE        ; PMDOS.SYS itself
 KBUF_HI2        EQU     DOS_LIMIT
-KBUF_LO3        EQU     IO_PM_BASE      ; PMIO, the IDT, the kernel stacks,
-KBUF_HI3        EQU     ARENA_BASE      ; the TSS, the page tables and the
-                                        ; kernel's buffers at KBSS_BASE
+KBUF_LO3        EQU     PG_DIR          ; the page tables, the kernel's
+KBUF_HI3        EQU     ARENA_BASE      ; buffers at KBSS_BASE, PMIO, the
+                                        ; IDT, the TSS and the kernel stacks
+
+; THE PAGES RING 3 MAY NOT WRITE (see PG_WRITABLE) are the same ranges
+; at page granularity, which costs the first one its first page: the
+; IVT and the BIOS data area share page 0 with the thunk's frame and
+; the real-mode stack, and a DOS program has to be able to write the
+; IVT.  What is left on page 0 is scratch the kernel fills before each
+; use, and buf_ok still refuses it to a length.  The hiram tables are
+; the fourth range here too.
+KPROT_LO1       EQU     IO_BASE         ; the stub, the GDT, the globals,
+KPROT_HI1       EQU     KBUF_HI1        ; XFER
+KPROT_LO2       EQU     KBUF_LO2
+KPROT_HI2       EQU     KBUF_HI2
+KPROT_LO3       EQU     KBUF_LO3
+KPROT_HI3       EQU     KBUF_HI3
 
 ;---------------------------------------------------------------------
 ; UPPER MEMORY.  The region between the top of conventional memory and
@@ -420,8 +473,10 @@ SLOT_IMAGE      EQU     00002000h               ; D32 header lands here - and
 
 SHELL_SLOT      EQU     00140000h               ; the interpreter's slot
 SHELL_SIZE      EQU     00040000h               ; 256K
-PROG_SLOT       EQU     00180000h               ; and the transient program's
-PROG_SIZE       EQU     00080000h               ; 512K
+PROG_SLOT       EQU     00180000h               ; where the transient slot was
+                                                ; until v0.62 - every level has
+                                                ; one out of the arena now
+PROG_SIZE       EQU     00080000h               ; 512K, each
 
 ; The flat addresses the kernel itself uses to reach into them.  The
 ; kernel is still flat and based at zero, so it adds what a program
@@ -611,7 +666,7 @@ TSS_IOMAP       EQU     66h                     ; word: offset of the bitmap
 ;---------------------------------------------------------------------
 ; DPMI.  A protected-mode client runs at ring 3 out of an LDT of its
 ; own, and both of the things it needs live in the gap between the end
-; of the TSS (21606Ch) and the page directory at 220000h.
+; of the TSS (21606Ch) and the arena at 220000h.
 ;
 ; THE RING-0 STACK IS NOT OPTIONAL AND IT IS NOT THE KERNEL'S.  Any
 ; interrupt taken while ring-3 code is running switches stacks through
@@ -628,7 +683,7 @@ DPMI_LDT        EQU     00218000h               ; the client's descriptor table
 ; rather than sharing: the shell is a ring-3 program that stays running
 ; while a DOS box and a DPMI client inside it come and go, so the two
 ; stacks are live at the same time.  It sits above the LDT (2K of the
-; 32K between DPMI_LDT and the page directory) and grows down.
+; 32K between DPMI_LDT and the arena) and grows down.
 R3_KSTACK       EQU     0021C000h               ; ring-0 ESP while a native
                                                 ; program is running
 DPMI_LDT_ENT    EQU     256                     ; descriptors in it
@@ -1741,6 +1796,12 @@ GV_MEMKB        EQU     GV_BASE + 08h           ; dword - KB of extended memory
 GV_E820CNT      EQU     GV_BASE + 0Ch           ; dword - E820 entry count
 GV_MEMTOP       EQU     GV_BASE + 10h           ; dword - highest usable linear
 
+; Where pg_hiram put the page tables for memory above 256MB, at the top
+; of memory and above GV_MEMTOP; both zero when there are none, and
+; read by pg_protect.
+GV_PGHILO       EQU     GV_BASE + 18h           ; dword - the first table
+GV_PGHIHI       EQU     GV_BASE + 1Ch           ; dword - one past the last
+
 ; CR3, or zero while paging is off.  It lives out here rather than in
 ; IOPM because the pm2rm thunk is the one piece of code that has to
 ; know: paging MUST be off before protected mode is left, and back on
@@ -2172,6 +2233,18 @@ IOS_ATAMODEL    EQU     IOSVC + 0E4h            ; AL = ATA device index, EDI ->
                                                 ; slot.  CF if AL is no index
 
 ATA_MODEL_LEN   EQU     40                      ; IDENTIFY words 27-46
+
+IOS_PGPRES      EQU     IOSVC + 0E8h            ; EAX = linear, DL = 0: take
+                                                ; its page out of the map,
+                                                ; else put it back as itself.
+                                                ; CF if no 4K table covers it.
+                                                ; A slot's guard page, which
+                                                ; moves with the slot
+IOS_USRWOK      EQU     IOSVC + 0ECh            ; EAX = linear, ECX = bytes:
+                                                ; CF unless ring 3 could
+                                                ; write all of it itself.
+                                                ; Ask before writing for a
+                                                ; program (PAGING.INC)
 
 PLM_STAGE       EQU     0       ; db - the PS/2 probe: the last step it
                                 ;      began, a letter (MOUSE.INC)

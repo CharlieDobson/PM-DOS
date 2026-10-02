@@ -13,6 +13,11 @@
 ; see pg_map at the foot of this file.  Both exceptions are below 1MB
 ; and neither is ever put on the bus.)
 ;
+; Where everything goes is the identity; WHO MAY WRITE is not.  The
+; kernel's own pages are read-only to ring 3 - see pg_protect - and
+; usr_wok is how the kernel asks the same question before it writes
+; into memory a program named.
+;
 ; On an 8086 there were twenty address lines, so FFFF:0010 came out at
 ; 00000h rather than 100000h, and a great deal of software written
 ; before 1985 depends on that wrap - it is how a program tests for
@@ -65,6 +70,16 @@ pgi_tab:
         add     eax,1000h
         loop    pgi_tab
 
+;--- and whatever the machine has past what those reach --------------
+        mov     dword ptr ds:[GV_PGHILO],0      ; none, until pg_hiram says
+        mov     dword ptr ds:[GV_PGHIHI],0
+        call    pg_hiram
+
+;--- the kernel's own pages, which ring 3 may read and not write -----
+; Before the A20 alias below is built, because the alias copies these
+; entries rather than making its own.
+        call    pg_protect
+
 ;--- the guard page at the foot of each program slot -----------------
 ; THE NULL-POINTER GUARD THE ROADMAP WANTED, and it is two cleared
 ; bits.  A native program runs at ring 3 out of a segment based at its
@@ -73,12 +88,12 @@ pgi_tab:
 ; BIOS data area, InDOS at 4F7h and the real-mode frame at 500h, and
 ; which NULLTRAP.INC argues at length cannot be taken away.
 ;
-; Both slots get one because both hold a program: the interpreter is
-; not a special case, it is the program that happens to be running when
-; no other one is.
+; The interpreter's slot is the one that is fixed, so its guard is made
+; here, once.  Every other program's slot is a block of the arena and
+; gets its guard from slot_new, through pg_guard, wherever it lands.
+; (The second fixed slot that used to be at PROG_SLOT is the page
+; directory now - taking ITS first page away would unmap the map.)
         mov     eax,SHELL_SLOT + SLOT_GUARD
-        call    pg_absent
-        mov     eax,PROG_SLOT + SLOT_GUARD
         call    pg_absent
 
 ;--- A20 starts OFF, which is how a PC starts ------------------------
@@ -101,6 +116,122 @@ pgi_flush:                                      ; the manual asks for it and
         call    pg_pseinit                      ; and whether device memory
                                                 ; can be mapped 4MB at a time
         popad
+        ret
+
+;=====================================================================
+; pg_hiram - map the memory above PG_MAXLIN, identity like the rest.
+;            Called from pg_init with paging still off.
+;
+; THE 64 TABLES AT PG_TABS ARE A FIXED 256MB, and for a long time that
+; was the ceiling on everything: arena_init stopped there, so a 1GB
+; machine and a 3GB machine both had 256MB of arena.  The tables for
+; the rest cannot go beside those - KBSS_BASE and ARENA_BASE follow
+; PG_TOP and are numbers every file is assembled with, MEM.EXE
+; included - and how many there are is not known until the BIOS has
+; been asked.  So they go at the TOP of memory, one 4K table for every
+; 4MB above PG_MAXLIN, and GV_MEMTOP comes down below them.  The
+; arena then ends where it always has, at GV_MEMTOP, and never hands
+; out a table.
+;
+; Ordinary 4K tables even where the processor has 4MB pages.  It costs
+; a megabyte of tables for every gigabyte of memory, and buys an
+; address space where any page can be taken out of the map - which the
+; guard page at the foot of a program slot is, wherever that slot is.
+;
+; Each table maps itself, being identity like everything else here.
+; The last one may run past the end of memory; those entries name
+; addresses nothing answers to, exactly as the 64 below do on a
+; machine with less than 256MB.
+;=====================================================================
+pg_hiram:
+        mov     eax,dword ptr ds:[GV_MEMTOP]
+        cmp     eax,PG_MAXLIN
+        jbe     pgh_done                        ; the 64 already reach it
+        mov     ecx,eax
+        sub     ecx,PG_MAXLIN - 003FFFFFh
+        shr     ecx,22                          ; ECX = tables, one per 4MB
+        mov     edx,ecx
+        shl     edx,12
+        sub     eax,edx
+        and     eax,NOT 0FFFh                   ; EAX = where the first goes
+        mov     dword ptr ds:[GV_MEMTOP],eax    ; and memory ends below them
+        mov     dword ptr ds:[GV_PGHILO],eax    ; which pg_protect and buf_ok
+        add     edx,eax                         ; need to know
+        mov     dword ptr ds:[GV_PGHIHI],edx
+
+        mov     edi,eax                         ; the tables, one after another
+        mov     esi,PG_DIR + PG_MAXTAB * 4      ; their directory entries
+        mov     edx,PG_MAXLIN + PG_PRESENT      ; the first page they map
+pgh_tab:
+        lea     eax,[edi + PG_PRESENT]
+        mov     [esi],eax
+        add     esi,4
+        push    ecx
+        mov     eax,edx
+        mov     ecx,1024
+pgh_ent:
+        stosd
+        add     eax,1000h
+        loop    pgh_ent
+        mov     edx,eax
+        pop     ecx
+        loop    pgh_tab
+pgh_done:
+        ret
+
+;=====================================================================
+; pg_guard - IOS_PGPRES.  EAX = a linear address, DL = 0 to take the
+;              page holding it out of the map, anything else to put it
+;              back as itself.  CF if no 4K table covers it.
+;
+; THE GUARD PAGE OF A SLOT THAT MOVES.  A transient program's slot is a
+; block of the arena now, somewhere new for every EXEC, so its first
+; page is taken out of the map when the slot is made and put back when
+; it is freed - before the arena can hand that memory to anybody else.
+; pg_absent below does the same for the shell's slot, once, at boot.
+;
+; The directory is walked rather than PG_TABS indexed, because a slot
+; above 256MB is in one of pg_hiram's tables at the top of memory.  A
+; 4MB page has no entry to clear and is refused; the arena is never
+; mapped with one.  One page and a reload of CR3: the 386 has no
+; INVLPG.
+;=====================================================================
+pg_guard:
+        push    eax
+        push    ebx
+        push    ecx
+        mov     ecx,eax
+        shr     ecx,22
+        mov     ebx,dword ptr [PG_DIR + ecx*4]
+        test    bl,1
+        jz      pgr_no                          ; no table here at all
+        test    bl,80h
+        jnz     pgr_no                          ; a 4MB page: nothing to clear
+        and     ebx,NOT 0FFFh                   ; EBX = the table
+        and     eax,NOT 0FFFh                   ; EAX = the page
+        mov     ecx,eax
+        shr     ecx,12
+        and     ecx,3FFh                        ; ECX = its entry
+        or      dl,dl
+        jz      pgr_out
+        or      eax,PG_PRESENT                  ; present, as itself
+        jmp     short pgr_put
+pgr_out:
+        xor     eax,eax                         ; absent
+pgr_put:
+        mov     dword ptr [ebx + ecx*4],eax
+        mov     eax,cr3
+        mov     cr3,eax
+        pop     ecx
+        pop     ebx
+        pop     eax
+        clc
+        ret
+pgr_no:
+        pop     ecx
+        pop     ebx
+        pop     eax
+        stc
         ret
 
 ;=====================================================================
@@ -127,6 +258,120 @@ pga_nothing:
         ret
 
 ;=====================================================================
+; pg_protect - take the write bit off every page the kernel lives in.
+;              Called from pg_init with paging still off.
+;
+; RING 3 CAN NAME THE KERNEL, so the page has to be what refuses.  A
+; DPMI client with a flat descriptor reaches all of memory, and so does
+; a DOS box below 1MB, where the stub, the GDT and the globals CR3 is
+; reloaded from all sit at 1000h.  With this bit clear a write from any
+; of them is a page fault in that program, and the fault ends it the
+; way any other does; reads still work, and ring 0 is not affected
+; (see PG_WRITABLE).
+;
+; The four ranges are KPROT_* and the hiram tables, which pg_hiram has
+; just placed.  Those may be above 256MB, so the directory is walked.
+;=====================================================================
+pg_protect:
+        mov     eax,KPROT_LO1
+        mov     edx,KPROT_HI1
+        call    pgk_range
+        mov     eax,KPROT_LO2
+        mov     edx,KPROT_HI2
+        call    pgk_range
+        mov     eax,KPROT_LO3
+        mov     edx,KPROT_HI3
+        call    pgk_range
+        mov     eax,dword ptr ds:[GV_PGHILO]
+        mov     edx,dword ptr ds:[GV_PGHIHI]
+        call    pgk_range                       ; empty if there are none
+        ret
+
+;--- one range.  EAX = its first byte, EDX = one past its last, both
+;--- whole pages.  EBX and ECX trashed.
+pgk_range:
+        cmp     eax,edx
+        jae     pgk_done
+        mov     ecx,eax
+        shr     ecx,22
+        mov     ebx,dword ptr [PG_DIR + ecx*4]
+        and     ebx,NOT 0FFFh                   ; EBX = the table
+        mov     ecx,eax
+        shr     ecx,12
+        and     ecx,3FFh                        ; ECX = the entry
+        and     dword ptr [ebx + ecx*4],NOT PG_WRITABLE
+        add     eax,1000h
+        jmp     short pgk_range
+pgk_done:
+        ret
+
+;=====================================================================
+; usr_wok - IOS_USRWOK.  EAX = a linear address, ECX = how many bytes.
+;           CF unless ring 3 could have written every one of them
+;           itself: each page present, user and writable, in the
+;           directory and in its table.  Everything preserved.
+;
+; THE QUESTION THE KERNEL HAS TO ASK BEFORE IT WRITES FOR A PROGRAM.
+; pg_protect stops the program's own stores; it cannot stop the
+; kernel's, and the kernel stores into memory a program chose all the
+; time - an interrupt frame on its stack, the words 0300h copies onto a
+; real-mode stack.  A guest whose SS:SP is 0100:0C20 is asking for the
+; GDT to be overwritten by the next INT it executes.  Asked here, the
+; answer is the page table's, which already knows everything: the
+; kernel's ranges, a slot's guard page, and the A20 alias of either.
+;
+; Empty is yes.  A range that wraps past 4GB is no.
+;=====================================================================
+usr_wok:
+        push    eax
+        push    ebx
+        push    ecx
+        push    edx
+        or      ecx,ecx
+        jz      uwk_yes
+        lea     ecx,[eax + ecx - 1]             ; ECX = the last byte
+        cmp     ecx,eax
+        jb      uwk_no                          ; ...which is past 4GB
+        and     eax,NOT 0FFFh
+uwk_page:
+        mov     edx,eax
+        shr     edx,22
+        mov     ebx,dword ptr [PG_DIR + edx*4]
+        mov     edx,ebx
+        and     edx,PG_PRESENT
+        cmp     edx,PG_PRESENT
+        jne     uwk_no                          ; the directory says no
+        test    bl,80h
+        jnz     uwk_next                        ; a 4MB page: it said yes
+        and     ebx,NOT 0FFFh
+        mov     edx,eax
+        shr     edx,12
+        and     edx,3FFh
+        mov     ebx,dword ptr [ebx + edx*4]
+        and     ebx,PG_PRESENT
+        cmp     ebx,PG_PRESENT
+        jne     uwk_no                          ; and so does the table
+uwk_next:
+        add     eax,1000h
+        jc      uwk_yes                         ; the last page there is
+        cmp     eax,ecx
+        jbe     uwk_page
+uwk_yes:
+        pop     edx
+        pop     ecx
+        pop     ebx
+        pop     eax
+        clc
+        ret
+uwk_no:
+        pop     edx
+        pop     ecx
+        pop     ebx
+        pop     eax
+        stc
+        ret
+
+;=====================================================================
 ; pg_a20 - IOS_A20.  AL = 0 for the 8086 wrap, 1 for flat addressing.
 ;
 ; Sixteen entries, and a TLB flush.  The 386 has no INVLPG - that
@@ -145,18 +390,27 @@ pg_a20:
         ; that is always shut and looks like it works because shut is
         ; also the default.
         mov     edi,PG_TABS + 256 * 4
-        xor     eax,eax                         ; A20 off: back to zero
-        cmp     byte ptr ds:[pg_a20st],0
-        je      pga_go
-        mov     eax,HMA_BASE                    ; A20 on: at themselves
-pga_go:
-        or      eax,PG_PRESENT
         mov     ecx,HMA_PAGES
+        cld
+        cmp     byte ptr ds:[pg_a20st],0
+        je      pga_wrap
+        mov     eax,HMA_BASE OR PG_PRESENT      ; A20 on: at themselves
 pga_one:
         stosd
         add     eax,1000h
         loop    pga_one
+        jmp     short pga_flush
 
+        ; A20 OFF: THE FIRST SIXTEEN PAGES AGAIN, ENTRY FOR ENTRY, and
+        ; not "the same addresses, writable".  The stub, the GDT and the
+        ; globals are on those pages, read-only to ring 3, and an alias
+        ; that granted what the page itself refuses would put the GDT
+        ; one FFFF:1C10 away from every DOS program in the machine.
+pga_wrap:
+        mov     esi,PG_TABS
+        rep     movsd
+
+pga_flush:
         mov     eax,dword ptr ds:[GV_PGDIR]     ; nothing to flush before
         or      eax,eax                         ; paging is even on
         jz      pga_done

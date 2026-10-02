@@ -46,28 +46,29 @@ FL_ZF           EQU     40h
 I21_MAXFN       EQU     6Dh             ; both tables cover 00h..6Ch
 
 ;---------------------------------------------------------------------
-; EXEC nesting.  A D32 image is linked for one absolute address, so
-; every transient program wants the SAME slot - there is no relocation
-; to hand a second one somewhere else.  Nesting is therefore done by
-; PARKING the occupant: its whole slot (PSP, image and stack) is
-; copied into the arena, the newcomer is loaded over the top, and the
-; occupant is put back when the newcomer exits.  One record per level
-; describes the program that is waiting.
+; EXEC nesting.  A D32 image is linked for one slot OFFSET, and the
+; segment base decides which slot that is - so every level gets a slot
+; of its own out of the arena (RING3.INC, slot_new) and nobody moves.
+; Until v0.62 every level shared one slot and nesting was done by
+; PARKING the occupant: its whole slot copied into the arena, the
+; newcomer loaded over the top, and the occupant copied back when the
+; newcomer exited.  One record per level describes the program that is
+; waiting.
 ;---------------------------------------------------------------------
 EXEC_MAX        EQU     8               ; nesting levels
 EXEC_PATH_MAX   EQU     144
-SLOT_SIZE       EQU     PROG_TOP - PROG_PSP     ; the whole transient slot
 
 XN_EBP          EQU     0               ; dd - the waiting program's frame
 XN_PSP          EQU     4               ; dd - and its PSP
 XN_OWN          EQU     8               ; dd - and its owner id
 XN_DTA          EQU     12              ; dd - and its DTA
-XN_SAVE         EQU     16              ; dd - its parked slot, 0 = none
-XN_INDOS        EQU     20              ; dd - and the InDOS depth it was at
-XN_ESP0         EQU     24              ; dd - and the ring-0 stack it makes
+XN_INDOS        EQU     16              ; dd - and the InDOS depth it was at
+XN_ESP0         EQU     20              ; dd - and the ring-0 stack it makes
                                         ;      its DOS calls on
-XN_HLO          EQU     28              ; dd - and where its 48h heap is:
-XN_HHI          EQU     32              ; dd   r3h_lo and r3h_hi, see 4Bh
+XN_HLO          EQU     24              ; dd - and where its 48h heap is:
+XN_HHI          EQU     28              ; dd   r3h_lo and r3h_hi, see 4Bh
+XN_LDTR         EQU     32              ; dd - and the LDT it ran with: a
+                                        ;      DPMI client's, or none
 XN_LEN          EQU     36
 
 ; Where a waiting program's floating-point state is kept: a slot a
@@ -702,12 +703,24 @@ i21_unsup:
 ;
 ; Empty is allowed and is not a special case - ECX = 0 makes the end
 ; equal the start and the overlap test false for all three ranges.
+;
+; AND THE PAGES ARE ASKED FIRST (IOS_USRWOK), because they know what
+; the three ranges cannot.  With the A20 gate shut FFFF:1010 IS 1010h -
+; the stub and the GDT - and its linear number, 101000h, is in no range
+; at all.  A slot's guard page and an address nothing is mapped at are
+; a ring-0 page fault halfway through the copy.  And the page tables at
+; the top of a big machine are somewhere only boot knows.  Every page
+; the kernel lives in is read-only to ring 3, so "ring 3 could write
+; this itself" is the rule above at page granularity; the ranges stay
+; for the scratch on page 0, which the guest's IVT shares.
 ;=====================================================================
 buf_ok:
         push    eax
         push    ebx
         push    ecx
         push    edx
+        call    dword ptr ds:[IOS_USRWOK]       ; EAX, ECX as they came
+        jc      bo_bad
         add     ecx,eax                 ; ECX = one past the end
         jc      bo_bad                  ; a length that wraps 4GB is not one
 
@@ -1340,6 +1353,11 @@ fn1A:
 fn25:
         mov     al,[ebp+F_EAX]
         mov     edi,[ebp+F_EDX]
+        mov     edx,-1                  ; a kernel address...
+        cmp     word ptr [ebp+F_CS],SEL_PROG_CS
+        jne     f25_set
+        mov     edx,[r3_depth]          ; ...unless a program is asking, in
+f25_set:                                ; whose slot EDX is an offset
         call    set_vec
         jmp     i21_ok
 
@@ -1347,22 +1365,29 @@ fn25:
 ; get_vec / set_vec - one place that knows how a vector is stored.
 ;
 ;   get_vec:  AL = vector -> EAX = handler address
-;   set_vec:  AL = vector,   EDI = handler address
+;   get_vtag: AL = vector -> EDX = whose it is: an EXEC depth, or -1
+;   set_vec:  AL = vector,   EDI = handler address, EDX = whose: the
+;             EXEC depth whose slot EDI is an offset in, or -1 for a
+;             kernel address
 ;
 ; 25h and 35h are the API face of these; the PSP save and restore in
 ; build_psp and 4Ch are the other caller, and it matters that both go
-; through the same two routines - a PSP that saved a vector read a
+; through the same routines - a PSP that saved a vector read a
 ; different way from the way 25h writes it would restore rubbish.
 ;
-; THERE ARE TWO KINDS OF HANDLER ADDRESS NOW and no tag is needed to
-; tell them apart, because the two ranges cannot overlap: a native
-; program's handler is an offset in its own slot, so it is below the
-; slot size, and every kernel address is above 1MB.  A value that
-; could be an offset is one; anything else is a kernel address being
-; put back.  That one rule serves 25h, 35h, the PSP save, the PSP
-; restore and the kernel's own installation, which is the point - a
-; vector that went in one way and came out another is how a restored
-; handler ends up pointing at nothing.
+; THERE ARE TWO KINDS OF HANDLER ADDRESS, and until v0.62 no tag was
+; kept to tell them apart: a program's handler was an offset in its
+; slot, so below 512K, and every kernel address was above 1MB, so a
+; value that could be an offset was one.  A slot that grows past 1MB
+; (RING3.INC, slot_grow) ends that - an offset can be any number - so
+; the caller says.  25h knows from the caller's CS; the PSP save
+; records whose each vector was, and 4Ch hands that back with it.
+;
+; THE TAG ALSO SAYS WHICH PROGRAM, which the old rule got wrong: 4Ch
+; put a restored handler down as the PARENT'S, whoever had hooked it,
+; so a shell's INT 23h handler inherited two levels down came back
+; tagged as the middle program's - an offset in the wrong slot, run
+; there on the next ^C.  The depth recorded at the save is the true one.
 ;---------------------------------------------------------------------
 get_vec:
         push    ecx
@@ -1381,16 +1406,26 @@ gv_out:
         pop     ecx
         ret
 
+get_vtag:
+        movzx   edx,al
+        cmp     dword ptr [r3vec+edx*4],0
+        je      gvt_kernel
+        mov     edx,[r3vdep+edx*4]
+        ret
+gvt_kernel:
+        mov     edx,-1
+        ret
+
 set_vec:
         push    eax
-        cmp     edi,[r3_size]           ; a slot offset - the program's own
-        jb      sv_r3
+        or      edx,edx
+        jns     sv_r3                   ; a depth: a program's own handler
         call    r3_unhook               ; a kernel address: whatever the
         call    dword ptr ds:[IOS_SETVEC]       ; program had is gone
         pop     eax
         ret
 sv_r3:
-        call    r3_hook
+        call    r3_hook                 ; EDX says whose
         pop     eax
         ret
 
@@ -4553,12 +4588,14 @@ f47_bad:
 ; an address out of it would be a pointer that faults the first time it
 ; is used - worse than a refusal, because the program would carry it
 ; around until the damage was somewhere else.  A program's memory comes
-; out of its own slot, between the end of its BSS and its stack.
+; out of its own slot: between the end of its BSS and its stack, and
+; above the stack once the slot has grown - which it does, here, when
+; that is not enough (RING3.INC, slot_grow).
 ;
 ; That is what DOS did with a .COM, which owned its segment and
-; allocated from inside it.  It also parks correctly: EXEC copies the
-; whole slot away when a program nests, so a program's heap travels
-; with it and needs neither an owner nor a sweep.
+; allocated from inside it.  It also ends correctly: the heap is inside
+; the slot, and the slot goes back to the arena whole when the program
+; ends, so a program's heap needs neither an owner nor a sweep.
 ;=====================================================================
 fn48:
         mov     ebx,[ebp+F_EBX]
@@ -4570,9 +4607,26 @@ fn48:
         jmp     i21_ok
 f48_slot:
         call    r3h_alloc
-        jc      f48_nomem
+        jnc     f48_got
+        ; THE HEAP IS SHORT, SO THE SLOT GROWS (RING3.INC, slot_grow),
+        ; and the same request is made again.  This is the whole of how
+        ; a native program gets more than 512K: it asks.
+        call    slot_grow
+        jc      f48_room
+        call    r3h_alloc
+        jc      f48_room
+f48_got:
         mov     [ebp+F_EAX],eax
         jmp     i21_ok
+f48_room:
+        ; "Largest available" is the bigger of the heap's best block and
+        ; what the slot could still grow to give - see slot_room.
+        push    eax
+        call    slot_room
+        pop     edx
+        cmp     eax,edx
+        jae     f48_nomem
+        mov     eax,edx
 f48_nomem:
         mov     [ebp+F_EBX],eax         ; largest possible
         mov     ax,ERR_NOMEM
@@ -4602,10 +4656,10 @@ f49_bad:
 ; A DOS program's first act is traditionally to shrink its OWN block -
 ; "4Ah on your PSP" - so that the memory it was handed but does not
 ; want is available to a child.  There is nothing to shrink here: a
-; PM-DOS program owns a fixed 512K slot which is not an arena block at
-; all, and EXEC parks that whole slot rather than allocating round it.
-; So the call is answered rather than refused, because a program that
-; gets an error from it will usually give up on the spot.
+; PM-DOS program owns a slot of its own, and a child gets another one
+; rather than the leftovers of this.  So the call is answered rather
+; than refused, because a program that gets an error from it will
+; usually give up on the spot.
 ;=====================================================================
 fn4A:
         mov     edx,[ebp+F_EDX]
@@ -5231,11 +5285,10 @@ ren_keep    db  0                       ; a change of case: keep the alias
 ; When the program terminates, control returns here and this call
 ; comes back with its exit code available through 4Dh.
 ;
-; A D32 program may EXEC a program, EXEC_MAX deep.  Since every D32
-; image is linked for the same slot, the occupant is PARKED in the
-; arena and restored on the child's 4Ch - see the nesting note at the
-; top.  A 16-bit program needs none of that: its DOS box is below 1MB,
-; so nothing above it is disturbed and nothing has to be parked.
+; A D32 program may EXEC a program, EXEC_MAX deep.  Each one gets a
+; slot of its own out of the arena, freed by its 4Ch - see the nesting
+; note at the top.  A 16-bit program needs none of that: its DOS box
+; is below 1MB, so nothing above it is disturbed.
 ;=====================================================================
 fn4B:
         cmp     byte ptr [ebp+F_EAX],0
@@ -5301,6 +5354,11 @@ f4B_notail:
         call    exec_cpenv
 f4B_noenv:
 
+        ; AND WHAT THE CALLER GREW AND HAS SINCE FREED GOES BACK TO THE
+        ; ARENA, for the child to have - a DOS program's 4Ah before an
+        ; EXEC, done for it.  See slot_trim.
+        call    slot_trim
+
         ; Which kind of program is it?  Ask the file.  EK_NOFILE joins
         ; the D32 path deliberately - see exec_kind.
         mov     edx,OFFSET exec_path
@@ -5324,7 +5382,6 @@ f4B_noenv:
         mov     [edi+XN_DTA],eax        ; how the parent gets its back
         movzx   eax,byte ptr ds:[DOS_INDOS]
         mov     [edi+XN_INDOS],eax      ; and its InDOS depth - see below
-        mov     dword ptr [edi+XN_SAVE],0
 
         ; THE RING-0 STACK HAS TO DESCEND WITH THE NESTING, and until it
         ; did, every child overwrote the frame its parent was waiting
@@ -5357,23 +5414,19 @@ f4B_noenv:
         mov     [edi+XN_HLO],eax
         mov     eax,[r3h_hi]
         mov     [edi+XN_HHI],eax
+        sldt    ax                      ; and whose descriptor table is
+        movzx   eax,ax                  ; loaded - see r3_start below
+        mov     [edi+XN_LDTR],eax
 
-        ; Park the occupant, if there is one.  At depth 0 the caller is
-        ; the shell, which lives in its own slot and is not disturbed.
-        cmp     dword ptr [exec_depth],0
-        je      f4B_nosave
-        mov     ebx,SLOT_SIZE
-        call    arena_alloc
-        jc      f4B_noroom              ; no room to park it: no EXEC
-        mov     [edi+XN_SAVE],eax
-        push    edi
-        mov     esi,PROG_PSP
-        mov     edi,eax
-        mov     ecx,SLOT_SIZE / 4
-        rep     movsd
-        pop     edi
+        ; A SLOT FOR THE CHILD, OF ITS OWN.  The caller stays exactly
+        ; where it is - which until v0.62 was not true: every level
+        ; below the shell shared one slot, and the caller was copied
+        ; out of it into the arena here and back in 4Ch.  See slot_new.
+        mov     eax,[exec_depth]
+        inc     eax
+        call    slot_new
+        jc      f4B_noroom              ; no room for one: no EXEC
 
-f4B_nosave:
         ; AND ITS FLOATING-POINT STATE, which the child is about to be
         ; running in.  The child starts with a fresh one (FPSTATE.INC).
         mov     eax,[exec_depth]
@@ -5408,7 +5461,8 @@ f4B_nosave:
         mov     eax,[next_own]          ; a fresh identity: handles and
         mov     [cur_own],eax           ; memory taken from here on are
         inc     dword ptr [next_own]    ; the child's, not the parent's
-        mov     dword ptr [cur_psp],PROG_PSP
+        mov     eax,[exec_psp]          ; and its PSP, wherever its slot is
+        mov     [cur_psp],eax
 
         ; THE CHILD RUNS WITH DOS IDLE, and getting this wrong would
         ; make every TSR useless.  This 4Bh never returns - it jumps
@@ -5418,12 +5472,22 @@ f4B_nosave:
         ; depth back before leaving through the front door.
         mov     byte ptr ds:[DOS_INDOS],0
 
+        ; AND NO LDT.  A native program's two selectors are in the GDT
+        ; and it has no use for one - but a DPMI client that EXECs it
+        ; leaves its own loaded, and every descriptor in that is DPL 3:
+        ; the client's flat data segment among them, which the child
+        ; could load and write the whole of memory through.  4Ch puts
+        ; back whatever was there.
+        xor     eax,eax
+        lldt    ax
+
         mov     eax,[exec_entry]
         jmp     r3_start                ; and away, at ring 3
 
-;--- the load failed with the slot already half overwritten ----------
-; Put the occupant back before answering, or a failed EXEC would take
-; its caller down with it.
+;--- the load failed with the child's slot already half written -------
+; Put the caller's world back before answering, or a failed EXEC would
+; take its caller down with it - and give the child's slot back, since
+; there is no child to give it back later.
 f4B_loadfail:
         movzx   eax,ax
         mov     [exec_err],eax
@@ -5438,17 +5502,9 @@ f4B_loadfail:
         mov     [r3h_lo],eax            ; got as far as r3h_init has laid
         mov     eax,[edi+XN_HHI]        ; out for a child that will not run
         mov     [r3h_hi],eax
-        mov     esi,[edi+XN_SAVE]
-        or      esi,esi
-        jz      f4B_lf_done
-        push    edi
-        mov     edi,PROG_PSP
-        mov     ecx,SLOT_SIZE / 4
-        rep     movsd
-        pop     edi
-        mov     edx,[edi+XN_SAVE]
-        call    arena_free
-        mov     dword ptr [edi+XN_SAVE],0
+        mov     eax,[exec_depth]
+        inc     eax
+        call    slot_free
 f4B_lf_done:
         ; AND ITS RING-0 STACK LEVEL.  r3_esp0 was moved down to this
         ; call's frame so that the child would start below it, and a
@@ -5489,7 +5545,7 @@ f4B_badfn:
         mov     ax,ERR_FUNC
         jmp     i21_fail
 f4B_noroom:
-        ; No room to park the caller - and r3_esp0 has already been
+        ; No room for the child's slot - and r3_esp0 has already been
         ; moved for a child that will not exist.  See f4B_lf_done.
         mov     eax,[edi+XN_ESP0]
         mov     [r3_esp0],eax
@@ -5884,6 +5940,7 @@ build_psp:
         mov     al,24h
         call    get_vec
         mov     [edi+PSP_CRITERR],eax
+        call    psp_vtags               ; and whose each of them was
 
         ; Who started us.  DOS's idiom is that a program whose parent
         ; field names its own PSP has no parent, and the shell is that
@@ -5957,9 +6014,9 @@ fn4C:
         mov     [exit_code],al
 
         ; Lift the saved vectors out of the PSP NOW, while the PSP is
-        ; still ours: un-parking below writes the parent's copy of the
-        ; whole slot back over it.  They are re-installed at the very
-        ; end, once nothing else can disturb them.
+        ; still ours: the slot it is in goes back to the arena below.
+        ; They are re-installed at the very end, once nothing else can
+        ; disturb them - each with whose it was (term_vtags).
         mov     esi,[cur_psp]
         mov     eax,[esi+PSP_TERM]
         mov     [term_vec22],eax
@@ -5967,6 +6024,7 @@ fn4C:
         mov     [term_vec23],eax
         mov     eax,[esi+PSP_CRITERR]
         mov     [term_vec24],eax
+        call    term_vtags
 
         ; Close what THIS program left open, and only that.  With one
         ; global handle table and no owner, a child's exit would take
@@ -6032,14 +6090,13 @@ f4C_next:
         imul    edi,XN_LEN
         add     edi,OFFSET exec_stk
 
-        ; Onto the kernel stack first.  Un-parking the waiting program
-        ; rewrites the whole slot, and nothing inside it may be
-        ; depended on across that.  The dying program's own stack is in
-        ; there - which is the half that used to matter, when the
-        ; kernel ran a program's DOS calls on the program's stack.  It
-        ; does not any more, and this stays anyway: a routine that
-        ; overwrites half a megabyte should not be standing on any of
-        ; it.
+        ; Onto the kernel stack first.  The dying program's slot goes
+        ; back to the arena below, and nothing inside it may be
+        ; depended on across that.  Its own stack is in there - which
+        ; is the half that used to matter, when the kernel ran a
+        ; program's DOS calls on the program's stack.  It does not any
+        ; more, and this stays anyway: a routine that frees half a
+        ; megabyte should not be standing on any of it.
         mov     esp,KSTACK_TOP
         mov     eax,[exec_depth]        ; the waiting program's slot, and
         call    r3_useslot              ; its descriptors, back
@@ -6047,18 +6104,9 @@ f4C_next:
         mov     [r3h_lo],eax
         mov     eax,[edi+XN_HHI]
         mov     [r3h_hi],eax
-        mov     esi,[edi+XN_SAVE]
-        or      esi,esi
-        jz      f4C_noparked            ; depth 1: the shell's own slot
-        push    edi
-        mov     edi,PROG_PSP
-        mov     ecx,SLOT_SIZE / 4
-        rep     movsd
-        pop     edi
-        mov     edx,[edi+XN_SAVE]
-        call    arena_free
-        mov     dword ptr [edi+XN_SAVE],0
-f4C_noparked:
+        mov     eax,[exec_depth]        ; and the slot that is ending
+        inc     eax                     ; goes back to the arena
+        call    slot_free
         mov     eax,[edi+XN_PSP]
         mov     [cur_psp],eax
         mov     eax,[edi+XN_OWN]        ; its identity comes back with it
@@ -6070,6 +6118,12 @@ f4C_noparked:
                                         ; lands where it should
         mov     eax,[edi+XN_ESP0]       ; and the ring-0 stack level it was
         mov     [r3_esp0],eax           ; making its DOS calls on
+        mov     eax,[edi+XN_LDTR]       ; and its LDT, if it had one and
+        cmp     dword ptr ds:[dpmi_active],0    ; the client it belongs to
+        jne     f4C_ldt                 ; is still there to use it
+        xor     eax,eax
+f4C_ldt:
+        lldt    ax
         mov     eax,[exec_depth]        ; and the floating-point state it
         call    fps_back                ; had, whatever the child left
         call    term_vectors
@@ -6123,6 +6177,61 @@ f4C_stdisdev:
         jmp     shell_restart           ; in DOSMAIN.ASM
 
 ;---------------------------------------------------------------------
+; psp_vtags - for build_psp: the three vectors it just saved in the PSP
+;             of the slot at r3_depth, and whose each was, kept here by
+;             that depth for 4Ch.  Everything preserved.
+;
+; term_vtags - for 4Ch: the tags for what it lifted out of the PSP of
+;              the program at exec_depth.  A vector the program has
+;              written into its own PSP since is not the one that was
+;              saved, and gets -2: term_vectors then decides it by size,
+;              which is the old rule and right for any slot under 1MB.
+;---------------------------------------------------------------------
+psp_vtags:
+        pushad
+        mov     ebx,[r3_depth]
+        imul    ebx,12
+        mov     al,22h
+        call    get_vec
+        mov     [sv_val+ebx],eax
+        mov     al,22h
+        call    get_vtag
+        mov     [sv_tag+ebx],edx
+        mov     al,23h
+        call    get_vec
+        mov     [sv_val+ebx+4],eax
+        mov     al,23h
+        call    get_vtag
+        mov     [sv_tag+ebx+4],edx
+        mov     al,24h
+        call    get_vec
+        mov     [sv_val+ebx+8],eax
+        mov     al,24h
+        call    get_vtag
+        mov     [sv_tag+ebx+8],edx
+        popad
+        ret
+
+term_vtags:
+        pushad
+        mov     ebx,[exec_depth]
+        imul    ebx,12
+        xor     ecx,ecx
+tvt_one:
+        mov     edx,-2
+        mov     eax,[term_vec22+ecx*4]
+        cmp     eax,[sv_val+ebx+ecx*4]
+        jne     tvt_put
+        mov     edx,[sv_tag+ebx+ecx*4]
+tvt_put:
+        mov     [term_tag22+ecx*4],edx
+        inc     ecx
+        cmp     ecx,3
+        jb      tvt_one
+        popad
+        ret
+
+;---------------------------------------------------------------------
 ; term_vectors - re-install the 22h/23h/24h handlers 4Ch lifted out of
 ;                the terminating program's PSP.
 ;
@@ -6133,15 +6242,23 @@ f4C_stdisdev:
 ;---------------------------------------------------------------------
 term_vectors:
         pushad
-        mov     edi,[term_vec22]
         mov     al,22h
+        xor     ecx,ecx
+tv_one:
+        mov     edi,[term_vec22+ecx*4]
+        mov     edx,[term_tag22+ecx*4]
+        cmp     edx,-2
+        jne     tv_set
+        mov     edx,-1                  ; not the one saved: by size, as
+        cmp     edi,[r3_size]           ; it always was - an offset in the
+        jae     tv_set                  ; slot now in use, or the kernel's
+        mov     edx,[r3_depth]
+tv_set:
         call    set_vec
-        mov     edi,[term_vec23]
-        mov     al,23h
-        call    set_vec
-        mov     edi,[term_vec24]
-        mov     al,24h
-        call    set_vec
+        inc     al
+        inc     ecx
+        cmp     ecx,3
+        jb      tv_one
         popad
         ret
 
@@ -9867,6 +9984,9 @@ next_own    dd  2                       ; the next id to hand out
 term_vec22  dd  0
 term_vec23  dd  0
 term_vec24  dd  0
+term_tag22  dd  -1, -1, -1              ; ...and whose each was: get_vtag
+sv_val      dd  (EXEC_MAX + 1) * 3 dup(0)       ; the three a PSP saved,
+sv_tag      dd  (EXEC_MAX + 1) * 3 dup(-1)      ; and whose, by EXEC depth
 exit_code   db  0
 name_buf    db  11 dup(0)
 name2_buf   db  11 dup(0)

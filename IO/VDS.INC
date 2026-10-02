@@ -253,6 +253,9 @@ vdf_version:
 ;--- is what the specification asks for and what a driver that means
 ;--- to carry on needs.
 vdf_lock:
+        mov     ecx,DDS_PHYS + 4        ; the answer goes back into it
+        call    vd_ddsok
+        jc      vdf_badreg
         call    vd_region               ; EBX = linear, ECX = bytes
         call    vd_run                  ; EAX = physical, ECX = unbroken
         jc      vdf_badreg
@@ -296,6 +299,13 @@ vdf_scatter:
         mov     dword ptr [vd_done],0
         movzx   eax,word ptr [edi+EDDS_AVAIL]
         mov     dword ptr [vd_avail],eax
+        lea     ecx,[eax*8 + EDDS_TABLE]        ; as long as the guest says
+        test    edx,VDF_PTES                    ; its table is, which is up
+        jz      vds_room                        ; to half a megabyte past
+        lea     ecx,[eax*4 + EDDS_TABLE]        ; FFFF:FFFF
+vds_room:
+        call    vd_ddsok
+        jc      vdf_badreg
         xor     ebp,ebp                 ; EBP = entries so far
         test    edx,VDF_PTES
         jnz     vds_ptes
@@ -385,6 +395,23 @@ vd_frame:
 ; vd_region - EDI -> a descriptor -> EBX = the linear address it
 ;             names, ECX = its length.
 ;---------------------------------------------------------------------
+;---------------------------------------------------------------------
+; vd_ddsok - EDI -> the guest's descriptor, ECX = how many bytes of it
+;            the answer will write.  CF unless the guest could have
+;            written them itself.
+;
+; ES:DI is the guest's and so is the count of table entries, and the
+; answer is written as ring 0: an 8105h with its descriptor at
+; FFFF:0000 and room claimed for 65535 pieces was half a megabyte of
+; physical addresses written into PMDOS.SYS.  Everything preserved.
+;---------------------------------------------------------------------
+vd_ddsok:
+        push    eax
+        mov     eax,edi
+        call    usr_wok
+        pop     eax
+        ret
+
 vd_region:
         movzx   ebx,word ptr [edi+DDS_SEG]
         shl     ebx,4

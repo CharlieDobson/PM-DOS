@@ -3,9 +3,9 @@ XMSTEST.COM - extended memory and the A20 gate
   version 0300, HMA flag 0000
   request the HMA:     OK   refused, no HMA here
   free (16-bit): largest 65535 KB of 65535 KB total
-  free (32-bit): largest 254627 KB of 254627 KB total
+  free (32-bit): largest 255015 KB of 255015 KB total
     OK   allocated 64 KB
-  locked at 003571E0
+  locked at 002750E0
   moving 32 bytes out and back
     OK   the bytes came back intact
     OK   the handle says 64 KB

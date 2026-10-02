@@ -16,8 +16,9 @@
 ;
 ;   /1   side 0 only
 ;   /V   every track is read back and compared once written
-;   /M   6.22's "memory only": the image stays inside the program's
-;        own 512K, which on anything but a 360K disk means passes
+;   /M   6.22's "memory only": the image stays in the program's own
+;        heap (48h).  That meant passes while a slot was 512K; 48h
+;        grows the slot now, so on most machines it is one pass
 ;
 ; THE TARGET IS FORMATTED WHEN IT HAS TO BE.  Its boot sector is read
 ; before anything is written: a disk of the same shape is written as

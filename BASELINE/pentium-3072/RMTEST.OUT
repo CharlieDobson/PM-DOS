@@ -6,7 +6,7 @@ RMTEST - a DOS program with no PM-DOS underneath it
   52h first MCB is 0520 ok
   and the arena walks: 000B blocks, ending in Z ok
   48h/49h a kilobyte, written and freed FAILED
-  36h free space (spc/free) 0002/7BDB ok
+  36h free space (spc/free) 0002/7635 ok
   3Dh/3Fh PMIO.SYS starts E9B1 ok
   3Dh/44h CON is a device 80D3 ok
 

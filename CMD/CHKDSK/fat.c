@@ -264,8 +264,9 @@ int write_secs( u32 lba, u32 count, const void *buf, int kind )
 /*
  * A FAT12 or FAT16 FAT is held whole - 6K and 128K at the most.  A FAT32
  * FAT has no such ceiling: it is four bytes a cluster, so an 80,000
- * cluster volume has a 320K FAT, and a program on PM-DOS has a 512K slot
- * for everything.  So a FAT32 FAT is read through a WINDOW of FW_BLOCK
+ * cluster volume has a 320K FAT, and a program on PM-DOS had a 512K slot
+ * for everything (48h grows the slot now).  So a FAT32 FAT is read
+ * through a WINDOW of FW_BLOCK
  * byte blocks instead, and the only table that grows with the volume is
  * the cluster map, at one byte a cluster.
  *

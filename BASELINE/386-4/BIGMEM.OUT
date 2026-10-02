@@ -1,0 +1,11 @@
+BIGMEM - a native program with more than 512K
+
+ 1 48h offers more than the slot it had  ok
+     largest it could give: 1059K
+ 2 all of it in one block, every page    ok
+ 3 given back, and again in 16 pieces    ok
+ 4 a child grows while this holds it all skipped
+ 5 the PSP's memory top has grown       ok
+
+Result: ...-.
+BIGMEM: all checks passed

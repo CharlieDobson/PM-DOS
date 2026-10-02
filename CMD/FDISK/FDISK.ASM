@@ -165,7 +165,7 @@ _FDK    SEGMENT USE32 PUBLIC 'CODE'
 FD_BSS_LEN      EQU     SEC_BYTES*4 + 65536 + CH_LEN*EBR_MAX
                                         ; four sectors, the 64K the relocator
                                         ; copies through, and the chain table
-TUI_BSS_LEN     EQU     82 + 69*32 + 512*4 + 8192 + 4000
+TUI_BSS_LEN     EQU     82 + 140*40 + 512*4 + 8192 + 4000
                                         ; the screen's buffers, as the end of
                                         ; this file lays them out - and the
                                         ; end of this file checks the sum
@@ -2562,6 +2562,7 @@ fdp_limits:
 
         mov     ebx,[pl_room]
         call    rl_minsize
+        mov     [pl_minsz],eax          ; and kept, for the screen's resize
         mov     edx,OFFSET msg_shrink
         call    puts
         or      eax,eax
@@ -2578,6 +2579,7 @@ fdp_noshrink:
 fdp_grow:
         mov     ebx,[pl_room]
         call    rl_maxsize
+        mov     [pl_maxsz],eax
         mov     edx,OFFSET msg_grow
         call    puts
         push    eax
@@ -3932,8 +3934,22 @@ fg_onenext:
 fg_measure:
         sub     ecx,ebx                 ; ECX = this gap's length
         jbe     fg_step
+        ; THE SCREEN NAMES ITS GAP by a sector inside it, because the
+        ; free space somebody clicked on is not always the biggest
+        ; there is.  The command line never sets gp_want, and gets the
+        ; biggest as it always has.
+        cmp     dword ptr [gp_want],0
+        je      fg_biggest
+        mov     eax,[gp_want]
+        sub     eax,ebx
+        jb      fg_step
+        cmp     eax,ecx
+        jae     fg_step
+        jmp     short fg_take
+fg_biggest:
         cmp     ecx,[gp_len]
         jbe     fg_step
+fg_take:
         mov     [gp_len],ecx
         mov     [gp_start],ebx
 fg_step:
@@ -4770,8 +4786,17 @@ fep_log:
         mov     eax,[ebr_buf]
         add     eax,PART_OFF
         mov     [pl_ent],eax
-        mov     eax,[chn_base]
+        ; NOT THE CONTAINER'S START BUT ITS OWN RECORD'S.  The volume's
+        ; start is written as an offset from that record, and an offset
+        ; has no sign: a volume moved in front of the record that names
+        ; it - into space a deleted drive left, say, which the walls
+        ; alone would allow - would be written as a start four
+        ; gigabytes on.  So it may go anywhere after its record and up
+        ; to the container's end.
+        mov     eax,[pl_sec]
+        inc     eax
         mov     [pl_lo],eax
+        mov     eax,[chn_base]
         add     eax,[chn_ext]
         mov     [pl_hi],eax
         call    fd_nblog
@@ -4934,8 +4959,18 @@ lg_gap:
 lg_measure:
         sub     ecx,ebx
         jbe     lg_step
+        cmp     dword ptr [gp_want],0   ; the run the screen named, as in
+        je      lg_biggest              ; fd_gap
+        mov     eax,[gp_want]
+        sub     eax,ebx
+        jb      lg_step
+        cmp     eax,ecx
+        jae     lg_step
+        jmp     short lg_take
+lg_biggest:
         cmp     ecx,[gp_len]
         jbe     lg_step
+lg_take:
         mov     [gp_len],ecx
         mov     [gp_start],ebx
 lg_step:
@@ -5940,6 +5975,8 @@ pl_nlen     dd  0
 pl_op       dd  0
 pl_status   dd  0
 pl_room     dd  0
+pl_minsz    dd  0                       ; what /P found it could shrink to
+pl_maxsz    dd  0                       ; and grow to; 0 when it did not say
 rl_needcc   dd  0
 rl_maxcc    dd  0
 phy_total   dd  0
@@ -5949,6 +5986,8 @@ phy_chs     dd  0
 gp_start    dd  0                       ; the free gap fd_gap found
 gp_len      dd  0
 gp_spcyl    dd  0                       ; sectors per cylinder
+gp_want     dd  0                       ; 0, or a sector in the free run the
+                                        ; screen wants a create to use
 cr_start    dd  0                       ; what /C would write
 cr_len      dd  0
 cr_type     db  0
@@ -5994,8 +6033,8 @@ fd_args     db  FD_MAXARGS * FD_ARGLEN dup(0)
 num_buf     db  20 dup(0)
 
 msg_usage   db  'Configures a hard disk for use with PM-DOS.',13,10,13,10
-            db  '  FDISK           the full-screen editor: the disk as a bar, and',13,10
-            db  '                  what a change would look like before it is made',13,10
+            db  '  FDISK           the full-screen editor: the disk as a bar, the',13,10
+            db  '                  partitions on it dragged with the mouse to move',13,10
             db  '  FDISK /STATUS   report every disk',27h,'s partition table',13,10
             db  '  FDISK /L        ...and the logical drives in the extended '
             db  'container',13,10
@@ -6176,7 +6215,7 @@ msg_slottaken db 13,10,'  That slot already holds a partition.  Delete it '
 msg_slotempty db 13,10,'  That slot is empty.',13,10,'$'
 msg_nogap   db  13,10,'  No free space on that disk.  Every sector after '
             db  'the first track',13,10,'  belongs to a partition.',13,10,'$'
-msg_toobig  db  13,10,'  Larger than the free space.  The biggest gap, '
+msg_toobig  db  13,10,'  Larger than the free space.  The gap, '
             db  'once aligned, is $'
 msg_tooshort db 13,10,'  Too small: it would not fill one cylinder.',13,10,'$'
 msg_chainbusy db 13,10,'  That is an extended container with logical drives '

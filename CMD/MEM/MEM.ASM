@@ -140,11 +140,11 @@ me_argdone:
         call    crlf
 no_upper:
 
-        ; the kernel and the two program slots - OS Reserved: fixed,
-        ; and all of it in use
+        ; the kernel and the two program slots, and the page tables at
+        ; the top - OS Reserved: all of it in use
         mov     edx,OFFSET msg_row_sys
         call    print
-        mov     eax,ARENA_BASE - HMA_BASE
+        mov     eax,[x_osrsv]
         shr     eax,10
         push    eax
         call    col_kb                  ; total
@@ -177,13 +177,13 @@ no_upper:
         mov     eax,[a_total]
         add     eax,[c_total]
         add     eax,[u_total]
-        add     eax,ARENA_BASE - HMA_BASE
+        add     eax,[x_osrsv]
         shr     eax,10
         call    col_kb
         mov     eax,[a_used]
         add     eax,[c_used]
         add     eax,[u_used]
-        add     eax,ARENA_BASE - HMA_BASE
+        add     eax,[x_osrsv]
         shr     eax,10
         call    col_kb
         mov     eax,[a_free]
@@ -292,6 +292,18 @@ survey:
         int     21h
         jc      sv_noxms
         mov     [x_memkb],eax
+
+        ; AND WHAT LIES PAST THE ARENA'S END, which is OS Reserved too:
+        ; the page tables for memory above 256MB sit at the top of
+        ; memory with the arena stopping below them (PAGING.INC,
+        ; pg_hiram).  EBX is the arena's end.  Counted in KB so that
+        ; the top of a machine near 4GB cannot overflow.
+        add     eax,HMA_BASE / 1024     ; the top of memory, in KB
+        shr     ebx,10
+        sub     eax,ebx
+        jbe     sv_noxms                ; nothing past it
+        shl     eax,10
+        add     [x_osrsv],eax
 sv_noxms:
 
         xor     ebx,ebx                 ; block zero of the kernel's arena
@@ -739,6 +751,8 @@ want_list   db  0
 free_only   db  0
             db  0,0
 x_memkb     dd  0
+x_osrsv     dd  ARENA_BASE - HMA_BASE   ; OS Reserved: below the arena,
+                                        ; and survey adds what is above it
 blk         db  F8_LEN dup(0)       ; one block, as F1h AL=8 answers
 a_total     dd  0
 a_used      dd  0

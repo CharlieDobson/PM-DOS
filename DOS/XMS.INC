@@ -438,6 +438,13 @@ XMM_SRCO        EQU     6               ; dd - offset, or seg:off
 XMM_DSTH        EQU     10
 XMM_DSTO        EQU     12
 
+; What xms_where found wrong with one end, in DL - here and not beside
+; it because xf_0B uses them first and wasm takes no forward EQU.
+XWE_HANDLE      EQU     0
+XWE_OFFSET      EQU     1
+XWE_LENGTH      EQU     2
+XMS_FARTOP      EQU     0010FFF0h               ; one past FFFF:FFFF
+
 xf_0B:
         ; The request pointer goes in a static rather than a register.
         ; EBP is the INT 21h frame pointer everywhere else in this
@@ -458,14 +465,25 @@ xf_0B:
         movzx   eax,word ptr [esi+XMM_SRCH]
         mov     edx,dword ptr [esi+XMM_SRCO]
         call    xms_where
-        jc      xf_0B_badsrc
+        jc      xf_0B_src
         mov     dword ptr ds:[xms_msrc],eax
 
         mov     esi,dword ptr ds:[xms_mreq]
         movzx   eax,word ptr [esi+XMM_DSTH]
         mov     edx,dword ptr [esi+XMM_DSTO]
+        mov     ecx,dword ptr ds:[xms_mlen]
         call    xms_where
-        jc      xf_0B_baddst
+        jc      xf_0B_dst
+
+        ; A FAR POINTER THE GUEST COULD NOT WRITE THROUGH ITSELF is not
+        ; one we write through for it: 0100:0C00 is the GDT, and this
+        ; copy is ring 0.  A handle's block is the arena's and needs no
+        ; asking - the bounds above keep the copy inside it.
+        cmp     word ptr [esi+XMM_DSTH],0
+        jne     xf_0B_dstok
+        call    dword ptr ds:[IOS_USRWOK]       ; EAX, ECX: the destination
+        jc      xf_0B_baddsto
+xf_0B_dstok:
         mov     edi,eax
         mov     esi,dword ptr ds:[xms_msrc]
         mov     ecx,dword ptr ds:[xms_mlen]
@@ -496,16 +514,45 @@ xf_0B_done:
 xf_0B_badlen:
         mov     bl,XSE_BADLEN
         jmp     xms_err
-xf_0B_badsrc:
+xf_0B_src:                                      ; DL = which part of it
         mov     bl,XSE_BADSRCH
-        jmp     xms_err
-xf_0B_baddst:
+        cmp     dl,XWE_HANDLE
+        je      xf_0B_err
+        mov     bl,XSE_BADSRCO
+        cmp     dl,XWE_OFFSET
+        je      xf_0B_err
+        mov     bl,XSE_BADLEN
+        jmp     short xf_0B_err
+xf_0B_dst:
         mov     bl,XSE_BADDSTH
+        cmp     dl,XWE_HANDLE
+        je      xf_0B_err
+        mov     bl,XSE_BADDSTO
+        cmp     dl,XWE_OFFSET
+        je      xf_0B_err
+        mov     bl,XSE_BADLEN
+        jmp     short xf_0B_err
+xf_0B_baddsto:
+        mov     bl,XSE_BADDSTO
+xf_0B_err:
         jmp     xms_err
 
 ;---------------------------------------------------------------------
-; xms_where - EAX = handle (0 = far pointer), EDX = offset or seg:off.
-;             -> EAX = flat address, CF on a handle that is not ours.
+; xms_where - EAX = handle (0 = far pointer), EDX = offset or seg:off,
+;             ECX = how many bytes from there.  -> EAX = flat address;
+;             CF with DL = XWE_* if the handle is not a live one, the
+;             offset is past its block, or the length runs off the end.
+;
+; THE BOUNDS ARE THE DRIVER'S JOB, and for a long time there were
+; none: the offset was added to the block's address and the copy went
+; wherever that came to, so a one-kilobyte handle and an offset of a
+; megabyte or two was a move into PMDOS.SYS - from any DOS program,
+; through the API every DOS extender uses.  HIMEM refuses all three
+; with the codes xf_0B gives them.
+;
+; A far pointer has no block, so its bound is how far a far pointer
+; reaches, which is FFFF:FFFF.  A length that runs past that is not
+; conventional memory any more.
 ;---------------------------------------------------------------------
 xms_where:
         or      eax,eax
@@ -515,12 +562,23 @@ xms_where:
         shl     eax,4
         movzx   edx,dx
         add     eax,edx
+        mov     edx,XMS_FARTOP
+        sub     edx,eax                         ; EDX = what it can reach
+        cmp     ecx,edx
+        ja      xw_long
         clc
         ret
 xw_handle:
         push    esi
         call    xms_find
         jc      xw_bad
+        mov     eax,dword ptr [esi+XH_KB]
+        shl     eax,10                          ; EAX = the block's size
+        cmp     edx,eax
+        ja      xw_off                          ; past its end
+        sub     eax,edx                         ; EAX = what is left from
+        cmp     ecx,eax                         ; the offset on
+        ja      xw_tlong
         mov     eax,dword ptr [esi+XH_ADDR]
         add     eax,edx
         pop     esi
@@ -528,6 +586,18 @@ xw_handle:
         ret
 xw_bad:
         pop     esi
+        mov     dl,XWE_HANDLE
+        stc
+        ret
+xw_off:
+        pop     esi
+        mov     dl,XWE_OFFSET
+        stc
+        ret
+xw_tlong:
+        pop     esi
+xw_long:
+        mov     dl,XWE_LENGTH
         stc
         ret
 

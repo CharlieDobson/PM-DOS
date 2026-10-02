@@ -89,6 +89,8 @@ svc_table:
         dd      plog_get        ; IOS_PROBELOG
         dd      atapi_svcunit   ; IOS_CDUNIT
         dd      ata_model       ; IOS_ATAMODEL
+        dd      pg_guard        ; IOS_PGPRES
+        dd      usr_wok         ; IOS_USRWOK
 
 ;=====================================================================
 ; pm_entry - first instruction executed in 32-bit protected mode.

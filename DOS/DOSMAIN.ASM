@@ -14,7 +14,7 @@
 ; service table at IOSVC - it never touches ports or the BIOS itself.
 ;
 ; Linked with:  wlink form raw bin ... order clname CODE offset=0x110000
-;               clname KBSS offset=0x269000
+;               clname KBSS offset=0x1C9000
 ;
 ; THREE SEGMENTS, ONE GROUP.  _DOS is the file.  _KBSS is buffers with
 ; nothing in them, which the link puts below the arena and does not
@@ -249,6 +249,9 @@ shell_restart:
         call    std_set                 ; 0 and 1 - see std_set
         call    fps_reset               ; and no program's floating-point
                                         ; state is waiting for it back
+        call    slot_sweep              ; nor any program's slot: each one
+                                        ; is an arena block 4Ch would have
+                                        ; freed, and owner 0 is never swept
 
         mov     dword ptr ds:[cur_psp],SHELL_PSP
         xor     eax,eax                 ; depth zero: the interpreter's own

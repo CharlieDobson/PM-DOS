@@ -918,7 +918,8 @@ d31_getdesc:
         call    dpmi_slot
         jc      d31_badsel
         mov     esi,edi
-        call    dpmi_esdi
+        mov     ecx,8
+        call    dpmi_esdiw
         jc      d31_badsel
         mov     ecx,2
         rep     movsd
@@ -934,6 +935,13 @@ d31_setdesc:
         jc      d31_badsel
         mov     esi,edi                         ; ESI = ours, EDI = theirs
         xchg    esi,edi
+        ; A CODE OR DATA SEGMENT, AS 0009h ALREADY INSISTS.  Forcing the
+        ; DPL to 3 is no protection for a GATE: a call gate at DPL 3 is
+        ; one any ring-3 code may use, and it goes wherever its own
+        ; selector says - SEL_CODE32, at whatever offset the client
+        ; wrote.  One far call through it was ring 0.
+        test    byte ptr [esi+5],10h
+        jz      d31_badval
         push    edi
         mov     ecx,2
         rep     movsd
@@ -1101,7 +1109,8 @@ dsp_none:
 d31_simint:
         cmp     byte ptr [ebp+F_EBX+1],0        ; BH must be zero
         jne     d31_badval
-        call    dpmi_esdi
+        mov     ecx,RMCS_LEN                    ; the answer goes back into it
+        call    dpmi_esdiw
         jc      d31_badsel
         mov     dword ptr ds:[dpmi_rmcs],edi
         mov     al,byte ptr [ebp+F_EBX]
@@ -1134,7 +1143,8 @@ d31_cballoc:
         mov     ax,word ptr ds:[dpmi_cds]       ; is the procedure's selector
         call    dpmi_base                       ; one of ours at all?
         jc      d31_badsel
-        call    dpmi_esdi                       ; EDI = the structure, flat
+        mov     ecx,RMCS_LEN                    ; EDI = the structure, flat,
+        call    dpmi_esdiw                      ; which every call fills in
         jc      d31_badsel
 
         push    edi
@@ -1231,7 +1241,8 @@ d31_capab:
 ; rest may be -1 and that a client must not believe them.
 ;---------------------------------------------------------------------
 d31_freeinfo:
-        call    dpmi_esdi
+        mov     ecx,30h
+        call    dpmi_esdiw
         jc      d31_badsel
         push    edi
         mov     ecx,12
@@ -1395,6 +1406,25 @@ des_bad:
         ret
 
 ;---------------------------------------------------------------------
+; dpmi_esdiw - dpmi_esdi, for a buffer the host is about to WRITE: ECX
+;              = how many bytes.  CF as well unless the client could
+;              have written every one of them itself.
+;
+; The client names the buffer and the host fills it - as ring 0, which
+; a read-only page does not stop.  A descriptor over PMDOS.SYS and an
+; 0500h would be forty-eight bytes of -1 written into the kernel.
+;---------------------------------------------------------------------
+dpmi_esdiw:
+        call    dpmi_esdi
+        jc      dew_out
+        push    eax
+        mov     eax,edi
+        call    dword ptr ds:[IOS_USRWOK]
+        pop     eax
+dew_out:
+        ret
+
+;---------------------------------------------------------------------
 ; dpmi_memslot / dpmi_memfind - the memory block table
 ;---------------------------------------------------------------------
 dpmi_memslot:
@@ -1542,6 +1572,15 @@ dsi_stack:
         mov     dword ptr [vdm_ctx+V86C_ESP],edx
         add     eax,edx
         mov     edi,eax
+        ; WHERE THE CLIENT SAID, and it said so in the structure: an
+        ; SS:SP of 0100:0C40 and twenty words off its own stack would be
+        ; a GDT of its making, written by us as ring 0.  Into memory it
+        ; could write itself, or not at all.
+        push    ecx
+        add     ecx,ecx
+        call    dword ptr ds:[IOS_USRWOK]
+        pop     ecx
+        jc      dsi_undo
         rep     movsw
 dsi_nocopy:
 
@@ -2210,6 +2249,11 @@ den_flags:
         cmp     edi,12
         jb      den_no
         sub     edi,12
+        push    ecx                             ; CH: dpmi_setsp's width
+        mov     ecx,12
+        call    den_room
+        pop     ecx
+        jc      den_no
         mov     dword ptr [edx+edi+8],eax
         movzx   eax,word ptr [esi+4]
         mov     dword ptr [edx+edi+4],eax
@@ -2221,6 +2265,11 @@ den_16:
         cmp     edi,6
         jb      den_no
         sub     edi,6
+        push    ecx
+        mov     ecx,6
+        call    den_room
+        pop     ecx
+        jc      den_no
         mov     word ptr [edx+edi+4],ax
         mov     ax,word ptr [esi+4]
         mov     word ptr [edx+edi+2],ax
@@ -2238,6 +2287,17 @@ den_go:
 den_no:
         popad
         stc
+        ret
+
+;--- den_room - EDX + EDI = where the frame goes, ECX = its size.  CF
+;--- unless the client could have written it there itself: its SS can
+;--- be a flat descriptor and its ESP anything, and the frame is a
+;--- ring-0 write (IOS_USRWOK).  Everything preserved.
+den_room:
+        push    eax
+        lea     eax,[edx + edi]
+        call    dword ptr ds:[IOS_USRWOK]
+        pop     eax
         ret
 
 ;---------------------------------------------------------------------

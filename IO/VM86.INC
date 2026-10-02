@@ -138,6 +138,20 @@ v86_claim:
 v86_run:
         pushad
 
+        ; A STACK THE GUEST COULD NOT WRITE IS NOT ENTERED.  The context
+        ; may hold one the guest never had - DPMI's 0300h and 0306h take
+        ; a real-mode SS:SP from the client - and an interrupt delivered
+        ; below would go onto it as a ring-0 write.  See v86_stkok.
+        mov     eax,[esi+V86C_SS]
+        mov     edx,[esi+V86C_ESP]
+        call    v86_stkok
+        jnc     vr_stkok
+        popad
+        mov     eax,V86R_FAULT
+        mov     ebx,12                          ; a stack fault, as it would
+        ret                                     ; have been on its first PUSH
+vr_stkok:
+
         ; IRET WITH NT SET IS A TASK SWITCH, not a return.  The CPU
         ; follows the back-link field at the front of the current TSS,
         ; finds the zero we left there, and raises #TS(0) on the very
@@ -367,6 +381,58 @@ v86_ctxto:
         ret
 
 ;---------------------------------------------------------------------
+; v86_stkok - EAX = a guest's SS, EDX = its SP.  CF unless the guest
+;             could write the V86_STKROOM bytes under SS:SP itself.
+;             Everything preserved.
+;
+; THE MONITOR WRITES ON THE GUEST'S STACK AS RING 0, and ring 0 is not
+; stopped by a read-only page.  So a guest that loads SS:SP with
+; 0100:0C20 and executes an INT has the reflection's FLAGS, CS and IP
+; written into the GDT for it - by us, with the guest's own CS and IP.
+; A guest cannot PUSH onto such a stack itself; it can only get the
+; kernel to.
+;
+; Asked at the three doors through which the monitor comes to write
+; there: a trap (v86_fault), an interrupt about to be delivered
+; (v86_irqexit), and a context handed to v86_run.  The DOS side writes
+; to the guest's stack only while answering a trap, so the first door
+; covers it too.  The room is more than any of them pushes before the
+; guest runs again.
+;
+; SP wraps at 64K, so room that does not fit under SP is the top of the
+; same segment.  A guest stack in the HMA with A20 off is the alias of
+; page 0 to 15, and usr_wok sees the alias.
+;---------------------------------------------------------------------
+V86_STKROOM     EQU     64
+
+v86_stkok:
+        push    eax
+        push    ecx
+        push    edx
+        movzx   eax,ax
+        shl     eax,4                           ; EAX = the segment
+        movzx   edx,dx
+        cmp     edx,V86_STKROOM
+        jb      vso_wrap
+        lea     eax,[eax + edx - V86_STKROOM]
+        mov     ecx,V86_STKROOM
+        call    usr_wok
+        jmp     short vso_out
+vso_wrap:
+        mov     ecx,edx                         ; what fits under SP...
+        call    usr_wok
+        jc      vso_out
+        lea     eax,[eax + edx + 10000h - V86_STKROOM]
+        mov     ecx,V86_STKROOM                 ; ...and the rest, at the
+        sub     ecx,edx                         ; top of the segment
+        call    usr_wok
+vso_out:
+        pop     edx
+        pop     ecx
+        pop     eax
+        ret
+
+;---------------------------------------------------------------------
 ; vic_push - AX onto the guest's stack, through the context.  EBX and
 ;            EDX are saved because the caller is using EBX for the
 ;            vector it is in the middle of delivering.
@@ -574,6 +640,19 @@ vc_skip:
         popad
 ENDIF
 
+        ; A STACK THE GUEST COULD NOT WRITE ITSELF ENDS IT HERE, before
+        ; the monitor or the DOS side pushes anything on it for it - see
+        ; v86_stkok.  Reported as the stack fault its own first PUSH
+        ; would have been.
+        push    eax
+        push    edx
+        mov     eax,[ebp+FR_SS]
+        mov     edx,[ebp+FR_ESP]
+        call    v86_stkok
+        pop     edx
+        pop     eax
+        jc      vf_badstk
+
         mov     eax,[ebp+FR_VEC]
         cmp     eax,13
         je      vf_isgp                 ; only #GP means "emulate me"
@@ -665,6 +744,10 @@ vf_bad:
 vf_notgp:
         mov     eax,V86R_FAULT
         mov     ebx,[ebp+FR_VEC]
+        jmp     v86_leave
+vf_badstk:
+        mov     eax,V86R_FAULT
+        mov     ebx,12
         jmp     v86_leave
 vf_hlt:
         mov     eax,V86R_HLT
@@ -1499,6 +1582,14 @@ v86_irqexit:
         je      vix_no
         test    dword ptr [ebp+FR_FLAGS],EFL_VM
         jz      vix_no                  ; ring 0: the monitor, not the guest
+        push    eax                     ; and nothing goes onto a stack
+        push    edx                     ; the guest could not write itself
+        mov     eax,[ebp+FR_SS]         ; - it has not trapped, so nobody
+        mov     edx,[ebp+FR_ESP]        ; has asked (v86_stkok).  Its next
+        call    v86_stkok               ; trap ends it.
+        pop     edx
+        pop     eax
+        jc      vix_no
         call    v86_ckkbd
 vix_no:
         ret

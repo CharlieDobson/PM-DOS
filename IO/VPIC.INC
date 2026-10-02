@@ -333,6 +333,11 @@ vpm_esp:
         cmp     edx,12
         jb      vpm_out
         sub     edx,12
+        push    ecx
+        mov     ecx,12
+        call    vpm_room
+        pop     ecx
+        jc      vpm_out
         mov     eax,dword ptr [ebp]
         mov     dword ptr [ebx+edx],eax
         movzx   eax,word ptr [ebp+4]
@@ -345,6 +350,11 @@ vpm_16:
         cmp     edx,6
         jb      vpm_out
         sub     edx,6
+        push    ecx
+        mov     ecx,6
+        call    vpm_room
+        pop     ecx
+        jc      vpm_out
         mov     eax,dword ptr [ebp]
         mov     word ptr [ebx+edx],ax
         mov     ax,word ptr [ebp+4]
@@ -368,6 +378,20 @@ vpm_taken:
         call    vpc_take
 vpm_out:
         popad
+        ret
+
+;--- vpm_room - EBX + EDX = where the frame goes, ECX = its size.  CF
+;--- unless the client could have written it there itself.  Its SS is
+;--- its own descriptor and its ESP its own number, and the frame below
+;--- is written as ring 0, which no read-only page stops - so a client
+;--- pointing its stack at the kernel would have the next interrupt it
+;--- is given written into it.  The interrupt waits instead, and the
+;--- client's own first PUSH ends it.  Everything preserved.
+vpm_room:
+        push    eax
+        lea     eax,[ebx + edx]
+        call    usr_wok
+        pop     eax
         ret
 
 ;=====================================================================

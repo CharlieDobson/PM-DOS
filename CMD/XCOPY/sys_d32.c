@@ -2,8 +2,8 @@
  * SYS_D32.C - XCOPY's system calls, PM-DOS native.
  *
  * XCOPY.EXE is a D32 image (DOSINT.ASM with -dD32), loaded at offset
- * 2000h of a 512K program slot and run at ring 3 with every pointer a
- * 32-bit offset within the slot.  INT 21h is the real-mode interface
+ * 2000h of a program slot (512K to start with; 48h grows it) and run
+ * at ring 3 with every pointer a 32-bit offset within the slot.  INT 21h is the real-mode interface
  * widened to 32 bits: pointers in EDX, ESI, EDI and EBX, counts in ECX,
  * CF and AX for errors.  Where PM-DOS differs from DOS:
  *

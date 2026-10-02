@@ -418,10 +418,19 @@ cache_addchunk:
         ; taken before the shell exists, when cur_own is still zero.
         ; That is exactly why this was invisible until a test grew the
         ; cache and then looked at MEM.
+        ;
+        ; AND FROM THE TOP OF THE ARENA, last fit.  A program's slot
+        ; grows upward into the free space above it (RING3.INC,
+        ; slot_grow), and a chunk bought first fit while that program
+        ; reads its files lands right there - the one place it is in
+        ; the way.
         push    dword ptr [cur_own]
+        push    dword ptr [alloc_strat]
         mov     dword ptr [cur_own],0
+        mov     dword ptr [alloc_strat],AF_LAST
         mov     ebx,CC_CHUNKBYTES
         call    arena_alloc
+        pop     dword ptr [alloc_strat]
         pop     dword ptr [cur_own]
         mov     byte ptr [cache_busy],0
         jc      cac_no

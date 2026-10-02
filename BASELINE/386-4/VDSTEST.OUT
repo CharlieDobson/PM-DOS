@@ -11,7 +11,7 @@ VDSTEST - is a driver told where its buffer is?
  8 8107h: no buffer to borrow            ok
  9 no such function                      ok
 10 INT 4Bh that is not VDS comes back    ok
-11 8103h: upper memory is elsewhere      002AA010 ok
+11 8103h: upper memory is elsewhere      00249010 ok
 12 ...and that is where its contents are ok
 
 Result: ............

@@ -81,7 +81,8 @@ Some things cannot be passed through, and they are exactly the places
 where "a program" means something different on each side: 48h/49h/4Ah
 (the guest's memory is the DOS arena below 1MB, not the kernel's),
 00h/4Ch/31h (terminate ends the VM), 62h (a PSP is a segment here),
-2Fh (the DTA is a far pointer) and 4Bh (refused until a VM can nest).
+2Fh (the DTA is a far pointer) and 4Bh (refused until a VM can nest -
+which it can since v0.25).
 On the way out the guest's handles are swept and its memory reclaimed
 by PSP segment - it gets its own owner id for the purpose, or its open
 files would belong to the shell and outlive it.
@@ -4043,7 +4044,8 @@ pools, so a loaded line costs its own bytes and nothing else; a line
 leaves the pool for its own block the first time it is edited.  In the
 512K slot that makes about 390K of text: a 339K file loads and saves
 back byte-identical, and a 477K one gets DOS's "not enough memory"
-and nothing is lost.  Memory that runs out while typing is said, not
+and nothing is lost.  [Since 2026-10-01 48h grows the slot, so the
+ceiling is the machine's rather than 390K.  Not measured again.]  Memory that runs out while typing is said, not
 fatal - only what EDIT cannot start without ends it.
 
 TWO NATIVE REGISTER CONTRACTS that cost time, because both look right
@@ -5600,6 +5602,237 @@ here that has the port, which says the probe suits an Award 486 and
 nothing about his.  HWPROBE's four mouse lines from his machine are
 what is wanted.
 
+FDISK'S SCREEN AGAIN, LAID OUT LIKE DISKSTAT: THE BAR TAKES THE MOUSE
+(2026-10-01)
+---------------------------------------------------------------------
+
+Charlie asked for the screen to be like DiskStat's "but with a bar
+instead of a PIE chart", the bar clickable and its partitions movable
+with the mouse "if there's space on the drive", and sizes for a resize
+typed in megabytes - "not cylinders because that's too tedious".
+
+WHAT IT LOOKS LIKE.  DiskStat's text screen, colours and all: a title
+row with the close box in its corner, a File / Disk / Partition / Help
+menu bar, grey single-line panes on a blue desktop, a cyan status
+line, bright-white-on-blue boxes with double borders and shadows.
+Where DiskStat has its usage chart there is the disk, across the full
+width, three rows deep: each partition a block in its own colour with
+its number and drive letter on it, the extended partition a dark shade
+under its logical drives, free space a light one, a bracket under
+whatever is selected and a scale in megabytes below.  Under that, the
+partitions as a list in disk order - free space a cylinder or longer
+gets a row of its own, at the level it is at - and beside it what the
+selection is.  A partition's colour follows its NUMBER, not its place,
+so deleting one does not repaint the rest.
+
+THE DRAG.  A press on a block selects it; moving the mouse off that
+cell moves a copy of the block along the bar.  Where the copy goes is
+worked out the way a partition's place always is here: its END goes to
+the nearest cylinder boundary (which keeps the first partition one
+track into the disk and a logical drive one track behind its record),
+and the whole is held inside the free space either side of it, so the
+block stops against its neighbours instead of going through them.  It
+is green while it fits and red for a partition with no FAT volume in
+it, which the engine will not move.  Letting go runs the move as a dry
+run; the engine's answer is either a red box saying why not, or the
+question - Yes or No - and then the move.  M does the same from the
+keyboard, with the start typed in megabytes and the bar redrawn as it
+is typed; a typed start may jump over another partition, and the dry
+run decides.
+
+MEGABYTES.  S asks /P first, so the box can say how small (what is
+stored) and how big (the room, and the FAT width's ceiling) the
+partition can be, and the bar turns red as soon as the number typed is
+outside that.  The size typed ends on the nearest cylinder boundary,
+held inside those two limits.  C creates in the free space that is
+SELECTED - which needed one engine change, below - offering all of it
+to a tenth of a megabyte; a size typed there also ends on the nearest
+cylinder, and anything within a megabyte of all of it is all of it
+(the first version took the offered 3.4 MB literally, rounded down
+twice, and came out a cylinder short).  An extended partition is asked
+for with a check box in the same box, offered only where the disk has
+none.
+
+WRITES.  W is gone.  Every change is a dry run first and a Yes/No box
+second - the delete's is red and its Enter is No - and only a Yes arms
+the writes, for that change, as tui_write always did.  The verbs' own
+words are not lost: the end of what the verb said is the box that
+follows a change, and File > Output log shows all of it.
+
+FOUR FILES NOW: FDTUI.INC (the session and the commands), FDDRAW.INC
+(the screen), FDDLG.INC (menus, boxes, the line builder, megabyte
+parsing, the viewer), FDEVENT.INC (keyboard, mouse, key file).  Every
+equate is at the top of FDTUI.INC - wasm will not take one it has not
+met.  The mouse is read as EDIT reads it: 21h/F0h AL=8 woken by the
+mouse too, INT 33h 05h/06h/03h turned into press, release, drag and
+double-click events on cells.  FDISK.EXE 31,677 -> 47,407 bytes;
+TUI_BSS_LEN is 82 + 140*40 + 512*4 + 8192 + 4000 (rows grew to 40
+bytes, and to 140 of them, because free space has rows now).
+
+THREE ENGINE CHANGES, two for the screen and one bug.
+  - gp_want: fd_gap and fd_lgap take the run of free space holding that
+    sector instead of the biggest, when it is not zero.  The command
+    line never sets it.
+  - fd_plan keeps the limits it prints in pl_minsz and pl_maxsz.
+  - A LOGICAL DRIVE COULD BE MOVED IN FRONT OF ITS OWN BOOT RECORD.
+    fd_entptr gave it the whole container as its region, and its own
+    record as a wall one sector wide - so a volume small enough to fit
+    wholly in front of that record, in space a shrunk or deleted
+    neighbour left, passed every check.  Its start is written as an
+    offset FROM that record, unsigned: the table would have said four
+    gigabytes on.  The old FDISK approves /M 1:6 108864 on MULTI.IMG
+    after /S 1:5 8M and /S 1:6 7M; this one says it is outside the
+    region, and still approves moving 5 up inside its own link.  pl_lo
+    for a logical drive is now its own record plus one.  The drag
+    cannot ask for it; a typed move could, and so could the command
+    line all along.
+
+THE TEST.  FDTEST key files carry the mouse now as EDIT's do: FEh, the
+buttons, a row and a column, put to the driver through INT 33h 04h and
+21h/F0h AL=0Bh and read back like the real thing; TOOLS\MKFDKEYS.PL
+has {PRESS r,c} {RELEASE} {DRAG} {MOVE} {CLICK} {DCLICK} and {ALT+X}.
+A press on the cell of the last click with nothing typed between is a
+double click, as in EDIT - which bit the first script.  DISK\FDM1.KEY
+(249 bytes) drags partition 2 against its neighbour, deletes 3, drags
+2 into the space (75600), creates there (68544 + 7056), resizes
+logical 5 to "8" (91854 + 16002), drags it inside its link (102942),
+opens both kinds of menu and the help, moves it by typing "46"
+(93870), shows its details, then empties, deletes and remakes the
+extended partition with the check box (91728 + 73584) and a logical
+drive in it (91791 + 73521) - 35 screens, every number as predicted.
+FDHOLD=anything with FDTEST hands the keyboard over when the file runs
+out, so a recording of the screen ends on whatever was left showing;
+that is how its pictures were taken (DOSBox-X headless, ZMBVSHOT.PL).
+FDTEST, FDLTEST, FDRTEST, /STATUS and /? give output identical byte
+for byte to the old FDISK's.
+
+NOT VERIFIED: real hardware; a real mouse being moved (every press and
+drag here was injected through the driver); a list longer than its 11
+rows, and its scroll bar; FAT32 through the screen; 43/50-line
+screens (the top 25 rows are drawn and the mouse is scaled to the real
+height).  NOT DONE: dragging an edge of a block to resize; moving a
+logical drive's record along with it, so it could go into space in
+front of its record; the /G graphics screen DiskStat has.  AND STILL
+TRUE OF THE ENGINE: a disk with no AA55 signature cannot be given a
+partition table here, by the screen or the command line.
+
+A NATIVE PROGRAM IS NOT 512K ANY MORE: A SLOT OUT OF THE ARENA, AND
+IT GROWS (2026-10-01)
+---------------------------------------------------------------------
+
+Charlie wants native programs that need a great deal of memory to be
+able to have it - a D32 port of XArc whose decompressor wants 1.5GB,
+a web browser.  A native program's whole address space was one fixed
+512K slot at 180000h, and 4Bh made room for a child by copying the
+parent out of that slot into the arena, and 4Ch copied it back.  It
+is now a block of the arena that grows when the program asks 48h for
+more than it has.  Done in three steps, each run on all seven of
+RUNTESTS.PS1's machines before the next.  Still v0.61.
+
+ALL OF MEMORY IS MAPPED, NOT 256MB.  The 64 page tables at PG_TABS are
+a fixed 256MB and arena_init stopped there, so the 260MB, 1GB and 3GB
+machines all had 262,059K.  pg_hiram (PAGING.INC) builds a 4K table
+for every 4MB above that at the TOP of memory and lowers GV_MEMTOP
+below them - a megabyte of tables a gigabyte, 704 tables on the 3GB
+machine.  4K tables even with 4MB pages, so that any page can still
+be taken out of the map: a slot's guard page can be anywhere now.
+arena_init asks the directory whether the top is mapped rather than
+believing the number, so a new PMDOS.SYS on an old PMIO.SYS stops at
+256MB as before.  MEM counts the tables as OS Reserved (the BIOS top
+less the arena's end, from F1h AL=4's EBX), so its total still adds up.
+
+EVERY PROGRAM HAS A SLOT OF ITS OWN.  slot_new (RING3.INC) takes one
+from the arena when 4Bh starts a native program and slot_free gives
+it back in 4Ch, in f4B_loadfail, and - slot_sweep - at every restart
+of the interpreter.  The block is owner 0, for the cache's reason: a
+block stamped with the parent's owner is swept when the PARENT ends.
+r3_useslot reads a table by depth instead of choosing between two
+constants, nobody is copied anywhere, and XN_SAVE is gone.  The guard
+page is taken out of the map by a new PMIO service, IOS_PGPRES
+(pg_guard, IOSVC+0E8h), and put back BEFORE the block is freed - after
+would hand a page that is not there to whoever the arena gives it to
+next.  The interpreter's slot is still the fixed one at 140000h.
+
+AND THE TABLES MOVED INTO THE OLD SLOT.  180000h-1FFFFFh was nobody's
+once programs left it, and on the 4MB 386 that cost a level of
+nesting.  The directory, the 72 fixed tables and _KBSS are 388K of
+it, so they live there now (PG_DIR 180000h, KBSS_BASE 1C9000h - on
+BUILD.CMD's wlink line too) and the arena starts at 220000h for every
+build: 388K more arena, and the 386 nests two levels again, as it
+did before.  KBUF_LO3, the bottom of the kernel range buf_ok guards,
+moved down with them.  pg_init no longer takes the page at PROG_SLOT
+out of the map - that page is the page directory now.
+
+A SLOT GROWS.  When the heap cannot meet a 48h, slot_grow resizes the
+slot's arena block in place (in 64K steps, or exact pages for the
+last of it), and the new memory becomes a free block at the old top.
+Three things make that work.  THE STACK IS A BLOCK IN USE in the heap
+chain (r3h_init): it is at the top of the first 512K and cannot move,
+so the chain steps over it to reach what grows above it.  THE LIMIT
+IS IN PAGES past 1MB (r3_setdesc sets DGRAN_G), since a byte limit is
+twenty bits; every slot is whole pages for that reason.  THE SLOT IS
+PLACED WHERE IT CAN GROW: slot_new takes the bottom of the biggest
+free block (AF_LARGEST, a fit 58h cannot set), and the cache buys its
+chunks last fit - which now takes the TOP of the highest block, as
+DOS's did, where it used to take the bottom and land beside a slot.
+48h's "largest" counts what the slot could still grow by (slot_room),
+or a program asking for FFFFFFFFh is told its heap is the machine.
+
+AND GIVES IT BACK AT EXEC.  A program that grew to all of memory and
+freed it still holds it, in its own heap.  DOS programs shrank their
+block with 4Ah before an EXEC; 4Bh now does it for them, slot_trim,
+handing the free top of the caller's slot back to the arena before
+either kind of child is started.
+
+A VECTOR SAYS WHOSE IT IS.  get_vec/set_vec told a program's handler
+from a kernel address by size - an offset below 512K, a kernel address
+above 1MB - which a slot past 1MB ends.  25h now says from the
+caller's CS, build_psp records whose each saved vector was
+(psp_vtags), and 4Ch hands that back with it (term_vtags); a PSP field
+the program rewrote itself falls back to the old rule.  THIS ALSO
+FIXES AN OLDER BUG, by reading: a vector restored at 4Ch was put down
+as the PARENT'S handler whoever had hooked it, so the shell's INT 23h
+handler inherited two levels down came back tagged as the middle
+program's, an offset in the wrong slot.  No test has exercised that.
+
+FOUND ON THE WAY.  Rounding a request up with "add ebx,15" wrapped one
+within 15 bytes of 4GB to zero: arena_alloc and r3h_alloc answered a
+48h or a DPMI 0501h for FFFFFFFFh with a 16-byte block, and
+arena_resize and r3h_resize SHRANK a block to nothing.  arena_avail's
+"impossible" request was 7FFFFFFFh, which a 3GB arena meets: it
+allocated 2GB, gave it back, and XMS 3.0 reported 2GB as the largest
+block.  PCITEST's check 10 used 3FC00000h as "past any memory this
+kernel maps", which is RAM on the 1GB machine now; it works its
+address out from the arena's end.  And the RUNTESTS baseline had been
+recorded on a tree without DISK\IMGFILE.TXT, which .gitignore keeps
+out of the repository, so TESTIMG.IMG was not on its test disk:
+RMFIND and RMTEST were re-recorded with it.
+
+TESTS.  SLOTTEST.EXE nests itself as deep as it can - seven levels
+below it where memory allows, two on the 4MB 386 - each level checking
+its own memory survived its child, then a null store and a read of the
+guard's last dword, each of which has to end its child with 255, then
+counts the slots left in the arena.  BIGMEM.EXE asks 48h for all there
+is: 1,059K on the 386, 29,215K on the 486 and 3,139,359K on the 3GB
+machine, in ONE block, every page written and read back; frees it and
+takes it as sixteen pieces; runs a child that has to grow its own slot
+while holding all but 2MB; and checks the PSP's memory top.  Both are
+in BUILD.CMD, both MKHD.CMD images and RUNTESTS.PS1.  RUNTESTS -All:
+69 tests, all seven machines.  PARKTEST with XMSREPT on the 3GB machine
+parks and comes back with MEM identical, so RMDOS's XMS takes a 3GB
+pool.  PMIO.SYS 44,411; PMDOS.SYS 136,032; MEM.EXE 3,108.
+
+NOT DONE.  4Ah on the PSP still neither grows nor shrinks the slot; a
+program gets memory through 48h.  A slot shrinks only at EXEC.  The
+interpreter keeps its fixed 256K.  A handler belonging to a program
+waiting further up than the shell is still refused (r3_thunk), though
+its code is no longer copied away and it could now be run.
+
+NOT VERIFIED.  Windows 3.1 itself on a machine with more than 256MB:
+RMDOS's XMS 2.0 answers still cap at 64MB, so it should see what it
+saw, but it has not been run.  A DPMI client given all of a large
+machine, beyond XMSTEST.  Real hardware.
+
 v0.61 - THE NUMBER CAUGHT UP (2026-09-30)
 ---------------------------------------------------------------------
 
@@ -5704,7 +5937,10 @@ one; a second disk with no BPB is compared anyway, track by track, as
 
 THE IMAGE NEEDS A KERNEL CALL: 21h/F1h AL=1Ah, XMF_* in bits 16-23 of
 EAX (PMDOS.INC).  A native program's segment is its 512K slot, less
-than one 1.44M disk.  XMF_ALLOC/FREE/GET/PUT/AVAIL give it blocks of
+than one 1.44M disk.  [Since 2026-10-01 the slot grows, so 48h could
+hold the disk too.  DISKCOPY and DISKCOMP still use the XMF calls
+first; /M, which takes 48h, should now need one pass where it took
+four.  Not run since.]  XMF_ALLOC/FREE/GET/PUT/AVAIL give it blocks of
 the arena it cannot address and copy in and out of them - XMS 0Bh in
 a flat program's shape.  The blocks ARE XMS handles (one pool, and MEM
 counts them), stamped with cur_own, so fn4C's arena sweep frees what a
@@ -13571,7 +13807,9 @@ carries what a PSP is for, and MEM is an external that has to ask.
     512K slot which is not an arena block, and EXEC parks the whole
     slot rather than allocating around it - but the call is answered
     rather than refused, because a program that gets an error from it
-    usually gives up on the spot.
+    usually gives up on the spot.  [Since 2026-10-01 the slot IS an
+    arena block and 48h grows it, but 4Ah on the PSP still only
+    answers; 4Bh gives back the slot's free top itself (slot_trim).]
   - A REFUSED 4Ah GROW USED TO EAT THE ARENA.  arena_resize pulls in
     the free neighbours BEFORE it can know whether the request fits,
     so a request that then turns out to be hopeless left the block
@@ -13593,6 +13831,8 @@ carries what a PSP is for, and MEM is an external that has to ask.
     the v0.18 design made visible: run it from inside a nested EXEC
     and you see the parked 524,288-byte slot charged to the PARENT,
     which is what makes the park get reclaimed if the parent dies.
+    [Not since 2026-10-01: a slot is owner 0 and is freed by 4Ch and
+    slot_sweep rather than by the owner sweep - see that entry.]
   - A BUG MEM.EXE FLUSHED OUT OF MORE.COM, pre-existing and mine:
     mo_pause read its keystroke into out_ch, the very buffer mo_put
     was about to write the pending character from, and returned with
@@ -13650,7 +13890,8 @@ honest answer to "what version really?".
     exits.  One record per level holds its frame, PSP, owner id and
     park address.  Depth 1 parks nothing: the shell lives in its own
     slot and is not disturbed, which is why the old single-level code
-    worked without any of this.
+    worked without any of this.  [Parking ended 2026-10-01: every
+    level has its own slot out of the arena, and nothing is copied.]
   - Two things nesting forced, both easy to miss:
     (1) The path and the command tail are COPIED into kernel buffers
         at the top of 4Bh.  They arrive as pointers into the caller's
@@ -13706,7 +13947,9 @@ honest answer to "what version really?".
     program-slot address onto a different physical frame per nesting
     level and the park-and-restore copy above becomes a pointer swap.
     That is the version of paging with a real customer, and it can be
-    taken up whenever the copying actually hurts.
+    taken up whenever the copying actually hurts.  [It never was: the
+    copy went on 2026-10-01 by giving each level its own slot, with no
+    aliasing.  See the roadmap's PAGING item.]
 
 v0.17: the system files are PMIO.SYS and PMDOS.SYS - our own names,
 for a good reason - and volume labels print properly.
@@ -14677,15 +14920,18 @@ and zeroes BSS after it.  The jump at byte zero is for real MS-DOS,
 which loads a file with no MZ signature as a .COM whatever it is
 called and executes it from the front: it goes to a stub at 20h that
 says the program needs 32-bit DOS mode and exits.  See v0.29.
-Two fixed slots: shell at 141000h (PSP 140000h, ESP 180000h) and
-transient at 181000h (PSP 180000h, ESP 200000h); a program's header
-base must match the slot it is loaded into, and image bases are
-4K-aligned because of the wlink offset rounding.  EXEC is one level
-deep: COMMAND can run a program, programs cannot EXEC yet.  The PSP
-starts with INT 20h and EXEC pushes the PSP address, so a plain RET
-terminates, like it always has.  Tail at PSP+80h, DOS format.
-Termination closes and flushes every non-standard handle.  When the
-SHELL slot terminates, the kernel reloads COMMAND.COM from disk
+WHERE A PROGRAM RUNS, as of 2026-10-01 (the paragraph that was here
+described v0.2's two fixed slots and one level of EXEC).  At ring 3,
+in a segment based at its SLOT: a guard page at 0, the PSP at 1000h,
+the image at 2000h (SLOT_IMAGE) - so every native program is linked
+at offset 2000h and its header's load base says so, whatever linear
+address the slot is at.  The interpreter's slot is the fixed 256K at
+140000h.  Every other program's is a block of the arena, 512K to
+start with and grown by 48h when the heap runs short, one per nesting
+level, EXEC_MAX (8) deep.  The PSP starts with INT 20h and a plain
+RET still ends a program.  Tail at PSP+80h, DOS format.  Termination
+closes and flushes every handle the program opened and frees what it
+owned.  When the SHELL ends, the kernel loads it again from disk
 ("Bad or missing command interpreter" + retry if it cannot).
 
 Two kernel files in the classic PC-DOS split, but the API runs in
@@ -14695,10 +14941,12 @@ Two kernel files in the classic PC-DOS split, but the API runs in
              loads PMDOS above 1M through unreal mode, enters
              protected mode) + 32-bit body (console at B8000h, PS/2
              keyboard, PIC, IDT, BIOS disk I/O through a PM->RM
-             thunk).  Exports a flat call table at 22010h.
-  PMDOS.SYS  DOS layer.  Memory arena, read-only FAT12 driver,
-             INT 21h dispatcher (28 functions), built-in shell
-             standing in for COMMAND.COM.
+             thunk).  Exports a flat call table at IOSVC, 200010h.
+  PMDOS.SYS  DOS layer: the arena, FAT12/16/32 with long names,
+             INT 21h, the DOS box and its XMS, EMS and DPMI, the
+             disk cache.  (v0.1's was a read-only FAT12 driver, 28
+             functions and a built-in shell.)  The shell is CMD.EXE,
+             a program like any other.
 
 Everything PMDOS knows about hardware goes through the PMIO service
 table; the two binaries are linked independently.
@@ -14728,9 +14976,15 @@ Layout
                     a guard page.  The comment at the top is the
                     argument for why page zero cannot be unmapped in
                     a kernel that shares an address space with the
-                    BIOS data area, InDOS and the real-mode IVT.
-  DOS\DOSMAIN.ASM   PMDOS.SYS (+ ARENA/FAT/INT21 .INC),
-                    linked at 100000h.
+                    BIOS data area, InDOS and the real-mode IVT.  A
+                    native program has had a real guard page since
+                    v0.33 - the first page of its slot, taken out of
+                    the map and put back by IOS_PGPRES.
+  DOS\DOSMAIN.ASM   PMDOS.SYS (+ ARENA/FAT/INT21 .INC and the rest),
+                    linked at 110000h, its _KBSS at 1C9000h.
+  DOS\RING3.INC     native programs at ring 3: their descriptors, the
+                    heap inside a slot, and the slots themselves -
+                    slot_new, slot_grow, slot_trim, slot_free.
   DOS\CONFIG.INC    CONFIG.SYS: reader, parser and statement table.
                     Add PM-DOS's own statements to cfg_table.
   DOS\CACHE.INC     the disk cache, between disk_read/disk_write and
@@ -14742,30 +14996,37 @@ Layout
                     the argument for all of that AND for the register
                     contract cache_io has to keep, which is the one
                     thing about this file that is not optional.
-  CMD\COMMAND.ASM   COMMAND.COM, a D32 executable linked at 141000h.
+  CMD\CMD.ASM       CMD.EXE, the native shell: a D32 program linked
+                    at 2000h like every other, run in the fixed slot
+                    at 140000h.
+  CMD\COMMAND\      COMMAND.COM, the 16-bit interpreter COMSPEC names,
+                    for DOS programs that shell out.
   CMD\BATCH.INC     the batch interpreter: frames, line fetch and
                     substitution, GOTO/IF/FOR/SHIFT/CALL/CTTY.
   CMD\REDIR.INC     redirection and pipes: exec_line, the layer that
                     strips < > >> | off a line and points handles
                     0/1 before exec_core sees the verb.
   CMD\<name>\       one directory per EXTERNAL command (2026-09-25):
-                    ATTRIB CHOICE DRIVES FDISK FORMAT LFNAPI MEM MORE
-                    MOUNT MOVE SORT SYS, each holding <name>.ASM.
-                    CMD\ itself keeps only the shell.  BUILD.CMD cds
-                    into each, so its paths there are ..\..\INC and
-                    ..\..\BIN; a new command's directory must also go
-                    in the stale-object sweep near the top.
-                    CHKDSK\ and LABEL\ are C (Open Watcom, no C
-                    library): SYS_D32.C is all they know of PM-DOS,
-                    and DOSINT.ASM -dD32 is the header and startup,
-                    FIRST on the link line.  See the 2026-09-25 entry
-                    for why their wlink line differs from the rest.
+                    ATTRIB CACHE CDEX CHKDSK CHOICE DISKCOMP DISKCOPY
+                    DRIVES EDIT FC FDISK FIND FORMAT LABEL LFNAPI MEM
+                    MORE MOUNT MOVE SORT SYS UNDELETE XCOPY.
+                    CMD\ itself keeps only the native shell.  BUILD.CMD
+                    cds into each, so its paths there are ..\..\INC
+                    and ..\..\BIN; a new command's directory must also
+                    go in the stale-object sweep near the top.
+                    CHKDSK\, EDIT\, LABEL\ and XCOPY\ are C (Open
+                    Watcom, no C library): SYS_D32.C is all they know
+                    of PM-DOS, and DOSINT.ASM -dD32 is the header and
+                    startup, FIRST on the link line.  See the
+                    2026-09-25 entry for why their wlink line differs
+                    from the rest.  FC\ is C as well, one file with a
+                    DOSINT.ASM of its own.  The others are one
+                    <name>.ASM.
   CMD\CHOICE\CHOICE.ASM
-                    CHOICE.COM, the first EXTERNAL command, linked at
-                    181000h - the transient slot, like any program.
-                    MORE, SORT, SYS, FORMAT, LFNAPI and MEM followed
-                    it there; all link at the same address, because
-                    only one of them runs at a time.
+                    CHOICE.COM, the first EXTERNAL command.  Every
+                    native program links at 2000h, an offset in its
+                    own segment, so they no longer have to take turns
+                    in one slot.
   CMD\MEM\MEM.ASM   MEM.EXE, the memory report.  The one program that
                     reads kernel structures directly - it walks the
                     arena from the header 52h hands it, which is what
@@ -14902,6 +15163,17 @@ not in a batch file.
 Both earned their keep immediately.  APITEST found the ".."-at-the-
 root bug in a resolver four releases old, and CRASH's new /N found
 that the whole null-guard question needed rethinking (see v0.31).
+
+SINCE 2026-10-01 THE REGRESSION RUN IS TOOLS\RUNTESTS.PS1 -All, and
+the regression set above is what a person still runs by hand.  It
+builds a disk of every program and test, boots it headless in
+DOSBox-X on seven machines - a 4MB 386, a 32MB 486, and Pentiums with
+252MB, 256MB, 260MB, 1GB and 3GB - and compares each test's output
+with BASELINE\<machine>\<test>.OUT; it exits 0 only if every machine
+matched.  -Update records a new baseline, which goes in the same
+commit as the change that moved it.  IDLETEST runs there as
+"IDLETEST /T", which needs no key.  The header of RUNTESTS.PS1 is
+the manual, and the 2026-10-01 entry is what it was built for.
 
 Design notes / traps hit
 ------------------------
@@ -15579,6 +15851,13 @@ Design notes / traps hit
   first version scribbled on the interrupt table and carried on.
   Testing a fault handler needs an address that is genuinely
   unmapped: PG_MAXTAB covers the first 256MB, so F0000000h will do.
+  [Both halves are history.  Since v0.33 a native program is at ring
+  3 in a segment whose first page is absent, so its null pointer
+  DOES fault, and F0000000h is past its segment's limit.  Since
+  2026-10-01 every byte of memory is mapped, not 256MB, and a card's
+  registers are mapped where they are when a driver asks - there is no
+  fixed linear address left that is safe to call unmapped.  PCITEST
+  works its one out from the end of the arena.]
 * 86BOX REMEMBERS A WINDOW POSITION FROM A MONITOR YOU NO LONGER
   HAVE.  Its window came up at x = -1644 and every screenshot showed
   the desktop, with the process running and the title bar correct.
@@ -15671,8 +15950,8 @@ Design notes / traps hit
   as the gv_x/GV_X collision; the build define namespace and the label
   namespace are one namespace.
 * WLINK ROUNDS "option offset=" UP TO THE NEXT 4K.  Every other
-  offset in this project is already 4K-aligned - 200000h, 100000h,
-  141000h, 181000h - so it never showed.  A .COM asks for 100h, gets
+  offset in this project is already 4K-aligned - 200000h, 110000h,
+  1C9000h, and 2000h for every native program - so it never showed.  A .COM asks for 100h, gets
   built for 1000h, is loaded by DOS at 100h anyway, and every
   absolute address in it points 3840 bytes too high: it assembles, it
   links, it runs into nothing.  "form dos com" is no better, it emits
@@ -15914,16 +16193,19 @@ Pointers that DOS took in DS:DX / DS:SI arrive as flat 32-bit EDX /
 ESI.  Counts are ECX.  42h takes the seek offset in ECX and returns
 EAX.  48h/49h/4Ah deal in bytes at EDX, not paragraphs/ES.  36h and
 47h take the drive in DL (0 = default, 1 = A:) - 47h callers MUST
-set DL now.  Errors: CF + code in AX as always.  Implemented: 00-02,
-06-0E, 19, 1A, 25, 2A, 2C, 2F, 30, 33, 35, 36, 39-42, 44-4A, 4C-4F,
-50-52, 56, 58, 62, 71xx, 7303h, plus two PM-DOS extensions: F0h console
-(AL=0 cls, 1 get cursor, 2 set cursor) and F1h kernel information
-(AL=0 -> BH.BL = version, AL=1 -> AL = a volume's FAT type, AL=2 ->
-remount a volume whose structures were rewritten underneath us,
-AL=3 -> the shell's own path ASCIIZ into EDX, AL=4 -> EAX = extended
-memory in KB and EBX = the top of the arena, AL=5 -> release the
-INT 24h lock and abandon any handler excursion, AL=8 -> one block of
-one memory arena at EDI, DL choosing the arena and EBX the block).
+set DL now.  Errors: CF + code in AX as always.  What is implemented
+is i21_table in DOS\INT21.INC - the list that was here had stopped
+growing long before the table did, and the roadmap's API item says
+what was left out on purpose.  Two PM-DOS extensions: F0h console
+(AL=0 cls, 1 get cursor, 2 set cursor, and more) and F1h kernel
+information (AL=0 -> BH.BL = version, AL=1 -> AL = a volume's FAT
+type, AL=2 -> remount a volume whose structures were rewritten
+underneath us, AL=3 -> the shell's own path ASCIIZ into EDX, AL=4 ->
+EAX = extended memory in KB and EBX = the top of the arena, AL=5 ->
+release the INT 24h lock and abandon any handler excursion, AL=8 ->
+one block of one memory arena at EDI, DL choosing the arena and EBX
+the block, and AL=9 to 1Ah since - the comment above fnF1 in
+INT21.INC lists them all).
 
 WHOSE ADDRESS SPACE A POINTER IS IN, as of v0.33.  A native program
 runs at ring 3 in a segment based at its slot, so every pointer it
@@ -15931,7 +16213,8 @@ passes is an OFFSET and the kernel adds the base - the same
 translation the DOS box bridge does for a segment:offset pair, out of
 the same table.  It is invisible from inside a program, which is the
 point, but three consequences are not: 48h allocates inside the slot
-rather than out of the arena, the environment is copied into a child
+rather than out of the arena (and since 2026-10-01 grows the slot out
+of the arena when it runs short), the environment is copied into a child
 rather than pointed at, and the three calls that ANSWER with an
 address the program cannot reach - 34h InDOS, 52h the list of lists,
 1Bh/1Ch the media descriptor - hand back flat addresses that will
@@ -16094,20 +16377,25 @@ THE NEXT THINGS, in the order they are worth doing:
   EXEC time if anything ever asks.]
 * RING 3 IS DONE (v0.33).  What it did NOT do, and what is worth
   knowing before anything is built on it:
-    - a program's memory is its slot and only its slot.  512K for a
-      transient program, and 48h cannot answer with more however much
-      the machine has.  Handing a program a second descriptor over
-      arena memory it asks for is the way out, and nothing has wanted
-      it yet
-    - the two slots are still fixed addresses and nesting is still
-      done by parking the occupant.  A based segment makes relocation
-      possible for the first time - the image no longer cares where it
-      lands - so giving each nesting level its own linear region is
-      now a page-table question rather than an impossible one.  See
-      the paging item below, which this release makes cheaper
+    - [DONE, 2026-10-01: a program's memory was its slot and only its
+      slot, 512K however much the machine had.  It is still its slot,
+      but the slot is a block of the arena and 48h grows it - one
+      program had 3GB of a 3GB machine in a single block.  Not by a
+      second descriptor, which this entry suggested: a C program's
+      malloc would never ask for one.  See the 2026-10-01 entry.]
+    - [DONE, 2026-10-01: the two fixed slots and the parking.  Every
+      nesting level has its own slot out of the arena and nothing is
+      copied.  The interpreter's is still the fixed 256K at 140000h.]
     - the SHELL is a program like any other and gets no special
-      privilege.  That is right, and it means COMMAND can never grow a
+      privilege.  That is right, and it means CMD.EXE can never grow a
       feature that needs one
+    - STILL TO DO from the slot work: 4Ah on a program's own PSP
+      answers without growing or shrinking the slot (48h grows it, 4Bh
+      gives back its free top); a slot shrinks at EXEC and at no other
+      time; and r3_thunk still refuses a handler belonging to a program
+      waiting further up than the shell, though its code is in memory
+      now and could be run - which wants the ancestor's descriptors put
+      back for the length of the call
 * A TSR POPPING UP FROM THE NATIVE PROMPT.  v0.31 issues INT 28h into
   a running DOS box, which covers the spooler case.  What it does not
   cover is the one people picture: a TSR loaded in one box, then a
@@ -16129,21 +16417,17 @@ THE NEXT THINGS, in the order they are worth doing:
     And it found the ESI push that was not there - see the release
   notes.  disk_write preserved that register by never touching it.]
 * PAGING: no swap file, ever - the ambition is dropped and the
-  CONFIG.SYS statements that recorded it are gone as of v0.19.  What
-  page tables would still buy is ADDRESS ALIASING: map the one
-  program-slot address onto a different physical frame per nesting
-  level and the 512K park-and-restore copy becomes a pointer swap.
-  That is paging WITHOUT a swap file, it is the only version with a
-  concrete customer here, and it is worth taking up when the copying
-  actually hurts - which at 512K a level on a 128MB machine it does
-  not yet.  RING 3 MADE IT CHEAPER AND OPENED A SECOND ROUTE: an
-  image linked for an offset rather than an address does not care what
-  linear address its slot is at, so per-level slots can be had by
-  moving the segment BASE, with no page tables involved at all.  What
-  that costs is address space rather than copying, which is the better
-  trade on any machine with memory to spare - and it would also give a
-  parked program's INT 24h handler somewhere to still exist, which is
-  the one thing r3_thunk currently has to refuse
+  CONFIG.SYS statements that recorded it are gone as of v0.19.  This
+  entry went on to offer ADDRESS ALIASING - one program-slot address
+  mapped onto a different frame per nesting level - as the way to end
+  the 512K park-and-restore copy, or else per-level slots by moving
+  the segment BASE.  [DONE, 2026-10-01, BY THE SECOND ROUTE: a slot
+  per level out of the arena, no aliasing, and linear is still
+  physical everywhere, which the ATA driver's DMA depends on.  The
+  page tables' part is smaller than either suggestion: every byte of
+  memory is mapped now, not 256MB, and the guard page moves with each
+  slot (IOS_PGPRES).  A parked program's INT 24h handler does now have
+  somewhere to exist; r3_thunk refusing it is in the RING 3 item.]
 * [DONE, v0.42, AND THE SUSPICION ABOVE WAS ABOUT THE WRONG CALLER.
   Both are in vdm_child.  An overlay IS a piece of code loaded into
   somebody else's memory at an address they pick, and a D32 image
@@ -16437,9 +16721,9 @@ THE NEXT THINGS, in the order they are worth doing:
   founding idea is that a letter is a volume rather than a disk, so it
   can read ISO9660 itself and never involve a redirector.  Decided that
   way 2026-09-08.  What is left is the reader and a drive letter for it
-* nested EXEC is DONE (v0.18, by parking the occupant).  What is not
-  done is doing it by RELOCATION or with more slots, which would turn
-  the 512K park copy into nothing at all - see the paging note above
+* [DONE, 2026-10-01: nested EXEC without the park copy.  It was done
+  in v0.18 by parking the occupant; now every level has a slot of its
+  own and nothing is copied - see the paging note above]
 * [DONE, v0.42: DIR /S and /O, DEL /S, COPY /V /A /B and DIRCMD.
   DIR /S and DEL /S are one walker with two verbs - tree_walk takes
   the verb in walk_act - and the find is NOT held open across the

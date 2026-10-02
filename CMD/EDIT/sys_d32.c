@@ -1,8 +1,9 @@
 /*
  * SYS_D32.C - EDIT's system calls, PM-DOS native.
  *
- * EDIT.EXE is a D32 image loaded at offset 2000h of a 512K program slot
- * and run at ring 3; INT 21h is the real-mode interface widened to 32
+ * EDIT.EXE is a D32 image loaded at offset 2000h of a program slot (512K
+ * to start with; 48h grows it) and run at ring 3; INT 21h is the
+ * real-mode interface widened to 32
  * bits (see XCOPY's SYS_D32.C for the details the two share).
  *
  * THE SCREEN AND THE KEYBOARD are 21h/F0h, the kernel's console calls

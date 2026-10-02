@@ -390,7 +390,7 @@ rem 0x110000, not 0x100000: the first 64K above 1MB is the HMA, left
 rem empty so the A20 wrap can be emulated by aliasing it - see
 rem PAGING.INC.  Must match DOS_BASE in PMDOS.INC.
 rem
-rem 0x269000 is KBSS_BASE in PMDOS.INC, and has to be: the kernel's big
+rem 0x1C9000 is KBSS_BASE in PMDOS.INC, and has to be: the kernel's big
 rem buffers are a segment of their own that is put there, below the
 rem arena, and not written to the file.  The kernel compares the two
 rem when it starts and stops if they differ.  "order" is what places a
@@ -398,7 +398,7 @@ rem class, and with it "option offset" is ignored - hence the first
 rem offset here.  NOT "noemit" on the second: without it, something in
 rem _KBSS that has a value makes this file 1.4MB and the check below
 rem stops the build; with it, the value is dropped and nothing says so.
-wlink form raw bin name ..\BIN\PMDOS.SYS file dosmain.obj order clname CODE offset=0x110000 clname KBSS offset=0x269000 || goto :fail
+wlink form raw bin name ..\BIN\PMDOS.SYS file dosmain.obj order clname CODE offset=0x110000 clname KBSS offset=0x1C9000 || goto :fail
 cd ..
 rem PMDOS.SYS runs from DOS_BASE to SHELL_PSP and the shell's slot is
 rem immediately above it.  Nothing complains if it overruns; the shell
@@ -1106,6 +1106,18 @@ echo === EXECLEAK.EXE (a failed EXEC gives the kernel stack back) ===
 cd TOOLS
 wasm -q -i=..\INC execleak.asm                   || goto :fail
 wlink form raw bin option offset=0x2000 name ..\BIN\TESTS\EXECLEAK.EXE file execleak.obj || goto :fail
+cd ..
+
+echo === SLOTTEST.EXE (every EXEC level in a slot of its own) ===
+cd TOOLS
+wasm -q -i=..\INC slottest.asm                   || goto :fail
+wlink form raw bin option offset=0x2000 name ..\BIN\TESTS\SLOTTEST.EXE file slottest.obj || goto :fail
+cd ..
+
+echo === BIGMEM.EXE (a native program with more than 512K) ===
+cd TOOLS
+wasm -q -i=..\INC bigmem.asm                     || goto :fail
+wlink form raw bin option offset=0x2000 name ..\BIN\TESTS\BIGMEM.EXE file bigmem.obj || goto :fail
 cd ..
 
 echo === TESTBLK.SYS (a BLOCK device driver: a 32K RAM disk) ===

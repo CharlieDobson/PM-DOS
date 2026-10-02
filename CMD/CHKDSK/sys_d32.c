@@ -7,8 +7,9 @@
  * THE PM-DOS NATIVE ABI
  * ---------------------
  * CHKDSK.EXE is a D32 image (DOSINT.ASM, assembled with -dD32, puts the
- * header in front).  PM-DOS loads it at offset 2000h of a 512K program
- * slot and runs it at ring 3 with CS, DS, ES and SS all based at the
+ * header in front).  PM-DOS loads it at offset 2000h of a program slot
+ * (512K to start with; 48h grows it) and runs it at ring 3 with CS, DS,
+ * ES and SS all based at the
  * slot, so every pointer is a plain 32-bit offset within it.  INT 21h
  * is the real-mode DOS register interface widened to 32 bits:
  *

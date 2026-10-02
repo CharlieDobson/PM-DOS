@@ -4,10 +4,10 @@ XMSREPT - what this XMS host offers, and WHERE
 entry point   0522:0000
 version       0300   HMA flag 0000
 08h  total  FFFFK  largest  FFFFK
-88h  highest 0FBFFFFF  total 0003E2A3K  largest 0003E2A3
+88h  highest 0FBFFFFF  total 0003E427K  largest 0003E427
 
 allocated FFFFK, handle 0001
-LOCKED AT LINEAR 003571E0
+LOCKED AT LINEAR 002750E0
 
 Below 16MB - reachable by a 286 extender.  If standard mode
 still fails, it is not because of where the memory is.

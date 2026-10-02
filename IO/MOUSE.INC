@@ -2352,6 +2352,11 @@ msf_16:
         mov     esi,OFFSET ms_state
         mov     edi,dword ptr [msr_ptr]
         mov     ecx,MS_STATELEN
+        push    eax                     ; somewhere the caller could have
+        mov     eax,edi                 ; written itself: ES:DX at 0100:0C00
+        call    usr_wok                 ; is the GDT, and this is ring 0
+        pop     eax
+        jc      m16_out
         rep     movsb
 m16_out:
         ret

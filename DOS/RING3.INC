@@ -56,7 +56,8 @@ RC_ESP0         EQU     4               ; dd - the TSS_ESP0 to put back
 RC_VEC          EQU     8               ; dd - which vector this was
 RC_DEPTH        EQU     12              ; dd - and the slot that was current
 RC_LASTESP      EQU     16              ; dd - and where its program's stack was
-RC_LEN          EQU     20
+RC_LDTR         EQU     20              ; dd - and the LDT that was loaded
+RC_LEN          EQU     24
 R3_CALLMAX      EQU     4               ; nested handler calls
 
 ; Where PUSHAD leaves EAX, counted from the bottom of the eight.
@@ -67,10 +68,14 @@ R3_PAEAX        EQU     28
 ;              descriptors at the slot that depth means, and remember
 ;              its base and size for everything else here.
 ;
-; Depth zero is the interpreter, which has a slot of its own; anything
-; deeper is a transient program, and every level of nesting shares the
-; one transient slot because nesting is done by parking the occupant.
-; So this is a two-way choice and not a table.
+; Depth zero is the interpreter, which has a slot of its own at
+; SHELL_SLOT.  EVERY DEEPER LEVEL HAS ONE OF ITS OWN TOO, out of the
+; arena, made by slot_new when 4Bh starts the program and freed by
+; slot_free when it ends.  Until v0.62 every level shared one slot at
+; PROG_SLOT and 4Bh copied the waiting program out of it into the
+; arena and 4Ch copied it back - half a megabyte each way, and a slot
+; that could never be bigger than the hole it lived in.  So this is a
+; table now, indexed by depth.
 ;=====================================================================
 r3_useslot:
         push    eax
@@ -78,19 +83,308 @@ r3_useslot:
         mov     [r3_depth],eax          ; whose slot the descriptors describe,
                                         ; which is not always [exec_depth] -
                                         ; see r3_thunk
-        or      eax,eax
-        jnz     rus_prog
-        mov     eax,SHELL_SLOT
-        mov     ebx,SHELL_SIZE
-        jmp     short rus_set
-rus_prog:
-        mov     eax,PROG_SLOT
-        mov     ebx,PROG_SIZE
-rus_set:
+        mov     ebx,[r3_slsize + eax*4]
+        mov     eax,[r3_slbase + eax*4]
         mov     [r3_base],eax
         mov     [r3_size],ebx
         call    r3_setdesc
         pop     ebx
+        pop     eax
+        ret
+
+;---------------------------------------------------------------------
+; slot_new - EAX = an EXEC depth, 1 or more.  Give that level a slot of
+;            its own: PROG_SIZE bytes of the arena on a page boundary,
+;            with its first page out of the map.  CF if the arena has
+;            not got one.  Everything preserved.
+;
+; THE BLOCK IS THE KERNEL'S, NOT THE PARENT'S.  arena_alloc stamps a
+; block with [cur_own], which at 4Bh is the program asking, and 4Ch
+; sweeps the arena by owner - so a slot bought under the parent's name
+; would be freed by the PARENT'S exit, and not the child's.  Owner 0 is
+; never swept; slot_free gives the block back by depth instead, which
+; is the only name a slot really has.  The cache's chunks are bought
+; the same way for the same reason (CACHE.INC, cache_addchunk).
+;
+; THE GUARD PAGE IS PART OF THE SLOT: offset 0 to SLOT_PSP is SLOT_GUARD,
+; and it is what makes a null pointer fault.  The slot is aligned so
+; that page is a whole page, and up to 0FF0h bytes at the front of the
+; block are the price of that.
+;---------------------------------------------------------------------
+slot_new:
+        pushad
+        mov     esi,eax
+        push    dword ptr [cur_own]
+        push    dword ptr [alloc_strat]
+        mov     dword ptr [cur_own],0
+        mov     dword ptr [alloc_strat],AF_LARGEST      ; the most room to grow
+        mov     ebx,PROG_SIZE + 0FF0h
+        call    arena_alloc
+        pop     dword ptr [alloc_strat]
+        pop     dword ptr [cur_own]
+        jc      sln_none
+        mov     [r3_slblk + esi*4],eax
+        add     eax,0FFFh
+        and     eax,NOT 0FFFh
+        mov     [r3_slbase + esi*4],eax
+        mov     dword ptr [r3_slsize + esi*4],PROG_SIZE
+        mov     dl,0                    ; the guard page goes
+        call    dword ptr ds:[IOS_PGPRES]
+        popad
+        clc
+        ret
+sln_none:
+        popad
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; slot_free - EAX = an EXEC depth.  Give that level's slot back to the
+;             arena, if it has one.  Everything preserved.
+;
+; The guard page comes back into the map FIRST.  Once the block is free
+; the arena may hand it to anybody, and a page that is not there is a
+; fault in whoever writes to it next - with nothing to say why.
+;---------------------------------------------------------------------
+slot_free:
+        pushad
+        mov     esi,eax
+        mov     edx,[r3_slblk + esi*4]
+        or      edx,edx
+        jz      slf_out                 ; the shell's, or none
+        mov     eax,[r3_slbase + esi*4]
+        mov     dl,1                    ; the guard page is memory again
+        call    dword ptr ds:[IOS_PGPRES]
+        mov     edx,[r3_slblk + esi*4]
+        mov     dword ptr [r3_slblk + esi*4],0
+        mov     dword ptr [r3_slbase + esi*4],0
+        mov     dword ptr [r3_slsize + esi*4],0
+        call    arena_free
+slf_out:
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; slot_grow - EBX = bytes the running program's heap is short of.  Make
+;             its slot bigger, in place, and hand the new memory to the
+;             heap as a free block at the old top.  CF if it cannot.
+;             Everything preserved.
+;
+; THIS IS WHAT LETS A NATIVE PROGRAM HAVE MORE THAN 512K: it asks 48h,
+; the heap is short, and rather than say no the slot grows into the
+; free arena above it.  A slot is one arena block, so growing it is
+; arena_resize - which takes in the free run that follows and gives
+; back what is not needed - and then three numbers move: the slot's
+; size, the descriptors' limit, and the PSP's memory top.  The program
+; cannot tell its slot was ever smaller, because its pointers are all
+; offsets from a base that did not move.
+;
+; What stops it is a block in use above the slot.  slot_new put the
+; slot at the bottom of the biggest free block and the cache buys from
+; the top, so on a quiet machine that is the end of memory; a child
+; program's slot or a DOS box's XMS is in the way only while it lasts.
+; The cache is asked for memory back once, as arena_alloc asks it.
+;
+; In 64K steps, so that a program allocating a little at a time does
+; not resize the arena for every call; an exact page count if 64K
+; would not fit, so that the last of the memory can still be had.  A
+; slot is always whole pages - the descriptor counts in them past 1MB.
+; The interpreter's slot is not an arena block and never grows.
+;---------------------------------------------------------------------
+slot_grow:
+        pushad
+        mov     esi,[r3_depth]
+        cmp     dword ptr [r3_slblk + esi*4],0
+        je      slg_no                          ; the shell's: fixed
+        add     ebx,MCB_LEN * 2 + 0FFFh         ; a header for the new block,
+        jc      slg_no                          ; one for the remainder
+        and     ebx,NOT 0FFFh                   ; EBX = whole pages, at least
+        mov     edi,ebx
+        add     edi,0FFFFh
+        jc      slg_exact
+        and     edi,NOT 0FFFFh                  ; EDI = 64K steps, preferred
+        call    slg_try
+        jnc     slg_got
+slg_exact:
+        mov     edi,ebx
+        call    slg_try
+        jnc     slg_got
+        push    ebx                             ; once more, with whatever the
+        call    cache_reclaim                   ; cache can give back
+        pop     ebx
+        jc      slg_no
+        call    slg_try
+        jc      slg_no
+slg_got:
+        ; EDI = what it grew by.  The new memory is a free block at the
+        ; old top; r3h_alloc's walk joins it to a free block below it.
+        mov     eax,[r3_slsize + esi*4]         ; the old top
+        add     [r3_slsize + esi*4],edi
+        mov     edx,[r3_slbase + esi*4]
+        add     edx,eax
+        mov     dword ptr [edx+MCB_SIG],SIG_FREE
+        sub     edi,MCB_LEN
+        mov     [edx+MCB_SIZE],edi
+        mov     dword ptr [edx+MCB_OWNER],0
+        mov     eax,esi                         ; its descriptors, and r3_size
+        call    r3_useslot
+        mov     eax,[r3_size]
+        mov     [r3h_hi],eax                    ; the heap's end
+        mov     edx,[r3_base]                   ; and the PSP's
+        mov     [edx + SLOT_PSP + PSP_MEMTOP],eax
+        popad
+        clc
+        ret
+slg_no:
+        popad
+        stc
+        ret
+
+; slg_try - ESI = the depth, EDI = bytes to grow by.  CF if the arena
+; block will not stretch that far.
+slg_try:
+        push    ebx
+        push    edx
+        mov     edx,[r3_slblk + esi*4]          ; the block
+        mov     ebx,[r3_slbase + esi*4]
+        sub     ebx,edx                         ; the slack before the slot,
+        add     ebx,[r3_slsize + esi*4]         ; the slot,
+        add     ebx,edi                         ; and the growth
+        jc      sgt_no
+        call    arena_resize
+        jc      sgt_no
+        pop     edx
+        pop     ebx
+        clc
+        ret
+sgt_no:
+        pop     edx
+        pop     ebx
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; slot_trim - give back the free top of the running program's slot,
+;             down to the page its last free block starts on.
+;             Everything preserved.
+;
+; THE OTHER HALF OF slot_grow, and DOS asked programs to do it for
+; themselves.  A slot that grew to take most of the machine keeps it
+; when the program frees what it took - into its own heap, not the
+; arena - so a child it then starts finds nothing left.  Under DOS a
+; program shrank its own block with 4Ah before an EXEC; here 4Bh does
+; it on the program's behalf, which is the one moment it matters and
+; one a program cannot forget.
+;
+; Only a free block at the very end of the chain can go, and only from
+; the page it starts on: everything below the cut is as it was, a used
+; block above the stack included.  The slot never shrinks below the
+; stack, which is below that block.
+;---------------------------------------------------------------------
+slot_trim:
+        pushad
+        mov     esi,[r3_depth]
+        mov     edx,[r3_slblk + esi*4]
+        or      edx,edx
+        jz      slt_out                         ; the shell's: fixed
+        mov     edi,[r3_base]
+        xor     ebx,ebx                         ; EBX+1 = the last block, 0 = none
+        mov     ecx,[r3h_lo]
+slt_walk:
+        cmp     ecx,[r3h_hi]
+        jae     slt_end
+        lea     ebx,[ecx+1]
+        add     ecx,MCB_LEN
+        add     ecx,[edi+ecx-MCB_LEN+MCB_SIZE]
+        jmp     short slt_walk
+slt_end:
+        or      ebx,ebx
+        jz      slt_out
+        dec     ebx                             ; EBX = its header, an offset
+        cmp     dword ptr [edi+ebx+MCB_SIG],SIG_FREE
+        jne     slt_out
+        mov     eax,ebx
+        add     eax,0FFFh
+        and     eax,NOT 0FFFh                   ; EAX = the cut, a page
+        cmp     eax,[r3_size]
+        jae     slt_out                         ; nothing whole to give
+        cmp     eax,ebx
+        je      slt_cut                         ; the header goes with it
+        mov     ecx,eax
+        sub     ecx,ebx
+        sub     ecx,MCB_LEN
+        mov     [edi+ebx+MCB_SIZE],ecx          ; what is left of it
+slt_cut:
+        mov     [r3_slsize + esi*4],eax
+        mov     ebx,[r3_slbase + esi*4]
+        sub     ebx,edx                         ; the slack before the slot,
+        add     ebx,eax                         ; and the slot
+        call    arena_resize                    ; smaller: it cannot fail
+        mov     eax,esi
+        call    r3_useslot
+        mov     eax,[r3_size]
+        mov     [r3h_hi],eax
+        mov     edx,[r3_base]
+        mov     [edx + SLOT_PSP + PSP_MEMTOP],eax
+slt_out:
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; slot_room - EAX = the most the running program's slot could still
+;             grow by, in whole pages, less the two headers a grow
+;             costs - which is the largest 48h could then answer.  0
+;             for the shell's slot or none at all.  Everything else
+;             preserved.
+;
+; 48h's "largest available" has to count it, or a program that asks
+; how much there is - FFFFFFFFh, as most do - is told the size of its
+; heap and believes the machine is full.  arena_resize answers a
+; request it cannot meet with the most it could have offered, so an
+; impossible one is the question.
+;---------------------------------------------------------------------
+slot_room:
+        push    ebx
+        push    edx
+        push    esi
+        mov     esi,[r3_depth]
+        mov     edx,[r3_slblk + esi*4]
+        or      edx,edx
+        jz      slr_none
+        mov     ebx,0FFFFFFF0h
+        call    arena_resize                    ; must fail: EAX = the most
+        jnc     slr_none                        ; cannot happen
+        mov     ebx,[r3_slbase + esi*4]
+        sub     ebx,edx
+        add     ebx,[r3_slsize + esi*4]         ; what the block holds now
+        sub     eax,ebx
+        jbe     slr_none
+        and     eax,NOT 0FFFh
+        sub     eax,MCB_LEN * 2
+        jbe     slr_none
+        pop     esi
+        pop     edx
+        pop     ebx
+        ret
+slr_none:
+        xor     eax,eax
+        pop     esi
+        pop     edx
+        pop     ebx
+        ret
+
+;---------------------------------------------------------------------
+; slot_sweep - every transient slot back to the arena.  For the restart
+;              of the interpreter, which is where nothing can be
+;              running above depth zero, whatever the way there was.
+;---------------------------------------------------------------------
+slot_sweep:
+        push    eax
+        mov     eax,EXEC_MAX
+sls_one:
+        call    slot_free
+        dec     eax
+        jnz     sls_one
         pop     eax
         ret
 
@@ -104,16 +398,25 @@ rus_set:
 ; while the kernel is: every entry to ring 3 goes through an IRETD that
 ; reloads CS and SS from the table as it stands.
 ;
-; Byte granularity, deliberately: a slot is 256K or 512K and a 4K-
-; granular limit could describe either, but byte granularity means the
-; limit is the size and the arithmetic anybody reads here is the
-; arithmetic the CPU does.
+; Byte granularity up to a megabyte, because then the limit is the size
+; and the arithmetic anybody reads here is the arithmetic the CPU does.
+; PAST A MEGABYTE IT CANNOT BE: a limit is twenty bits, and a slot that
+; has grown (slot_grow) can be most of the machine.  So a bigger slot
+; is described in 4K pages with the G bit set, which is why every slot
+; size is a whole number of pages - and the CPU then allows the last
+; page in full, which is exactly the size again.
 ;---------------------------------------------------------------------
 r3_setdesc:
         pushad
         mov     ebx,[r3_base]
         mov     ecx,[r3_size]
-        dec     ecx                             ; a limit is the last valid byte
+        xor     dh,dh                           ; byte granular
+        cmp     ecx,100000h
+        jbe     rsd_bytes
+        shr     ecx,12                          ; past 1MB: in pages
+        mov     dh,DGRAN_G
+rsd_bytes:
+        dec     ecx                             ; a limit is the last valid unit
 
         mov     edi,GDT_BASE + GDT_IDX_PROGCS * 8
         mov     dl,DACC_CODE                    ; present, DPL 3, code, readable
@@ -124,7 +427,8 @@ r3_setdesc:
         popad
         ret
 
-; EDI -> the descriptor, EBX = base, ECX = limit, DL = access byte.
+; EDI -> the descriptor, EBX = base, ECX = limit, DL = access byte,
+; DH = DGRAN_G or 0.
 r3_wrdesc:
         mov     [edi],cx                        ; limit 15:0
         mov     [edi+2],bx                      ; base 15:0
@@ -135,7 +439,8 @@ r3_wrdesc:
         mov     eax,ecx
         shr     eax,16
         and     al,0Fh                          ; limit 19:16, and the D bit
-        or      al,DGRAN_32                     ; beside it: 32-bit, byte granular
+        or      al,DGRAN_32                     ; beside it: 32-bit
+        or      al,dh                           ; and the granularity
         mov     [edi+6],al
         mov     eax,ebx
         shr     eax,24
@@ -619,7 +924,7 @@ rsf_hit:
 
 ;---------------------------------------------------------------------
 ; r3_hook / r3_unhook - remember (or forget) that vector AL belongs to
-;                       the program, at offset EDI.
+;                       the program at EXEC depth EDX, at offset EDI.
 ;
 ; Called from set_vec, which is the one place that knows how a vector
 ; is stored - the PSP save and restore go through it too, so a vector
@@ -632,12 +937,12 @@ r3_hook:
         mov     [r3vec+ebx*4],edi
 
         ; WHOSE handler it is, and not just where.  An offset means
-        ; nothing without the slot it is an offset into, and the two
-        ; slots hold different programs: the interpreter's INT 24h
-        ; handler has to be reachable while a child program is running,
-        ; which is most of when disks fail.  The depth names the slot.
-        mov     eax,[exec_depth]
-        mov     [r3vdep+ebx*4],eax
+        ; nothing without the slot it is an offset into, and the slots
+        ; hold different programs: the interpreter's INT 24h handler has
+        ; to be reachable while a child program is running, which is
+        ; most of when disks fail.  The depth names the slot, and the
+        ; caller names the depth (EDX) - see set_vec.
+        mov     [r3vdep+ebx*4],edx
 
         movzx   eax,bl
         call    r3_stubfor
@@ -728,6 +1033,9 @@ r3_thunk:
         mov     ecx,[r3_lastesp]
         mov     [edi+RC_LASTESP],ecx
         mov     [edi+RC_ESP],esp
+        sldt    cx
+        movzx   ecx,cx
+        mov     [edi+RC_LDTR],ecx
 
         ; WHOSE HANDLER IS IT?  An offset is an offset into a slot, and
         ; the slot that is loaded is not always the slot the handler
@@ -749,12 +1057,14 @@ r3_thunk:
         ; the stack it runs on is the shell's own, exactly where the
         ; shell was when it called EXEC.  That is where DOS ran one.
         ;
-        ; A handler belonging to any OTHER depth is refused, and the
-        ; refusal is honest rather than cautious: nesting is done by
+        ; A handler belonging to any OTHER depth is refused.  Until
+        ; v0.62 that was the only honest answer: nesting was done by
         ; PARKING the occupant, so a program at depth 1 with a child
-        ; running has had its code copied into the arena and overwritten
-        ; - there is nothing at that offset to call any more.  The
-        ; ring-0 build had the same hole and no way to notice it.
+        ; running had had its code copied into the arena and
+        ; overwritten.  Every level keeps its own slot now and the code
+        ; is still there, so this could be lifted - it would take that
+        ; program's frame from its own exec_stk record, as the shell's
+        ; is taken below - but it has not been yet.
         xor     eax,eax
         call    r3_useslot                      ; the shell's slot, and its
                                                 ; two descriptors
@@ -778,6 +1088,19 @@ rt_here:
         sub     ecx,12
         mov     edx,[r3_base]
         add     edx,ecx
+        ; Inside the slot is not enough: the bottom page of it is the
+        ; guard, and an ESP pointing there is a ring-0 page fault the
+        ; moment the frame goes in.  A program that put it there would
+        ; have faulted on its own first PUSH; one that only made calls
+        ; gets refused instead.
+        push    eax
+        push    ecx
+        mov     eax,edx
+        mov     ecx,12
+        call    dword ptr ds:[IOS_USRWOK]
+        pop     ecx
+        pop     eax
+        jc      rt_unwind
         mov     dword ptr [edx],SLOT_PSP + PSP_R3RET    ; EIP: the trampoline
         mov     dword ptr [edx+4],SEL_PROG_CS
         mov     dword ptr [edx+8],EFL_IF OR 2
@@ -802,6 +1125,12 @@ rt_here:
         ; restored - which nothing would notice until the handler
         ; returned and resumed the kernel with eight dwords of stale
         ; interrupt frame in its registers.
+        ;
+        ; AND NO LDT, for 4Bh's reason: the shell's INT 24h answering
+        ; for a DPMI client's disk would otherwise run with the
+        ; client's descriptors loadable.  r3_ret puts it back.
+        xor     eax,eax
+        lldt    ax
         mov     esp,[edi+RC_ESP]
         popad
         sub     esp,64
@@ -876,6 +1205,12 @@ r3_ret:
         mov     [r3_lastesp],eax
         mov     eax,[edi+RC_DEPTH]
         call    r3_useslot
+        mov     eax,[edi+RC_LDTR]               ; and the LDT, while the
+        cmp     dword ptr ds:[dpmi_active],0    ; client it belongs to is
+        jne     r3r_ldt                         ; still there
+        xor     eax,eax
+r3r_ldt:
+        lldt    ax
 
         ; This trampoline call is an INT 21h that will never reach
         ; i21_r0, so its own increment of the InDOS count has to come
@@ -958,9 +1293,9 @@ ra_none:
 ;
 ; That is what DOS did.  A .COM program owned its segment and every
 ; allocation came out of it, which is why 4Ah "shrink yourself" existed
-; at all.  It also travels correctly: EXEC parks the whole slot, so a
-; nested program's heap goes into the park and comes back with it,
-; where an arena block would have needed an owner and a sweep.
+; at all.  It also ends correctly: the slot goes back to the arena
+; whole when the program ends, heap and all, where a block of its own
+; would have needed an owner and a sweep.
 ;
 ; The header is the arena's, sixteen bytes with the same signatures,
 ; because two block formats in one kernel is one too many.  The owner
@@ -971,40 +1306,60 @@ ra_none:
 
 ;---------------------------------------------------------------------
 ; r3h_init - EAX = the first free offset (the end of the BSS), EBX =
-;            bytes of stack to keep at the top.  One free block.
+;            bytes of stack to keep at the top.  One free block, and
+;            the stack after it as a block in use.
+;
+; THE CHAIN RUNS TO THE TOP OF THE SLOT, STACK AND ALL, and that is
+; for slot_grow.  A slot grows upward, and the stack is at the top and
+; cannot move - every return address on it is an offset - so new
+; memory arrives ABOVE the stack.  For 48h to hand it out, the chain
+; has to step over the stack to get there; a used block the size of
+; the stack is how it steps over it, and growing is then one free
+; block written at the old top.  Until v0.62 the chain stopped at the
+; stack and nothing was ever above it.
+;
+; With no room below the stack for a free block, the chain is empty
+; and starts at the top, and the first slot_grow begins it there.
 ;---------------------------------------------------------------------
 r3h_init:
         pushad
         add     eax,15                          ; headers stay 16-aligned
         and     eax,NOT 15
-        mov     [r3h_lo],eax
-
         mov     ecx,[r3_size]
+        mov     [r3h_hi],ecx                    ; to the top, whatever happens
         cmp     ebx,1000h                       ; whatever the header asked
         jae     rhi_stk                         ; for, and never less than 4K
         mov     ebx,1000h
 rhi_stk:
-        sub     ecx,ebx
-        and     ecx,NOT 15
-        mov     [r3h_hi],ecx
+        add     ebx,15
+        and     ebx,NOT 15                      ; EBX = the stack's block
+        mov     edx,ecx
+        sub     edx,ebx
+        sub     edx,MCB_LEN                     ; EDX = where its header goes
 
-        ; No room for a header and a byte?  Then there is no heap, and
-        ; 48h will say so rather than build one that overlaps a stack.
-        mov     edx,eax
-        add     edx,MCB_LEN + MCB_LEN
-        cmp     edx,ecx
-        jbe     rhi_room
-        mov     [r3h_hi],eax
-        popad
-        ret
-rhi_room:
+        ; Room below it for a header and a byte?  If not, no heap below
+        ; the stack, and 48h will say so rather than build one that
+        ; overlaps it.
+        lea     esi,[eax + MCB_LEN + 16]
+        cmp     esi,edx
+        ja      rhi_none
+        mov     [r3h_lo],eax
         mov     edi,[r3_base]
-        add     edi,eax
-        mov     dword ptr [edi+MCB_SIG],SIG_FREE
+        lea     esi,[edi+eax]                   ; the free block
+        mov     dword ptr [esi+MCB_SIG],SIG_FREE
+        mov     ecx,edx
         sub     ecx,eax
         sub     ecx,MCB_LEN
-        mov     [edi+MCB_SIZE],ecx
-        mov     dword ptr [edi+MCB_OWNER],0
+        mov     [esi+MCB_SIZE],ecx
+        mov     dword ptr [esi+MCB_OWNER],0
+        lea     esi,[edi+edx]                   ; and the stack, in use
+        mov     dword ptr [esi+MCB_SIG],SIG_USED
+        mov     [esi+MCB_SIZE],ebx
+        mov     dword ptr [esi+MCB_OWNER],0
+        popad
+        ret
+rhi_none:
+        mov     [r3h_lo],ecx                    ; empty, at the top
         popad
         ret
 
@@ -1020,7 +1375,10 @@ r3h_alloc:
         push    ecx
         push    edx
         push    edi
-        add     ebx,15
+        add     ebx,15                          ; within 15 of 4GB wraps to
+        jnc     rha_round                       ; nothing - see arena_alloc
+        mov     ebx,0FFFFFFFFh
+rha_round:
         and     ebx,NOT 15
         xor     edx,edx                         ; the largest seen
         mov     ecx,[r3h_lo]
@@ -1143,6 +1501,9 @@ r3h_resize:
         call    r3h_find
         jc      rhr_bad
         add     ebx,15
+        jnc     rhr_round
+        mov     ebx,0FFFFFFFFh
+rhr_round:
         and     ebx,NOT 15
 
         ; Growing means taking in the free block above, if there is
@@ -1342,6 +1703,12 @@ r3_selnull      dw  0
 
 r3h_lo          dd  0                   ; the slot heap, as offsets
 r3h_hi          dd  0
+
+; Every EXEC level's slot, by depth: where it is, how big, and the
+; arena block it was cut from (0 for the shell's, which is not one).
+r3_slbase       dd  SHELL_SLOT, EXEC_MAX dup(0)
+r3_slsize       dd  SHELL_SIZE, EXEC_MAX dup(0)
+r3_slblk        dd  EXEC_MAX + 1 dup(0)
 
 r3_fvec         dd  0
 r3_ferr         dd  0

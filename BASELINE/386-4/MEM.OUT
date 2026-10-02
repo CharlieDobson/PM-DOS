@@ -2,12 +2,12 @@ Memory Type                Total KB      Used KB      Free KB
 ----------------        -----------  -----------  -----------
 Conventional                    619            0          618
 Upper                           320          144          175
-OS Reserved                   1,540        1,540            0
-XMS pool                      1,531          340        1,191
+OS Reserved                   1,152        1,152            0
+XMS pool                      1,919          856        1,063
 ----------------        -----------  -----------  -----------
-Total memory                  4,011        2,025        1,986
+Total memory                  4,011        2,153        1,858
 
 Extended memory reported by the BIOS                    3,072 KB
-Largest free XMS block                                  1,191 KB
-XMS blocks in use                                           4
+Largest free XMS block                                  1,063 KB
+XMS blocks in use                                           5
 XMS blocks free                                             1
