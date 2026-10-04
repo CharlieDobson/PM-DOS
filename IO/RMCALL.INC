@@ -51,8 +51,11 @@ rm_int:
         xor     al,al
         call    nt_arm
         pop     eax
+        call    vd_rmdown               ; and VDS, which a box needs and a
+                                        ; ROM in real mode must not see
 
         mov     byte ptr ds:[RMR_INTNO],al
+        call    rq_down                 ; and the timer's count with it
         mov     dword ptr ds:[RMSAVE_ESP],esp
         mov     dword ptr ds:[RMRET],OFFSET rmc_back
         mov     word ptr ds:[RMRET+4],SEL_CODE32
@@ -76,9 +79,149 @@ rmc_back:
         mov     al,1                    ; and back on, if it is wanted at all
         call    nt_arm
         pop     eax
+        call    vd_rmup
+        call    rq_up                   ; and what interrupted the call
         popfd
         popad
         ret
+
+;=====================================================================
+; rq_down / rq_up - either side of a BIOS call.  Interrupts off.
+;                   Everything preserved.
+;
+; The timer's count goes down to rq_timer (IORM.ASM) and comes back.
+; And the lines that interrupted while the call was running are handed
+; on: the RMT_IRQS entries noted them in GV_RMOWED, and the BIOS's own
+; handlers dealt with the devices.
+;
+; A tick is owed to a DOS box the way any tick is (vpc_tick).  A box's
+; line is owed to it if it would have been in protected mode
+; (vpc_raise): the box's handler is not in the table the BIOS was
+; given, so this is the only way the box hears of it.  A line the
+; kernel owns outright was its owner's, and is not handed on.  Two on
+; one line during one call are one, as they are on the real part while
+; it is masked.
+;=====================================================================
+rq_down:
+        push    eax
+        mov     eax,dword ptr [vt_div]
+        mov     dword ptr ds:[GV_VTDIV],eax
+        mov     eax,dword ptr [vt_acc]
+        mov     dword ptr ds:[GV_VTACC],eax
+        mov     word ptr ds:[GV_RMOWED],0
+        mov     eax,dword ptr [vpc_imr] ; the lines a box listens on, for
+        not     eax                     ; rq_rtc
+        and     eax,VP_GUEST
+        mov     word ptr ds:[GV_RMBOX],ax
+        pop     eax
+        ret
+
+rq_up:
+        push    eax
+        push    ebx
+        mov     eax,dword ptr ds:[GV_VTACC]
+        mov     dword ptr [vt_acc],eax
+        movzx   eax,word ptr ds:[GV_RMOWED]
+        btr     eax,0
+        jnc     rqu_lines
+        call    vpc_tick
+rqu_lines:
+        and     eax,VP_GUEST
+rqu_next:
+        bsf     ebx,eax
+        jz      rqu_out
+        btr     eax,ebx
+        cmp     dword ptr [irq_vectors + ebx*4],OFFSET irq_shared
+        jne     rqu_next
+        call    vpc_raise
+        jmp     short rqu_next
+rqu_out:
+        pop     ebx
+        pop     eax
+        ret
+
+;=====================================================================
+; rm_freeze - IOS_RMFREEZE, once, from PMDOS when CONFIG.SYS is
+;             finished.  From here on a BIOS call runs with a copy of
+;             the vector table as it is now (BIOS_IVT), and not with
+;             the table at 0:0.
+;
+; THE TABLE AT 0:0 IS EVERY PROGRAM'S.  A DOS box writes it with 25h,
+; a DPMI client with 0201h, and rm_int handed it to the BIOS as it
+; found it - with interrupts on, because the BIOS's disk code waits on
+; them.  So a handler a program had put on anything the BIOS reaches
+; during a call ran in real mode, inside the kernel, with paging off:
+; the timer, INT 1Ch, the clock's interrupt, INT 15h, and INT 13h, 1Ah,
+; 14h and 17h themselves, which the kernel calls by number.  No page
+; is read-only down there, so that was the end of the kernel's
+; protection from its programs.  A program that died with INT 1Ch
+; hooked took the machine with it at the next diskette read.  And an
+; interrupt that protected mode had already owed to a box was run
+; down there as well, and the box had it twice.
+;
+; THE COPY IS TAKEN NOW because CONFIG.SYS is where the machine is set
+; up.  A DEVICE= driver or an INSTALL= program that hooks the BIOS is
+; in it, and the BIOS goes on reaching it; what AUTOEXEC.BAT runs, and
+; everything after, is a program and is not.  A box's own INT 13h, 1Ah
+; and the rest still go through the box's own table: the monitor sends
+; them there.
+;
+; TWO THINGS IN THE COPY ARE CHANGED.  INT 4Bh is what it was before
+; the kernel put the VDS stub there, which is what vd_rmdown gives a
+; BIOS call anyway: the stub is a HLT that means something only in a
+; box.  And the sixteen interrupt lines go to IORM.ASM's RMT_IRQS
+; entries, which note the line for rq_up and pass it on to where it
+; went in the copy - all but the clock's, which goes there only when
+; it is the BIOS's (rq_rtc).  They are put at IRQ_BASE and up, where
+; protected mode has the 8259s send them, because from now on a BIOS
+; call does not move the controllers' bases: moving them threw away
+; whatever interrupt was waiting (pic_down, IORM.ASM).  08h-0Fh and
+; 70h-77h in the copy are left as they were, for whatever calls them
+; as software interrupts.
+;
+; THE VECTORS THE BIOS READS AS DATA - the diskette table at 1Eh, the
+; fixed disks' at 41h and 46h - are read at 0:0 by address and not
+; through the table an INT uses, so GV_RWDPT and the rest still work.
+; And a park does not use this: it hands the machine over, and the
+; table at 0:0 goes with it (park_land).
+;=====================================================================
+rm_freeze:
+        pushad
+        pushfd
+        cli
+        xor     al,al                   ; vectors 0 to 3 are the null
+        call    nt_arm                  ; guard's to watch
+        cld
+        xor     esi,esi
+        mov     edi,BIOS_IVT
+        mov     ecx,256
+        rep     movsd
+        mov     al,1
+        call    nt_arm
+        mov     edi,BIOS_IVT
+        call    vd_freeze               ; INT 4Bh
+        xor     ebx,ebx
+        mov     eax,(IO_SEG SHL 16) + RMT_IRQS
+rfz_one:
+        lea     edx,[ebx + 08h]         ; the line's vector in the BIOS's
+        cmp     ebx,8                   ; layout: 08h to 0Fh, then 70h to
+        jb      rfz_vec                 ; 77h - which stay as they are
+        add     edx,70h - 10h
+rfz_vec:
+        mov     ecx,dword ptr ds:[BIOS_IVT + edx*4]
+        mov     dword ptr ds:[IO_BASE + RMT_IRQORIG + ebx*4],ecx
+        mov     dword ptr ds:[BIOS_IVT + IRQ_BASE*4 + ebx*4],eax
+        add     eax,RQ_LEN
+        inc     ebx
+        cmp     ebx,16
+        jb      rfz_one
+        mov     word ptr ds:[GV_BIDTR],03FFh
+        mov     dword ptr ds:[GV_BIDTR + 2],BIOS_IVT
+        mov     byte ptr ds:[GV_PICKEEP],1
+        popfd
+        popad
+        ret
+.ERRNZ  IRQ_BASE2 - (IRQ_BASE + 8), <rm_freeze puts the sixteen lines in one run from IRQ_BASE>
 
 ;=====================================================================
 ; rm_cf - ZF clear if the last rm_int came back with carry set.

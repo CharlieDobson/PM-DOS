@@ -3,7 +3,9 @@
 ;
 ;   CDEX            one line per drive: the letter, the unit number
 ;                   MSCD001 and INT 2Fh AH=15h count it by, where it
-;                   is on the IDE bus, what is in it, and its name
+;                   is - an IDE channel or a SCSI ID, and the adapter
+;                   when there are two - what is in it, and its name;
+;                   then the SCSI adapters, if a drive is on one
 ;
 ; THERE IS NO MSCDEX.EXE ON THIS MACHINE AND THIS IS NOT ONE.  The
 ; extensions are in the kernel (MSCDEX.INC answers the API, MSCD001.INC
@@ -18,9 +20,10 @@
 ; What it asks:
 ;   21h/F1h AL=0     the kernel's version
 ;   21h/F1h AL=6     the volume table, letter by letter: a DRVF_CDROM
-;                    entry's DRV_BIOS is the ATAPI unit number
+;                    entry's DRV_BIOS is the CD-ROM unit number
 ;   21h/F1h AL=17h   that unit - its place on the bus and its name,
 ;                    answered with the tray open
+;   21h/F1h AL=1Ch   the SCSI adapters, by name
 ;   21h/F1h AL=1     mounts the letter, which is how "is there a
 ;                    disc" is asked; with none the kernel raises a
 ;                    critical error, which crit_fail answers FAIL
@@ -107,6 +110,13 @@ ca_done:
         mov     ax,4C01h
         int     21h
 cx_some:
+        mov     edx,1                           ; a second SCSI adapter?  Then
+        mov     edi,OFFSET hba                  ; each SCSI row names its own
+        mov     eax,0F11Ch + (SCF_ADAPTER SHL 16)
+        int     21h
+        jc      cx_head
+        mov     byte ptr [many_hba],1
+cx_head:
         mov     edx,OFFSET msg_head
         call    print
 
@@ -155,8 +165,57 @@ cx_unext:
         inc     ebx
         jmp     short cx_unit
 cx_done:
+        cmp     byte ptr [any_scsi],0
+        je      cx_exit
+        call    adapters
+cx_exit:
         mov     ax,4C00h
         int     21h
+
+;=====================================================================
+; adapters - one line per SCSI adapter, under the table: which card a
+;            "SCSI ID" in it is on.  21h/F1h AL=1Ch, SCF_ADAPTER.
+;=====================================================================
+adapters:
+        call    crlf
+        xor     ebx,ebx
+ad_one:
+        mov     edx,ebx
+        mov     edi,OFFSET hba
+        mov     eax,0F11Ch + (SCF_ADAPTER SHL 16)
+        int     21h
+        jc      ad_out
+        mov     edx,OFFSET msg_adapter
+        call    print
+        mov     eax,ebx
+        call    pdec
+        mov     edx,OFFSET msg_colon
+        call    print
+        mov     esi,OFFSET hba + HBA_NAME
+        mov     ecx,16
+        call    trim
+        call    putn
+        movzx   eax,word ptr [hba+HBA_BASE]
+        or      eax,eax
+        jz      ad_noport
+        mov     edx,OFFSET msg_at
+        call    print
+        call    puthex16                        ; into msg_hport, which ends
+        mov     eax,dword ptr [msg_hport]       ; in a blank for the table;
+        mov     dword ptr [msg_hnum],eax        ; this line ends at the h
+        mov     edx,OFFSET msg_hnum
+        call    print
+ad_noport:
+        cmp     byte ptr [hba+HBA_KIND],SHK_ASPI
+        jne     ad_eol
+        mov     edx,OFFSET msg_byaspi
+        call    print
+ad_eol:
+        call    crlf
+        inc     ebx
+        jmp     ad_one
+ad_out:
+        ret
 
 ;=====================================================================
 ; row - one drive: row_letter (FFh for none) and row_unit are set.
@@ -189,6 +248,41 @@ rw_letter:
         int     21h
         jc      rw_nounit
 
+        ; ON A SCSI ADAPTER: its ID there, and the LUN when it is not
+        ; the first.  With two adapters or more, which one - "SCSI 1
+        ; ID 2" - and the adapters are listed under the table
+        mov     dword ptr [loc_len],0
+        cmp     byte ptr [cdu+CDU_KIND],CDK_SCSI
+        jne     rw_ide
+        mov     byte ptr [any_scsi],1
+        mov     edx,OFFSET msg_scsiid
+        cmp     byte ptr [many_hba],0
+        je      rw_id
+        mov     edx,OFFSET msg_scsin
+        call    printc
+        movzx   eax,byte ptr [cdu+CDU_DEV]
+        call    pdecc
+        mov     edx,OFFSET msg_id
+rw_id:
+        call    printc
+        movzx   eax,byte ptr [cdu+CDU_TARGET]
+        and     eax,0Fh
+        call    pdecc
+        mov     al,byte ptr [cdu+CDU_TARGET]
+        shr     al,4
+        jz      rw_lpadset
+        mov     edx,OFFSET msg_lun
+        call    printc
+        movzx   eax,byte ptr [cdu+CDU_TARGET]
+        shr     eax,4
+        call    pdecc
+rw_lpadset:
+        mov     ecx,LOC_W + 2
+        sub     ecx,[loc_len]
+        jle     rw_disc
+        jmp     short rw_lpad
+
+rw_ide:
         ; where it is: the channel by its base port, then the device
         movzx   eax,word ptr [cdu+CDU_BASE]
         mov     edx,OFFSET msg_primary
@@ -427,6 +521,23 @@ trim:
 tr_out:
         ret
 
+; pdecc - pdec, counting the digits into loc_len
+pdecc:
+        push    eax
+        push    ecx
+        push    edx
+        mov     ecx,10
+pdc_lp:
+        inc     dword ptr [loc_len]
+        xor     edx,edx
+        div     ecx
+        or      eax,eax
+        jnz     pdc_lp
+        pop     edx
+        pop     ecx
+        pop     eax
+        ; and on into pdec, which prints it
+
 ; pdec - EAX in decimal, no padding
 pdec:
         pushad
@@ -477,6 +588,10 @@ row_unit    db  0
             db  0,0
 loc_len     dd  0                       ; what printc has put in the column
 n_units     dd  0
+any_scsi    db  0                       ; a unit on a SCSI adapter was shown
+many_hba    db  0                       ; there is more than one adapter
+            db  0,0
+hba         db  HBA_LEN dup(0)
 unit_seen   db  LETTERS dup(0)
             db  0,0
 drv         db  DRV_LEN dup(0)
@@ -499,8 +614,17 @@ msg_secondary db 'secondary ','$'
 msg_tertiary db 'tertiary ','$'
 msg_quaternary db 'quaternary ','$'
 msg_hport   db  '0000h ','$'
+msg_hnum    db  '0000h','$'
 msg_master  db  'master','$'
 msg_slave   db  'slave','$'
+msg_scsiid  db  'SCSI ID ','$'
+msg_scsin   db  'SCSI ','$'
+msg_id      db  ' ID ','$'
+msg_lun     db  ' LUN ','$'
+msg_adapter db  'SCSI adapter ','$'
+msg_colon   db  ': ','$'
+msg_at      db  ' at ','$'
+msg_byaspi  db  ' (through its ASPI driver)','$'
 msg_nounit  db  '?',(LOC_W + 1) dup(' '),'$'
 msg_nodisc  db  'no disc',(DISC_W + 2 - 7) dup(' '),'$'
 msg_nolabel db  '-',(DISC_W + 2 - 1) dup(' '),'$'
@@ -511,8 +635,11 @@ msg_badparm db  'Invalid parameter',13,10,'$'
 msg_usage   db  'Displays the CD-ROM drives and their drive letters.',13,10,13,10
             db  'CDEX',13,10,13,10
             db  'Each line is one drive: its letter, the unit number by which',13,10
-            db  'MSCD001 and INT 2Fh AH=15h count it, where it is on the IDE bus,',13,10
-            db  'the label of the disc in it, and the name the drive reports.',13,10,13,10
+            db  'MSCD001 and INT 2Fh AH=15h count it, where it is (an IDE',13,10
+            db  'channel or a SCSI ID), the label of the disc in it, and the',13,10
+            db  'name the drive reports.  The SCSI adapters are listed under',13,10
+            db  'the table when a drive is on one.  With two or more adapters,',13,10
+            db  'SCSI 1 ID 2 is ID 2 on adapter 1.',13,10,13,10
             db  'CDROM= in CONFIG.SYS chooses the first letter.',13,10,'$'
 
 _CDX    ENDS

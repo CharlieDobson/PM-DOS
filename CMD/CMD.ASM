@@ -3615,7 +3615,7 @@ cpp_q:
 cpp_qend:
         mov     byte ptr [esi],0
         inc     esi
-        jmp     short cpp_next
+        jmp     cpp_next
 cpp_bare:
         call    cpp_record
         inc     ebx
@@ -3643,13 +3643,13 @@ cpp_swcut:
         call    upcase                  ; where the '/' used to be plus one
         call    cpp_apply
         inc     esi
-        jmp     short cpp_next
+        jmp     cpp_next
 cpp_plus:
         mov     byte ptr [esi],0        ; "A+B" - cut here and glue on
         inc     esi
         mov     byte ptr [cp_pend],1
         mov     byte ptr [cp_glued],1
-        jmp     short cpp_next
+        jmp     cpp_next
 cpp_cut:
         mov     byte ptr [esi],0
         inc     esi
@@ -5822,10 +5822,10 @@ pp_dollar:
 pp_ch:
         mov     ah,02h
         int     21h
-        jmp     short pp_lp
+        jmp     pp_lp
 pp_nl:
         call    put_crlf
-        jmp     short pp_lp
+        jmp     pp_lp
 pp_date:
         push    esi
         mov     ah,2Ah
@@ -6559,10 +6559,12 @@ cn_loadhigh db  'LOADHIGH',0
 ; CMD is not in cmd_table - a shell cannot be an internal command of
 ; itself - so cmd_startup prints this one from its own tail scan.
 hlp_command db  'Starts a new copy of the PM-DOS command interpreter, CMD.EXE.',13,10,13,10
-            db  '  CMD [/P] [/C string]',13,10,13,10
+            db  '  CMD [/P [/D]] [/C string]',13,10,13,10
             db  '  /P   permanent: run AUTOEXEC.BAT at startup and refuse to',13,10
             db  '       EXIT.  This is how the kernel starts the first shell,',13,10
             db  '       and how a SHELL= line in CONFIG.SYS asks for one.',13,10
+            db  '  /D   with /P, skip AUTOEXEC.BAT.  The kernel adds it when',13,10
+            db  '       Shift or F5 at startup bypasses the startup files.',13,10
             db  '  /C   run string as a command line - a batch file runs to',13,10
             db  '       its end - and then exit with its errorlevel.  Anything',13,10
             db  '       after /C is the command, switches and all.',13,10,13,10

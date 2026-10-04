@@ -660,7 +660,41 @@ r3_pflags:
         je      rpf_cache
         cmp     ax,1Ah * 256 + 0F1h
         je      rpf_xmem
+        cmp     ax,12h * 256 + 0F1h
+        je      rpf_bus
+        cmp     ax,1Fh * 256 + 0F1h
+        je      rpf_vbe
         call    vdm_flags
+        ret
+
+; F1h/1Fh, VBE: the two blocks the BIOS answers into and the palette
+; come and go through EDI.  Everything else is a mode or a count - and
+; VBF_BIOS's EBX, ECX and EDX are numbers the BIOS reads.
+rpf_vbe:
+        mov     bl,P_DI
+        cmp     byte ptr [ebp+F_EAX+2],VBF_INFO
+        je      rpf_out
+        cmp     byte ptr [ebp+F_EAX+2],VBF_MODE
+        je      rpf_out
+        cmp     byte ptr [ebp+F_EAX+2],VBF_PALETTE
+        je      rpf_out
+        xor     bl,bl
+        ret
+
+; F1h/12h, the buses: only the Plug and Play calls carry a pointer -
+; EDI for the two that answer into a buffer, ESI for the one that is
+; handed a list - and every other one carries numbers that a blanket
+; flag would turn into nonsense addresses, as F1h/16h's comment says.
+rpf_bus:
+        mov     bl,P_DI
+        cmp     byte ptr [ebp+F_EAX+2],BUS_PNPRES
+        je      rpf_out
+        cmp     byte ptr [ebp+F_EAX+2],BUS_PNPREGS
+        je      rpf_out
+        mov     bl,P_SI
+        cmp     byte ptr [ebp+F_EAX+2],BUS_PNPSET
+        je      rpf_out
+        xor     bl,bl
         ret
 
 rpf_cache:
@@ -1626,6 +1660,13 @@ r3_fault:
         ; lines away, and did not think to look here.
         mov     esp,[r3_esp0]                   ; ours again, whatever the
         sti                                     ; program was doing on it
+
+        ; A program that faults in a graphics mode it set would have its
+        ; report written where nobody can read it, and then wiped by the
+        ; mode 4Ch puts back.  So the screen goes back first, and 4Ch's
+        ; own call finds nothing left to do (VBE.INC).
+        mov     eax,[exec_depth]
+        call    vbe_exit
 
         mov     esi,OFFSET msgR3Fault
         call    dword ptr ds:[IOS_CONSTR]

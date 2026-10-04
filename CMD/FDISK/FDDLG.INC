@@ -136,7 +136,7 @@ mur_drag:
         cmp     eax,[mu_open]
         je      mur_loop
         mov     ecx,eax
-        jmp     short mur_switch
+        jmp     mur_switch
 mur_dragin:
         call    mu_itemat
         or      eax,eax
@@ -406,7 +406,7 @@ mud_sep:
         call    scr_putc
 mud_next:
         inc     ebp
-        jmp     short mud_item
+        jmp     mud_item
 mud_out:
         popad
         ret
@@ -1392,7 +1392,7 @@ vws_key:
         je      vws_out
         cmp     al,'V'
         je      vws_out
-        jmp     short vws_loop
+        jmp     vws_loop
 vws_grey:
         mov     ecx,-1
         cmp     ah,SC_UP

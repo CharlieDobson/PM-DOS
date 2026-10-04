@@ -59,6 +59,8 @@ int   sys_read_sec( int drv, u32 lba, u32 count, u32 bps, void *buf );
 int   sys_write_sec( int drv, u32 lba, u32 count, u32 bps, const void *buf,
                      int kind );
 void  sys_reset_drive( int drv );           /* flush and invalidate buffers */
+void  sys_mark_checked( int drv );          /* the volume is sound: PM-DOS
+                                               may set its clean bit */
 
 void *sys_mem_alloc( u32 size );
 void  sys_mem_info( u32 *total, u32 *avail );

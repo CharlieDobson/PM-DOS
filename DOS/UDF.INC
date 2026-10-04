@@ -439,7 +439,7 @@ umo_pd:
         mov     eax,dword ptr [udf_fbuf+UDF_PD_LENGTH]
         mov     [udf_partlen],eax
         pop     eax
-        jmp     short umo_vdsnext
+        jmp     umo_vdsnext
 
 ;--- the logical volume: the block size, the file set, and the name
 umo_lvd:

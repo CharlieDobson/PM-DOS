@@ -1057,7 +1057,7 @@ mp_istep:
 mp_iquote:
         mov     byte ptr [esi],0        ; the closing quote ends it
         inc     esi
-        jmp     short mp_tok
+        jmp     mp_tok
 mp_icut:
         mov     byte ptr [esi],0
         inc     esi

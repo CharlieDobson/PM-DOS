@@ -61,6 +61,8 @@ in_nocomspec:
 
         cmp     byte ptr [permanent],0
         je      in_final
+        cmp     byte ptr [in_noauto],0  ; /D: neither AUTOEXEC.BAT nor the
+        jne     in_final                ; date and time asked without one
         call    in_autoexec
 in_final:
         mov     bx,OFFSET resident_end + STACK_SIZE
@@ -114,13 +116,14 @@ isp_out:
 ;---------------------------------------------------------------------
 ; in_switches - the command tail:
 ;
-;   COMMAND [[drive:]path] [device] [/E:nnnnn] [/P] [/F]
+;   COMMAND [[drive:]path] [device] [/E:nnnnn] [/P [/D]] [/F]
 ;           [/C command | /K command]
 ;
 ; A device is a CTTY; a path is where COMMAND.COM lives, which a
-; permanent shell turns into COMSPEC.  /Y, /D and /MSG are DOS 6's and
-; are accepted without doing anything.  /C and /K take the whole rest
-; of the line.
+; permanent shell turns into COMSPEC.  /D skips AUTOEXEC.BAT, and the
+; date and time a permanent shell asks for without one, as DOS 6's
+; did.  /Y and /MSG are DOS 6's too and are accepted without doing
+; anything.  /C and /K take the whole rest of the line.
 ;---------------------------------------------------------------------
 in_switches:
         mov     si,PSP_TAIL + 1
@@ -183,6 +186,8 @@ ins_sw:
         je      ins_e
         cmp     al,'F'
         je      ins_f
+        cmp     al,'D'
+        je      ins_d
         cmp     al,'?'
         je      ins_help
 ins_skip:                               ; anything else: to the next word
@@ -200,6 +205,9 @@ ins_p:
         jmp     ins_skip
 ins_f:
         mov     byte ptr [crit_fail],1
+        jmp     ins_skip
+ins_d:
+        mov     byte ptr [in_noauto],1
         jmp     ins_skip
 ins_e:
         cmp     byte ptr [si],':'
@@ -443,6 +451,7 @@ in_autoname db  'A:\AUTOEXEC.BAT',0
 in_empty    db  0
 ic_fmts     dw  OFFSET dfmt_mdy, OFFSET dfmt_dmy, OFFSET dfmt_ymd
 in_envreq   dw  0
+in_noauto   db  0                       ; /D
 ie_old      dw  0
 ie_used     dw  0
 ie_strat    dw  0

@@ -310,6 +310,8 @@ ai_picked:
         add     esi,ATD_LEN
         dec     ecx
         jnz     ai_pick
+        call    cun_build               ; and the CD-ROM units, which number
+                                        ; the packet devices just found
 IFDEF ATA_DEBUG
         ; self-test: read LBA 0 back and show its signature word
         cmp     dword ptr [ata_count],0
@@ -343,7 +345,7 @@ ai_notest:
         call    con_out
         mov     al,10
         call    con_out
-        call    atapi_selftest
+        call    cun_selftest
 ENDIF
         popad
         ret

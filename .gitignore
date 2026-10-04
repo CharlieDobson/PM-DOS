@@ -1,4 +1,5 @@
 *.bat
+!DISK/*.BAT
 *.exe
 *.com
 *.obj
@@ -6,9 +7,5 @@
 BIN/**
 IMAGES/**
 *.img
-*.txt
-!*.CMD
 *.png
 *.err
-!NOTES.TXT
-!README.TXT

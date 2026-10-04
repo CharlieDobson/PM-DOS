@@ -43,6 +43,16 @@ bsv_call:
         je      bsv_physof
         cmp     ah,BUS_IRQSTAT
         je      bsv_stat
+        cmp     ah,BUS_DMASTAT
+        je      vdma_stats
+        cmp     ah,BUS_PNPHERE
+        je      pnp_here
+        cmp     ah,BUS_PNPRES
+        je      bsv_pnpres
+        cmp     ah,BUS_PNPREGS
+        je      bsv_pnpregs
+        cmp     ah,BUS_PNPSET
+        je      bsv_pnpset
 IFDEF IRQ_SELFTEST
         cmp     ah,BUS_SELFTEST
         je      iqx_report
@@ -178,6 +188,24 @@ bsv_stat:
         stc
         ret
 
+;--- ISA Plug and Play, for ISAPNP.EXE: there is no such card, or (for
+;--- BUS_PNPSET) a register it may not write
+bsv_pnpres:
+        call    pnp_resall
+        jnc     bsv_ret
+        mov     eax,ERR_BADDRIVE
+        ret
+bsv_pnpregs:
+        call    pnp_getregs
+        jnc     bsv_ret
+        mov     eax,ERR_BADDRIVE
+        ret
+bsv_pnpset:
+        call    pnp_setregs
+        jnc     bsv_ret
+        mov     eax,ERR_ACCESS
+        ret
+
 ;---------------------------------------------------------------------
 ; bsv_isdev - EBX = what a caller says is a device.  CF unless there is
 ;             a PCI bus, the number is an address and nothing else, and
@@ -202,15 +230,17 @@ bsd_no:
 
 ;=====================================================================
 ; bsv_init - IOS_BUSINIT.  AX = BUS_PARAS paragraphs below 1MB for the
-;            INT 4Bh stub, or 0; EBX -> the DPMI host's protected-mode
-;            vectors; ECX -> its "a client is running"; EDX -> its "and
-;            it is a 32-bit one".  Answers EAX ->
-;            the client's interrupt flag, which is PMIO's to keep and
-;            the host's to put back when a handler returns through it.
+;            INT 4Bh stub and the INT 08h one, or 0; EBX -> the DPMI
+;            host's protected-mode vectors; ECX -> its "a client is
+;            running"; EDX -> its "and it is a 32-bit one".  Answers
+;            EAX -> the client's interrupt flag, which is PMIO's to keep
+;            and the host's to put back when a handler returns through
+;            it.
 ;=====================================================================
 bsv_init:
         call    vpc_setup
         call    vd_setup
+        call    vt_setup
         mov     eax,OFFSET pm3_vif
         ret
 
@@ -239,4 +269,5 @@ box_park:
         call    ms_park
         pop     eax
         call    vd_park
+        call    vt_park
         ret

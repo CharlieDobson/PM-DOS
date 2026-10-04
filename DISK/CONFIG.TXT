@@ -1,0 +1,239 @@
+PM-DOS CONFIG.SYS Reference
+===========================
+
+PM-DOS reads CONFIG.SYS once at boot, before the shell starts.
+
+Every statement MS-DOS knows is accepted, so a CONFIG.SYS from a real
+DOS machine boots here without errors.  Many of those statements do
+nothing on PM-DOS.  A statement PM-DOS doesn't know at all gets
+"Unrecognized command in CONFIG.SYS", so typos show up.
+
+Lines run top to bottom, with three exceptions: SWITCHES= is read
+before anything else, DOS= next, and INSTALL= lines run last, after
+every driver has loaded.
+
+Only the first 16K of CONFIG.SYS is read.
+
+To start without CONFIG.SYS and AUTOEXEC.BAT, hold down Shift or
+press F5 while "Starting PM-DOS..." is on the screen.  PM-DOS waits
+two seconds for the key, then says "Safe mode" and goes straight to
+the prompt.  Use this when a line in either file stops the machine
+from starting.
+
+
+MS-DOS STATEMENTS
+-----------------
+
+DOS=HIGH|LOW[,UMB|NOUMB]
+    UMB sets up upper memory for DEVICEHIGH, INSTALLHIGH and LOADHIGH.
+    Without UMB, those load low.  HIGH is accepted but does nothing:
+    the kernel already runs above 1MB and leaves the HMA to DOS
+    programs.
+
+FILES=n
+    How many files can be open at once across the whole system.  8 to
+    64.  The default is 64.
+
+LASTDRIVE=x
+    The highest drive letter programs should look for, up to P.
+    LASTDRIVE never goes below the drives you actually have, and
+    doesn't add new ones.
+
+SET name=value
+    Sets an environment variable before AUTOEXEC.BAT runs.  Every
+    program inherits the variable.
+
+DEVICE=file [options]
+DEVICEHIGH=file [options]
+    Loads a 16-bit DOS device driver.  A block driver's drives get the
+    letters after your last disk.  DEVICEHIGH loads the driver into
+    upper memory if DOS=UMB is set.
+
+INSTALL=file [options]
+INSTALLHIGH=file [options]
+    Runs a 16-bit program, usually a TSR, before the shell starts.
+    32-bit programs can't be loaded this way.
+    A TSR that adds to the BIOS, such as a printer redirector, has to
+    be loaded here or with DEVICE=.  PM-DOS's own disk, clock and
+    printer calls to the BIOS don't see a TSR loaded from AUTOEXEC.BAT.
+    The same goes for a VBE driver such as UniVBE: load it here and
+    32-bit programs get its graphics modes as well as DOS programs.
+
+SHELL=file [options]
+    Picks the command interpreter.  The default is CMD.EXE /P.  Leave
+    off /P and AUTOEXEC.BAT is skipped.
+
+BREAK=ON|OFF
+    Sets the Ctrl+Break flag that programs read with INT 21h AX=3300h.
+    PM-DOS doesn't check the flag itself yet.
+
+SWITCHES=/F /N
+    /F skips the two-second wait for Shift or F5 at startup.  A key
+    pressed before the wait still counts.
+    /N turns Shift and F5 off, so CONFIG.SYS and AUTOEXEC.BAT always
+    run.
+    /K, /W and /E are accepted but do nothing.
+
+Accepted and ignored:
+    BUFFERS  FCBS  STACKS  COUNTRY  DRIVPARM  NUMLOCK  MULTITRACK
+
+Boot menus ([menu], MENUITEM, MENUDEFAULT, MENUCOLOR, SUBMENU, INCLUDE,
+COMMENT) are accepted, but there is no menu.  Every line in every
+block is used.
+
+
+PM-DOS STATEMENTS
+-----------------
+
+On MS-DOS these jobs took a separate driver or program (EMM386,
+SMARTDRV, SHARE, MODE).  On PM-DOS they're built into the kernel, so
+don't load those programs.
+
+EMS=NO|AUTO|segment
+    Expanded memory (LIM 4.0) for DOS programs.  Off unless this line
+    is present.  AUTO finds room for a 64K page frame in upper memory,
+    which leaves 64K less for DOS=UMB.  A segment from C000 to E000, on
+    a 16K boundary, puts the frame exactly there (EMS=D000).  Pages can
+    only be mapped into the frame, not into conventional memory.
+
+LFN=ON|OFF
+    Long file names.  ON by default.  OFF turns off the LFN calls (INT
+    21h 71xxh) and sticks to 8.3 names, for programs that can't cope
+    with long ones.
+
+DPMI=ON|OFF
+    The DPMI host.  ON by default.  With OFF, programs are told there
+    is no DPMI host, and the ones that can run in real mode will.
+
+NULLTRAP=ON|OFF
+    Stops a 32-bit program that writes through a null pointer before
+    the write wrecks the first four interrupt vectors.  ON by default.
+    Turn NULLTRAP off for a program that writes to low memory on
+    purpose.
+
+KEYRATE=rate[,delay]
+    Keyboard repeat, using MODE CON's numbers.  Rate is 1 to 32, and
+    higher is faster (32 is about 30 keys a second).  Delay is 1 to 4
+    quarter seconds.  Without this line the BIOS setting stays.
+    DOSBox 0.74 stops taking keys at KEYRATE=32,1.  Use 31,1 there.
+
+IDEDMA=OFF|AUTO|ON|mode
+    How IDE disks move data.  AUTO (the default) keeps the mode the
+    BIOS set and falls back to PIO if there isn't one.  ON picks the
+    fastest mode the drive, controller and cable can handle.  PM-DOS
+    knows the controller timing on Intel (PIIX/ICH) and VIA chipsets
+    only.  On other chipsets ON stops at the BIOS mode or UDMA2,
+    whichever is faster.  OFF is PIO only.
+    UDMA0 to UDMA6 sets a ceiling: that mode, or the best one under
+    the ceiling that works.  MWDMA0 to MWDMA2 sets that exact mode.
+    Naming a mode also gets past the limit on other chipsets.
+    If a DMA transfer fails, that disk goes back to PIO until the next
+    boot.  A CRC error above UDMA2 drops the disk to UDMA2 first.
+
+IDECABLE=AUTO|40|80
+    UDMA3 and faster need an 80-wire cable, otherwise the limit is
+    UDMA2.  AUTO works out which cable is fitted.  Use 40 or 80 if
+    AUTO gets it wrong; the setting covers both channels.  Put this
+    line above IDEDMA=.
+
+IDE32=OFF|AUTO|ON
+    32-bit reads from the IDE data port.  AUTO (the default) tests
+    each drive first.  ON skips the test.  If a disk reads garbage
+    here but works fine on MS-DOS, try IDE32=OFF.
+
+    \TESTS\IDETEST.EXE shows what was picked for each drive.
+
+CDROM=x
+    Drive letter for the first CD-ROM; any others follow it.  Without
+    this line they come after the hard disks.  A letter that already
+    belongs to a hard disk is ignored.
+
+SCSI=ON|OFF
+    SCSI CD-ROM drives.  ON by default.  PM-DOS has its own drivers
+    for Adaptec 154x and BusLogic cards, and for the SCSI port on a
+    Pro Audio Spectrum 16.  For any other card, such as an Adaptec
+    2940 or a Sound Blaster 16 SCSI-2, load the card's ASPI driver
+    with DEVICE= and PM-DOS uses the drives through it.  The card's
+    IRQ must then be 3, 4, 5, 7, 9, 10 or 11.
+    OFF turns PM-DOS's own drivers off.  An ASPI driver still works.
+    CDEX lists the drives and the card each one is on.
+
+CACHE=max[,min[,ON|OFF]]
+CACHE=OFF
+    The disk cache.  It's on by default, so you only need this line to
+    change it.  Sizes are in KB, or add K or M: CACHE=4M is the same as
+    CACHE=4096.
+    The cache grows between min and max as it needs to, and gives
+    memory back when a program wants it.  For a fixed size, give the
+    same number twice (CACHE=2048,2048).  Without the line, max is an
+    eighth of extended memory and min is a quarter of max.  With less
+    than 2MB of extended memory there's no cache.
+    The third field is write-behind, ON by default, for hard disks
+    only.  Anything waiting is written before the prompt comes back,
+    so a power cut can only lose the command that was running.  OFF
+    writes straight through, and so does VERIFY ON.  Floppies,
+    CD-ROMs and loaded block drivers are only read-cached.
+    The CACHE command shows statistics (/S), writes everything out
+    (/C), empties the cache (/R) and sets write-behind per drive
+    (CACHE C+ A-).
+
+SHARE=locks[,space]|ON|OFF
+    File sharing and record locking.  ON with 20 locks by default.
+    The number is how many byte ranges can be locked at once, up to
+    1024, like SHARE /L.  The second number (SHARE /F) is accepted and
+    ignored.  OFF works like DOS without SHARE loaded.
+
+UNDELETE=ON|OFF
+    Delete protection.  ON by default.  A deleted file goes into a
+    hidden RECYCLED directory on its own drive, and UNDELETE.EXE lists
+    files, restores them, or empties the directory (/PURGE).  Up to 10%
+    of free space is used, and the oldest files go first when more
+    room is needed.  Files bigger than that, *.TMP and *.$$$ files, and
+    anything deleted inside RECYCLED are gone for good.  Protection
+    doesn't work under Windows 3.1 in 386 enhanced mode.  OFF deletes
+    files the normal way.
+
+AUTOCHECK=ON|ASK|OFF
+    What happens at startup to a hard disk that wasn't shut down
+    properly.  ON by default: CHKDSK X: /F checks the drive before
+    AUTOEXEC.BAT runs.  ASK asks first.  OFF only names the drive.
+    In safe mode, ON works like ASK.
+    A drive is marked when something writes to it, and unmarked once
+    everything is written and no file is left open for writing, which
+    is done by the time the prompt comes back.  So turning the machine
+    off at the prompt is safe.  Turning it off while a program is
+    saving a file, or while Windows 3.1 runs in 386 enhanced mode,
+    leaves the drive marked.
+    The mark is the one Windows 95 and 98 use on FAT16 and FAT32
+    drives, so each system notices when the other wasn't shut down.
+    Floppies don't have it.  A marked drive stays marked until CHKDSK
+    finds nothing wrong or fixes it with /F.  CHKDSK.EXE has to be in
+    the shell's directory or in the root of the boot drive.
+
+
+THE CONFIG.SYS ON THIS DISK
+---------------------------
+
+The MS-DOS lines are there to prove that a normal DOS CONFIG.SYS
+boots cleanly.  A release build prints nothing while reading the
+file.  The only boot messages are for a mouse, for each CD-ROM
+drive, and for a hard disk that wasn't shut down properly, and only
+when there is one.
+
+CFGTEST expects FILES=40, LASTDRIVE=E, SET PMDOSTEST and the TSRTEST
+line below, so leave those alone if you plan to run it.
+
+Three test lines are commented out because they print banners at boot:
+
+REM DEVICEHIGH=\TESTS\TESTDEV.SYS
+    A sample character driver.  TYPE TESTDEV to see the driver work,
+    and MEM /D shows TESTDEV in upper memory.  DEVCRIT and I24TEST
+    need the driver loaded.
+
+REM DEVICE=\TESTS\TESTBLK.SYS
+    A 32K RAM disk, formatted when it loads.  The RAM disk takes the
+    next letter after your last disk.
+
+REM INSTALLHIGH=\TESTS\TSRTEST.COM
+    A TSR loaded before the shell.  CFGTEST checks that the TSR is
+    still answering.

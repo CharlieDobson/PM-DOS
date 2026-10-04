@@ -839,6 +839,248 @@ pcf_free:
         ret
 
 ;=====================================================================
+; THE REST OF THE CARD, FOR ISAPNP.EXE (BUS_PNP*)
+;
+; What pnp_init does is the least the kernel needs.  Everything else on
+; a card - the sound, the game port, the synthesiser - is the business
+; of a configurator, and on a machine whose BIOS is not a Plug and Play
+; one that has always been a program run at boot: Creative's CTCM,
+; Intel's ICU.  ISAPNP.EXE is PM-DOS's, and the policy is all in it.
+; These four are what it cannot do from ring 3: the cards keep the
+; numbers pnp_init gave them, and talking to one is the key, a wake,
+; some registers, and the key forgotten again.
+;
+; A LOGICAL DEVICE'S REGISTERS ARE 30h AND UP.  Below that are the
+; card's own - the read port, isolation, the card numbers - and they
+; are pnp_init's; a program may not write them.
+;=====================================================================
+
+;---------------------------------------------------------------------
+; pnp_here - BUS_PNPHERE.  -> EAX = the cards pnp_init numbered, EBX =
+;            the port their registers are read at (0 if none).
+;---------------------------------------------------------------------
+pnp_here:
+        movzx   eax,byte ptr [pnp_cards]
+        movzx   ebx,word ptr [pnp_rdp]
+        or      eax,eax
+        jnz     phr_out
+        xor     ebx,ebx
+phr_out:
+        clc
+        ret
+
+;---------------------------------------------------------------------
+; pnp_wakeup - DL = a card's number.  The key, and that card woken.  CF
+;              if there is no such card.  Everything preserved.
+; pnp_asleep - and every card back to waiting for the key.
+;---------------------------------------------------------------------
+pnp_wakeup:
+        or      dl,dl
+        jz      pwu_no
+        cmp     dl,byte ptr [pnp_cards]
+        ja      pwu_no
+        push    eax
+        call    pnp_key
+        mov     ah,dl
+        mov     al,PNP_R_WAKE
+        call    pnp_wr
+        pop     eax
+        clc
+        ret
+pwu_no:
+        stc
+        ret
+
+pnp_asleep:
+        push    eax
+        mov     ax,(PNP_C_WAITKEY SHL 8) OR PNP_R_CTRL
+        call    pnp_wr
+        pop     eax
+        ret
+
+;---------------------------------------------------------------------
+; pnp_resall - BUS_PNPRES.  DL = a card, EDI -> a buffer of ECX bytes
+;              -> ECX = bytes put there: the card's nine bytes of
+;              identifier, and then its resource data to the end tag
+;              and the checksum after it.  CF if there is no such card,
+;              or it never offered the first byte.
+;
+; The items are followed only far enough to know where the data ends:
+; what is in them is the program's to read.
+;---------------------------------------------------------------------
+pnp_resall:
+        push    eax
+        push    ebx
+        push    edx
+        push    esi
+        push    edi
+        call    pnp_wakeup
+        jc      pra_fail
+        mov     esi,ecx                         ; ESI = room
+        xor     ebx,ebx                         ; EBX = bytes so far
+        mov     dword ptr [pnp_left],PNP_MAXRES
+        mov     edx,9                           ; the identifier first
+pra_id:
+        call    pra_byte
+        jc      pra_bad
+        dec     edx
+        jnz     pra_id
+pra_item:
+        call    pra_byte
+        jc      pra_end
+        test    al,80h
+        jnz     pra_large
+        mov     ah,al
+        and     ah,78h
+        movzx   edx,al
+        and     edx,7                           ; bytes that follow
+        cmp     ah,PNP_T_END SHL 3
+        je      pra_last
+        jmp     short pra_body
+pra_large:
+        call    pra_byte
+        jc      pra_end
+        movzx   edx,al
+        call    pra_byte
+        jc      pra_end
+        mov     dh,al
+pra_body:
+        or      edx,edx
+        jz      pra_item
+pra_skip:
+        call    pra_byte
+        jc      pra_end
+        dec     edx
+        jnz     pra_skip
+        jmp     short pra_item
+pra_last:
+        or      edx,edx                         ; the checksum
+        jz      pra_end
+        call    pra_byte
+pra_end:
+        call    pnp_asleep
+        mov     ecx,ebx
+        pop     edi
+        pop     esi
+        pop     edx
+        pop     ebx
+        pop     eax
+        clc
+        ret
+pra_bad:
+        call    pnp_asleep
+pra_fail:
+        xor     ecx,ecx
+        pop     edi
+        pop     esi
+        pop     edx
+        pop     ebx
+        pop     eax
+        stc
+        ret
+
+;--- pra_byte - the next byte, into the buffer if there is room; CF at
+;--- the end of the card's data or of the buffer
+pra_byte:
+        cmp     ebx,esi
+        jae     prb_full
+        call    pnp_next
+        jc      prb_out
+        mov     byte ptr [edi+ebx],al
+        inc     ebx
+        clc
+prb_out:
+        ret
+prb_full:
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; pnp_getregs - BUS_PNPREGS.  DL = a card, DH = one of its logical
+;               devices, EDI -> 256 bytes: registers 30h to 0AFh of that
+;               device at their own offsets, and 06h and 07h - the
+;               card's number and the device's.  The rest are zero.  CF
+;               if there is no such card.
+;---------------------------------------------------------------------
+pnp_getregs:
+        pushad
+        call    pnp_wakeup
+        jc      pgx_no
+        push    edi
+        mov     ecx,256 / 4
+        xor     eax,eax
+        cld
+        rep     stosd
+        pop     edi
+        mov     ah,dh
+        mov     al,PNP_R_LDN
+        call    pnp_wr
+        mov     al,PNP_R_CSN
+        call    pnp_rd
+        mov     byte ptr [edi+PNP_R_CSN],al
+        mov     al,PNP_R_LDN
+        call    pnp_rd
+        mov     byte ptr [edi+PNP_R_LDN],al
+        mov     ecx,PNP_R_ACT
+pgx_reg:
+        mov     al,cl
+        call    pnp_rd
+        mov     byte ptr [edi+ecx],al
+        inc     ecx
+        cmp     ecx,0B0h
+        jb      pgx_reg
+        call    pnp_asleep
+        popad
+        clc
+        ret
+pgx_no:
+        popad
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; pnp_setregs - BUS_PNPSET.  DL = a card, DH = one of its logical
+;               devices, ESI -> ECX pairs of bytes: a register and the
+;               value for it, written in that order.  CF if there is no
+;               such card, or a register is below 30h - and then nothing
+;               has been written.
+;---------------------------------------------------------------------
+pnp_setregs:
+        pushad
+        mov     ebx,ecx
+        mov     edi,esi
+psr_look:
+        or      ebx,ebx
+        jz      psr_go
+        cmp     byte ptr [edi],PNP_R_ACT
+        jb      psr_no
+        add     edi,2
+        dec     ebx
+        jmp     short psr_look
+psr_go:
+        call    pnp_wakeup
+        jc      psr_no
+        mov     ah,dh
+        mov     al,PNP_R_LDN
+        call    pnp_wr
+        jecxz   psr_done
+psr_one:
+        mov     al,byte ptr [esi]
+        mov     ah,byte ptr [esi+1]
+        call    pnp_wr
+        add     esi,2
+        loop    psr_one
+psr_done:
+        call    pnp_asleep
+        popad
+        clc
+        ret
+psr_no:
+        popad
+        stc
+        ret
+
+;=====================================================================
 ; Data
 ;=====================================================================
 

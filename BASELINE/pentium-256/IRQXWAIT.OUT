@@ -1,0 +1,7 @@
+
+IRQXWAIT - keys typed by a resident handler, with no box running
+
+Zs while polling, 5s ..... # OK
+and waiting for one ...... Z OK
+
+IRQXWAIT: all checks passed

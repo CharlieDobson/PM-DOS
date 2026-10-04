@@ -504,7 +504,7 @@ dac_next_free:
 
 dac_step:
         inc     ebp
-        jmp     short dac_loop
+        jmp     dac_loop
 dac_none:
         popad
         ret
@@ -824,6 +824,7 @@ fat_mount:
         pushad
 fm_start:
         mov     byte ptr [fat_ok],0
+        mov     byte ptr [vol_vf],0             ; until vfl_mounted says so
         mov     dword ptr [sec_lba],-1          ; sec_buf is about to hold
                                                 ; the boot sector, and a
                                                 ; mount that fails leaves it
@@ -1140,6 +1141,8 @@ fm_is12:
 fm_typed:
         call    fat_checkmedia
         jc      fm_fail
+        call    vfl_mounted                     ; and the clean-shutdown bit,
+                                                ; out of the same sector
 
         mov     dword ptr [sec_lba],-1          ; dir cache is empty
         call    ctx_root
@@ -1244,6 +1247,8 @@ fat_checkmedia:
 fcm_read:
         mov     al,[fat_drive]
         mov     ebx,[fat_fatlba]
+        call    fat_rdcopy                      ; the live copy, which is the
+                                                ; one vfl_mounted wants next
         mov     cx,1
         mov     edi,OFFSET clus_buf             ; scratch: the cluster
         call    disk_read                       ; cache is invalid anyway
@@ -1918,7 +1923,15 @@ ffl_fail:
 ;           they are dropped - and if the volume's own boot sector was
 ;           in the range, the volume is unmounted outright, because
 ;           the BPB this kernel is working from may no longer be the
-;           one on the disk.
+;           one on the disk.  A volume still mounted has its
+;           clean-shutdown bit read back if the range covered it
+;           (vfl_after, VOLFLAG.INC).
+;
+;   AH = 2  BEFORE a transfer that WILL WRITE.  Mode 0, and every
+;           volume in the range has its clean-shutdown bit turned off
+;           first, the way the filesystem's own first write would turn
+;           it off (vfl_touch).  For the callers that know it is a
+;           write: INT 26h, 21h/7305h and a DOS box's INT 13h.
 ;
 ; Mode 1 DISCARDS rather than flushes, and that is the whole point:
 ; the sectors underneath have just been overwritten by somebody else,
@@ -1962,8 +1975,10 @@ vol_syncdrv:
         ;   the directory, and those writes land IN the cache; letting
         ;   them out before they have been made would leave the very
         ;   sectors this call is about still held.
-        cmp     byte ptr [vsd_mode],0
-        je      vsd_walk
+        ;
+        ; Mode 2 is mode 0 with one more step, and goes where it does.
+        cmp     byte ptr [vsd_mode],1
+        jne     vsd_walk
         mov     al,[vsd_bios]
         mov     ebx,[vsd_lba]
         mov     ecx,[vsd_end]
@@ -2013,10 +2028,13 @@ vsd_take:
         cmp     eax,[vsd_lba]
         jbe     vsd_next                        ; volume ends before it starts
 
-        cmp     byte ptr [vsd_mode],0
-        jne     vsd_forget
+        cmp     byte ptr [vsd_mode],1
+        je      vsd_forget
         call    fat_flush
-        jmp     short vsd_next
+        cmp     byte ptr [vsd_mode],2           ; a write is coming: the bit
+        jne     vsd_next                        ; goes off ahead of it
+        call    vfl_touch
+        jmp     vsd_next
 
 ;--- mode 1: the sectors are somebody else's now ---------------------
 vsd_forget:
@@ -2035,6 +2053,7 @@ vsd_forget:
 
 vsd_caches:
         call    vol_forget
+        call    vfl_after                       ; was the flag in the range?
 
 vsd_next:
         pop     ebx
@@ -2047,8 +2066,8 @@ vsd_done:
         mov     al,[vsd_back]                   ; back to the caller's volume,
         call    vol_swap                        ; as it stands and not remounted
 
-        cmp     byte ptr [vsd_mode],0           ; see the note at the top:
-        jne     vsd_out                         ; the flush half goes here,
+        cmp     byte ptr [vsd_mode],1           ; see the note at the top:
+        je      vsd_out                         ; the flush half goes here,
         mov     al,[vsd_bios]                   ; after every fat_flush the
         mov     ebx,[vsd_lba]                   ; walk above performed
         mov     ecx,[vsd_end]
@@ -3373,7 +3392,7 @@ fc_dot1:
         cmp     ah,'/'
         je      fc_ch
         mov     byte ptr [fc_long],1
-        jmp     short fc_ch
+        jmp     fc_ch
 fc_dotsplit:
         cmp     edx,3                   ; a SECOND dot: "a.b.c" is
         jne     fc_dosplit2             ; long-name territory too
@@ -3385,7 +3404,7 @@ fc_dosplit2:
         xor     ecx,ecx
         mov     edx,3
         inc     esi
-        jmp     short fc_ch
+        jmp     fc_ch
 
 fc_end:
         pop     edi
@@ -3493,7 +3512,10 @@ fatsec_dirty db 0
 vol_fs      db  0                       ; FS_FAT or FS_ISO - out of the pad
                                         ; that was already here, so
                                         ; VOL_STATE_SIZE does not move
-            db  0,0                     ; pad to a dword boundary
+vol_vf      db  0                       ; the volume has a clean-shutdown
+                                        ; flag (VOLFLAG.INC) - out of the
+                                        ; same pad, for the same reason
+            db  0                       ; pad to a dword boundary
 
 fat_media   db  0                       ; the BPB's media descriptor
 fat_lshift  db  0                       ; log2(BPB sector size / 512): the

@@ -381,6 +381,13 @@ void chkdsk_main( void )
         }
         fsinfo_update( count_free() );
     }
+
+    /* PM-DOS keeps a volume's clean-shutdown bit off after a crash until
+       a check says the volume is sound: a whole /F run, or a look that
+       found nothing.  Before the reset below, whose commit sets it. */
+    if ( !st.ftrunc && (opt.dofix || (!errors_seen() && !st.cross_cnt)) ) {
+        sys_mark_checked( opt.drive );
+    }
     if ( locked ) {
         sys_reset_drive( opt.drive );
         sys_unlock( opt.drive, vol.fattype == 32 );

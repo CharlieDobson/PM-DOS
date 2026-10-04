@@ -7,12 +7,12 @@ MCBTEST - the memory arena, walked the way MEM walks it
       0520 M    0008    0002           
       0523 M    0008    0007           
       052B M    0008    0009           
-      0535 M    0008    0002           
-      0538 M    0008    0003           
-      053C M    0008    0011           
-      054E M    0008    0003           
-      0552 M    0559    0005           
-      0558 M    0559    9AA6   MCBTEST 
+      0535 M    0008    0005           
+      053B M    0008    0003           
+      053F M    0008    0011           
+      0551 M    0008    0003           
+      0555 M    055C    0005           
+      055B M    055C    9AA3   MCBTEST 
       9FFF M    0008    2400   SC      
       C400 Z    0000    2BFF           
 

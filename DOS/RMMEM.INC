@@ -479,7 +479,7 @@ fn4C:
         movzx   ax,al
         mov     [rd_exitcode],ax
         mov     byte ptr [rd_exitway],0
-        jmp     short term_common
+        jmp     term_common
 
 fn31:
         mov     al,byte ptr [bp+F_AX]

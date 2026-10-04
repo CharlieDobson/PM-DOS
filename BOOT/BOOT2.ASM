@@ -124,9 +124,7 @@ s2_off      dw  0
 ; load a truncated stage 2 and execute whatever followed it.
 ;---------------------------------------------------------------------
 s2_end:
-IF (s2_end - s2_entry) GT (S2_SECTORS * 512)
-.ERR    ; stage 2 no longer fits in S2_SECTORS sectors
-ENDIF
+.ERRE   (s2_end - s2_entry) LE (S2_SECTORS * 512), <stage 2 no longer fits in S2_SECTORS sectors>
 
 _S2     ENDS
         END     s2_entry

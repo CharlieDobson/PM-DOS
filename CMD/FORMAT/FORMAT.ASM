@@ -10,7 +10,8 @@
 ;                       down again
 ;   FORMAT d: /C        clusters the old FAT had marked bad are tested
 ;                       again instead of staying marked
-;   FORMAT d: /F:size   a diskette of that capacity
+;   FORMAT d: /F:size   a diskette of that capacity.  /F:1.68 and
+;                       /F:DMF are Microsoft's DMF on a 1.44M disk
 ;   FORMAT d: /S        ...and the system copied to it afterwards
 ;   FORMAT d: /B        accepted, and does nothing: see fm_swb
 ;
@@ -67,7 +68,7 @@ FS_MEDIA        EQU     11              ; db
 FS_MEDIUM       EQU     12              ; db - FDM_*
 FS_NAME         EQU     13              ; 7 bytes, '$' and all
 FS_LEN          EQU     20
-FS_COUNT        EQU     8
+FS_COUNT        EQU     9
 
 NO_SIZE         EQU     0FFh
 
@@ -195,7 +196,7 @@ fm_swnc:
         ; written for another DOS runs
 fm_swb:
         mov     byte ptr [bflag],1
-        jmp     short fm_sw
+        jmp     fm_sw
 fm_swnb:
         cmp     al,'F'
         jne     fm_badsw
@@ -325,7 +326,7 @@ fmd_want:
         ; ...and whether this drive can make one
         movzx   ecx,al
         movzx   eax,byte ptr [fd_type]
-        movzx   eax,byte ptr [fd_can+eax]
+        movzx   eax,word ptr [fd_can+eax*2]
         bt      eax,ecx
         jnc     fm_nosize
 
@@ -972,7 +973,8 @@ fm_die:
 ;
 ; 1440, 1440K, 1440KB, 1.44, 1.44M and 1.44MB are one size, so the
 ; number is read as thousandths when it has a point in it and the
-; letters after it are stepped over without being read.
+; letters after it are stepped over without being read.  DMF is the
+; one size with a name, and the name is 1680.
 ;=====================================================================
 fm_size:
         push    ebx
@@ -985,6 +987,25 @@ fm_size:
         inc     esi
         dec     ecx
 fsz_num:
+        cmp     ecx,3
+        jb      fsz_notdmf
+        mov     al,[esi]
+        call    fm_upcase
+        cmp     al,'D'
+        jne     fsz_notdmf
+        mov     al,[esi+1]
+        call    fm_upcase
+        cmp     al,'M'
+        jne     fsz_notdmf
+        mov     al,[esi+2]
+        call    fm_upcase
+        cmp     al,'F'
+        jne     fsz_notdmf
+        add     esi,3
+        sub     ecx,3
+        mov     ebx,1680
+        jmp     fsz_look
+fsz_notdmf:
         xor     ebx,ebx                 ; EBX = the number
         xor     edi,edi                 ; EDI = digits read
 fsz_int:
@@ -2108,10 +2129,21 @@ fd_sizes:
         dw      240
         db      9, 0F0h, FDM_2880
         db      '2.88M$ '
+        ; DMF: a 1.44M disk with 21 sectors a track, and Microsoft's
+        ; layout to the byte - 2K clusters, 16 root entries, three
+        ; sectors a FAT - so that what is made here is what every DMF
+        ; reader expects.  FDF_BEGIN knows it by the 21 sectors on an
+        ; FDM_1440 medium.  It is never a drive's default: a disk only
+        ; becomes DMF when /F: says so or when it was DMF already.
+        dw      1680, 3360
+        db      21, 2, 80, 4
+        dw      16
+        db      3, 0F0h, FDM_1440
+        db      '1.68M$ '
 
 ; by FDT_*: the rows a drive can make, a bit each, and the one it
-; makes when nothing says otherwise
-fd_can      db  0, 0Fh, 2Fh, 10h, 50h, 0D0h
+; makes when nothing says otherwise.  Words, for DMF's bit 8
+fd_can      dw  0, 0Fh, 2Fh, 10h, 150h, 1D0h
 fd_default  db  0, 3, 5, 4, 6, 7
 
 ; The boot sector of a disk with no system on it.  Sixteen-bit code,
@@ -2176,6 +2208,7 @@ msg_usage   db  'Formats a disk for use with PM-DOS.',13,10,13,10
             db  '  /U          Performs an unconditional format.',13,10
             db  '  /F:size     Specifies the size of the floppy disk to format (such',13,10
             db  '              as 160, 180, 320, 360, 720, 1.2, 1.44, 2.88).',13,10
+            db  '              1.68 or DMF puts 1.68M on a 1.44M diskette.',13,10
             db  '  /B          Allocates space on the formatted disk for system files.',13,10
             db  '  /S          Copies system files to the formatted disk.',13,10
             db  '  /C          Tests clusters that are currently marked "bad."',13,10,13,10,'$'

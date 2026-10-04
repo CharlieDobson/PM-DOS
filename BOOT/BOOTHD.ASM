@@ -80,9 +80,7 @@ ENDIF
 
 ; MKDISK splices its own BPB in over exactly this span, so a drift
 ; here would have it cutting into code instead.
-IF ($ - start) - BPB_SIZE
-.ERR    ; BPB is not BPB_SIZE bytes
-ENDIF
+.ERRNZ  ($ - start) - BPB_SIZE, <BPB is not BPB_SIZE bytes>
 
 ;=====================================================================
 begin:
@@ -190,9 +188,7 @@ bootdrv     db  0
 
 ;---------------------------------------------------------------------
 boot_end:
-IF (boot_end - start) GT 1FEh
-.ERR    ; stage 1 has overflowed past the signature
-ENDIF
+.ERRE   (boot_end - start) LE 1FEh, <stage 1 has overflowed past the signature>
 
         ORG     1FEh
         dw      0AA55h

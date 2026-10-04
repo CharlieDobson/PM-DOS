@@ -2917,9 +2917,9 @@ fdp_limits:
         call    rl_room
         mov     [pl_room],eax
 
-        mov     edx,OFFSET msg_room
+        mov     edx,OFFSET msg_cursize
         call    puts
-        mov     eax,[pl_room]
+        mov     eax,[pl_olen]
         call    put10
         call    fdp_mb
 
@@ -3016,8 +3016,9 @@ fdx_said:
 fdp_free:
         call    rl_room
         mov     [pl_room],eax
-        mov     edx,OFFSET msg_room
+        mov     edx,OFFSET msg_cursize
         call    puts
+        mov     eax,[pl_olen]
         call    put10
         call    fdp_mb
 
@@ -3892,7 +3893,7 @@ rzf_put:
         jmp     short rzf_sec
 rzf_next:
         inc     ebp
-        jmp     short rzf_one
+        jmp     rzf_one
 rzf_done:
         popad
         clc
@@ -7485,9 +7486,9 @@ msg_cxnone  db  'extended, with no logical drives inside$'
 msg_cxsome  db  'extended, holding $'
 msg_cxlast  db  ' logical drive(s), the last ending at sector $'
 msg_upto    db  ' is the highest cluster,$'
-msg_room    db  13,10,13,10,'  Current size  $'
-msg_shrink  db  13,10,'  Smallest size      $'
-msg_grow    db  13,10,'  Largest size        $'
+msg_cursize db  13,10,13,10,'  Current size   $'
+msg_shrink  db  13,10,'  Smallest size  $'
+msg_grow    db  13,10,'  Largest size   $'
 msg_nolimit db  'not at all - see what is in use above$'
 msg_ideal   db  13,10,13,10,'  The smallest cluster this size could take is $'
 msg_idealto db  ' sector(s), which',13,10,'  would make the partition $'
@@ -7542,7 +7543,7 @@ msg_moveroot db 13,10,'  moving the root directory$'
 msg_movefat db  13,10,'  writing the file allocation tables$'
 msg_wrboot  db  13,10,'  writing the boot record$'
 msg_wrtab   db  13,10,'  writing the partition table$'
-msg_didit   db  13,10,'  Done.  REBOOT before using the drive. ',13,10,'$'
+msg_didit   db  13,10,'  Done.  REBOOT before using the drive.',13,10,'$'
 msg_refused db  13,10,'  Refused: $'
 
 ;--- /C, /D and /A ---------------------------------------------------
@@ -7563,8 +7564,8 @@ msg_actrest db  ' the active one',13,10
             db  '            (every other slot becomes inactive)',13,10,'$'
 msg_crthen  db  13,10,'  It will hold no filesystem until FORMAT has '
             db  'been run on it.',13,10,'$'
-msg_crdone  db  13,10,'  Created.  REBOOT before using the drive. ',13,10,'$'
-msg_deldone db  13,10,'  Deleted.  REBOOT before using the drive. ',13,10,'$'
+msg_crdone  db  13,10,'  Created.  REBOOT before using the drive.',13,10,'$'
+msg_deldone db  13,10,'  Deleted.  REBOOT before using the drive.',13,10,'$'
 msg_actdone db  13,10,'  Done.',13,10,'$'
 msg_delgone db  13,10,'  Everything stored in it becomes unreachable.  The '
             db  'sectors are not',13,10,'  erased and the volume can be put '
@@ -7585,7 +7586,7 @@ msg_toobig  db  13,10,'  Larger than the free space.  The gap, '
             db  'once aligned, is $'
 msg_tooshort db 13,10,'  Too small: it would not fill one cylinder.',13,10,'$'
 msg_chainbusy db 13,10,'  All logical partitions must be deleted first '
-            db  'before',13,10,'  deleting the Extended Partition. ',13,10,'$'
+            db  'before',13,10,'  deleting the Extended Partition.',13,10,'$'
 msg_wrerr   db  13,10,'  The partition table would not write.',13,10,'$'
 
 

@@ -21,7 +21,7 @@
 ;    4  42h: the system has pages, and free is not more than total
 ;    5  43h allocates four pages and answers with a handle
 ;    6  4Ch says that handle owns four
-;    7  4Bh counts one open handle
+;    7  4Bh counts one more open handle
 ;    8  44h maps logical 0 into window 0, and the memory is there
 ;    9  four windows show four different pages AT ONCE
 ;   10  remapping a window changes what is behind it, and the page it
@@ -161,7 +161,13 @@ t5:
 
 ;=====================================================================
 ; 5 - four pages, please
+;
+; How many handles are open is asked first, for check 7: a 4.0
+; manager always has the system's handle 0, and a TSR may hold more.
 ;=====================================================================
+        mov     ah,4Bh
+        int     67h
+        mov     [nopen],bx
         mov     dx,OFFSET msg_t5
         call    puts
         mov     ah,43h
@@ -199,7 +205,7 @@ t6bad:
 t7:
 
 ;=====================================================================
-; 7 - one handle open, which is ours
+; 7 - one more handle open than before, which is ours
 ;=====================================================================
         mov     dx,OFFSET msg_t7
         call    puts
@@ -207,7 +213,8 @@ t7:
         int     67h
         or      ah,ah
         jnz     t7bad
-        cmp     bx,1
+        dec     bx
+        cmp     bx,[nopen]
         jne     t7bad
         call    good
         jmp     short t8
@@ -587,6 +594,7 @@ frameseg    dw  0
 handle      dw  0
 pgfree      dw  0
 pgtotal     dw  0
+nopen       dw  0
 version     db  0
 fails       db  0
 resptr      dw  0
@@ -605,7 +613,7 @@ msg_t3      db  ' 3 41h hands back a page frame       ','$'
 msg_t4      db  ' 4 42h counts the pages              ','$'
 msg_t5      db  ' 5 43h allocates four of them        ','$'
 msg_t6      db  ' 6 4Ch says the handle owns four     ','$'
-msg_t7      db  ' 7 4Bh counts one open handle        ','$'
+msg_t7      db  ' 7 4Bh counts one more handle        ','$'
 msg_t8      db  ' 8 a mapped window is really there   ','$'
 msg_t9      db  ' 9 four windows, four pages, at once ','$'
 msg_t10     db  '10 remapping changes what is behind  ','$'

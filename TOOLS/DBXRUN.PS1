@@ -11,7 +11,11 @@ param(
     [int]$MemMB = 32,                            # the machine's RAM
     [string]$Cpu = '',                           # DOSBox-X cputype: 386, 486, pentium...
     [string]$Exe = '',                           # DOSBox-X to run, if not one of the two below
-    [string]$Until = ''                          # end the run once -Lpt has printed this
+    [string]$Until = '',                         # end the run once -Lpt has printed this
+    [switch]$Sound,                              # a Sound Blaster 16 at 220h, IRQ 7,
+                                                 # DMA 1 and 5, heard by nobody
+    [string]$SbType = 'sb16'                     # ...of this kind: sb16vibra is the
+                                                 # Plug and Play one (ISAPNP.EXE)
 )
 # DBXRUN.PS1 - boot PM-DOS from a hard-disk image in DOSBox-X with NO
 # window, and let the time limit end the run.
@@ -93,7 +97,16 @@ if ( $Cap -ne '' ) { $lines += "captures=$Cap" }
 if ( $E9 ) { $lines += 'bochs debug port e9=true' }
 $lines += '[cpu]', 'core=normal', 'cycles=max'
 if ( $Cpu -ne '' ) { $lines += "cputype=$Cpu" }
-$lines += '[mixer]', 'nosound=true'
+# -Sound: the card is there, so a program can drive its DMA, and the
+# mixer runs into SDL's dummy audio driver.  DOSBox-X answers the card's
+# recording with silence written through the DMA controller, which is a
+# device writing into memory that a test can look at afterwards.
+if ( $Sound ) {
+    $lines += '[mixer]', 'nosound=false'
+    $lines += '[sblaster]', "sbtype=$SbType", 'sbbase=220', 'irq=7', 'dma=1', 'hdma=5'
+} else {
+    $lines += '[mixer]', 'nosound=true'
+}
 $lines += '[dos]', 'int33=false'
 if ( $Log.Count -gt 0 -or $E9 ) {
     $lines += '[log]', "logfile=$dir\dosbox.log"
@@ -109,8 +122,16 @@ $lines += if ( $Floppy -ne '' ) { 'boot -l a' } else { 'boot -l c' }
 Set-Content -Path $conf -Value $lines -Encoding ascii
 
 $env:SDL_VIDEODRIVER = 'dummy'
-$proc = Start-Process -FilePath $exe -WindowStyle Hidden -PassThru `
-    -ArgumentList @( '-silent', '-nopromptfolder', '-time-limit', "$Seconds", '-conf', "`"$conf`"" )
+# -silent switches the sound devices off whatever the conf says - the
+# mixer then has no SB channel and there is no BLASTER - so a -Sound run
+# goes without it.  The dummy video driver is what keeps the window
+# away; -silent was never needed for that.
+$dbxargs = @( '-silent', '-nopromptfolder', '-time-limit', "$Seconds", '-conf', "`"$conf`"" )
+if ( $Sound ) {
+    $env:SDL_AUDIODRIVER = 'dummy'
+    $dbxargs = @( '-nopromptfolder', '-time-limit', "$Seconds", '-conf', "`"$conf`"" )
+}
+$proc = Start-Process -FilePath $exe -WindowStyle Hidden -PassThru -ArgumentList $dbxargs
 $ended = $false
 try {
     if ( $Until -ne '' ) {

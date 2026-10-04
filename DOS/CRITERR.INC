@@ -56,6 +56,11 @@ disk_read:
 disk_write:
         cmp     byte ptr [vol_fs],FS_ISO
         je      dio_nocd
+        cmp     byte ptr [vol_vf],0     ; THE FIRST WRITE TURNS THE VOLUME'S
+        je      disk_wrsure             ; CLEAN-SHUTDOWN BIT OFF, ahead of
+        call    vfl_touch               ; itself (VOLFLAG.INC).  Before the
+                                        ; dio_ statics are set, because it
+                                        ; does I/O of its own
 
 ; disk_wrsure - disk_write for a caller that already knows the drive
 ;               number in AL is a block drive and not an ATAPI unit.

@@ -106,6 +106,20 @@ v86_init:
         mov     ax,PIC2_DATA
         call    v86_claim
 
+        ; AND TWO OF THE TIMER'S, which are watched rather than stood in
+        ; for: what a box writes there reaches the 8254, and the divisor
+        ; it sets is what the kernel's clock has to count against.  See
+        ; VTIMER.INC.
+        mov     ax,PIT_CH0
+        call    v86_claim
+        mov     ax,PIT_CTRL
+        call    v86_claim
+
+        ; AND BOTH DMA CONTROLLERS, which are stood in for: an address a
+        ; box hands one is an address in its own picture of memory, and
+        ; the page tables say where that is.  See VDMA.INC.
+        call    vdma_claim
+
         mov     ax,SEL_TSS
         ltr     ax
         popad
@@ -212,8 +226,10 @@ vr_noif:
         ; stack it stacks the guest's return frame on is the one those
         ; pushes are about to copy out of it.
         mov     byte ptr ds:[v86_active],1
-        call    v86_kbwant
-        jc      vr_nokey
+        cmp     byte ptr ds:[v86_irqx],0        ; an excursion for an
+        jne     vr_nokey                        ; interrupt is nobody's
+        call    v86_kbwant                      ; program: keys and mouse
+        jc      vr_nokey                        ; events stay the kernel's
         mov     al,9
         call    v86_intctx
         mov     byte ptr ds:[v86_vif],0         ; an ISR starts closed, and
@@ -235,6 +251,8 @@ vr_noirq:
         ; stub rather than through the IVT (MOUSE.INC, ms_boxwant).
         cmp     byte ptr ds:[v86_vif],0
         je      vr_go
+        cmp     byte ptr ds:[v86_irqx],0
+        jne     vr_go
         call    ms_boxwant
         jc      vr_go
         call    v86_ctxto
@@ -863,8 +881,8 @@ ENDIF
         je      vio_i64
         call    vio_ispic
         je      vpc_in
-        in      al,dx
-        ret
+        jmp     vdma_in                 ; the DMA controllers, and anything
+                                        ; else goes to the hardware
 
 vio_i92:
         mov     ah,byte ptr ds:[vio_porta]      ; whatever it last wrote...
@@ -987,8 +1005,11 @@ ENDIF
         je      vio_o60
         call    vio_ispic
         je      vpc_out
-        out     dx,al
-        ret
+        cmp     dx,PIT_CH0
+        je      vt_out
+        cmp     dx,PIT_CTRL
+        je      vt_out
+        jmp     vdma_out                ; likewise
 
 ;--- vio_ispic - ZF set if DX is one of the four ports of the two
 ;--- interrupt controllers.
@@ -1520,6 +1541,10 @@ v86_kbwant:
         je      vkw_no
         test    byte ptr ds:[vpc_imr],2 ; the box has masked the keyboard,
         jnz     vkw_no                  ; and means it
+        test    byte ptr ds:[vpc_isr],1 ; ...or its timer handler is running,
+        jnz     vkw_no                  ; which the 8259 would make it wait
+                                        ; for - and whose EOI, non-specific,
+                                        ; would otherwise end the key's
         cmp     dword ptr ds:[IVT_INT09],0
         je      vkw_no
         call    kbq_take                ; and it latches the code, because
@@ -1541,6 +1566,8 @@ vkw_no:
 ;---------------------------------------------------------------------
 v86_ckkbd:
         pushad
+        cmp     byte ptr ds:[v86_irqx],0        ; not into an excursion's
+        jne     vck_no                          ; guest: see v86_run
         call    v86_kbwant
         jc      vck_no
         mov     eax,9
@@ -1560,6 +1587,8 @@ vck_mouse:
         ; stub's event entry rather than through the IVT.
         cmp     byte ptr ds:[v86_vif],0
         je      vck_out
+        cmp     byte ptr ds:[v86_irqx],0
+        jne     vck_out
         call    ms_boxwant
         jc      vck_out
         call    v86_deliverto
@@ -1747,6 +1776,10 @@ v86_active      db      0               ; a guest is executing, as opposed to
                                         ; the guest and cleared the moment the
                                         ; monitor takes the CPU back, so that
                                         ; IRQ 1 knows whose keystroke it is
+v86_irqx        db      0               ; ...and the guest is an excursion's,
+                                        ; run for an interrupt and nobody's
+                                        ; program (VPIC.INC, vpc_boxirq), so
+                                        ; a keystroke is still the kernel's
 vio_porta       db      0               ; port 92h as the guest last wrote it
 vio_kbdwr       db      0               ; an 8042 D1h is outstanding
 vio_kbdrd       db      0               ; ...or a D0h

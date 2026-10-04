@@ -1,0 +1,4 @@
+@ECHO OFF
+ECHO   CCONE %1 >> C:\COUT.TXT
+HOOKTEST /D >> C:\COUT.TXT
+ECHO   CCONE %1 after its child >> C:\COUT.TXT

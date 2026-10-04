@@ -402,6 +402,12 @@ void sys_reset_drive( int drv )
     dos( &rmcs, 0x0D00 );
 }
 
+/* PM-DOS's clean-shutdown flag; DOS has none to clear */
+void sys_mark_checked( int drv )
+{
+    (void)drv;
+}
+
 void *sys_mem_alloc( u32 size )
 {
     REGS regs;

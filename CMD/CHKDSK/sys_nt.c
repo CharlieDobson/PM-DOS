@@ -362,6 +362,11 @@ void sys_reset_drive( int drv )
     (void)drv;
 }
 
+void sys_mark_checked( int drv )
+{
+    (void)drv;
+}
+
 void *sys_mem_alloc( u32 size )
 {
     return VirtualAlloc( NULL, size, 0x3000, 4 );

@@ -11,12 +11,14 @@
 ;=====================================================================
 hl_command  db  'Starts a new copy of the PM-DOS 16-bit command interpreter.',13,10
             db  13,10
-            db  'COMMAND [[drive:]path] [device] [/E:nnnnn] [/P] [/F] [/C command | /K command]',13,10
+            db  'COMMAND [[drive:]path] [device] [/E:nnnnn] [/P [/D]] [/F]',13,10
+            db  '        [/C command | /K command]',13,10
             db  13,10
             db  '  [drive:]path    The directory COMMAND.COM is in (COMSPEC, with /P).',13,10
             db  '  device          The device to use for input and output.',13,10
             db  '  /E:nnnnn        The size of the environment, 160 to 32768 bytes.',13,10
             db  '  /P              Permanent: runs AUTOEXEC.BAT, and EXIT does not end it.',13,10
+            db  '  /D              With /P: skips AUTOEXEC.BAT, and the date and time.',13,10
             db  '  /F              Answers Fail to every critical error, without asking.',13,10
             db  '  /C command      Runs the command and returns.',13,10
             db  '  /K command      Runs the command and carries on.',13,10

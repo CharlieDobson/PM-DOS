@@ -131,10 +131,10 @@ pl_pend:
         mov     byte ptr [edi],0
         cmp     byte ptr [u_arg],0
         je      pl_bad                  ; "" names nothing
-        jmp     short pl_next
+        jmp     pl_next
 pl_skip:
         inc     esi
-        jmp     short pl_next
+        jmp     pl_next
 
 pl_switch:
         inc     esi

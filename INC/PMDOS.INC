@@ -207,18 +207,34 @@ KBSS_LEN        EQU     00018000h       ; 96K: 31K of buffers, the 32K
                                         ; cluster buffer, SHARE's 16K of
                                         ; locks, and room
 
+; THE ISA DMA BOUNCE BUFFER (IO\VDMA.INC).  A DOS box that programs the
+; 8237 with a buffer the controller cannot reach as it stands - upper
+; memory, the page frame, anything above 16MB or across a 64K line - is
+; given this instead and the data is copied.  Below 16MB, identity
+; mapped, and inside one 128K block, so that neither a byte channel's
+; 64K nor a word channel's 128K line runs through it.
+DMA_BUF         EQU     KBSS_BASE + KBSS_LEN
+
 ; THE TRACE'S BUFFERS FOLLOW, in a kernel built to trace, and are not
 ; in PMIO: they are 40K of nothing, and assembled into the image they
-; put it over the 64K the stub blits.
+; put it over the 64K the stub blits.  The bounce buffer is halved in
+; such a kernel to leave them room.
 IFDEF DBG_LPT
-DBG_MEM         EQU     KBSS_BASE + KBSS_LEN    ; IO\DBGSINK.INC divides it up
+DMA_BUFLEN      EQU     00004000h
+DBG_MEM         EQU     DMA_BUF + DMA_BUFLEN    ; IO\DBGSINK.INC divides it up
 DBG_MEMLEN      EQU     0000A000h
+ELSE
+DMA_BUFLEN      EQU     00008000h
 ENDIF
+.ERRNZ  (DMA_BUF XOR (DMA_BUF + DMA_BUFLEN - 1)) AND 0FFFE0000h, <the DMA bounce buffer crosses a 128K line>
+.ERRE   (DMA_BUF + DMA_BUFLEN) LE 01000000h, <the DMA bounce buffer is not below 16MB>
 
-; ALL OF THAT HAS TO END BELOW IO_PM_BASE, and does with 84K to spare
-; (1EB000h with the trace's buffers).  The arena starts above PMIO, the
-; IDT, the TSS and the two ring-0 stacks, which end at 220000h - the
-; same for every build now, so nothing has to be assembled to agree.
+; ALL OF THAT HAS TO END BELOW SCSI_BUF, the 64K under IO_PM_BASE - or
+; below BIOS_IVT, the 1K under that - and does: at 1E9000h, or 1EF000h
+; with the trace's buffers.  The arena
+; starts above PMIO, the IDT, the TSS and the two ring-0 stacks, which
+; end at 220000h - the same for every build now, so nothing has to be
+; assembled to agree.
 ARENA_BASE      EQU     00220000h               ; start of the DOS memory arena
 
 ;---------------------------------------------------------------------
@@ -382,7 +398,7 @@ DVS_CCPAD       EQU     DVS_LEN * DVS_COUNT
 DVS_PARAS       EQU     (DVS_CCPAD + 1 + 15) / 16
 
 ;---------------------------------------------------------------------
-; Expanded memory - INT 67h, LIM EMS 3.2.  See DOS\EMS.INC.
+; Expanded memory - INT 67h, LIM EMS 4.0.  See DOS\EMS.INC.
 ;
 ; EMS is a 64K PAGE FRAME somewhere in the same C0000h-EFFFFh that the
 ; UMB probe measures, divided into four 16K windows, each of which can
@@ -397,22 +413,27 @@ DVS_PARAS       EQU     (DVS_CCPAD + 1 + 15) / 16
 ; PM-DOS has been paging since v0.29 and has had the monitor since
 ; v0.30, so what is left to write is the API and the bookkeeping.
 ;---------------------------------------------------------------------
-EMS_MAXH        EQU     32              ; handles, the count XMS has too
+EMS_MAXH        EQU     64              ; handles, counting the system's
+                                        ; handle 0 - EMM386's default
 EMS_PGSIZE      EQU     4000h           ; 16K, and the specification says so
 EMS_PGPAGES     EQU     EMS_PGSIZE / 1000h      ; ...in CPU pages
 EMS_WINDOWS     EQU     4               ; physical pages in the frame
 EMS_FRAMESZ     EQU     EMS_WINDOWS * EMS_PGSIZE
 EMS_FRAMEPG     EQU     EMS_FRAMESZ / 1000h
-EMS_MAXPAGES    EQU     512             ; 8MB, which is the LIM 3.2 ceiling
+EMS_MAXPAGES    EQU     2048            ; 32MB, which is the LIM 4.0 ceiling
                                         ; and not an opinion about this
                                         ; machine's memory
-EMS_VERSION     EQU     32h             ; 3.2 in BCD, and the truth: 4.0 is
-                                        ; not implemented and claiming it
-                                        ; would earn a call to 5Ah
+EMS_VERSION     EQU     40h             ; 4.0 in BCD
 EMS_MAPLEN      EQU     EMS_WINDOWS * 4 ; the 4Eh page-map array, whose shape
                                         ; is the manager's own business
+EMS_PMAPENT     EQU     6               ; one window of a 4Fh partial map: its
+                                        ; segment and the 4Eh dword for it
+EMS_PMAPLEN     EQU     2 + EMS_WINDOWS * EMS_PMAPENT   ; ...after a count
 EMS_UNMAPPED    EQU     0FFFFFFFFh      ; a window pointing at nothing: a
                                         ; handle of FFFFh, which is not one
+EMS_KEEP        EQU     0FFFFFFFEh      ; 56h's "leave this window alone" -
+                                        ; never in the live map
+EMS_CALLSTK     EQU     26              ; bytes of guest stack 56h uses
 
 ; The status codes, from the LIM specification.  AH carries them; there
 ; is no carry flag in this API.
@@ -431,7 +452,28 @@ EMSE_BADPHYS    EQU     8Bh             ; a window that is not 0-3
 EMSE_SAVEFULL   EQU     8Ch
 EMSE_SAVED      EQU     8Dh             ; already saved under this handle
 EMSE_NOTSAVED   EQU     8Eh             ; ...and never saved under it
-EMSE_BADSUB     EQU     8Fh             ; 4Eh subfunction out of range
+EMSE_BADSUB     EQU     8Fh             ; subfunction out of range
+EMSE_BADATTR    EQU     90h             ; 52h: no such attribute
+EMSE_NOFEAT     EQU     91h             ; 52h: non-volatile, which is not kept
+EMSE_MOVEOVL    EQU     92h             ; 57h: done, but the source was
+                                        ; overwritten - a warning
+EMSE_PASTEND    EQU     93h             ; 57h: runs off the end of the handle
+EMSE_CONVEXP    EQU     94h             ; 57h: the conventional side is a
+                                        ; window onto the expanded side
+EMSE_BADOFF     EQU     95h             ; 57h: offset past the end of a page
+EMSE_TOOBIG     EQU     96h             ; 57h: more than a megabyte
+EMSE_XCHGOVL    EQU     97h             ; 57h: an exchange that overlaps
+EMSE_BADTYPE    EQU     98h             ; 57h: neither conventional nor
+                                        ; expanded
+EMSE_NOALT      EQU     9Ch             ; 5Bh: there are no alternate sets
+                                        ; and the one asked for is not 0
+EMSE_NONAME     EQU     0A0h            ; 54h: no handle has that name
+EMSE_WRAP       EQU     0A2h            ; 57h: the conventional side runs
+                                        ; past the megabyte
+EMSE_DUPNAME    EQU     0A1h            ; 53h: the name is taken; 54h: the
+                                        ; name searched for is empty
+EMSE_CORRUPT    EQU     0A3h            ; a map handed back is not one ours
+EMSE_DENIED     EQU     0A4h            ; the OS/E functions are switched off
 
 ;---------------------------------------------------------------------
 ; Program slots.  One shell, one transient program - DOS with the
@@ -1721,11 +1763,26 @@ RMT_PM2RM       EQU     0010h                   ; entry in the RM stub
 ; because RMDOS.SYS is built separately and PMIO may move.
 ;
 ; The offset is where it is because the stub's code and data end at
-; about 0830h and the GDT begins at 0C00h.  An assembler check below
-; keeps that true rather than trusting this comment.
+; about 08F0h - 0912h under MASM, which keeps long some jumps wasm
+; makes short - and the GDT begins at 0C00h.  An assembler check in
+; IORM.ASM keeps that true rather than trusting this comment.
 ;---------------------------------------------------------------------
-RMT_PARK        EQU     0900h                   ; PM -> real, for good
+RMT_PARK        EQU     0940h                   ; PM -> real, for good
 RMT_UNPARK      EQU     0A80h                   ; real -> PM, from RMDOS
+
+;---------------------------------------------------------------------
+; THE SIXTEEN INTERRUPT LINES DURING A BIOS CALL.  Once CONFIG.SYS is
+; finished a BIOS call runs with a vector table of the kernel's own
+; (BIOS_IVT, and rm_freeze in RMCALL.INC says why), in which every line
+; points at an entry here: the line is noted in GV_RMOWED and goes on
+; to where it went when the copy was taken, which is kept at
+; RMT_IRQORIG.  The entries are RQ_LEN bytes apart, line 0 first.  After
+; the GDT and its pointers, which end at 0C5Ah; IORM.ASM checks both
+; ends.
+;---------------------------------------------------------------------
+RMT_IRQORIG     EQU     0C60h                   ; dd x 16: where each line went
+RMT_IRQS        EQU     0CA0h                   ; the entries
+RQ_LEN          EQU     12
 
 ; What to hand the real-mode program.  In the globals block rather than
 ; in RMFRAME because RMFRAME is 44 bytes with four to spare before the
@@ -1779,7 +1836,19 @@ SEL_PROG_CS     EQU     003Bh
 SEL_PROG_DS     EQU     0043h
 GDT_IDX_PROGCS  EQU     7
 GDT_IDX_PROGDS  EQU     8
-GDT_ENTRIES     EQU     9
+
+; A native program's screen: the frame buffer of the mode it set with
+; 21h/F1h AL=1Fh, DPL 3 (DOS\VBE.INC).  Its slot cannot reach video
+; memory, so this is the one descriptor it has that reaches past it.
+; With no mode set it is EMPTY rather than absent - expand-down with
+; the highest limit there is, so every offset is outside it - because
+; a program may still hold it in ES, and the kernel reloads ES on the
+; way out of every call: a descriptor that was not there would fault
+; the kernel, where an empty one faults the program, and only if it
+; uses it.
+SEL_VBE         EQU     004Bh
+GDT_IDX_VBE     EQU     9
+GDT_ENTRIES     EQU     10
 
 GDT_OFF         EQU     0C00h                   ; offset within the RM stub
 GDT_BASE        EQU     IO_BASE + GDT_OFF
@@ -1835,6 +1904,13 @@ GVO_EDP         EQU     GV_OFF  + 40h
 GV_PICMASK      EQU     GV_BASE + 70h           ; db master mask, db slave
 GVO_PICMASK     EQU     GV_OFF  + 70h
 
+; ...and the masks the BIOS left at power-on, read before anything in
+; PM-DOS touched the controllers.  Every trip back into the BIOS keeps
+; those lines open (pic_to_rm): a SCSI card's ROM waits on its card's
+; interrupt to finish an INT 13h, and masking it hung the machine.
+GV_BIOSIMR      EQU     GV_BASE + 72h           ; db master mask, db slave
+GVO_BIOSIMR     EQU     GV_OFF  + 72h
+
 ; A DISKETTE PARAMETER TABLE OF OUR OWN, for a BIOS that cannot be asked
 ; for one (INT 13h AH=18h).  The BIOS formats a track with the gap and
 ; the sector count it finds through vector 1Eh, so the table has to be
@@ -1842,6 +1918,54 @@ GVO_PICMASK     EQU     GV_OFF  + 70h
 ; packets above are here.  Sixteen bytes; the table is eleven.
 GV_FDPT         EQU     GV_BASE + 80h
 GVO_FDPT        EQU     GV_OFF  + 80h
+
+; AND ONE FOR READING AND WRITING A DISK WITH LONGER TRACKS THAN THE
+; BIOS'S TABLE SAYS - a DMF disk's 21 sectors through a 1.44M drive's
+; 18.  Vector 1Eh points here only for the length of one block-layer
+; call (fpy_rwup and fpy_rwdown in FLOPPY.INC).  Separate from GV_FDPT
+; so that neither can be in the middle of using the other's.
+GV_RWDPT        EQU     GV_BASE + 0B0h
+GVO_RWDPT       EQU     GV_OFF  + 0B0h
+
+; THE VECTOR TABLE A BIOS CALL RUNS WITH, as LIDT takes it: the one at
+; 0:0 until CONFIG.SYS is finished, and BIOS_IVT from then on (rm_freeze
+; in RMCALL.INC).  A park does not use it - it hands the machine over,
+; and the table at 0:0 goes with it.
+GV_BIDTR        EQU     GV_BASE + 0C0h          ; dw limit, dd base
+GVO_BIDTR       EQU     GV_OFF  + 0C0h
+; ...the lines that interrupted during the last BIOS call, a bit a line,
+; set by the RMT_IRQS entries and handed on by rq_up (RMCALL.INC)...
+GV_RMOWED       EQU     GV_BASE + 0C6h          ; dw
+GVO_RMOWED      EQU     GV_OFF  + 0C6h
+; ...and channel 0's count, so that the clock is counted in whole ticks
+; down there too: vt_div and vt_acc (VTIMER.INC), taken down by rq_down
+; and the second brought back by rq_up, for IORM.ASM's rq_timer
+GV_VTDIV        EQU     GV_BASE + 0C8h          ; dd - the divisor
+GVO_VTDIV       EQU     GV_OFF  + 0C8h
+GV_VTACC        EQU     GV_BASE + 0CCh          ; dd - counts towards a tick
+GVO_VTACC       EQU     GV_OFF  + 0CCh
+; ...and the lines a DOS box is listening on, a bit a line, set by
+; rq_down for IORM.ASM's rq_rtc, which looks at line 8's
+GV_RMBOX        EQU     GV_BASE + 0D0h          ; dw
+GVO_RMBOX       EQU     GV_OFF  + 0D0h
+; ...and whether the 8259s keep protected mode's vector bases during a
+; BIOS call (pic_down and pic_up in IORM.ASM): set by rm_freeze, which
+; is what makes that possible, and by pic_down for pic_up
+GV_PICKEEP      EQU     GV_BASE + 0D2h          ; db - 1 once BIOS_IVT is in use
+GVO_PICKEEP     EQU     GV_OFF  + 0D2h
+GVO_PICKEPT     EQU     GV_OFF  + 0D3h          ; db - 1 while a call has them
+
+; THE STARTUP KEYS.  Shift held down or F5 pressed while "Starting
+; PM-DOS..." is on the screen bypasses CONFIG.SYS and AUTOEXEC.BAT.
+; PMIO writes both of these and PMDOS acts on them (cfg_keys in
+; CONFIG.INC): when the message went up, so that the wait for a key
+; can run to two seconds after it, and what kb_init found the BIOS
+; holding before it cleared the keyboard - a key pressed while the
+; files were loading counts, as it did under DOS 6.
+GV_BOOTTICK     EQU     GV_BASE + 0D4h          ; dd - 40:6C at the message
+GV_BOOTKEY      EQU     GV_BASE + 0D8h          ; db - BOOTK_* bits
+BOOTK_SHIFT     EQU     01h                     ; a Shift key was down
+BOOTK_F5        EQU     02h                     ; an F5 was in the ring
 
 ; THE HANG REPORTER'S MAILBOX, in a kernel built with HANG_E9 (BUILD
 ; hang) and in no other.  PMDOS writes it at every INT 21h and PMIO's
@@ -2189,7 +2313,8 @@ FDF_TYPE        EQU     0       ; -> BL = the drive, FDT_*; CL = its sectors
 FDF_SETGEO      EQU     1       ; CX = sectors a track, DX = heads, EBX =
                                 ;    sectors in all: what is in the drive now
 FDF_BEGIN       EQU     2       ; CL = sectors a track, CH = cylinders, BL =
-                                ;    the medium, FDM_*: a format starts
+                                ;    the medium, FDM_*: a format starts.
+                                ;    FDM_1440 with CL > 18 is DMF (21)
 FDF_TRACK       EQU     3       ; CH = cylinder, DH = head, CL = sectors a
                                 ;    track: format it, and read it back
 FDF_END         EQU     4       ; the format is over
@@ -2251,6 +2376,224 @@ IOS_REBOOT      EQU     IOSVC + 0F0h            ; never returns: a warm start
                                                 ; The caches are the caller's
                                                 ; to write first - 21h/F1h
                                                 ; AL=1Bh does (KEYBD.INC)
+IOS_SCSI        EQU     IOSVC + 0F4h            ; AH = an SSF_* function, the
+                                                ; rest as it says (SCSI.INC)
+IOS_BOXIRQ      EQU     IOSVC + 0F8h            ; AL = a BXI_* function: an
+                                                ; interrupt owed to real-mode
+                                                ; code while none is running
+                                                ; (VPIC.INC, DOS\IRQX.INC)
+
+BXI_TAKE        EQU     0       ; -> CF clear and EAX = the vector of the
+                                ;    most urgent line that is owed and can
+                                ;    be given to real-mode code now; it is
+                                ;    in service from here, and an excursion
+                                ;    has begun: the keyboard and the mouse
+                                ;    stay the kernel's until BXI_END.  CF if
+                                ;    nothing is owed
+BXI_END         EQU     1       ; the excursion is over; DL = 1 if it was
+                                ;    abandoned, and whatever it put in
+                                ;    service is ended
+
+IOS_RMFREEZE    EQU     IOSVC + 0FCh            ; CONFIG.SYS is finished: from
+                                                ; here a BIOS call runs with a
+                                                ; copy of the vector table as
+                                                ; it is now (RMCALL.INC)
+IOS_ACPI        EQU     IOSVC + 100h            ; AL = an ACPF_* function:
+                                                ; switching the machine off
+                                                ; (IO\ACPI.INC)
+
+ACPF_FIND       EQU     0       ; -> CF clear if ACPI can switch this machine
+                                ;    off.  CF and AL = ACPE_NONE if there are
+                                ;    no ACPI tables, ACPE_NOOFF if there are
+                                ;    and they give no way to do it
+ACPF_OFF        EQU     1       ; switch it off.  The caches are the caller's
+                                ;    to write first - 21h/F1h AL=1Eh does.
+                                ;    Returns, with CF, only if the machine is
+                                ;    still running some seconds later
+ACPF_REPORT     EQU     2       ; ACPF_FIND, and what it found, as far as it
+                                ;    got - on CF too:
+                                ;    EAX = the RSDP's physical address
+                                ;    EBX = PM1b control port:PM1a control port
+                                ;    ECX = PM1a control as it reads now (high
+                                ;          word), SLP_TYPb (CH), SLP_TYPa (CL)
+                                ;    EDX = ACPI_DISABLE, ACPI_ENABLE (bits
+                                ;          31-24, 23-16), SMI_CMD port (DX)
+                                ;    ESI = PM timer port:PM1a event port
+                                ;    EDI = where \_S5_ is, 0 if not found
+                                ;    A port of 0 is one the FADT has not got
+
+ACPE_NONE       EQU     1
+ACPE_NOOFF      EQU     2
+
+; 21h/F1h AL=1Eh, bits 16-23 of EAX.  A DOS box passes AX alone, so it
+; always means PWF_OFF from there.
+PWF_OFF         EQU     0       ; switch the machine off
+PWF_QUERY       EQU     1       ; switch nothing: ACPF_REPORT's registers
+
+;---------------------------------------------------------------------
+; CD-ROM UNITS, AND THE SCSI ONES AMONG THEM.
+;
+; A unit number - what IOS_CDREAD and the rest take in AL, what
+; DRV_BIOS holds on a DRVF_CDROM row, what MSCD001 counts in - is a
+; place in PMIO's unit table (IO\CDUNIT.INC), and a unit is served by
+; one of two transports: ATAPI, the packet interface on an IDE
+; channel, or SCSI, through a host adapter.  Both carry the same
+; command blocks, so nothing above the table knows which it has.
+; The ATAPI units come first, in probe order, so a machine with no
+; SCSI numbers its drives exactly as it always did.
+;
+; SCSI units arrive after CONFIG.SYS: PMDOS asks for the probe
+; (SSF_PROBE) once the DEVICE= lines have run, because a loaded ASPI
+; manager owns its adapter and the probe has to know that before it
+; resets anything.  ASPI.INC registers what the manager can see as
+; adapters of a kind of their own (SSF_ADDHBA, SSF_ADDDEV).
+;---------------------------------------------------------------------
+CDU_MAX         EQU     8               ; units of every kind together:
+                                        ; F0h..F7h in CACHE.INC
+
+; PMIO's own: one row of the unit table, cun_tab
+CUE_KIND        EQU     0               ; db - CUK_*
+CUE_DEVIDX      EQU     1               ; db - its ATA slot, or its row
+                                        ;      in the SCSI device table
+CUE_DEV         EQU     4               ; dd - the ATA device entry, or
+                                        ;      the SDV_LEN row
+CUE_PENDP       EQU     8               ; dd - the byte its listener bits
+                                        ;      are kept in
+CUE_LEN         EQU     12
+
+CUK_ATAPI       EQU     1               ; ATAPI.INC's atapi_exec
+CUK_SCSI        EQU     2               ; SCSI.INC's scs_cdexec
+
+SCSI_MAXHBA     EQU     4               ; host adapters, every kind
+SCSI_MAXDEV     EQU     16              ; devices of any type, every bus
+
+; SSF_* - IOS_SCSI's functions, in AH
+SSF_PROBE       EQU     0       ; AL = SPF_* -> ECX = adapters PMIO drives
+                                ;    itself.  Looks for them, scans each
+                                ;    bus, and rebuilds the unit table
+SSF_ADDHBA      EQU     1       ; EDI -> an HBA_LEN record, filled in by
+                                ;    an outside transport -> EAX = its
+                                ;    adapter number.  CF if full
+SSF_ADDDEV      EQU     2       ; AL = adapter, DL = target, DH = LUN,
+                                ;    ESI -> 36 bytes of INQUIRY data.
+                                ;    CF if full.  A device PMIO already
+                                ;    drives itself, seen again through
+                                ;    an ASPI manager, is kept with
+                                ;    SDF_DUP set and is not a unit
+SSF_BUILD       EQU     3       ; -> ECX = CD units: the table rebuilt
+SSF_ADAPTER     EQU     4       ; AL = adapter, EDI -> HBA_LEN bytes
+                                ;    -> ECX = adapters.  CF if no such
+SSF_DEVICE      EQU     5       ; AL = device, EDI -> SDV_LEN bytes
+                                ;    -> ECX = devices.  CF if no such
+SSF_CDDESC      EQU     6       ; AL = CD unit, EDI -> a CDU_LEN record,
+                                ;    every field (see CDU_* below) ->
+                                ;    ECX = units.  CF if no such unit
+
+SPF_NATIVE      EQU     01h     ; look for the cards PMIO has drivers for
+SPF_ASPI        EQU     02h     ; an ASPI manager is loaded: an adapter
+                                ; whose mailboxes are already set up is
+                                ; the manager's, and is left alone
+
+; HBA_* - a host adapter.  SSF_ADDHBA takes one of these.
+HBA_EXEC        EQU     00h     ; dd - the routine that runs a request:
+                                ;      EBX -> this record, EDI -> SRQ_SIZE.
+                                ;      CF on failure, every register kept
+HBA_KIND        EQU     04h     ; db - SHK_*
+HBA_ID          EQU     05h     ; db - its own SCSI ID
+HBA_FLAGS       EQU     06h     ; db - SHF_*
+HBA_NUM         EQU     07h     ; db - ASPI's number for it, or 0
+HBA_BASE        EQU     08h     ; dw - I/O base, 0 if it has none here
+HBA_IRQ         EQU     0Ah     ; db - FFh if unknown or unused
+HBA_DMA         EQU     0Bh     ; db - FFh if none
+HBA_MAXX        EQU     0Ch     ; dd - most bytes one request may move
+HBA_NAME        EQU     10h     ; 16 bytes, space padded
+HBA_PRIV        EQU     20h     ; dd - the driver's own
+HBA_LEN         EQU     24h
+
+SHK_AHA         EQU     1       ; Adaptec AHA-154x
+SHK_BUSLOGIC    EQU     2       ; BusLogic, which speaks the same
+SHK_PAS16       EQU     3       ; the SCSI port on a Pro Audio Spectrum
+SHK_ASPI        EQU     4       ; whatever an ASPI manager drives
+
+SHF_BOUNCE      EQU     01h     ; data goes through SCSI_BUF: the card
+                                ; masters the bus with 24-bit addresses
+SHF_GONE        EQU     02h     ; taken over: its devices are not used
+SHF_PCI         EQU     04h     ; found on the PCI bus
+
+; SDV_* - a device on one of those buses, of any type
+SDV_HBA         EQU     00h     ; db - adapter number
+SDV_TARGET      EQU     01h     ; db
+SDV_LUN         EQU     02h     ; db
+SDV_TYPE        EQU     03h     ; db - INQUIRY byte 0: qualifier and type
+SDV_FLAGS       EQU     04h     ; db - SDF_*
+SDV_PEND        EQU     05h     ; db - per-listener "the medium moved",
+                                ;      as ATAPI.INC keeps it per slot
+SDV_ANSI        EQU     06h     ; db - INQUIRY byte 2: SCSI-1, -2...
+SDV_RMB         EQU     07h     ; db - INQUIRY byte 1: removable in bit 7
+SDV_INQ         EQU     08h     ; 28 bytes: vendor 8, product 16,
+                                ;           revision 4, as sent
+SDV_LEN         EQU     24h
+
+SDF_MODE6       EQU     01h     ; refused MODE SENSE(10): use the 6-byte
+                                ; forms and turn the answers round
+SDF_DUP         EQU     02h     ; also seen another way; this row unused
+
+SCSI_TYPE_CD    EQU     05h     ; INQUIRY peripheral type: CD-ROM
+SCSI_TYPE_WORM  EQU     04h     ; ...and write-once, which reads CDs
+
+; SRQ_* - one request to a host adapter
+SRQ_TARGET      EQU     00h     ; db
+SRQ_LUN         EQU     01h     ; db
+SRQ_CDBLEN      EQU     02h     ; db - 6, 10 or 12
+SRQ_DIR         EQU     03h     ; db - SRD_*
+SRQ_BUF         EQU     04h     ; dd - flat address of the data
+SRQ_COUNT       EQU     08h     ; dd - bytes, 0 for no data phase
+SRQ_GOT         EQU     0Ch     ; dd - out: bytes moved.  A card that
+                                ;      cannot say returns SRQ_COUNT, with
+                                ;      what it did not send left zero
+SRQ_HSTAT       EQU     10h     ; db - out: SRH_*
+SRQ_TSTAT       EQU     11h     ; db - out: the target's status byte
+SRQ_SLEN        EQU     12h     ; db - out: sense bytes in SRQ_SENSE
+SRQ_CDB         EQU     14h     ; 12 bytes
+SRQ_SENSE       EQU     20h     ; 18 bytes
+SRQ_SIZE        EQU     34h
+
+SRD_IN          EQU     0       ; the target sends
+SRD_OUT         EQU     1       ; the target receives
+SRD_NONE        EQU     2       ; no data phase
+
+SRH_OK          EQU     0
+SRH_NODEV       EQU     1       ; nothing answered selection
+SRH_TIMEOUT     EQU     2       ; it answered and then never finished
+SRH_ERROR       EQU     3       ; the adapter or the bus failed it
+
+SCSI_ST_GOOD    EQU     00h     ; target status bytes
+SCSI_ST_CHECK   EQU     02h
+SCSI_ST_BUSY    EQU     08h
+
+; THE BOUNCE BUFFER.  An ISA card that masters the bus puts 24 bits of
+; address on it, so whatever it reads or writes has to be below 16MB -
+; and the caller's buffer may be a cache block at 2GB, a native
+; program's slot, or a box's upper memory that only appears to be at
+; C8000h.  Every transfer to or from such a card goes through here,
+; which is below 16MB, identity mapped and the kernel's, and the copy
+; costs nothing next to the SCSI bus.  It is the 64K under PMIO, which
+; KBSS and the trace's buffers stop short of (the .ERRE below).
+SCSI_BUF        EQU     IO_PM_BASE - 10000h
+SCSI_BUFLEN     EQU     10000h
+
+; THE VECTOR TABLE BIOS CALLS RUN WITH once CONFIG.SYS is finished
+; (rm_freeze, RMCALL.INC): 1K, the last of the space under SCSI_BUF
+; that the DMA bounce buffer and the trace's buffers leave.  Above 1MB,
+; where a DOS box cannot reach, on a page ring 3 cannot write, and
+; below 16MB, where a LIDT made in 16-bit code can put a table.
+BIOS_IVT        EQU     SCSI_BUF - 400h
+.ERRE   (KBSS_BASE + KBSS_LEN) LE BIOS_IVT, <KBSS has grown into BIOS_IVT>
+.ERRE   (DMA_BUF + DMA_BUFLEN) LE BIOS_IVT, <the DMA bounce buffer has grown into BIOS_IVT>
+IFDEF DBG_LPT
+.ERRE   (DBG_MEM + DBG_MEMLEN) LE BIOS_IVT, <the trace buffers have grown into BIOS_IVT>
+ENDIF
+.ERRE   (BIOS_IVT + 400h) LE 01000000h, <BIOS_IVT is out of a 16-bit LIDT's reach>
 
 PLM_STAGE       EQU     0       ; db - the PS/2 probe: the last step it
                                 ;      began, a letter (MOUSE.INC)
@@ -2324,7 +2667,9 @@ FPU_STUCK       EQU     36                      ; ticks: two seconds of the same
                                                 ; has stopped
 DPMI_FPTICKS    EQU     FPU_STUCK
 
-BUS_PARAS       EQU     1                       ; the INT 4Bh stub below 1MB
+BUS_PARAS       EQU     4                       ; the INT 4Bh stub below 1MB,
+                                                ; and the INT 08h one after it
+VT_STUB         EQU     10h                     ; ...at this offset (VTIMER.INC)
 
 ; IOS_BUS and 21h/F1h AL=12h: the function is in AH.
 BUS_PCIHERE     EQU     00h     ; -> EAX = 1 if there is a PCI bus, EBX =
@@ -2354,6 +2699,23 @@ BUS_IRQSTAT     EQU     20h     ; DL = an IRQ -> EAX = IRQF_* flags, EBX =
                                 ;    interrupts taken on it, ECX = how
                                 ;    many went to a DOS box, EDX = how
                                 ;    many nobody claimed
+BUS_DMASTAT     EQU     21h     ; -> EAX = 8237 transfers refused, EBX = a
+                                ;    bit for each channel the kernel keeps,
+                                ;    ECX = the bounce buffer's size, EDX =
+                                ;    the channel that has it plus one, or 0
+                                ;    (IO\VDMA.INC)
+BUS_PNPHERE     EQU     30h     ; ISA Plug and Play (IO\ISAPNP.INC): -> EAX
+                                ;    = the cards numbered at boot, EBX =
+                                ;    the port they are read at
+BUS_PNPRES      EQU     31h     ; DL = a card, EDI -> ECX bytes -> ECX =
+                                ;    bytes there: its 9-byte identifier
+                                ;    and its resource data, end tag and all
+BUS_PNPREGS     EQU     32h     ; DL = a card, DH = a logical device, EDI
+                                ;    -> 256 bytes: its registers 30h-0AFh
+                                ;    at their own offsets
+BUS_PNPSET      EQU     33h     ; DL = a card, DH = a logical device, ESI
+                                ;    -> ECX (register, value) byte pairs,
+                                ;    written in order; none below 30h
 BUS_SELFTEST    EQU     2Fh     ; only in a kernel built -dIRQ_SELFTEST:
                                 ;    see iqx_report in IO\IRQ.INC
 
@@ -2380,6 +2742,12 @@ IRQ_CHAIN       EQU     4                       ; handlers a line
 ; and not 12, because a mouse byte nobody reads blocks the keyboard
 ; behind it (see irq_timer) and the kernel has a driver for it.
 VP_GUEST        EQU     0FB8h                   ; 3, 4, 5, 7, and 8 to 11
+; ...and the lines that can be DELIVERED to one, which is those and the
+; timer.  The timer's line is never the box's to open or shut - the
+; kernel's clock is on it - but every tick is owed to a box that has
+; hooked INT 08h or INT 1Ch (VTIMER.INC), and goes in through the same
+; registers as a card's interrupt.
+VP_DELIVER      EQU     VP_GUEST OR 1
 
 MS_PARAS        EQU     8                       ; the INT 33h stub below 1MB
 MS_NONE         EQU     0                       ; what PMIO found: nothing,
@@ -2462,6 +2830,17 @@ IRQ_BASE        EQU     50h                     ; IRQ0..7  -> INT 50h..57h
 IRQ_BASE2       EQU     58h                     ; IRQ8..15 -> INT 58h..5Fh
 
 ;---------------------------------------------------------------------
+; 8254 timer.  Channel 0 is IRQ 0.  A DOS box may reprogram it - a game
+; that wants its own INT 08h seventy times a second does - and the two
+; ports it does that through are watched (IO\VTIMER.INC), so that the
+; kernel's clock at 40:6C goes on counting at 18.2 Hz whatever the
+; interrupt rate is.
+;---------------------------------------------------------------------
+PIT_CH0         EQU     40h                     ; channel 0's count
+PIT_CTRL        EQU     43h                     ; the control word
+PIT_FULL        EQU     10000h                  ; the BIOS's divisor: 18.2 Hz
+
+;---------------------------------------------------------------------
 ; Console
 ;
 ; SCR_COLS and SCR_ROWS are the DEFAULTS, not the truth: the console
@@ -2508,6 +2887,8 @@ BDA_MOTORST     EQU     BDA_BASE + 3Fh          ; db - floppy motors running
 BDA_MOTORCNT    EQU     BDA_BASE + 40h          ; db - ticks until motor off
 BDA_COM1        EQU     BDA_BASE + 00h          ; 4 dw - COM1-COM4 base ports
 BDA_LPT1        EQU     BDA_BASE + 08h          ; dw - LPT1 base port, 0 if none
+BDA_EBDA        EQU     BDA_BASE + 0Eh          ; dw - the extended BIOS data
+                                                ; area's segment
 BDA_EQUIP       EQU     BDA_BASE + 10h          ; dw - equipment word
 BDA_DSKSTAT     EQU     BDA_BASE + 41h          ; db - last INT 13h status
 BDA_TICKS       EQU     BDA_BASE + 6Ch          ; dd - 18.2 Hz since midnight
@@ -2515,6 +2896,10 @@ BDA_TICKROLL    EQU     BDA_BASE + 70h          ; db - and its 24-hour flag
 BDA_WARMBOOT    EQU     BDA_BASE + 72h          ; dw - 1234h makes the next
                                                 ; start a warm one: the BIOS
                                                 ; skips its memory test
+BDA_RTCWAIT     EQU     BDA_BASE + 0A0h         ; db - bit 0: the BIOS is
+                                                ; timing a wait with the
+                                                ; clock's interrupt (INT 15h
+                                                ; AH=83h or 86h)
 BDA_VMODE       EQU     BDA_BASE + 49h          ; db - current video mode
 BDA_VCOLS       EQU     BDA_BASE + 4Ah          ; dw - columns on screen
 BDA_VPGSZ       EQU     BDA_BASE + 4Ch          ; dw - bytes per video page
@@ -2640,6 +3025,16 @@ ERR_SHAREBUF    EQU     24h                     ; sharing buffer exceeded:
 ERR_WRFAULT     EQU     1Dh                     ; write fault: F1h AL=1Bh, when
                                                 ; the cache would not all write
                                                 ; and the machine was left up
+ERR_NOACPI      EQU     71h                     ; (PM-DOS: F1h AL=1Eh) no ACPI
+ERR_NOSOFTOFF   EQU     72h                     ; ACPI, but no soft-off state
+ERR_STAYEDON    EQU     73h                     ; told to switch off, and still
+                                                ; running
+ERR_NOVBE       EQU     74h                     ; (PM-DOS: F1h AL=1Fh) the video
+                                                ; BIOS has no VBE
+ERR_VBEFAIL     EQU     75h                     ; it has, and refused what was
+                                                ; asked: a mode it has not got,
+                                                ; or not with a linear frame
+                                                ; buffer
 ERR_GENERAL     EQU     1Fh                     ; general failure - what DOS
                                                 ; has always called a disk that
                                                 ; would not read or write, and
@@ -2989,6 +3384,15 @@ DRVF_IMAGE      EQU     10h                     ; the volume's sectors live
                                         ; The filesystem inside may be FAT
                                         ; or may be ISO9660/UDF; img_isiso
                                         ; is what fat_mount asks
+DRVF_DIRTY      EQU     20h                     ; the volume's clean-shutdown
+                                        ; bit says NOT clean on the disk,
+                                        ; as far as the kernel knows: it
+                                        ; wrote that, or found it so.  See
+                                        ; VOLFLAG.INC
+DRVF_HOLD       EQU     40h                     ; ...and it was found that way
+                                        ; at a mount, so it stays that way
+                                        ; until a CHKDSK says the volume
+                                        ; is sound (21h/F1h AL=1Dh)
 
 ;---------------------------------------------------------------------
 ; PSEUDO BIOS DRIVE NUMBERS - every range in use, in one place, which
@@ -3109,13 +3513,38 @@ CSTF_ERROR      EQU     04h                     ; a write-back failed and the
 ;---------------------------------------------------------------------
 CDU_UNIT        EQU     00h                     ; db - the unit asked about
 CDU_DEV         EQU     01h                     ; db - its ATA device index:
-                                                ; channel * 2 + 1 for a slave
-CDU_FLAGS       EQU     02h                     ; db - ATDF_*, as AL=0Ah has them
-CDU_MODE        EQU     03h                     ; db - the transfer mode in force
-CDU_BASE        EQU     04h                     ; dw - the channel's base port
+                                                ; channel * 2 + 1 for a slave.
+                                                ; SCSI: the adapter number
+CDU_FLAGS       EQU     02h                     ; db - ATDF_*, as AL=0Ah has them.
+                                                ; SCSI: the adapter's SHK_*
+CDU_MODE        EQU     03h                     ; db - the transfer mode in force.
+                                                ; SCSI: the adapter's own ID
+CDU_BASE        EQU     04h                     ; dw - the channel's base port.
+                                                ; SCSI: the adapter's, or 0
+CDU_KIND        EQU     06h                     ; db - CDK_*: how it is reached
+CDU_TARGET      EQU     07h                     ; db - SCSI: the target ID in
+                                                ; bits 0-3, the LUN in 4-6
 CDU_MODEL       EQU     08h                     ; ATA_MODEL_LEN bytes, space
-                                                ; padded: what IDENTIFY said
+                                                ; padded: what IDENTIFY said.
+                                                ; SCSI: INQUIRY's vendor,
+                                                ; product and revision
 CDU_LEN         EQU     CDU_MODEL + ATA_MODEL_LEN
+
+CDK_ATAPI       EQU     0                       ; an IDE channel (zero, so a
+                                                ; record from before SCSI
+                                                ; reads as what it was)
+CDK_SCSI        EQU     1                       ; a SCSI host adapter
+
+;---------------------------------------------------------------------
+; THE SCSI BUSES, as 21h/F1h AL=1Ch shows them: bits 16-23 of EAX = an
+; SCF_* function, DL = which, EDI -> the record.  ECX = how many there
+; are, valid on CF (ERR_BADDRIVE) as well.  The records are PMIO's own
+; (HBA_*, SDV_*), copied out; a device of any type is listed, not just
+; the CD-ROMs, because a disk on the bus is part of the answer to "why
+; is my drive not there".
+;---------------------------------------------------------------------
+SCF_ADAPTER     EQU     0                       ; EDI -> HBA_LEN bytes
+SCF_DEVICE      EQU     1                       ; EDI -> SDV_LEN bytes
 
 ;---------------------------------------------------------------------
 ; DELETE PROTECTION - UNDELETE=ON|OFF in CONFIG.SYS, DOS\RECYCLE.INC in
@@ -3203,6 +3632,133 @@ XMF_FREE        EQU     1
 XMF_GET         EQU     2
 XMF_PUT         EQU     3
 XMF_AVAIL       EQU     4
+
+;---------------------------------------------------------------------
+; THE CLEAN-SHUTDOWN FLAG - one bit in FAT entry 1, where Windows 95
+; keeps it, so that each system reads the other's.  Set means clean.
+; FAT12 has no room for it, so a diskette never has one.  VOLFLAG.INC
+; has the rules; the short form is that the bit goes off before the
+; first write after a commit and back on at the first commit with no
+; written file still open on the drive.
+;
+;   21h/F1h AL=1Dh, DL = drive (0 = default, 1 = A:), the function in
+;   bits 16-23 of EAX:
+;     VLF_QUERY     -> EAX = VLS_* bits
+;     VLF_CHECKED   a CHKDSK has found the volume sound or repaired
+;                   it: the bit may go back on.  -> EAX = VLS_* bits
+;
+; AUTOCHECK=ON|ASK|OFF in CONFIG.SYS: what happens at boot to a drive
+; found with the bit off.  ON runs CHKDSK X: /F before the shell, ASK
+; asks first, OFF says so and leaves it.  A safe-mode start turns ON
+; into ASK.
+;---------------------------------------------------------------------
+FAT16_CLEAN     EQU     8000h                   ; in FAT[1], bit 15
+FAT32_CLEAN     EQU     08000000h               ; in FAT[1], bit 27
+
+VLF_QUERY       EQU     0
+VLF_CHECKED     EQU     1
+
+VLS_KEPT        EQU     01h                     ; the volume has the bit
+VLS_DIRTY       EQU     02h                     ; and it is off now
+VLS_HOLD        EQU     04h                     ; and was found off: only
+                                                ; VLF_CHECKED turns it on
+
+AUTOC_OFF       EQU     0
+AUTOC_ASK       EQU     1
+AUTOC_ON        EQU     2
+
+;---------------------------------------------------------------------
+; VBE FOR A NATIVE PROGRAM - 21h/F1h AL=1Fh, the function in bits
+; 16-23 of EAX.  A native program has no BIOS and its segment is its
+; slot, so it can neither set a graphics mode nor reach the frame
+; buffer of one.  The kernel does the first and hands out SEL_VBE for
+; the second.  Native programs only: a DOS box has INT 10h itself and
+; a DPMI client has 0300h and 0800h.  DOS\VBE.INC has the rest.
+;
+;   VBF_INFO     EDI -> 512 bytes: 4F00h's block, asked for as VBE 2.0.
+;                Its far pointers come back as the program's own
+;                pointers into this same buffer: the mode list copied
+;                to VBI_RESERVED (at most VBE_MAXMODES), the four
+;                strings to VBI_OEMDATA (VBE_STRLEN each).  -> EAX =
+;                the VBE version, ECX = the modes in the list
+;   VBF_MODE     CX = a mode, EDI -> 256 bytes: 4F01h's block for it
+;   VBF_SET      EBX = a mode as 4F02h takes it: VBM_LFB for the linear
+;                frame buffer, which every VBE mode (100h and up) must
+;                ask for here, and VBM_KEEP not to clear the screen.  A
+;                VGA mode (below 100h) is set by INT 10h AH=00h and must
+;                not ask.  -> EAX = SEL_VBE, ECX = the bytes it covers
+;                (all of video memory, so a second page can be drawn
+;                and shown with 4F07h), EDX = bytes per scan line.  A
+;                VGA graphics mode gets the 64K window at A0000h (B8000h
+;                and 32K for the CGA modes) and EDX = 0; a text mode
+;                gets EAX = ECX = EDX = 0.  Load the selector after
+;                every VBF_SET: a segment register keeps the old one.
+;   VBF_RESTORE  the screen back as it was before this program's first
+;                VBF_SET, and SEL_VBE with it.  4Ch does the same for a
+;                program that did not
+;   VBF_PALETTE  BL = 00h to set (80h: during the retrace), 01h to read,
+;                ECX = entries, EDX = the first, EDI -> 4 bytes each:
+;                blue, green, red, 0, in the DAC's width.  4F09h, or the
+;                DAC's ports when the BIOS has not got 4F09h
+;   VBF_BIOS     bits 24-31 of EAX = 03h, 06h, 07h or 08h: that VBE
+;                function, which takes and gives back numbers only, with
+;                EBX, ECX and EDX as it has them and as it leaves them.
+;                07h is the one that flips pages
+;
+; CF and AX = ERR_NOVBE, ERR_VBEFAIL (the BIOS said no), ERR_BADDATA
+; (a mode or a palette range that cannot be asked for), ERR_NOMEM (the
+; frame buffer could not be mapped), ERR_ACCESS (a buffer outside the
+; slot) or ERR_FUNC.
+;---------------------------------------------------------------------
+VBF_INFO        EQU     0
+VBF_MODE        EQU     1
+VBF_SET         EQU     2
+VBF_RESTORE     EQU     3
+VBF_PALETTE     EQU     4
+VBF_BIOS        EQU     5
+
+VBM_MODE        EQU     07FFh                   ; the mode number in a 4F02h BX.
+                                                ; VBE gives it nine bits and
+                                                ; reserves 9 and 10, but a
+                                                ; program sets what the BIOS
+                                                ; lists, and DOSBox-X lists
+                                                ; 200h to 213h
+VBM_LFB         EQU     4000h
+VBM_KEEP        EQU     8000h
+VBE_NONE        EQU     0FFFFh                  ; no mode set through VBF_SET
+
+; 4F00h's block
+VBI_SIG         EQU     00h                     ; 'VESA' out, 'VBE2' in
+VBI_VERSION     EQU     04h                     ; dw - 0200h is 2.0
+VBI_OEMSTR      EQU     06h                     ; dd - far pointer
+VBI_CAPS        EQU     0Ah                     ; dd
+VBI_MODES       EQU     0Eh                     ; dd - far pointer, FFFFh ends
+VBI_MEMORY      EQU     12h                     ; dw - in 64K
+VBI_OEMREV      EQU     14h                     ; dw - VBE 2.0 from here on
+VBI_VENDOR      EQU     16h                     ; dd - far pointer
+VBI_PRODUCT     EQU     1Ah                     ; dd - far pointer
+VBI_PRODREV     EQU     1Eh                     ; dd - far pointer
+VBI_RESERVED    EQU     22h                     ; 222 bytes
+VBI_OEMDATA     EQU     100h                    ; 256 bytes
+VBI_LEN         EQU     200h
+VBE_MAXMODES    EQU     (VBI_OEMDATA - VBI_RESERVED) / 2 - 1
+VBE_STRLEN      EQU     (VBI_LEN - VBI_OEMDATA) / 4
+
+; 4F01h's block
+VMI_ATTR        EQU     00h                     ; dw - VMA_* bits
+VMI_PITCH       EQU     10h                     ; dw - bytes per scan line
+VMI_XRES        EQU     12h                     ; dw
+VMI_YRES        EQU     14h                     ; dw
+VMI_BPP         EQU     19h                     ; db - bits per pixel
+VMI_MODEL       EQU     1Bh                     ; db - 4 packed, 6 direct
+VMI_PAGES       EQU     1Dh                     ; db - image pages, less one
+VMI_PHYS        EQU     28h                     ; dd - the linear frame buffer
+VMI_LINPITCH    EQU     32h                     ; dw - VBE 3.0: its scan line
+VMI_LEN         EQU     100h
+
+VMA_HW          EQU     0001h                   ; the hardware can show it
+VMA_GRAPHICS    EQU     0010h
+VMA_LFB         EQU     0080h                   ; ...through a linear buffer
 
 ;---------------------------------------------------------------------
 ; How many drive letters exist.  SHARED, and it has to be: COMMAND.COM

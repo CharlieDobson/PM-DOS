@@ -28,6 +28,9 @@
 ;   STOP   ...and IOCTL input 15 must then say paused
 ;   RESUME ...and the position must move again
 ;   STOP twice, which really stops
+;   VOLUME IOCTL input 4 and output 3: output 0's volume changed,
+;          read back and put back - the drive's MODE SENSE page, which
+;          a SCSI drive sends behind a block descriptor
 ;   THE DEVICE ITSELF: the strategy and interrupt entries out of the
 ;          header are CALLED DIRECTLY, the way a program that found
 ;          the driver through 1501h would call them, rather than
@@ -484,8 +487,77 @@ c_upclp:
         call    put2
         loop    c_upclp
         call    ok
-        jmp     short c_raw
+        jmp     short c_vol
 c_upcbad:
+        call    bad
+
+;=====================================================================
+; IOCTL input 4 and output 3 - the audio channels: which input feeds
+; each output, and how loudly.  The drive keeps them in MODE SENSE's
+; page 0Eh, and these two calls are the only way to it.
+;
+; WRITTEN, READ BACK AND PUT BACK.  Output 0's volume is changed to a
+; value it did not have, the page is read again and the new value must
+; be there, and then the old one goes back.  A driver that answered
+; the read and dropped the write fails it - and so does one that read
+; the page at the wrong offset, which a SCSI drive makes easy: it
+; sends a block descriptor ahead of the page, and an ATAPI drive does
+; not.
+;=====================================================================
+c_vol:
+        call    crlf
+        mov     dx,OFFSET msg_vol
+        call    puts
+        mov     al,4
+        mov     cx,9
+        call    ioctl_in
+        jc      c_volbad
+        push    ds
+        pop     es
+        mov     si,OFFSET cblk + 1
+        mov     di,OFFSET vol_old
+        mov     cx,8
+        cld
+        rep     movsb
+        mov     al,byte ptr [vol_old+1]         ; output 0's volume
+        call    put2
+        mov     al,byte ptr [vol_old+1]
+        xor     al,80h                          ; something it was not
+        mov     byte ptr [vol_new],al
+        mov     dx,OFFSET msg_volto
+        call    puts
+        mov     al,byte ptr [vol_new]
+        call    put2
+
+        mov     si,OFFSET vol_old
+        mov     di,OFFSET cblk + 1
+        mov     cx,8
+        rep     movsb
+        mov     al,byte ptr [vol_new]
+        mov     byte ptr [cblk+2],al
+        mov     al,3
+        mov     cx,9
+        call    ioctl_out
+        jc      c_volbad
+        mov     al,4
+        mov     cx,9
+        call    ioctl_in
+        jc      c_volbad
+        mov     al,byte ptr [cblk+2]
+        cmp     al,byte ptr [vol_new]
+        jne     c_volbad
+
+        mov     si,OFFSET vol_old               ; and as it was
+        mov     di,OFFSET cblk + 1
+        mov     cx,8
+        rep     movsb
+        mov     al,3
+        mov     cx,9
+        call    ioctl_out
+        jc      c_volbad
+        call    ok
+        jmp     short c_raw
+c_volbad:
         call    bad
 
 ;=====================================================================
@@ -746,6 +818,31 @@ ioctl_in:
         pop     cx
         pop     ax
         mov     byte ptr [cblk],al              ; the code goes in the block
+        mov     word ptr [req+0Eh],OFFSET cblk
+        mov     ax,ds
+        mov     word ptr [req+10h],ax
+        mov     word ptr [req+12h],cx
+        call    sendreq
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
+
+;=====================================================================
+; ioctl_out - AL = the control code, CX = how many bytes the block is,
+;             in cblk from byte 1.  CF on failure.
+;=====================================================================
+ioctl_out:
+        push    ax
+        push    bx
+        push    cx
+        push    ax
+        push    cx
+        mov     al,12                           ; IOCTL output
+        call    mkreq
+        pop     cx
+        pop     ax
+        mov     byte ptr [cblk],al
         mov     word ptr [req+0Eh],OFFSET cblk
         mov     ax,ds
         mov     word ptr [req+10h],ax
@@ -1019,6 +1116,8 @@ letters     db  16 dup(0)
 drvlist     db  32 dup(0)
 req         db  32 dup(0)
 cblk        db  32 dup(0)
+vol_old     db  8 dup(0)                ; the channels as they were
+vol_new     db  0
 path_root   db  '\',0                   ; every disc has one of these
 path_junk   db  '\NO SUCH.XYZ',0        ; and no disc has one of these
 dirent      db  255 dup(0)              ; what 150Fh writes
@@ -1052,6 +1151,8 @@ msg_resume  db  '136     resume, and moving:$'
 msg_stop2   db  '133x2   stopped for good: $'
 msg_direct  db  'device  strategy+interrupt called directly: $'
 msg_upc     db  '15h/14  catalogue number: $'
+msg_vol     db  '15h/04  volume, output 0:  $'
+msg_volto   db  ' -> $'
 msg_raw     db  '128     raw frame vs cooked sector: $'
 msg_rawno   db  ' this drive has no READ CD - skipped',13,10,'$'
 msg_0F      db  '150Fh   the root, extent:  $'

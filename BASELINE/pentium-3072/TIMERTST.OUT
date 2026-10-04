@@ -1,0 +1,15 @@
+
+TIMERTST - does a DOS box get the timer?
+
+INT 1Ch, 2s ............. #### OK
+INT 08h, 2s ............. #### OK
+and INT 1Ch behind it ... #### OK
+in service, in handler .. 01 OK
+in service, outside it .. 00 OK
+INT 08h while masked, 1s  #### OK
+and after unmasking ..... #### OK
+timer x4: INT 08h, 1s ... #### OK
+and INT 1Ch, passed on .. #### OK
+clock ticks in 2 RTC s .. #### OK
+
+TIMERTST: all checks passed

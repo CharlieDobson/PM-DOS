@@ -17,8 +17,9 @@
 ; Every track that differs is named ("Compare error on side 0, track
 ; 5") and the comparison carries on to the end; "Compare OK" only if
 ; none did and every track could be read.  A disk and its DISKCOPY
-; differ on track 0, where the copy was given a serial number of its
-; own - DOS's DISKCOMP said so too.
+; compare OK: the copy was given a serial number of its own, and the
+; serial number is left out of the comparison, as DOS's DISKCOMP left
+; it out (dk_volser).
 ;
 ; Errorlevels, 6.22's: 0 the same, 1 different, 2 ^C, 3 a track that
 ; could not be read, 4 the command line, the drives, memory, or disks
@@ -313,6 +314,10 @@ kcp_got:
         call    di_imgget
         mov     esi,[di_trk]
         mov     edi,[di_trk2]
+        cmp     dword ptr [dk_t],0
+        jne     kcp_cmp
+        call    dk_volser               ; the boot sector is on this one
+kcp_cmp:
         mov     ecx,[di_tbytes]
         shr     ecx,2
         repe    cmpsd
@@ -324,8 +329,38 @@ kcp_got:
         call    say_where
 kcp_next:
         inc     dword ptr [dk_i]
-        jmp     short kcp_lp
+        jmp     kcp_lp
 kcp_out:
+        ret
+
+;---------------------------------------------------------------------
+; dk_volser - ESI = the first disk's track 0, EDI = the second's.  If
+;             the first disk's boot sector has a serial number, the
+;             second's is made the same - in the buffer, not on the
+;             disk - so that it is not what makes them differ.
+;
+; A DISK AND ITS DISKCOPY ARE THE SAME DISK.  DISKCOPY gives the copy
+; a serial number of its own, and 6.22's DISKCOMP copies the first
+; disk's over the second's before it compares (VOLSER, in the 6.0
+; source) when the first's media byte is Fxh and its boot signature is
+; 28h or 29h, the two that have one.  This said "Compare error on side
+; 0, track 0" over every disk and its own copy; 6.22, run on the same
+; two images, says "Compare OK".
+;---------------------------------------------------------------------
+dk_volser:
+        mov     al,[esi+15h]            ; the media byte
+        and     al,0F0h
+        cmp     al,0F0h
+        jne     dvs_out
+        mov     al,[esi+26h]            ; the boot signature
+        cmp     al,28h
+        je      dvs_copy
+        cmp     al,29h
+        jne     dvs_out
+dvs_copy:
+        mov     eax,[esi+27h]           ; the serial number
+        mov     [edi+27h],eax
+dvs_out:
         ret
 
 ; dk_rdfail - AL = the letter, track [dk_t] would not read

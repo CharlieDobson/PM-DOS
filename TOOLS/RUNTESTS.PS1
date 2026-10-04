@@ -7,7 +7,10 @@ param(
     [int]$Seconds = 240,                         # DOSBox-X's -time-limit
     [string]$Exe = '',                           # DOSBox-X, if DBXRUN.PS1 would pick wrong
     [switch]$Update,                             # keep what this run said as the baseline
-    [switch]$All                                 # every row in $rows, one after another
+    [switch]$All,                                # every row in $rows, one after another
+    [switch]$Sound,                              # a Sound Blaster in the machine (DMATEST);
+                                                 # the baselines are without one
+    [string]$SbType = 'sb16'                     # ...and which: sb16vibra for ISAPNP
 )
 # RUNTESTS.PS1 - run the unattended tests on one DOSBox-X machine and
 # say which of them now answer differently.
@@ -56,6 +59,11 @@ param(
 # An entry in -Run may carry arguments ("IDLETEST /T"); the first word
 # names the test and its .OUT file.
 #
+# -Sound puts a Sound Blaster 16 in the machine (DBXRUN.PS1), which
+# DMATEST drives through the DMA controller; -SbType sb16vibra makes it
+# a Plug and Play one, which ISAPNP lists.  The baselines are recorded
+# without one, so give such a run a -Name of its own.
+#
 # -Update writes what this run said as the new baseline, after masking.
 # Run it twice on an unchanged build before trusting a row: anything
 # that differs between two runs of the same kernel belongs in $masks.
@@ -99,13 +107,16 @@ if ( $All ) {
 #   TESTDEV, TESTBLK     drivers, loaded by a CONFIG.SYS that names them
 $default = @(
     'MEM', 'A20TEST', 'ALLOCTST', 'APITEST', 'ARGS', 'BIGMEM', 'BUFTEST', 'CACHETST', 'CDATEST', 'CDXTEST',
-    'CFGTEST', 'CTRYDMP', 'CTRYTEST', 'CURTEST', 'DEVCRIT', 'DEVTEST', 'DPMIFP32', 'DPMIFPU',
+    'CFGTEST', 'CTRYDMP', 'CTRYTEST', 'CURTEST', 'DEVCRIT', 'DEVTEST', 'DMATEST', 'DPMIFP32', 'DPMIFPU',
     'DPMII32', 'DPMIIRQ', 'DPMITEST', 'DPMIV32', 'DPMIVEC', 'DRIVES', 'EMSTEST', 'EXECLEAK', 'EXECTST',
     'F32TEST', 'FCBTEST', 'FNDTEST', 'FPU32', 'FPUTEST', 'HELLO', 'HELLOX', 'HNDTEST', 'HOOKTEST',
-    'HWPROBE', 'I13TEST', 'I24TEST', 'IDLETEST /T', 'IRQTEST', 'LFNAPI', 'LOLTEST', 'LPTTEST',
+    'HWPROBE', 'I13TEST', 'I24TEST', 'IDLETEST /T', 'IRQTEST', 'ISAPNP', 'LFNAPI', 'LOLTEST', 'LPTTEST',
     'MCBTEST', 'MEMPROBE', 'MS32TEST', 'MSTEST', 'NICIRQ', 'PCITEST', 'PEKID', 'PROBE13', 'R3TEST',
-    'RMFIND', 'RMFSTEST', 'RMSPEED', 'RMTEST', 'SFTSCAN', 'SHARETST', 'SLOTTEST', 'TSRTEST', 'UDTEST',
-    'UMBTEST', 'VDSTEST', 'VFYTEST', 'VPICTEST', 'WINTEST', 'XMSREPT', 'XMSTEST'
+    'RMFIND', 'RMFSTEST', 'RMIVT', 'RMSPEED', 'RMTEST', 'SFTSCAN', 'SHARETST', 'SLOTTEST', 'TIMERTST', 'TSRTEST', 'UDTEST',
+    'UMBTEST', 'VBETEST', 'VDSTEST', 'VFTEST', 'VFYTEST', 'VPICTEST', 'WINTEST', 'XMSREPT', 'XMSTEST',
+    # last, because it leaves a program resident: a handler on the timer
+    # and the clock that IRQXWAIT, a native program, waits on
+    'IRQXTEST /I', 'IRQXWAIT', 'IRQXTEST /R'
 )
 
 # Run-to-run noise: a pattern and what it becomes.  Each one was seen to
@@ -128,6 +139,20 @@ $masks = @(
     , @( '\s+\d+ ticks,\s+\d+ ms each', ' # ticks, # ms each' )
     # APITEST: 5Ah makes the name from the clock
     , @( '(unique name: \\)[0-9A-F]{8}', '$1########' )
+    # TIMERTST: ticks counted over two seconds, and against the RTC
+    , @( '(, 2s[ .]+)[0-9A-F]{4}', '$1####' )
+    , @( '(and INT 1Ch( behind it|, passed on) \.+ )[0-9A-F]{4}', '$1####' )
+    , @( '(clock ticks in 2 RTC s \.+ )[0-9A-F]{4}', '$1####' )
+    # RMIVT: the same count, with the kernel calling the BIOS meanwhile
+    # (its IRQ 8 count is ", 1s" above)
+    , @( '((2Ch|timer x4): clock in 2 RTC s \.+ )[0-9A-F]{4}', '$1####' )
+    # IRQXTEST and IRQXWAIT: what happened while the clock ran
+    , @( '(ticks since /I \.+ )\d+', '$1#' )
+    , @( '(INT 1Ch calls, 9/10 \.+ )\d+', '$1#' )
+    , @( '(IRQ 8 interrupts, 3/tick \. )\d+', '$1#' )
+    , @( '(Zs typed by INT 1Ch \.+ )\d+', '$1#' )
+    , @( '(and calls the clock did not ask for \.+ )\d+', '$1#' )
+    , @( '(Zs while polling, 5s \.+ )\d+', '$1#' )
 )
 
 # "powershell -File" hands a list over as ONE string, so -Run is split
@@ -229,7 +254,7 @@ function Read-Results {
 if ( -not ( Test-Path "$root\TOOLS\MKDISK.EXE" ) ) { throw 'Run BUILD.CMD first.' }
 New-Disk
 $dbx = & "$PSScriptRoot\DBXRUN.PS1" -Hd $image -Seconds $Seconds -MemMB $MemMB -Cpu $Cpu -Exe $Exe `
-    -Lpt ( Join-Path $work 'LPT.TXT' ) -Until $endmark
+    -Lpt ( Join-Path $work 'LPT.TXT' ) -Until $endmark -Sound:$Sound -SbType $SbType
 $found = Read-Results
 $done = $found.ContainsKey( 'DONE.TXT' )
 $stuck = -1

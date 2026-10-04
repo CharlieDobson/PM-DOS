@@ -91,8 +91,9 @@ rm_land:
         mov     gs,ax
         mov     ss,ax
         mov     sp,RM_STACK_TOP
-        lidt    fword ptr cs:[rm_idtr]  ; put the BIOS IVT back
-        call    pic_to_rm               ; BIOS expects IRQs at 08h/70h
+        lidt    fword ptr cs:[GVO_BIDTR] ; the vector table a BIOS call
+                                        ; runs with (rm_freeze, RMCALL.INC)
+        call    pic_down                ; and the 8259s, for the BIOS
 
         ; Patch the INT opcode from the frame (DS = 0 addresses RMFRAME)
         push    es
@@ -152,7 +153,7 @@ rm_intop:
         ; how long they spent down here.
 rm_toprot:
         cli
-        call    pic_to_pm               ; IRQs back out of the exception range
+        call    pic_up                  ; IRQs back out of the exception range
         lgdt    fword ptr cs:[gdtr]
         mov     eax,cr0
         or      al,1
@@ -201,9 +202,11 @@ no_paging:
 ; pic_to_rm / pic_to_pm - shuffle the 8259 vector bases between the
 ; BIOS layout (08h/70h) and the protected-mode layout (20h/28h).
 ;
-; Every real-mode BIOS call runs with the BIOS layout so the floppy
-; driver sees its timer tick and IRQ 6 completion interrupt; protected
-; mode needs the IRQs clear of the CPU exception vectors.
+; A real-mode BIOS call made before CONFIG.SYS is finished, and a park,
+; run with the BIOS layout so the floppy driver sees its timer tick and
+; IRQ 6 completion interrupt; protected mode needs the IRQs clear of
+; the CPU exception vectors.  After CONFIG.SYS a BIOS call leaves the
+; bases alone - pic_down says why.
 ;
 ; pic_to_rm unmasks timer, keyboard, cascade, floppy, the RTC and the
 ; two IDE channels for the BIOS; pic_to_pm restores the kernel's own
@@ -233,6 +236,14 @@ pic_to_rm:
         mov     bl,70h                  ; slave base
         mov     ch,0B8h                 ; master mask: IRQ 0,1,2,6 live
         mov     cl,3Eh                  ; slave mask:  IRQ 8, 14, 15 live
+        ; ...AND EVERY LINE THE BIOS ITSELF LEFT OPEN.  A SCSI card's ROM
+        ; serves its hard disk through INT 13h and waits on the card's
+        ; interrupt - IRQ 11 on a 1542 out of the box - which the two
+        ; constants above mask.  With them alone the first INT 13h to
+        ; such a disk never came back and PM-DOS stopped at boot, on
+        ; the partition table, before it had printed anything.
+        and     ch,byte ptr cs:[GVO_BIOSIMR]
+        and     cl,byte ptr cs:[GVO_BIOSIMR+1]
         jmp     short pic_prog
 pic_to_pm:
         mov     bh,IRQ_BASE
@@ -366,6 +377,15 @@ rm_main:
 
         mov     [v_bootdrv],dl          ; DS = CS, so this works wherever
                                         ; we happen to have been loaded
+
+        ; THE INTERRUPT MASK THE BIOS LEFT, before anything here touches
+        ; the controllers: the lines it opened at POST are the ones its
+        ; own code - and a SCSI card's ROM - will wait on.  pic_to_rm
+        ; keeps them open on every trip back into the BIOS.
+        in      al,PIC1_DATA
+        mov     [v_biosimr],al
+        in      al,PIC2_DATA
+        mov     [v_biosimr+1],al
 
 ;--- get out of the transient program area ----------------------------
 ; Everything above this point is position independent - a near jump,
@@ -843,7 +863,7 @@ IFDEF PMDOS_DEBUG
 ENDIF
         pop     eax
         call    fl_next
-        jmp     short ld_loop
+        jmp     ld_loop
 
 ld_done:
         pop     es
@@ -956,9 +976,7 @@ ld_this     dd  0                       ; sectors in the piece in hand
 ; supplying that again is RMDOS's whole job.
 ;=====================================================================
 park_mark:
-IF (park_mark - rm_base) GT RMT_PARK
-        .ERR    <the stub's code has grown into the park entry at RMT_PARK>
-ENDIF
+.ERRE   (park_mark - rm_base) LE RMT_PARK, <the stub's code has grown into the park entry at RMT_PARK>
         ORG     RMT_PARK
 
 ;---------------------------------------------------------------------
@@ -1053,9 +1071,7 @@ park_go:
 ; mode, so the machine SURVIVED and reported success.  A fixed
 ; offset with code in front of it needs a check at both ends.
 unpark_mark:
-IF (unpark_mark - rm_base) GT RMT_UNPARK
-        .ERR    <the park code has grown into the unpark entry>
-ENDIF
+.ERRE   (unpark_mark - rm_base) LE RMT_UNPARK, <the park code has grown into the unpark entry>
         ORG     RMT_UNPARK
 rm_unpark:
         cli
@@ -1115,8 +1131,65 @@ gdt_start:
         ; the wrong kind of default.  r3_setdesc fills them in.
         dq      0
         dq      0
-gdt_end:
 
+        ; 0048 - SEL_VBE: a native program's frame buffer, DPL 3, which
+        ; DOS\VBE.INC describes when the program sets a mode.  It starts
+        ; EMPTY and not absent: expand-down data with the highest limit,
+        ; so it can be loaded and nothing can be reached through it.
+        dw      0FFFFh, 0000h
+        db      00h, 0F6h, 0CFh, 00h
+gdt_end:
+.ERRNZ  (gdt_end - gdt_start) - GDT_ENTRIES * 8, <the GDT is not GDT_ENTRIES descriptors>
+
+;=====================================================================
+; THE INTERRUPT LINES DURING A BIOS CALL.
+;
+; Until CONFIG.SYS is finished a BIOS call runs with the vector table
+; at 0:0, and after that with the copy of it rm_freeze took then
+; (RMCALL.INC says why), in which the sixteen lines point here - at
+; IRQ_BASE and up, where they arrive during a call (pic_down).  An
+; interrupt that arrives in the middle of a call is noted in GV_RMOWED
+; - rq_up hands it to a DOS box afterwards, if one is listening - and
+; goes on to wherever its line went when the copy was taken: the
+; BIOS's own handler, or a CONFIG.SYS driver's.  Nothing a DOS program
+; has hooked since is run down here.
+;
+; An entry is RQ_LEN bytes: the note, and the far jump on.  Line 0's is
+; a jump to rq_timer, which passes on whole ticks only, and line 8's to
+; rq_rtc, which passes on only the clock's interrupts the BIOS is
+; waiting for.
+;=====================================================================
+RQS     MACRO   n
+        bts     word ptr cs:[GVO_RMOWED],n
+        jmp     dword ptr cs:[RMT_IRQORIG + n * 4]
+        ENDM
+
+rq_mark:
+.ERRE   (rq_mark - rm_base) LE RMT_IRQORIG, <the GDT and its pointers have grown into RMT_IRQORIG>
+        ORG     RMT_IRQORIG
+rq_orig     dd  16 dup(0)               ; where each line went: rm_freeze
+
+        ORG     RMT_IRQS
+        jmp     rq_timer                ; line 0
+        ORG     RMT_IRQS + RQ_LEN
+        IRP     v,<1,2,3,4,5,6,7>
+        RQS     %v
+        ENDM
+rq_eight:
+.ERRNZ  (rq_eight - rm_base) - (RMT_IRQS + 8 * RQ_LEN), <an RMT_IRQS entry is not RQ_LEN bytes>
+        jmp     rq_rtc                  ; line 8
+        ORG     RMT_IRQS + 9 * RQ_LEN
+        IRP     v,<9,10,11,12,13,14,15>
+        RQS     %v
+        ENDM
+rq_end:
+.ERRNZ  (rq_end - rm_base) - (RMT_IRQS + 16 * RQ_LEN), <an RMT_IRQS entry is not RQ_LEN bytes>
+
+;---------------------------------------------------------------------
+; The three descriptor-table pointers.  They followed the GDT until the
+; GDT grew a tenth entry (SEL_VBE) and pushed them into RMT_IRQORIG;
+; out here, behind the last entry's jump, nothing falls into them.
+;---------------------------------------------------------------------
 gdtr:
         dw      GDT_ENTRIES * 8 - 1
         dd      GDT_BASE
@@ -1125,9 +1198,136 @@ idtr_pm:                                ; the 32-bit IDT built by IOPM
         dw      IDT_LIMIT
         dd      IDT_BASE
 
-rm_idtr:                                ; the BIOS interrupt vector table
-        dw      03FFh
+rm_idtr:                                ; the BIOS interrupt vector table,
+        dw      03FFh                   ; for a park
         dd      0
+
+;---------------------------------------------------------------------
+; rq_timer - line 0 during a BIOS call.
+;
+; THE ROM'S HANDLER COUNTS 40:6C ONCE AN INTERRUPT, so while a game in a
+; DOS box has the timer running four times as fast it counted four
+; times as fast for as long as each call lasted - which upstairs
+; irq_timer does not, because it counts a tick only every 65536 counts
+; of the timer's input (vt_tick).  The same count is kept here, in
+; GV_VTDIV and GV_VTACC, which rq_down and rq_up carry between this and
+; vt_div and vt_acc.  A whole tick goes on to the ROM's handler; the
+; rest are ended here, as a game ends the ones it keeps to itself.
+;---------------------------------------------------------------------
+rq_timer:
+        bts     word ptr cs:[GVO_RMOWED],0
+        push    eax
+        mov     eax,dword ptr cs:[GVO_VTACC]
+        add     eax,dword ptr cs:[GVO_VTDIV]
+        sub     eax,PIT_FULL
+        jb      rqt_part
+        mov     dword ptr cs:[GVO_VTACC],eax
+        pop     eax
+        jmp     dword ptr cs:[RMT_IRQORIG]
+rqt_part:
+        add     eax,PIT_FULL
+        mov     dword ptr cs:[GVO_VTACC],eax
+        mov     al,20h
+        out     PIC1_CMD,al
+        pop     eax
+        iret
+
+;---------------------------------------------------------------------
+; rq_rtc - line 8, the real-time clock, during a BIOS call.
+;
+; THE BIOS'S HANDLER IS NOT HANDED A PROGRAM'S CLOCK INTERRUPT.  A
+; program that runs the clock's periodic interrupt for itself reads
+; register C in its own handler, which is how it knows why the clock
+; interrupted and what lets the clock go.  The ROM's handler reads it
+; too, and finding a periodic interrupt with no wait of its own to time
+; it does what IBM's does: switches the periodic interrupt OFF, for
+; good, and the program never hears from the clock again.  That
+; happened at the first of a program's interrupts to land in a BIOS
+; call, and a program in a box asking the time on every turn of a loop
+; lost its clock within a second.
+;
+; So it is the BIOS's only while the BIOS is timing a wait with it
+; (BDA_RTCWAIT), or when no DOS box is listening on the line
+; (GV_RMBOX).  Otherwise the line is masked for what is left of the
+; call, register C is left unread for the box's handler, and rq_up
+; owes the box the interrupt; the masks protected mode wants are put
+; back on the way up.  A BIOS that started a wait of its own after that,
+; in the same call, would wait for an interrupt that cannot come.  The
+; calls the kernel makes - the time, the disks, the printer and the
+; serial ports - are not the waits that use the clock (INT 15h AH=83h
+; and 86h), though nothing stops a BIOS calling one from inside another.
+;---------------------------------------------------------------------
+rq_rtc:
+        bts     word ptr cs:[GVO_RMOWED],8
+        push    ax
+        push    ds
+        xor     ax,ax
+        mov     ds,ax
+        test    byte ptr ds:[BDA_RTCWAIT],1
+        pop     ds
+        jnz     rqr_bios                ; the BIOS's wait
+        test    byte ptr cs:[GVO_RMBOX + 1],1
+        jz      rqr_bios                ; nobody else's
+        in      al,PIC2_DATA
+        or      al,1
+        out     PIC2_DATA,al
+        mov     al,20h
+        out     PIC2_CMD,al
+        out     PIC1_CMD,al
+        pop     ax
+        iret
+rqr_bios:
+        pop     ax
+        jmp     dword ptr cs:[RMT_IRQORIG + 8 * 4]
+
+;---------------------------------------------------------------------
+; pic_down / pic_up - the 8259s either side of a BIOS call (rm_land and
+; rm_toprot).
+;
+; RE-INITIALISING AN 8259 THROWS AWAY WHAT IS WAITING IN IT.  Moving the
+; vector bases takes a fresh ICW1, and ICW1 resets the request latches,
+; so an interrupt that came in while the switch had interrupts off was
+; never delivered on either side.  With nothing but BIOS calls going
+; on, that was a tenth of the clock's ticks on 86Box's Pentium II and
+; up to half of them on its 486 - every one of them found waiting at a
+; re-initialisation - and a keystroke or a mouse byte arriving there
+; went the same way.
+;
+; Once rm_freeze has given BIOS calls a vector table of their own, the
+; lines can arrive where protected mode keeps them, at IRQ_BASE and up,
+; and that table sends each to the RMT_IRQS entry for its line: only
+; the masks change, and an interrupt the BIOS's masks shut out waits in
+; the controller for protected mode instead of being lost.  Before
+; that, and for a park, which hands the machine to code that expects
+; the BIOS's bases, they move as they always did.
+;---------------------------------------------------------------------
+pic_down:
+        cmp     byte ptr cs:[GVO_PICKEEP],0
+        jne     pd_keep
+        jmp     pic_to_rm
+pd_keep:
+        mov     byte ptr cs:[GVO_PICKEPT],1
+        mov     al,0B8h                 ; the lines pic_to_rm opens
+        and     al,byte ptr cs:[GVO_BIOSIMR]
+        out     PIC1_DATA,al
+        mov     al,3Eh
+        and     al,byte ptr cs:[GVO_BIOSIMR+1]
+        out     PIC2_DATA,al
+        ret
+
+pic_up:
+        cmp     byte ptr cs:[GVO_PICKEPT],0
+        jne     pu_kept
+        jmp     pic_to_pm
+pu_kept:
+        mov     byte ptr cs:[GVO_PICKEPT],0
+        mov     al,byte ptr cs:[GVO_PICMASK]
+        out     PIC1_DATA,al
+        mov     al,byte ptr cs:[GVO_PICMASK+1]
+        out     PIC2_DATA,al
+        ret
+rqt_end:
+.ERRE   (rqt_end - rm_base) LE GV_OFF, <the BIOS call's interrupt code has grown into the globals>
 
 ;=====================================================================
 ; Globals, at a fixed offset so protected-mode code can find them.
@@ -1151,6 +1351,8 @@ v_edp      db  32 dup(0)                ; AH=48h drive parameters
         ORG     GV_OFF + 70h
 v_picmask  db  0FCh, 0FFh              ; GV_PICMASK: the timer and the
                                         ; keyboard until a mouse is found
+v_biosimr  db  0B8h, 3Eh               ; GV_BIOSIMR: what the BIOS left,
+                                        ; read by rm_main; this until then
 
         ORG     GV_OFF + 80h
 v_fdpt     db  16 dup(0)                ; GV_FDPT: a diskette parameter
@@ -1160,6 +1362,26 @@ IFDEF HANG_E9
 v_hang     db  20 dup(0)                ; GV_HANGT..GV_HANGN: the hang
                                         ; reporter's mailbox
 ENDIF
+
+        ORG     GV_OFF + 0B0h
+v_rwdpt    db  16 dup(0)                ; GV_RWDPT: the table for reading
+                                        ; a disk with longer tracks
+
+        ORG     GV_OFF + 0C0h
+v_bidtr    dw  03FFh                    ; GV_BIDTR: a BIOS call's vector
+           dd  0                        ; table, 0:0 until rm_freeze
+v_rmowed   dw  0                        ; GV_RMOWED: the lines that
+                                        ; interrupted one
+v_vtdiv    dd  PIT_FULL                 ; GV_VTDIV and GV_VTACC: the
+v_vtacc    dd  0                        ; timer's count, for rq_timer
+v_rmbox    dw  0                        ; GV_RMBOX: a box's lines, for
+                                        ; rq_rtc
+v_pickeep  db  0                        ; GV_PICKEEP: the 8259s keep their
+v_pickept  db  0                        ; bases for a BIOS call; and do now
+
+        ORG     GV_OFF + 0D4h
+v_boottick dd  0                        ; GV_BOOTTICK and GV_BOOTKEY: the
+v_bootkey  db  0                        ; startup keys, for PMDOS
 
 ;=====================================================================
 ; Pad the stub to exactly RMSTUB_SIZE so IOPM.BIN lands at IO_PM_BASE.

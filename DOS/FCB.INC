@@ -298,7 +298,7 @@ f13_lp:
         mov     byte ptr [fq_hit],1
 f13_next:
         inc     ebx                     ; the entry is E5h now, so the scan
-        jmp     short f13_lp            ; can only move forwards
+        jmp     f13_lp            ; can only move forwards
 f13_end:
         cmp     byte ptr [fq_hit],0
         je      f13_none
@@ -692,7 +692,7 @@ f17_taken:
                                         ; says something went wrong
 f17_next:
         inc     ebx
-        jmp     short f17_lp
+        jmp     f17_lp
 f17_end:
         cmp     byte ptr [fq_bad],0
         jne     f17_none

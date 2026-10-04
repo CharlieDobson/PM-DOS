@@ -646,6 +646,10 @@ i13_flush:
         pushad
         mov     al,[i13_drive]
         mov     ah,0
+        cmp     byte ptr [i13_iswrite],1        ; a write: mode 2, and the
+        jne     i13_flgo                        ; clean-shutdown bit of what
+        mov     ah,2                            ; it lands in goes off first
+i13_flgo:
         mov     ebx,[i13_lba]
         mov     ecx,[i13_count]
         call    vol_syncdrv

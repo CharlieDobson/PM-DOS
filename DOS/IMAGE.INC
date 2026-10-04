@@ -1053,7 +1053,7 @@ imw_step:
         mov     [imw_prev],eax
         call    fat_next
         mov     [imw_clus],eax
-        jmp     short imw_lp
+        jmp     imw_lp
 
 imw_end:
         cmp     dword ptr [imw_len],0

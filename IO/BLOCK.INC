@@ -359,6 +359,10 @@ blk_go:
         call    blk_getgeo
         jc      bio_geofail
         mov     [bio_geo],ebx
+        cmp     byte ptr [bio_drive],80h
+        jae     bio_loop
+        call    fpy_rwup                ; a diskette's tracks can be longer
+                                        ; than the BIOS's table says
 
 bio_loop:
         cmp     dword ptr [bio_count],0
@@ -548,6 +552,7 @@ bio_fail:
         mov     al,byte ptr ds:[RMR_EAX+1]      ; BIOS status code
         mov     [bio_status],al
         mov     byte ptr [bio_tries],0
+        call    fpy_rwdown
         popad
         mov     ah,[bio_status]
         stc
@@ -565,12 +570,14 @@ bio_geofail:
 ; the truest of the INT 13h status codes for a sector this machine has
 ; no way to ask for.
 bio_nocyl:
+        call    fpy_rwdown
         popad
         mov     ah,04h
         stc
         ret
 
 bio_done:
+        call    fpy_rwdown
         popad
         xor     ah,ah
         clc

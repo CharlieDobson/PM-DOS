@@ -48,7 +48,7 @@ DIS_HEADS       EQU     1               ; db
 DIS_CYLS        EQU     2               ; db
 DIS_MEDIUM      EQU     3               ; db - FDM_*, for FDF_BEGIN
 DIS_LEN         EQU     4
-DIS_COUNT       EQU     8
+DIS_COUNT       EQU     9
 
 ;=====================================================================
 ; di_init - buffers, ^C and critical errors, and nothing owed to a
@@ -190,7 +190,7 @@ dp_swset:
         mov     edx,[ebx+1]
         mov     byte ptr [edx],1
         add     esi,2
-        jmp     short dp_lp
+        jmp     dp_lp
 dp_done:
         ret
 
@@ -635,7 +635,7 @@ di_fits:
         movzx   eax,ah
         cmp     eax,FDT_2880
         ja      dfi_no
-        movzx   eax,byte ptr [di_can+eax]
+        movzx   eax,word ptr [di_can+eax*2]
         bt      eax,ecx
         jnc     dfi_no
 dfi_ok:
@@ -935,7 +935,12 @@ did_out:
 ; Data
 ;=====================================================================
 ; The standard formats, FORMAT's fd_sizes in the same order, and which
-; of them each kind of drive can take (a bit per row, by FDT_*)
+; of them each kind of drive can take (a bit per row, by FDT_*).
+;
+; DMF IS THE NINTH ROW AND FORMAT HAS NO NINTH: it is a disk to copy,
+; not one to make.  Its medium is FDM_1440's, so DISKCOPY formats a
+; 1.44M target as DMF and refuses a 720K one as it would for 1.44M,
+; and FDF_BEGIN knows it by the 21 sectors.
 di_sizes    db  8, 1, 40, FDM_360       ; 160K
             db  9, 1, 40, FDM_360       ; 180K
             db  8, 2, 40, FDM_360       ; 320K
@@ -944,7 +949,8 @@ di_sizes    db  8, 1, 40, FDM_360       ; 160K
             db  15, 2, 80, FDM_1200     ; 1.2M
             db  18, 2, 80, FDM_1440     ; 1.44M
             db  36, 2, 80, FDM_2880     ; 2.88M
-di_can      db  0, 0Fh, 2Fh, 10h, 50h, 0D0h
+            db  21, 2, 80, FDM_1440     ; DMF, 1.68M
+di_can      dw  0, 0Fh, 2Fh, 10h, 150h, 1D0h
 
 ; a disk with no BPB: its FAT's media byte -> sectors, heads, and one
 ; spare byte

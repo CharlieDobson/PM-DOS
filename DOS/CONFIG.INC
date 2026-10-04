@@ -55,13 +55,22 @@ CFG_KEY_MAX     EQU     16
 
 ; The walks over the file, in order.  See cfg_phaseof for which
 ; statement belongs to which, and why any of them has to.
-CFG_PASS_DOS    EQU     0               ; DOS=, so upper memory exists
-CFG_PASS_MAIN   EQU     1               ; everything else, in file order
-CFG_PASS_INST   EQU     2               ; INSTALL=, after every driver
+CFG_PASS_KEYS   EQU     0               ; SWITCHES=, before the startup keys
+CFG_PASS_DOS    EQU     1               ; DOS=, so upper memory exists
+CFG_PASS_MAIN   EQU     2               ; everything else, in file order
+CFG_PASS_INST   EQU     3               ; INSTALL=, after every driver
+
+; How long the startup keys are waited for: two seconds from the time
+; "Starting PM-DOS..." went up, which is DOS 6's 37 ticks.
+BOOTKEY_WAIT    EQU     37
 
 ;=====================================================================
 ; config_run - find CONFIG.SYS on the boot drive and act on it.
 ;              Its absence is not an error and never was.
+;
+; Unless the startup keys say otherwise (cfg_keys): with Shift held
+; down or F5 pressed, none of the file is acted on, and the shell is
+; told to skip AUTOEXEC.BAT too.
 ;=====================================================================
 config_run:
         mov     al,[cur_drive]
@@ -125,17 +134,24 @@ cfg_shut:
         or      eax,eax
         jz      cfg_none
 
-        cmp     byte ptr [cfg_over],0
-        je      cfg_fitted
-        push    eax
-        mov     esi,OFFSET msgCfgLong
-        call    dword ptr ds:[IOS_CONSTR]
-        pop     eax
-cfg_fitted:
-
         mov     esi,OFFSET cfg_buf      ; NUL-terminate what we read
         add     esi,eax
         mov     byte ptr [esi],0
+
+        ; SWITCHES= BEFORE ANYTHING ELSE IS READ, because /N and /F are
+        ; about whether the file is read at all: they turn the startup
+        ; keys off and skip the wait for them.  DOS 6 scans for them
+        ; ahead of everything else for the same reason.
+        mov     dword ptr [cfg_pass],CFG_PASS_KEYS
+        call    cfg_walk
+        call    cfg_keys
+        jc      cfg_out                 ; bypassed: none of it is acted on
+
+        cmp     byte ptr [cfg_over],0
+        je      cfg_fitted
+        mov     esi,OFFSET msgCfgLong
+        call    dword ptr ds:[IOS_CONSTR]
+cfg_fitted:
 
 IFDEF PMDOS_DEBUG
         mov     esi,OFFSET msgCfgFound
@@ -158,7 +174,109 @@ ENDIF
         call    cfg_walk
         mov     dword ptr [cfg_pass],CFG_PASS_INST
         call    cfg_walk
+cfg_out:
+        ret
+
+        ; No CONFIG.SYS, and the keys still count: they are how
+        ; AUTOEXEC.BAT is skipped too.
 cfg_none:
+        jmp     cfg_keys
+
+;=====================================================================
+; cfg_keys - the startup keys.  CF set if they bypassed CONFIG.SYS and
+;            AUTOEXEC.BAT, which is done here: the message, and /D on
+;            the shell's tail, which is DOS 6's way of telling the
+;            interpreter to skip AUTOEXEC.BAT.
+;
+; Shift held down, or F5, while "Starting PM-DOS..." is on the screen.
+; PMIO noted when that went up (GV_BOOTTICK) and whether the BIOS had
+; seen either key before the kernel took the keyboard (GV_BOOTKEY).
+; The wait runs until two seconds after the message and ends early at
+; any key or a Shift; then the first key in the queue decides.  A key
+; that is not F5 is left where it is - it was typed for whatever runs
+; next.  Every F5 at the front of the queue is taken off it, because
+; people press it more than once and the rest would reach the prompt.
+;
+; SWITCHES=/N turns the keys off.  SWITCHES=/F skips the wait, so only
+; a key already pressed counts.
+;=====================================================================
+cfg_keys:
+        cmp     byte ptr [cfg_nokeys],0
+        jne     ck_normal
+        cmp     byte ptr [cfg_nowait],0
+        jne     ck_look
+ck_wait:
+        call    ck_any
+        jnz     ck_look
+        call    dword ptr ds:[IOS_TICKS]
+        sub     eax,dword ptr ds:[GV_BOOTTICK]
+        jae     ck_since
+        add     eax,TICKS_PER_DAY       ; past midnight since the message
+ck_since:
+        cmp     eax,BOOTKEY_WAIT
+        jae     ck_look
+        sti
+        hlt                             ; until the next tick or key
+        jmp     short ck_wait
+
+ck_look:
+        mov     dl,byte ptr ds:[GV_BOOTKEY]
+        test    byte ptr ds:[BDA_KBFLAG],BDAK_LSHIFT OR BDAK_RSHIFT
+        jz      ck_f5
+        or      dl,BOOTK_SHIFT
+ck_f5:
+        movzx   ebx,word ptr ds:[BDA_KBHEAD]
+        cmp     bx,word ptr ds:[BDA_KBTAIL]
+        je      ck_decide               ; nothing waiting
+        cmp     word ptr ds:[ebx+BDA_BASE],3F00h        ; F5
+        jne     ck_decide
+        push    edx
+        call    dword ptr ds:[IOS_CONIN]        ; take it off the queue
+        pop     edx
+        or      dl,BOOTK_F5
+        jmp     short ck_f5
+ck_decide:
+        or      dl,dl
+        jz      ck_normal
+
+        mov     esi,OFFSET msgCfgSafe
+        call    dword ptr ds:[IOS_CONSTR]
+
+        ; A drive not shut down properly is asked about rather than
+        ; checked: CHKDSK at boot may be the very thing that needed a
+        ; safe-mode start to get past (VOLFLAG.INC).
+        cmp     byte ptr [autoc_mode],AUTOC_ON
+        jne     ck_tail
+        mov     byte ptr [autoc_mode],AUTOC_ASK
+ck_tail:
+        movzx   ecx,byte ptr [shell_tail]
+        cmp     ecx,7Eh - 3             ; no room: DOS 6 gave up here too
+        ja      ck_bypass
+        lea     edi,[shell_tail+ecx+1]
+        mov     byte ptr [edi],' '
+        mov     byte ptr [edi+1],'/'
+        mov     byte ptr [edi+2],'D'
+        mov     byte ptr [edi+3],0Dh
+        add     byte ptr [shell_tail],3
+ck_bypass:
+        stc
+        ret
+ck_normal:
+        clc
+        ret
+
+;---------------------------------------------------------------------
+; ck_any - ZF clear if a startup key may have been pressed: one the
+;          BIOS saw, a Shift down now, or any key waiting.
+;---------------------------------------------------------------------
+ck_any:
+        cmp     byte ptr ds:[GV_BOOTKEY],0
+        jne     cka_out
+        test    byte ptr ds:[BDA_KBFLAG],BDAK_LSHIFT OR BDAK_RSHIFT
+        jnz     cka_out
+        mov     ax,word ptr ds:[BDA_KBHEAD]
+        cmp     ax,word ptr ds:[BDA_KBTAIL]
+cka_out:
         ret
 
 ;=====================================================================
@@ -348,12 +466,15 @@ cdl_unknown:
 ;               statement belongs to.
 ;
 ; Kept here as a list of exceptions rather than a column in the table,
-; because it IS a list of exceptions: two statements have to be early,
-; two have to be late, and the other twenty-odd genuinely do not care.
-; A fourth phase goes in as two more lines.
+; because it IS a list of exceptions: SWITCHES= has to be first, two
+; statements have to be early, two have to be late, and the other
+; twenty-odd genuinely do not care.  A fifth phase goes in as two more
+; lines.
 ;---------------------------------------------------------------------
 cfg_phaseof:
         mov     eax,[ebx+4]
+        cmp     eax,OFFSET cfg_switches ; before the startup keys, which
+        je      cph_keys                ; it can turn off
         cmp     eax,OFFSET cfg_dos
         je      cph_first
         cmp     eax,OFFSET cfg_ems      ; for the same reason as DOS=: the
@@ -366,6 +487,9 @@ cfg_phaseof:
         cmp     eax,OFFSET cfg_insthigh
         je      cph_last
         mov     eax,CFG_PASS_MAIN
+        ret
+cph_keys:
+        mov     eax,CFG_PASS_KEYS
         ret
 cph_first:
         mov     eax,CFG_PASS_DOS
@@ -451,6 +575,36 @@ cbk_on:
         ret
 
 ;---------------------------------------------------------------------
+; SWITCHES=/F /N /K /W /E - read in a walk of its own, ahead of the
+;               rest of the file, for the startup keys (cfg_keys):
+;
+;   /N  Shift and F5 do nothing at startup
+;   /F  no wait for them: only a key already pressed counts
+;
+; /K, /W and /E are DOS 6's too and are accepted without doing
+; anything - see the note on the inert statements below.  No switch at
+; all is not an error, and neither is one this does not know.
+;---------------------------------------------------------------------
+cfg_switches:
+        lodsb
+        or      al,al
+        jz      csw_out
+        cmp     al,'/'
+        jne     cfg_switches
+        mov     al,[esi]
+        call    cfg_upcase
+        cmp     al,'N'
+        jne     csw_notn
+        mov     byte ptr [cfg_nokeys],1
+csw_notn:
+        cmp     al,'F'
+        jne     cfg_switches
+        mov     byte ptr [cfg_nowait],1
+        jmp     short cfg_switches
+csw_out:
+        ret
+
+;---------------------------------------------------------------------
 ; Accepted, and deliberately inert.
 ;
 ; Every statement a real DOS understands is recognised here and does
@@ -491,8 +645,9 @@ cbk_on:
 ;               and KEYBD.INC deliberately tracks neither - see the
 ;               note on BDAK_CAPS.  It is a keyboard feature wearing a
 ;               CONFIG.SYS statement's clothes.
-;   SWITCHES=   /F skips a startup delay there is none of and /N
-;               disables startup keys nothing reads - but /K HAS
+;   SWITCHES=   HALF OF IT HAS LEFT: /F and /N are real since the
+;               startup keys arrived (cfg_switches, which keeps this
+;               list's other half accepted and inert).  /K HAS
 ;               ACQUIRED A SUBJECT since this note was written.  It
 ;               means "treat the keyboard as an 84-key one", and until
 ;               v0.42 that was the only kind here; now KEYBD.INC
@@ -1132,6 +1287,32 @@ cfg_cdrom:
         call    drv_addcds
         ret
 
+;---------------------------------------------------------------------
+; SCSI=ON|OFF - whether the kernel looks for SCSI cards itself.
+;
+;   SCSI=ON     the default: an Adaptec AHA-154x or a BusLogic card,
+;               and the SCSI port on a Pro Audio Spectrum, are found
+;               and their CD-ROMs given letters
+;   SCSI=OFF    they are not looked for.  A CD-ROM on a card whose
+;               ASPI manager is loaded with DEVICE= is still used
+;
+; WHERE THE LINE IS MAKES NO DIFFERENCE: the probe runs once CONFIG.SYS
+; is finished (scsi_start, ASPI.INC), because it has to know first
+; whether a DEVICE= line loaded a manager that owns one of the cards.
+;---------------------------------------------------------------------
+cfg_scsi:
+        mov     edi,OFFSET cfgw_on
+        call    cfg_iskw
+        jnc     cfsc_on
+        mov     edi,OFFSET cfgw_off
+        call    cfg_iskw
+        jc      cfg_badparm
+        mov     byte ptr [scsi_on],0
+        ret
+cfsc_on:
+        mov     byte ptr [scsi_on],1
+        ret
+
 cfg_lastdrv:
         mov     al,[esi]
         or      al,al
@@ -1437,6 +1618,32 @@ cfg_undelete:
         ret
 cud_on:
         mov     byte ptr [undel_on],1
+        ret
+
+;---------------------------------------------------------------------
+; AUTOCHECK=ON|ASK|OFF - what happens at boot to a hard disk volume
+; whose clean-shutdown bit is off.  ON is the default: CHKDSK X: /F
+; runs before the shell.  ASK asks first, Y or N.  OFF only says
+; which drives need it.  The bit itself is kept whatever this says.
+; See VOLFLAG.INC.
+;---------------------------------------------------------------------
+cfg_autocheck:
+        mov     edi,OFFSET cfgw_on
+        call    cfg_iskw
+        jnc     cak_on
+        mov     edi,OFFSET cfgw_ask
+        call    cfg_iskw
+        jnc     cak_ask
+        mov     edi,OFFSET cfgw_off
+        call    cfg_iskw
+        jc      cfg_badparm
+        mov     byte ptr [autoc_mode],AUTOC_OFF
+        ret
+cak_ask:
+        mov     byte ptr [autoc_mode],AUTOC_ASK
+        ret
+cak_on:
+        mov     byte ptr [autoc_mode],AUTOC_ON
         ret
 
 ;---------------------------------------------------------------------
@@ -2043,6 +2250,7 @@ cfg_table:
 ;--- statements PM-DOS acts on ----------------------------------------
         dd      OFFSET cfgn_shell,   OFFSET cfg_shell
         dd      OFFSET cfgn_break,   OFFSET cfg_break
+        dd      OFFSET cfgn_switches,OFFSET cfg_switches
 
 ;--- PM-DOS's own -----------------------------------------------------
         dd      OFFSET cfgn_device,  OFFSET cfg_device
@@ -2056,9 +2264,11 @@ cfg_table:
         dd      OFFSET cfgn_ide32,   OFFSET cfg_ide32
         dd      OFFSET cfgn_idecbl,  OFFSET cfg_idecable
         dd      OFFSET cfgn_cdrom,   OFFSET cfg_cdrom
+        dd      OFFSET cfgn_scsi,    OFFSET cfg_scsi
         dd      OFFSET cfgn_cache,   OFFSET cfg_cache
         dd      OFFSET cfgn_share,   OFFSET cfg_share
         dd      OFFSET cfgn_undel,   OFFSET cfg_undelete
+        dd      OFFSET cfgn_autochk, OFFSET cfg_autocheck
 
 ;--- the inherited set: recognised, and doing nothing ----------------
         dd      OFFSET cfgn_rem,     OFFSET cfg_rem
@@ -2068,7 +2278,6 @@ cfg_table:
         dd      OFFSET cfgn_fcbs,    OFFSET cfg_ignore
         dd      OFFSET cfgn_stacks,  OFFSET cfg_ignore
         dd      OFFSET cfgn_country, OFFSET cfg_ignore
-        dd      OFFSET cfgn_switches,OFFSET cfg_ignore
         dd      OFFSET cfgn_numlock, OFFSET cfg_ignore
         dd      OFFSET cfgn_dos,     OFFSET cfg_dos
         dd      OFFSET cfgn_drivparm,OFFSET cfg_ignore
@@ -2094,9 +2303,11 @@ cfgn_idedma   db  'IDEDMA',0
 cfgn_ide32    db  'IDE32',0
 cfgn_idecbl   db  'IDECABLE',0
 cfgn_cdrom    db  'CDROM',0
+cfgn_scsi     db  'SCSI',0
 cfgn_cache    db  'CACHE',0
 cfgn_share    db  'SHARE',0
 cfgn_undel    db  'UNDELETE',0
+cfgn_autochk  db  'AUTOCHECK',0
 cfgn_nulltrp  db  'NULLTRAP',0
 cfgn_rem      db  'REM',0
 cfgn_buffers  db  'BUFFERS',0
@@ -2124,6 +2335,7 @@ cfgn_multitrk db  'MULTITRACK',0
 
 cfgw_on       db  'ON',0
 cfgw_off      db  'OFF',0
+cfgw_ask      db  'ASK',0
 cfgw_no       db  'NO',0
 cfgw_yes      db  'YES',0
 cfgw_enable   db  'ENABLE',0
@@ -2189,10 +2401,13 @@ inst_path   db  EXEC_PATH_MAX dup(0)    ; what INSTALL= names, and the tail
 inst_tail   db  132 dup(0)              ; it is given, in DOS's own form
 cfg_tmp     dd  0
 break_flag  db  0
+cfg_nokeys  db  0                       ; SWITCHES=/N: no startup keys
+cfg_nowait  db  0                       ; SWITCHES=/F: no wait for them
 
 msgCrLf         db  13,10,0
 msgCfgBadCmd    db  'Unrecognized command in CONFIG.SYS',13,10,0
 msgCfgLong      db  'CONFIG.SYS is too long: only the first 16K was read',13,10,0
+msgCfgSafe      db  'Safe mode: skipping CONFIG.SYS and AUTOEXEC.BAT.',13,10,13,10,0
 msgDevNoFile    db  'Bad or missing device driver',13,10,0
 msgDevNoMem     db  'Not enough memory for device driver',13,10,0
 msgDevUnits     db  'Device driver has no units',13,10,0

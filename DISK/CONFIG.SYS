@@ -1,273 +1,32 @@
 REM PM-DOS CONFIG.SYS
-REM
-REM Everything a real DOS understands is recognised here and does
-REM nothing, so a CONFIG.SYS carried over from a real install boots
-REM without complaint.  A release build should print NOTHING for
-REM this whole file - that silence is the test.  (What a boot does
-REM say is what the machine HAS: a line for a mouse and one for each
-REM CD-ROM drive with its letter, and neither on a machine without.)
+REM See CONFIG.TXT for what each statement does.
 
+REM MS-DOS statements
 BUFFERS=30,8
 FILES=40
 FCBS=4,0
 LASTDRIVE=E
 STACKS=9,256
 DOS=HIGH,UMB
-SWITCHES=/F
+SWITCHES=/K
 NUMLOCK=OFF
-EMS=AUTO
-REM EMS= is PM-DOS's own statement and not one MS-DOS ever had: there
-REM the manager is a driver and you load it with DEVICE=EMM386.EXE,
-REM where here paging and the V86 monitor have been in the kernel
-REM since v0.29 and v0.30 and there is nothing to load.  It takes
-REM EMS=NO, EMS=AUTO, or a segment - EMS=D000 - and a segment
-REM OVERRULES the probe, which is the point of being able to name one.
-REM AUTO reserves a 64K page frame out of the same upper memory
-REM DOS=UMB uses, which is why the two are answered in that order and
-REM why asking for both costs the UMB pool 64K.  EMSTEST is what it
-REM was written against.  Take the line out and INT 67h goes back to
-REM an IRET, which is what a machine with no expanded memory should
-REM have on that vector.
-REM
-REM DOS=UMB above is the one line here with teeth.  It probes the
-REM address space between the top of memory and the system BIOS,
-REM puts pages under whatever nothing decodes, and lays an MCB chain
-REM over the result, which is what DEVICEHIGH and LOADHIGH load into.
-REM It says nothing when it works.  Take it out and everything still
-REM boots - DEVICEHIGH just means DEVICE= again, silently, exactly as
-REM a real DOS with no upper-memory provider behaves.
-REM
-REM DEVICE= and DEVICEHIGH= LOAD the driver they name, so the line
-REM below is commented out: a DEVICE= line naming a driver that is
-REM not there prints a message, which would break the silence above.
-REM TESTDEV.SYS is on the disk and is what the loader was written
-REM against - uncomment it to watch the driver install, then TYPE
-REM TESTDEV.  With DOS=UMB present it lands in upper memory and MEM
-REM /D will show it there.  DEVCRIT and I24TEST need it too and cannot
-REM run without it: TESTDEV refuses a '!' every other time, and it is
-REM the only failure in this machine that happens on every machine.
-REM DEVICEHIGH=\TESTS\TESTDEV.SYS
-REM
-REM And the BLOCK half of DEVICE=, which is a different job: a unit
-REM is a DRIVE LETTER rather than a name.  TESTBLK.SYS is a 32K RAM
-REM disk that formats itself at INIT, so uncommenting the line below
-REM adds a drive letter with a filesystem already on it - the DRIVES
-REM diagnostic in \TESTS shows it as "driver", and it is the letter
-REM after the last real volume.  Commented out for the same reason as
-REM the others: it prints a banner.
-REM DEVICE=\TESTS\TESTBLK.SYS
-SET PMDOSTEST=hello from config
 SET TEMP=C:\TEMP
-REM SET= is the master environment, which is the kernel's and which
-REM the interpreter inherits: PATH and TEMP set before AUTOEXEC.BAT
-REM runs, and set for every program in the machine.  These two are
-REM what CFGTEST looks for.
-REM
-REM INSTALL= runs a program before the shell exists - what it is for
-REM is TSRs - and INSTALLHIGH= puts one in upper memory.  The line
-REM below is commented out because TSRTEST prints a banner and that
-REM would break the silence above; uncomment it to watch a TSR load
-REM before there is an interpreter, and CFGTEST's fourth check will
-REM find it still answering.
-REM INSTALLHIGH=\TESTS\TSRTEST.COM
 
-REM Multi-config blocks are skipped rather than rejected.
+REM PM-DOS statements
+EMS=AUTO
+LFN=ON
+DPMI=ON
+NULLTRAP=ON
+
+REM A boot menu, to show that one is accepted
 [menu]
 MENUITEM=NORMAL,Normal boot
 MENUDEFAULT=NORMAL,5
 [NORMAL]
 INCLUDE=BASE
 
-REM PM-DOS's own.  LFN is acted on at once: OFF makes the 71xxh API
-REM answer "unsupported" and the classic calls match strict 8.3, the
-REM escape hatch for a program that cannot cope with long names.  ON
-REM is the default, so this line only documents it.
-LFN=ON
-
-REM DPMI=ON|OFF is the protected-mode interface.  ON is the default;
-REM OFF makes INT 2Fh AX=1687h answer "no host", so a program that can
-REM run either way falls back to real mode instead of failing.  This
-REM line documents the default the same way LFN= above does.
-DPMI=ON
-
-REM NULLTRAP=ON|OFF is the null-pointer guard: four debug registers
-REM watching the first sixteen bytes of memory for writes, so that a
-REM 32-bit program dereferencing a null pointer stops instead of
-REM quietly rewriting interrupt vectors 0 to 3.  ON is the default.
-REM OFF is for the program that writes low memory on purpose.
-NULLTRAP=ON
-
-REM KEYRATE=rate[,delay] - how fast a held key repeats.  The numbers
-REM are MODE CON's: RATE runs 1 to 32 and counts UPWARDS to faster
-REM (32 is thirty characters a second), DELAY is 1 to 4 quarter-
-REM seconds before it starts.  It is a CONFIG.SYS statement because
-REM MODE is a program PM-DOS does not have, and it belongs with LFN=,
-REM DPMI= and NULLTRAP= as a machine-wide setting the kernel owns.
-REM Absent, the BIOS's setting stands - which is the right default,
-REM because a statement nobody wrote should change nothing.
-REM
-REM AND ONE EMULATOR CANNOT TAKE THE FASTEST SETTING.  RATE=32 with
-REM DELAY=1 is the byte 00h, which is a perfectly legal argument to
-REM the keyboard's F3h command and means "30 a second, 250ms".  DOSBox
-REM 0.74 does not implement F3h's argument state, reads that 00h as a
-REM COMMAND, and stops taking keystrokes - the machine boots and then
-REM will not listen.  Every other value is fine there, and so is 00h
-REM on 86Box and on real hardware.  KEYRATE=31,1 is as fast as makes
-REM any difference and is the one to use if a DOSBox is in the mix.
-REM KEYRATE=31,1
-
-REM IDEDMA=OFF|AUTO|ON|<mode> - how the IDE disks move their data, and
-REM IDE32=OFF|AUTO|ON - whether the data port is read a doubleword at
-REM a time.  They default to AUTO, as IDECABLE= does, and the lines
-REM below only document that, which is why they are commented out.
-REM
-REM AUTO for DMA means "use the transfer mode the drive already has
-REM selected, and if it has none, stay on programmed I/O".  That is
-REM more cautious than it looks and the caution is the point: a
-REM transfer mode is TWO settings that have to agree, the drive's and
-REM the controller's timing, and only the drive's half is standard.
-REM The BIOS set both at POST and made them match.  IDEDMA=ON says
-REM "pick the best mode and select it".  On an Intel (PIIX, ICH) or a
-REM VIA host PM-DOS sets the controller's timing to match.  On any
-REM other it goes no faster than the BIOS did, or UDMA2.  IDEDMA=UDMA5
-REM (UDMA0 to UDMA6) names a ceiling: that mode, or the nearest under
-REM it that the drive, the host and the cable carry.  MWDMA0, MWDMA1
-REM and MWDMA2 name one exactly.
-REM
-REM UDMA3 AND UP - 44, 66, 100 AND 133 MB/s - NEED THE 80-CONDUCTOR
-REM CABLE.  Without it the mode is UDMA2, whatever IDEDMA= says.
-REM IDECABLE=AUTO|40|80 is how the cable is known.  AUTO asks the
-REM BIOS's choice of mode, the host adapter and the drives, in that
-REM order.  40 and 80 are for a machine where AUTO gets it wrong, and
-REM apply to both channels.  Write IDECABLE= above IDEDMA=: each line
-REM takes effect as it is read.
-REM
-REM A failed bus-master transfer takes that disk off DMA for the rest
-REM of the session and repeats the transfer by PIO, so a machine whose
-REM chipset misbehaves gets a slow disk rather than a wrong one.  A
-REM CRC error in a mode past UDMA2 brings that disk down to UDMA2
-REM instead, and at UDMA2 or under takes it off DMA.  Set IDEDMA=OFF
-REM to have programmed I/O from the start.
-REM
-REM IDE32=OFF is the one to reach for if a machine reads rubbish off a
-REM disk that a real DOS reads perfectly: an adapter that cannot latch
-REM two words does not report an error, it returns half the data.
-REM AUTO tries it before using it - the drive's IDENTIFY block is read
-REM both ways, and the wide way is used only if the two agree - and
-REM IDETEST says when it was tried and refused.  IDE32=ON does not try.
-REM
-REM IDETEST.EXE reports what was chosen and checks that the same
-REM sectors read through the wide path and the narrow one agree.
-REM IDEDMA=AUTO
-REM IDE32=AUTO
-REM IDECABLE=AUTO
-REM
-REM CDROM= puts the first CD-ROM on a letter of your choosing; the
-REM rest follow it.  Without it they land after the hard disks.
-REM CDROM=M
-
-REM CACHE=max[,min[,ON|OFF]] - the disk cache, and it is on by default
-REM with no line here at all.  Sizes are in KILOBYTES, which is what
-REM SMARTDRV's command line took; a K or an M suffix says so, so
-REM CACHE=4M and CACHE=4096 are the same line.  The third field is
-REM lazy writing.
-REM
-REM THE TWO NUMBERS ARE A RANGE AND NOT A SIZE, and that is the whole
-REM design of it.  The cache lives between them: it grows on a miss
-REM while the arena has memory to spare, and it hands memory BACK when
-REM a program asks for more than is left, flushing what it owes on the
-REM way out.  Naming one number still gives a range, because a cache
-REM that cannot shrink is memory a program can never have.  To pin it,
-REM name the same number twice - CACHE=2048,2048.
-REM
-REM Absent, both bounds come from the size of extended memory: an
-REM eighth of the arena for the ceiling, a quarter of that for the
-REM floor, and NO CACHE AT ALL on a machine with less than two
-REM megabytes of arena to spend, because there the memory is wanted
-REM for programs.
-REM
-REM WHAT LAZY WRITING PROMISES.  With it on - the default, and only
-REM ever for FIXED DISKS - a write to a hard disk is held in memory
-REM and the several writes that DOS makes to one FAT sector during a
-REM copy become one transfer.  Everything owed is written before the
-REM command prompt comes back, because COMMAND.COM calls INT 21h
-REM AH=0Dh there and the kernel treats it as the commit point; a
-REM program ending commits too.  So the window in which switching the
-REM machine off loses a write is one command long and never includes
-REM the time you spend thinking about the next one.  CACHE=...,OFF
-REM closes even that window, at the cost of the coalescing.
-REM
-REM FLOPPIES, CD-ROMS AND LOADED BLOCK DRIVERS ARE READ-CACHED ONLY
-REM and there is no switch for it.  A diskette can be swapped between
-REM two commands with nothing to tell us; an ATAPI drive reports a
-REM disc change only as a failure on the next command it is given; a
-REM block driver is somebody else's code.  Holding a write for any of
-REM those means holding data for a medium that may not be there.
-REM Their cached blocks are dropped at every commit as well, so a
-REM stale read cannot outlive one command either.
-REM
-REM VERIFY defeats lazy writing while it is on, because 21h/2Eh asks
-REM for a write to be read back and there is nothing to read back
-REM until the sector has been written.
-REM
-REM THE CACHE ANSWERS SMARTDRV'S INTERFACE, INT 2Fh AX=4A10h, so
-REM SMARTDRV.EXE and anything like it finds a cache already installed
-REM and does not load a second one on top - two caches holding two
-REM versions of one sector being the thing all of this exists to
-REM avoid.  \TESTS\CACHETST asks it the ten questions SMARTMON asks,
-REM from inside a DOS box, which is the only place that API lives.
-REM
-REM CACHE /S AT THE PROMPT IS SMARTDRV /S: the hits and the misses,
-REM the three sizes, and which letters are read- and write-cached.
-REM CACHE /C writes what is owed, CACHE /R empties it, and CACHE C+ A-
-REM sets write-behind per letter, as SMARTDRV's did.
-REM
-REM CACHE=OFF turns the whole thing off and puts the machine back to
-REM how it behaved before v0.59.
-REM CACHE=2048,512,ON
-
-REM SHARE=locks[,space] | ON | OFF - file sharing and record locking,
-REM which was SHARE.EXE and is in the kernel since v0.60.  ON with
-REM twenty locks is the default, so the line below only documents it.
-REM The number is SHARE.EXE's /L: - how many byte ranges may be locked
-REM at once, up to 1024.  A second number is its /F:, the space it
-REM kept file names in; it is accepted so that a line carried over
-REM from a real DOS is not an error, and means nothing here - a file
-REM is known by where its directory entry is, and no names are kept.
-REM
-REM WHAT IT DOES is what SHARE.EXE did, by SHARE.EXE's own tables: an
-REM open in a deny mode is refused when the file is already open in a
-REM way it would deny, and a compatibility-mode open is refused when
-REM the file is open in any deny mode ("Sharing violation", through
-REM INT 24h, error 20h if the handler fails it); 5Ch locks a byte
-REM range and refuses one that overlaps another lock on the same file
-REM (error 21h); and a read or a write into a range some OTHER handle
-REM has locked is refused ("Lock violation", INT 24h, error 21h).
-REM Locks go when the handle closes or the program ends.  INT 2Fh
-REM AX=1000h says installed, so SHARE.EXE itself declines to load.
-REM
-REM SHARE=OFF is a DOS with no SHARE.EXE: every open succeeds, every
-REM lock is granted, and 2Fh/1000h is unanswered.  \TESTS\SHARETST
-REM asks sixteen questions and expects SHARE.EXE's answers to each.
-REM SHARE=20
-
-REM UNDELETE=ON | OFF - delete protection, in the kernel since v0.60.
-REM ON is the default, so the line below only documents it.  A deleted
-REM file is not freed: it is moved into a hidden RECYCLED directory on
-REM its own drive (made on the first delete there), and UNDELETE.EXE
-REM lists it, puts it back, or clears the lot out for good (/PURGE).
-REM It works for every program - 32-bit ones, 16-bit ones in a DOS box,
-REM DEL through the FCB calls as well as the handle ones - except under
-REM Windows 3.1 in 386 enhanced mode, whose DOS is RMDOS.SYS: what is
-REM deleted there is deleted as before.
-REM
-REM Kept files may use up to 10% of the space that would be free
-REM without them; the oldest go first when a new one needs the room,
-REM and a file bigger than that on its own is deleted as before.  So
-REM are *.TMP and *.$$$ files (the shells' pipes are %PIPEn.$$$), and
-REM anything deleted from inside RECYCLED itself.  MOVE, XCOPY and
-REM COMMAND.COM's COPY delete a copy they have just made safe
-REM elsewhere, or could not finish, without keeping it.
-REM
-REM UNDELETE=OFF deletes as DOS always has.
-REM UNDELETE=ON
+REM Tests.  The commented lines print a banner at boot.
+SET PMDOSTEST=hello from config
+REM DEVICEHIGH=\TESTS\TESTDEV.SYS
+REM DEVICE=\TESTS\TESTBLK.SYS
+REM INSTALLHIGH=\TESTS\TSRTEST.COM

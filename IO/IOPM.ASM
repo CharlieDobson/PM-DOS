@@ -64,10 +64,10 @@ svc_table:
         dd      ata_info                ; IOS_ATAINFO
         dd      rm_park         ; IOS_PARK
         dd      rm_unparkaddr   ; IOS_UNPARKADDR
-        dd      atapi_svcread   ; IOS_CDREAD
-        dd      atapi_svcinfo   ; IOS_CDINFO
-        dd      atapi_svcchg    ; IOS_CDCHG
-        dd      atapi_svcpkt    ; IOS_CDPKT
+        dd      cun_svcread     ; IOS_CDREAD
+        dd      cun_svcinfo     ; IOS_CDINFO
+        dd      cun_svcchg      ; IOS_CDCHG
+        dd      cun_svcpkt      ; IOS_CDPKT
         dd      con_putcells    ; IOS_PUTCELLS
         dd      con_getcells    ; IOS_GETCELLS
         dd      con_curshape    ; IOS_CURSHAPE
@@ -87,11 +87,15 @@ svc_table:
         dd      fpu_svc         ; IOS_FPU
         dd      fpy_svc         ; IOS_FLOPPY
         dd      plog_get        ; IOS_PROBELOG
-        dd      atapi_svcunit   ; IOS_CDUNIT
+        dd      cun_svcunit     ; IOS_CDUNIT
         dd      ata_model       ; IOS_ATAMODEL
         dd      pg_guard        ; IOS_PGPRES
         dd      usr_wok         ; IOS_USRWOK
         dd      sys_reboot      ; IOS_REBOOT
+        dd      scs_svc         ; IOS_SCSI
+        dd      vpc_boxirq      ; IOS_BOXIRQ
+        dd      rm_freeze       ; IOS_RMFREEZE
+        dd      acpi_svc        ; IOS_ACPI
 
 ;=====================================================================
 ; pm_entry - first instruction executed in 32-bit protected mode.
@@ -118,6 +122,12 @@ ELSE
         mov     esi,OFFSET msgStart2
         call    con_str
 ENDIF
+        ; ...and when, for the startup keys: PMDOS waits until two
+        ; seconds after this for a Shift or an F5 (cfg_keys in
+        ; CONFIG.INC).  The clock is stopped until the STI below, so
+        ; the two seconds are two seconds of the clock running.
+        mov     eax,dword ptr ds:[BDA_TICKS]
+        mov     dword ptr ds:[GV_BOOTTICK],eax
 
         call    idt_init
         lidt    fword ptr [pm_idtr]
@@ -277,6 +287,7 @@ panic_hlt:
         INCLUDE EXCEPT.INC
         INCLUDE IRQ.INC          ; after EXCEPT.INC: whose interrupt it is
         INCLUDE VPIC.INC         ; ...and the box, which is last in line
+        INCLUDE VTIMER.INC       ; ...and its timer
         INCLUDE FPU.INC          ; the coprocessor, whose errors are one
         INCLUDE PAGING.INC
         INCLUDE NULLTRAP.INC
@@ -295,10 +306,16 @@ ENDIF
                                  ; configuration space
         INCLUDE ATA.INC
         INCLUDE ATAPI.INC        ; after ATA.INC: it is built on its transport
+        INCLUDE CDUNIT.INC       ; the CD-ROM units, ATAPI and SCSI alike
+        INCLUDE SCSI.INC         ; SCSI host adapters, and their buses
+        INCLUDE AHA154X.INC      ; ...Adaptec and BusLogic
+        INCLUDE NCR5380.INC      ; ...and a Pro Audio Spectrum's port
         INCLUDE BLOCK.INC
         INCLUDE FLOPPY.INC       ; after BLOCK.INC: they are the same drives
         INCLUDE VDS.INC          ; where a buffer physically is
+        INCLUDE VDMA.INC         ; ...and the 8237, which needs to know
         INCLUDE BUS.INC          ; and the way in to all of it
+        INCLUDE ACPI.INC         ; switching the power off
 
 ;=====================================================================
 ; Data
@@ -314,7 +331,7 @@ msgStart    db  'PMIO: starting PMDOS.SYS',13,10,0
 msgATA      db  'PMIO: IDE disks found: ',0
 msgATA2     db  ' (0 = BIOS INT 13h fallback)',13,10,0
 ELSE
-msgStart2   db  'Starting PM-DOS...',13,10,0
+msgStart2   db  'Starting PM-DOS...',13,10,13,10,0
 ENDIF
 msgNoDos    db  'PMDOS.SYS was never loaded',0
 msgPanic    db  13,10,'PMIO PANIC: ',0

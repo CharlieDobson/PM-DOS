@@ -279,7 +279,7 @@ drp_keep:
         mov     esi,[di_trk]
         call    di_imgput
         inc     dword ptr [dc_i]
-        jmp     short drp_lp
+        jmp     drp_lp
 drp_out:
         clc
         ret
@@ -427,7 +427,7 @@ dfm_nexthead:
         jmp     short dfm_head
 dfm_nextcyl:
         inc     dword ptr [df_cyl]
-        jmp     short dfm_cyl
+        jmp     dfm_cyl
 dfm_end:
         movzx   edx,byte ptr [di_bios2]
         mov     eax,(FDF_END SHL 16) OR 0F114h

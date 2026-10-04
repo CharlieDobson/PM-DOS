@@ -1763,6 +1763,12 @@ vdd_one:
 ENDIF
 
 vdm_loop:
+        ; A DRIVER'S CALL, NOT THE BOX'S.  dl_excur hands the DOS calls
+        ; that have a V86 answer of their own - a vector, a pointer into
+        ; DOS's data - to the handlers below, which all end by coming
+        ; back here; this sends them back to the excursion instead.
+        cmp     byte ptr ds:[vdm_inexc],0
+        jne     dlx_back21
         mov     esi,OFFSET vdm_ctx
         call    dword ptr ds:[IOS_V86RUN]
         cmp     eax,V86R_INT
@@ -1779,13 +1785,14 @@ vdm_loop:
 ; address settles it: the callback block is memory we planted and know
 ; the address of, and no ordinary program executes a HLT at all.
 ;---------------------------------------------------------------------
-; Seven things can be at the far end of a HLT now.  Five of them are
+; Eight things can be at the far end of a HLT now.  Six of them are
 ; told apart by ADDRESS - the XMS entry, DPMI's mode switch, the pad a
 ; simulated real-mode interrupt returns to, one of the real-mode
-; callback landing pads, and either entry point of the MSCD001 device
-; - and if it is none of those, the guest's own interrupt flag settles
-; the last two: on, and it is a program waiting for an interrupt; off,
-; and it is one that has genuinely stopped.
+; callback landing pads, either entry point of the MSCD001 device, and
+; the byte an EMS 56h target returns to - and if it is none of those,
+; the guest's own interrupt flag settles the last two: on, and it is a
+; program waiting for an interrupt; off, and it is one that has
+; genuinely stopped.
 vdm_halt:
         mov     esi,OFFSET vdm_ctx      ; the mouse's INT 33h stub, which
         movzx   eax,word ptr ds:[vdm_pspseg]    ; PMIO answers itself; the
@@ -1804,6 +1811,8 @@ vdm_halt:
         jnc     vh_dpmicb
         call    cdd_iscb                ; EAX = which entry, if it is one of
         jnc     vh_cdd                  ; the MSCD001 device's two
+        call    ems_iscb                ; or the RETF of a routine EMS 56h
+        jnc     vh_ems                  ; called
 
         ; A SIXTH, and it is not a stopped program at all: a HLT WITH
         ; INTERRUPTS ON is a program waiting for one.  That is the
@@ -1845,6 +1854,10 @@ vh_dpmicb:
 vh_cdd:
         call    cdd_call
         jmp     vdm_loop
+vh_ems:
+        call    ems_callret             ; CF: no 56h frame under it, and
+        jc      vdm_abend               ; so no caller to go back to
+        jmp     vdm_loop
 
 ;---------------------------------------------------------------------
 ; vdm_abend - the box ends because something went wrong rather than
@@ -1853,6 +1866,8 @@ vh_cdd:
 ;             were relying on.
 ;---------------------------------------------------------------------
 vdm_abend:
+        cmp     byte ptr ds:[irx_busy],0        ; a handler an excursion ran:
+        jne     irx_lost                        ; the excursion ends, not a box
         mov     dword ptr ds:[vdm_exit],0
         mov     dword ptr ds:[vdm_extype],VDX_CRITERR
 va_unwind:
@@ -1896,9 +1911,13 @@ vdm_s21:
         jmp     vdm_dos
 vdm_s20:
         call    vdm_ciret
+        cmp     byte ptr ds:[irx_busy],0        ; nothing to end in an
+        jne     vdm_loop                        ; excursion (IRQX.INC)
         jmp     vdm_ret0
 vdm_s27:                                ; terminate and stay resident, the
         call    vdm_ciret               ; DOS 1 spelling
+        cmp     byte ptr ds:[irx_busy],0
+        jne     vdm_loop
         jmp     vdm_keep27
 
 ;--- 2Fh: the multiplex.  Whatever was in front of the stub has already
@@ -1907,6 +1926,10 @@ vdm_s27:                                ; terminate and stay resident, the
 vdm_s2F:
         call    vdm_ciret
         call    dvs_do2F
+        cmp     byte ptr ds:[irx_busy],0        ; nothing parks from inside
+        je      vs2f_park                       ; an interrupt handler
+        mov     byte ptr ds:[win_parkreq],0
+vs2f_park:
         cmp     byte ptr ds:[win_parkreq],0
         jne     vdm_winpark
         jmp     vdm_loop
@@ -2510,6 +2533,9 @@ vwp_say:
 ;---------------------------------------------------------------------
 vdm_dos:
         movzx   eax,byte ptr [vdm_ctx+V86C_EAX+1]
+        cmp     byte ptr ds:[irx_busy],0        ; a handler an excursion ran
+        jne     irx_dos                         ; (IRQX.INC) has no program
+vdm_dos_go:
         cmp     al,4Ch
         je      vdm_term
         cmp     al,00h
@@ -2524,6 +2550,7 @@ vdm_dos:
         je      vdm_dealloc
         cmp     al,4Ah
         je      vdm_setblock
+vdm_dos_v86:                             ; dl_excur comes in here
         cmp     al,62h
         je      vdm_getpsp
         cmp     al,51h                          ; 51h and 62h are the same
@@ -3330,7 +3357,7 @@ d32i_one:
         je      d32i_next                ; already where a 32-bit program looks
         cmp     eax,MAX_HANDLES
         jae     d32i_next                ; closed: slot i stays as it is
-        mov     [ebx+D32S_SLOTS+edx],al
+        mov     byte ptr [ebx+D32S_SLOTS+edx],al
         pushad
         cmp     eax,3                   ; the source: one of 0-2, from the
         jb      d32i_saved               ; copy; any other, from the table
@@ -4315,6 +4342,8 @@ vcr_again:
 ; has a sensible value to return.
 ;=====================================================================
 vdm_killprog:
+        cmp     byte ptr ds:[irx_busy],0        ; see vdm_abend
+        jne     irx_lost
         mov     dword ptr ds:[vdm_abrt],eax
         call    vdm_anchor
         jc      vkp_inner
@@ -4809,7 +4838,7 @@ vdm_flags:
 vpf_table:
         cmp     bl,I21_MAXFN
         jae     vpf_family
-        mov     bl,[vdm_ptrtab+ebx]
+        mov     bl,byte ptr [vdm_ptrtab+ebx]
         jmp     short vpf_out
 
 vpf_family:
@@ -4895,6 +4924,7 @@ vdm_subptr:
         db  0F1h, 17h,  P_DI            ; one CD-ROM drive's record
         db  0F1h, 19h,  P_DX            ; a file to delete and not keep
                                         ; (18h carries nothing)
+        db  0F1h, 1Ch,  P_DI            ; a SCSI adapter's, or a device's
         db  0F0h, 04h,  P_SI           ; cells onto the screen - EBX is a
                                         ; CELL NUMBER, not a pointer
         db  0F0h, 05h,  P_DI            ; and back off it
@@ -4966,6 +4996,9 @@ ENDIF
 ; Data
 ;=====================================================================
 vdm_p29     db  0                       ; this call was 21h/29h
+vdm_inexc   db  0                       ; a driver excursion's INT 21h is
+                                        ; being served by the box's handlers:
+                                        ; vdm_loop goes back to dl_excur
             db  0,0,0
 k21_eax     dd  0
 k21_ebx     dd  0

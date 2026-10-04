@@ -91,6 +91,7 @@ kb_init:
         mov     eax,dword ptr ds:[IVT_INT09]
         mov     dword ptr [kb_romint9],eax
         call    kb_boxreset
+        call    kb_bootkeys             ; before the lines below clear them
 
         ; The ring, as the ROM would have set it up.  Both bounds are
         ; written rather than trusted: a BIOS is entitled to move the
@@ -110,6 +111,44 @@ ki_drain:
         in      al,KB_DATA
         jmp     short ki_drain
 ki_done:
+        ret
+
+;---------------------------------------------------------------------
+; kb_bootkeys - the startup keys as the BIOS left them, into GV_BOOTKEY:
+;               a Shift held down (40:17) and an F5 anywhere in its
+;               ring.  kb_init throws both away, and a Shift held from
+;               power-on may not repeat, so they are noted first.
+;               cfg_keys in CONFIG.INC acts on them.
+;---------------------------------------------------------------------
+kb_bootkeys:
+        push    ebx
+        push    ecx
+        push    edx
+        xor     dl,dl
+        test    byte ptr ds:[BDA_KBFLAG],BDAK_LSHIFT OR BDAK_RSHIFT
+        jz      kbk_ring
+        or      dl,BOOTK_SHIFT
+kbk_ring:
+        movzx   ebx,word ptr ds:[BDA_KBHEAD]
+        mov     ecx,64                  ; the BIOS's ring, bounded in case
+kbk_next:                               ; its pointers are not sane
+        cmp     bx,word ptr ds:[BDA_KBTAIL]
+        je      kbk_done
+        cmp     word ptr ds:[ebx+BDA_BASE],3F00h        ; F5
+        jne     kbk_step
+        or      dl,BOOTK_F5
+kbk_step:
+        add     ebx,2
+        cmp     bx,word ptr ds:[BDA_KBEND]
+        jb      kbk_nowrap
+        movzx   ebx,word ptr ds:[BDA_KBSTART]
+kbk_nowrap:
+        loop    kbk_next
+kbk_done:
+        mov     byte ptr ds:[GV_BOOTKEY],dl
+        pop     edx
+        pop     ecx
+        pop     ebx
         ret
 
 ;=====================================================================
@@ -134,6 +173,9 @@ irq_keyboard:
         mov     byte ptr [kb_forbox],0
         cmp     byte ptr ds:[v86_active],0
         je      kb_decode               ; no box: the keyboard is all ours
+        cmp     byte ptr ds:[v86_irqx],0
+        jne     kb_decode               ; nor while an excursion runs for an
+                                        ; interrupt: that guest is nobody's
         mov     ebx,dword ptr ds:[IVT_INT09]
         cmp     ebx,dword ptr [kb_romint9]
         je      kb_decode               ; a box, but it has not hooked 09h,
@@ -210,7 +252,7 @@ kb_plain:
         mov     ah,al                   ; keep the scan code in AH
         test    byte ptr [kb_flags],KBF_SHIFT
         jnz     kb_shifted
-        mov     al,[kb_lower + ebx]
+        mov     al,byte ptr [kb_lower + ebx]
         test    byte ptr [kb_flags],KBF_CAPS
         jz      kb_haveasc
         cmp     al,'a'                  ; caps lock affects letters only
@@ -220,7 +262,7 @@ kb_plain:
         sub     al,32
         jmp     short kb_haveasc
 kb_shifted:
-        mov     al,[kb_upper + ebx]
+        mov     al,byte ptr [kb_upper + ebx]
         test    byte ptr [kb_flags],KBF_CAPS
         jz      kb_haveasc
         cmp     al,'A'
@@ -308,7 +350,7 @@ kb_grey:
         jz      kb_store
         movzx   ebx,ah
         sub     ebx,47h
-        mov     ah,[kb_ctrlnav + ebx]
+        mov     ah,byte ptr [kb_ctrlnav + ebx]
         or      ah,ah
         jz      kb_clr_e0               ; no Ctrl form of that one
         jmp     short kb_store
@@ -345,7 +387,7 @@ kf_ctrl:
         jmp     short kb_store
 kf_alt:
         add     ah,68h - 3Bh
-        jmp     short kb_store
+        jmp     kb_store
 
 ;---------------------------------------------------------------------
 ; kb_fkey11 - F11 and F12, which are 57h and 58h on the wire and
@@ -364,16 +406,16 @@ kb_fkey11:
         jnz     kf11_ctrl
         test    byte ptr [kb_flags],KBF_SHIFT
         jnz     kf11_shift
-        jmp     short kb_store
+        jmp     kb_store
 kf11_shift:
         add     ah,2
-        jmp     short kb_store
+        jmp     kb_store
 kf11_ctrl:
         add     ah,4
-        jmp     short kb_store
+        jmp     kb_store
 kf11_alt:
         add     ah,6
-        jmp     short kb_store
+        jmp     kb_store
 
 ; Ctrl and a cursor-pad key, indexed by scan code from 47h (Home).
 ; A zero means the BIOS has no code for that combination.
@@ -438,7 +480,7 @@ kb_mod:
         cmp     byte ptr [kb_forbox],0
         jne     kb_clr_e0
         call    kb_bdaflags
-        jmp     short kb_clr_e0
+        jmp     kb_clr_e0
 
 ;=====================================================================
 ; kb_reboot - Ctrl-Alt-Del.  Ask the 8042 to pulse the reset line, and
@@ -852,5 +894,5 @@ kbq_head    db  0
 kbq_tail    db  0
 kbq         db  KBQ_SIZE dup (0)
 
-null_idtr:  dw  0
+null_idtr   dw  0
             dd  0

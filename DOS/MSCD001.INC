@@ -119,12 +119,11 @@ CDE_READFAULT   EQU     11
 CDE_GENERAL     EQU     12
 CDE_DISKCHG     EQU     15
 
-; How many packet devices there can be, which is PMIO's ATA_MAXDEV
-; seen from this side.  It is written out again rather than shared,
-; because ATAPI.INC's equates belong to PMIO and this file is in
-; PMDOS: the two are assembled separately and the only things they
-; agree on are in PMDOS.INC, deliberately.
-CDD_MAXUNIT     EQU     4
+; How many CD-ROM units there can be: PMIO's unit table, IDE and SCSI
+; together.  This used to be written out as 4, PMIO's ATAPI count at
+; the time, and stayed 4 when the IDE probe grew to eight devices -
+; a fifth drive would have kept its flags past the end of cdd_fl.
+CDD_MAXUNIT     EQU     CDU_MAX
 
 ; The per-unit flags this driver keeps for itself.
 CDF_PLAYED      EQU     01h             ; a play was started on this unit,
@@ -1497,22 +1496,54 @@ cdd_subq:
         ret
 
 ;--- cdd_modesns / cdd_modesel - the audio control page, in and out.
+;
+; THE PAGE IS LEFT AT BYTE 8 OF cdd_mbuf, whatever the drive sent, and
+; the readers and cdd_modesel all count on that.  An ATAPI drive puts it
+; straight after the eight-byte header; a SCSI one puts an eight-byte
+; block descriptor in between.  DBD would ask it not to, but an ATAPI
+; drive is entitled to call that bit reserved, so instead there is room
+; for a descriptor and one that came is cut out - which also leaves the
+; buffer the shape MODE SELECT wants it in, with no descriptor and the
+; page's saveable bit clear, since SCSI calls that bit reserved on the
+; way in.
 cdd_modesns:
         push    eax
         push    ecx
+        push    esi
         push    edi
         call    cdd_cdbzero
         mov     byte ptr [cdd_dcb+0],CDOP_MODESNS
         mov     byte ptr [cdd_dcb+2],0Eh        ; the audio control page
-        mov     byte ptr [cdd_dcb+8],24         ; header, block descriptor
-        xor     ah,ah                           ; and the page itself
-        mov     ecx,24
+        mov     byte ptr [cdd_dcb+8],32         ; header, a descriptor if
+        xor     ah,ah                           ; the drive sends one, and
+        mov     ecx,32                          ; the page itself
         mov     edi,OFFSET cdd_mbuf
         call    cdd_pkt
+        jc      cms_out
+        movzx   ecx,byte ptr [cdd_mbuf+7]       ; the descriptor's length
+        or      ecx,ecx
+        jz      cms_page
+        cmp     ecx,8
+        ja      cms_bad                         ; not a page this fits
+        lea     esi,[cdd_mbuf+8+ecx]
+        mov     edi,OFFSET cdd_mbuf + 8
+        mov     ecx,16
+        cld
+        rep     movsb
+        mov     byte ptr [cdd_mbuf+6],0
+        mov     byte ptr [cdd_mbuf+7],0
+cms_page:
+        and     byte ptr [cdd_mbuf+8],7Fh       ; PS
+        clc
+cms_out:
         pop     edi
+        pop     esi
         pop     ecx
         pop     eax
         ret
+cms_bad:
+        stc
+        jmp     short cms_out
 
 cdd_modesel:
         push    eax

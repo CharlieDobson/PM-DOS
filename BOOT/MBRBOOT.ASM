@@ -182,9 +182,7 @@ bootdrv     db  0
 
 ;---------------------------------------------------------------------
 mbr_code_end:                           ; MKDISK copies 0..1BDh verbatim
-IF (mbr_code_end - start) GT 1BEh
-.ERR    ; MBR code has grown into the partition table
-ENDIF
+.ERRE   (mbr_code_end - start) LE 1BEh, <MBR code has grown into the partition table>
 
         ORG     1BEh                    ; placeholder partition table -
 parttab db      64 dup(0)               ; MKDISK writes the real one

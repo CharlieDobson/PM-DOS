@@ -171,7 +171,7 @@ rc_sep:
         je      rc_eat
         cmp     byte ptr [esi],'/'
         je      rc_eat
-        jmp     short rc_components
+        jmp     rc_components
 rc_eat:
         inc     esi
         cmp     byte ptr [esi],0        ; trailing separator: the path
@@ -275,7 +275,7 @@ wt_next:
         pop     edx
         pop     ecx
         inc     edx
-        jmp     short wt_lp
+        jmp     wt_lp
 wt_notdir:
         pop     edx
         pop     ecx

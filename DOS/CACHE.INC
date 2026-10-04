@@ -2182,6 +2182,12 @@ dcm_next:
 
 dcm_cache:
         call    cache_commit
+
+        ; AND THEN A THIRD STEP, which only makes sense after the other
+        ; two: a volume the filesystem wrote to, with nothing left owed
+        ; and no written file open on it, gets its clean-shutdown bit
+        ; back (VOLFLAG.INC).
+        call    vfl_cleanall
         popad
         ret
 

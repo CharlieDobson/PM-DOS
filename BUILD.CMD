@@ -23,6 +23,9 @@ rem                       said about the geometry and what status every
 rem                       INT 13h/02h came back with.  This is what
 rem                       proved the 86Box floppy was an EMPTY DRIVE and
 rem                       not a bug in the thunk - keep it to hand
+rem     BUILD scsi6       release, with every SCSI drive taken for one
+rem                       that has only the 6-byte MODE SENSE and MODE
+rem                       SELECT, to test the translation
 rem
 rem Produces, in BIN\:
 rem     BOOT.BIN     512-byte FAT12 floppy boot sector
@@ -65,13 +68,13 @@ if "%TGT%"=="" goto :gottgt
 for %%T in (debug ata ataq nohost iso fdd img move i13 vfy rmbisect rmmark rmexec rmlow rmhigh cap16 ^
   lptcap lpthigh lptpad rmlowm vdm vdmdbg v86 trace watch watchq nomode ^
   tracenm watchnm lpt stamp freeze stampfrz lptfrz lptfz lptq lpt0 lptnm ^
-  lptlow kbionm calls kbio rme9 irqtest fpuirq eager32 trust32 hang) do echo [%TGT%]| find /i "[%%T]" > nul && set TGT=%%T
+  lptlow kbionm calls kbio rme9 irqtest fpuirq eager32 trust32 hang scsi6) do echo [%TGT%]| find /i "[%%T]" > nul && set TGT=%%T
 :gottgt
 if "%TGT%"=="debug" set DEFS=-dPMDOS_DEBUG
 if "%TGT%"=="ata"   set DEFS=-dPMDOS_DEBUG -dATA_DEBUG
 rem "ataq" is the probe trace and nothing else, for "iso"'s reason: a
-rem debug kernel reads CONFIG.SYS out loud, and two hundred lines of it
-rem scroll the one line that was wanted off the top of the screen.
+rem debug kernel reads CONFIG.SYS out loud, a line at a time, and that
+rem scrolls the one line that was wanted off the top of the screen.
 if "%TGT%"=="ataq"  set DEFS=-dATA_DEBUG
 rem "nohost" has IDEHOST.INC recognise no IDE controller at all, so an
 rem Intel or a VIA board is treated as one whose timing PM-DOS cannot
@@ -105,7 +108,7 @@ if "%TGT%"=="eager32" set DEFS=-dIDE32_EAGER
 if "%TGT%"=="trust32" set DEFS=-dIDE32_EAGER -dIDE32_TRUST
 rem "iso" mounts the first CD in the machine at boot and reads its root
 rem directory out loud - the ISO9660 reader's own proof, the way "ata"
-rem is the packet transport's.  No PMDOS_DEBUG: the CONFIG.SYS commentary
+rem is the packet transport's.  No PMDOS_DEBUG: the CONFIG.SYS listing
 rem scrolls the answer off the screen before it can be photographed.
 if "%TGT%"=="iso"   set DEFS=-dISO_DEBUG
 if "%TGT%"=="fdd"   set DEFS=-dPMDOS_DEBUG -dFDD_DEBUG
@@ -222,6 +225,11 @@ rem little as anything here can.  It is what found the 64 bytes every
 rem failed EXEC left on the kernel stack.  A machine that says nothing
 rem at all stopped with interrupts off.
 if "%TGT%"=="hang" set DEFS=-dHANG_E9
+rem "scsi6" takes every SCSI drive for one that has only the 6-byte MODE
+rem SENSE and MODE SELECT, so that the translation SCSI.INC does for such
+rem a drive runs on a machine whose drives would never need it.  86Box
+rem emulates both forms on every model it has.
+if "%TGT%"=="scsi6" set DEFS=-dSCSI_MODE6
 rem "watchq" is the same sampler with the console taken out of it: it
 rem pokes the guest's CS:IP into the top right of the text page instead
 rem of printing, which is nine instructions in the timer interrupt
@@ -324,7 +332,7 @@ rem each one has to be named here too: a directory missing from this
 rem list is one whose failed assembly links yesterday's object.  (A
 rem failed COMPILE does not need it - wcc386, unlike wasm, returns an
 rem error - but CHKDSK's and LABEL's startup is assembled like the rest.)
-for %%D in (ATTRIB CHKDSK CHOICE DISKCOMP DISKCOPY DRIVES EDIT FC FDISK FIND FORMAT LABEL LFNAPI MEM MORE MOUNT MOVE SORT SYS XCOPY) do if exist CMD\%%D\*.obj del /q CMD\%%D\*.obj
+for %%D in (ATTRIB CACHE CDEX CHKDSK CHOICE DISKCOMP DISKCOPY DRIVES EDIT FC FDISK FIND FORMAT ISAPNP LABEL LFNAPI MEM MORE MOUNT MOVE SHUTDOWN SORT SYS UNDELETE XCOPY) do if exist CMD\%%D\*.obj del /q CMD\%%D\*.obj
 
 rem FSIZE asserts the sizes the checks below used to test with FOR's
 rem "~z" size modifier.  That modifier is a cmd.exe command EXTENSION:
@@ -505,6 +513,12 @@ cd CMD\CDEX
 wasm -q -i=..\..\INC cdex.asm                   || goto :fail
 wlink form raw bin option offset=0x2000 name ..\..\BIN\CDEX.EXE file cdex.obj || goto :fail
 cd ..\..
+rem SHUTDOWN switches the power off through ACPI, over 21h/F1h AL=1Eh,
+rem which writes everything the kernel owes the disks first.
+cd CMD\SHUTDOWN
+wasm -q -i=..\..\INC shutdown.asm               || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\BIN\SHUTDOWN.EXE file shutdown.obj || goto :fail
+cd ..\..
 rem FIND is MS-DOS 6.22's, switch for switch and message for message:
 rem batch files test what it prints and the errorlevel it leaves.
 cd CMD\FIND
@@ -626,6 +640,15 @@ wasm -q -i=..\..\INC dosint.asm                 || goto :fail
 wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 fc.c      || goto :fail
 wlink form raw bin option offset=0x2000 name ..\..\BIN\FC.EXE ^
     file dosint.obj,fc.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+rem ISAPNP is C as well: a card's resource data is a little language,
+rem and choosing from it is easier to keep right in C.  Linked as FC.
+cd CMD\ISAPNP
+wasm -q -i=..\..\INC dosint.asm                 || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 isapnp.c  || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\BIN\ISAPNP.EXE ^
+    file dosint.obj,isapnp.obj ^
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
 cd ..\..
 
@@ -1013,6 +1036,16 @@ wasm -q -i=..\INC cachetst.asm                   || goto :fail
 wlink form raw bin name ..\BIN\TESTS\CACHETST.COM file cachetst.obj order clname CODE offset=0x100 || goto :fail
 cd ..
 
+echo === VFTEST.COM (the clean-shutdown flag, kernel and disk) ===
+rem 16-bit so that the disk is read the way a DOS program reads it,
+rem 21h/7305h through the DOS box.  VFTEST HANG is for a rig: a file
+rem left half written, and the machine stopped for the plug to be
+rem pulled on.
+cd TOOLS
+wasm -q -i=..\INC vftest.asm                     || goto :fail
+wlink form raw bin name ..\BIN\TESTS\VFTEST.COM file vftest.obj order clname CODE offset=0x100 || goto :fail
+cd ..
+
 echo === SHARETST.COM (file sharing and record locking, SHARE's rules) ===
 rem 16-bit for the same reason: the first thing a program asks SHARE
 rem is INT 2Fh AX=1000h.
@@ -1037,6 +1070,15 @@ rem test built out of return codes and maps nothing.
 cd TOOLS
 wasm -q -i=..\INC emstest.asm                    || goto :fail
 wlink form raw bin name ..\BIN\TESTS\EMSTEST.COM file emstest.obj order clname CODE offset=0x100 || goto :fail
+cd ..
+
+echo === EMS4TEST.COM (the LIM 4.0 functions, 4Fh-5Dh) ===
+rem The same rule as EMSTEST: where there is memory to look at, the
+rem check looks at it - a handle that grew or moved, the bytes 57h
+rem moved, the map a 56h target sees and the one its caller gets back.
+cd TOOLS
+wasm -q -i=..\INC ems4test.asm                   || goto :fail
+wlink form raw bin name ..\BIN\TESTS\EMS4TEST.COM file ems4test.obj order clname CODE offset=0x100 || goto :fail
 cd ..
 
 echo === I24TEST.COM (a DOS box's OWN INT 24h handler) ===
@@ -1118,6 +1160,14 @@ echo === BIGMEM.EXE (a native program with more than 512K) ===
 cd TOOLS
 wasm -q -i=..\INC bigmem.asm                     || goto :fail
 wlink form raw bin option offset=0x2000 name ..\BIN\TESTS\BIGMEM.EXE file bigmem.obj || goto :fail
+cd ..
+
+echo === VBETEST.EXE (VBE and the linear frame buffer, for a native program) ===
+rem 21h/F1h AL=1Fh and SEL_VBE.  VBETEST /S shows a picture in a VBE
+rem mode until a key is pressed, for a look at a real card.
+cd TOOLS
+wasm -q -i=..\INC vbetest.asm                    || goto :fail
+wlink form raw bin option offset=0x2000 name ..\BIN\TESTS\VBETEST.EXE file vbetest.obj || goto :fail
 cd ..
 
 echo === TESTBLK.SYS (a BLOCK device driver: a 32K RAM disk) ===
@@ -1224,6 +1274,45 @@ rem has one and it is behind the cascade.
 cd TOOLS
 wasm -q -i=..\INC vpictest.asm                   || goto :fail
 wlink form raw bin name ..\BIN\TESTS\VPICTEST.COM file vpictest.obj order clname CODE offset=0x100 || goto :fail
+cd ..
+
+echo === TIMERTST.COM (the timer, in a DOS box) ===
+rem VPICTEST's question asked of line 0: INT 08h and INT 1Ch reach a
+rem program at last, and the kernel's clock keeps 18.2 a second when a
+rem program runs the timer faster for itself.
+cd TOOLS
+wasm -q -i=..\INC timertst.asm                   || goto :fail
+wlink form raw bin name ..\BIN\TESTS\TIMERTST.COM file timertst.obj order clname CODE offset=0x100 || goto :fail
+cd ..
+
+echo === RMIVT.COM (the vector table a BIOS call runs with) ===
+rem A program's hooks on INT 1Ah, INT 08h, INT 1Ch and IRQ 8 are not
+rem called in real mode when the kernel calls the BIOS, and the clock
+rem neither runs fast nor loses ticks while it does.
+cd TOOLS
+wasm -q -i=..\INC rmivt.asm                      || goto :fail
+wlink form raw bin name ..\BIN\TESTS\RMIVT.COM file rmivt.obj order clname CODE offset=0x100 || goto :fail
+cd ..
+
+echo === IRQXTEST.COM, IRQXWAIT.EXE (a resident driver, with no box running) ===
+rem IRQXTEST /I goes resident on INT 1Ch and IRQ 8 and types a Z every
+rem two seconds; IRQXWAIT is native, so every Z it reads came from a
+rem handler the kernel ran with no DOS box there; IRQXTEST /R counts.
+cd TOOLS
+wasm -q -i=..\INC irqxtest.asm                   || goto :fail
+wlink form raw bin name ..\BIN\TESTS\IRQXTEST.COM file irqxtest.obj order clname CODE offset=0x100 || goto :fail
+wasm -q -i=..\INC irqxwait.asm                   || goto :fail
+wlink form raw bin option offset=0x2000 name ..\BIN\TESTS\IRQXWAIT.EXE file irqxwait.obj || goto :fail
+cd ..
+
+echo === DMATEST.COM (the 8237, from a DOS box) ===
+rem A driver hands the DMA controller segment times sixteen, which is
+rem not where upper memory or the page frame really is.  With a Sound
+rem Blaster (DBXRUN.PS1 -Sound) the card records into each kind of
+rem memory and every byte is looked at; without one, the registers.
+cd TOOLS
+wasm -q -i=..\INC dmatest.asm                    || goto :fail
+wlink form raw bin name ..\BIN\TESTS\DMATEST.COM file dmatest.obj order clname CODE offset=0x100 || goto :fail
 cd ..
 
 echo === DPMIIRQ.COM (the same, and a card's memory, in protected mode) ===
@@ -1334,8 +1423,8 @@ echo === PMDOS.IMG ===
 TOOLS\MKDISK.EXE IMAGES\PMDOS.IMG BIN\BOOT.BIN BIN\PMIO.SYS BIN\PMDOS.SYS BIN\CMD.EXE BIN\COMMAND.COM ^
     BIN\CHOICE.COM BIN\MORE.COM BIN\SORT.COM BIN\SYS.COM BIN\FORMAT.COM BIN\MEM.EXE ^
     BIN\FDISK.EXE BIN\MOUNT.EXE BIN\CACHE.EXE BIN\UNDELETE.EXE BIN\CDEX.EXE BIN\MOVE.EXE BIN\ATTRIB.EXE BIN\CHKDSK.EXE BIN\LABEL.EXE BIN\XCOPY.EXE BIN\EDIT.EXE ^
-    BIN\FC.EXE BIN\FIND.EXE BIN\DISKCOPY.COM BIN\DISKCOMP.COM ^
-    BIN\RMDOS.SYS README.TXT DISK\CONFIG.SYS DISK\AUTOEXEC.BAT -dir ^
+    BIN\FC.EXE BIN\FIND.EXE BIN\DISKCOPY.COM BIN\DISKCOMP.COM BIN\ISAPNP.EXE BIN\SHUTDOWN.EXE ^
+    BIN\RMDOS.SYS README.TXT DISK\CONFIG.SYS DISK\CONFIG.TXT DISK\AUTOEXEC.BAT -dir ^
     TESTS BIN\TESTS\DRIVES.EXE BIN\TESTS\LFNAPI.COM BIN\TESTS\HELLO.COM BIN\TESTS\HELLOX.EXE BIN\TESTS\ARGS.COM ^
     BIN\TESTS\XMSTEST.COM BIN\TESTS\A20TEST.COM BIN\TESTS\MEMPROBE.COM BIN\TESTS\EXECTST.COM BIN\TESTS\TSRTEST.COM ^
     BIN\TESTS\I13TEST.COM BIN\TESTS\CURTEST.COM BIN\TESTS\DPMITEST.COM BIN\TESTS\DEVTEST.COM ^
@@ -1345,10 +1434,10 @@ TOOLS\MKDISK.EXE IMAGES\PMDOS.IMG BIN\BOOT.BIN BIN\PMIO.SYS BIN\PMDOS.SYS BIN\CM
     BIN\TESTS\XMSREPT.COM BIN\TESTS\CDXTEST.COM BIN\TESTS\CDATEST.COM ^
     BIN\TESTS\KBTEST.COM BIN\TESTS\INT9TEST.COM ^
     BIN\TESTS\UDTEST.COM BIN\TESTS\ALLOCTST.COM BIN\TESTS\MCBTEST.COM BIN\TESTS\FCBTEST.COM ^
-    BIN\TESTS\BUFTEST.COM BIN\TESTS\UMBTEST.COM BIN\TESTS\EMSTEST.COM BIN\TESTS\DEVCRIT.EXE ^
+    BIN\TESTS\BUFTEST.COM BIN\TESTS\UMBTEST.COM BIN\TESTS\EMSTEST.COM BIN\TESTS\EMS4TEST.COM BIN\TESTS\DEVCRIT.EXE ^
     BIN\TESTS\I24TEST.COM BIN\TESTS\VFYTEST.EXE BIN\TESTS\IDETEST.EXE BIN\TESTS\HWPROBE.EXE BIN\TESTS\F32TEST.COM BIN\TESTS\FNDTEST.EXE ^
-    BIN\TESTS\CFGTEST.COM BIN\TESTS\CACHETST.COM BIN\TESTS\SHARETST.COM BIN\TESTS\TESTDEV.SYS BIN\TESTS\TESTBLK.SYS BIN\TESTS\CTRYDMP.COM ^
-    BIN\TESTS\CTRYTEST.COM BIN\TESTS\CRASH.EXE BIN\TESTS\R3TEST.EXE BIN\TESTS\MS32TEST.EXE BIN\TESTS\VPICTEST.COM BIN\TESTS\DPMIIRQ.COM BIN\TESTS\DPMII32.COM BIN\TESTS\DPMIVEC.COM BIN\TESTS\DPMIV32.COM BIN\TESTS\VDSTEST.COM BIN\TESTS\NICIRQ.COM BIN\TESTS\PCITEST.EXE BIN\TESTS\IRQTEST.EXE BIN\TESTS\FPUTEST.COM BIN\TESTS\FPU32.EXE BIN\TESTS\DPMIFPU.COM BIN\TESTS\DPMIFP32.COM DISK\BATTEST.BAT ^
+    BIN\TESTS\CFGTEST.COM BIN\TESTS\CACHETST.COM BIN\TESTS\VFTEST.COM BIN\TESTS\SHARETST.COM BIN\TESTS\TESTDEV.SYS BIN\TESTS\TESTBLK.SYS BIN\TESTS\CTRYDMP.COM ^
+    BIN\TESTS\CTRYTEST.COM BIN\TESTS\CRASH.EXE BIN\TESTS\R3TEST.EXE BIN\TESTS\MS32TEST.EXE BIN\TESTS\VPICTEST.COM BIN\TESTS\TIMERTST.COM BIN\TESTS\RMIVT.COM BIN\TESTS\IRQXTEST.COM BIN\TESTS\IRQXWAIT.EXE BIN\TESTS\DMATEST.COM BIN\TESTS\DPMIIRQ.COM BIN\TESTS\DPMII32.COM BIN\TESTS\DPMIVEC.COM BIN\TESTS\DPMIV32.COM BIN\TESTS\VDSTEST.COM BIN\TESTS\NICIRQ.COM BIN\TESTS\PCITEST.EXE BIN\TESTS\IRQTEST.EXE BIN\TESTS\FPUTEST.COM BIN\TESTS\FPU32.EXE BIN\TESTS\DPMIFPU.COM BIN\TESTS\DPMIFP32.COM DISK\BATTEST.BAT ^
     DISK\SUB.BAT DISK\CHTEST.BAT DISK\GOTOTEST.BAT DISK\LOOPTEST.BAT DISK\REDTEST.BAT ^
     DISK\LFNTEST.BAT DISK\CMDTEST.CMD DISK\SUBQ.CMD DISK\BATQ.BAT DISK\CTRLC.BAT DISK\CHAIN1.BAT ^
     DISK\CHAIN2.BAT DISK\NOLABEL.BAT DISK\SHIFT12.BAT DISK\VDMTEST.BAT DISK\NESTTEST.BAT ^

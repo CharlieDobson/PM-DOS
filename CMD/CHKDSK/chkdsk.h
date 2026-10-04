@@ -76,6 +76,7 @@ void chkdsk_abort( void );      /* unlock the drive and exit 255      */
 void scan_pass1( void );
 void scan_pass2( void );
 void nofix_notice( void );
+int  errors_seen( void );
 void report_error( const char *path, const char *text );
 int  prompt_yn( const char *text );
 u32  entry_first( const u8 *ent );

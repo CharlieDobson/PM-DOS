@@ -55,6 +55,10 @@ BF_LEN          EQU     BF_PATH + BF_PATHMAX
 ; The kernel starts us with "/P", the same marker CONFIG.SYS's SHELL=
 ; line used, and it means two things: run AUTOEXEC.BAT, and refuse to
 ; EXIT because there is nothing underneath us to go back to.
+;
+; "/D" takes the first of those away, as it did for DOS 6's
+; COMMAND.COM.  The kernel adds it when Shift or F5 at startup asked
+; for CONFIG.SYS and AUTOEXEC.BAT to be bypassed.
 ;=====================================================================
 cmd_startup:
         mov     esi,SLOT_PSP + PSP_TAIL
@@ -71,6 +75,10 @@ cs_lp:
         je      cs_help                 ; too, and answers like one
         cmp     al,'C'
         je      cs_once
+        cmp     al,'D'
+        jne     cs_notd
+        mov     byte ptr [noauto_flag],1
+cs_notd:
         cmp     al,'P'
         jne     cs_next
         mov     byte ptr [perm_flag],1
@@ -81,6 +89,8 @@ cs_next:
 cs_done:
         cmp     byte ptr [perm_flag],0
         je      cs_out
+        cmp     byte ptr [noauto_flag],0
+        jne     cs_out
 
         ; AUTOEXEC.BAT off the root of the drive we booted from.  Its
         ; absence is not an error - it never was.
@@ -1106,7 +1116,7 @@ fr_plain:
         mov     esi,OFFSET tok_buf
         call    fr_addname
         pop     esi
-        jmp     short fr_item
+        jmp     fr_item
 
 fr_items_done:
         mov     byte ptr [edi],0        ; the extra NUL ends the list
@@ -1531,7 +1541,7 @@ fo_skip:
 
 fo_backq:
         mov     byte ptr [ff_backq],1
-        jmp     short fo_lp
+        jmp     fo_lp
 
 fo_delims:
         mov     edi,OFFSET ff_delims
@@ -2297,6 +2307,7 @@ fr_lim      dd  0
 
 errorlevel  db  0                       ; last external command's code
 perm_flag   db  0                       ; started with /P
+noauto_flag db  0                       ; ...and /D: no AUTOEXEC.BAT
 c_once      db  0                       ; /C: 1 = its command is waiting,
                                         ; 2 = it has run, so leave
 c_line      db  CMDLINE_MAX + 2 dup(0)  ; ...and what it is

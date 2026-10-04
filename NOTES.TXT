@@ -1,6 +1,6 @@
 PM-DOS - Protected Mode DOS, a 32-bit DOS kernel
 ================================================
-Started 2026-08-06.  Version 0.61.
+Started 2026-08-06.  Version 0.62.
 
 The VDM - running 16-bit DOS programs
 -------------------------------------
@@ -4513,7 +4513,8 @@ for arriving unclaimed: nothing emulated produces either.  IOS_IRQHOOK
 with a real driver behind it - the self-test's handlers are the only
 ones there have been.
 
-NOT DONE, and each is its own piece of work.
+NOT DONE, and each is its own piece of work.  [The first four DONE
+2026-10-03: see "THE FOUR THE PCI WORK LEFT".]
   - THE TIMER.  Line 0 is not delivered to a box, as it never was.
   - A RESIDENT DRIVER WHILE NO BOX IS RUNNING.  An interrupt for it
     waits, with its line shut, for the next program that runs in a
@@ -6051,6 +6052,1764 @@ the FAT16 and the FAT32 of the format test.
 
 NOT VERIFIED.  MASM.  Real hardware.  A commit that fails half way;
 changes on two disks in one commit; reaching either limit.
+
+MASM ASSEMBLES ALL OF IT, AND WHAT CHECKING THE FDISK WORK FOUND
+(2026-10-02)
+---------------------------------------------------------------------
+
+The two entries above were checked from the outside the same evening,
+and what that found is fixed here.  Still v0.61.
+
+THE CHECK.  The old FDISK (8eff60a, with /W) ran FDTEST, FDLTEST,
+FDRTEST and FD32TEST as they were; the new one ran them with /W taken
+off and every dry run that said it wrote nothing left out.  All four
+second disks came out byte for byte the same.  On the screen: two
+changes staged and Q answered No left the disk as it started; U and
+then W gave exactly what FDISK /D 1:3 gives; F made a FAT12, a FAT16
+and a FAT32 volume that CHKDSK passed after the restart.  A resize
+that merged clusters (one sector to two, the files packed) and two
+that went FAT16 to FAT12, on volumes of fragmented files, each passed
+CHKDSK and FC /B on every file afterwards, and a long name survived
+all three.  RUNTESTS differed in two answers only, and FDISK.EXE's
+size on the test disk is why: with the old FDISK.EXE put back,
+CACHETST matched again and RMTEST's free count rose by the 15
+clusters FDISK had grown by.  Both are re-recorded in BASELINE.
+
+MASM.  ML 6.13 (C:\MASM611, which is 6.11 patched; any MASM 6.1x
+is the target) refused fifteen of the 108 .ASM files, the kernel and
+FDISK among them, and had since August.  Three kinds of line, 31 files:
+  - `jmp short` to a label MASM places further away than wasm does.
+    wasm quietly makes such a jump near; dropping `short` leaves
+    wasm's output as it was.  Forty-seven of these.
+  - a table written `name:` above its db lines is NEAR to MASM, so
+    `mov al,[kb_lower + ebx]` needs `byte ptr`, as does a store to
+    `[ebx+CONST+edx]`; `null_idtr:  dw  0` is a syntax error to it.
+  - the size guards written IF / .ERR / ENDIF.  MASM evaluates IF on
+    its first pass, before its jumps are sized, so BOOT.ASM, BOOTHD's
+    BPB check and IORM's park entry all failed on sizes that were
+    right.  The seven that measure code are .ERRE / .ERRNZ now, which
+    both assemblers evaluate at the end and both still fire - each was
+    tried with a size that should fail.
+Every .ASM, and BUILD's -dFAT32BOOT, -dCLIENT32 and -dD32 variants,
+assembles under ML.  Every file BUILD makes is byte for byte what it
+was, except FDISK.EXE, and FDISK built by ML ran FDMTEST's 38
+pictures and left the same disk as the wasm build.
+
+/P SAID "Current size" OVER THE ROOM AT THE PARTITION'S START, not its
+size - 30240 for a logical drive of 16002, in FDMTEST's Details.  It
+prints the length now, and the three labels line up again.  The
+messages that ended in a space before the line end lost it, and a
+resize that changes the FAT width no longer says "No file moves." over
+a line saying it is moving the data: the cluster numbers are what stay.
+
+THE BATCH FILES, which .gitignore keeps out of the repository and so
+were still the /W ones: FDTEST, FDLTEST, FDRTEST and FD32TEST write
+at once now, FDTEST checks that /W is refused with the usage and
+nothing written, and FDLTEST's refusal (4) is a shrink below the
+smallest size, since one that needs FAT12 is no longer refused.
+AUTOEXEC.BAT's notes on FDISK, and FDMTEST's, describe today's FDISK.
+
+FDISK.EXE 61,688 bytes.  NOT VERIFIED: BUILD's debug targets
+(%DEFS%) under ML.
+
+A DMF DISK READS AND WRITES: THE BIOS'S TABLE SAID WHERE A TRACK ENDS
+(2026-10-02)
+---------------------------------------------------------------------
+
+Charlie asked whether PM-DOS could take DMF diskettes natively.  DMF
+is Microsoft's distribution format: a 1.44M disk laid down with 21
+sectors a track instead of 18, 3,360 sectors, 2K clusters and 16 root
+entries.  Still v0.61.
+
+MOST OF IT WAS ALREADY THERE.  fm_layout takes a diskette's geometry
+from its boot sector, and 21 x 2 x 3,360 is 80 whole cylinders, so
+FDF_SETGEO took it; the block layer splits a request where the BPB
+says a track ends; and to the FAT layer the volume is an ordinary
+FAT12.  What was missing was below all of that.
+
+THE BIOS STOPS WHERE ITS TABLE SAYS A TRACK ENDS, NOT WHERE THE DISK'S
+DOES.  INT 13h gives the controller the last sector of the track out of
+the diskette parameter table vector 1Eh points at.  The block layer
+moves up to sixteen sectors a call without leaving a track, so a call
+for sectors 17 to 21 asked for three sectors past a table that says
+18.  A real controller ends the command at 18 and reports the end of
+the cylinder.  86Box ends it at 18 and reports SUCCESS, so there the
+bug is data that never arrived: on the vli486sv2g (Award BIOS, table
+says 18) the old kernel read 85,177 bytes of a 700,000-byte file
+wrong, and 49 of the 391 sectors of a file it wrote were never
+written, without a single error.  The first wrong byte was at 1400h,
+ten sectors into a file that starts at logical sector 8: sector 19 of
+the first track.
+
+WHETHER A MACHINE HAS IT IS WHATEVER ITS TABLE SAYS.  The vs440fx's AMI
+BIOS points vector 1Eh at a table that says 36 - sized for a 2.88M
+drive - so the old kernel read and wrote DMF there perfectly, by luck.
+MS-DOS 6.0 lifts the byte only as far as the longest track of a drive
+it knows (MSINIT.ASM, and install_bds in MSBIO2.ASM), never as far as
+the disk's, so it has the same limit.  DOSBox-X's INT 13h does not read
+the table at all, which is why no run there could have shown it.
+
+THE FIX IS MS-DOS'S OWN TRICK, TAKEN AS FAR AS THE DISK.  fpy_rwup and
+fpy_rwdown in FLOPPY.INC: when a diskette's GEO_SPT is more than the
+table's last sector, vector 1Eh is pointed at a copy of that table in
+GV_RWDPT (GV_BASE+0B0h, IORM's v_rwdpt) with the disk's count in it,
+for the length of one blk_go call, and put back at each of its three
+exits after the geometry is known (bio_done, bio_fail, bio_nocyl).  A
+table that says more than a disk has costs nothing - the DMA count
+ends the transfer, which is how a 720K disk is read through a 1.44M
+drive's table - but the vector is moved only when it has to be, and
+not at all while a format has it (fpy_open).  GV_RWDPT is separate
+from GV_FDPT so that neither can be in the middle of using the other's.
+A DOS box's INT 13h on a diskette is translated into blk_read
+(INT13.INC), so a program reading the disk itself gets the same.
+
+VERIFIED on 86Box with a DMF image holding two files of 700,000 and
+800,001 bytes, every 512 bytes stamped with its file and offset, and
+the same files on C:; FC /B compares them and a 200,000-byte W.BIN is
+copied on and compared, then read back off the image on the host with
+FLOPGET.PL:
+  - vli486sv2g (Award, table 18): old kernel wrong both ways as above;
+    new kernel no differences, W.BIN byte for byte on the image.
+  - the same machine with a 1.44M disk: no differences.
+  - vs440fx (AMI, table 36): no differences, old kernel and new.
+  - vector 1Eh read by a probe program before the diskette is
+    touched, after the first DIR and at the end: F000:EFC7 all three
+    times on both machines, so it is always put back.
+IOPM.ASM, IORM.ASM and DOSMAIN.ASM assemble under ML.  Of everything
+BUILD makes only PMIO.SYS changed (44,954 to 45,117 bytes), and that
+is the whole of what RUNTESTS saw on its seven machines: RMTEST's free
+count is one cluster less, because PMIO.SYS now needs a 45th 1K
+cluster, and CACHETST's "a write is owed" went from 5 to 4 on the six
+machines that cache.  The OLD kernel padded with zeros to the new
+PMIO.SYS's size gives exactly the new CACHETST, so that is where the
+files lie and not what the kernel does.  Both re-recorded in BASELINE;
+CACHETST is back to what it was before the FDISK work moved it.
+
+RUNTESTS FROM A SCRATCH TREE SEEDED WITH S:\BIN finds RMFIND and RMTEST
+different whatever the kernel: BIN\TESTS there also holds EXEHDR, MSD,
+NMAKE, MEM622, DISKSTAT and REVEAL, which BUILD does not make and
+BASELINE was recorded without.  Take them out first.
+
+NOT VERIFIED.  Real hardware.  A 2.88M disk in a drive whose table says
+18, which met the same limit.  Booting from a DMF disk (FATLOAD reads
+one sector at a call, which a short table should not stop).  NOT DONE:
+FORMAT /F:1.68 and DISKCOPY of a DMF disk, which are next.  And RMDOS
+(DOS\RMDISK.INC) still takes a diskette's geometry from INT 13h AH=08h,
+which describes the drive: a DMF or a 720K disk is misaddressed after
+its first track while the kernel is parked under Windows - the bug
+fm_layout had until 2026-09-27, not changed here.
+
+RMDOS READS A 720K DISK, AND NO FILE ON A DISKETTE WRAPS AT 64K
+(2026-10-02)
+---------------------------------------------------------------------
+
+Charlie asked for the RMDOS half of the entry above to be fixed.  It
+was two bugs, the second hidden behind the first.  Still v0.61.
+
+THE GEOMETRY.  rd_mount asked INT 13h AH=08h, which describes the
+drive, and never looked at the boot sector's figures.  On the
+vli486sv2g, whose BIOS calls a 1.44M drive eighteen sectors a track,
+a 720K disk was addressed as if it had eighteen: its files start at
+logical sector 14, sector 15 of a track that has nine, so the first
+read of every file failed (RMDOS's error 9) and so did the first
+write.  A diskette's boot sector is believed now, after it has been
+read, when its figures agree - at most 63 sectors a track, one or two
+sides, a whole number of cylinders between 40 and 84 - which is
+fm_layout's test.  The boot sector itself is sector 1 of track 0 under
+any geometry, so reading it with the drive's is safe.
+
+AND BEHIND IT, EVERY FILE ON A DISKETTE WRAPPED AT 64K.  With the
+geometry right the reads went through, and from 64K into a file came
+back as the file's first sectors again - the stamp read at offset
+65536 said 00000000 - while a write past 64K went over the start of
+the file.  A 1.44M disk, whose geometry was never wrong, did exactly
+the same, so this had always been there.  rd_getvol mounts a diskette
+every time it is asked for one, and file_io and sft_clus ask in the
+middle of a transfer, holding the file position in EAX and the bytes
+still to move in ECX.  rd_mount saved them with PUSHA, which keeps
+sixteen bits, and worked in EAX, ECX and EDX; the top of the position
+came back as nought.  A hard disk is mounted once, at its first use,
+and never showed it.  PUSHAD and POPAD now, which also keeps the top
+half of every register of a caller running 32-bit code.
+
+SEEN AND LEFT: mounting on every call reads the boot sector twice for
+every 512 bytes of a file, each time with a seek back to track 0.
+100K takes over a minute on 86Box's drive.  It is correct; a
+change-line check would make it quick, and is not done here.
+
+VERIFIED on 86Box, vli486sv2g, by PARKTEST running a scratch program
+(RMCMP.COM) on RMDOS that compares two files on A: of 100,000 and
+80,001 bytes with copies on C:, copies a 70,000-byte file to A: and
+compares that back, and writes what it found to C:; the written file
+was then read off the diskette image on the host with FLOPGET.PL.
+Before: 720K, the first read of each file and the first write failed;
+1.44M, every block past 64K wrong in both files and the written one.
+After: 720K, 1.44M and DMF, every block of all three right, and the
+written file byte for byte on each image.  RMDOS.ASM assembles under
+ML.  RMDOS.SYS 28,711 to 28,794 bytes.  NOT VERIFIED: real hardware,
+and Windows itself using a diskette while the kernel is parked.
+
+DISKCOPY AND DISKCOMP TAKE DMF, AND A DISK AND ITS COPY COMPARE OK
+(2026-10-02)
+---------------------------------------------------------------------
+
+Charlie asked for DISKCOPY and DISKCOMP next.  Still v0.61.
+
+WHAT THEY DID WITH DMF BEFORE.  di_shape read the BPB and found no
+row of di_sizes for 21 sectors, so g_row was FFh: a DMF disk could be
+compared, and copied onto a disk that was already DMF, but nothing
+could be formatted as one - "only a standard shape can be laid down" -
+so a 1.44M or blank target was refused.
+
+DMF IS NOW di_sizes' NINTH ROW, with FDM_1440 as its medium: the same
+density, so DISKCOPY formats a 1.44M target as DMF and refuses a 720K
+one as it would a 1.44M source.  di_can became words to have a bit 8
+(1.44M and 2.88M drives take it).  FORMAT's fd_sizes still stops at
+eight rows; DMF is a disk to copy, not to make.
+
+FDF_BEGIN KNOWS DMF BY ITS 21 SECTORS: FDM_1440 with more than 18 in
+CL.  No BIOS has AH=18h for it, so the BIOS is asked for 1.44M - which
+sets the data rate - and the table it answers with is copied to
+GV_FDPT and given 21 sectors and a format gap of 0Ch, Linux's figure
+for its 1.68M type (drivers/block/floppy.c, "H1680").  A BIOS without
+AH=18h starts from its own table, as before.  FDF_TRACK lays a DMF
+track down two to one - 1, 12, 2, 13 ... 21, 11 - as Microsoft's DMF
+disks are and as Linux does for any format gap under 22h: twelve bytes
+between sectors is too little for anything that reads one sector a
+call to catch the next, and such a reader would otherwise wait a whole
+turn of the disk for every sector.
+
+DISKCOMP SAID A DISK AND ITS OWN COPY DIFFERED.  DISKCOPY gives the
+copy a serial number of its own, and the header of DISKCOMP.ASM said
+"DOS's DISKCOMP said so too".  It did not: 6.22's DISKCOMP, run under
+DOSBox-X's DOS on the same two images, says "Compare OK", and the 6.0
+source says why - VOLSER copies the first disk's serial over the
+second's in the buffer before track 0 is compared, when the first's
+media byte is Fxh and its boot signature 28h or 29h.  dk_volser does
+the same.  It hides nothing else: a pair differing in one more byte
+of track 0 - in the second sector, or in the boot sector's OEM name -
+is still "Compare error on side 0, track 0", in 6.22 and here.
+
+VERIFIED on 86Box, vli486sv2g with B: added to a copy of its CMOS:
+DISKCOPY A: B: of a full DMF disk onto a blank DMF-sized image -
+"Copying 80 tracks, 21 sectors per track", "Formatting while copying",
+a serial number - and the two images then differ in the four serial
+bytes at 27h and nowhere else; the same for 1.44M onto a blank 1.44M
+image.  DISKCOMP A: B: of each disk and its copy said "Compare error
+on side 0, track 0" before dk_volser and "Compare OK" after, DMF and
+1.44M; the DMF pair with a byte changed in track 0's second sector,
+and with the OEM name changed, still "Compare error on side 0, track
+0" - all four what 6.22's DISKCOMP says of the same images.  RUNTESTS
+on all seven machines: SFTSCAN's four addresses moved by 53h, the 83
+bytes RMDOS.SYS grew in the entry above, and nothing else; SFTSCAN
+re-recorded in BASELINE.  The interleave was checked by running the
+address-field arithmetic on the host - 21 places, 21 sectors, each
+once - because a raw image keeps no order of sectors and 86Box's
+formatter does not object to any.  IOPM, DISKCOPY and DISKCOMP
+assemble under ML.
+
+NOT VERIFIED: real hardware - and a real DMF format especially, whose
+gap only a real drive can be too fast or too slow for; a DMF format
+onto a disk that was a 1.44M one (an emulator's raw 1.44M image cannot
+hold 21 sectors a track); a 2.88M drive.
+
+FORMAT MAKES A DMF DISK: /F:1.68 AND /F:DMF (2026-10-02)
+---------------------------------------------------------------------
+
+Charlie asked for FORMAT /F:1.68 and /F:DMF.  Still v0.61.
+
+THE KERNEL HAD IT ALREADY.  FDF_BEGIN and FDF_TRACK learned DMF for
+DISKCOPY in the entry above, so FORMAT only had to ask, and the entry
+above's "DMF is a disk to copy, not to make" is no longer so.
+fd_sizes has a ninth row: 1680, 3,360 sectors, 21 a track, 4 a
+cluster, 16 root entries, 3 a FAT, media F0h, FDM_1440.  That is
+Microsoft's own layout, so the BPB FORMAT writes is the one on a DMF
+disk of theirs, byte for byte from 0Bh to 3Dh bar the serial number
+and the label.  fd_can became words for its bit 8, which 1.44M and
+2.88M drives have, as di_can did in DISKIMG.INC.  fm_size takes DMF,
+in any case, as the name of 1680; 1.68, 1.68M, 1680 and 1680K are the
+number, read as before.
+
+DMF IS NEVER A DRIVE'S DEFAULT.  A disk becomes DMF when /F: says so,
+and stays DMF when it was one and nothing says otherwise - what FORMAT
+does with every size.  Before, a DMF disk was no row FORMAT knew, so
+FORMAT A: on one laid every track down again as a 1.44M disk.
+
+/S ONTO A DMF DISK BOOTS.  BOOT.BIN and FATLOAD read one sector a call
+with the BPB's sectors a track, which a table that says 18 does not
+stop, and from then on the kernel's fpy_rwup lengthens the table.
+
+VERIFIED on 86Box, vli486sv2g (Award, table 18).  SYS wants its
+source to be FAT12 like its target, so the runs boot PM-DOS from a
+1.44M floppy in A: and format the disk in B::
+  - FORMAT B: /F:DMF /S onto a blank DMF-sized image: "Formatting
+    1.68M", 1,716,224 bytes, 838 units of 2,048, "System transferred".
+    A 700,000- and a 200,000-byte file copied on.  Read off the image
+    on the host with FLOPGET.PL: all seven files byte for byte, both
+    FATs the same, the BPB as above, PM-DOS's boot code from 3Eh.
+  - that disk in A: of a fresh boot: it booted, FC /B found both
+    files the same as copies on C:, and CHKDSK found nothing wrong.
+    With a 720K drive as B:, FORMAT B: /F:DMF and /F:1.68 each said
+    "Size not supported by drive", and that disk was not changed.
+  - on a copy of the same disk: FORMAT B: "Checking 1.68M" (format
+    kept, surface read); /Q "Quick format 1.68M"; /F:1.68M /U
+    "Formatting 1.68M", every track again, a new serial number;
+    /F:dmf /Q quick again; /F:DM "Invalid size for /F"; /F:DMFX
+    "Invalid switch".  The file copied on after all that matched on
+    the host, and the BPB was still Microsoft's.
+6.22's CHKDSK under DOSBox-X's DOS calls every used cluster of every
+disk lost, a 1.44M disk MKDISK made as well, so it is no oracle for
+this.  6.22's DIR lists the formatted DMF disk correctly.
+RUNTESTS on all seven machines: 69 of 69 the same on each, BASELINE
+unchanged.  FORMAT.ASM assembles under ML.  FORMAT.COM 7,236 to 7,375
+bytes, nothing else changed.
+
+NOT VERIFIED: real hardware, where the gap is the risk, as in the
+entry above; a DMF format over a disk that was 1.44M; a 2.88M drive.
+
+SCSI CD-ROMS: AN ADAPTEC 154X OR BUSLOGIC, A PRO AUDIO SPECTRUM, AND
+ANY CARD WITH AN ASPI DRIVER (2026-10-03)
+---------------------------------------------------------------------
+
+Charlie asked for both halves of the plan - a native Adaptec 154x and
+BusLogic driver, and the 2940-class cards through their ASPI managers
+- and "if at all possible" the SCSI CD-ROM on a sound card.  All
+three are in.  Still v0.61.
+
+A CD-ROM UNIT IS NOT AN ATAPI DEVICE ANY MORE.  Everything ATAPI.INC
+did that was about the drive and not the bus - READY, the media check,
+capacity, READ(10), the sense key that says a disc changed - moved to
+IO\CDUNIT.INC (cun_*), working on a table of units, cun_tab, of up to
+CDU_MAX (8) entries: a kind, the device behind it and where its
+listener bits live.  ATAPI.INC keeps the packet transport and one
+entry point, atapi_exec; SCSI's is scs_cdexec.  IOS_CDREAD, CDINFO,
+CDCHG, CDPKT and CDUNIT index that table, so MSCD001, MSCDEX and CDEX
+did not learn the word SCSI.  ATAPI units come first, so a machine
+whose drive was D: yesterday still has it at D:.  CDD_MAXUNIT is
+CDU_MAX now, not 4.
+
+THE SCSI LAYER, IO\SCSI.INC, is one service, IOS_SCSI (IOSVC+0F4h,
+SSF_* in AH), with a request block (SRQ_*) and an adapter record
+(HBA_*) whose first dword is the routine that runs a request.  It
+scans targets 0-7, LUN 0, with INQUIRY; keeps a row per device; makes
+a unit of each type 5 (CD-ROM) and type 4 (WORM); and does the parts
+no adapter should do twice: the bounce through SCSI_BUF (64K at
+1F0000h, under 16MB, for a card that only sees 24 bits), REQUEST
+SENSE when the card did not, READ(10)/(12)/READ CD split to what the
+card can move at once, and MODE SENSE/SELECT(10) sent again as (6) on
+an ILLEGAL REQUEST - and as (6) from then on for that drive
+(SDF_MODE6).  BUILD scsi6 forces the six-byte forms everywhere, to
+test that path on drives that never need it.
+
+  IO\AHA154X.INC   Adaptec 1540/1542 B, C, CF and the BusLogic cards
+                   that copy them, ISA at 330h/334h/230h/234h/130h/
+                   134h and BusLogic PCI (104Bh:1040h, BAR 0).
+                   Polled, one mailbox each way, auto-sense.  84h
+                   tells a BusLogic from an Adaptec, 28h/29h unlock a
+                   1542C's mailbox as Linux does, and the card's DMA
+                   channel is set to cascade.  A PCI BusLogic's
+                   ISA-compatible port is asked for (86h) and not
+                   probed twice.
+  IO\NCR5380.INC   the 53C80 on a Pro Audio Spectrum 16, at 388h,
+                   384h, 38Ch or 288h.  No IRQ, no DMA channel: the
+                   bus is worked phase by phase, a byte at a time,
+                   except READ(10)/(12) in whole 512-byte pieces,
+                   which go through the board's pseudo-DMA port
+                   (+5C00h).
+
+ASPI IS THE OTHER WAY IN, and it is in PMDOS, DOS\ASPI.INC, because a
+manager is a DOS device driver.  After CONFIG.SYS, scsi_start looks
+for SCSIMGR$, asks it for its entry point (an IOCTL read of four
+bytes), and scans through it.  Every call is made from V86 through
+two small stubs in an 8K block of conventional memory, and the wait
+for the SRB's status is a loop in V86 too - the manager's interrupt
+handler is real-mode code and is only ever delivered to a box.  This
+is what reaches an Adaptec 2940, an AIC-7xxx on a motherboard, or the
+AIC-6360 on a Sound Blaster 16 SCSI-2: whatever the vendor's manager
+drives.
+
+WHY THE PROBE WAITS FOR CONFIG.SYS.  A card a manager has taken must
+not be taken again behind its back.  PMIO's probe runs once
+CONFIG.SYS is done; told a manager is there (SPF_ASPI), it leaves
+alone any 154x whose Return Setup Data shows mailboxes already set up
+(the manager's), and a device seen both ways is marked SDF_DUP and
+used once.  SCSI=OFF in CONFIG.SYS turns the native drivers off and
+leaves ASPI working.
+
+WHAT A PROGRAM SEES.  21h/F1h AL=1Ch reads the adapter and device
+rows (SCF_ADAPTER, SCF_DEVICE); AL=17h fills the new CDU_KIND and
+CDU_TARGET and gives CDU_DEV/FLAGS/MODE/BASE their SCSI meanings.
+CDEX shows "SCSI ID 2", "SCSI 1 ID 2" when there are two adapters,
+and lists the adapters under the table.  HWPROBE has a SCSI section:
+each adapter's port, IRQ, DMA and own ID, and each device's INQUIRY
+strings, CD-ROM or not.  CDATEST gained a volume check (IOCTL input
+4, output 3: change output 0's volume, read it back, put it back).
+MSCD001's MODE SENSE asks for the block descriptor a SCSI drive sends
+and an ATAPI drive never did, and cuts it out before reading the page.
+
+FIVE BUGS THAT WERE NOT IN THIS WORK, all found by it.
+
+  DEVICE= GAVE INIT A BREAK ADDRESS OF 0:0, in a block the size of
+  the file.  ASPI4DOS reads that field to see what memory it may use
+  and said "Not enough memory available to load driver".  dl_load
+  now takes the largest block there is and INIT is told where it
+  ends, as DOS tells it.
+
+  A DRIVER'S INT 21h DURING DEVICE= WENT TO THE KERNEL'S 32-BIT
+  HANDLERS.  For most calls that is the same answer; for 25h it set
+  an IDT gate instead of the real-mode vector.  ASPI4DOS's 25h for
+  IRQ 10 vanished, its interrupt never arrived and the first command
+  waited for ever.  25h, 35h, 34h, 50h, 51h, 62h, 2Fh, 52h, 38h and
+  65h now go to the box's own handlers (dlx_v86fn), and a VDS or
+  mouse HLT inside an excursion is served (dlx_nodvs) instead of
+  ending it.
+
+  EVERY BIOS CALL THE KERNEL MADE RAN WITH IRQ 9-13 MASKED.
+  pic_to_rm forced the slave PIC's mask to 3Eh on the way down.  It
+  now leaves unmasked whatever the BIOS had unmasked at boot (read in
+  rm_main into GV_BIOSIMR).  Added while chasing the next one; whether
+  that BIOS needed it on its own was not separated out.
+
+  A DISK SERVED BY A SCSI CARD'S BIOS HUNG THE BOOT, every release.
+  vd_setup sets bit 5 of 40:7Bh and points INT 4Bh at a HLT stub,
+  which is right for a box and wrong for rm_int, where a HLT is a HLT.
+  A bus-master ROM reads 40:7Bh before it hands its card an address,
+  called INT 4Bh, halted till the next tick, and carried on with a
+  descriptor nobody had filled in - on the kernel's very first INT
+  13h, before CONFIG.SYS.  rm_int now takes VDS away for the call
+  (vd_rmdown, vd_rmup) and puts it back.  Before: hung on a 1542CF,
+  old kernel and new alike, with SCSI=OFF too.  After: boots from the
+  SCSI disk on a 1542CF, a BT-545S and a BT-958D, each card's BIOS
+  serving C: while PMIO drives the CD-ROM on the same card.
+
+  THE REAL-MODE STUB DID NOT FIT UNDER MASM.  The BIOS-mask lines
+  above pushed it to 0912h, past RMT_PARK at 0900h (wasm, which
+  shortens more jumps, had 08EEh).  RMT_PARK is 0940h now; RMDOS is
+  handed the unpark address, so nothing outside PMIO moves.  That also
+  makes BUILD debug, and every target with PMDOS_DEBUG, assemble
+  again - under wasm too they had been over the line before this work
+  began.
+
+VERIFIED on 86Box (p3bf, Pentium II, unless it says otherwise), CDEX,
+CDXTEST and CDATEST each run - 26 checks - with FC /B of files read
+off the disc:
+  - native: AHA-1542B, 1542C, 1542CF; BusLogic BT-542B, BT-545S,
+    BT-958D (PCI); Pro Audio Spectrum 16.  BUILD scsi6 on the 1542C
+    and the PAS16.
+  - drives: 86Box's own, Chinon CDS-431, Toshiba XM-3301TA, NEC 25,
+    Plextor PX-32TS, TEAC CD-50 all pass; a Sony CDU-541 passes all
+    but the volume check (below).
+  - 300,000- and 1,600,000-byte files byte for byte through COPY, a
+    DOS box's COPY and FC, on the 1542C, the BT-958D, the PAS16 and
+    through ASPI.
+  - ASPI: a 1542B with ASPI4DOS loaded by DEVICE=, with SCSI=OFF and
+    with the native probe on (which left the card alone).
+  - an ATAPI and a SCSI CD-ROM together: D: and E:, ATAPI first;
+    CDROM=M made them M: and N:.
+  - two SCSI CD-ROMs and a SCSI disk on one 1542C: HWPROBE lists the
+    disk and both drives, only the drives get letters.
+  - a 386DX/33 ISA board (asus386, 8MB) with a PAS16 and a 1542B at
+    once: one drive on each, both read correctly.
+  - the BIOS-served SCSI disk above: a 1.6MB file copied from the CD
+    on the card to the disk on it and compared both ways.
+RUNTESTS on all seven machines: 67 of 69 the same; HWPROBE (the new
+SCSI lines) and RMTEST (free space, PMIO's first jump) re-recorded.
+Every .ASM assembles under ML 6.13, and IOPM.ASM also with scsi6,
+DBG_LPT, ATA_DEBUG and FDD_DEBUG.  PMIO.SYS 45,217 to 51,505 bytes,
+PMDOS.SYS 136,410 to 138,206.
+
+LIMITS.  Targets 0-7 and LUN 0 only, so a changer shows one drive
+and IDs 8-15 on a wide card are not looked at.  Native cards are
+polled and never use their IRQ.  Through ASPI, the card's IRQ has to
+be one a box can have - 3-5, 7 or 9-11 (VP_GUEST); on 12, 14 or 15
+every request times out.  At most 4 adapters, 16 devices, 8 CD units.
+
+NOT VERIFIED: real hardware of any of it.  A real 2940 or any
+AIC-7xxx manager - ASPI was proved with ASPI4DOS only, and only on a
+1542B: on a 1542C or CF it says "Unable to read configuration from
+host adapter", and says the same under MS-DOS 5, so that is the
+emulation and that ASPI4DOS, not PM-DOS.  A Sound Blaster 16 SCSI-2
+with its ASPI driver.  SDF_DUP, which nothing here could make happen.
+A disc changed in a SCSI drive while the machine runs: it goes through
+the same cun_note as ATAPI, which SWAPTEST proved, but the swap needs
+86Box's menus clicked and was not run.  The Sony CDU-541's volume:
+the drive has only its vendor's audio page (09h), not page 0Eh, so
+CDATEST's volume step fails there and the rest pass.
+
+THE FOUR THE PCI WORK LEFT: THE TIMER IN A BOX, A RESIDENT DRIVER'S
+INTERRUPT AT THE PROMPT, THE 8237, AND ISAPNP.EXE (2026-10-03)
+---------------------------------------------------------------------
+
+The PCI entry ended with five things not done, each its own piece of
+work.  Charlie asked for four of them.  New: IO\VTIMER.INC, IO\VDMA.INC,
+DOS\IRQX.INC, CMD\ISAPNP\ (ISAPNP.C, DOSINT.ASM), IOS_BOXIRQ, BUS_DMASTAT
+and BUS_PNPHERE/RES/REGS/SET, and four tests: TIMERTST.COM, IRQXTEST.COM
+with IRQXWAIT.EXE, DMATEST.COM.  Still v0.61.
+
+1.  THE TIMER, IN A BOX (IO\VTIMER.INC).  INT 08h and INT 1Ch had
+never been called in a DOS box: IRQ 0 was the kernel's clock and went
+nowhere else.  Every tick is now owed to the box (vpc_tick) and goes
+in through the box's controller like a card's interrupt, in service
+until the EOI - VP_DELIVER is VP_GUEST and line 0.  The box's INT 08h
+reaches a STUB of the kernel's, not the ROM's handler: the stub calls
+INT 1Ch and sends the EOI, and the rest of the BIOS's handler is the
+kernel's, because 40:6C is counted in protected mode and the floppy
+motor belongs to the kernel's floppy calls - the ROM's handler run in
+the box as well would count every tick twice.  The stub hands real
+mode to the ROM (SMSW: PE clear is rm_int or a park), and a byte of its
+own hands Windows' V86 to the ROM too (vt_park clears it at a park).
+Nothing listening - INT 08h still the stub and INT 1Ch still the ROM's
+IRET - and the tick is dropped rather than delivered as five traps to
+nowhere.  The stub lives in the bus paragraphs, so BUS_PARAS is 4.
+
+A GAME THAT RUNS THE TIMER FASTER gets INT 08h as often as it asked:
+43h and 40h are claimed and WATCHED, not stood in for - every byte
+reaches the 8254 - and the divisor is kept, so irq_timer counts a tick
+of 40:6C every 65536 counts of the timer's input (vt_tick).  The old
+kernel's clock ran four times fast under a 4x timer: 146 ticks in two
+seconds of the real-time clock.  The motor countdown is per tick too.
+A key is no longer handed to a box whose timer handler is in service
+(the 8259 would make it wait, and its non-specific EOI would have
+ended the timer's).
+
+2.  A RESIDENT DRIVER'S INTERRUPT WITH NO BOX RUNNING (DOS\IRQX.INC).
+An interrupt owed to the box waited, line shut, for the next program
+that ran in one - so at the native prompt a packet driver, a serial
+port's driver or a clock TSR heard nothing.  Now the DOS side makes an
+EXCURSION at the two moments it is idle enough to: dos_idle (every
+wait for a key) and the end of every native program's DOS call
+(i21_r3native).  The handler runs as a simulated interrupt through
+dpmi_simint - INT 28h's own road - on the waiting box's stack, or the
+scratch real-mode stack when there is no box.  IOS_BOXIRQ hands out
+the lines most urgent first (BXI_TAKE is vpc_boxwant from outside the
+monitor); while it runs, keys and mouse events stay the kernel's
+(v86_irqx).  InDOS is 1 at both moments.  The four calls that start
+or end a program fail in it (ERR_FUNC); INT 20h and 27h are ignored;
+a fault, ^C or Abort in a handler ends the EXCURSION (irx_lost) and
+not a box, which with no box would have unwound into nothing; nothing
+parks for Windows from inside one.  A native program that makes no
+calls at all still holds an interrupt off until it does.
+
+3.  THE 8237 (IO\VDMA.INC).  A driver hands the DMA controller segment
+times sixteen, which in upper memory and the page frame is the address
+of somewhere else.  Both controllers' ports and seven page registers
+are the monitor's now.  What a box writes to a channel is KEPT, and
+the real channel is programmed at the UNMASK: the box's buffer looked
+up in the page tables (vd_run) - where it says is where it is, and the
+box's own numbers go to the controller; in one piece below 16MB and
+across no 64K (128K) line, the controller is sent where it really is;
+neither, and it goes through DMA_BUF, 32K at 1E1000h (16K in a trace
+kernel, whose buffers move up behind it), copied in for a transfer
+from memory and out as a transfer into memory goes - at every look at
+a DMA port and before any interrupt reaches the box (vpc_take), which
+between them are every moment a driver can learn a transfer ended.
+Reading back tells the box its own story: the current address turned
+back into the box's, the terminal-count bits kept until the box reads
+them.  The flip-flop the box toggles is a copy; the real one is the
+kernel's.  REFUSED, with the channel left masked and counted
+(BUS_DMASTAT): an auto-initialising transfer that would need the
+bounce buffer (a ring cannot be copied behind the card's back), the
+buffer when another channel has it, and any buffer the box could not
+write itself - a DMA channel was a way to write into the kernel.  A
+channel the kernel keeps (4, and an AHA-154x's, from aha_cascade) is
+not the box's to touch.  VDS 810Bh/810Ch now really switch translation
+off and on for a channel, counted as the specification counts them.
+
+4.  ISAPNP.EXE.  The kernel numbers the cards at boot and switches on
+only the IDE port it needs; on a machine whose BIOS is not Plug and
+Play everything else stays off, and that was CTCM's job.  ISAPNP lists
+every card and device with what it uses; /A switches on every device
+that is off, with the first set it offers in which nothing collides
+with what can be seen - an AT's ports, all four COM and three LPT
+addresses, PCI lines, lines the kernel keeps or a resident driver has
+unmasked, the kernel's DMA channels, the other cards, ten-bit aliases
+unless a descriptor says sixteen; "c.d IO=220,330,388 IRQ=5 DMA=1,5"
+sets one by hand, what is not given staying as it is, and ON/OFF alone
+switch it.  /A never chooses memory and leaves the kernel's IDE port
+alone.  The kernel's half is four BUS_ calls in ISAPNP.INC (resource
+data, registers 30h-0AFh, register writes - none below 30h); F1h/12h
+has r3_pflags rows for their buffers and fF1_bus checks each with
+cbuf_ok.
+
+VERIFIED.  DOSBox-X, seven machines, RUNTESTS 75 of 75 twice over
+(the baselines re-recorded: the bus paragraphs moved everything three
+paragraphs, PROBE13 now shows INT 08h at the stub, CACHETST's "a write
+is owed" is 5 again with PMIO bigger).  The OLD kernel on the new
+tests: TIMERTST fails every check, IRQXWAIT waits for ever, DMATEST
+gets nothing into upper memory or two EMS pages and lets the card
+write 256 bytes into PMDOS.SYS.  DMATEST with a Sound Blaster (DBXRUN
+-Sound: DOSBox-X answers a recording with 80h through the DMA
+controller): conventional, upper memory (C4010h is really 249010h),
+two EMS pages mapped out of order through the bounce buffer, and the
+kernel refused.  86Box P3B-F with an NE2000 and an SB16: PCITEST,
+NICIRQ, VPICTEST, VDSTEST, the four DPMI tests, TIMERTST, DMATEST (the
+real 8237 and its card) and the IRQX pair, all passed.  86Box 486
+(vli486sv2g, no PnP BIOS - Charlie's 486) with Creative's SB32 PnP:
+everything off but the CD-ROM's port; /A gave Audio 220 330 388, IRQ 5,
+DMA 1 5 - CTCM's own - WaveTable 620, Game 200, StereoEnhance 100;
+DMATEST found the card and recorded through it; IO=240 moved it, OFF
+switched it off, IO=220 brought it back.  MASM-clean, 113 files;
+SYMCASE clean.
+
+TRAPS MET.
+  - v86_claim spends AL: a loop that keeps its port in EAX claims one
+    port and then whatever the bit mask says, for ever, and the boot
+    stops at "Starting PM-DOS...".
+  - wasm's case folding, twice: VT_STUB and vt_stub, SB_RESET and
+    sb_reset.  And PowerShell's: a [string] parameter $Cfg and a local
+    $cfg are one variable, and an 86Box configuration written through
+    it is one line, which 86Box answers by becoming an IBM PC.
+  - DOSBox-X's -silent switches the sound devices off whatever the
+    configuration says: no BLASTER, no SB in MIXER.  DBXRUN -Sound
+    leaves it off; the dummy video driver is what keeps the window
+    away.
+  - DOSBox-X's Plug and Play cards are read-only: their resource data
+    and registers read, a write to any register is ignored.  Writing
+    is tested on 86Box (run86.ps1-style, started minimized and never
+    activated, closed with WM_CLOSE).
+  - RUNTESTS splits -Run on commas, so "ISAPNP 1.0 IO=220,330" cannot
+    be a test there.
+  - WIN.INI's run= is a LIST of programs: a second word is a second
+    program, not an argument.
+
+FOUND AND LEFT.
+  - [Done 2026-10-03: see "THE VECTOR TABLE A BIOS CALL RUNS WITH".]
+    THE REAL-MODE VECTOR TABLE AGAIN.  A kernel call into the BIOS runs
+    with the guest's vector table and the BIOS's own masks, so an
+    interrupt a box's handler hooks is handled THERE when it arrives
+    during one - and if the protected-mode side had already queued it
+    for the box, it is delivered a second time afterwards.  IRQXTEST's
+    clock handler saw it: one call in real mode for every interrupt,
+    tens of thousands of calls the clock had not asked for when a test
+    read the time (2Ch, which is INT 1Ah in real mode) on every turn of
+    a loop.  Keeping a box's owed lines shut during BIOS calls cures
+    the second delivery and was tried - and taken out again, because a
+    BIOS waits on its own interrupts there (a SCSI card's ROM on its
+    card's, the RTC's waits on IRQ 8), and one owed to a box that is
+    not running would never be released.  It belongs with the
+    real-mode IVT question that is Charlie's to decide.  A handler that
+    asks its device, as real ones do, takes a second delivery as
+    nothing.
+  - Windows 3.1 in standard mode starts, on this kernel and the old
+    one alike, and its timer messages never arrive (WINDRV's one-second
+    SetTimer never fires), so it never exits; its DOS session hangs as
+    before.  386 enhanced mode does not start on either kernel, on
+    DOSBox-X or on 86Box.
+  - BIN\ and IMAGES\ on S: were not rebuilt (they hold the 2026-10-02
+    kernel, from before the SCSI work as well).
+
+NOT DONE.  An auto-initialising DMA transfer through the bounce buffer;
+a client with only a real-mode handler, in protected mode when its
+interrupt comes (the fifth of the PCI entry's list); an interrupt for a
+resident driver while a native program makes no DOS calls at all; a
+TSR popping up from the native prompt (INT 9 into an excursion).
+
+NOT VERIFIED.  Real hardware, any of it - ISAPNP on the 486 with its
+own card is the one that matters.  A 16-bit DMA channel moving data
+(DOSBox-X has no 16-bit recording); a refused auto-init; two channels
+wanting the bounce buffer at once.
+
+THE VECTOR TABLE A BIOS CALL RUNS WITH, AND THE INTERRUPTS IT LOST
+(2026-10-03)
+---------------------------------------------------------------------
+
+Left open by the kernel's memory protection two days ago (written up
+at the end of this entry, which it never was), and found again by the
+entry above: when the kernel called the BIOS, the BIOS ran with the
+vector table every DOS box writes.  Charlie chose a copy of it taken
+when CONFIG.SYS is finished.  Testing that found the 8259s losing
+interrupts on every call, which the copy made it possible to stop.
+New: IOS_RMFREEZE (rm_freeze, rq_down and rq_up in IO\RMCALL.INC),
+IORM.ASM's RMT_IRQS entries with rq_timer, rq_rtc, pic_down and
+pic_up, vd_freeze, BIOS_IVT, GV_BIDTR and six more globals, and
+TOOLS\RMIVT.ASM.  PMIO.SYS 54,666 to 54,937 bytes, PMDOS.SYS 138,994
+to 139,000.  Still v0.61.
+
+THE TABLE AT 0:0 IS EVERY PROGRAM'S.  A DOS box writes it with 25h and
+a DPMI client with 0201h, and rm_int loaded it - LIDT base 0 - and
+turned interrupts on for the call, because the BIOS's disk code waits
+on them.  So whatever a program had put on a vector the BIOS reaches
+during a call ran in real mode, inside the kernel, with paging off:
+the timer and INT 1Ch, the clock's interrupt, INT 15h, and INT 13h,
+1Ah, 14h and 17h themselves, which the kernel calls by number.  Three
+things followed from that:
+  - No page is read-only in real mode, so any 16-bit program, or any
+    DPMI client through 0201h, could write anywhere in memory.  That
+    undid the protection below.
+  - A program that died with INT 1Ch hooked took the whole machine
+    down at the next diskette read, where in a box only the box would
+    have gone.
+  - An interrupt protected mode had already owed to a box was also
+    run down there, so the box had it twice (the entry above).
+RMIVT on the old kernel: its INT 1Ah hook was called in real mode on
+all 100 of a hundred 2Ch calls, on every machine.
+
+1.  THE COPY (rm_freeze, IOS_RMFREEZE).  dos_entry calls it once,
+after config_run, scsi_start and cd_announce and before the first
+shell: 1K at BIOS_IVT, the last of the gap under SCSI_BUF, on a page
+ring 3 cannot write and no box can reach.  GV_BIDTR is the IDTR
+rm_land loads - {3FFh, 0} until then, {3FFh, BIOS_IVT} after; park_land
+still loads rm_idtr, because a park hands the machine over and the
+table at 0:0 goes with it.  WHY AFTER CONFIG.SYS: a DEVICE= driver or
+an INSTALL= program that hooks the BIOS is in the copy, and the
+kernel's calls go on reaching it; what AUTOEXEC.BAT runs, and
+everything after, is a program.  A box's own INT 13h, 1Ah and the
+rest still go through the box's own table.  Two things in the copy
+are changed:
+  - INT 4Bh is vd_old, the vector from before the kernel put its VDS
+    stub there.  That is what vd_rmdown gives a call anyway: the stub
+    is a HLT that only means something in a box (vd_freeze).
+  - The sixteen interrupt lines go to IORM.ASM's RMT_IRQS entries, at
+    IRQ_BASE and up (see 3).  Each entry notes its line in GV_RMOWED
+    and far-jumps on to where the line went in the copy (RMT_IRQORIG).
+    So the BIOS's handler runs, or a CONFIG.SYS driver's, and nothing
+    a program hooked since.
+The vectors the BIOS reads as data are read at 0:0 by address and not
+through IDTR, so GV_RWDPT and the fixed-disk tables still work: the
+diskette table at 1Eh, and the fixed-disk tables at 41h and 46h.
+
+rq_up hands the noted lines on afterwards, because the box's handler
+is not in the table the BIOS was given:
+  - a tick goes to vpc_tick;
+  - a box's line goes to vpc_raise, which owes it only if the box has
+    the line open;
+  - a line the kernel owns outright is its owner's and is not handed
+    on.
+Two interrupts on one line during one call become one.
+
+2.  TWO LINES ARE NOT PASSED STRAIGHT ON.
+LINE 0 (rq_timer).  The ROM's INT 08h counts 40:6C once an interrupt.
+While a game ran the timer four times as fast, the clock therefore
+counted four times as fast for the length of every call; RMIVT
+measured 89 to 116 ticks in two RTC seconds on DOSBox-X and 91 to 102
+on the Pentium II.  rq_timer keeps VTIMER's whole-tick count down there:
+vt_div and vt_acc go down as GV_VTDIV and GV_VTACC (rq_down) and the
+count comes back (rq_up).  Only whole ticks go on to the ROM; the rest
+are ended there.
+LINE 8 (rq_rtc), FOUND BY THE FIRST VERSION OF THIS.  A program
+running the clock's periodic interrupt for itself (IRQXTEST does)
+reads register C in its own handler.  The ROM's handler, given that
+interrupt instead, read register C itself, found a periodic interrupt
+with no wait of its own to time, and did what IBM's does: switched
+the periodic interrupt OFF.  On 86Box IRQXTEST got 29 periodic
+interrupts where it had had 375.  So line 8 goes to the BIOS only if
+the BIOS is timing a wait with it (BDA_RTCWAIT, 40:A0h bit 0) or no
+box is listening (GV_RMBOX, set by rq_down).  Otherwise it is masked
+for the rest of the call, EOIed, and owed, and the box's own handler
+reads register C afterwards.  375 again, and none in real mode.
+
+3.  THE 8259s LOST WHAT WAS WAITING IN THEM, ON EVERY CALL - old, and
+not this change's, but the copy is what made it fixable.  The thunk
+moved the vector bases both ways, and a base takes a fresh ICW1, which
+resets the controllers' request latches.  So an interrupt that arrived
+while the switch had interrupts off was delivered on neither side.
+With nothing but BIOS calls going on, that cost a tenth of the clock
+on 86Box's Pentium II and a quarter on its 486, on the old kernel as
+on the new one.  IRRDIAG, a diagnostic build that counted IRQ 0
+waiting at each re-initialisation (scratch, not in the tree), found
+16 ticks counted and 18 waiting at the normal rate, and 20 counted and
+64 waiting at four times the rate.  Both add up to the 36 that two
+seconds should give.  A keystroke or a mouse byte arriving in the same
+window went the same way.  Since rm_freeze, a BIOS call leaves the
+bases where protected mode keeps them:
+  - pic_down and pic_up write only the masks, and the copy's IRQ_BASE
+    to IRQ_BASE+15 point at the RMT_IRQS entries.
+  - 08h to 0Fh and 70h to 77h in the copy stay as they were, for
+    anything that calls them as software interrupts.
+  - A line the BIOS's masks shut now waits in the controller for
+    protected mode instead of being lost.
+  - Before CONFIG.SYS is finished, and for a park, the bases move as
+    before (GV_PICKEEP, and GV_PICKEPT so that rm_toprot knows which
+    way it came).
+After this change the clock read 36 or 37 at both rates on all three
+emulated machines.  IRQXTEST's "calls the clock did not ask for" on
+86Box went from about 16,000 to 1: that number was this too.
+
+WHAT IS LOST BY THE COPY.  A TSR that adds to the BIOS and is loaded
+from AUTOEXEC.BAT - a printer redirector on INT 17h, a FOSSIL on
+INT 14h, an INT 13h or INT 1Ah extender - no longer sees the kernel's
+own calls, so it misses DOS-level printing to PRN and the rest.
+CONFIG.TXT says to load such a thing with INSTALL= or DEVICE=.  A
+box's own calls to the same vectors are unaffected.
+
+VERIFIED.
+  - RMIVT, six checks on seven lines, new kernel against old:
+      DOSBox-X:              every line OK; the old kernel fails 1, 3,
+                             4b and 6.
+      86Box p3bf (PII):      every line OK, 36 and 36; old 100, 22,
+                             20,607 calls to IRQ 8 in real mode,
+                             31 and 91.
+      86Box vli486sv2g:      every line OK, 36 and 36; old 100, 14,
+      (Award, 66 MHz)        6,129, 27 (FAILED) and 40.
+      p3bf booting off a     every line OK.
+      1542CF's BIOS disk:
+    IRQXTEST passes on all three emulated machines, with 0 calls made
+    in real mode.
+  - The disk a 1542CF's BIOS serves, booted from and used for
+    everything: a 139,000-byte file copied natively and in a box,
+    with FC finding no differences.
+  - A hook made by CONFIG.SYS is kept.  A scratch TSR loaded with
+    INSTALL= on INT 1Ah was reached 56,649 times in real mode by the
+    kernel's 2Ch.  RMIVT's own hook, made after, was reached none.
+  - Windows 3.1 standard mode on DOSBox-X (the park, after the copy
+    is taken), as before: Windows starts, and its DOS session hangs.
+  - RUNTESTS 76/76 on all seven machines, twice, after re-recording
+    34 files:
+      - RMIVT's seven are new.
+      - IRQXTEST /R's real-mode line is a check now.
+      - RMFIND, RMTEST and CACHETST changed because the disk has one
+        more file; the old kernel shows the same three on the same
+        disk.
+    Then 76/76 twice more with the 8259 change, with no baseline
+    changing.
+  - All 114 .ASM files assemble under MASM 6.13.  IOPM.ASM also
+    assembles with DBG_LPT, HANG_E9 and IRQ_SELFTEST.  SYMCASE finds
+    no clash.
+
+FOUND AND LEFT.
+  - rq_rtc masks line 8 for the rest of a call.  A BIOS that started a
+    clock-timed wait of its own later in the same call would wait for
+    nothing.  None of the calls the kernel makes is such a wait (INT
+    15h AH=83h or 86h), though a BIOS could call one from inside
+    another.
+  - A key typed during a BIOS call goes through the BIOS's INT 09h
+    into the buffer, as before, and a box TSR's INT 09h hook does not
+    see it.
+  - A BIOS that writes a vector into 0:0 in the middle of one of its
+    own calls would not have that vector used.  None of the machines
+    tested does this.
+
+NOT VERIFIED.  Real hardware.  A DEVICE= driver on INT 13h (an
+INSTALL= TSR on INT 1Ah was tested, at the same point in the boot).
+Any BIOS but DOSBox-X's and two Award ones.
+
+THE PROTECTION THIS FINISHES (2026-10-01, NOT WRITTEN UP THEN).
+Charlie asked how to stop D32 and DPMI programs writing over the
+kernel, and agreed to the first two steps.
+  1.  THE KERNEL'S PAGES ARE READ-ONLY TO RING 3.  pg_protect clears
+  PG_WRITABLE on every page in the KPROT_* ranges:
+    - the stub, the GDT, the globals and XFER (1000h-3FFFh);
+    - PMDOS.SYS;
+    - 180000h-21FFFFh: the page tables, KBSS, the bounce buffers,
+      PMIO, the IDT, the TSS and the kernel stacks;
+    - pg_hiram's tables (GV_PGHILO and GV_PGHIHI).
+  CR0.WP stays clear, so ring 0 is not affected.  Page 0 stays
+  writable, because a DOS program must be able to write the IVT.  The
+  A20-off alias copies the HMA's sixteen entries, so the protection
+  follows it.
+  2.  THE KERNEL ASKS BEFORE IT WRITES FOR A PROGRAM.  usr_wok
+  (IOS_USRWOK) asks whether ring 3 could have written a range itself.
+  It is asked before every store the kernel makes into memory a
+  program chose:
+    - buf_ok;
+    - a box's stack at v86_run, v86_fault and v86_irqexit (v86_stkok);
+    - a client's interrupt frame (vpc_pmchk) and dpmi_enter;
+    - 0300h's word copy, and 000Bh, 0300h, 0303h and 0500h
+      (dpmi_esdiw);
+    - VDS 8103h and 8105h (vd_ddsok);
+    - mouse function 16h;
+    - XMS 0Bh, which also got real bounds (xms_where).
+  Further, DPMI 000Ch refuses a descriptor that is not code or data,
+  and the LDT is unloaded for a native child (XN_LDTR) and a native
+  handler (RC_LDTR).
+What that left, as of this entry:
+  - THE BIOS CALL'S VECTOR TABLE: done above.
+  - DMA: the 8237 is covered, since VDMA refuses a buffer the program
+    could not write.  A PCI card's bus-mastering, and CF8h/CFCh, are
+    still open to a box.
+  - Pages in the arena are still writable through a DPMI client's
+    flat selector.  That is other programs' memory and not the
+    kernel's, and would be step 3.
+  - There are no hostile test programs proving each protection.
+
+EXPANDED MEMORY GOES TO LIM 4.0 (2026-10-03)
+---------------------------------------------------------------------
+
+Charlie asked for LIM 4.0 for RMDOS, since 32-bit programs have no
+use for it.  It went into DOS\EMS.INC, the manager the DOS boxes
+already had, and not into RMDOS.SYS - the first paragraph below says
+why.  46h now answers 40h, and every function and subfunction from
+4Fh to 5Dh is served.  New: TOOLS\EMS4TEST.ASM (22 checks); the HLT a
+56h target returns to, recognised in vdm_halt and in the DEVICE=
+excursion (ems_iscb, ems_callret); status codes 90h-A4h, EMS_KEEP,
+EMS_CALLSTK and EMS_PMAPENT/EMS_PMAPLEN in PMDOS.INC.  EMS_MAXH 32 to
+64, EMS_MAXPAGES 512 to 2048 (8MB to 32MB, 4.0's ceiling), and the
+handle table moved to _KBSS.  PMDOS.SYS 139,000 to 141,718 bytes.
+Still v0.61.
+
+WHY NOT RMDOS.SYS.  RMDOS runs only while the kernel is parked under
+Windows 3.1 standard mode.  Paging is off, there is no V86 monitor,
+and the upper memory is gone - park_chaincut ends the chain at 640K
+because the UMBs were arena pages under page tables that no longer
+exist.  A manager with none of that has nothing to map a window with:
+it could only copy 16K in and out of a frame carved from conventional
+memory at every map, and a frame that costs 64K below 640K, under a
+Windows that swaps DOS programs to disk, is not one anybody would
+switch on.  The 16-bit programs that can ask for expanded memory are
+the ones in DOS boxes, and that manager is where 4.0 went.
+
+WHAT 4.0 ADDED, AND HOW EACH ONE IS DONE HERE.
+  4Fh  partial page map.  The array is a count and then, per window,
+       its segment and its 4Eh dword - 2 + 6n bytes - so a restore
+       needs nothing but the array and touches only those windows.
+  50h  several windows in one call.  55h and 56h take the same list.
+  51h  reallocate.  See ONE BLOCK, below.
+  52h  attributes: volatile only.  Non-volatile is 91h, anything else
+       90h.  A pool rebuilt at every boot has no other honest answer.
+  53h  names, eight bytes in the row.  A name another handle has is
+       A1h; the empty name is everybody's.
+  54h  the directory: the list, a search by name (an empty name is
+       A1h, an unknown one A0h), and the number of handles (64).
+  55h  map and jump.  INT 67h is trapped, not reflected, so the
+       guest's CS:IP is two fields in vdm_ctx and a jump is changing
+       them.
+  56h  map and call.  See THE CALL, below.
+  57h  move and exchange, up to a megabyte, with every refusal the
+       specification lists: 92h to 98h, A2h, 83h and 8Ah.
+  58h  four mappable pages, the frame's, numbered 0 to 3.
+  59h  a raw page is 16K, and there are no alternate or DMA register
+       sets.
+  5Ah  standard and raw pages, the same 16K, and 0 is allowed.
+  5Bh  set 0 and a context save area in the caller's memory.  No
+       alternate sets: 03h and 05h answer BL = 0, and any set but 0
+       is 9Ch.
+  5Ch  nothing to prepare.
+  5Dh  the access key.  The first 00h or 01h hands one out; with the
+       functions off, 59h/00 and 5Bh are A4h.
+And the old ones: 44h's FFFFh unmap is official now, and 43h still
+refuses no pages, which is what 5Ah is for.
+
+HANDLE 0 IS THE SYSTEM'S, as 4.0 says: always open, counted by 4Bh,
+listed by 4Dh and 54h, emptied but not closed by 45h, and owned by
+the kernel so that no program's exit sweep reaches it.  A handle is
+now the index of its row and row 0 is that handle, so a program's
+first allocation still gets handle 1.  EMSTEST's check 7 had asserted
+"one handle open" and now counts against what was open before it
+started, which it always should have: a TSR with a handle failed it
+too.
+
+ONE BLOCK PER HANDLE, KEPT.  The v0.41 roadmap suggested a list of
+blocks per handle.  One block is what makes 57h a memmove and a window
+a base plus an offset, so 51h does the work instead:
+  - fewer pages: the windows onto the pages going come down
+    (ems_cutwin) and the block shrinks where it stands, or is freed
+    at 0;
+  - more pages: arena_resize grows the block where it stands if the
+    arena has free space after it.  Otherwise the handle MOVES - a new
+    block, the pages copied, the old block freed - and every window
+    showing one of its pages is pointed at the page's new home
+    (ems_rewin).
+The new block's owner is the ROW's owner, not whoever is running
+(ems_blkown).  A TSR's handle grown while another program has the
+machine must not be swept when that program ends.
+
+A MAP LIST BECOMES FOUR WINDOW STATES.  50h, 55h and both of 56h's
+maps go through ems_listmap, which reads the whole list and reduces it
+to KEEP, UNMAPPED or a 4Eh dword for each window before any window
+moves.  Applying the pairs one at a time would read the list while the
+windows change, and the list is allowed to be in a window.  It also
+makes "nothing changes unless every pair is good" free.  ems_setmap
+(48h, 4Eh/01, 5Bh/01) copies its sixteen bytes in first for the same
+reason, and 4Fh/01 copies its array in.
+
+THE CALL.  56h's far call is 55h; the return is the part with
+something to it.  The target's RETF lands on a HLT at EMSH_RET in the
+EMMXXXX0 paragraph, and what that HLT needs is on the guest's own stack
+under the return address: a signature, the old map as four window
+states, and the caller's CS:IP - 26 bytes, which is what 56h/02
+reports.  Nothing is held in the kernel between the call and the
+return, so calls nest, and a target that never returns costs nothing.
+The old map is read at the call and not at the return, because the
+caller's list may be in a page the new map takes away.  A handle freed
+while the target ran is 83h at the return, and a page shrunk away is
+8Ah.  A HLT there with no frame under it ends the box, since there is
+no caller to go back to.
+
+94h IS THE ONE OVERLAP THAT ADDRESSES CANNOT SHOW.  A conventional
+side inside the frame and an expanded side in the same handle can be
+the same memory at two addresses.  ems_alias asks the map, window by
+window, whether any window the conventional side crosses is showing a
+page of the expanded side.
+
+TWO THINGS A PROGRAM CAN LEAVE BEHIND, and ems_relown clears both when
+it ends: 5Bh's save area pointer, which points into the program's own
+memory and would have 5Bh/00 writing into whatever is loaded there
+next; and 5Dh's key, which nobody is left to give back.
+
+NOT DONE: pages mapped into conventional memory.  4.0 allows it, and
+it is what Windows 3.0 real mode and DESQview used to give each
+program a bank of its own.  The page tables would take a conventional
+page as readily as a frame page.  The reason is the rest of the
+kernel, which treats a linear address below A0000h as the physical
+one - ata_dmaok for one - so a hole made there by a guest would be a
+disk transfer into the wrong memory.  58h offers the four frame pages,
+which the specification permits and which is all DOSBox's 4.0 manager
+has ever offered.
+
+VERIFIED, DOSBox-X headless, 486, 32MB, EMS=AUTO, frame at E000h:
+EMSTEST 14/14 and EMS4TEST 22/22.  EMS4TEST checks memory wherever
+there is memory to check: a grown handle still holds what was written,
+a 57h move lands across a page line where two windows can see both
+halves, a 56h target sees one map and its caller gets the other back,
+and 55h's target finds the page it mapped.
+CHECK 5 NEEDED A SECOND VERSION.  It grows a handle past a neighbour
+so that the handle has to move, then looks through a window that was
+onto it.  The first version read the page's pattern through that
+window and passed - and passed again with ems_rewin taken out and
+every grow forced to move, because the old block, freed, still held
+every byte.  A stale window reads the right answer.  It now WRITES
+through the old window and reads through one mapped after the grow.
+With that, the same control fails at check 5 alone, and the forced
+move with ems_rewin left in passes.  A check that cannot fail tests
+nothing, and the only way to find out is to break the code on
+purpose.
+Also with EMS=: a 4MB 386 (AUTO, 109 pages); a 1GB Pentium with
+EMS=D000 (2048 pages, the ceiling, and the segment arithmetic of 4Fh,
+50h and 58h at a frame that is not E000h); and the 486 with UMBTEST,
+MCBTEST, XMSTEST, DPMITEST and TSRTEST in front and both EMS tests run
+twice, the second runs showing the first left nothing behind.  All
+clean; what differs from the no-EMS baselines is the frame itself
+(the header paragraph in the chain, upper memory ending at E000h, and
+64K more XMS because the frame's pages are not backed).
+86Box agrees: p3bf, Pentium II, 64MB, EMS=AUTO puts the frame at
+D000h there, and EMSTEST 14/14, EMS4TEST 22/22.
+Regression: RUNTESTS -All, the seven machines without EMS=, 74 of 76
+the same on every one.  RMFIND and RMTEST moved only because \TESTS
+has one more file and the disk 9 fewer free clusters (EMS4TEST.COM,
+and PMDOS.SYS three clusters longer); both are re-recorded.
+MASM 6.13 is clean on DOSMAIN.ASM, EMSTEST.ASM and EMS4TEST.ASM.
+
+NOT VERIFIED: the 486; real programs that use 4.0 - ones
+that grow a handle with 51h, overlay managers on 55h and 56h, RAMDRIVE
+/A; 56h from a DEVICE= driver's INIT, which is wired up but has no
+test.  EMS4TEST is not in RUNTESTS' default list, because no baseline
+machine boots with EMS=.
+
+SAFE MODE: SHIFT OR F5 AT "STARTING PM-DOS..." (2026-10-03)
+---------------------------------------------------------------------
+
+Charlie asked for a safe-mode boot: hold Shift, or press F5, while
+"Starting PM-DOS..." is on the screen, and CONFIG.SYS and AUTOEXEC.BAT
+are bypassed, with a message saying so; and a blank line after the
+"Starting" message.  It is DOS 6's clean boot (sysinit2.asm kbd_read
+and disable_autoexec in S:\DOS6SRC), and works the way that one did.
+F8, the line-by-line confirmation, is not done.  Still v0.61.
+
+WHAT A BOOT DOES NOW.
+  - PMIO prints "Starting PM-DOS..." and a blank line, and puts 40:6C
+    in GV_BOOTTICK (GV_BASE+0D4h).
+  - kb_init clears the BIOS's ring and 40:17, as it always has.  First
+    kb_bootkeys notes in GV_BOOTKEY (GV_BASE+0D8h) whether a Shift was
+    down and whether an F5 was anywhere in the ring - a key pressed
+    while the files were loading counts, as it did under DOS 6, and a
+    Shift held since power-on need not repeat for the kernel to see
+    it.
+  - config_run reads CONFIG.SYS into cfg_buf as before, then walks it
+    once for SWITCHES= alone (CFG_PASS_KEYS, a new first walk), then
+    calls cfg_keys - before a single statement is acted on.
+  - cfg_keys waits until 37 ticks after GV_BOOTTICK, ending early at a
+    key in the ring, a Shift in 40:17, or anything in GV_BOOTKEY; HLT
+    between looks.  Then: Shift down, or the first key in the ring is
+    F5, or GV_BOOTKEY says either - and every F5 at the front of the
+    ring is taken off it, because people press it more than once and
+    the rest would reach the prompt.  A first key that is not F5 is
+    left alone and the boot is normal.
+  - Bypassed: "Safe mode: skipping CONFIG.SYS and AUTOEXEC.BAT." and a
+    blank line, " /D" is appended to shell_tail, and config_run
+    returns without a walk.  With no CONFIG.SYS at all the keys are
+    still looked at, since they are how AUTOEXEC.BAT is skipped.
+The two seconds are two seconds of the clock RUNNING: 40:6C stands
+still from the CLI in the real-mode stub to the STI in pm_entry.
+Measured on DOSBox-X: 2.4 s from the message to the first CONFIG.SYS
+line - 0.4 s of probing with interrupts off before the mouse line
+went up, then the 2.0 s wait.
+
+SWITCHES= IS HALF REAL.  /N turns the keys off and /F skips the wait
+(a key pressed before it still counts), as in DOS 6; /K, /W and /E
+stay accepted and inert.  cfg_switches is in phase CFG_PASS_KEYS in
+cfg_phaseof, so the main walk skips it.  DISK\CONFIG.SYS had
+SWITCHES=/F, written when it did nothing - left there it would have
+taken the wait away from every image built from that file, and
+tapping F5 at the message would have missed most of the time.  It is
+SWITCHES=/K now.
+
+/D IN BOTH SHELLS.  DOS 6's COMMAND.COM took /D as "no AUTOEXEC.BAT
+and no date and time prompt" (init.asm, PrdAttm), and IO.SYS added it
+to the shell's tail for a clean boot.  CMD.EXE had no /D: cmd_startup
+now sets noauto_flag and skips bat_launch of AUTOEXEC.BAT when it is
+set.  The 16-bit COMMAND.COM accepted /D and ignored it - its header
+said so - so COMMAND /P /D ran AUTOEXEC.BAT anyway, which 6.22's does
+not; in_noauto now skips in_autoexec, date and time with it.  Both /?
+screens list /D.  The /D stays on shell_tail for the session, so a
+shell that is reloaded after a fault does not run AUTOEXEC.BAT either.
+
+Files: INC\PMDOS.INC (GV_BOOTTICK, GV_BOOTKEY, BOOTK_*), IO\IORM.ASM
+(the two globals), IO\IOPM.ASM, IO\KEYBD.INC (kb_bootkeys),
+DOS\CONFIG.INC (CFG_PASS_KEYS, BOOTKEY_WAIT, cfg_keys, ck_any,
+cfg_switches, msgCfgSafe, cfg_nokeys, cfg_nowait), DOS\DOSMAIN.ASM
+(comment), CMD\BATCH.INC, CMD\CMD.ASM, CMD\COMMAND\INIT16.INC,
+CMD\COMMAND\HELPTEXT.INC, DISK\CONFIG.SYS, DISK\CONFIG.TXT (the keys
+in the introduction, a SWITCHES= entry).  PMIO.SYS 54,937 to 55,039
+bytes, PMDOS.SYS 141,718 to 142,055.
+
+VERIFIED on DOSBox-X, headless.  The keys were put in before "boot"
+by two tiny programs run in DOSBox-X's own DOS: INT 16h AH=05h for
+F5, and bit 1 of 40:17 for a Shift.  The test CONFIG.SYS had SET and
+a bad line; AUTOEXEC.BAT echoed and wrote two files.
+  - No key: the blank line, the bad line reported, AUTOEXEC.BAT run.
+  - F5, and Shift: the safe-mode line, no CONFIG.SYS error, no files
+    written, a clean prompt.
+  - F5 with SWITCHES=/N: a normal boot.  F5 with "switches = /k /f":
+    safe mode.  F5 with no CONFIG.SYS: safe mode, AUTOEXEC.BAT
+    skipped.  No CONFIG.SYS and no key: AUTOEXEC.BAT runs.
+  - Timing, from screen captures at 70 frames a second: 2.0 s from
+    the mouse line to the first CONFIG.SYS line; none with
+    SWITCHES=/F, and none with a key waiting.
+  - Control: the S:\BIN kernel with the same F5 boots normally.
+  - A TEST-ONLY variant whose kb_init puts the BIOS's keys back into
+    the ring, and its Shift into kb_flags, instead of GV_BOOTKEY - so
+    the keys reach cfg_keys the way one pressed during the wait does:
+    three F5s all taken off (clean prompt), Shift via 40:17 bypasses,
+    and "x" then F5 boots normally with no wait.
+  - COMMAND /P /D from AUTOEXEC.BAT: straight to its prompt.  The old
+    COMMAND.COM ran AUTOEXEC.BAT nine times over, until "Program too
+    big to fit in memory".
+  - MASM 6.13: all 115 .ASM files clean.
+Regression: RUNTESTS -All, 76 of 76 the same on all seven machines,
+with no baseline re-recorded (its CONFIG.SYS has no SWITCHES=, so
+every row now waits the two seconds).
+
+VERIFIED BY CHARLIE on 86Box (the PM-DOS VM, after S:\BIN, HD16.IMG
+and PMDOS.IMG were brought up to date): F5 or Shift pressed by hand
+at "Starting PM-DOS..." bypasses the startup files.  That was the one
+test headless runs could not make - DOSBox-X's AUTOTYPE crashes it.
+NOT VERIFIED: the 486.  F8 is not done.
+
+THE CLEAN-SHUTDOWN FLAG, AND CHKDSK AT BOOT (2026-10-03)
+---------------------------------------------------------------------
+
+Charlie asked for a partition dirty flag and CHKDSK on boot.  The
+flag is kept by the kernel, in a new DOS\VOLFLAG.INC, and the check is
+run BY THE KERNEL, before the shell, the way NT's autochk runs before
+anything else - so it does not depend on which interpreter SHELL=
+names, and nothing has touched the disk when it starts.  Still v0.61.
+
+WHICH BIT.  Windows 95's: bit 15 of FAT entry 1 on FAT16, bit 27 on
+FAT32, set meaning clean.  Using the same one means a disk Windows 98
+left dirty is checked here and one PM-DOS left dirty is checked by
+ScanDisk there, and every FORMAT ever written, ours and MKDISK
+included, already leaves it set.  FAT12 has no spare bit, so
+diskettes have no flag; neither do a loaded block driver's units, a
+CD-ROM or a mounted image, which are not this kernel's disks to vouch
+for.  vol_vf in vol_state (out of a pad byte, so VOL_STATE_SIZE does
+not move) says whether the loaded volume has it.  The bit beside it,
+Windows' "no disk error" bit (14 / 26), is left exactly as found:
+nothing here does the surface scan it asks for.
+
+WHEN IT GOES OFF, AND WHEN IT COMES BACK.  CACHE.INC already promises
+that at every commit point - the prompt (CMD.EXE and COMMAND.COM both
+call 0Dh before printing one), a program starting, a program ending,
+2Fh's commit - the disk says what the filesystem says.  So a volume
+is consistent at a commit point unless a file is open on it with
+writes its directory entry does not have yet (SFTF_DIRTY), and the
+bit follows exactly that:
+  - OFF before the first write after the volume was last marked
+    clean.  disk_write calls vfl_touch, which sets DRVF_DIRTY FIRST
+    (the bit's own write comes back through disk_write), writes FAT
+    sector 0 to every copy with the bit off, and pushes those sectors
+    out of the cache at once (cache_flushrange), so the mark is on the
+    disk ahead of anything written after it.  If fatsec_buf holds
+    sector 0 it gets the bit too, or its next flush would put the old
+    bit back.
+  - ON at the end of dos_commit (vfl_cleanall), after both flushes,
+    for every DRVF_DIRTY volume that is not held, if the cache owes
+    nothing at all and no SFT on the drive has SFTF_DIRTY.
+Turning the machine off at the prompt therefore leaves every volume
+clean; so does a crash in a game that writes nothing.  A crash while
+a program has a file half written leaves that volume dirty, which is
+the truth.  The cost is one sector per FAT copy when a volume goes
+dirty and again when it comes back: per command that writes, not per
+write.  A redirected program costs four of them, because the create
+of the redirect file dirties C: and 4Bh's commit cleans it again
+before the program writes; that was judged cheaper than leaving every
+long-running program's drive dirty from its start.
+
+RAW WRITES TOO.  vol_syncdrv has a MODE 2: mode 0, plus vfl_touch on
+every volume in the range - asked for by the three writers that know
+they are writing: INT 26h (disk_absgo, by the service), 21h/7305h
+(f75_write) and a DOS box's INT 13h write (i13_flush, by
+i13_iswrite).  A disk utility stopped halfway is precisely the volume
+that wants checking.  And a raw write may land ON the bit: mode 1
+afterwards calls vfl_after, which reads it back when the range held
+sector 0 of a FAT copy.  CHKDSK /F is the case - it writes back the
+FAT it loaded before its first write turned the bit off - and
+vfl_after turns it off again.  F1h AL=0Dh/0Eh (FDISK's) does not sync
+at all and does not mark; i13_reflect (unknown INT 13h functions)
+unmounts the whole disk, and the remount reads the bit.
+
+WINDOWS 3.1.  RMDOS writes without knowing any of this, so park_go
+marks every volume with the flag dirty after its commit
+(vfl_parkmark), vfl_parked keeps every commit from cleaning one, and
+park_recover clears it after park_remount.  A crash inside Windows is
+then a check at the next start, as it was on Windows 95.
+
+FOUND OFF, AND HELD.  A volume found dirty at a mount that the kernel
+did not make dirty (DRVF_DIRTY clear) was left that way by a crash or
+another system, and gets DRVF_HOLD: no commit cleans it, because only
+a check knows whether it is sound.  Found clean, both flags go - a
+FORMAT, or another system's checker, has said so.  The two flags are
+DRV_FLAGS bits 20h and 40h in the volume table rather than vol_state
+bytes, because a remount re-reads the bit and must know whether the
+kernel put it there: SYS writing a boot sector unmounts the volume it
+has just written files to, and the remount must not take the kernel's
+own mark for a crash.  vfl_found is the one rule, used by the mount
+(vfl_mounted, out of the FAT sector fat_checkmedia already reads - it
+now reads the LIVE copy, fat_rdcopy) and by vfl_after.
+
+CHKDSK SAYS SO through the new 21h/F1h AL=1Dh: DL = drive (0 =
+default), bits 16-23 of EAX = VLF_QUERY or VLF_CHECKED, answer EAX =
+VLS_KEPT/DIRTY/HOLD.  VLF_CHECKED drops the hold; the next commit -
+CHKDSK's own reset, or its 4Ch - turns the bit on.  CHKDSK calls it
+(sys_mark_checked, before the final reset) after a whole /F run, or
+after a look without /F that reported nothing (errors_seen, the
+cross-link count), and never when part of the tree was not processed
+(st.ftrunc) or the run ended early.  A DOS BOX CAN ONLY QUERY:
+vdm_do21 hands the kernel AX, not EAX, so the function bits never
+arrive - true of every F1h family that takes one there (12h, 14h,
+16h, 1Ah, 1Ch).  Noticed, not changed.
+
+AT BOOT, after CONFIG.SYS and rm_freeze, vfl_bootscan mounts every
+volume that can have the flag (crit_busy, so a bad one is quiet now
+and complains at its first real use as before) and lists the held
+ones in ack_list.  Mounting them all at boot is new; each costs a few
+sector reads.  shell_restart then calls ack_next before loading the
+shell: CHKDSK X: /F is loaded into the shell's slot and started the
+way the shell is, and its 4Ch at depth 0 comes back to shell_restart
+like the shell's would - so the next drive, then the shell, follow on
+their own, and ^C or a fault in CHKDSK skips that drive and no more.
+CHKDSK.EXE is looked for beside shell_name, then in the root of the
+boot drive (shell_dflt's letter).  AUTOCHECK=ON|ASK|OFF in CONFIG.SYS
+(cfg_autocheck; ON the default): ASK takes Y or N from the keyboard,
+OFF only names the drive.  A safe-mode start turns ON into ASK
+(cfg_keys), since CHKDSK at boot could be what needed one.  The
+messages:
+    Drive C: was not shut down properly. Running CHKDSK C: /F.
+    Drive C: was not shut down properly. Run CHKDSK C: /F now (Y/N)?
+    Drive C: was not shut down properly. Run CHKDSK C: /F to check the drive.
+    Cannot find CHKDSK.EXE to check drive C:.
+CHKDSK /F still asks "Convert lost chains to files (Y/N)?" when it
+finds some, as it always has, so a boot can wait for an answer.
+
+TOOLS\VFTEST.ASM -> \TESTS\VFTEST.COM (new, in BUILD.CMD, both MKHD
+lists, the floppy and RUNTESTS): ten checks of the bit as the kernel
+reports it and as 7305h reads it off the disk - after a commit, a
+file open and written, a commit with it open, closed, a delete, a
+letter that does not exist, and raw writes of FAT sector 1, FAT
+sector 0 and the boot sector.  It holds everything it prints until
+the end, because its output goes to a file on C: and the first
+version's own lines kept C: dirty.  VFTEST Q prints one line of
+state; VFTEST HANG writes a file, leaves it open and spins, for a rig
+to pull the plug on; HANGC commits first, so the clusters are on the
+disk and the directory entry is not - a lost chain.
+
+Files: DOS\VOLFLAG.INC (new), INC\PMDOS.INC (DRVF_DIRTY, DRVF_HOLD,
+FAT16/32_CLEAN, VLF_*, VLS_*, AUTOC_*), DOS\FAT.INC (vol_vf, fat_mount,
+fat_checkmedia, vol_syncdrv mode 2 + vfl_after), DOS\CRITERR.INC
+(disk_write), DOS\CACHE.INC (dos_commit), DOS\PARK.INC, DOS\INT13.INC,
+DOS\INT21.INC (F1h AL=1Dh, INT 26h, 7305h), DOS\CONFIG.INC
+(AUTOCHECK=, safe mode), DOS\DOSMAIN.ASM (include, vfl_bootscan,
+ack_next in shell_restart), CMD\CHKDSK\ (main.c, scan.c, chkdsk.h,
+sys.h, sys_d32.c, and stubs in sys_dpmi.c/sys_nt.c), TOOLS\VFTEST.ASM,
+TOOLS\RUNTESTS.PS1, BUILD.CMD, MKHD.CMD, DISK\CONFIG.TXT.  PMDOS.SYS
+142,055 to 144,007 bytes, CHKDSK.EXE 28,408 to 28,504; PMIO.SYS
+unchanged.
+
+VERIFIED on DOSBox-X, headless (scratchpad vf.ps1: an image built
+with MKDISK, booted, ended by the time limit - which is the plug: the
+guest's cache is lost and the emulated disk kept - then FAT[1] of
+both copies read straight off the image on the host, and the image
+booted again):
+  - A file written and left open (VFTEST HANG), plug pulled: both
+    FAT copies 7FFF - VFTEST Q at that program's start had said clean
+    and on, so the commit before it had cleaned C:.  Booted again:
+    "Drive C: was not shut down properly. Running CHKDSK C: /F.",
+    CHKDSK's report, then AUTOEXEC.BAT; C: clean, both copies FFFF.
+  - The same on FAT32: 07FFFFFF after, 0FFFFFFF after the check.
+  - VFTEST, all ten checks, on FAT16 and on FAT32.
+  - AUTOCHECK=OFF: the one line, no CHKDSK, VFTEST Q said DIRTY and
+    HOLD with the bit off; CHKDSK C: without /F found nothing, and the
+    next VFTEST Q said clean, as did the image.
+  - No CHKDSK.EXE on the disk: "Cannot find CHKDSK.EXE to check drive
+    C:." and the boot went on, C: still held.
+  - A lost chain (VFTEST HANGC): CHKDSK at boot found 4 lost
+    allocation units in 1 chain and asked.  Answered Y, FILE0000.CHK
+    was the 4,096 bytes of V's VFTEST had written, and C: was clean.
+  - Safe mode (F5): the ASK question.  Y ran CHKDSK and left C:
+    clean; N went to the prompt with C: still marked.
+  - A second disk: D: dirty alone - CHKDSK D: only; C: and D: both
+    dirty - C: then D:, both clean after.  (The bit put off on the
+    host, in both FAT copies, which is what a crash leaves.)
+  - Windows' path: PARKTEST running a two-byte JMP $ on RMDOS, plug
+    pulled while parked - 7FFF, though C: had been clean when PARKTEST
+    started.  A park that came back: clean at the end.
+  - Control: the S:\BIN kernel, the same plug pulled - FFFF before and
+    after, and no check at the next boot.
+The answers were typed by a TEST-ONLY kernel, as for safe mode:
+variant.pl makes kb_init put the BIOS's keys back into the ring
+instead of noting them, so keys put in before "boot" reach the
+questions.  MASM 6.13: DOSMAIN.ASM and VFTEST.ASM clean.  SYMCASE:
+clean.  Every partition of the shipped images (HD16, HD32, HDBIG,
+MULTI, the VM's HD16) already had the bit on, so none of them is
+checked at its first boot on this kernel.
+RUNTESTS -All before VFTEST was in its list: 74 of 76 the same on all
+seven machines, and the two that moved moved by layout only - RMFIND
+(\TESTS has one more entry) and RMTEST (fewer clusters free:
+VFTEST.COM, PMDOS.SYS, CHKDSK.EXE).  VFTEST added, those three
+re-recorded with -Update on all seven, and a second run: 77 of 77
+the same on all seven.  VFTEST.OUT is one file seven times over.
+
+S:\BIN (PMDOS.SYS, CHKDSK.EXE, TESTS\VFTEST.COM), IMAGES\PMDOS.IMG (the
+scratch BUILD's floppy), IMAGES\HD16.IMG (FATREPL: those three and
+CONFIG.TXT) and the 86Box VM's two copies brought up to date.  Not
+HD32, HDBIG or the two other floppies.
+
+NOT VERIFIED: 86Box, real hardware, and Windows 98 reading PM-DOS's
+mark or the other way round - the Win98 SE VM exists, and wants
+Charlie's hands.  NOT DONE: the error bit; F1h AL=0Eh's raw writes
+(FDISK) marking anything; a way to answer CHKDSK's own questions at an
+unattended boot.
+
+SHUTDOWN.EXE: THE POWER SWITCHED OFF THROUGH ACPI (2026-10-04)
+---------------------------------------------------------------------
+
+Charlie asked for a new external command, SHUTDOWN.EXE, that switches
+off a machine with ACPI and a soft power switch, and on one without
+ACPI just says "ACPI not found." and stops.  Still v0.61.
+
+THE KERNEL DOES IT, IN ONE CALL: 21h/F1h AL=1Eh.  A program at ring 3
+can reach neither the tables (physical memory, usually just above
+what E820 calls usable) nor the port, and only the kernel knows what
+it still owes the disks.  SHUTDOWN.EXE (CMD\SHUTDOWN, 756 bytes)
+parses its tail and turns the call's error into a sentence.  /?
+anywhere on the line is help and any other argument is "Invalid
+parameter": a command that switches the machine off must not do it
+because a switch it does not know was mistyped.
+
+THE ORDER, in fF1_power:
+  1. find ACPI (IOS_ACPI, ACPF_FIND) - before anything is written, so
+     "ACPI not found." leaves the machine exactly as it was;
+  2. every open file that has been written to gets its directory
+     entry written (sft_flush on each SFT, as 68h would): nothing will
+     ever close it now;
+  3. dos_commit, which also puts back each volume's clean-shutdown bit
+     (VOLFLAG.INC);
+  4. a block still owed is a write that failed: ERR_WRFAULT, as 1Bh;
+  5. ACPF_OFF, which comes back only if the machine is still running
+     three seconds after the write: ERR_STAYEDON.
+New errors beside ERR_DISKFULL's 70h: ERR_NOACPI 71h, ERR_NOSOFTOFF
+72h, ERR_STAYEDON 73h.  SHUTDOWN says "ACPI not found.", "ACPI
+soft-off not supported.", "A disk could not be written. The computer
+was not switched off.", or "The computer did not switch off.
+Everything has been written to the disks, so the power can be
+switched off by hand." - and "This version of PM-DOS cannot switch
+the computer off." to a kernel without AL=1Eh.  ERRORLEVEL 1 for all.
+
+IO\ACPI.INC (PMIO, IOS_ACPI = IOSVC+100h):
+  - the RSDP, in 16-byte steps through the EBDA's first kilobyte
+    (40:0Eh) and E0000h-FFFFFh, believed when its first 20 bytes add
+    up to zero;
+  - the RSDT, or from 2.0 the XSDT when the RSDT pointer is 0 and the
+    XSDT is below 4GB; its entries for 'FACP'.  Every table goes
+    through pg_mapphys first, 32 bytes past its length, so a malformed
+    \_S5_ at the very end reads memory rather than faults;
+  - the FADT: SMI_CMD, ACPI_ENABLE and ACPI_DISABLE, PM1a/PM1b event
+    and control, the PM timer.  A 1.0 field of 0 falls back to its
+    2.0 GAS when that names an I/O port; TMR_VAL_EXT for 32 bits;
+  - \_S5_ IS SEARCHED FOR, NOT RUN: NameOp, optional '\', '_S5_',
+    PackageOp, PkgLength, count, integers (Zero, One, Ones, or a
+    byte, word or dword after its prefix) - in the DSDT, then each
+    SSDT.  An _S5_ worked out in a Method is "no soft-off";
+  - the write, as Linux makes it: ACPI mode first if SCI_EN is clear
+    (ACPI_ENABLE to SMI_CMD, up to three seconds for SCI_EN, and the
+    write is made anyway if it never comes); the fixed-event status
+    cleared (8731h); SLP_TYP alone into PM1a and PM1b, then again with
+    SLP_EN; three seconds of the PM timer (reads of port 80h without
+    one), interrupts off throughout.  Still running: both control
+    registers put back as found, ACPI_DISABLE if this put the firmware
+    into ACPI mode, and CF;
+  - ACPF_REPORT: what was found, in registers.
+F1h AL=1Eh bits 16-23: PWF_OFF 0, PWF_QUERY 1 (ACPF_REPORT's
+registers, on "no soft-off" too).  A DOS box passes AX alone, so it
+can only switch off.  HWPROBE prints the query as its last section,
+"ACPI:" - the ports, the sleep types and where in the DSDT they came
+from - so a machine that will not switch off can be reported on.
+
+THE THING TO KNOW: A BIOS CAN NAME A SLEEP TYPE ITS CHIPSET DOES NOT
+HAVE.  86Box's ASUS P3B-F (440BX, PIIX4E) and ASUS CUV4X-LS (VIA
+686B) both give \_S5_ = Package (4) {7, 7, 0, 0} - with \_S0_ {5,5},
+\_S1_ {6,6} and \_S3_ switched off by a mangled name - although
+PIIX4's soft-off is SLP_TYP 0 and 6 and 7 are reserved (the 82371EB
+datasheet, and coreboot's PIIX4 table).  Two ASUS BIOSes on unrelated
+chipsets using the same reserved values looks like firmware that traps
+the SLP_EN write in SMM and does the switching itself.  86Box does not
+emulate that, and its PIIX4 switches off on type 0 only, so on those
+two boards no ACPI operating system can switch 86Box off and SHUTDOWN
+says "did not switch off".  The kernel writes what the DSDT says, as
+Windows and Linux do, and does NOT second-guess it per chipset.  (The
+P3B-F's \_PTS, which is not run here, only stores the state in CMOS
+through ports 72h/73h.)  Found with two TEST-ONLY PMIOs: one handing
+back the 16 bytes around \_S5_ in the report registers, one copying
+the whole DSDT (9,786 bytes) to B9000h for a DOS box to save.
+
+VERIFIED:
+  - 86Box ASUS P5A (ALi M1543C, \_S5_ {5,5}, which 86Box's ALi
+    switches off on): 86Box closed itself 16 seconds into the run.  A
+    file ECHO wrote just before was on the disk; a CMD /C whose
+    redirected output ("HELLO") was still open when the power went
+    left OUT.TXT at 7 bytes; C: clean.  NEGATIVE CONTROL, a TEST-ONLY
+    PMDOS jumping over the open-file loop: OUT.TXT 0 bytes and C:
+    DIRTY (7FFF in both FATs), so the next boot would run CHKDSK.
+  - 86Box P3B-F and CUV4X-LS: ACPI found, types 7 and 7, the write
+    made, "did not switch off" after the wait, the batch carried on,
+    C: clean.
+  - 86Box VS440FX at 512MB (Charlie's VM; PIIX3 has no ACPI): "ACPI
+    not found."
+  - DOSBox-X without acpi=: "ACPI not found.", ERRORLEVEL 1; /? and
+    NOW /? print help; NOW is "Invalid parameter".
+  - DOSBox-X with acpi=1.0: the tables are at FFFB0000h (pg_mapphys
+    mapped the top 4MB) and the DSDT is 146 bytes with no \_S5_ -
+    dumped with INT 15h AH=87h under DOSBox-X's own DOS: \_SB_.PCI0
+    and a debug region only - so "ACPI soft-off not supported.", and
+    HWPROBE's report matches the dumped FADT.  DOSBox-X leaves SLP_EN
+    a TODO and can never switch off.  A TEST-ONLY PMIO taking a
+    missing \_S5_ as 5 showed the whole write in DOSBox-X's log:
+    control read 0, A1h to 828h, "Guest enabled ACPI", control 1,
+    8731h to 820h, 1401h then 3401h to 824h, the wait, 0001h back,
+    A0h, "Guest disabled ACPI" - then the stayed-on message,
+    ERRORLEVEL 1, and the batch went on.
+  - MASM 6.13: IOPM.ASM, DOSMAIN.ASM, SHUTDOWN.ASM, HWPROBE.ASM clean.
+  - RUNTESTS: 75 of 77 on all seven rows, HWPROBE (its new "ACPI: not
+    found") and RMTEST (four fewer clusters free) the only changes,
+    the same on every row.  Re-recorded from a full -Update - a run of
+    just those two records RMTEST's free space wrong, having fewer
+    .OUT files - then 77 of 77 on all seven, twice.
+
+BUILD.CMD builds SHUTDOWN and puts it on the floppy.  CACHE, CDEX and
+UNDELETE were missing from its object-delete list, so a failed
+assembly of any of them would have linked yesterday's object; they
+are in it now, with SHUTDOWN.  MKHD.CMD: both lists.  DISK\
+HELPTEST.BAT: SHUTDOWN /? and SHUTDOWN NOW /?.  DISK\AUTOEXEC.BAT:
+the list of commands and a paragraph.
+
+Files: IO\ACPI.INC (new), IO\IOPM.ASM, INC\PMDOS.INC (IOS_ACPI,
+ACPF_*, ACPE_*, PWF_*, ERR_NOACPI, ERR_NOSOFTOFF, ERR_STAYEDON,
+BDA_EBDA), DOS\INT21.INC (F1h AL=1Eh), CMD\SHUTDOWN\SHUTDOWN.ASM (new),
+TOOLS\HWPROBE.ASM, BUILD.CMD, MKHD.CMD, BASELINE (HWPROBE.OUT and
+RMTEST.OUT, seven rows), DISK\HELPTEST.BAT, DISK\AUTOEXEC.BAT.
+PMIO.SYS 55,039 to 56,507 bytes, PMDOS.SYS 144,038 to 144,172,
+HWPROBE.EXE 3,011 to 3,765.
+
+S:\BIN (PMIO.SYS, PMDOS.SYS, SHUTDOWN.EXE, TESTS\HWPROBE.EXE, HD\AUTOEXEC.BAT),
+IMAGES\PMDOS.IMG (the scratch BUILD's floppy), IMAGES\HD16.IMG (FATREPL:
+those, and HELPTEST.BAT in \TESTS; a copy booted headless first) and
+the 86Box VM's two copies brought up to date.  Not HD32, HDBIG or the
+two other floppies.
+
+NOT VERIFIED: real hardware.  An ATX machine with ACPI is the test
+that matters, and HWPROBE's "ACPI:" section is what to send back if
+it does not switch off.  NOT DONE: \_PTS and \_GTS (they need an AML
+interpreter); hardware-reduced ACPI (SLEEP_CONTROL_REG) and registers
+in memory space; APM for a machine that has no ACPI.
+
+VBE AND THE LINEAR FRAME BUFFER, FOR A NATIVE PROGRAM (2026-10-04)
+---------------------------------------------------------------------
+
+Charlie asked for VBE 2.0's linear frame buffer for D32 programs.
+Still v0.61.
+
+A NATIVE PROGRAM COULD NOT HAVE A GRAPHICS SCREEN AT ALL.  It has no
+BIOS and its segment is its slot (RING3.INC), so it could neither set
+a mode nor reach video memory.  21h/F0h has done a text screen's work
+for it since EDIT; nothing did a graphics screen's.  So there are two
+new things: a call that asks the video BIOS for the program, and a
+descriptor that reaches the frame buffer.
+
+21h/F1h AL=1Fh, the function in bits 16-23 of EAX, native programs
+only (DOS\VBE.INC; the list is with the VBF_* equates in PMDOS.INC):
+  VBF_INFO 0     EDI -> 512 bytes: 4F00h's block, asked for as "VBE2".
+                 Its far pointers name the ROM or XFER_BUF, neither of
+                 them the program's, so the mode list is copied into
+                 the block's reserved area (110 modes at most), the
+                 four strings into its OEM area (64 bytes each), and
+                 the pointers come back as the program's own.  EAX =
+                 the version, ECX = the modes.  A 1.x block's vendor,
+                 product and revision come back 0: they were reserved
+                 bytes then, not pointers.
+  VBF_MODE 1     CX = a mode, EDI -> 256 bytes: 4F01h's block.
+  VBF_SET 2      EBX as 4F02h's BX.  A VBE mode must ask for the
+                 linear frame buffer (bit 14); a VGA mode (below 100h)
+                 must not, and is set with AH=00h.  -> EAX = SEL_VBE,
+                 ECX = the bytes it covers, EDX = bytes per scan line
+                 (VBE 3.0's linear one when there is one).
+  VBF_RESTORE 3  what this program's end would do, now.
+  VBF_PALETTE 4  4F09h: BL 00h/80h set, 01h read, ECX entries from
+                 EDX, 4 bytes each at EDI.  The DAC's ports when the
+                 BIOS has no 4F09h - a VBE 1.2 BIOS, or none at all in
+                 mode 13h.
+  VBF_BIOS 5     bits 24-31 of EAX = 03h, 06h, 07h or 08h, passed
+                 through with EBX, ECX and EDX: the mode now, the
+                 logical scan line, the display start (page flipping),
+                 the DAC's width.  They take numbers and give numbers,
+                 so there is nothing to copy and nothing kept to
+                 spoil.
+New errors after ERR_STAYEDON: ERR_NOVBE 74h, ERR_VBEFAIL 75h (the
+BIOS said no).  Also ERR_BADDATA (a mode or palette range that cannot
+be asked for), ERR_NOMEM (the frame buffer would not map), ERR_ACCESS
+and ERR_FUNC.  r3_pflags gives EDI as a pointer to 0, 1 and 4 only.
+
+THE FRAME BUFFER IS A SELECTOR: SEL_VBE, 004Bh, the GDT's tenth entry.
+A pointer in the program's segment can only name its slot, and a
+descriptor based on the frame buffer is the only way to give it that
+and nothing else.  DPL 3 data, based where the buffer physically is -
+mapped there by IOS_MAPPHYS, as DPMI 0800h maps, so linear is still
+physical - and as long as all of video memory (4F00h's TotalMemory),
+so one page can be drawn while 4F07h shows another; in pages past
+1MB.  When a processor without 4MB pages runs out of device tables,
+one screen.  A VGA graphics mode gets A0000h for 64K (the CGA modes
+B8000h for 32K), a text mode no selector.  With no mode set it is
+EMPTY, not absent - expand-down, limit 4GB: loadable, nothing in it -
+because the kernel reloads the caller's ES on the way out of every
+INT 21h and a program may still hold SEL_VBE there after its mode has
+gone.  Absent, that would be a fault in the kernel.  IORM's GDT grew
+from nine to ten, and gdtr, idtr_pm and rm_idtr moved out from behind
+it to behind the RMT_IRQS entries, which it would otherwise have run
+them into (the .ERRE there fired); an .ERRNZ now checks the GDT is
+GDT_ENTRIES long.
+
+A PROGRAM DRAWS THROUGH ES: REP MOVSD from a picture in its own slot
+is the natural shape (VBETEST /S draws a scan line at a time that
+way), or a far pointer.  ES and not FS or GS, because DS and ES are
+what every DOS call gives back: FS and GS come back NULL from any call
+that went through rm_int - rmc_back loads them with SEL_DATA32, and
+the return to ring 3 drops a ring-0 selector.  That is true of every
+native program and is not new; VBE.INC says it because a graphics
+program is the one that will want FS for its screen.
+
+WHAT A PROGRAM SETS, ITS END PUTS BACK.  4Ch calls vbe_exit for the
+depth that is ending, after the mouse's ms_exit; r3_fault calls it
+BEFORE it writes "*** Program fault", or the report would go into the
+graphics screen and then be wiped by the mode 4Ch put back.  Kept by
+EXEC depth (vbe_prev, vbe_dset): a depth's first VBF_SET remembers the
+mode then current, and its end sets that again - a parent's VBE mode,
+with SEL_VBE describing the parent's frame buffer again, or the text
+mode the first VBF_SET found (the BIOS data area's mode, and the 8x8
+or 8x14 font for 43/50 or 28 lines).  A parent's mode that will not
+set again falls back to text.  The screen's contents are not kept.
+
+THE VIDEO BIOS RUNS IN THE THUNK, with XFER_BUF as the block it
+answers into (4F00h clears a kilobyte of it: some BIOSes write past
+512), and with the vector table rm_freeze took after CONFIG.SYS - so
+a VBE driver (UniVBE, Display Doctor, a card maker's VBE 2.0 TSR) has
+to be loaded with INSTALL= to be seen by a native program.  From
+AUTOEXEC.BAT it serves DOS boxes only.
+
+ONLY THE LINEAR FRAME BUFFER.  A VBE mode without bit 14 is refused:
+banked drawing would be a trip to real mode for every 64K.  Mode bits
+9 and 10 are let through although VBE reserves them, because a
+program sets what the BIOS lists and DOSBox-X lists 200h to 213h.
+Bit 11 (a CRTC block) and bits 12-13 are refused.
+
+TOOLS\VBETEST.ASM -> \TESTS\VBETEST.EXE (D32): BUILD, both MKHD lists
+and RUNTESTS' default list; not the floppy.  Twelve checks - the info
+block and its pointers, every mode's 4F01h, VBF_SET's selector (LSL,
+LAR, VERW, 4F03h), all of video memory written and read back through
+it, 4F07h, the palette there and back, ten refusals, a child's mode
+13h and this one's back after it, mode 13h's window, VBF_RESTORE
+(4F03h and an empty SEL_VBE), a child that ends in a mode, and one
+that FAULTS in one (/F, through a null pointer: 255, and the first
+mode back).  VBE 1.x passes check 1 and skips the linear ones: that
+is the BIOS's age, not a failure.  A listed mode the BIOS will not
+describe is counted and said, not failed - only a refusal that is not
+ERR_VBEFAIL, or a list with nothing describable, fails check 2.
+VBETEST /L lists the modes; VBETEST /S [mode] draws a gradient in a
+white frame until a key - straight sides mean the pitch is right,
+smooth colours mean the masks are, and an 8-bit mode gets a 3-3-2
+palette to show the same picture, a scan line at a time through ES.
+
+ITS OUTPUT WAITS IN A BUFFER while the screen may be graphics - unless
+standard output is a file (4400h bit 7 clear), when each check's line
+is written as it is decided and then 0Dh, so that a check that hangs
+the machine leaves the lines before it on the disk.  0Dh and not 68h,
+because fn68 does nothing for handles 0 to 2 ("the standard handles
+are devices or files nobody else can flush") - so a program run as
+"X > FILE" cannot commit its own output, only the cache.  After a hang
+the file says 0 bytes and the lines are in a lost chain, which the
+CHKDSK the next boot runs turns into FILE0000.CHK; the rig found them
+by searching the raw image.  That rule about 68h is older than this
+and was left alone.
+
+VERIFIED:
+  - DOSBox-X (its S3 Trio64 VBE 2.0, 2MB, buffer at E0000000h, 53
+    modes): 12 of 12 on all seven RUNTESTS rows, the same output on
+    each - the 386 has no 4MB pages, so the buffer came out of the
+    device-table pool; the 3GB row has the hiram tables.
+  - Seen, not just read back: VBETEST /S in 112h (640x480x32) and in
+    101h (8 bits, 3-3-2) captured with ZMBVSHOT and looked at - smooth
+    gradients, the palette's bands, a straight white frame.
+  - NEGATIVE CONTROLS, TEST-ONLY PMDOS variants: no vbe_exit in 4Ch ->
+    checks 8, 11 and 12 FAILED (12 from the stale depth record that 8
+    left); vbe_exit always going back to text -> 8 FAILED; no vbe_exit
+    in r3_fault -> 12 still passes, as it should, but the capture
+    shows the fault report wiped by the mode change, where the real
+    kernel's leaves "*** Program fault: exception 0E at 00002775 err
+    06 - through a null pointer" on a text screen.
+  - 86Box, real video ROMs through the thunk (run86.ps1, P3B-F,
+    Pentium II): Voodoo3 3000 PCI (3dfx VBE 3.0, 16MB, DE000000h),
+    Cirrus GD5480 (VBE 2.0) and S3 Trio64V2/DX (VBE 2.0): 12 of 12.
+    Cirrus GD5436 - CHARLIE'S VM'S CARD - GD5446, S3 Trio64, ViRGE
+    (325) and ViRGE/DX (375), ATI Mach64GX: VBE 1.2, so no linear
+    buffer exists to have; 1, 2, 7, 9 and 10 pass, the rest skip.  The
+    Mach64's BIOS lists 20 modes and refuses 4F01h for the 15 above
+    640x480 (AX=014Fh) - the same from a DOS program in a box (V86,
+    not the thunk), so it is the BIOS (its monitor setting, most
+    likely).
+  - 86Box Voodoo Banshee (3dfx VBE 3.0): 1 to 4 pass, then 4F07h never
+    comes back and the machine stops in check 5.  NOT PM-DOS: a
+    scratch .COM doing 4F02h 4101h then 4F07h under REAL MS-DOS 5 (a
+    copy of the DOS VM's disk, booted on the same emulated Banshee)
+    prints nothing either, and the same .COM on the Voodoo3 prints
+    004F 004F 004F 0001.  That run is what VBETEST's file-mode
+    writes were added for.
+  - MASM 6.13: all 118 .ASM clean; wasm builds the tree clean.
+  - RUNTESTS: before baselines, 75 of 77 on every row - RMFIND (59
+    entries in \TESTS) and RMTEST (8 clusters fewer free: VBETEST and
+    PMDOS.SYS's growth) the only differences - then those and
+    VBETEST.OUT recorded on all seven rows, and 78 of 78 on all seven.
+
+IORM, the stub: the GDT's tenth descriptor, the three pointers moved.
+PMIO.SYS's size is unchanged at 56,507 (the stub is a fixed 4K);
+PMDOS.SYS 144,172 to 146,002; VBETEST.EXE 5,864.
+
+Files: DOS\VBE.INC (new), DOS\DOSMAIN.ASM, DOS\INT21.INC (F1h AL=1Fh,
+4Ch), DOS\RING3.INC (rpf_vbe, r3_fault), IO\IORM.ASM, INC\PMDOS.INC
+(SEL_VBE, GDT_IDX_VBE, GDT_ENTRIES, VBF_*, VBM_*, VBE_*, VBI_*, VMI_*,
+VMA_*, ERR_NOVBE, ERR_VBEFAIL), TOOLS\VBETEST.ASM (new), TOOLS\
+RUNTESTS.PS1, BUILD.CMD, MKHD.CMD, DISK\CONFIG.TXT (INSTALL=: a VBE
+driver goes there), BASELINE (RMFIND, RMTEST and VBETEST, seven rows).
+
+S:\BIN (PMIO.SYS, PMDOS.SYS, TESTS\VBETEST.EXE), IMAGES\PMDOS.IMG (the
+scratch BUILD's floppy, its kernel and CONFIG.TXT byte-checked),
+IMAGES\HD16.IMG (FATREPL: those, CONFIG.TXT, and VBETEST.EXE in
+\TESTS; a copy booted to the prompt, another ran VBETEST 12 of 12) and
+the 86Box VM's two copies brought up to date.  Not HD32, HDBIG or the
+two other floppies.
+
+THE VM CANNOT SHOW IT AS IT IS: its GD5436 is VBE 1.2.  With
+gfxcard = voodoo3_3k_pci it can - run86 on the VM's own machine
+(VS440FX, Pentium Pro 166, 512MB) with that card: 12 of 12.
+
+NOT VERIFIED: real hardware; a VBE driver under INSTALL=; a C program
+drawing through a far pointer (no C binding exists - DOSINT.ASM
+style, it would be one INT 21h); DPMI clients' own VBE (0300h and
+0800h, untouched by this).  NOT DONE: banked modes (4F05h); 4F0Ah's
+protected-mode interface; keeping the text screen's contents across a
+graphics program; a mouse cursor drawn by the driver in a VBE mode
+(its table knows the VGA modes only).
+
+v0.62 - SCSI, LIM 4.0, VBE, ACPI, SAFE MODE, AND A DISK THAT KNOWS IT
+        WAS NOT SHUT DOWN (2026-10-04)
+---------------------------------------------------------------------
+
+Charlie asked for everything since 0.61 to be wrapped up, summed up
+and committed, and for the number to say so.  INC\PMVER.INC now says
+62.  The entries above, from "FDISK'S SCREEN AGAIN" on 2026-10-01
+down to "VBE AND THE LINEAR FRAME BUFFER", are this release, and so
+are the 2026-10-01 commits that have no entry of their own (RUNTESTS,
+BUILD hang, the cache commit, EXECLEAK).  Most of those entries end
+"Still v0.61"; that is left as written.  This entry is the list.
+
+PROGRAMS AND MEMORY
+  - A native program is not 512K any more.  Its slot is an arena
+    block, 48h grows it, and a nested EXEC leaves the parent where it
+    is.  Page tables cover all of RAM below 4GB; BIGMEM takes 3GB in
+    one block on the 3GB machine.
+  - Kernel memory is read-only to ring 3, and a pointer a program
+    hands the kernel must be one the program could write itself
+    (IOS_USRWOK).
+  - A failed EXEC gives the kernel stack back.  Each one used to cost
+    64 bytes, until the machine triple-faulted (the R3TEST "hang").
+  - LIM 4.0 in the DOS boxes: 46h answers 40h, 4Fh to 5Dh are
+    served, 64 handles, 32MB.
+  - VBE 2.0's linear frame buffer for D32 programs: 21h/F1h AL=1Fh
+    sets the mode and SEL_VBE reaches the screen.  The old mode comes
+    back when the program ends or faults.
+
+DISKS
+  - DMF diskettes read and write; the BIOS's diskette table is
+    lengthened for the call.  FORMAT /F:DMF and /F:1.68 make one.
+    DISKCOPY and DISKCOMP take DMF, and a disk and its copy compare
+    OK, as they do under 6.22.
+  - RMDOS takes a 720K disk's geometry from its boot sector, and no
+    file on a diskette wraps at 64K any more.
+  - The clean-shutdown bit (Windows 95's, in FAT entry 1) is kept on
+    FAT16 and FAT32.  A volume found dirty at boot gets CHKDSK /F
+    before the shell.  AUTOCHECK=ON|ASK|OFF.
+  - FDISK has DiskStat's layout: partitions drag with the mouse,
+    changes wait for W, U undoes, F formats, the extended partition
+    moves, and a resize can change the cluster size.
+  - The cache is written back when a DOS program ends and before any
+    program starts.
+
+DEVICES
+  - SCSI CD-ROMs: a native Adaptec 154x and BusLogic driver, the Pro
+    Audio Spectrum's 53C80, and any card with an ASPI manager.
+    SCSI=ON|OFF.
+  - INT 08h and 1Ch run in a DOS box, and the clock stays right under
+    a fast timer.  A resident driver's interrupt is served at the
+    prompt.  The 8237 is virtualised: a transfer runs in place, is
+    moved, or is bounced.  ISAPNP.EXE lists ISA Plug and Play cards
+    and sets their resources.
+  - A BIOS call runs with a copy of the vector table taken after
+    CONFIG.SYS.  The 8259s are no longer set up again for every call.
+    That used to lose a waiting interrupt each time, and the clock
+    ran slow.
+
+BOOT AND POWER
+  - Safe mode: Shift or F5 at "Starting PM-DOS..." skips CONFIG.SYS
+    and AUTOEXEC.BAT.  SWITCHES=/N turns the keys off, /F the wait.
+  - SHUTDOWN.EXE writes back every file and cache, then switches the
+    machine off through ACPI (21h/F1h AL=1Eh).
+  - 21h/F1h AL=1Bh writes every cache and restarts the machine.
+
+BUILD, TESTS AND FILES
+  - Every .ASM file assembles with MASM 6.13 as well as wasm.
+  - DISK\CONFIG.SYS holds settings only.  DISK\CONFIG.TXT explains
+    every statement and goes on every image.
+  - RUNTESTS.PS1 runs the tests unattended on seven DOSBox-X machines
+    against BASELINE: 78 tests on each.  BUILD hang reports a hang or
+    an exception on port E9h.
+  - New tests: SLOTTEST, BIGMEM, EXECLEAK, TIMERTST, IRQXTEST,
+    IRQXWAIT, DMATEST, RMIVT, EMS4TEST, VFTEST, VBETEST.
+  - DISK\*.BAT and DISK\*.TXT are in git now, so a clone has
+    everything BUILD.CMD and MKHD.CMD read.
+
+PMIO.SYS is 56,507 bytes and PMDOS.SYS 146,002.
+
+THE STAMP.  Three files read the equate.  PMDOS.SYS has it in two
+places, CMD.EXE and COMMAND.COM in one each.  The rebuild changed
+those four bytes and nothing else: every other file the build made
+came out byte for byte as it was under 0.61.  On a copy of HD16
+booted headless, VER, COMMAND /C VER and CMD /C VER all said "PM-DOS
+version 0.62", with no mismatch line.  S:\BIN, IMAGES\PMDOS.IMG,
+IMAGES\HD16.IMG and the 86Box VM's two copies carry it.  HD32,
+HDBIG, PMDOSATA and PMDOSFDD were not rebuilt; each is an older
+build whose kernel and shells match each other.  MULTI has no
+system files.
+
+NOT VERIFIED, from the entries above: none of the new hardware work
+has run on a real machine (SCSI, ACPI power-off, DMF formatting,
+VBE).  No real LIM 4.0 program has run.  Windows 98 has not met a disk
+PM-DOS left dirty.  NOT DONE: F8 at boot, banked VBE modes.
 
 v0.61 - THE NUMBER CAUGHT UP (2026-09-30)
 ---------------------------------------------------------------------
@@ -15252,9 +17011,17 @@ Layout
                     MEM always did and why 52h exists.  It walks the
                     conventional chain at V86_TPA too, which is where
                     the 588K figure can be seen from a running system.
-  DISK\CONFIG.SYS   a test CONFIG.SYS that deliberately trips the
-                    error paths.  SHELL= is not in it: the same file
-                    goes on the floppy (A:) and both hard disks (C:).
+  DISK\CONFIG.SYS   the CONFIG.SYS every disk ships with: settings
+                    only, no help text.  A release build boots it
+                    without a word.  SHELL= is not in it: the same
+                    file goes on the floppy (A:) and both hard disks
+                    (C:).  CFGTEST expects its FILES=, LASTDRIVE= and
+                    SET PMDOSTEST lines.
+  DISK\CONFIG.TXT   the user's guide to every CONFIG.SYS statement,
+                    on every disk next to CONFIG.SYS (2026-10-02).
+                    The help moved out of CONFIG.SYS itself, which had
+                    grown to 14K of a 16K read buffer.  A new
+                    statement gets its entry here.
   DISK\*.BAT        batch test files, written onto every disk image
                     by BUILD.CMD and MKHD.CMD.  BATTEST is the broad
                     one; GOTOTEST, LOOPTEST, SHIFT12, CHAIN1/CHAIN2
@@ -16505,18 +18272,16 @@ THE NEXT THINGS, in the order they are worth doing:
   is the point of being able to name one.  40h-4Eh are all served, 46h
   answers 32h and means it, and TOOLS\EMSTEST.ASM is what it was
   written against.  Still to do up there, none of it urgent:
-    - LIM 4.0, if a program ever turns up that will not take 3.2 for
-      an answer.  50h and 51h are small; 57h move/exchange is real
-      work; 5Ah raw pages and 58h mappable-address arrays exist to
-      let a client bypass the frame, which is the part this design
-      does not have
+    - [DONE 2026-10-03: LIM 4.0, all of 4Fh-5Dh, handle names and the
+      directory with it - see "EXPANDED MEMORY GOES TO LIM 4.0".  The
+      one part of this bullet that still stands is the last: pages
+      mapped outside the frame, which 58h does not offer]
     - a handle's pages are one CONTIGUOUS arena block, so a large
       handle needs a large contiguous free run and 42h reports the
       largest free block rather than the sum.  Honest, and it would
-      stop being a constraint if a handle kept a list of blocks
-    - 4.0's handle NAMES (53h) and the handle directory (54h), which
-      MEM and QEMM-era tools print and which cost a name field per
-      row and nothing else]
+      stop being a constraint if a handle kept a list of blocks.  4.0
+      kept the one block on purpose: 51h grows in place or moves the
+      handle, and 57h is a memmove because of it]
 
 * [DONE, 2026-08-18: IRQ 1 goes into the box, and MSD takes a
   keystroke.  See the section above for what it cost - the interrupt
@@ -16679,19 +18444,14 @@ THE NEXT THINGS, in the order they are worth doing:
   read times out correctly.  What remains is genuinely untested, not
   known-broken, and the way to test it is to get a disk into the
   emulated drive by hand and then run BUILD FDD
-* DMF disks (1.68MB, 21 sectors per track) - READING them is not a
-  controller problem at all: any 765/82077 reads 21 sectors of a
-  track that physically has them.  What blocks it is where BLOCK.INC gets
-  its geometry - INT 13h/08h, i.e. the BIOS's idea of the DRIVE (18
-  spt for a 1.44M unit) rather than the BPB's idea of the DISK.
-  Sourcing GEO_SPT/GEO_HEADS from the BPB (offsets 18h/1Ah) for
-  removable media fixes the addressing; a stubborn BIOS may also
-  want the INT 1Eh diskette parameter table patched (byte 4 = spt,
-  byte 7 = gap), which is exactly what the DMF drivers of the day
-  did.  CREATING one is the hard half and needs the low-level format
-  PM-DOS deliberately does not have: INT 13h/AH=05h with a 21-entry
-  sector list and a reduced GAP3.  So: reading is a contained
-  change, formatting is a new capability
+* [DONE 2026-10-02 - DMF disks (1.68MB, 21 sectors a track) are
+  read and written, by the kernel and by RMDOS, copied and compared,
+  and made by FORMAT /F:1.68 or /F:DMF.  The geometry had come from
+  the BPB since the floppy driver; what was left was the vector 1Eh
+  table's last sector, which the block layer now lengthens for the
+  length of a call, and a format, which FDF_BEGIN and FDF_TRACK do
+  with a gap of 0Ch and two-to-one interleave.  See the four entries
+  of that date.]
 * DIRCMD (default DIR switches from the environment) once DIR has
   switches worth defaulting
 * [DONE for /S, v0.42: FORMAT /S RUNS SYS rather than being it.  A

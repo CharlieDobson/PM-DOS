@@ -207,6 +207,10 @@ i21_return:
 ;--- program is at: the top of the native stack normally, and the
 ;--- interrupted level's frame while one of its handlers is running.
 i21_r3native:
+        ; AN INTERRUPT A RESIDENT DRIVER IS OWED, which nothing has been
+        ; in a position to give it while this program ran (IRQX.INC).
+        ; The call is over and still open, which is the moment.
+        call    irx_try
         call    r3_unxlat
         mov     eax,[r3_esp0]
         mov     dword ptr ds:[TSS_BASE + TSS_ESP0],eax
@@ -270,11 +274,11 @@ i21_ext:
 
 i21_ext1:
         call    fnF1
-        jmp     short i21_return
+        jmp     i21_return
 
 i21_badfn:
         call    i21_unsup
-        jmp     short i21_return
+        jmp     i21_return
 
 ;=====================================================================
 ; INT 20h - classic terminate.  The PSP starts with this opcode so a
@@ -532,6 +536,10 @@ disk_absgo:
         push    ebx
         push    eax
         mov     ah,0
+        cmp     edx,IOS_WRBLK           ; mode 2 for a write: the clean-
+        jne     dag_sync                ; shutdown bit goes off first
+        mov     ah,2
+dag_sync:
         call    vol_syncdrv
         pop     eax
         pop     ebx
@@ -3064,11 +3072,16 @@ dci_have:
         ret
 
 ;---------------------------------------------------------------------
-; dos_idle - one pass of doing nothing, as usefully as possible.
+; dos_idle - one pass of doing nothing, as usefully as possible.  An
+;            interrupt a resident driver is owed goes first (IRQX.INC):
+;            a key that the wait is for may be the next thing it does.
 ;---------------------------------------------------------------------
 dos_idle:
+        call    irx_try
+        jnc     di_ran
         call    dos_int28
         jc      di_hlt                  ; nothing was called: sleep instead
+di_ran:
         ret                             ; something ran; go round again at
                                         ; once rather than at 18.2Hz
 di_hlt:
@@ -6080,6 +6093,11 @@ f4C_next:
         inc     eax
         call    dword ptr ds:[IOS_MSEXIT]
 
+        ; ...and the screen goes back to what it found, if it set a
+        ; graphics mode and left it set (VBE.INC).
+        mov     eax,[exec_depth]
+        call    vbe_exit
+
         cmp     dword ptr [exec_depth],0
         je      f4C_shell
 
@@ -8306,8 +8324,8 @@ f75_flat:
 
 f75_write:
         push    eax
-        mov     ah,0
-        call    vol_syncdrv
+        mov     ah,2                    ; mode 2: flushed, and the clean-
+        call    vol_syncdrv             ; shutdown bit off ahead of it
         pop     eax
         mov     ebx,[f75_lba]
         add     ebx,[fat_partlba]
@@ -8606,9 +8624,9 @@ fF0_mouse:
 ;                 cache: its status into a CST_LEN record at EDI, a
 ;                 commit, a reset, and one letter's caching (DL, DH).
 ;                 INT 2Fh 4A10h for a native program (CACHE.INC)
-;       AL = 17h: DL = an ATAPI unit, EDI -> a CDU_LEN record - that
-;                 CD-ROM DRIVE, disc or no disc, and ECX = how many
-;                 there are.  The letter is in the volume table
+;       AL = 17h: DL = a CD-ROM unit, EDI -> a CDU_LEN record - that
+;                 DRIVE, disc or no disc, IDE or SCSI, and ECX = how
+;                 many there are.  The letter is in the volume table
 ;       AL = 18h: -> EAX = UNDF_* (UNDELETE=ON|OFF), ECX = UNDEL_PCT
 ;       AL = 19h: EDX -> a path - delete it and do not keep it
 ;                 (RECYCLE.INC)
@@ -8619,6 +8637,24 @@ fF0_mouse:
 ;                 Does not return - unless something would not
 ;                 write, and then CF, AX = ERR_WRFAULT, and the
 ;                 machine is still up (fF1_reboot)
+;       AL = 1Ch: bits 16-23 of EAX = an SCF_* function, DL = which,
+;                 EDI -> the record - the SCSI adapters, and every
+;                 device on their buses (IO\SCSI.INC).  ECX = how many
+;       AL = 1Dh: bits 16-23 of EAX = VLF_QUERY or VLF_CHECKED, DL =
+;                 drive (0 = default, 1 = A:) -> EAX = VLS_* bits: the
+;                 volume's clean-shutdown flag, and CHKDSK saying the
+;                 volume is sound (VOLFLAG.INC)
+;       AL = 1Eh: bits 16-23 of EAX = PWF_OFF: switch the machine off
+;                 through ACPI, every file and every cache written
+;                 first.  Does not return - unless it cannot be done,
+;                 and then CF and AX = ERR_NOACPI, ERR_NOSOFTOFF,
+;                 ERR_WRFAULT or ERR_STAYEDON, and the machine is still
+;                 up.  PWF_QUERY: switch nothing, and report what ACPI
+;                 gave, in ACPF_REPORT's registers (fF1_power)
+;       AL = 1Fh: bits 16-23 of EAX = a VBF_* function - VBE: the
+;                 modes there are, a graphics mode set, and SEL_VBE
+;                 over its linear frame buffer.  Native programs only
+;                 (VBE.INC)
 ;
 ; 30h has to keep lying about being DOS 5 so that ordinary programs
 ; recognise us, which leaves nothing there to report what the kernel
@@ -8687,6 +8723,14 @@ fnF1:
         je      xmn_call
         cmp     al,1Bh
         je      fF1_reboot
+        cmp     al,1Ch
+        je      fF1_scsi
+        cmp     al,1Dh
+        je      fF1_vflag
+        cmp     al,1Eh
+        je      fF1_power
+        cmp     al,1Fh
+        je      fF1_vbe
         jmp     i21_unsup
 
 ;--- AL=18h: DELETE PROTECTION'S STATE.  EAX = UNDF_* bits, ECX = the
@@ -8704,10 +8748,10 @@ fF1_delperm:
         mov     byte ptr [rcy_perm],1
         jmp     f41_go
 
-;--- AL=17h: ONE CD-ROM DRIVE.  DL = the ATAPI unit, EDI -> CDU_LEN
-;--- bytes, ECX = the units there are.  Two PMIO calls that ask the
-;--- drive nothing - the unit's place in the ATA table, and the name
-;--- IDENTIFY gave it - so the record is the same with the tray open.
+;--- AL=17h: ONE CD-ROM DRIVE.  DL = the unit, EDI -> CDU_LEN bytes,
+;--- ECX = the units there are.  PMIO fills the record from its own
+;--- tables and asks the drive nothing, so it is the same with the
+;--- tray open - for a unit on an IDE channel or on a SCSI adapter.
 ;--- The record is cleared first for fF1_disk's reason: a caller that
 ;--- ignores the carry reads an absent unit as absent.
 fF1_cdunit:
@@ -8723,20 +8767,38 @@ fF1_cdunit:
         pop     edi
         mov     al,[ebp+F_EDX]
         mov     [edi+CDU_UNIT],al
-        call    dword ptr ds:[IOS_CDUNIT]       ; -> EDX = device, EBX = its
-        mov     [ebp+F_ECX],ecx                 ; channel's port, ECX = units
+        mov     ah,SSF_CDDESC
+        call    dword ptr ds:[IOS_SCSI]         ; -> ECX = units
+        mov     [ebp+F_ECX],ecx
         jc      fF1_nodisk
-        mov     [edi+CDU_DEV],dl
-        mov     [edi+CDU_BASE],bx
-        mov     al,dl
-        push    edi
-        add     edi,CDU_MODEL
-        call    dword ptr ds:[IOS_ATAMODEL]
-        pop     edi
-        call    dword ptr ds:[IOS_ATAINFO]      ; AL = the device still:
-        mov     [edi+CDU_FLAGS],al              ; ata_model keeps it.  Its
-        mov     [edi+CDU_MODE],cl               ; EBX is the bus-master
-        jmp     i21_ok                          ; engine, not the channel
+        jmp     i21_ok
+
+;--- AL=1Ch: THE SCSI BUSES.  Bits 16-23 of EAX = SCF_ADAPTER or
+;--- SCF_DEVICE, DL = which, EDI -> the record; ECX = how many there
+;--- are, valid on CF too.  PMIO's own rows, copied out: an adapter,
+;--- or a device of any type that answered on one of their buses.
+fF1_scsi:
+        mov     ecx,HBA_LEN
+        cmp     byte ptr [ebp+F_EAX+2],SCF_ADAPTER
+        je      fF1_scsilen
+        mov     ecx,SDV_LEN
+        cmp     byte ptr [ebp+F_EAX+2],SCF_DEVICE
+        jne     i21_unsup
+fF1_scsilen:
+        mov     eax,[ebp+F_EDI]
+        call    cbuf_ok
+        jc      buf_deny
+        mov     edi,[ebp+F_EDI]
+        mov     al,[ebp+F_EDX]
+        mov     ah,SSF_ADAPTER
+        cmp     byte ptr [ebp+F_EAX+2],SCF_ADAPTER
+        je      fF1_scsiask
+        mov     ah,SSF_DEVICE
+fF1_scsiask:
+        call    dword ptr ds:[IOS_SCSI]         ; -> ECX = how many
+        mov     [ebp+F_ECX],ecx
+        jc      fF1_nodisk
+        jmp     i21_ok
 
 ;--- AL=16h: THE DISK CACHE.  Bits 16-23 of EAX = a CCF_* function,
 ;--- documented with the equates in PMDOS.INC.  The status record is
@@ -8986,6 +9048,61 @@ fF1_reboot:
 fF1_rbfail:
         mov     ax,ERR_WRFAULT
         jmp     i21_fail
+
+;--- AL=1Eh: SWITCH THE MACHINE OFF, for SHUTDOWN.EXE.  AL=1Bh's
+;--- argument, with a step in front of it and one behind.  In front:
+;--- ACPI is looked for before anything is written, so a machine that
+;--- cannot be switched off is left exactly as it was.  Then every file
+;--- a program has written to and not closed gets its directory entry
+;--- written, as 68h would - a restart is followed by a boot that finds
+;--- the file as far as it got, and so is a power-off, but nothing will
+;--- ever close this one.  Then the caches, which also put back each
+;--- volume's clean-shutdown bit (VOLFLAG.INC), and only when nothing
+;--- is left owing, the power.
+fF1_power:
+        cmp     byte ptr [ebp+F_EAX+2],PWF_QUERY
+        je      fF1_pwquery
+        mov     al,ACPF_FIND
+        call    dword ptr ds:[IOS_ACPI]
+        jc      fF1_pwnone
+        mov     esi,OFFSET sft_tbl
+        mov     ecx,MAX_HANDLES
+fF1_pwsft:
+        test    dword ptr [esi+SFT_FLAGS],SFTF_INUSE
+        jz      fF1_pwnext
+        call    sft_flush                       ; nothing unless it was written
+fF1_pwnext:
+        add     esi,SFT_LEN
+        loop    fF1_pwsft
+        call    dos_commit
+        cmp     dword ptr [cache_dirty],0
+        jne     fF1_rbfail
+        mov     al,ACPF_OFF
+        call    dword ptr ds:[IOS_ACPI]         ; and nothing after it runs,
+        mov     ax,ERR_STAYEDON                 ; unless the power stayed on
+        jmp     i21_fail
+fF1_pwnone:
+        cmp     al,ACPE_NONE
+        mov     ax,ERR_NOACPI                   ; MOV: the flags are the CMP's
+        je      fF1_pwfail
+        mov     ax,ERR_NOSOFTOFF
+fF1_pwfail:
+        jmp     i21_fail
+
+;--- PWF_QUERY: what was found, for HWPROBE.  The registers go back on
+;--- a failure too, as far as the search got: a machine that has ACPI
+;--- and cannot be switched off is the one that needs explaining.
+fF1_pwquery:
+        mov     al,ACPF_REPORT
+        call    dword ptr ds:[IOS_ACPI]
+        mov     [ebp+F_EBX],ebx
+        mov     [ebp+F_ECX],ecx
+        mov     [ebp+F_EDX],edx
+        mov     [ebp+F_ESI],esi
+        mov     [ebp+F_EDI],edi
+        jc      fF1_pwnone
+        mov     [ebp+F_EAX],eax
+        jmp     i21_ok
 ;--- AL=12h: THE BUSES.  Handed to PMIO as it came and handed back as
 ;--- it returns, for the reason AL=0Ah gives: a program at ring 3
 ;--- cannot look at the hardware even to describe it.
@@ -8993,6 +9110,27 @@ fF1_bus:
         mov     eax,[ebp+F_EAX]
         shr     eax,8                   ; AH = the function: it arrives
                                         ; above AX, which is F112h
+        ; THE PLUG AND PLAY CALLS TAKE A BUFFER, and PMIO fills one as
+        ; ring 0, so it is asked about first, as every buffer is.
+        mov     ecx,[ebp+F_ECX]
+        mov     edx,[ebp+F_EDI]
+        cmp     ah,BUS_PNPRES
+        je      fbs_buf
+        mov     ecx,256
+        cmp     ah,BUS_PNPREGS
+        je      fbs_buf
+        mov     ecx,[ebp+F_ECX]
+        shl     ecx,1
+        mov     edx,[ebp+F_ESI]
+        cmp     ah,BUS_PNPSET
+        jne     fbs_go
+fbs_buf:
+        push    eax
+        mov     eax,edx
+        call    cbuf_ok
+        pop     eax
+        jc      buf_deny
+fbs_go:
         mov     ebx,[ebp+F_EBX]
         mov     ecx,[ebp+F_ECX]
         mov     edx,[ebp+F_EDX]
@@ -9191,7 +9329,7 @@ fF1_mgot:
         mov     eax,[ebx+MCB_OWNER]
         mov     dword ptr [f8_rec+F8_OWNER],eax
         mov     dword ptr [f8_rec+F8_ADDR],ebx
-        jmp     short fF1_mout
+        jmp     fF1_mout
 
 ;--- and the one below 1MB, in the same terms -------------------------
 ;--- ONE CHAIN, TWO REGIONS, AND THE CALLER ASKS FOR ONE OF THEM.

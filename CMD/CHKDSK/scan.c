@@ -111,6 +111,12 @@ void nofix_notice( void )
     out_blank();
 }
 
+/* nonzero once any error has been reported, /F or not */
+int errors_seen( void )
+{
+    return fixmes_done;
+}
+
 /* the object in error on one line, the complaint on the next */
 void report_error( const char *path, const char *text )
 {

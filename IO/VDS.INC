@@ -32,8 +32,8 @@
 ;   8105h  the same for a region in several pieces: a list of them, or
 ;          of page table entries
 ;   8106h  and unlock that
-;   810Bh, 810Ch  translation off and on for a DMA channel: accepted,
-;          because there is no translation to turn off
+;   810Bh, 810Ch  translation off and on for a DMA channel, for a
+;          driver that hands the 8237 what 8103h told it (VDMA.INC)
 ;
 ; WHAT IS REFUSED is the half that lends memory out.  8107h to 810Ah
 ; are a buffer of the provider's own, below 16MB and in one piece, for
@@ -44,10 +44,11 @@
 ; driver move its data a piece at a time - and is never silently
 ; copied somewhere else.
 ;
-; NOT THE 8237.  A driver that does not ask, and programs the ISA DMA
-; controller with segment times sixteen from upper memory, is still
-; wrong.  Putting that right means standing in for the controller's
-; ports, which is a different piece of work and is not here.
+; A DRIVER THAT DOES NOT ASK, and programs the ISA DMA controller with
+; segment times sixteen from upper memory, is put right by the monitor
+; standing in for the controller's ports - VDMA.INC, which uses vd_run
+; below for the same question.  Its bounce buffer is the monitor's own
+; and is not lent out here.
 ;
 ; REACHED BY A HLT, like the mouse: the vector points at a stub below
 ; 1MB, the monitor stops on it, and vd_hlt is asked whether the HLT
@@ -142,6 +143,71 @@ vdk_out:
         ret
 
 ;=====================================================================
+; vd_rmdown - rm_int is about to run a BIOS call in real mode.  Bit 5
+;             of 40:7Bh comes off and INT 4Bh goes back to the BIOS's
+;             own for the length of the call.
+; vd_rmup   - and both are put back as they were.
+;
+; A BUS-MASTER ROM ASKS VDS TOO.  An Adaptec 154x's INT 13h code
+; reads 40:7Bh before it hands the card an address, and with bit 5
+; set it calls INT 4Bh to lock its buffer.  In a box that is right.
+; Down in rm_int it lands on the stub's HLT in real mode, where a HLT
+; is a HLT: the CPU waits for the next tick, the IRET after it returns
+; nothing, and the ROM carries on with a descriptor nobody filled in.
+; Every PM-DOS before this one hung on its first read of a disk that
+; such a card's BIOS serves - before CONFIG.SYS, before the kernel had
+; read a sector of anything.
+;
+; Nothing in real mode needs the translation anyway: paging is off
+; down there, so segment times sixteen is the physical address.  Only
+; bit 5 is put back, since the rest of 40:7Bh is the BIOS's.
+;=====================================================================
+vd_rmdown:
+        cmp     dword ptr [vd_seg],0
+        je      vrd_out
+        push    eax
+        mov     al,byte ptr ds:[VD_BDAFLAG]
+        and     al,20h
+        mov     byte ptr [vd_rmflag],al
+        and     byte ptr ds:[VD_BDAFLAG],NOT 20h
+        mov     eax,dword ptr ds:[VD_VECTOR * 4]
+        mov     dword ptr [vd_rmvec],eax
+        mov     eax,dword ptr [vd_old]
+        mov     dword ptr ds:[VD_VECTOR * 4],eax
+        pop     eax
+vrd_out:
+        ret
+
+vd_rmup:
+        cmp     dword ptr [vd_seg],0
+        je      vru_out
+        push    eax
+        mov     eax,dword ptr [vd_rmvec]
+        mov     dword ptr ds:[VD_VECTOR * 4],eax
+        mov     al,byte ptr [vd_rmflag]
+        or      byte ptr ds:[VD_BDAFLAG],al
+        pop     eax
+vru_out:
+        ret
+
+;=====================================================================
+; vd_freeze - EDI -> the copy of the vector table BIOS calls will run
+;             with (rm_freeze, RMCALL.INC).  Its INT 4Bh becomes what
+;             vd_rmdown puts at 0:0 for a call, and the rest of what
+;             vd_rmdown does - bit 5 of 40:7Bh - it goes on doing.
+;             Everything preserved.
+;=====================================================================
+vd_freeze:
+        cmp     dword ptr [vd_seg],0
+        je      vdz_out
+        push    eax
+        mov     eax,dword ptr [vd_old]
+        mov     dword ptr [edi + VD_VECTOR * 4],eax
+        pop     eax
+vdz_out:
+        ret
+
+;=====================================================================
 ; vd_hlt - ESI -> a box's context, stopped at a HLT.  CF clear if the
 ;          HLT was the INT 4Bh stub's, and the call has been answered.
 ;=====================================================================
@@ -203,7 +269,7 @@ vdh_ours:
         cmp     al,0Ah
         je      vdf_badbuf
         cmp     al,0Bh
-        je      vdf_ok
+        je      vdf_disable
         cmp     al,0Ch
         je      vdf_enable
         mov     al,VDE_UNSUP
@@ -229,11 +295,26 @@ vdf_badbuf:
         mov     al,VDE_BADBUF
         jmp     short vdf_fail
 
-;--- 810Ch: translation back on.  The count it keeps is zero, and the
-;--- specification wants the zero flag to say so.
+;--- 810Bh and 810Ch: translation off and on again for DMA channel BX.
+;--- There is translation to turn off now (VDMA.INC): a driver that has
+;--- asked where its buffer is hands the controller that answer, and
+;--- these are how it says so.  Counted, as the specification counts
+;--- them, and 810Ch sets the zero flag when the count is back to zero.
+vdf_disable:
+        mov     al,1
+        jmp     short vdf_xlat
 vdf_enable:
+        xor     al,al
+vdf_xlat:
+        movzx   ebx,word ptr [esi+V86C_EBX]
+        call    vdma_noxl
+        jc      vdf_fail
+        jz      vdf_zf
+        and     dword ptr [esi+V86C_FLAGS],NOT 40h
+        jmp     vdf_ok
+vdf_zf:
         or      dword ptr [esi+V86C_FLAGS],40h
-        jmp     short vdf_ok
+        jmp     vdf_ok
 
 ;--- 8102h: who is here.  DX bit 3 - "all memory is in one piece" - is
 ;--- NOT set, because upper memory is not; SI:DI, the size of the
@@ -526,6 +607,8 @@ vd_seg          dd      0                       ; the stub's segment
 vd_old          dd      0                       ; INT 4Bh as the BIOS left it
 vd_mine         dd      0                       ; ...and as it was made
 vd_parked       dd      0                       ; ...and as it was at a park
+vd_rmvec        dd      0                       ; ...and during an rm_int
+vd_rmflag       db      0, 0, 0, 0              ; 40:7Bh bit 5 during an rm_int
 vd_left         dd      0
 vd_done         dd      0
 vd_avail        dd      0

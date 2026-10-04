@@ -227,9 +227,21 @@ IFDEF VDM_TEST
         call    vdm_selftest
 ENDIF
         call    config_run
+        call    scsi_start              ; the SCSI cards, now that a DEVICE=
+                                        ; line may have loaded a manager
+                                        ; that owns one (ASPI.INC)
         call    cd_announce             ; the CD-ROM drives and their
                                         ; letters, now that CONFIG.SYS
                                         ; has had its say about both
+        call    dword ptr ds:[IOS_RMFREEZE]     ; and the vector table BIOS
+                                        ; calls run with: the machine as
+                                        ; CONFIG.SYS left it, and nothing
+                                        ; a program hooks from here on
+                                        ; (RMCALL.INC)
+        call    vfl_bootscan            ; and every hard disk volume, for
+                                        ; the ones not shut down properly:
+                                        ; shell_restart runs CHKDSK on those
+                                        ; before the shell (VOLFLAG.INC)
 
 ;=====================================================================
 ; shell_restart - (re)load the command interpreter into the shell slot
@@ -256,6 +268,14 @@ shell_restart:
         mov     dword ptr ds:[cur_psp],SHELL_PSP
         xor     eax,eax                 ; depth zero: the interpreter's own
         call    r3_useslot              ; slot, and its two descriptors
+
+        ; A DRIVE NOT SHUT DOWN PROPERLY IS CHECKED BEFORE THE SHELL
+        ; STARTS, by CHKDSK run in the shell's place: same slot, same
+        ; start, and its 4Ch at depth zero comes back to this label like
+        ; the shell's would - so the next drive comes round, and then
+        ; the shell (vfl_bootscan and ack_next, VOLFLAG.INC).
+        call    ack_next                ; -> CF clear, ESI = CHKDSK's tail
+        jnc     shell_go
         mov     edx,OFFSET shell_name
         call    exec_load
         jnc     shell_loaded
@@ -280,8 +300,11 @@ shell_loaded:
 
         ; "/P" marks the permanent shell, exactly as SHELL= does in a
         ; real CONFIG.SYS: it is what tells COMMAND.COM to run
-        ; AUTOEXEC.BAT and to ignore EXIT.
+        ; AUTOEXEC.BAT and to ignore EXIT.  A safe-mode start has added
+        ; "/D", which skips AUTOEXEC.BAT (cfg_keys in CONFIG.INC), and
+        ; it stays for every reload of the shell after that.
         mov     esi,OFFSET shell_tail
+shell_go:
         call    build_psp
 
         ; AND THE MASTER ENVIRONMENT, which CONFIG.SYS's SET= lines
@@ -494,6 +517,11 @@ kbss_stop:
         INCLUDE RECYCLE.INC             ; after INT21.INC: every delete goes
                                         ; through it, and it opens its index
                                         ; with INT21.INC's own file routines
+        INCLUDE VOLFLAG.INC             ; and after it: the clean-shutdown
+                                        ; flag reads the SFT, and the boot
+                                        ; check loads CHKDSK with exec_load.
+                                        ; FAT.INC, CRITERR.INC and CACHE.INC
+                                        ; call forwards into it
         INCLUDE IMAGE.INC               ; after PATH.INC because it resolves
                                         ; a path, and after INT21.INC
                                         ; because it reads the SFT to find
@@ -549,6 +577,8 @@ kbss_stop:
                                         ; probe upper memory is found with
         INCLUDE DPMI.INC                ; and after both: the DPMI host
                                         ; borrows the DOS box's own V86 loop
+        INCLUDE IRQX.INC                ; and after it: an interrupt for a
+                                        ; resident driver, with no box running
         INCLUDE RING3.INC               ; last: it sorts ring-3 faults into
                                         ; the DPMI host's and its own, and
                                         ; borrows the bridge's pointer table
@@ -560,6 +590,13 @@ kbss_stop:
                                         ; real-mode driver through the V86
                                         ; monitor and hands the driver's own
                                         ; INT 21h calls to vdm_do21
+        INCLUDE ASPI.INC                ; after it: an ASPI manager is a
+                                        ; driver, called the same way, and
+                                        ; the SCSI probe that has to know
+                                        ; about it first
+        INCLUDE VBE.INC                 ; and VBE for a native program,
+                                        ; which describes SEL_VBE the way
+                                        ; RING3.INC describes a slot
 
 ;=====================================================================
 ; Data

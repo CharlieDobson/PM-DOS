@@ -463,7 +463,7 @@ pip_run:
         xor     byte ptr [pip_toggle],1
         mov     eax,[pip_next]
         mov     [pip_cur],eax
-        jmp     short pip_stage
+        jmp     pip_stage
 pip_done:
         mov     edx,OFFSET pipe1_name   ; take the plumbing down
         mov     ah,41h

@@ -27,12 +27,18 @@
 ; table of our own in GV_FDPT, copied from the BIOS's and given the
 ; three bytes a format reads.
 ;
+; AND IT COULD NOT READ PAST THE TABLE'S LAST SECTOR.  The same table
+; says where a track ends for a read or a write, and a DMF disk's
+; tracks are longer than a 1.44M drive's table says.  fpy_rwup and
+; fpy_rwdown lengthen it for the length of one block-layer call.
+;
 ; Included by IOPM.ASM, after BLOCK.INC.
 ;=====================================================================
 
 IVT_INT1E       EQU     1Eh * 4
 
 FPY_NTRIES       EQU     3
+FPY_DMFGAP       EQU     0Ch            ; DMF's format gap
 
 ; the diskette parameter table, as far as a format reads it
 DPT_SIZE        EQU     3               ; 2 = 512 bytes a sector
@@ -219,12 +225,29 @@ fpy_fgout:
 ; Vector 1Eh is kept the first time and put back by FDF_END, so a
 ; program that begins twice - a second disk - does not lose the
 ; BIOS's own table behind its own.
+;
+; DMF IS A 1.44M DISK WITH 21 SECTORS A TRACK, so it is asked for as
+; FDM_1440 with more than 18 in CL.  No BIOS knows it: AH=18h is asked
+; for the 1.44M shape, which sets the data rate, and the table it
+; answers with is copied and given 21 sectors and DMF's format gap of
+; 0Ch - the figure Linux's floppy driver formats its 1.68M type with.
+; Twelve bytes between sectors is too little time for a program that
+; reads one sector a call to catch the next, so FDF_TRACK lays these
+; tracks down two to one (1, 12, 2, 13, ...), as Microsoft's own DMF
+; disks are and as Linux does for any gap that small.
 ;=====================================================================
 fpy_begin:
         pushad
         mov     byte ptr [fpy_spt],cl
         mov     byte ptr [fpy_cyls],ch
         mov     byte ptr [fpy_medium],bl
+        mov     byte ptr [fpy_dmf],0
+        cmp     bl,FDM_1440
+        jne     fpy_bshape
+        cmp     cl,18
+        jbe     fpy_bshape
+        mov     byte ptr [fpy_dmf],1
+fpy_bshape:
 
         cmp     byte ptr [fpy_open],0
         jne     fpy_bkept
@@ -243,6 +266,10 @@ fpy_bkept:
         dec     al
         mov     byte ptr ds:[RMR_ECX+1],al
         mov     al,byte ptr [fpy_spt]
+        cmp     byte ptr [fpy_dmf],0
+        je      fpy_b18spt
+        mov     al,18                   ; DMF: the BIOS knows 1.44M
+fpy_b18spt:
         mov     byte ptr ds:[RMR_ECX],al
         mov     al,byte ptr [fpy_drive]
         mov     byte ptr ds:[RMR_EDX],al
@@ -256,6 +283,8 @@ fpy_bkept:
         mov     ax,word ptr ds:[RMR_EDI]
         or      eax,eax
         jz      fpy_bown                ; it said yes and gave no table
+        cmp     byte ptr [fpy_dmf],0
+        jne     fpy_bfrom               ; that table, lengthened
         mov     dword ptr ds:[IVT_INT1E],eax
         jmp     fpy_bok
 
@@ -305,6 +334,8 @@ fpy_b17go:
 fpy_bown:
         ; the BIOS's table, with the three bytes a format reads
         mov     eax,dword ptr [fpy_old1e]
+fpy_bfrom:
+        ; ...or the one in EAX
         movzx   esi,ax
         shr     eax,16
         shl     eax,4
@@ -318,6 +349,10 @@ fpy_bown:
         mov     byte ptr ds:[GV_FDPT+DPT_EOT],al
         movzx   esi,byte ptr [fpy_medium]
         mov     al,byte ptr [fpy_gaps+esi]
+        cmp     byte ptr [fpy_dmf],0
+        je      fpy_bgap
+        mov     al,FPY_DMFGAP
+fpy_bgap:
         mov     byte ptr ds:[GV_FDPT+DPT_FMTGAP],al
         mov     byte ptr ds:[GV_FDPT+DPT_FILL],0F6h
         mov     dword ptr ds:[IVT_INT1E],(IO_SEG SHL 16) OR GVO_FDPT
@@ -350,21 +385,41 @@ fpy_track:
 
         mov     byte ptr [fpy_tries],FPY_NTRIES
 fpy_tfmt:
-        ; the address fields: cylinder, head, sector, size
+        ; the address fields: cylinder, head, sector, size, in the
+        ; order they go round the track.  One to one, or for DMF two
+        ; to one: the even places take 1, 2, 3 ... and the odd ones
+        ; what is left, so 21 sectors go 1, 12, 2, 13 ... 21, 11.
         mov     edi,XFER_BUF
         movzx   ecx,byte ptr [fpy_spt]
-        mov     bl,1
+        xor     ebx,ebx                 ; EBX = the place on the track
 fpy_tfield:
         mov     al,byte ptr [fpy_cyl]
         mov     byte ptr [edi],al
         mov     al,byte ptr [fpy_head]
         mov     byte ptr [edi+1],al
-        mov     byte ptr [edi+2],bl
+        mov     al,bl
+        inc     al
+        cmp     byte ptr [fpy_dmf],0
+        je      fpy_tsec
+        mov     al,bl
+        shr     al,1
+        inc     al
+        test    bl,1
+        jz      fpy_tsec
+        mov     al,byte ptr [fpy_spt]
+        inc     al
+        shr     al,1
+        mov     ah,bl
+        inc     ah
+        shr     ah,1
+        add     al,ah
+fpy_tsec:
+        mov     byte ptr [edi+2],al
         mov     byte ptr [edi+3],2
         add     edi,4
-        inc     bl
-        dec     ecx
-        jnz     fpy_tfield
+        inc     ebx
+        cmp     ebx,ecx
+        jb      fpy_tfield
 
         mov     ah,05h
         call    fpy_chs
@@ -470,6 +525,81 @@ fpy_eout:
         ret
 
 ;=====================================================================
+; fpy_rwup - EBX = the geometry cache entry of a diskette about to be
+;            read or written.  If the table vector 1Eh points at ends a
+;            track before the disk does, the vector is pointed at a copy
+;            that does not.  All registers and flags kept.
+;
+; THE BIOS ENDS A TRANSFER AT THE TABLE'S LAST SECTOR, NOT THE DISK'S.
+; INT 13h hands the controller the sector count from the table, and a
+; controller that reaches that sector before the transfer is finished
+; stops and reports the end of the cylinder.  A 1.44M drive's table
+; says eighteen.  A DMF disk has twenty-one sectors a track, so sectors
+; 17 to 21 in one call failed at 18, while a call that began at 19 went
+; through: some files read and others did not.  Emulators never showed
+; it, because their INT 13h does not read the table.
+;
+; A table that says more than the disk has costs nothing, because the
+; transfer ends when the DMA count runs out: that is how a 720K disk is
+; read through a 1.44M drive's table.  MS-DOS raises the same byte round
+; every call and puts it back afterwards, but only ever as far as the
+; longest track of a drive it knows, never as far as the disk's.
+;
+; A format in progress is left alone: FDF_BEGIN has pointed the vector
+; at a table made for that disk.
+;=====================================================================
+fpy_rwup:
+        pushfd
+        pushad
+        cmp     byte ptr [fpy_rwon],0
+        jne     fru_out
+        cmp     byte ptr [fpy_open],0
+        jne     fru_out
+        mov     eax,dword ptr ds:[IVT_INT1E]
+        movzx   esi,ax
+        shr     eax,16
+        shl     eax,4
+        add     esi,eax                 ; ESI = the table, flat
+        movzx   eax,byte ptr [esi+DPT_EOT]
+        cmp     ax,word ptr [ebx+GEO_SPT]
+        jae     fru_out                 ; it reaches the end of the track
+
+        mov     eax,dword ptr ds:[IVT_INT1E]
+        mov     dword ptr [fpy_rwold],eax
+        mov     edi,GV_RWDPT
+        mov     ecx,DPT_LEN
+        cld
+        rep     movsb
+        mov     al,byte ptr [ebx+GEO_SPT]
+        mov     byte ptr ds:[GV_RWDPT+DPT_EOT],al
+        mov     dword ptr ds:[IVT_INT1E],(IO_SEG SHL 16) OR GVO_RWDPT
+        mov     byte ptr [fpy_rwon],1
+fru_out:
+        popad
+        popfd
+        ret
+
+;=====================================================================
+; fpy_rwdown - vector 1Eh back where fpy_rwup found it.  All registers
+;              and flags kept.
+;=====================================================================
+fpy_rwdown:
+        pushfd
+        cmp     byte ptr [fpy_rwon],0
+        je      frd_out
+        push    eax
+        mov     eax,dword ptr [fpy_rwold]
+        mov     dword ptr ds:[IVT_INT1E],eax
+        mov     byte ptr [fpy_rwon],0
+        pop     eax
+frd_out:
+        popfd
+        ret
+
+;=====================================================================
+fpy_rwold   dd  0                       ; vector 1Eh before fpy_rwup
+fpy_rwon    db  0                       ; and it has been moved
+            db  0,0,0
 fpy_old1e   dd  0                       ; vector 1Eh as the BIOS had it
 fpy_drive   db  0
 fpy_open    db  0                       ; a format is in progress
@@ -481,7 +611,8 @@ fpy_cyl     db  0
 fpy_head    db  0
 fpy_tries   db  0
 fpy_status  db  0
-            db  0,0
+fpy_dmf     db  0                       ; FDF_BEGIN was asked for DMF
+            db  0
 
 ; by FDT_*: what the drive holds when it is full
 fpy_kindspt db  0, 9, 15, 9, 18, 36

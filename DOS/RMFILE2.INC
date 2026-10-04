@@ -2095,7 +2095,7 @@ sub_create:
         mov     dword ptr [si+SFT_POS],0
         call    file_trunc
         call    sft_touch               ; truncated is written
-        jmp     short sc2_ok
+        jmp     sc2_ok
 
 sc2_new:
         mov     si,[rd_opvol]

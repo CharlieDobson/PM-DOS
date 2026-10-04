@@ -986,6 +986,11 @@ park_go:
         ; has to mean everything.
         call    dos_commit
 
+        ; ...and RMDOS writes without turning any volume's clean-
+        ; shutdown bit off, so it is turned off here, on every volume
+        ; that has one, and stays off until park_recover (VOLFLAG.INC).
+        call    vfl_parkmark
+
         movzx   eax,word ptr [park_seg]
         mov     word ptr [park_blk + GVP_CS],ax
         mov     word ptr [park_blk + GVP_IP],RM_ORG     ; not 0: the image
@@ -1201,7 +1206,8 @@ park_recover:
         ; sectors is the truth now.
         call    cache_dropall
         call    park_remount
-
+        mov     byte ptr [vfl_parked],0         ; the next commit may mark
+                                                ; them clean again
         popad
         ret
 

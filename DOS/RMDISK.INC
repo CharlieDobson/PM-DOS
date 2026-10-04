@@ -130,10 +130,22 @@ rgv_bad:
 
 ;=====================================================================
 ; rd_mount - SI = a volume record with BIOS and START filled in.  Read
-;            its boot sector and work out the rest.
+;            its boot sector and work out the rest.  Every register is
+;            kept, all thirty-two bits of it.
+;
+; ALL THIRTY-TWO BITS, BECAUSE A DISKETTE IS MOUNTED IN THE MIDDLE OF A
+; READ.  rd_getvol mounts a diskette every time it is asked for one,
+; and file_io and sft_clus ask in the middle of a transfer, holding a
+; file position in EAX and the bytes still to move in ECX.  This used
+; to save them with PUSHA, which keeps sixteen bits, and then worked in
+; EAX, ECX and EDX: the top half of the position came back as nought
+; and every file on a diskette wrapped at 64K - the sector at 64K was
+; read from the sector at 0, and a write past 64K went over the start
+; of the file.  A hard disk is mounted once, at its first use, and
+; never showed it.
 ;=====================================================================
 rd_mount:
-        pusha
+        pushad
         push    es
 
         ; Do the extensions exist on this drive?  Asked once per mount
@@ -158,7 +170,8 @@ rm_nolba:
         ; The geometry the CHS path needs, from the BIOS rather than
         ; from the BPB: a partition's BPB records the geometry of the
         ; disk it was FORMATTED on, and an image moved between machines
-        ; carries the old one.
+        ; carries the old one.  A diskette is the other way about, and
+        ; its boot sector is believed once it has been read (below).
         mov     ah,08h
         mov     dl,[si+VOL_BIOS]
         push    si
@@ -226,6 +239,50 @@ rm_spf:
 rm_tot:
         mov     dword ptr [si+VOL_TOTSEC],eax
 
+        ; A DISKETTE'S GEOMETRY IS THE DISK'S, NOT THE DRIVE'S.  AH=08h
+        ; above describes the drive: eighteen sectors a track for a
+        ; 1.44M drive whatever is in it, so a 720K disk was read from
+        ; the wrong sector from logical sector 9 onwards - a sector the
+        ; track does not have, or one on the wrong track.  The boot
+        ; sector says what the disk is, and is believed when its three
+        ; figures agree: so many sectors a track, on one or two sides,
+        ; making a whole number of tracks between 40 and 84.  The kernel
+        ; has done the same since fm_layout learned it (FAT.INC).  The
+        ; boot sector itself is sector 1 of track 0 under any geometry.
+        test    byte ptr [si+VOL_FLAGS],VF_FLOPPY
+        jz      rm_fgdone
+        push    eax
+        push    bx
+        mov     cx,word ptr [di+18h]            ; sectors a track
+        mov     bx,word ptr [di+1Ah]            ; sides
+        or      cx,cx
+        jz      rm_fgkeep
+        cmp     cx,63                           ; all CHS has room for
+        ja      rm_fgkeep
+        or      bx,bx
+        jz      rm_fgkeep
+        cmp     bx,2
+        ja      rm_fgkeep
+        mov     ax,cx
+        mul     bl                              ; AX = sectors a cylinder
+        movzx   ecx,ax
+        mov     eax,dword ptr [si+VOL_TOTSEC]
+        xor     edx,edx
+        div     ecx                             ; EAX = cylinders
+        or      edx,edx
+        jnz     rm_fgkeep                       ; not a whole number of them
+        cmp     eax,40
+        jb      rm_fgkeep
+        cmp     eax,84
+        ja      rm_fgkeep
+        mov     ax,word ptr [di+18h]
+        mov     [si+VOL_SPT],ax
+        mov     [si+VOL_HEADS],bx
+rm_fgkeep:
+        pop     bx
+        pop     eax
+rm_fgdone:
+
         mov     eax,dword ptr [di+2Ch]          ; FAT32's root cluster
         mov     dword ptr [si+VOL_ROOTCLUS],eax
 
@@ -273,7 +330,7 @@ ENDIF
         mov     dword ptr [si+VOL_FREEHINT],2
         or      byte ptr [si+VOL_FLAGS],VF_MOUNTED
         pop     es
-        popa
+        popad
         clc
         ret
 rm_fail:
@@ -289,7 +346,7 @@ IFDEF RMDOS_MARK
 ENDIF
         and     byte ptr [si+VOL_FLAGS],NOT VF_MOUNTED
         pop     es
-        popa
+        popad
         stc
         ret
 

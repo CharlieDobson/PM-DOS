@@ -230,6 +230,39 @@ dbg_rec:
         push    ebx
         push    edx
         push    edi
+
+        ; THE SAME TRAP AGAIN IS NOT RECORDED AGAIN.  A guest waiting on
+        ; a flag with STI in the loop takes the same trap millions of
+        ; times, and the ring - 512 entries - fills with it in a blink
+        ; and loses everything that led up to the wait, which is the
+        ; part worth reading.  Same CS:IP and the same AX, BX and DX as
+        ; the entry before is the same trap; the count still goes up.
+        cmp     dword ptr ds:[dbg_count],0
+        je      dbg_recnew
+        mov     edi,dword ptr ds:[dbg_head]
+        dec     edi
+        and     edi,DBG_MASK
+        imul    edi,DBG_ENT
+        add     edi,DBG_RINGAT
+        mov     eax,[ebp+FR_EIP]
+        cmp     word ptr [edi+DBGE_IP],ax
+        jne     dbg_recnew
+        mov     eax,[ebp+FR_CS]
+        cmp     word ptr [edi+DBGE_CS],ax
+        jne     dbg_recnew
+        mov     eax,[ebp+PA_EAX]
+        cmp     word ptr [edi+DBGE_AX],ax
+        jne     dbg_recnew
+        mov     eax,[ebp+PA_EBX]
+        cmp     word ptr [edi+DBGE_BX],ax
+        jne     dbg_recnew
+        mov     eax,[ebp+PA_EDX]
+        cmp     word ptr [edi+DBGE_DX],ax
+        jne     dbg_recnew
+        inc     dword ptr ds:[dbg_count]
+        mov     dword ptr ds:[v86_wtick],0
+        jmp     dbg_rec9
+dbg_recnew:
         mov     edi,dword ptr ds:[dbg_head]
         and     edi,DBG_MASK
         imul    edi,DBG_ENT
@@ -366,6 +399,108 @@ dbg_dump:
         call    dbg_hex32
         call    dbg_crlf
 
+        ; THE INTERRUPT CONTROLLERS, the box's and the machine's: a
+        ; guest spinning on a flag its ISR sets is the commonest hang a
+        ; driver has, and these say whether the interrupt was ever owed
+        ; (pend), given (isr), or shut (dead) - and whether the real
+        ; 8259 is holding one it was never let deliver (irr)
+        mov     esi,OFFSET dbg_mpic
+        call    dbg_str
+        mov     eax,dword ptr [vpc_imr]
+        call    dbg_hex16
+        call    dbg_space
+        mov     eax,dword ptr [vpc_pend]
+        call    dbg_hex16
+        call    dbg_space
+        mov     eax,dword ptr [vpc_isr]
+        call    dbg_hex16
+        call    dbg_space
+        mov     eax,dword ptr [irq_open]
+        call    dbg_hex16
+        call    dbg_space
+        mov     eax,dword ptr [irq_dead]
+        call    dbg_hex16
+        call    dbg_space
+        mov     eax,dword ptr [vpc_nraise]
+        call    dbg_hex32
+        call    dbg_space
+        movzx   eax,byte ptr ds:[v86_vif]
+        call    dbg_hex8
+        mov     esi,OFFSET dbg_mreal
+        call    dbg_str
+        in      al,0A1h                 ; the masks
+        mov     ah,al
+        in      al,21h
+        call    dbg_hex16
+        call    dbg_space
+        mov     al,0Ah                  ; the requests
+        out     0A0h,al
+        out     20h,al
+        in      al,0A0h
+        mov     ah,al
+        in      al,20h
+        call    dbg_hex16
+        call    dbg_space
+        mov     al,0Bh                  ; in service
+        out     0A0h,al
+        out     20h,al
+        in      al,0A0h
+        mov     ah,al
+        in      al,20h
+        call    dbg_hex16
+        mov     esi,OFFSET dbg_mlost
+        call    dbg_str
+        mov     ecx,16
+        xor     ebx,ebx
+dbg_lost:
+        mov     eax,dword ptr [irq_lost + ebx*4]
+        call    dbg_hex16
+        call    dbg_space
+        inc     ebx
+        loop    dbg_lost
+
+        ; ...and the box's last writes to the controllers, oldest first:
+        ; port, value, and the ICW state of that controller before it
+        mov     esi,OFFSET dbg_mvpw
+        call    dbg_str
+        mov     eax,dword ptr [vpc_dbgn]
+        call    dbg_hex16
+        call    dbg_crlf
+        mov     ecx,dword ptr [vpc_dbgn]
+        cmp     ecx,32
+        jbe     dbg_vw0
+        mov     ecx,32
+dbg_vw0:
+        jecxz   dbg_vw9
+        mov     ebx,dword ptr [vpc_dbgn]
+        sub     ebx,ecx
+dbg_vw1:
+        mov     esi,ebx
+        and     esi,31
+        movzx   eax,byte ptr [vpc_dbglog + esi*8]
+        call    dbg_hex8
+        mov     al,'='
+        call    dbg_out
+        movzx   eax,byte ptr [vpc_dbglog + esi*8 + 1]
+        call    dbg_hex8
+        mov     al,'/'
+        call    dbg_out
+        movzx   eax,byte ptr [vpc_dbglog + esi*8 + 2]
+        call    dbg_hex8
+        mov     al,'@'
+        call    dbg_out
+        movzx   eax,word ptr [vpc_dbglog + esi*8 + 6]
+        call    dbg_hex16
+        mov     al,':'
+        call    dbg_out
+        movzx   eax,word ptr [vpc_dbglog + esi*8 + 4]
+        call    dbg_hex16
+        call    dbg_space
+        inc     ebx
+        loop    dbg_vw1
+dbg_vw9:
+        call    dbg_crlf
+
         ; The names first: they are the shape of the run, and the ring
         ; is the last inch of it.
         mov     esi,OFFSET dbg_mnames
@@ -396,7 +531,8 @@ dbg_dn3:
         ; ...and now the ring.
         mov     esi,OFFSET dbg_mring
         call    dbg_str
-        mov     ecx,dword ptr ds:[dbg_count]
+        mov     ecx,dword ptr ds:[dbg_head]     ; entries, not traps: a
+                                                ; repeat is not written twice
         cmp     ecx,DBG_RING
         jbe     dbg_dr0
         mov     ecx,DBG_RING
@@ -468,6 +604,10 @@ dbg_age         dd      0
 dbg_dumped      db      0
 dbg_mstop       db      13,10,'STOPPED, mode ',0
 dbg_mhead       db      13,10,'== PM-DOS guest trace ==',13,10,0
+dbg_mpic        db      'PIC box imr/pend/isr, open, dead, raises, vif: ',0
+dbg_mreal       db      13,10,'real imr/irr/isr: ',0
+dbg_mlost       db      13,10,'lost by line: ',0
+dbg_mvpw        db      13,10,'box PIC writes port=value/icw, count ',0
 dbg_mcount      db      'traps ',0
 dbg_mage        db      '  ticks ',0
 dbg_mnames      db      'EXEC:',13,10,0

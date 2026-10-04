@@ -1,0 +1,19 @@
+
+VFTEST - the clean-shutdown flag on C:
+--------------------------------------
+C: has the flag              OK
+committed: clean, bit on     OK
+file open, written: dirty    OK
+...committed, still dirty    OK
+closed, committed: clean     OK
+deleted: dirty               OK
+...committed: clean          OK
+no such drive refused        OK
+raw FAT sector 1: dirty      OK
+...committed: clean          OK
+raw FAT sector 0: dirty      OK
+...committed: clean          OK
+raw boot sector: dirty       OK
+...committed: clean          OK
+
+VFTEST done, 0 failed

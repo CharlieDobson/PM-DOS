@@ -877,7 +877,7 @@ rdc_follow:
         cmp     eax,RM_EOC
         je      rdc_end
         mov     ebp,eax
-        jmp     short rdc_one
+        jmp     rdc_one
 rdc_end:
         cmp     byte ptr [rm_fix],0
         je      rdc_ok
@@ -1268,7 +1268,7 @@ rpm_land:
         jc      rpm_bad
 rpm_next:
         inc     ebp
-        jmp     short rpm_slot
+        jmp     rpm_slot
 rpm_ok:
         popad
         clc
@@ -1772,10 +1772,10 @@ rm_try      db  FG_LEN dup(0)
 
 msg_rmwidth db  '  The volume changes from FAT$'
 msg_rmto    db  ' to FAT$'
-msg_rmwdone db  '.  No file moves.',13,10,'$'
+msg_rmwdone db  '.  Cluster numbers stay the same.',13,10,'$'
 msg_rmclus  db  '  The clusters change from $'
 msg_rmsecto db  ' sector(s) to $'
-msg_rmsplit db  '.  No file moves, but every',13,10
+msg_rmsplit db  '.  Files stay in order, but every',13,10
             db  '  cluster is renumbered.',13,10,'$'
 msg_rmmerge db  ', so every file moves and',13,10
             db  '  every cluster is renumbered.',13,10,'$'

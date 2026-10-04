@@ -1,0 +1,2 @@
+This file lives INSIDE TESTIMG.IMG, which is itself a file on C:.
+If you are reading it through a drive letter, the extent map worked.

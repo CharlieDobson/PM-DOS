@@ -505,7 +505,7 @@ ji_one:
         test    byte ptr [sft_tbl+eax+SFT_MODE],80h
         jnz     ji_skip                 ; opened no-inherit
         pop     eax
-        mov     [ebx+RSP_JFT+edx],al
+        mov     byte ptr [ebx+RSP_JFT+edx],al
         inc     byte ptr [jft_ref+eax]
         jmp     short ji_next
 ji_skip:
@@ -516,7 +516,7 @@ ji_next:
 ji_top:
         xor     eax,eax
 ji_std:
-        mov     [ebx+RSP_JFT+eax],al
+        mov     byte ptr [ebx+RSP_JFT+eax],al
         inc     byte ptr [jft_ref+eax]
         inc     eax
         cmp     eax,JFT_STD
@@ -550,7 +550,7 @@ ji_dev:
         movzx   eax,ax
         cmp     eax,MAX_HANDLES
         jae     jd_out
-        mov     [ebx+RSP_JFT+edi],al
+        mov     byte ptr [ebx+RSP_JFT+edi],al
         mov     byte ptr [jft_ref+eax],1
 jd_out:
         ret

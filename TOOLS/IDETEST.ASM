@@ -724,7 +724,7 @@ rd_eol:
         call    report_how
 rd_next:
         inc     ebx
-        jmp     short rd_lp
+        jmp     rd_lp
 rd_done:
         pop     ebx
         ret

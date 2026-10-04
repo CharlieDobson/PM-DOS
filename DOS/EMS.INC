@@ -1,5 +1,5 @@
 ;=====================================================================
-; EMS.INC - expanded memory: INT 67h, LIM EMS 3.2
+; EMS.INC - expanded memory: INT 67h, LIM EMS 4.0
 ;
 ; This is EMM386's job, done by the kernel instead of by a driver, and
 ; the reason is the same one XMS.INC gives for HIMEM: a real EMM386's
@@ -59,13 +59,44 @@
 ; chain is merely a gap; being in it and answering with an untouched
 ; status word would be a lie.
 ;
-; WHAT IS DELIBERATELY NOT HERE: LIM 4.0.  46h answers 32h and means
-; it.  4.0's additions are mostly about mapping pages OUTSIDE the
-; frame - anywhere in conventional memory, on demand, so that Windows
-; and DESQview could give a whole DOS box its own bank - and a manager
-; that claims 4.0 will be asked for 5Ah, 57h and 58h by programs that
-; will not take an error for an answer.  Claiming what is implemented
-; is the honest version and every 3.2 program works against it.
+;---------------------------------------------------------------------
+; LIM 4.0, AND WHAT IT ADDED.  v0.41 stopped at 3.2 on the argument
+; that a manager claiming 4.0 will be asked for everything 4.0 has,
+; by programs that will not take an error for an answer.  So 4.0 is
+; here whole - 4Fh to 5Dh, every subfunction - rather than the cheap
+; half of it:
+;
+;   4Fh  a partial page map, saved and restored by segment
+;   50h  several windows mapped in one call
+;   51h  a handle grown or shrunk, its contents kept
+;   52h  handle attributes: volatile, which is all a RAM pool can be
+;   53h  a handle's eight-byte name, and 54h, the directory of them
+;   55h  map and jump, 56h map and call: an overlay manager's far
+;        JMP and far CALL, with the windows changed on the way
+;   57h  a region moved or exchanged, up to a megabyte, between any
+;        two of conventional memory and the pages of a handle
+;   58h  where the windows are; 59h, what the "hardware" is like
+;   5Ah  a handle of standard or raw pages, which may hold none
+;   5Bh  alternate map register sets - none, and the context save
+;        area that replaces them
+;   5Ch  warm boot, which has nothing to prepare
+;   5Dh  the OS/E functions locked behind an access key
+;
+; HANDLE 0 IS THE SYSTEM'S, as 4.0 says it is: always open, owning no
+; pages unless somebody gives it some, never ended by a program
+; exiting, and counted by 4Bh.  Every other handle is the index of its
+; row, so handles start at 1 exactly as they did under 3.2.
+;
+; THE ONE THING 4.0 ALLOWS AND THIS DOES NOT DO is map pages OUTSIDE
+; the frame - into conventional memory, so that Windows 3.0 real mode
+; or DESQview could give each program a whole bank of its own.  58h
+; lists the four windows and nothing else, which the specification
+; permits and which is what DOSBox's 4.0 manager has always done.  The
+; reason is not the page tables, which would take a conventional page
+; as readily as a frame page; it is ata_dmaok, and anything else in the
+; kernel that takes a linear address below A0000h to be the physical
+; one.  A guest-made hole in that rule is a disk transfer landing in
+; the wrong memory.
 ;
 ; Included by DOSMAIN.ASM, after VDM.INC: it reads and writes the
 ; guest's registers out of vdm_ctx, as every other service for a
@@ -76,7 +107,9 @@
 ; is 12h - one past the eight-byte name - and that byte is where the
 ; vector's OFFSET points, so that anything which reflects INT 67h
 ; rather than trapping it lands on an IRET instead of on the name.
+; The byte after it is the HLT that 56h's called routine returns to.
 EMSH_IRET       EQU     DEVH_LEN
+EMSH_RET        EQU     DEVH_LEN + 1
 
 ;---------------------------------------------------------------------
 ; One row of the handle table.
@@ -85,7 +118,8 @@ EMSH_IRET       EQU     DEVH_LEN
 ; up to a page; both are kept because the first is what arena_free
 ; must be given and the second is what every map call uses.  Freeing
 ; the rounded one would hand the arena an address that is not the
-; start of any block it knows about.
+; start of any block it knows about.  A handle with no pages has no
+; block, and both are zero.
 ;---------------------------------------------------------------------
 EH_FLAGS        EQU     0               ; dd - 0 free, 1 allocated
 EH_PAGES        EQU     4               ; dd - logical pages it owns
@@ -94,10 +128,62 @@ EH_RAW          EQU     12              ; dd - what arena_alloc handed back
 EH_OWN          EQU     16              ; dd - the owner id that took it
 EH_SAVED        EQU     20              ; dd - a page map is parked here
 EH_SMAP         EQU     24              ; and this is where it is parked
-EH_LEN          EQU     EH_SMAP + EMS_MAPLEN
+EH_NAME         EQU     EH_SMAP + EMS_MAPLEN    ; 8 bytes, 53h's
+EH_LEN          EQU     EH_NAME + 8
 
-EMS_MAXFN       EQU     0Eh             ; 4Eh is the last one 3.2 defines;
+EMS_MAXFN       EQU     1Dh             ; 5Dh is the last one 4.0 defines;
                                         ; anything above it gets 84h
+
+;---------------------------------------------------------------------
+; 55h's and 56h's structures, as the specification lays them out.  A
+; map list is pairs of words: a logical page, then a physical page
+; number or a segment, as AL said.
+;---------------------------------------------------------------------
+EMJ_TARGET      EQU     0               ; dd - where to go, offset first
+EMJ_LEN         EQU     4               ; db - entries in the list
+EMJ_MAP         EQU     5               ; dd - the list
+EMJ_SIZE        EQU     9
+
+EMC_TARGET      EQU     0               ; dd - what to call
+EMC_NEWLEN      EQU     4               ; db
+EMC_NEWMAP      EQU     5               ; dd - the windows while it runs
+EMC_OLDLEN      EQU     9               ; db
+EMC_OLDMAP      EQU     0Ah             ; dd - the windows when it returns
+EMC_SIZE        EQU     0Eh             ; and eight reserved bytes that
+                                        ; this manager does not read
+
+; What 56h leaves on the guest's stack.  The first two words are the
+; far return address the called routine's RETF takes, and they lead
+; to the HLT at EMSH_RET; everything after them is what that HLT needs
+; to finish the call.  The old map is kept as four window states, not
+; as the caller's list - see ems_listmap.
+ECF_RETIP       EQU     0
+ECF_RETCS       EQU     2
+ECF_SIG         EQU     4               ; dw - EMS_CALLSIG, or it is not ours
+ECF_OLD         EQU     6               ; dd x4 - a state per window
+ECF_IP          EQU     ECF_OLD + EMS_WINDOWS * 4       ; where 56h was called
+ECF_CS          EQU     ECF_IP + 2
+.ERRNZ  ECF_CS + 2 - EMS_CALLSTK, <EMS_CALLSTK does not match 56h's frame>
+
+EMS_CALLSIG     EQU     'MC'
+
+; 57h's descriptor: a length, then the source and the destination as
+; seven bytes each.
+EMX_LEN         EQU     0               ; dd - bytes, a megabyte at most
+EMX_SRC         EQU     4
+EMX_DST         EQU     0Bh
+EMX_SIZE        EQU     12h
+EMXR_TYPE       EQU     0               ; db - 0 conventional, 1 expanded
+EMXR_HANDLE     EQU     1               ; dw - expanded only
+EMXR_OFF        EQU     3               ; dw - into the segment or the page
+EMXR_SEGPG      EQU     5               ; dw - a segment, or a logical page
+
+; ...and what ems_region makes of one side of it.
+ERG_FLAT        EQU     0               ; dd - where it is, flat
+ERG_TYPE        EQU     4               ; dd - 0 conventional, 1 expanded
+ERG_HANDLE      EQU     8               ; dd - expanded: which handle
+ERG_FROM        EQU     12              ; dd - expanded: bytes into it
+ERG_SIZE        EQU     16
 
 ems_have    dd  0                       ; there is a manager
 ems_wanted  dd  0                       ; EMS= asked for one
@@ -114,7 +200,38 @@ ems_hdrseg  dd  0                       ; the EMMXXXX0 paragraph
 ; EMS_UNMAPPED is FFFFFFFFh, and FFFFh is a handle nobody has.
 ems_map     dd  EMS_WINDOWS dup (EMS_UNMAPPED)
 
-ems_htab    db  EMS_MAXH * EH_LEN dup (0)
+ems_tmap    dd  EMS_WINDOWS dup (0)     ; a map on its way into the windows
+ems_cold    dd  EMS_WINDOWS dup (0)     ; 56h's old map, being built
+ems_pwin    dd  EMS_WINDOWS dup (0)     ; 4Fh's windows, in the caller's order
+ems_pmap    dd  (EMS_PMAPLEN + 3) / 4 dup (0)   ; 4Fh's array, copied in
+
+ems_how     dd  0                       ; 50h/55h/56h: 0 physical page
+                                        ; numbers, 1 segments
+ems_osoff   dd  0                       ; 5Dh switched the OS/E functions off
+ems_key     dd  0                       ; 5Dh's access key
+ems_haskey  dd  0                       ; ...and whether one is out
+ems_keyown  dd  0                       ; ...and whose
+ems_alt     dd  0                       ; 5Bh's context save area, as the
+                                        ; guest's far pointer; 0 = none
+ems_altown  dd  0                       ; ...and whose memory that is
+
+ems_csp     dd  0                       ; 56h: the frame's SP
+ems_cst     dd  0                       ; ...and the status coming back
+ems_xchg    dd  0                       ; 57h: 1 exchange, 0 move
+ems_mst     dd  0                       ; ...and the status, if it worked
+ems_mx      dd  (EMX_SIZE + 3) / 4 dup (0)      ; 57h's descriptor, copied in
+ems_rsrc    dd  ERG_SIZE / 4 dup (0)
+ems_rdst    dd  ERG_SIZE / 4 dup (0)
+
+; The handle table is below the arena and not in the file - see
+; KBSS_BASE in PMDOS.INC.  Nothing in it has a value until ems_init
+; opens handle 0, and dos_entry has zeroed it long before that.
+_DOS    ENDS
+_KBSS   SEGMENT
+.ERRNZ  ($ - kbss_start) AND 3, <ems_htab in _KBSS is not on a dword>
+ems_htab    db  EMS_MAXH * EH_LEN dup (?)
+_KBSS   ENDS
+_DOS    SEGMENT
 
 ;=====================================================================
 ; ems_init - find a page frame, publish the manager, and reserve the
@@ -158,6 +275,10 @@ ems_init:
         call    ems_avail                       ; what the arena could give
         mov     [ems_total],eax                 ; today is what 42h calls the
                                                 ; system's total from now on
+
+        ; Handle 0, the system's: open, empty, and owned by the kernel,
+        ; so that no program's exit sweep ever reaches it.
+        mov     dword ptr [ems_htab+EH_FLAGS],1
         mov     dword ptr [ems_have],1
 ei_already:
         popad
@@ -229,12 +350,13 @@ eff_none:
         ret
 
 ;=====================================================================
-; ems_hdr - the paragraph a program finds when it reads the vector.
+; ems_hdr - the paragraphs a program finds when it reads the vector.
 ;
-; A CHARACTER DEVICE HEADER with EMMXXXX0 in its name field, and one
-; IRET past the end of it for the vector to point at.  It is system
-; memory (owner 8) like the XMS callback paragraph, so no exit sweep
-; takes it and it lives as long as the machine.
+; A CHARACTER DEVICE HEADER with EMMXXXX0 in its name field, one IRET
+; past the end of it for the vector to point at, and one HLT after
+; that for 56h.  It is system memory (owner 8) like the XMS callback
+; paragraph, so no exit sweep takes it and it lives as long as the
+; machine.
 ;
 ; The name goes into dev_tab as well, and only here: the slot is FFh
 ; bytes until this runs, which is a name no path component can be, so
@@ -244,8 +366,8 @@ ems_hdr:
         push    eax
         push    ebx
         push    edi
-        mov     ebx,2                           ; 12h of header and an IRET
-        call    lm_sysalloc
+        mov     ebx,2                           ; 12h of header, an IRET and
+        call    lm_sysalloc                     ; a HLT
         jc      ehd_out
         movzx   edi,ax
         mov     [ems_hdrseg],edi
@@ -259,6 +381,7 @@ ems_hdr:
         mov     dword ptr [edi+DEVH_NAME],'XMME'        ; 'EMMX'
         mov     dword ptr [edi+DEVH_NAME+4],'0XXX'      ; 'XXX0'
         mov     byte ptr [edi+EMSH_IRET],0CFh
+        mov     byte ptr [edi+EMSH_RET],0F4h
 
         ; The vector.  vdm_stubs has already pointed 67h at its own
         ; IRET byte, which is what a machine with no EMS should have
@@ -288,9 +411,10 @@ ehd_out:
 ; page of slack every handle pays for its alignment comes off first,
 ; for the same reason.
 ;
-; Capped at the LIM 3.2 ceiling of 8MB, which is a statement about the
-; specification rather than about this machine: page counts travel in
-; 16-bit registers and 512 pages is what the API can describe.
+; Capped at the LIM 4.0 ceiling of 32MB, which is a statement about
+; the specification rather than about this machine: the registers
+; could carry more, and programs written against 4.0 do not expect to
+; be offered it.
 ;=====================================================================
 ems_avail:
         push    edx
@@ -342,13 +466,9 @@ ef_e_func:      mov     ah,EMSE_BADFUNC
                 jmp     ems_done
 ef_e_handle:    mov     ah,EMSE_BADHANDLE
                 jmp     ems_done
-ef_e_handles:   mov     ah,EMSE_NOHANDLES
-                jmp     ems_done
 ef_e_ctx:       mov     ah,EMSE_MAPCTX
                 jmp     ems_done
 ef_e_many:      mov     ah,EMSE_TOOMANY
-                jmp     ems_done
-ef_e_avail:     mov     ah,EMSE_NOTAVAIL
                 jmp     ems_done
 ef_e_zero:      mov     ah,EMSE_ZERO
                 jmp     ems_done
@@ -362,28 +482,53 @@ ef_e_nosave:    mov     ah,EMSE_NOTSAVED
                 jmp     ems_done
 ef_e_sub:       mov     ah,EMSE_BADSUB
                 jmp     ems_done
+ef_e_attr:      mov     ah,EMSE_BADATTR
+                jmp     ems_done
+ef_e_nofeat:    mov     ah,EMSE_NOFEAT
+                jmp     ems_done
+ef_e_toobig:    mov     ah,EMSE_TOOBIG
+                jmp     ems_done
+ef_e_convexp:   mov     ah,EMSE_CONVEXP
+                jmp     ems_done
+ef_e_xchgovl:   mov     ah,EMSE_XCHGOVL
+                jmp     ems_done
+ef_e_noalt:     mov     ah,EMSE_NOALT
+                jmp     ems_done
+ef_e_noname:    mov     ah,EMSE_NONAME
+                jmp     ems_done
+ef_e_dup:       mov     ah,EMSE_DUPNAME
+                jmp     ems_done
+ef_e_corrupt:   mov     ah,EMSE_CORRUPT
+                jmp     ems_done
+ef_e_denied:    mov     ah,EMSE_DENIED
+                jmp     ems_done
 
 ; A POINTER THAT REACHES THE KERNEL, and 80h is an invention: the LIM
 ; specification has no code for it because on a real machine there is
 ; nothing above the manager to protect.  A guest's ES:DI stops at
 ; 10FFEFh and PMDOS.SYS starts at 110000h, so the pointer alone is
 ; harmless - but the pointer PLUS A LENGTH is not, and 4Dh writes up
-; to 128 bytes.  That is the same hole v0.37 found in the device
-; buffers and buf_ok is the same guard that closed it.  "The manager
-; has broken" is a fatal answer, which is the right size of answer for
-; a program that has just asked us to write into the kernel.
+; to 256 bytes and 57h a megabyte.  That is the same hole v0.37 found
+; in the device buffers and buf_ok is the same guard that closed it.
+; "The manager has broken" is a fatal answer, which is the right size
+; of answer for a program that has just asked us to write into the
+; kernel.
 ef_e_ptr:       mov     ah,EMSE_SOFT
                 jmp     ems_done
 
 ;---------------------------------------------------------------------
-; The dispatch table.  40h to 4Eh, and the two holes in the middle are
-; real: 49h and 4Ah were "get page map" and "set page map" in EMS 3.0
-; and the 3.2 specification withdrew both.
+; The dispatch table.  40h to 5Dh, and the two holes in it are real:
+; 49h and 4Ah were "get page map" and "set page map" in EMS 3.0, and
+; 3.2 withdrew both.  4.0 left them reserved.
 ;---------------------------------------------------------------------
 ems_tbl dd  ef_40,     ef_41,     ef_42,     ef_43
         dd  ef_44,     ef_45,     ef_46,     ef_47
         dd  ef_48,     ef_e_func, ef_e_func, ef_4B
-        dd  ef_4C,     ef_4D,     ef_4E
+        dd  ef_4C,     ef_4D,     ef_4E,     ef_4F
+        dd  ef_50,     ef_51,     ef_52,     ef_53
+        dd  ef_54,     ef_55,     ef_56,     ef_57
+        dd  ef_58,     ef_59,     ef_5A,     ef_5B
+        dd  ef_5C,     ef_5D
 
 ;=====================================================================
 ; 40h - is the manager there and working?
@@ -419,56 +564,25 @@ ef_42:
 ;=====================================================================
 ; 43h - BX pages, please.  DX = the handle they belong to.
 ;
-; The order of the refusals is the order the specification puts them
-; in, and it matters: "more than the system has" and "more than are
-; free" are different answers to different questions and a program
-; that gets the second one will try again later.
+; NONE IS STILL AN ERROR HERE, in 4.0 as in 3.2.  A handle with no
+; pages is legal now, but the way to ask for one is 5Ah, and a 3.2
+; program that asks 43h for nothing has made a mistake it would want
+; to hear about.
 ;=====================================================================
 ef_43:
         movzx   ecx,word ptr [vdm_ctx+V86C_EBX]
         or      ecx,ecx
         jz      ef_e_zero
-        cmp     ecx,[ems_total]
-        ja      ef_e_many
-        call    ems_avail
-        cmp     ecx,eax
-        ja      ef_e_avail
-        call    ems_newh                        ; -> EAX = row index, ESI = row
-        jc      ef_e_handles
-
-        push    eax
-        push    ecx
-        mov     ebx,ecx
-        shl     ebx,14                          ; the pages, in bytes
-        add     ebx,1000h                       ; and room to align the front
-        call    arena_alloc
-        pop     ecx
-        jc      e43_nomem
-        mov     [esi+EH_RAW],eax                ; what arena_free will want
-        add     eax,0FFFh
-        and     eax,NOT 0FFFh
-        mov     [esi+EH_BASE],eax               ; and what every map uses
-        mov     [esi+EH_PAGES],ecx
-        mov     eax,dword ptr [cur_own]         ; whose it is, so that the end
-        mov     [esi+EH_OWN],eax                ; of one program does not
-                                                ; strand another's handles
-        mov     dword ptr [esi+EH_FLAGS],1
-        pop     eax
-        inc     eax                             ; handles start at one: zero
-        mov     word ptr [vdm_ctx+V86C_EDX],ax  ; is the system's in 4.0 and
-        mov     ah,EMSE_OK                      ; is "no handle" everywhere
+        call    ems_alloc                       ; -> EDX, or AH = why not
+        jc      ems_done
+        mov     word ptr [vdm_ctx+V86C_EDX],dx
+        mov     ah,EMSE_OK
         jmp     ems_done
-e43_nomem:
-        pop     eax                             ; the row was never marked
-        jmp     ef_e_avail                      ; taken, so there is no undo
 
 ;=====================================================================
 ; 44h - AL = window 0-3, BX = logical page, DX = handle.
 ;
-; BX = FFFFh unmaps the window, which is a 4.0 spelling this manager
-; honours anyway: it costs one comparison, a 3.2 program cannot ask
-; for it by accident (no handle has 65535 pages), and without it there
-; is no way at all to take a window down again.
+; BX = FFFFh unmaps the window, which 4.0 made official.
 ;=====================================================================
 ef_44:
         movzx   eax,byte ptr [vdm_ctx+V86C_EAX]
@@ -499,6 +613,9 @@ e44_off:
 ; saved the map and never restored it has left the manager holding
 ; state on its behalf, and letting the handle go would strand it.
 ; Real EMM386 refuses in the same place with the same code.
+;
+; HANDLE 0 GIVES BACK ITS PAGES AND STAYS OPEN, which is the 4.0 rule
+; for the system's handle: a program cannot close it, only empty it.
 ;=====================================================================
 ef_45:
         movzx   edx,word ptr [vdm_ctx+V86C_EDX]
@@ -506,7 +623,14 @@ ef_45:
         jc      ef_e_handle
         cmp     dword ptr [esi+EH_SAVED],0
         jne     ef_e_ctx
+        or      edx,edx
+        jz      e45_sys
         call    ems_release
+        mov     ah,EMSE_OK
+        jmp     ems_done
+e45_sys:
+        xor     ecx,ecx                         ; down to nothing, which
+        call    ems_resize                      ; cannot fail
         mov     ah,EMSE_OK
         jmp     ems_done
 
@@ -523,8 +647,8 @@ ef_46:
 ;
 ; This is how a TSR that pops up over an EMS program borrows the
 ; windows: save under its own handle, map what it wants, restore.  The
-; parked copy lives in the handle's own row, which is why a row is 40
-; bytes rather than 24.
+; parked copy lives in the handle's own row, which is why a row is as
+; long as it is.
 ;=====================================================================
 ef_47:
         movzx   edx,word ptr [vdm_ctx+V86C_EDX]
@@ -536,6 +660,7 @@ ef_47:
         lea     edi,[esi+EH_SMAP]
         mov     esi,OFFSET ems_map
         mov     ecx,EMS_WINDOWS
+        cld
         rep     movsd
         pop     esi
         mov     dword ptr [esi+EH_SAVED],1
@@ -556,7 +681,7 @@ ef_48:
         jmp     ems_done
 
 ;=====================================================================
-; 4Bh - BX = how many handles are open
+; 4Bh - BX = how many handles are open, the system's among them
 ;=====================================================================
 ef_4B:
         call    ems_count
@@ -587,7 +712,7 @@ ef_4D:
         call    buf_ok                          ; the only one worth checking
         jc      ef_e_ptr
 
-        xor     ebx,ebx                         ; the row
+        xor     ebx,ebx                         ; the row, and the handle
         xor     ecx,ecx                         ; how many written
         mov     esi,OFFSET ems_htab
 e4D_one:
@@ -595,9 +720,7 @@ e4D_one:
         jae     e4D_done
         cmp     dword ptr [esi+EH_FLAGS],0
         je      e4D_next
-        mov     eax,ebx
-        inc     eax
-        mov     [edi],ax
+        mov     [edi],bx
         mov     eax,[esi+EH_PAGES]
         mov     [edi+2],ax
         add     edi,4
@@ -659,7 +782,1191 @@ e4E_both:
         jmp     ems_done
 
 ;=====================================================================
+; 4Fh - part of the page map, named by segment.  AL selects:
+;
+;   0  DS:SI -> a count and that many window segments; the state of
+;      just those windows goes to ES:DI
+;   1  DS:SI -> what 0 wrote; those windows go back to it
+;   2  BX = how many windows; AL = how many bytes 0 will write
+;
+; The array is a word count and then, per window, its segment and the
+; 4Eh dword for it - so a restore needs nothing but the array, and a
+; window that was not saved is not touched.  A partial map is what an
+; interrupt handler saves when it only means to borrow one window.
+;=====================================================================
+ef_4F:
+        mov     al,byte ptr [vdm_ctx+V86C_EAX]
+        or      al,al
+        jz      e4F_get
+        cmp     al,1
+        je      e4F_set
+        cmp     al,2
+        jne     ef_e_sub
+        movzx   ecx,word ptr [vdm_ctx+V86C_EBX]
+        cmp     ecx,EMS_WINDOWS
+        ja      ef_e_phys                       ; more windows than there are
+        imul    eax,ecx,EMS_PMAPENT
+        add     eax,2
+        mov     byte ptr [vdm_ctx+V86C_EAX],al
+        mov     ah,EMSE_OK
+        jmp     ems_done
+
+e4F_get:
+        call    ems_dssi
+        mov     eax,esi
+        mov     ecx,2
+        call    buf_ok
+        jc      ef_e_ptr
+        movzx   ecx,word ptr [esi]
+        cmp     ecx,EMS_WINDOWS
+        ja      ef_e_corrupt
+        lea     ecx,[ecx*2+2]
+        call    buf_ok
+        jc      ef_e_ptr
+        movzx   ecx,word ptr [esi]
+
+        ; EVERY SEGMENT IS A WINDOW BEFORE ANYTHING IS WRITTEN, and the
+        ; windows are kept here rather than read again: ES:DI is allowed
+        ; to be the same memory as DS:SI.
+        xor     edx,edx
+e4F_chk:
+        cmp     edx,ecx
+        jae     e4F_write
+        movzx   eax,word ptr [esi+edx*2+2]
+        call    ems_winseg                      ; -> EBX
+        jc      ef_e_phys
+        mov     [ems_pwin+edx*4],ebx
+        inc     edx
+        jmp     short e4F_chk
+e4F_write:
+        call    ems_esdi
+        imul    eax,ecx,EMS_PMAPENT
+        add     eax,2
+        push    ecx
+        mov     ecx,eax
+        mov     eax,edi
+        call    buf_ok
+        pop     ecx
+        jc      ef_e_ptr
+        mov     [edi],cx
+        add     edi,2
+        xor     edx,edx
+e4F_put:
+        cmp     edx,ecx
+        jae     e4F_ok
+        mov     ebx,[ems_pwin+edx*4]
+        mov     eax,ebx
+        shl     eax,10                          ; 400h paragraphs a window
+        add     eax,[ems_frame]
+        mov     [edi],ax
+        mov     eax,[ems_map+ebx*4]
+        mov     [edi+2],eax
+        add     edi,EMS_PMAPENT
+        inc     edx
+        jmp     short e4F_put
+e4F_ok:
+        mov     ah,EMSE_OK
+        jmp     ems_done
+
+; A RESTORE IS COPIED IN AND CHECKED WHOLE BEFORE A WINDOW MOVES, for
+; the reason ems_setmap gives: the array may be sitting in one of the
+; windows it is about to change.
+e4F_set:
+        call    ems_dssi
+        mov     eax,esi
+        mov     ecx,2
+        call    buf_ok
+        jc      ef_e_ptr
+        movzx   ecx,word ptr [esi]
+        cmp     ecx,EMS_WINDOWS
+        ja      ef_e_corrupt
+        imul    ecx,ecx,EMS_PMAPENT
+        add     ecx,2
+        call    buf_ok
+        jc      ef_e_ptr
+        mov     edi,OFFSET ems_pmap
+        cld
+        rep     movsb
+        movzx   ecx,word ptr [ems_pmap]
+
+        mov     esi,OFFSET ems_pmap + 2
+        xor     edx,edx
+e4F_vchk:
+        cmp     edx,ecx
+        jae     e4F_apply
+        movzx   eax,word ptr [esi]
+        call    ems_winseg
+        jc      ef_e_corrupt
+        mov     eax,[esi+2]
+        call    ems_entryok
+        jc      ef_e_corrupt
+        add     esi,EMS_PMAPENT
+        inc     edx
+        jmp     short e4F_vchk
+e4F_apply:
+        mov     esi,OFFSET ems_pmap + 2
+        xor     edx,edx
+e4F_one:
+        cmp     edx,ecx
+        jae     e4F_ok
+        movzx   eax,word ptr [esi]
+        call    ems_winseg                      ; -> EBX, checked above
+        mov     eax,[esi+2]
+        call    ems_mapone
+        add     esi,EMS_PMAPENT
+        inc     edx
+        jmp     short e4F_one
+
+;=====================================================================
+; 50h - several windows at once.  AL = 0 if the list names windows by
+;       physical page number, 1 if by segment; DX = the handle; CX =
+;       how many pairs; DS:SI -> the pairs, logical page first.
+;
+; A logical page of FFFFh unmaps its window, as in 44h.  Nothing moves
+; unless every pair is good - see ems_listmap.
+;=====================================================================
+ef_50:
+        mov     al,byte ptr [vdm_ctx+V86C_EAX]
+        cmp     al,1
+        ja      ef_e_sub
+        movzx   eax,al
+        mov     [ems_how],eax
+        movzx   edx,word ptr [vdm_ctx+V86C_EDX]
+        call    ems_hrow
+        jc      ef_e_handle
+        mov     ebp,esi
+        movzx   ecx,word ptr [vdm_ctx+V86C_ECX]
+        call    ems_dssi
+        mov     edi,OFFSET ems_tmap
+        call    ems_listmap
+        jc      ems_done
+        mov     esi,OFFSET ems_tmap
+        call    ems_state
+        mov     ah,EMSE_OK
+        jmp     ems_done
+
+;=====================================================================
+; 51h - the handle in DX, made BX pages long.  What it already holds
+;       is kept, up to the new length.
+;
+; The pages stay ONE BLOCK, which is the design and what makes 57h a
+; memmove - so growing either takes the free space after the block or
+; moves the whole handle somewhere bigger.  See ems_resize.  A window
+; showing a page that has gone comes down; one showing a page that
+; moved follows it.
+;
+; BX is left as it came on a refusal, which is DOSBox's answer to a
+; question the specification does not settle, and on success it is
+; already the new length.
+;=====================================================================
+ef_51:
+        movzx   edx,word ptr [vdm_ctx+V86C_EDX]
+        call    ems_hrow
+        jc      ef_e_handle
+        movzx   ecx,word ptr [vdm_ctx+V86C_EBX]
+        cmp     ecx,[ems_total]
+        ja      ef_e_many
+        call    ems_resize
+        jc      ems_done
+        mov     ah,EMSE_OK
+        jmp     ems_done
+
+;=====================================================================
+; 52h - handle attributes.  AL selects:
+;
+;   0  AL = the handle's: 0 volatile, 1 non-volatile
+;   1  BL = what it should be
+;   2  AL = what this manager can keep: 0, volatile only
+;
+; NON-VOLATILE MEANT "STILL THERE AFTER A WARM BOOT", which a card with
+; its own memory could promise and a pool in the arena cannot: the
+; arena is rebuilt from nothing every time the kernel starts.  So
+; every handle is volatile, asking for the other kind is 91h, and
+; asking for a kind the specification never defined is 90h.
+;=====================================================================
+ef_52:
+        mov     al,byte ptr [vdm_ctx+V86C_EAX]
+        cmp     al,2
+        je      e52_cap
+        ja      ef_e_sub
+        movzx   edx,word ptr [vdm_ctx+V86C_EDX]
+        call    ems_hrow
+        jc      ef_e_handle
+        cmp     al,1
+        je      e52_set
+        mov     byte ptr [vdm_ctx+V86C_EAX],0
+        mov     ah,EMSE_OK
+        jmp     ems_done
+e52_set:
+        mov     al,byte ptr [vdm_ctx+V86C_EBX]
+        cmp     al,1
+        ja      ef_e_attr
+        je      ef_e_nofeat
+        mov     ah,EMSE_OK
+        jmp     ems_done
+e52_cap:
+        mov     byte ptr [vdm_ctx+V86C_EAX],0
+        mov     ah,EMSE_OK
+        jmp     ems_done
+
+;=====================================================================
+; 53h - a handle's name.  AL = 0 copies the eight bytes to ES:DI, 1
+;       sets them from DS:SI.  DX = the handle.
+;
+; A NAME BELONGS TO ONE HANDLE, and giving a second handle a name that
+; is taken is A1h - except the empty name, eight zero bytes, which is
+; what every handle starts with and which any number of them may have.
+; Freeing a handle clears its name with the rest of its row.
+;=====================================================================
+ef_53:
+        mov     al,byte ptr [vdm_ctx+V86C_EAX]
+        cmp     al,1
+        ja      ef_e_sub
+        movzx   edx,word ptr [vdm_ctx+V86C_EDX]
+        call    ems_hrow
+        jc      ef_e_handle
+        cmp     al,1
+        je      e53_set
+        call    ems_esdi
+        mov     eax,edi
+        mov     ecx,8
+        call    buf_ok
+        jc      ef_e_ptr
+        mov     eax,[esi+EH_NAME]
+        mov     [edi],eax
+        mov     eax,[esi+EH_NAME+4]
+        mov     [edi+4],eax
+        mov     ah,EMSE_OK
+        jmp     ems_done
+e53_set:
+        mov     ebx,esi                         ; EBX = the row being named
+        call    ems_dssi
+        mov     eax,esi
+        mov     ecx,8
+        call    buf_ok
+        jc      ef_e_ptr
+        mov     eax,[esi]
+        mov     ecx,[esi+4]
+        mov     edi,eax
+        or      edi,ecx
+        jz      e53_store                       ; no name at all
+        call    ems_byname                      ; -> ESI = the row with it
+        jc      e53_store
+        cmp     esi,ebx
+        jne     ef_e_dup                        ; ...and it is another handle
+e53_store:
+        mov     [ebx+EH_NAME],eax
+        mov     [ebx+EH_NAME+4],ecx
+        mov     ah,EMSE_OK
+        jmp     ems_done
+
+;=====================================================================
+; 54h - the handle directory.  AL selects:
+;
+;   0  ES:DI gets ten bytes per open handle, its number and its name;
+;      AL = how many
+;   1  DS:SI -> a name; DX = the handle that has it
+;   2  BX = how many handles the manager has
+;
+; SEARCHING FOR NO NAME IS A1h, not A0h.  Every unnamed handle has the
+; empty name, so "which handle is called nothing" has many answers,
+; and the specification gives that question a code of its own.
+;=====================================================================
+ef_54:
+        mov     al,byte ptr [vdm_ctx+V86C_EAX]
+        or      al,al
+        jz      e54_dir
+        cmp     al,1
+        je      e54_find
+        cmp     al,2
+        jne     ef_e_sub
+        mov     word ptr [vdm_ctx+V86C_EBX],EMS_MAXH
+        mov     ah,EMSE_OK
+        jmp     ems_done
+
+e54_dir:
+        call    ems_count
+        mov     ebx,eax                         ; BL = AL on the way out
+        imul    ecx,eax,10
+        call    ems_esdi
+        mov     eax,edi
+        call    buf_ok
+        jc      ef_e_ptr
+        xor     edx,edx
+        mov     esi,OFFSET ems_htab
+e54_one:
+        cmp     dword ptr [esi+EH_FLAGS],0
+        je      e54_next
+        mov     [edi],dx
+        mov     eax,[esi+EH_NAME]
+        mov     [edi+2],eax
+        mov     eax,[esi+EH_NAME+4]
+        mov     [edi+6],eax
+        add     edi,10
+e54_next:
+        add     esi,EH_LEN
+        inc     edx
+        cmp     edx,EMS_MAXH
+        jb      e54_one
+        mov     byte ptr [vdm_ctx+V86C_EAX],bl
+        mov     ah,EMSE_OK
+        jmp     ems_done
+
+e54_find:
+        call    ems_dssi
+        mov     eax,esi
+        mov     ecx,8
+        call    buf_ok
+        jc      ef_e_ptr
+        mov     eax,[esi]
+        mov     ecx,[esi+4]
+        mov     edx,eax
+        or      edx,ecx
+        jz      ef_e_dup
+        call    ems_byname                      ; -> EDX = the handle
+        jc      ef_e_noname
+        mov     word ptr [vdm_ctx+V86C_EDX],dx
+        mov     ah,EMSE_OK
+        jmp     ems_done
+
+;=====================================================================
+; 55h - map some pages and jump.  AL = 0 physical page numbers, 1
+;       segments; DX = the handle; DS:SI -> where to go and the list.
+;
+; AN OVERLAY MANAGER'S FAR JMP: the code it is jumping to is in the
+; page it is mapping, so the two have to happen as one call.  This one
+; is cheap, because INT 67h is trapped rather than reflected and the
+; guest's CS:IP is a pair of fields in vdm_ctx: change them and the
+; monitor resumes the guest at the target.  The target sees every
+; register and flag the caller had, except AH, which is 0.
+;=====================================================================
+ef_55:
+        mov     al,byte ptr [vdm_ctx+V86C_EAX]
+        cmp     al,1
+        ja      ef_e_sub
+        movzx   eax,al
+        mov     [ems_how],eax
+        movzx   edx,word ptr [vdm_ctx+V86C_EDX]
+        call    ems_hrow
+        jc      ef_e_handle
+        mov     ebp,esi
+        call    ems_dssi
+        mov     eax,esi
+        mov     ecx,EMJ_SIZE
+        call    buf_ok
+        jc      ef_e_ptr
+        mov     ebx,[esi+EMJ_TARGET]
+        movzx   ecx,byte ptr [esi+EMJ_LEN]
+        mov     eax,[esi+EMJ_MAP]
+        call    ems_far
+        mov     esi,eax
+        mov     edi,OFFSET ems_tmap
+        call    ems_listmap
+        jc      ems_done
+        mov     esi,OFFSET ems_tmap
+        call    ems_state
+
+        movzx   eax,bx
+        mov     dword ptr [vdm_ctx+V86C_EIP],eax
+        shr     ebx,16
+        mov     dword ptr [vdm_ctx+V86C_CS],ebx
+        mov     ah,EMSE_OK
+        jmp     ems_done
+
+;=====================================================================
+; 56h - map some pages and call.  AL = 0 or 1 as for 55h, or 2 to ask
+;       how much of the caller's stack this takes (BX).  DX = the
+;       handle; DS:SI -> the target, the map to call with, and the map
+;       to come back to.
+;
+; THE FAR CALL HALF IS 55h.  The return is the part with something to
+; it: when the target's RETF comes back, the old map has to go in
+; before the caller sees its next instruction - so the RETF is made to
+; land on our HLT at EMSH_RET, and everything that HLT needs to finish
+; the job is on the guest's own stack underneath the return address
+; (ECF_*).  NOTHING IS KEPT IN THE KERNEL BETWEEN THE CALL AND THE
+; RETURN, which is what makes these nest - a target may call 56h
+; itself - and what makes a target that never returns cost nothing.
+;
+; THE OLD MAP IS READ AT THE CALL, NOT AT THE RETURN.  The list the
+; caller pointed at may be in a page the new map is about to take
+; away, and the specification's own errors for a bad old map are
+; errors of the call.  It goes on the stack as four window states; a
+; handle the target has freed by the time it returns is 83h then.
+;
+; The order matters because only the last step changes anything: old
+; map checked, room on the stack checked, new map checked and put in,
+; and only then the frame written and CS:IP moved.
+;=====================================================================
+ef_56:
+        mov     al,byte ptr [vdm_ctx+V86C_EAX]
+        cmp     al,2
+        je      e56_size
+        ja      ef_e_sub
+        movzx   eax,al
+        mov     [ems_how],eax
+        movzx   edx,word ptr [vdm_ctx+V86C_EDX]
+        call    ems_hrow
+        jc      ef_e_handle
+        mov     ebp,esi                         ; EBP = the row from here
+        call    ems_dssi
+        mov     eax,esi
+        mov     ecx,EMC_SIZE
+        call    buf_ok
+        jc      ef_e_ptr
+        mov     ebx,esi                         ; EBX = the structure
+
+        movzx   ecx,byte ptr [ebx+EMC_OLDLEN]
+        mov     eax,[ebx+EMC_OLDMAP]
+        call    ems_far
+        mov     esi,eax
+        mov     edi,OFFSET ems_cold
+        call    ems_listmap
+        jc      ems_done
+
+        movzx   eax,word ptr [vdm_ctx+V86C_ESP]
+        cmp     eax,EMS_CALLSTK
+        jb      ef_e_ptr                        ; it would wrap the segment
+        sub     eax,EMS_CALLSTK
+        mov     [ems_csp],eax
+        mov     ecx,dword ptr [vdm_ctx+V86C_SS]
+        shl     ecx,4
+        add     eax,ecx
+        mov     ecx,EMS_CALLSTK
+        call    buf_ok
+        jc      ef_e_ptr
+        push    eax                             ; the frame, flat
+
+        movzx   ecx,byte ptr [ebx+EMC_NEWLEN]
+        mov     eax,[ebx+EMC_NEWMAP]
+        call    ems_far
+        mov     esi,eax
+        mov     edi,OFFSET ems_tmap
+        call    ems_listmap
+        pop     edi                             ; EDI = the frame
+        jc      ems_done
+        mov     ebx,[ebx+EMC_TARGET]            ; before the frame can land
+                                                ; on the structure
+        mov     esi,OFFSET ems_tmap
+        call    ems_state
+
+        mov     word ptr [edi+ECF_RETIP],EMSH_RET
+        mov     eax,[ems_hdrseg]
+        mov     word ptr [edi+ECF_RETCS],ax
+        mov     word ptr [edi+ECF_SIG],EMS_CALLSIG
+        mov     esi,OFFSET ems_cold
+        push    edi
+        add     edi,ECF_OLD
+        mov     ecx,EMS_WINDOWS
+        cld
+        rep     movsd
+        pop     edi
+        mov     eax,dword ptr [vdm_ctx+V86C_EIP]
+        mov     word ptr [edi+ECF_IP],ax
+        mov     eax,dword ptr [vdm_ctx+V86C_CS]
+        mov     word ptr [edi+ECF_CS],ax
+
+        mov     eax,[ems_csp]
+        mov     word ptr [vdm_ctx+V86C_ESP],ax
+        movzx   eax,bx
+        mov     dword ptr [vdm_ctx+V86C_EIP],eax
+        shr     ebx,16
+        mov     dword ptr [vdm_ctx+V86C_CS],ebx
+        mov     ah,EMSE_OK
+        jmp     ems_done
+
+e56_size:
+        mov     word ptr [vdm_ctx+V86C_EBX],EMS_CALLSTK
+        mov     ah,EMSE_OK
+        jmp     ems_done
+
+;=====================================================================
+; ems_iscb - CF clear if the guest is stopped on the HLT a 56h target
+;            returns to.  Everything preserved.
+;=====================================================================
+ems_iscb:
+        push    eax
+        cmp     dword ptr [ems_have],0
+        je      eic_no
+        mov     eax,[ems_hdrseg]
+        cmp     dword ptr [vdm_ctx+V86C_CS],eax
+        jne     eic_no
+        cmp     dword ptr [vdm_ctx+V86C_EIP],EMSH_RET
+        jne     eic_no
+        pop     eax
+        clc
+        ret
+eic_no:
+        pop     eax
+        stc
+        ret
+
+;=====================================================================
+; ems_callret - the second half of 56h: the target has returned.  Put
+;               the old map back and resume the caller after its INT,
+;               with AH saying how that went.
+;
+; CF set if the stack under the HLT is not one of our frames, which
+; means the guest got here some way other than a RETF from a 56h
+; target - and then there is no caller to resume and the box is lost.
+;=====================================================================
+ems_callret:
+        movzx   eax,word ptr [vdm_ctx+V86C_ESP]
+        sub     eax,ECF_SIG                     ; the RETF took the first
+        jb      ecr_bad                         ; four bytes
+        cmp     eax,10000h - EMS_CALLSTK
+        ja      ecr_bad
+        mov     [ems_csp],eax
+        mov     ecx,dword ptr [vdm_ctx+V86C_SS]
+        shl     ecx,4
+        add     eax,ecx
+        mov     edi,eax                         ; EDI = the frame, flat
+        mov     ecx,EMS_CALLSTK
+        call    buf_ok
+        jc      ecr_bad
+        cmp     word ptr [edi+ECF_SIG],EMS_CALLSIG
+        jne     ecr_bad
+
+        mov     dword ptr [ems_cst],EMSE_OK
+        xor     ebx,ebx
+ecr_one:
+        mov     eax,[edi+ECF_OLD+ebx*4]
+        cmp     eax,EMS_KEEP
+        je      ecr_next
+        call    ems_entryok
+        jc      ecr_gone
+        call    ems_mapone
+        jmp     short ecr_next
+ecr_gone:
+        ; Freed or shrunk while the target ran.  That window is left
+        ; as the target had it, and the caller is told which went.
+        mov     edx,eax
+        and     edx,0FFFFh
+        call    ems_hrow
+        mov     dword ptr [ems_cst],EMSE_BADHANDLE
+        jc      ecr_next
+        mov     dword ptr [ems_cst],EMSE_BADLOG
+ecr_next:
+        inc     ebx
+        cmp     ebx,EMS_WINDOWS
+        jb      ecr_one
+
+        movzx   eax,word ptr [edi+ECF_IP]
+        mov     dword ptr [vdm_ctx+V86C_EIP],eax
+        movzx   eax,word ptr [edi+ECF_CS]
+        mov     dword ptr [vdm_ctx+V86C_CS],eax
+        mov     eax,[ems_csp]
+        add     eax,EMS_CALLSTK
+        mov     word ptr [vdm_ctx+V86C_ESP],ax
+        mov     al,byte ptr [ems_cst]
+        mov     byte ptr [vdm_ctx+V86C_EAX+1],al
+        clc
+        ret
+ecr_bad:
+        stc
+        ret
+
+;=====================================================================
+; 57h - move (AL = 0) or exchange (AL = 1) a region.  DS:SI -> the
+;       descriptor: a length, then each side as a type (0
+;       conventional, 1 expanded), a handle, an offset and a segment
+;       or logical page.
+;
+; ONE BLOCK PER HANDLE IS WHAT MAKES THIS SHORT.  An expanded region
+; that crosses pages is still one run of memory, so each side becomes
+; a flat address and a length, and the whole call is a memmove or a
+; swap.  Most of what follows is the specification's list of reasons
+; to refuse, which are worth getting right because programs test for
+; them:
+;
+;   96h  more than a megabyte
+;   98h  a type that is neither
+;   A2h  a conventional side that runs past the megabyte
+;   83h, 95h, 8Ah, 93h  an expanded side's handle, offset, first page,
+;        and last byte
+;   94h  a conventional side running through a window that is
+;        showing the expanded side, which a flat comparison cannot see
+;   97h  an exchange whose two sides overlap
+;   92h  a move whose two sides overlap in one handle - done, as a
+;        memmove does it, and reported, because the source is now
+;        partly gone
+;=====================================================================
+ef_57:
+        mov     al,byte ptr [vdm_ctx+V86C_EAX]
+        cmp     al,1
+        ja      ef_e_sub
+        movzx   eax,al
+        mov     [ems_xchg],eax
+        mov     dword ptr [ems_mst],EMSE_OK
+        call    ems_dssi
+        mov     eax,esi
+        mov     ecx,EMX_SIZE
+        call    buf_ok
+        jc      ef_e_ptr
+        mov     edi,OFFSET ems_mx
+        cld
+        rep     movsb
+
+        mov     ecx,dword ptr [ems_mx+EMX_LEN]
+        cmp     ecx,100000h
+        ja      ef_e_toobig
+        mov     esi,OFFSET ems_mx + EMX_SRC
+        mov     edi,OFFSET ems_rsrc
+        call    ems_region
+        jc      ems_done
+        mov     esi,OFFSET ems_mx + EMX_DST
+        mov     edi,OFFSET ems_rdst
+        call    ems_region
+        jc      ems_done
+
+        mov     eax,dword ptr [ems_rsrc+ERG_TYPE]
+        cmp     eax,dword ptr [ems_rdst+ERG_TYPE]
+        je      e57_same
+
+        ; ONE OF EACH: the conventional side may be a window.
+        mov     esi,OFFSET ems_rsrc
+        mov     edi,OFFSET ems_rdst
+        or      eax,eax
+        jz      e57_alias
+        xchg    esi,edi
+e57_alias:
+        call    ems_alias
+        jc      ef_e_convexp
+        jmp     short e57_go
+
+e57_same:
+        or      eax,eax
+        jz      e57_conv
+        mov     eax,dword ptr [ems_rsrc+ERG_HANDLE]
+        cmp     eax,dword ptr [ems_rdst+ERG_HANDLE]
+        jne     e57_go                          ; two handles, two blocks
+        mov     eax,dword ptr [ems_rsrc+ERG_FROM]
+        mov     edx,dword ptr [ems_rdst+ERG_FROM]
+        call    ems_overlap
+        jnc     e57_go
+        cmp     dword ptr [ems_xchg],0
+        jne     ef_e_xchgovl
+        mov     dword ptr [ems_mst],EMSE_MOVEOVL
+        jmp     short e57_go
+e57_conv:
+        mov     eax,dword ptr [ems_rsrc+ERG_FLAT]
+        mov     edx,dword ptr [ems_rdst+ERG_FLAT]
+        call    ems_overlap
+        jnc     e57_go
+        cmp     dword ptr [ems_xchg],0
+        jne     ef_e_xchgovl
+
+e57_go:
+        mov     esi,dword ptr [ems_rsrc+ERG_FLAT]
+        mov     edi,dword ptr [ems_rdst+ERG_FLAT]
+        cmp     dword ptr [ems_xchg],0
+        jne     e57_swap
+        call    ems_copy
+        jmp     short e57_out
+e57_swap:
+        call    ems_swap
+e57_out:
+        mov     ah,byte ptr [ems_mst]
+        jmp     ems_done
+
+;---------------------------------------------------------------------
+; ems_region - ESI -> one side of 57h's descriptor, EDI -> the ERG_
+;              record to fill, ECX = the length.  CF set: AH = why it
+;              is refused.  ECX, ESI and EDI survive.
+;---------------------------------------------------------------------
+ems_region:
+        push    ebx
+        push    edx
+        push    esi
+        movzx   eax,byte ptr [esi+EMXR_TYPE]
+        cmp     eax,1
+        ja      rgn_type
+        mov     [edi+ERG_TYPE],eax
+        je      rgn_exp
+
+        movzx   eax,word ptr [esi+EMXR_SEGPG]
+        shl     eax,4
+        movzx   edx,word ptr [esi+EMXR_OFF]
+        add     eax,edx
+        mov     [edi+ERG_FLAT],eax
+        lea     edx,[eax+ecx]
+        cmp     edx,100000h
+        ja      rgn_wrap
+        call    buf_ok
+        jc      rgn_ptr
+        jmp     short rgn_ok
+
+rgn_exp:
+        movzx   edx,word ptr [esi+EMXR_HANDLE]
+        mov     [edi+ERG_HANDLE],edx
+        movzx   ebx,word ptr [esi+EMXR_OFF]
+        movzx   eax,word ptr [esi+EMXR_SEGPG]
+        call    ems_hrow                        ; -> ESI = the row
+        jc      rgn_handle
+        cmp     ebx,EMS_PGSIZE
+        jae     rgn_off
+        cmp     eax,[esi+EH_PAGES]
+        jae     rgn_log
+        shl     eax,14
+        add     eax,ebx                         ; bytes into the handle
+        mov     [edi+ERG_FROM],eax
+        lea     edx,[eax+ecx]
+        mov     ebx,[esi+EH_PAGES]
+        shl     ebx,14
+        cmp     edx,ebx
+        ja      rgn_end
+        add     eax,[esi+EH_BASE]
+        mov     [edi+ERG_FLAT],eax
+rgn_ok:
+        pop     esi
+        pop     edx
+        pop     ebx
+        clc
+        ret
+
+rgn_type:       mov     ah,EMSE_BADTYPE
+                jmp     short rgn_fail
+rgn_wrap:       mov     ah,EMSE_WRAP
+                jmp     short rgn_fail
+rgn_ptr:        mov     ah,EMSE_SOFT
+                jmp     short rgn_fail
+rgn_handle:     mov     ah,EMSE_BADHANDLE
+                jmp     short rgn_fail
+rgn_off:        mov     ah,EMSE_BADOFF
+                jmp     short rgn_fail
+rgn_log:        mov     ah,EMSE_BADLOG
+                jmp     short rgn_fail
+rgn_end:        mov     ah,EMSE_PASTEND
+rgn_fail:
+        pop     esi
+        pop     edx
+        pop     ebx
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; ems_alias - ESI -> the conventional side, EDI -> the expanded one,
+;             ECX = the length.  CF set if the conventional side runs
+;             through a window that is showing any of the expanded
+;             side's pages.  Everything preserved.
+;
+; THE ONE OVERLAP A FLAT COMPARISON CANNOT SEE.  Through a window, D000:0
+; and the handle's page are the same memory at two different addresses,
+; so a memmove that looked only at the addresses would copy a region
+; over itself in the wrong order.  Page granular, which is the most a
+; window can say.
+;---------------------------------------------------------------------
+ems_alias:
+        pushad
+        or      ecx,ecx
+        jz      als_no
+        mov     ebp,[esi+ERG_FLAT]
+        xor     ebx,ebx
+als_one:
+        mov     eax,ebx
+        shl     eax,14
+        add     eax,[ems_flin]                  ; the window's first byte
+        lea     edx,[eax+EMS_PGSIZE]
+        cmp     ebp,edx
+        jae     als_next                        ; the region starts above it
+        lea     edx,[ebp+ecx]
+        cmp     eax,edx
+        jae     als_next                        ; ...or ends below it
+        mov     eax,[ems_map+ebx*4]
+        cmp     eax,EMS_UNMAPPED
+        je      als_next
+        movzx   edx,ax
+        cmp     edx,[edi+ERG_HANDLE]
+        jne     als_next
+        shr     eax,16
+        shl     eax,14                          ; the page, as bytes into it
+        mov     edx,[edi+ERG_FROM]
+        add     edx,ecx
+        cmp     eax,edx
+        jae     als_next                        ; past the expanded side
+        add     eax,EMS_PGSIZE
+        cmp     [edi+ERG_FROM],eax
+        jae     als_next                        ; ...or before it
+        popad
+        stc
+        ret
+als_next:
+        inc     ebx
+        cmp     ebx,EMS_WINDOWS
+        jb      als_one
+als_no:
+        popad
+        clc
+        ret
+
+;---------------------------------------------------------------------
+; ems_overlap - EAX and EDX = where two runs of ECX bytes start.  CF
+;               set if they share a byte.  Everything preserved.
+;---------------------------------------------------------------------
+ems_overlap:
+        or      ecx,ecx
+        jz      ovl_no
+        push    eax
+        push    edx
+        cmp     eax,edx
+        jbe     ovl_ord
+        xchg    eax,edx                         ; EAX the lower
+ovl_ord:
+        sub     edx,eax
+        cmp     edx,ecx
+        pop     edx
+        pop     eax
+        jb      ovl_yes
+ovl_no:
+        clc
+        ret
+ovl_yes:
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; ems_copy - ECX bytes from ESI to EDI, as a memmove: overlap is safe
+;            in either direction.  Everything preserved.
+;
+; Downwards when the destination starts inside the source, which is
+; the only case where a forward copy reads what it has already
+; written.  XMS's 0Bh does the same with STD and interrupts on, so
+; this is not the first.
+;---------------------------------------------------------------------
+ems_copy:
+        pushad
+        cld
+        cmp     esi,edi
+        jae     cpy_up
+        lea     eax,[esi+ecx]
+        cmp     edi,eax
+        jae     cpy_up
+        std
+        lea     esi,[esi+ecx-1]
+        lea     edi,[edi+ecx-1]
+        mov     eax,ecx
+        and     ecx,3                           ; the odd bytes at the top
+        rep     movsb
+        mov     ecx,eax
+        shr     ecx,2
+        sub     esi,3                           ; and the dwords below them,
+        sub     edi,3                           ; from the last one down
+        rep     movsd
+        cld
+        popad
+        ret
+cpy_up:
+        mov     eax,ecx
+        shr     ecx,2
+        rep     movsd
+        mov     ecx,eax
+        and     ecx,3
+        rep     movsb
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; ems_swap - exchange ECX bytes at ESI with ECX bytes at EDI, which do
+;            not overlap.  Everything preserved.
+;---------------------------------------------------------------------
+ems_swap:
+        pushad
+        mov     edx,ecx
+        shr     ecx,2
+        jz      swp_bytes
+swp_dw:
+        mov     eax,[esi]
+        mov     ebx,[edi]
+        mov     [edi],eax
+        mov     [esi],ebx
+        add     esi,4
+        add     edi,4
+        dec     ecx
+        jnz     swp_dw
+swp_bytes:
+        mov     ecx,edx
+        and     ecx,3
+        jz      swp_done
+swp_b:
+        mov     al,[esi]
+        mov     bl,[edi]
+        mov     [edi],al
+        mov     [esi],bl
+        inc     esi
+        inc     edi
+        dec     ecx
+        jnz     swp_b
+swp_done:
+        popad
+        ret
+
+;=====================================================================
+; 58h - the mappable physical pages.  AL = 0 writes a segment and a
+;       page number for each to ES:DI, in address order; both forms
+;       answer CX = how many.
+;
+; Four, and they are the frame - see the file header for why there
+; is nothing in conventional memory.
+;=====================================================================
+ef_58:
+        mov     al,byte ptr [vdm_ctx+V86C_EAX]
+        or      al,al
+        jz      e58_list
+        cmp     al,1
+        je      e58_count
+        jmp     ef_e_sub
+e58_list:
+        call    ems_esdi
+        mov     eax,edi
+        mov     ecx,EMS_WINDOWS * 4
+        call    buf_ok
+        jc      ef_e_ptr
+        mov     eax,[ems_frame]
+        xor     ebx,ebx
+e58_one:
+        mov     [edi],ax
+        mov     [edi+2],bx
+        add     eax,EMS_PGSIZE / 16
+        add     edi,4
+        inc     ebx
+        cmp     ebx,EMS_WINDOWS
+        jb      e58_one
+e58_count:
+        mov     word ptr [vdm_ctx+V86C_ECX],EMS_WINDOWS
+        mov     ah,EMSE_OK
+        jmp     ems_done
+
+;=====================================================================
+; 59h - what the hardware is like.  AL = 0 writes five words to ES:DI
+;       (an OS/E function, so 5Dh can lock it); AL = 1 is BX = raw
+;       pages free and DX = raw pages in all.
+;
+; THE HARDWARE IS PAGE TABLES, so the answers are short: a raw page is
+; 16K like a standard one, there are no alternate register sets and
+; no DMA register sets, and a context save area is 4Eh's array.
+;=====================================================================
+ef_59:
+        mov     al,byte ptr [vdm_ctx+V86C_EAX]
+        cmp     al,1
+        je      e59_raw
+        ja      ef_e_sub
+        cmp     dword ptr [ems_osoff],0
+        jne     ef_e_denied
+        call    ems_esdi
+        mov     eax,edi
+        mov     ecx,10
+        call    buf_ok
+        jc      ef_e_ptr
+        mov     word ptr [edi],EMS_PGSIZE / 16  ; a raw page, in paragraphs
+        mov     word ptr [edi+2],0              ; alternate register sets
+        mov     word ptr [edi+4],EMS_MAPLEN     ; a context save area
+        mov     word ptr [edi+6],0              ; DMA register sets
+        mov     word ptr [edi+8],0              ; ...and how DMA works with
+        mov     ah,EMSE_OK                      ; them, which is moot
+        jmp     ems_done
+e59_raw:
+        call    ems_avail
+        mov     word ptr [vdm_ctx+V86C_EBX],ax
+        mov     edx,[ems_total]
+        mov     word ptr [vdm_ctx+V86C_EDX],dx
+        mov     ah,EMSE_OK
+        jmp     ems_done
+
+;=====================================================================
+; 5Ah - BX pages, standard (AL = 0) or raw (AL = 1), which here are the
+;       same 16K.  DX = the handle.  Unlike 43h, BX may be 0.
+;=====================================================================
+ef_5A:
+        mov     al,byte ptr [vdm_ctx+V86C_EAX]
+        cmp     al,1
+        ja      ef_e_sub
+        movzx   ecx,word ptr [vdm_ctx+V86C_EBX]
+        call    ems_alloc
+        jc      ems_done
+        mov     word ptr [vdm_ctx+V86C_EDX],dx
+        mov     ah,EMSE_OK
+        jmp     ems_done
+
+;=====================================================================
+; 5Bh - alternate map register sets.  An OS/E function, all of it.
+;
+;   0  BL = the set in use; with set 0, ES:DI = the context save area
+;      5Bh/01 named, now holding the current map, or 0:0
+;   1  BL = the set to use; with set 0, ES:DI = a context save area to
+;      take the map from and to remember, or 0:0 to forget it
+;   2  DX = how big a context save area is
+;   3  allocate a set, 5 a DMA set: BL = 0, there are none
+;   4  free a set, 6 and 7 DMA on a set, 8 free a DMA set: set 0 only
+;
+; A CARD WITH SPARE REGISTER BANKS COULD SWITCH WHOLE MAPS IN ONE OUT,
+; and that is what an alternate set was.  Without them the
+; specification falls back to set 0 and a save area in the caller's
+; memory, which costs a copy each way and is exactly what a multitasker
+; switching programs needs - so that is what is here, and every other
+; set number is 9Ch.
+;=====================================================================
+ef_5B:
+        cmp     dword ptr [ems_osoff],0
+        jne     ef_e_denied
+        movzx   eax,byte ptr [vdm_ctx+V86C_EAX]
+        cmp     eax,8
+        ja      ef_e_sub
+        jmp     dword ptr [e5B_tbl+eax*4]
+
+e5B_tbl dd  e5B_get,   e5B_set,   e5B_size,  e5B_none
+        dd  e5B_zero,  e5B_none,  e5B_zero,  e5B_zero
+        dd  e5B_zero
+
+e5B_get:
+        mov     byte ptr [vdm_ctx+V86C_EBX],0
+        mov     eax,[ems_alt]
+        mov     word ptr [vdm_ctx+V86C_EDI],ax
+        shr     eax,16
+        mov     dword ptr [vdm_ctx+V86C_ES],eax
+        mov     eax,[ems_alt]
+        or      eax,eax
+        jz      e5B_ok
+        call    ems_far
+        mov     edi,eax
+        mov     ecx,EMS_MAPLEN
+        call    buf_ok
+        jc      ef_e_ptr
+        mov     esi,OFFSET ems_map
+        mov     ecx,EMS_WINDOWS
+        cld
+        rep     movsd
+e5B_ok:
+        mov     ah,EMSE_OK
+        jmp     ems_done
+
+e5B_set:
+        cmp     byte ptr [vdm_ctx+V86C_EBX],0
+        jne     ef_e_noalt
+        mov     eax,dword ptr [vdm_ctx+V86C_ES]
+        shl     eax,16
+        mov     ax,word ptr [vdm_ctx+V86C_EDI]
+        or      eax,eax
+        jz      e5B_forget
+        mov     ebx,eax
+        call    ems_far
+        mov     esi,eax
+        mov     ecx,EMS_MAPLEN
+        call    buf_ok
+        jc      ef_e_ptr
+        call    ems_setmap
+        jc      ef_e_corrupt
+        mov     [ems_alt],ebx
+        mov     eax,dword ptr [cur_own]
+        mov     [ems_altown],eax
+        jmp     e5B_ok
+e5B_forget:
+        mov     [ems_alt],eax
+        jmp     e5B_ok
+
+e5B_size:
+        mov     word ptr [vdm_ctx+V86C_EDX],EMS_MAPLEN
+        jmp     e5B_ok
+
+e5B_none:
+        mov     byte ptr [vdm_ctx+V86C_EBX],0
+        jmp     e5B_ok
+
+e5B_zero:
+        cmp     byte ptr [vdm_ctx+V86C_EBX],0
+        jne     ef_e_noalt
+        jmp     e5B_ok
+
+;=====================================================================
+; 5Ch - get ready for a warm boot.  There is nothing to get ready: the
+;       kernel starts the arena again from nothing, and the windows go
+;       with it.
+;=====================================================================
+ef_5C:
+        mov     ah,EMSE_OK
+        jmp     ems_done
+
+;=====================================================================
+; 5Dh - the OS/E functions on (AL = 0) or off (AL = 1), and the key
+;       handed back (AL = 2).  BX:CX = the access key.
+;
+; THE FIRST CALL GETS THE KEY rather than giving one: whoever switches
+; the functions first is told a number, and from then on only that
+; number switches them again.  2 gives the key back, switches the
+; functions on, and leaves the next caller to be told a new one.  It is
+; how an operating system kept 59h/00 and 5Bh to itself while it ran
+; programs that might call them.
+;
+; A key whose program has ended goes with it - see ems_relown - since
+; nobody is left who could give it back.
+;=====================================================================
+ef_5D:
+        mov     al,byte ptr [vdm_ctx+V86C_EAX]
+        cmp     al,2
+        je      e5D_return
+        ja      ef_e_sub
+        cmp     dword ptr [ems_haskey],0
+        je      e5D_first
+        call    ems_keyok
+        jc      ef_e_denied
+        jmp     short e5D_set
+e5D_first:
+        call    ems_newkey
+        mov     [ems_key],eax
+        mov     dword ptr [ems_haskey],1
+        mov     ecx,dword ptr [cur_own]
+        mov     [ems_keyown],ecx
+        mov     word ptr [vdm_ctx+V86C_ECX],ax
+        shr     eax,16
+        mov     word ptr [vdm_ctx+V86C_EBX],ax
+e5D_set:
+        movzx   eax,byte ptr [vdm_ctx+V86C_EAX]
+        mov     [ems_osoff],eax
+        mov     ah,EMSE_OK
+        jmp     ems_done
+e5D_return:
+        cmp     dword ptr [ems_haskey],0
+        je      e5D_open
+        call    ems_keyok
+        jc      ef_e_denied
+e5D_open:
+        xor     eax,eax
+        mov     [ems_haskey],eax
+        mov     [ems_osoff],eax
+        mov     ah,EMSE_OK
+        jmp     ems_done
+
+;--- ems_keyok - CF unless the guest's BX:CX is the key.
+ems_keyok:
+        push    eax
+        movzx   eax,word ptr [vdm_ctx+V86C_EBX]
+        shl     eax,16
+        mov     ax,word ptr [vdm_ctx+V86C_ECX]
+        cmp     eax,[ems_key]
+        pop     eax
+        jne     eko_no
+        clc
+        ret
+eko_no:
+        stc
+        ret
+
+;--- ems_newkey - EAX = a key, never 0.  The tick count stirred with
+;--- the last key, so that two keys asked for in one tick differ.
+ems_newkey:
+        mov     eax,dword ptr ds:[BDA_TICKS]
+        add     eax,[ems_key]
+        imul    eax,eax,41C64E6Dh
+        add     eax,3039h
+        or      eax,eax
+        jnz     enk_out
+        inc     eax
+enk_out:
+        ret
+
+;=====================================================================
 ; ems_esdi / ems_dssi - a guest's far pointer, flattened.
+; ems_far            - EAX = a far pointer as stored in memory,
+;                      segment high; EAX = it flattened.
 ;
 ; No guard here and none needed here: the guard is buf_ok and it wants
 ; a length, which only the caller knows.
@@ -680,6 +1987,15 @@ ems_dssi:
         movzx   eax,word ptr [vdm_ctx+V86C_ESI]
         add     esi,eax
         pop     eax
+        ret
+
+ems_far:
+        push    edx
+        movzx   edx,ax
+        shr     eax,16
+        shl     eax,4
+        add     eax,edx
+        pop     edx
         ret
 
 ;---------------------------------------------------------------------
@@ -703,6 +2019,7 @@ ems_mapout:
         jc      emp_ptr
         mov     esi,OFFSET ems_map
         mov     ecx,EMS_WINDOWS
+        cld
         rep     movsd
         popad
         clc
@@ -739,75 +2056,242 @@ emp_ctx:
 ;              got, and NOTHING IS CHANGED BEFORE THAT IS KNOWN -
 ;              because a half-applied page map is a program looking at
 ;              two different pictures at once, and it would have no
-;              way to tell.
+;              way to tell.  Everything preserved.
+;
+; COPIED IN FIRST, because the guest is allowed to keep its saved map
+; in expanded memory: if the array is in window 2 and the map moves
+; window 2, reading the rest of it afterwards reads somebody else's
+; page.
 ;=====================================================================
 ems_setmap:
         pushad
-        xor     ebx,ebx                         ; pass one: is it all legal?
-esm_check:
-        cmp     ebx,EMS_WINDOWS
-        jae     esm_apply
-        mov     eax,[esi+ebx*4]
-        cmp     eax,EMS_UNMAPPED
-        je      esm_cnext
-        movzx   edx,ax
-        mov     ecx,eax
-        shr     ecx,16
-        push    esi
-        call    ems_hrow
-        jc      esm_cbad
-        cmp     ecx,[esi+EH_PAGES]
-        pop     esi
-        jae     esm_bad
-esm_cnext:
-        inc     ebx
-        jmp     short esm_check
-esm_cbad:
-        pop     esi
-        jmp     short esm_bad
+        mov     edi,OFFSET ems_tmap
+        mov     ecx,EMS_WINDOWS
+        cld
+        rep     movsd
 
-esm_apply:
+        xor     ebx,ebx
+esm_check:
+        mov     eax,[ems_tmap+ebx*4]
+        call    ems_entryok
+        jc      esm_bad
+        inc     ebx
+        cmp     ebx,EMS_WINDOWS
+        jb      esm_check
+
         xor     ebx,ebx
 esm_one:
-        cmp     ebx,EMS_WINDOWS
-        jae     esm_ok
-        mov     eax,[esi+ebx*4]
-        cmp     eax,EMS_UNMAPPED
-        je      esm_off
-        movzx   edx,ax
-        mov     ecx,eax
-        shr     ecx,16
-        push    esi
-        call    ems_hrow                        ; checked above; ESI is the
-        call    ems_window                      ; row from here to the pop
-        pop     esi
-        jmp     short esm_next
-esm_off:
-        call    ems_unwin
-esm_next:
+        mov     eax,[ems_tmap+ebx*4]
+        call    ems_mapone
         inc     ebx
-        jmp     short esm_one
+        cmp     ebx,EMS_WINDOWS
+        jb      esm_one
+        popad
+        clc
+        ret
 esm_bad:
         popad
         stc
         ret
-esm_ok:
+
+;=====================================================================
+; ems_listmap - a 4.0 map list made into a state per window.
+;
+;   ESI -> the list, flat: pairs of words, logical page then physical
+;          page number or segment as [ems_how] says
+;   ECX =  how many pairs
+;   EDX =  the handle, EBP -> its row
+;   EDI -> four dwords to fill
+;
+; Each window comes out as EMS_KEEP if the list does not name it,
+; EMS_UNMAPPED if its last pair says FFFFh, or the 4Eh dword for the
+; page its last pair names.  CF set: AH = 80h, 8Bh or 8Ah, and the
+; four dwords mean nothing.  Everything else preserved.
+;
+; WHY A STATE AND NOT THE LIST.  Applying pairs one at a time reads the
+; list while the windows move, and the list is allowed to be in a
+; window - 50h's own pairs can be in the page they are taking away.
+; Four windows means the last pair for each one is the only one that
+; matters, so the whole list reduces to four answers before any window
+; changes, and nothing changes at all if any pair is bad.  56h keeps
+; its old map this way too, which is why its stack frame is a fixed
+; size however long the caller's list was.
+;=====================================================================
+ems_listmap:
+        pushad
+        push    ecx
+        push    edi
+        mov     eax,EMS_KEEP
+        mov     ecx,EMS_WINDOWS
+        cld
+        rep     stosd
+        pop     edi
+        pop     ecx
+
+        mov     eax,esi
+        push    ecx
+        shl     ecx,2
+        call    buf_ok
+        pop     ecx
+        jc      lmp_ptr
+lmp_one:
+        or      ecx,ecx
+        jz      lmp_ok
+        movzx   eax,word ptr [esi+2]
+        call    ems_phys                        ; -> EBX = the window
+        jc      lmp_phys
+        movzx   eax,word ptr [esi]
+        cmp     eax,0FFFFh
+        je      lmp_off
+        cmp     eax,[ebp+EH_PAGES]
+        jae     lmp_log
+        shl     eax,16
+        or      eax,edx
+        jmp     short lmp_set
+lmp_off:
+        mov     eax,EMS_UNMAPPED
+lmp_set:
+        mov     [edi+ebx*4],eax
+        add     esi,4
+        dec     ecx
+        jmp     short lmp_one
+lmp_ok:
         popad
         clc
+        ret
+lmp_ptr:
+        popad
+        mov     ah,EMSE_SOFT
+        stc
+        ret
+lmp_phys:
+        popad
+        mov     ah,EMSE_BADPHYS
+        stc
+        ret
+lmp_log:
+        popad
+        mov     ah,EMSE_BADLOG
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; ems_state - ESI -> four window states that ems_listmap has already
+;             checked.  Make the windows say them.  Everything
+;             preserved.
+;---------------------------------------------------------------------
+ems_state:
+        push    eax
+        push    ebx
+        xor     ebx,ebx
+est_one:
+        mov     eax,[esi+ebx*4]
+        cmp     eax,EMS_KEEP
+        je      est_next
+        call    ems_mapone
+est_next:
+        inc     ebx
+        cmp     ebx,EMS_WINDOWS
+        jb      est_one
+        pop     ebx
+        pop     eax
+        ret
+
+;---------------------------------------------------------------------
+; ems_phys   - EAX = a physical page number or a segment, as [ems_how]
+;              says.  EBX = its window, CF if it is not one.
+; ems_winseg - EAX = a segment.  EBX = the window that starts there,
+;              CF if none does.
+;
+; A SEGMENT INSIDE A WINDOW IS NOT THAT WINDOW.  58h published four
+; segments and those are the ones that name windows; D100h is a
+; mistake, and answering it with window 0 would hide the mistake.
+;---------------------------------------------------------------------
+ems_phys:
+        cmp     dword ptr [ems_how],0
+        jne     ems_winseg
+        cmp     eax,EMS_WINDOWS
+        jae     eph_bad
+        mov     ebx,eax
+        clc
+        ret
+eph_bad:
+        stc
+        ret
+
+ems_winseg:
+        mov     ebx,eax
+        sub     ebx,[ems_frame]
+        jb      eph_bad
+        test    ebx,(EMS_PGSIZE / 16) - 1
+        jnz     eph_bad
+        shr     ebx,10
+        cmp     ebx,EMS_WINDOWS
+        jae     eph_bad
+        clc
+        ret
+
+;---------------------------------------------------------------------
+; ems_entryok - EAX = a window's state as the 4Eh array has it.  CF
+;               if it names a handle that is not open, or a page that
+;               handle has not got.  Unmapped is a state.  Everything
+;               preserved.
+; ems_mapone  - EBX = a window, EAX = a state ems_entryok has passed.
+;               The window shows it.  Everything preserved.
+;---------------------------------------------------------------------
+ems_entryok:
+        cmp     eax,EMS_UNMAPPED
+        je      eok_yes
+        push    ecx
+        push    edx
+        push    esi
+        movzx   edx,ax
+        mov     ecx,eax
+        shr     ecx,16
+        call    ems_hrow
+        jc      eok_no
+        cmp     ecx,[esi+EH_PAGES]
+        jae     eok_no
+        pop     esi
+        pop     edx
+        pop     ecx
+eok_yes:
+        clc
+        ret
+eok_no:
+        pop     esi
+        pop     edx
+        pop     ecx
+        stc
+        ret
+
+ems_mapone:
+        cmp     eax,EMS_UNMAPPED
+        je      ems_unwin
+        push    ecx
+        push    edx
+        push    esi
+        movzx   edx,ax
+        mov     ecx,eax
+        shr     ecx,16
+        call    ems_hrow
+        call    ems_window
+        pop     esi
+        pop     edx
+        pop     ecx
         ret
 
 ;=====================================================================
 ; ems_window - EBX = window 0-3, EDX = handle number, ESI = its row,
 ;              ECX = logical page.  Point the window at the page.
+;              Everything preserved.
 ;
 ; FOUR PAGE TABLE ENTRIES AND A CR3 RELOAD, which is the whole of what
 ; a bank-switching card did with its registers.  The page frame is
 ; below 1MB and is never handed to hardware, which is the condition
-; PAGING.INC states for a hole in the identity map: the ATA driver is
-; polled PIO, the floppy path stages through XFER_BUF, and rm_int
-; passes registers and that same buffer.  A driver loaded high that
-; programs the DMA controller to write into the page frame is the case
-; this does not survive - and it is the case EMM386 needed virtual DMA
+; PAGING.INC states for a hole in the identity map: the ATA driver
+; takes the frame by PIO, and a box's 8237 is given the bounce buffer
+; instead (VDMA.INC) - which is the job EMM386 needed virtual DMA
 ; services for.
 ;=====================================================================
 ems_window:
@@ -834,7 +2318,8 @@ ems_window:
         ret
 
 ;=====================================================================
-; ems_unwin - EBX = window 0-3.  Point it back at itself.
+; ems_unwin - EBX = window 0-3.  Point it back at itself.  Everything
+;             preserved.
 ;
 ; WHICH IS NOT NOTHING, and is exactly right: the frame was chosen
 ; because nothing decodes it, so a window pointing at its own address
@@ -854,37 +2339,261 @@ ems_unwin:
         mov     dword ptr [ems_map+ebx*4],EMS_UNMAPPED
         ret
 
+;---------------------------------------------------------------------
+; ems_cutwin - EDX = a handle, ECX = its first page that is going.
+;              Every window showing that page or a later one comes
+;              down.
+; ems_rewin  - EDX = a handle, ESI = its row, whose pages have moved.
+;              Every window showing one of them is pointed at where it
+;              is now.
+;
+; Both preserve everything.
+;---------------------------------------------------------------------
+ems_cutwin:
+        push    eax
+        push    ebx
+        xor     ebx,ebx
+ecw_one:
+        mov     eax,[ems_map+ebx*4]
+        cmp     ax,dx
+        jne     ecw_next
+        shr     eax,16
+        cmp     eax,ecx
+        jb      ecw_next
+        call    ems_unwin
+ecw_next:
+        inc     ebx
+        cmp     ebx,EMS_WINDOWS
+        jb      ecw_one
+        pop     ebx
+        pop     eax
+        ret
+
+ems_rewin:
+        push    eax
+        push    ebx
+        push    ecx
+        xor     ebx,ebx
+erw_one:
+        mov     eax,[ems_map+ebx*4]
+        cmp     ax,dx
+        jne     erw_next
+        shr     eax,16
+        mov     ecx,eax
+        call    ems_window
+erw_next:
+        inc     ebx
+        cmp     ebx,EMS_WINDOWS
+        jb      erw_one
+        pop     ecx
+        pop     ebx
+        pop     eax
+        ret
+
+;=====================================================================
+; ems_alloc - ECX = pages, which may be none.  CF clear: EDX = the new
+;             handle.  CF set: AH = why not.
+;
+; The order of the refusals is the order the specification puts them
+; in, and it matters: "more than the system has" and "more than are
+; free" are different answers to different questions and a program
+; that gets the second one will try again later.
+;=====================================================================
+ems_alloc:
+        cmp     ecx,[ems_total]
+        ja      eac_many
+        call    ems_avail
+        cmp     ecx,eax
+        ja      eac_avail
+        call    ems_newh                        ; -> EAX = row index, ESI = row
+        jc      eac_handles
+        push    eax
+        or      ecx,ecx
+        jz      eac_empty
+        mov     ebx,ecx
+        shl     ebx,14                          ; the pages, in bytes
+        add     ebx,1000h                       ; and room to align the front
+        call    arena_alloc
+        jc      eac_nomem
+        mov     [esi+EH_RAW],eax                ; what arena_free will want
+        add     eax,0FFFh
+        and     eax,NOT 0FFFh
+        mov     [esi+EH_BASE],eax               ; and what every map uses
+eac_empty:
+        mov     [esi+EH_PAGES],ecx
+        mov     eax,dword ptr [cur_own]         ; whose it is, so that the end
+        mov     [esi+EH_OWN],eax                ; of one program does not
+                                                ; strand another's handles
+        mov     dword ptr [esi+EH_FLAGS],1
+        pop     edx                             ; the row IS the handle
+        clc
+        ret
+eac_nomem:
+        pop     eax                             ; the row was never marked
+eac_avail:                                      ; taken, so there is no undo
+        mov     ah,EMSE_NOTAVAIL
+        stc
+        ret
+eac_many:
+        mov     ah,EMSE_TOOMANY
+        stc
+        ret
+eac_handles:
+        mov     ah,EMSE_NOHANDLES
+        stc
+        ret
+
+;=====================================================================
+; ems_resize - ESI = a handle's row, EDX = the handle, ECX = how many
+;              pages it should own.  CF set: AH = 88h, and the handle
+;              is as it was.
+;
+; FEWER: the windows onto the pages going come down, and the block
+; shrinks where it stands, which arena_resize cannot refuse.  None at
+; all gives the block back.
+;
+; MORE: the block grows where it stands if the arena has free space
+; right after it, which is the usual case for a handle grown soon
+; after it was made.  Otherwise the whole handle MOVES - a new block,
+; the pages copied, the old block freed, and every window that was
+; showing one of its pages pointed at the page's new home.  Moving
+; rather than chaining a second block is what keeps a handle one run,
+; and one run is what makes 57h and 4.0's ceiling cheap.
+;
+; WHOSE THE MEMORY IS stays the row's, not the caller's: arena_alloc
+; stamps a block with whoever is running, and a TSR's handle grown
+; while some other program has the machine must not end with it.
+;=====================================================================
+ems_resize:
+        pushad
+        mov     [ems_rsh],edx
+        mov     eax,[esi+EH_PAGES]
+        cmp     ecx,eax
+        je      rsz_ok
+        jb      rsz_less
+        cmp     dword ptr [esi+EH_RAW],0
+        je      rsz_new
+
+        mov     ebx,ecx
+        shl     ebx,14
+        add     ebx,[esi+EH_BASE]
+        sub     ebx,[esi+EH_RAW]                ; the block, to its new end
+        mov     edx,[esi+EH_RAW]
+        call    arena_resize
+        jnc     rsz_set                         ; it grew where it stood
+
+        mov     ebx,ecx
+        shl     ebx,14
+        add     ebx,1000h
+        call    arena_alloc
+        jc      rsz_nomem
+        call    ems_blkown
+        mov     edx,eax                         ; the new block, as allocated
+        add     eax,0FFFh
+        and     eax,NOT 0FFFh                   ; ...and as the windows want it
+        push    ecx
+        push    esi
+        mov     edi,eax
+        mov     ecx,[esi+EH_PAGES]
+        shl     ecx,12                          ; 4K dwords to a 16K page
+        mov     esi,[esi+EH_BASE]
+        cld
+        rep     movsd
+        pop     esi
+        pop     ecx
+        push    edx
+        mov     edx,[esi+EH_RAW]
+        call    arena_free
+        pop     dword ptr [esi+EH_RAW]
+        mov     [esi+EH_BASE],eax
+        mov     [esi+EH_PAGES],ecx
+        mov     edx,[ems_rsh]
+        call    ems_rewin
+        jmp     short rsz_ok
+
+rsz_new:
+        mov     ebx,ecx
+        shl     ebx,14
+        add     ebx,1000h
+        call    arena_alloc
+        jc      rsz_nomem
+        call    ems_blkown
+        mov     [esi+EH_RAW],eax
+        add     eax,0FFFh
+        and     eax,NOT 0FFFh
+        mov     [esi+EH_BASE],eax
+rsz_set:
+        mov     [esi+EH_PAGES],ecx
+rsz_ok:
+        popad
+        clc
+        ret
+rsz_nomem:
+        popad
+        mov     ah,EMSE_NOTAVAIL
+        stc
+        ret
+
+rsz_less:
+        mov     edx,[ems_rsh]
+        call    ems_cutwin
+        or      ecx,ecx
+        jz      rsz_none
+        mov     ebx,ecx
+        shl     ebx,14
+        add     ebx,[esi+EH_BASE]
+        sub     ebx,[esi+EH_RAW]
+        mov     edx,[esi+EH_RAW]
+        call    arena_resize
+        jmp     short rsz_set
+rsz_none:
+        mov     edx,[esi+EH_RAW]
+        call    arena_free
+        xor     eax,eax
+        mov     [esi+EH_RAW],eax
+        mov     [esi+EH_BASE],eax
+        jmp     short rsz_set
+
+ems_rsh     dd  0                       ; the handle, across the arena calls
+
+;--- ems_blkown - EAX = a block arena_alloc has just handed back, ESI =
+;--- the row it is for.  The block's owner becomes the row's.
+ems_blkown:
+        push    edx
+        mov     edx,[esi+EH_OWN]
+        mov     [eax-MCB_LEN+MCB_OWNER],edx
+        pop     edx
+        ret
+
 ;=====================================================================
 ; ems_hrow - EDX = a handle number as a program sees it.  ESI = its
-;            row, CF if there is no such handle.
+;            row, CF if there is no such handle.  Everything else
+;            preserved.
 ;=====================================================================
 ems_hrow:
+        cmp     edx,EMS_MAXH
+        jae     ehr_bad
         push    eax
-        mov     eax,edx
-        dec     eax                             ; handle 1 is row 0, so that
-        cmp     eax,EMS_MAXH                    ; handle 0 - which programs
-        jae     ehr_bad                         ; use to mean "none" - never
-        imul    eax,EH_LEN                      ; belongs to anybody
+        imul    eax,edx,EH_LEN
         add     eax,OFFSET ems_htab
         mov     esi,eax
+        pop     eax
         cmp     dword ptr [esi+EH_FLAGS],0
         je      ehr_bad
-        pop     eax
         clc
         ret
 ehr_bad:
-        pop     eax
         stc
         ret
 
 ;=====================================================================
 ; ems_newh - CF clear: EAX = a free row's index, ESI = the row.  The
 ;            row is NOT marked taken, so a caller that fails after
-;            this has nothing to undo.
+;            this has nothing to undo.  Row 0 is never free.
 ;=====================================================================
 ems_newh:
-        xor     eax,eax
-        mov     esi,OFFSET ems_htab
+        mov     eax,1
+        mov     esi,OFFSET ems_htab + EH_LEN
 enh_one:
         cmp     eax,EMS_MAXH
         jae     enh_none
@@ -924,6 +2633,32 @@ ecn_out:
         pop     ecx
         ret
 
+;---------------------------------------------------------------------
+; ems_byname - EAX and ECX = eight bytes of name.  CF clear: ESI = the
+;              open row that has it, EDX = its handle.  EAX and ECX
+;              preserved.
+;---------------------------------------------------------------------
+ems_byname:
+        xor     edx,edx
+        mov     esi,OFFSET ems_htab
+ebn_one:
+        cmp     dword ptr [esi+EH_FLAGS],0
+        je      ebn_next
+        cmp     [esi+EH_NAME],eax
+        jne     ebn_next
+        cmp     [esi+EH_NAME+4],ecx
+        je      ebn_got
+ebn_next:
+        add     esi,EH_LEN
+        inc     edx
+        cmp     edx,EMS_MAXH
+        jb      ebn_one
+        stc
+        ret
+ebn_got:
+        clc
+        ret
+
 ;=====================================================================
 ; ems_release - EDX = handle, ESI = its row.  Windows down, memory
 ;               back to the arena, row clear.
@@ -960,6 +2695,7 @@ efg_clear:
         mov     edi,esi
         xor     eax,eax
         mov     ecx,EH_LEN / 4
+        cld
         rep     stosd
         popad
         ret
@@ -971,30 +2707,49 @@ efg_clear:
 ; its children, and a TSR outlives the box entirely - so its handles
 ; have to outlive it too.  Called from vdm_cleanup, immediately after
 ; arena_freeown and xms_relown, and the order is what makes ems_forget
-; the right half of ems_release to use.
+; the right half of ems_release to use.  Row 0 is the system's and is
+; never swept.
+;
+; TWO MORE THINGS A PROGRAM CAN LEAVE WITH THE MANAGER: 5Bh's context
+; save area, which is a pointer into the program's own memory and
+; would have 5Bh/00 writing into whoever is loaded there next, and
+; 5Dh's key, which nobody is left to give back.
 ;=====================================================================
 ems_relown:
         pushad
         cmp     dword ptr [ems_have],0
         je      erl_out
         mov     edi,dword ptr [cur_own]
-        xor     ebx,ebx
+        mov     ebx,1
 erl_one:
         cmp     ebx,EMS_MAXH
-        jae     erl_out
+        jae     erl_more
         mov     esi,ebx
-        imul    esi,EH_LEN
+        imul    esi,esi,EH_LEN
         add     esi,OFFSET ems_htab
         cmp     dword ptr [esi+EH_FLAGS],0
         je      erl_next
         cmp     [esi+EH_OWN],edi
         jne     erl_next
-        mov     edx,ebx
-        inc     edx                             ; the handle number
+        mov     edx,ebx                         ; the handle number
         call    ems_forget
 erl_next:
         inc     ebx
         jmp     short erl_one
+erl_more:
+        cmp     dword ptr [ems_alt],0
+        je      erl_key
+        cmp     [ems_altown],edi
+        jne     erl_key
+        mov     dword ptr [ems_alt],0
+erl_key:
+        cmp     dword ptr [ems_haskey],0
+        je      erl_out
+        cmp     [ems_keyown],edi
+        jne     erl_out
+        xor     eax,eax
+        mov     [ems_haskey],eax
+        mov     [ems_osoff],eax
 erl_out:
         popad
         ret

@@ -37,12 +37,12 @@
  *
  * Functions used: 0Ah 19h 2Ah 2Ch 3800h 3Fh 40h 4400h 4409h 440Dh
  * (084Ah/086Ah, 484Ah/486Ah) 47h 48h 4Ch 60h 62h 710Dh 7147h 7302h
- * 7305h F101h.  PM-DOS answers 440Dh and 710Dh with "invalid function":
- * the first is taken as "no lock needed", which is what it means there
- * (the kernel serves one program at a time and flushes round every
- * 7305h), and the second is followed by 0Dh anyway.  Each call is
- * isolated in one small function below, so adapting to a different
- * kernel convention means changing only that function.
+ * 7305h F101h F11Dh.  PM-DOS answers 440Dh and 710Dh with "invalid
+ * function": the first is taken as "no lock needed", which is what it
+ * means there (the kernel serves one program at a time and flushes
+ * round every 7305h), and the second is followed by 0Dh anyway.  Each
+ * call is isolated in one small function below, so adapting to a
+ * different kernel convention means changing only that function.
  */
 #include "chkdsk.h"
 
@@ -364,6 +364,17 @@ void sys_reset_drive( int drv )
     call21( &regs, 0x710D );
     clear( &regs );
     call21( &regs, 0x0D00 );
+}
+
+/* 21h/F1h AL=1Dh, VLF_CHECKED in bits 16-23: the volume may have its
+   clean-shutdown bit back.  A drive without the bit ignores it. */
+void sys_mark_checked( int drv )
+{
+    REGS regs;
+
+    clear( &regs );
+    regs.edx = (u32)drv + 1;
+    call21( &regs, 0x0001F11Dul );
 }
 
 void *sys_mem_alloc( u32 size )

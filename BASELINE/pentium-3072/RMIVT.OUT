@@ -1,0 +1,12 @@
+
+RMIVT - does a BIOS call reach a DOS box's vectors?
+
+INT 1Ah, real mode, 2Ch x100 .. 0000 OK
+INT 1Ah, from the box ......... 0001 OK
+INT 08h/1Ch, in real mode ..... 0000 OK
+IRQ 8 at 64 a second, 1s ...... #### OK
+IRQ 8, in real mode ........... 0000 OK
+2Ch: clock in 2 RTC s ......... #### OK
+timer x4: clock in 2 RTC s .... #### OK
+
+RMIVT: all checks passed

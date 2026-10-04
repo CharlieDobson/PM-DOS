@@ -293,9 +293,7 @@ datastart   dw  0
 ; push a live variable past the end of the loaded sector and into the
 ; FAT buffer at 0000:7E00, where the chain walk would corrupt it.
 boot_end:
-IF (boot_end - start) GT 200h
-.ERR    ; the sector has overflowed - see the note above
-ENDIF
+.ERRE   (boot_end - start) LE 200h, <the sector has overflowed - see the note above>
 
         ORG     1FEh
         dw      0AA55h

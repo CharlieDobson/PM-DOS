@@ -17,3 +17,9 @@ IDE:     stage flags  status           signature
   168 s  F     00     FF -- -- --      ---- err --
 
 status: before, after select, after IDENTIFY, after IDENTIFY PACKET
+
+SCSI:
+  no adapters
+
+ACPI:
+  not found

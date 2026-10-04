@@ -8,11 +8,11 @@ names found: 000A
   at 00000878  gap 0000003B
   at 00000F9A  gap 00000722
   at 00004058  gap 000030BE
-  at 00005B40  gap 00001AE8
-  at 00017781  gap 00011C41
-  at 000177B1  gap 00000030
-  at 000177E1  gap 00000030
-  at 0001881F  gap 0000103E
+  at 00005B70  gap 00001B18
+  at 00017804  gap 00011C94
+  at 00017834  gap 00000030
+  at 00017864  gap 00000030
+  at 000188A2  gap 0000103E
 
 a scanner would call an entry 0000003B bytes, table at 00000802
 BUT SFT_LEN IS 30h - it would measure the wrong thing.

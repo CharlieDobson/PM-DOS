@@ -54,6 +54,8 @@ DLU_LEN         EQU     8
 DL_IOSECS       EQU     16              ; the staging buffer, in sectors
 
 DL_PATH_MAX     EQU     80
+DLX_NV86        EQU     10              ; DOS calls a driver's excursion
+                                        ; hands to the box's own handlers
 
 ; The scratch block, and everything in it is there because a real-mode
 ; driver has to be able to reach it with a segment and an offset:
@@ -256,9 +258,33 @@ dlx_i21:
         je      dlx_lost                ; wrong: there is no process here
         cmp     al,31h
         je      dlx_lost
+
+        ; THE CALLS WITH A V86 ANSWER OF THEIR OWN go where a box's go.
+        ; vdm_do21 is the KERNEL's INT 21h, and for these that is the
+        ; wrong one: its 25h points a protected-mode IDT gate at the
+        ; driver's segment:offset and leaves the real-mode vector table
+        ; - the one the interrupt is delivered through - as it was, so
+        ; a driver hooking its card's IRQ at INIT never heard from the
+        ; card (ASPI4DOS waited two minutes per device for an interrupt
+        ; the BIOS's spurious-interrupt handler took and then masked);
+        ; 35h, 34h, 52h and the rest answer flat addresses a driver
+        ; cannot hold.  The box's handlers all end at vdm_loop, which
+        ; sees vdm_inexc and comes back to dlx_back21.
+        mov     edi,OFFSET dlx_v86fn
+        mov     ecx,DLX_NV86
+        cld
+        repne   scasb
+        je      dlx_v86call
         mov     al,byte ptr [vdm_ctx+V86C_EAX+1]
         call    vdm_do21
         jmp     short dlx_run
+dlx_v86call:
+        mov     byte ptr ds:[vdm_inexc],1
+        movzx   eax,byte ptr [vdm_ctx+V86C_EAX+1]
+        jmp     vdm_dos_v86
+dlx_back21:
+        mov     byte ptr ds:[vdm_inexc],0
+        jmp     dlx_run
 
 dlx_ems:
         call    ems_call
@@ -306,6 +332,23 @@ dlx_sabs:
         call    dvs_doabs
         jmp     dlx_run
 dlx_nodvs:
+        ; ONE OF PMIO'S OWN STUBS - Virtual DMA Services' INT 4Bh, or the
+        ; mouse's INT 33h - served as a box's run loop serves them.  A
+        ; driver that masters the bus has to ask VDS where its buffer
+        ; physically is, and an ASPI manager asks on every request it
+        ; is handed (ASPI.INC); it used to find the HLT taken for the
+        ; driver stopping in the middle of itself
+        mov     esi,OFFSET vdm_ctx
+        movzx   eax,word ptr ds:[vdm_pspseg]
+        or      eax,MSTOK_BOX
+        call    dword ptr ds:[IOS_MSHLT]
+        jnc     dlx_run
+        call    ems_iscb                ; and EMS 56h's return, for a driver
+        jc      dlx_noems               ; that calls an overlay of its own
+        call    ems_callret
+        jc      dlx_lost
+        jmp     dlx_run
+dlx_noems:
         mov     eax,dword ptr [vdm_ctx+V86C_CS]
         mov     ebx,[dl_seg]
         cmp     eax,ebx
@@ -448,10 +491,27 @@ dl_load:
         add     eax,15
         shr     eax,4
         mov     ebx,eax
-        call    lm_alloc
-        jc      dll_nomem_c
+
+        ; ALL THE ROOM THERE IS, AND INIT IS TOLD WHERE IT ENDS.  A
+        ; driver is loaded at the bottom of free memory with the rest
+        ; of it above, and the packet says how far that reaches; INIT
+        ; builds its tables and buffers past the end of its own image
+        ; and answers with where it stopped, which dll_keep trims the
+        ; block to.  An ASPI manager is exactly that driver: given a
+        ; block the size of its file and an end of 0:0, ASPI4DOS says
+        ; "Not enough memory available to load driver" and refuses.
+        ; lm_allocbig asks the regions in the strategy's order, so
+        ; DEVICEHIGH still means upper memory first.
+        call    lm_allocbig             ; at least the file; the largest
+        jc      dll_nomem_c             ; block there is
         movzx   eax,ax
         mov     [dl_drvseg],eax
+        mov     edx,eax
+        dec     edx
+        shl     edx,4
+        movzx   edx,word ptr [edx+RMCB_LEN]     ; how big it came out
+        add     edx,eax
+        mov     [dl_brkseg],edx                 ; the paragraph after it
         mov     dx,8                    ; DOS owns it: a driver outlives
         call    lm_setown               ; every program in the machine
 
@@ -672,6 +732,9 @@ dl_doinit:
         mov     eax,[dl_seg]
         mov     word ptr [edi+REQI_ARGSEG],ax
         mov     byte ptr [edi+REQI_DRIVE],0
+        mov     word ptr [edi+REQI_ENDOFF],0    ; how far it may grow: the
+        mov     eax,[dl_brkseg]                 ; end of the block dl_load
+        mov     word ptr [edi+REQI_ENDSEG],ax   ; gave it, as DOS 5 says
 
         call    dl_fire
         jc      dld_bad
@@ -956,6 +1019,9 @@ dl_linelen  dd  0
 dl_fnext    dd  0
 dl_endoff   dd  0
 dl_endseg   dd  0
+dl_brkseg   dd  0                       ; the end of the room INIT was given
+dlx_v86fn   db  25h, 35h, 34h, 50h, 51h, 62h, 2Fh, 52h, 38h, 65h
+.ERRNZ  ($ - dlx_v86fn) - DLX_NV86, <DLX_NV86 is not the length of dlx_v86fn>
 dl_lost     db  0
 dl_isblk    db  0
 dl_byte     db  0
@@ -1104,7 +1170,7 @@ dbi_size:
         inc     dword ptr [dl_nunits]
 dbi_next:
         inc     ebx
-        jmp     short dbi_unit
+        jmp     dbi_unit
 dbi_done:
         popad
         clc

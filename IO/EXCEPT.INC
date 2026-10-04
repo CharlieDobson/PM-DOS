@@ -736,8 +736,19 @@ irq_fpnow:
 ; The tick count now lives ONLY in the BDA - the kernel's private
 ; tick_count is gone and IOS_TICKS reads 40:6C - so a DOS box reading
 ; the BDA and the kernel answering IOS_TICKS cannot drift apart.
+;
+; AN INTERRUPT IS NOT ALWAYS A TICK.  A DOS box may run the timer
+; faster for its own INT 08h (VTIMER.INC), and the clock is counted
+; against the divisor it set, not against the interrupts: vt_tick says
+; when 65536 counts of the timer's input have gone by.  Every interrupt
+; is the box's, though - a game that asked for seventy a second gets
+; seventy (vpc_tick).
 ;---------------------------------------------------------------------
 irq_timer:
+        call    vpc_tick
+        call    vt_tick
+        setnc   byte ptr ds:[vt_whole]
+        jc      it_noday
         mov     eax,dword ptr ds:[BDA_TICKS]
         inc     eax
         cmp     eax,TICKS_PER_DAY
@@ -746,6 +757,7 @@ irq_timer:
         mov     byte ptr ds:[BDA_TICKROLL],1    ; flag INT 1Ah/00h reads
 it_noroll:
         mov     dword ptr ds:[BDA_TICKS],eax
+it_noday:
 
 IFDEF HANG_E9
 ;--- the hang reporter (BUILD hang) ----------------------------------
@@ -1069,7 +1081,10 @@ it_noaux:
 ;--- the floppy motor-off countdown ----------------------------------
 ; Zero means "no motor running and nothing to do", which is also the
 ; state the count is left in after it fires, so this costs two
-; instructions on the ticks where there is no floppy activity.
+; instructions on the ticks where there is no floppy activity.  It is
+; counted in ticks of the clock, like the BIOS's.
+        cmp     byte ptr ds:[vt_whole],0
+        je      it_out
         mov     al,byte ptr ds:[BDA_MOTORCNT]
         or      al,al
         jz      it_out

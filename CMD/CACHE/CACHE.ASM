@@ -132,12 +132,12 @@ da_drvgo:
         mov     al,[dop_req]
         mov     [dops+ebx*2+1],al
         inc     byte ptr [n_dops]
-        jmp     short da_next
+        jmp     da_next
 
 da_skip:
         inc     esi
         dec     ecx
-        jmp     short da_next
+        jmp     da_next
 
 da_switch:
         inc     esi
@@ -173,7 +173,7 @@ da_swend:
         jmp     short da_bad
 da_swset:
         mov     byte ptr [ebx],1
-        jmp     short da_next
+        jmp     da_next
 
 da_help:
         mov     edx,OFFSET msg_usage

@@ -20,7 +20,9 @@
 ;   a program that masks the timer has masked it for itself.
 ;
 ;   AN INTERRUPT ON AN OPEN LINE IS OWED TO THE BOX (vpc_raise) and the
-;   real line is SHUT until the box has taken it and sent the EOI.
+;   real line is SHUT until the box has taken it and sent the EOI.  So
+;   is one that arrived while the kernel was in a BIOS call, where the
+;   BIOS's own handler took it (rq_up, RMCALL.INC).
 ;   That is what makes a level-triggered line work: a PCI device goes
 ;   on asserting its line until its driver has dealt with it, the
 ;   kernel's own EOI is sent long before the driver has run, and an
@@ -44,10 +46,18 @@
 ; (vpc_pmchk).  One it has only a real-mode handler for waits until the
 ; client is next in real mode.
 ;
-; WHAT IS NOT HERE.  The timer: IRQ 0 is not delivered to a box, as it
-; never was.  An interrupt for a resident driver while NO box is
-; running - the native shell at its prompt - waits for the next program
-; that runs in one.  And a box's reprogramming of the controller is
+; THE TIMER IS A LINE A BOX IS GIVEN TOO, though never one it opens or
+; shuts: every tick is owed to a box that listens (vpc_tick), and is
+; delivered and ended here like a card's interrupt.  VTIMER.INC has
+; what the box's INT 08h reaches and why the ROM's handler is not it.
+;
+; AND WHEN NO PROGRAM IS RUNNING IN A BOX - the native shell at its
+; prompt, or a box waiting inside a DOS call - an interrupt for a
+; resident driver is handed out through IOS_BOXIRQ to a short
+; excursion of the DOS side's (DOS\IRQX.INC), at the moments the DOS
+; side is idle enough to make one.
+;
+; WHAT IS NOT HERE.  A box's reprogramming of the controller is
 ; followed only as far as the vector bases; the modes nobody uses on a
 ; PC (polling, special mask, rotation) are accepted and ignored.
 ;
@@ -73,7 +83,23 @@ vpc_init:
         mov     esi,70h * 4
         mov     ecx,8
         rep     movsd
+        mov     eax,dword ptr ds:[1Ch * 4]      ; and the timer's other one,
+        mov     dword ptr [vt_boot1c],eax       ; which INT 08h calls
         popad
+        ret
+
+;=====================================================================
+; vpc_tick - irq_timer, once an interrupt.  The tick is owed to the box
+;            unless the box has masked the timer's line - for itself:
+;            the kernel's clock is not on the box's mask.  Owed and not
+;            yet taken, a second tick is the same tick, as it is on the
+;            real part.
+;=====================================================================
+vpc_tick:
+        test    byte ptr [vpc_imr],1
+        jnz     vtk_masked
+        bts     dword ptr [vpc_pend],0
+vtk_masked:
         ret
 
 ;=====================================================================
@@ -110,6 +136,9 @@ vpc_boxreset:
 ;=====================================================================
 vpc_raise:
         push    eax
+IFDEF DBG_LPT
+        inc     dword ptr [vpc_nraise]  ; for the trace's dump
+ENDIF
         mov     eax,dword ptr [vpc_imr]
         not     eax
         and     eax,VP_GUEST
@@ -155,6 +184,67 @@ vbw_no:
         stc
         ret
 
+;=====================================================================
+; vpc_boxirq - IOS_BOXIRQ.  AL = a BXI_* function, for the DOS side's
+;              excursions (DOS\IRQX.INC): real-mode code run to take an
+;              interrupt at a moment when no DOS program is running in
+;              a box to take it - a resident driver's, with the native
+;              shell at its prompt.
+;
+; BXI_TAKE is vpc_boxwant asked from outside the monitor: the line it
+; names is in service from here, and the excursion has to deliver it.
+; The first one an excursion takes begins it, and BXI_END ends it.
+; While it runs, the monitor is running a guest that is nobody's
+; program, and a key or a mouse event that arrives meanwhile is the
+; native program's - so neither is queued for the guest (v86_irqx).  An
+; excursion that was abandoned half way has not had its handlers'
+; EOIs, and BXI_END with DL = 1 ends whatever it put in service.
+;=====================================================================
+vpc_boxirq:
+        cmp     al,BXI_TAKE
+        je      vbi_take
+        cmp     al,BXI_END
+        je      vbi_end
+        stc
+        ret
+vbi_take:
+        pushfd
+        cli
+        cmp     dword ptr [vpc_pend],0          ; the usual answer, quickly
+        je      vbi_none
+        cmp     byte ptr ds:[v86_irqx],0
+        jne     vbi_more
+        push    eax                             ; the first of an excursion:
+        mov     eax,dword ptr [vpc_isr]         ; what was in service before
+        mov     dword ptr [vpc_xisr],eax        ; it began
+        pop     eax
+vbi_more:
+        call    vpc_boxwant
+        jc      vbi_none
+        mov     byte ptr ds:[v86_irqx],1
+        popfd
+        clc
+        ret
+vbi_none:
+        popfd
+        stc
+        ret
+vbi_end:
+        mov     byte ptr ds:[v86_irqx],0
+        or      dl,dl
+        jz      vbe_out
+        pushfd
+        cli
+        push    eax
+        mov     eax,dword ptr [vpc_xisr]
+        mov     dword ptr [vpc_isr],eax
+        pop     eax
+        call    irq_sync
+        popfd
+vbe_out:
+        clc
+        ret
+
 ;---------------------------------------------------------------------
 ; vpc_pick - AL = 0 for a guest in real mode, 1 for a client in
 ;            protected mode.  -> EAX = the line to deliver, EDX = its
@@ -174,7 +264,7 @@ vpc_pick:
         mov     ecx,dword ptr [vpc_imr]
         not     ecx
         and     ecx,dword ptr [vpc_pend]
-        and     ecx,VP_GUEST
+        and     ecx,VP_DELIVER
         jz      vpk_no
         mov     esi,OFFSET vpc_order
 vpk_one:
@@ -205,13 +295,21 @@ vpk_vec:
         ; entitled to the half it is standing in.
         cmp     byte ptr [vpc_mode],0
         jne     vpk_got
-        mov     eax,dword ptr ds:[edx*4]
-        cmp     eax,dword ptr [vpc_boot + ebx*4]
-        je      vpk_one
+        call    vpc_rmown
+        jc      vpk_one
         jmp     short vpk_ivt
 vpk_real:
         cmp     byte ptr [vpc_mode],0
         jne     vpk_one                 ; protected mode, and nothing there
+        ; THE TIMER, which ticks whether anybody is listening or not.
+        ; Nobody is: the tick is not owed any more, rather than owed
+        ; for ever to a box that will never take it.
+        or      ebx,ebx
+        jnz     vpk_ivt
+        call    vt_hooked
+        jnc     vpk_ivt
+        btr     dword ptr [vpc_pend],0
+        jmp     vpk_one
 vpk_ivt:
         cmp     dword ptr ds:[edx*4],0  ; a vector that points nowhere
         je      vpk_one
@@ -226,6 +324,26 @@ vpk_no:
         pop     esi
         pop     ecx
         pop     ebx
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; vpc_rmown - EBX = a line, EDX = its vector.  CF clear if the real-mode
+;             vector table has a handler of somebody's there rather than
+;             what the machine started with - which for the timer is the
+;             stub, and INT 1Ch has to be looked at as well.
+;---------------------------------------------------------------------
+vpc_rmown:
+        or      ebx,ebx
+        jz      vt_hooked
+        push    eax
+        mov     eax,dword ptr ds:[edx*4]
+        cmp     eax,dword ptr [vpc_boot + ebx*4]
+        pop     eax
+        je      vro_no
+        clc
+        ret
+vro_no:
         stc
         ret
 
@@ -264,7 +382,9 @@ vpc_take:
         or      dword ptr [vpc_isr],4
 vtk_master:
         inc     dword ptr [vpc_seen + ebx*4]
-        ret
+        jmp     vdma_poll               ; a card's interrupt can be the end of
+                                        ; a transfer, whose data has to be
+                                        ; there first (VDMA.INC)
 
 ;=====================================================================
 ; vpc_pmchk - irq_common and pm3_done, on the way back to ring 3.
@@ -507,6 +627,29 @@ vpc_out:
         push    eax
         push    ebx
         push    ecx
+IFDEF DBG_LPT
+        ; THE LAST 32 WRITES, for the trace's dump: port, value, and how
+        ; far into an initialisation sequence that controller was
+        test    dl,1                    ; the data ports only: the EOIs
+        jz      vpo_nolog               ; would drown them
+        mov     ebx,dword ptr [vpc_dbgn]
+        and     ebx,31
+        mov     byte ptr [vpc_dbglog + ebx*8],dl
+        mov     byte ptr [vpc_dbglog + ebx*8 + 1],al
+        mov     ecx,[ebp+FR_EIP]        ; who: the instruction after the OUT
+        mov     word ptr [vpc_dbglog + ebx*8 + 4],cx
+        mov     ecx,[ebp+FR_CS]
+        mov     word ptr [vpc_dbglog + ebx*8 + 6],cx
+        push    edx
+        call    vpc_which
+        mov     cl,byte ptr [vpc_icw + ebx]
+        pop     edx
+        mov     ebx,dword ptr [vpc_dbgn]
+        and     ebx,31
+        mov     byte ptr [vpc_dbglog + ebx*8 + 2],cl
+        inc     dword ptr [vpc_dbgn]
+vpo_nolog:
+ENDIF
         call    vpc_which
         jnc     vpo_cmd
 
@@ -612,8 +755,15 @@ vpw_data:
 ;=====================================================================
 vpc_imr         dd      VPC_IMRBOOT             ; masked, as the box has it
 vpc_pend        dd      0                       ; owed to the box
+IFDEF DBG_LPT
+vpc_nraise      dd      0               ; lines offered to the box, ever
+vpc_dbgn        dd      0               ; writes logged
+vpc_dbglog      db      32 * 8 dup (0)  ; port, value, ICW state, -, IP, CS
+ENDIF
 vpc_isr         dd      0                       ; in the box's handler; bit 2
                                                 ; is the cascade's own
+vpc_xisr        dd      0                       ; ...as it was when an
+                                                ; excursion began
 vpc_base        db      08h, 70h                ; where the box's vectors are
 vpc_rsel        db      0, 0                    ; a command port reads 0 =
                                                 ; requests, 1 = in service
