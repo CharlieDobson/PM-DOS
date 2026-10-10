@@ -604,6 +604,8 @@ ci_none:
 ;   Ignore.  Comparing the vector against the stub we planted is what
 ;   tells "nobody is listening" from "somebody is".
 ;=====================================================================
+CG_FRAME        EQU 24                  ; nine registers and an IRET frame
+
 crit_guest:
         mov     [cg_ax],ax                      ; the register set, before
         mov     [cg_di],di                      ; anything below needs them
@@ -663,6 +665,69 @@ crit_guest:
         mov     eax,[esi+V86C_ESP]
         mov     [edi+RMCS_SP],ax
 
+        ; THE STACK AS DOS LEAVES IT FOR THE HANDLER.  MS-DOS raises
+        ; INT 24h on the caller's own stack with the caller's INT 21h
+        ; return frame on top and, under it, the caller's registers as
+        ; the dispatcher pushed them - AX, BX, CX, DX, SI, DI, BP, DS,
+        ; ES, AX lowest - and handlers RELY ON THE SHAPE: the C
+        ; library's _hardretn drops its own frame and those nine words
+        ; and IRETs through the caller's frame, straight back into the
+        ; program with the error in AX and carry set.  MSD does exactly
+        ; that for every drive it probes.  This monitor had popped the
+        ; caller's frame before the call was served (vdm_ciret) and
+        ; kept the registers in vdm_ctx, so a handler doing the
+        ; arithmetic landed thirty bytes above where it meant to and
+        ; popped a local variable as its return address: 0111:0000, the
+        ; real-mode stub, "VDM: the guest faulted, vector 0D at
+        ; 0111:001D" (2026-10-09).  So the frame is built below the
+        ; caller's SP - its return first, the nine words under it - and
+        ; the interrupt is raised beneath those.  A handler that comes
+        ; home the ordinary way IRETs onto the landing pad and the
+        ; frame is so much dead stack; one that goes straight back to
+        ; the program leaves SP at the caller's, which vdm_loop watches
+        ; for (vdm_cgchk) and takes as the answer.
+        mov     byte ptr [cg_inflight],0
+        mov     ecx,[esi+V86C_SS]
+        mov     [cg_ss],ecx
+        mov     eax,ecx
+        shl     eax,4
+        movzx   edx,word ptr [esi+V86C_ESP]
+        mov     [cg_sp],edx
+        sub     edx,CG_FRAME
+        add     eax,edx
+        push    edx
+        mov     ecx,CG_FRAME
+        call    dword ptr ds:[IOS_USRWOK]       ; the caller's stack, writable?
+        pop     edx
+        jc      cg_noframe                      ; then no frame, as before
+        mov     ecx,[esi+V86C_EAX]
+        mov     [eax+0],cx
+        mov     ecx,[esi+V86C_EBX]
+        mov     [eax+2],cx
+        mov     ecx,[esi+V86C_ECX]
+        mov     [eax+4],cx
+        mov     ecx,[esi+V86C_EDX]
+        mov     [eax+6],cx
+        mov     ecx,[esi+V86C_ESI]
+        mov     [eax+8],cx
+        mov     ecx,[esi+V86C_EDI]
+        mov     [eax+10],cx
+        mov     ecx,[esi+V86C_EBP]
+        mov     [eax+12],cx
+        mov     ecx,[esi+V86C_DS]
+        mov     [eax+14],cx
+        mov     ecx,[esi+V86C_ES]
+        mov     [eax+16],cx
+        mov     ecx,[esi+V86C_EIP]              ; and the caller's return,
+        mov     [eax+18],cx                     ; IP, CS, FLAGS, as the INT
+        mov     ecx,[esi+V86C_CS]               ; pushed it
+        mov     [eax+20],cx
+        mov     ecx,[esi+V86C_FLAGS]
+        mov     [eax+22],cx
+        mov     [edi+RMCS_SP],dx
+        mov     byte ptr [cg_inflight],1
+cg_noframe:
+
         ; ...and the four registers that ARE the critical error.
         movzx   eax,word ptr [cg_ax]
         mov     [edi+RMCS_EAX],eax
@@ -681,6 +746,7 @@ crit_guest:
         jc      cg_done
         mov     byte ptr [cg_ok],1
 cg_done:
+        mov     byte ptr [cg_inflight],0        ; it came home the usual way
         popad
         cmp     byte ptr [cg_ok],0
         je      cg_no
@@ -838,7 +904,10 @@ crit_rmcs   db  ((RMCS_LEN + 3) / 4) * 4 dup (0)
 cg_ax       dw  0                       ; the register set crit_raise was
 cg_di       dw  0                       ; called with, parked across the
 cg_ok       db  0                       ; pushad that builds the guest's
-            db  0
+cg_inflight db  0                       ; a box's handler is running on the
+                                        ; DOS-shaped frame (see crit_guest)
+cg_ss       dd  0                       ; the caller's SS:SP, where a handler
+cg_sp       dd  0                       ; that goes straight home ends up
 
 crit_busy   db  0                       ; a handler is running
 crit_resp   db  CERR_FAIL

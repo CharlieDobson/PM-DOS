@@ -5,21 +5,28 @@
 ; Assembles with Open Watcom WASM 1.9 and MASM 6.1x.
 ;=====================================================================
 
+IFDEF EXIT_TRACE
+        INCLUDE XTRACE.INC              ; BUILD exittrace's markers
+ENDIF
+
 ;---------------------------------------------------------------------
 ; Physical / linear memory map
 ;
 ;   00000000-000004FF   Real-mode IVT and BIOS data area
-;   000004E8-000004EB   RMSAVE_ESP - the caller's 32-bit ESP
-;   000004F0-000004F5   RMRET    - 16:32 far pointer, thunk return address
-;   00000500-0000052B   RMFRAME  - register frame for the PM->RM thunk
-;   00000530-00000FFF   Real-mode stack (SS=0000, SP=1000) - 2.7K
+;   00000500-000005FF   DOS's communication area - the guest's
+;   00000600-00000603   RMSAVE_ESP - the caller's 32-bit ESP
+;   00000608-0000060D   RMRET    - 16:32 far pointer, thunk return address
+;   00000610-0000063B   RMFRAME  - register frame for the PM->RM thunk
+;   00000640-00000FFF   Real-mode stack (SS=0000, SP=1000) - 2.4K
 ;   00001000-00001FFF   PMIO.SYS real-mode stub (4K, fixed size)
 ;   00002000-00003FFF   XFER     - transfer buffer for BIOS disk I/O
-;   00004000-000051FF   DOS data segment - the list of lists, the device
+;   00004000-000059CF   DOS data segment - the list of lists, the device
 ;                       headers, the swappable data area (SDA_OFF), the
-;                       guest file table (GSFT_) and the country tables
-;                       (GNLS_), BELOW the arena as in real DOS
-;   00005200-0009FFFF   the DOS box's transient program area, ending
+;                       guest file table (GSFT_), the country tables
+;                       (GNLS_) and the drive parameter blocks (GDPB_),
+;                       BELOW the arena as in real DOS, and in MS-DOS
+;                       5's layout (see DOSDATA)
+;   000059D0-0009FFFF   the DOS box's transient program area, ending
 ;                       where the BIOS says conventional memory does
 ;   000A0000-000FFFFF   Video RAM and ROM
 ;   00100000-0010FFEF   the HMA, left empty for the A20 wrap
@@ -53,10 +60,11 @@
 ; why, because the obvious next question is where the last 16K went:
 ;
 ;   1.25K  IVT and BIOS data area.  Fixed by the hardware.
-;   0.05K  the thunk's register frame, in the BDA's user area at 4E8h.
-;   2.7K   the real-mode stack.  Every BIOS call the kernel makes runs
+;   0.25K  DOS's communication area at 500h.  Not ours: see RMFRAME.
+;   0.06K  the thunk's register frame, at 600h.
+;   2.4K   the real-mode stack.  Every BIOS call the kernel makes runs
 ;          on it, with IRQs enabled, so the timer and keyboard ISRs
-;          nest on it too.  It could be cut to 1K; the 1.7K saved is
+;          nest on it too.  It could be cut to 1K; the 1.4K saved is
 ;          not worth being the reason a BIOS with deep INT 13h
 ;          extensions scribbles on the IVT.
 ;   4K     the stub.  Was 8K, which was a round number and not a
@@ -258,8 +266,8 @@ ARENA_BASE      EQU     00220000h               ; start of the DOS memory arena
 ; is the same argument i13_bufok was written for in v0.27, one API
 ; further up.
 ;
-; Three ranges, and the gaps between them are deliberate.  The IVT and
-; the BIOS data area below 4E8h are the guest's to ruin, as they are
+; Three ranges, and the gaps between them are deliberate.  The IVT, the
+; BIOS data area and DOS's area at 500h are the guest's to ruin, as they are
 ; on a real machine; so is the DOS data segment at 4000h, which holds
 ; the list of lists and which a program is invited to read.  The shell's
 ; slot at 140000h-17FFFFh is a PROGRAM's memory and not the kernel's,
@@ -271,7 +279,7 @@ ARENA_BASE      EQU     00220000h               ; start of the DOS memory arena
 ; covers the A20 alias of these, guard pages, and the page tables
 ; pg_hiram puts at the top of a machine with more than 256MB.
 ;---------------------------------------------------------------------
-KBUF_LO1        EQU     000004E8h       ; the thunk's register frame, the
+KBUF_LO1        EQU     00000600h       ; the thunk's register frame, the
 KBUF_HI1        EQU     00004000h       ; real-mode stack, the stub, XFER
 KBUF_LO2        EQU     DOS_BASE        ; PMDOS.SYS itself
 KBUF_HI2        EQU     DOS_LIMIT
@@ -766,7 +774,23 @@ DPMI_IDX_CBSS   EQU     7
 ; itself, executed from here, and an INT 31h after it that gives the
 ; answer to whoever was waiting for the handler to return.
 DPMI_IDX_DEFVEC EQU     8
-DPMI_IDX_FIRST  EQU     9                       ; the first one 0000h can give
+; And the stack a processor exception handler (0203h) is called on,
+; which the specification wants locked and separate: the fault may be
+; the client's own stack being wrong.
+DPMI_IDX_EXCSS  EQU     9
+
+; And the one the PSP's environment word holds while the client runs.
+; The specification has the host put a selector at PSP:2Ch at the mode
+; switch, and every extender reads its environment through it: a
+; segment there is loaded as a selector and faults.
+DPMI_IDX_ENV    EQU     10
+
+; And a window on the table itself, which the "MS-DOS" extension's one
+; function (AX=0100h) hands out.  Read-only: a client that could write
+; its own descriptors could write a call gate, and 000Ch and 0009h
+; refuse those for a reason.
+DPMI_IDX_LDTA   EQU     11
+DPMI_IDX_FIRST  EQU     12                      ; the first one 0000h can give
 DPMI_SEL_DEFVEC EQU     (DPMI_IDX_DEFVEC SHL 3) + DPMI_SELBITS
 
 DST_LEN         EQU     2                       ; bytes to a vector
@@ -795,6 +819,7 @@ HK_IRET         EQU     8                       ; EIP, CS, EFLAGS, ESP, SS
 ; client is allowed to do at ring 0.
 DACC_CODE       EQU     0FAh                    ; present, DPL 3, code, readable
 DACC_DATA       EQU     0F2h                    ; present, DPL 3, data, writable
+DACC_RODATA     EQU     0F0h                    ; ...and read only
 DGRAN_16        EQU     000h                    ; byte granular, 16-bit
 DGRAN_32        EQU     040h                    ; byte granular, 32-bit
 DGRAN_G         EQU     080h                    ; 4K granular, added to either
@@ -862,7 +887,21 @@ DPMI_MAXCB      EQU     8                       ; live callbacks, at once
 DPMICB_SLOT     EQU     2                       ; F4 CB - the HLT and its RETF
 DPMICB_R3RET    EQU     DPMI_MAXCB * DPMICB_SLOT        ; CD 31
 DPMICB_RETF     EQU     DPMICB_R3RET + 2        ; CB - 0305h's do-nothing
+DPMICB_RAWRM    EQU     DPMICB_RETF + 1         ; F4 - 0306h, protected to real:
+                                                ; a HLT at ring 3 is a #GP, and
+                                                ; dpmi_fault knows the address
+DPMICB_RAWPM    EQU     DPMICB_RAWRM + 1        ; F4 - 0306h, real to protected:
+                                                ; a HLT in V86, which vdm_halt
+                                                ; hands to dpmi_rawpm
+DPMICB_EXCRET   EQU     DPMICB_RAWPM + 1        ; CD 31 - where an exception handler's
+                                                ; RETF goes (dpmi_excret)
+DPMICB_EXCDEF   EQU     DPMICB_EXCRET + 2       ; CD 31 - 0202h's default handler, for
+                                                ; a client that chains to it
+DPMICB_MSDOS    EQU     DPMICB_EXCDEF + 2       ; CD 31 CB - the "MS-DOS" extension's
+                                                ; entry point (dpmi_msapi)
 DPMICB_PARAS    EQU     2                       ; paragraphs of all that
+.ERRE   (DPMICB_MSDOS + 3) LE (DPMICB_PARAS * 16), <the DPMI landing pads outgrew their paragraphs>
+
 
 ; One of these per callback the client holds.
 DCB_FLAGS       EQU     0                       ; dd - 0 free, 1 allocated
@@ -878,6 +917,15 @@ DCB_LEN         EQU     24
 ; it "a locked API stack"; here nothing is pageable, so locking it is
 ; a matter of never freeing it.
 DPMI_CBSTK      EQU     4096
+DPMI_EXCSTK     EQU     4096                    ; the exception handlers' locked stack
+DPMI_MAXEXC     EQU     32                      ; 0202h/0203h: exceptions 00h-1Fh
+
+; How dpmi_simint enters real mode (dpmi_rmcall): through an INT xx for
+; 0300h and the reflector, or at the structure's CS:IP with a frame to
+; come back through - a far call's for 0301h, an interrupt's for 0302h.
+DRC_INT         EQU     0
+DRC_RETF        EQU     1
+DRC_IRET        EQU     2
 
 ;---------------------------------------------------------------------
 ; INT 31h error codes.  DPMI 0.9 returns them in AX with CF set.
@@ -932,12 +980,54 @@ DM_LEN          EQU     16
 ; costs is a quarter of a kilobyte of a DOS box's memory; what it buys
 ; is that every tool computing a size by subtraction gets a positive
 ; one.
+;
+; AND IT IS LAID OUT AS MS-DOS 5 LAYS ITS OWN OUT (2026-10-06), at
+; every offset anybody reads without being told it.  Three kinds of
+; program read this segment at FIXED offsets rather than through the
+; pointers 52h and 34h hand out: SHARE and Windows for Workgroups'
+; VSHARE (the version word at 4, SHARE's jump table at 90h, its flag
+; at 303h), MEM (UMB_HEAD at 8Ch), and - the one that decided it - any
+; driver loaded by a DEVICE= line, which asks 34h and 52h once, at its
+; INIT, and keeps the answers for ever.  IFSHLP.SYS keeps the InDOS
+; address and reads the SDA's PSP and drive through it every time a
+; program makes a file call.
+;
+; THAT LAST ONE CROSSES THE HANDOVER.  A driver loaded here is still
+; resident when the kernel parks and RMDOS.SYS becomes the DOS under
+; Windows (RMDOS.INC), and RMDOS builds ITS published structures in
+; this same segment - in DOS 5's layout, because VSHARE will not load
+; on anything else.  Until now the two layouts differed: the kernel's
+; InDOS was at 91h, which on RMDOS's side of the handover is the
+; middle of SHARE's jump table, so every driver loaded at boot would
+; have read a byte of a far pointer as InDOS for as long as Windows
+; ran.  So both sides use one layout and RMDOS.INC's RL_ names are
+; checked against these in PARK.INC:
+;
+;   0004  DataVersion, 1          0303  SHARE's flag
+;   0024  first MCB, then the     0320  the swappable data area, so
+;         list of lists at 26h          InDOS is at 321h, as in DOS 5
+;   0048  the NUL header          0340  the guest file table, block 1
+;   008C  UMB_HEAD                0600  the current directory array
+;   0090  SHARE's jump table      0B80  the guest file table, block 2
+;   00D0  ours: the RETF, the     17C0  the drive parameter blocks
+;         media byte, the DBCS word, CON, AUX and PRN's headers,
+;         RMDOS's DOSMGR table, the country tables
+;
+; THE PRICE IS 5C0h BYTES OF CONVENTIONAL MEMORY, and it is the price
+; of the current directory array, which DOS 5 has and this segment did
+; not: sixteen of DOS's 58h-byte entries is 580h.  Everything else
+; fitted in the same 4.5K by splitting the file table in two, which
+; is how MS-DOS keeps its own (five entries in the data segment and the
+; rest elsewhere), and moving the country tables into what DOS 5 left
+; between SHARE's table and SHARE's flag.
 DOSDATA         EQU     00004000h
 DOSDATA_SEG     EQU     0400h
-DOSDATA_SIZE    EQU     00001200h       ; four and a half kilobytes: 256 bytes
-                                        ; until the system file table below
-                                        ; needed somewhere real to be, 4K
-                                        ; until the country tables (GNLS_)
+DOSDATA_SIZE    EQU     000019D0h       ; 256 bytes until the system file
+                                        ; table below needed somewhere real
+                                        ; to be, 4K until the country tables
+                                        ; (GNLS_), 4.5K until the current
+                                        ; directory array, 17C0h until the
+                                        ; drive parameter blocks (GDPB_)
 
 ;---------------------------------------------------------------------
 ; THE SYSTEM FILE TABLE A GUEST CAN WALK, and it exists because of what
@@ -966,7 +1056,14 @@ DOSDATA_SIZE    EQU     00001200h       ; four and a half kilobytes: 256 bytes
 ; sees a table with nothing open in it, which is a lie only if it is
 ; looking for a file somebody else has open.
 ;---------------------------------------------------------------------
-GSFT_OFF        EQU     00000100h       ; within the DOS data segment
+;
+; TWO BLOCKS, AS MS-DOS HAS TWO (2026-10-06).  The first is in the part
+; of the segment DOS 5 gives the rest of its SDA, past the 26 bytes of
+; it this kernel publishes, and the second follows the current
+; directory array.  vdm_lolfresh shares FILES= out between them: the
+; first takes up to GSFT_N1, and the second is in the chain only when
+; there is more than that to hold.
+GSFT_OFF        EQU     00000340h       ; block 1, within the DOS data segment
 GSFT_BASE       EQU     DOSDATA + GSFT_OFF
 GSFT_NEXT       EQU     00h             ; dd - the next block, FFFFh = last
 GSFT_COUNT      EQU     04h             ; dw - entries in this block
@@ -974,7 +1071,61 @@ GSFT_ENTRY      EQU     06h             ; and here they start
 GSFT_ENTSIZE    EQU     3Bh             ; as DOS 4 and later lay one out
 GSFT_ENTRIES    EQU     64              ; = MAX_HANDLES, guarded where that
                                         ; is defined
-GSFT_SIZE       EQU     GSFT_ENTRY + GSFT_ENTRIES * GSFT_ENTSIZE
+GSFT_N1         EQU     11              ; of them in block 1
+GSFT_SIZE       EQU     GSFT_ENTRY + GSFT_N1 * GSFT_ENTSIZE
+GSFT2_OFF       EQU     00000B80h       ; block 2
+GSFT2_BASE      EQU     DOSDATA + GSFT2_OFF
+GSFT_N2         EQU     GSFT_ENTRIES - GSFT_N1
+GSFT2_SIZE      EQU     GSFT_ENTRY + GSFT_N2 * GSFT_ENTSIZE
+
+;---------------------------------------------------------------------
+; THE DRIVE PARAMETER BLOCKS, one for each letter, after the second
+; file table block (2026-10-09).
+;
+; The list of lists said FFFF:FFFF for the chain until now, as "there
+; are none here", and MSD crashed the box on Charlie's 486 for it: the
+; check Microsoft hid in MSD (the AARD code, run from its own stack at
+; start-up) loads the first DPB pointer and adds up the first twenty
+; words there without testing it.  A word read at offset FFFFh is a
+; general protection fault on a real processor, in V86 mode as in real
+; mode - "VDM: the guest faulted, vector 0D", ES:DI = FFFF:FFFF.
+; QEMU does not check a real-mode segment's limit and read on, so the
+; rig never saw it.  MS-DOS always has the chain, so it is here now:
+; MS-DOS 4's 21h bytes (DOS6SRC inc/dpb.inc, and the first 21h bytes
+; of EDPB_ below), in drive order, the last one's next pointer
+; FFFF:FFFF.  A CD-ROM has none, as under MSCDEX.
+;
+; A SLOT FOR EVERY LETTER, and only the drives that have a volume in
+; the chain, so that a drive's DPB is always at the same address and a
+; current directory structure can point at it (GCDS_DPB).  vdm_dpbfresh
+; writes them when a guest asks 52h, 1Fh or 32h, out of what each
+; volume's state says; a drive not read yet says so with FFh in
+; EDPB_ACCESS, as DOS's does.  The cost is 210h bytes of the arena.
+;---------------------------------------------------------------------
+GDPB_OFF        EQU     000017C0h       ; within the DOS data segment
+GDPB_BASE       EQU     DOSDATA + GDPB_OFF
+GDPB_LEN        EQU     21h             ; MS-DOS 4's size, fields EDPB_*
+
+;---------------------------------------------------------------------
+; THE CURRENT DIRECTORY ARRAY - where it goes, LASTDRIVE entries of
+; MS-DOS 4's 58h bytes.  Reserved here; what goes in it is VDM.INC's.
+;---------------------------------------------------------------------
+GCDS_OFF        EQU     00000600h       ; within the DOS data segment
+GCDS_BASE       EQU     DOSDATA + GCDS_OFF
+GCDS_LEN        EQU     58h
+GCDS_PATH       EQU     00h             ; 67 bytes: "C:\DIR\SUB", ASCIIZ
+GCDS_FLAGS      EQU     43h             ; dw - GCDSF_*
+GCDS_DPB        EQU     45h             ; dd - the drive's GDPB_ slot, or
+                                        ; FFFF:FFFF for a drive with none
+GCDS_CLUS       EQU     49h             ; dd - the directory's first cluster,
+                                        ; 0 for the root
+GCDS_BACK       EQU     4Fh             ; dw - where the path's root
+                                        ; backslash is: 2
+GCDSF_PHYS      EQU     4000h           ; a drive with a volume behind it
+GCDSF_CDROM     EQU     0C080h          ; a CD-ROM's, as MSCDEX marks its
+                                        ; letters: in use, a redirector's,
+                                        ; and not in 5F02h's list - as
+                                        ; RMDOS marks it under Windows
 
 ;---------------------------------------------------------------------
 ; THE COUNTRY TABLES 65h HANDS OUT - uppercase (02h, and 04h for file
@@ -997,7 +1148,7 @@ GSFT_SIZE       EQU     GSFT_ENTRY + GSFT_ENTRIES * GSFT_ENTSIZE
 ; Each is a word saying how long it is, then the table - the format
 ; 65h's callers read.  Built once, at boot, by vdm_lolinit.
 ;---------------------------------------------------------------------
-GNLS_OFF        EQU     00001000h       ; within the DOS data segment
+GNLS_OFF        EQU     00000130h       ; within the DOS data segment
 GNLS_UPCASE     EQU     GNLS_OFF        ; dw 128, then 80h-FFh upper-cased
 GNLS_TERM       EQU     GNLS_OFF + 82h  ; dw 22, then the terminator table
 GNLS_TERMLEN    EQU     24
@@ -1006,8 +1157,8 @@ GNLS_DBCS       EQU     GNLS_OFF + 19Ch ; dw 0, dw 0: no ranges, and the end
 GNLS_END        EQU     GNLS_OFF + 1A0h
 GNLS_ACCENTS    EQU     26h             ; 80h-A5h, which vdm_nlsacc weighs
 
-V86_TPA         EQU     00005200h
-V86_TPA_SEG     EQU     0520h
+V86_TPA         EQU     000059D0h
+V86_TPA_SEG     EQU     059Dh
 V86_TPA_TOP     EQU     000A0000h       ; THE CEILING, NOT THE TOP.  Where the
                                         ; arena really ends is what the BIOS
                                         ; says at 40:13 and is decided at run
@@ -1048,34 +1199,40 @@ RMCB_SIZE       EQU     10h
 ; between versions, so a tool that reads it hedges - which is what
 ; makes the rest safe to answer honestly rather than convincingly.
 ;
-; WHAT THE POINTERS SAY.  PM-DOS has no DPBs, no SFT chain in DOS's
-; shape, no CDS array and no FCB table, so those four answer FFFF:FFFF
-; - the sentinel DOS itself uses for "the chain ends here", which a
-; walker tests for before it dereferences anything.  Inventing plausible
-; structures there would be worse than saying no: a tool would follow
-; them.  The device chain is different, because PM-DOS genuinely has
+; WHAT THE POINTERS SAY.  PM-DOS had no DPBs, no SFT chain in DOS's
+; shape, no CDS array and no FCB table, so those four answered
+; FFFF:FFFF - the sentinel DOS itself uses for "the chain ends here",
+; on the belief that a walker tests for it before it dereferences
+; anything.  Two programs did not: WIN.COM walked the file tables and
+; MSD added up the first DPB, and three of the four are real chains
+; now (GSFT_, GCDS_, GDPB_).  The FCB table still says FFFF:FFFF.  The
+; device chain was always different, because PM-DOS genuinely has
 ; devices, so it gets one real terminated entry.
 ;
 ; Offsets here are from the SEGMENT BASE, not from the returned
-; pointer, which sits GLOL_PTR bytes in.  Subtract 2 to read them
-; against a DOS reference.
+; pointer, which sits GLOL_PTR bytes in.  Subtract 26h to read them
+; against a DOS reference - the list starts where DOS 5's SysInitVars
+; does (DOSDATA, above), with the first MCB's word in front of it.
 ;---------------------------------------------------------------------
-GLOL_MCBSEG     EQU     00h             ; dw - first MCB.  [ES:BX-2]
-GLOL_PTR        EQU     02h             ; ES:BX is handed out pointing here
-GLOL_DPB        EQU     02h             ; dd - +00 first drive parameter block
-GLOL_SFT        EQU     06h             ; dd - +04 first system file table
-GLOL_CLOCK      EQU     0Ah             ; dd - +08 the CLOCK$ device
-GLOL_CON        EQU     0Eh             ; dd - +0C the console device
-GLOL_MAXSEC     EQU     12h             ; dw - +10 largest sector of any block
-GLOL_BUFFERS    EQU     14h             ; dd - +12 the disk buffer chain
-GLOL_CDS        EQU     18h             ; dd - +16 the current directory array
-GLOL_FCB        EQU     1Ch             ; dd - +1A the system FCB table
-GLOL_PROTFCB    EQU     20h             ; dw - +1E FCBs kept from recycling
-GLOL_NBLOCK     EQU     22h             ; db - +20 block devices, filled per call
-GLOL_LASTDRV    EQU     23h             ; db - +21 LASTDRIVE
-GLOL_NUL        EQU     24h             ; +22 the NUL driver header, and with
+GLOL_DOSVER     EQU     04h             ; dw - DOS 5's DataVersion, 1: what
+                                        ; SHARE checks before it believes
+                                        ; anything else in the segment
+GLOL_MCBSEG     EQU     24h             ; dw - first MCB.  [ES:BX-2]
+GLOL_PTR        EQU     26h             ; ES:BX is handed out pointing here
+GLOL_DPB        EQU     26h             ; dd - +00 first drive parameter block
+GLOL_SFT        EQU     2Ah             ; dd - +04 first system file table
+GLOL_CLOCK      EQU     2Eh             ; dd - +08 the CLOCK$ device
+GLOL_CON        EQU     32h             ; dd - +0C the console device
+GLOL_MAXSEC     EQU     36h             ; dw - +10 largest sector of any block
+GLOL_BUFFERS    EQU     38h             ; dd - +12 the disk buffer chain
+GLOL_CDS        EQU     3Ch             ; dd - +16 the current directory array
+GLOL_FCB        EQU     40h             ; dd - +1A the system FCB table
+GLOL_PROTFCB    EQU     44h             ; dw - +1E FCBs kept from recycling
+GLOL_NBLOCK     EQU     46h             ; db - +20 block devices, filled per call
+GLOL_LASTDRV    EQU     47h             ; db - +21 LASTDRIVE
+GLOL_NUL        EQU     48h             ; +22 the NUL driver header, and with
                                         ; it the head of the device chain
-GLOL_NJOIN      EQU     36h             ; db - +34 JOIN'ed drives, none
+GLOL_NJOIN      EQU     5Ah             ; db - +34 JOIN'ed drives, none
 
 ; THE TAIL OF THE STRUCTURE, AND WHY IT IS HERE AT ALL.
 ;
@@ -1093,19 +1250,19 @@ GLOL_NJOIN      EQU     36h             ; db - +34 JOIN'ed drives, none
 ; only choice is whether it reads an answer or a device name.  That is
 ; the same argument the FFFF:FFFF pointers above are made of, one step
 ; further along: say nothing, but say it in the right place.
-GLOL_SPECIAL    EQU     37h             ; dw - +35 "special code segment",
+GLOL_SPECIAL    EQU     5Bh             ; dw - +35 "special code segment",
                                         ; unused from DOS 5 onwards
-GLOL_SETVER     EQU     39h             ; dd - +37 the SETVER table
-GLOL_CPFIX      EQU     3Dh             ; dw - +3B Microsoft's copy-protection
+GLOL_SETVER     EQU     5Dh             ; dd - +37 the SETVER table
+GLOL_CPFIX      EQU     61h             ; dw - +3B Microsoft's copy-protection
                                         ; .COM fixup entry
-GLOL_A20PSP     EQU     3Fh             ; dw - +3D PSP of the last program
+GLOL_A20PSP     EQU     63h             ; dw - +3D PSP of the last program
                                         ; loaded, for disabling A20
-GLOL_NBUF       EQU     41h             ; dw - +3F disk buffers
-GLOL_NLOOK      EQU     43h             ; dw - +41 lookahead buffers
-GLOL_BOOTDRV    EQU     45h             ; db - +43 boot drive, 1 = A
-GLOL_DWMOVE     EQU     46h             ; db - +44 386 dword moves available
-GLOL_EXTMEM     EQU     47h             ; dw - +45 extended memory, KB
-GLOL_TAIL       EQU     49h             ; +47 - and there the structure ends
+GLOL_NBUF       EQU     65h             ; dw - +3F disk buffers
+GLOL_NLOOK      EQU     67h             ; dw - +41 lookahead buffers
+GLOL_BOOTDRV    EQU     69h             ; db - +43 boot drive, 1 = A
+GLOL_DWMOVE     EQU     6Ah             ; db - +44 386 dword moves available
+GLOL_EXTMEM     EQU     6Bh             ; dw - +45 extended memory, KB
+GLOL_TAIL       EQU     6Dh             ; +47 - and there the structure ends
 
 ; Past the list of lists proper, and in the same block for the same
 ; reason: THESE ARE THE OTHER THINGS A GUEST IS HANDED A POINTER TO.
@@ -1115,16 +1272,22 @@ GLOL_TAIL       EQU     49h             ; +47 - and there the structure ends
 ; here means the handlers return a flat address inside this block and
 ; the bridge converts it the same way for all of them.
 ;
-; They live AFTER the documented tail now, which is where anything of
-; ours belongs: an offset DOS defines is not ours to spend.
-GLOL_RETF       EQU     49h             ; db - a far return, which is what both
+; They live past SHARE's jump table now, in the bytes DOS 5 keeps its
+; own variables in and nothing outside DOS reads, which is where
+; anything of ours belongs: an offset somebody else reads is not ours
+; to spend.
+GLOL_JSHARE     EQU     90h             ; 15 far pointers - SHARE's jump table,
+                                        ; where SHARE and VSHARE look for it.
+                                        ; RMDOS fills it; this kernel leaves
+                                        ; it zero, calling none of it
+GLOL_RETF       EQU     0D0h            ; db - a far return, which is what both
                                         ; driver entries below point at: they
                                         ; are FAR CALL targets, and a program
                                         ; that calls one must come back
-GLOL_MEDIA      EQU     4Ah             ; db - 1Bh/1Ch hand back DS:BX
+GLOL_MEDIA      EQU     0D1h            ; db - 1Bh/1Ch hand back DS:BX
                                         ; pointing at the media descriptor
                                         ; byte of the drive just asked about
-GLOL_DBCS       EQU     4Ch             ; dw - 63h hands back DS:SI pointing
+GLOL_DBCS       EQU     0D2h            ; dw - 63h hands back DS:SI pointing
                                         ; at the DBCS lead-byte table, and a
                                         ; single zero word IS the table: no
                                         ; ranges, which is the truth for
@@ -1161,9 +1324,12 @@ DEVH_LEN        EQU     12h
 ; pointer AT the console header and is a different thing at a
 ; different offset - hence the H, which is not decoration.
 GLOL_HNUL       EQU     GLOL_NUL        ; the head, already inside the LoL
-GLOL_HCON       EQU     4Eh
-GLOL_HAUX       EQU     60h
-GLOL_HPRN       EQU     72h
+GLOL_HCON       EQU     0DAh            ; and RMDOS's are at the same three
+GLOL_HAUX       EQU     0ECh            ; addresses (RL_DEVS), so that a
+GLOL_HPRN       EQU     0FEh            ; loaded driver's link to the kernel's
+                                        ; CON is a link to RMDOS's after the
+                                        ; handover - see PARK.INC
+GLOL_FSHARE     EQU     303h            ; db - SHARE's "installed" flag: 0
 
 ; UMB_HEAD, AND IT IS NOT PART OF THE LIST OF LISTS AT ALL.
 ;
@@ -1198,7 +1364,7 @@ GLOL_HPRN       EQU     72h
 ; same reason (sysconf.asm, LinkFirstUMB: "cx = ax - 1" where ax is
 ; the size of memory in paragraphs).  See UMB.INC.
 GLOL_UMBHEAD    EQU     8Ch             ; dw - where upper memory starts
-GLOL_SIZE       EQU     8Eh
+GLOL_SIZE       EQU     GLOL_HPRN + DEVH_LEN
                                         ; and it lives at DOSDATA, below the
                                         ; arena - not in it
 
@@ -1216,6 +1382,9 @@ DEV_ATTR_CON    EQU     8003h           ; character, is stdin, is stdout
 DEV_ATTR_AUX    EQU     8000h           ; character, and nothing special
 DEV_ATTR_PRN    EQU     8000h
 DEV_ATTR_CHAR   EQU     8000h           ; the bit that says which kind
+DEV_ATTR_IOCTL  EQU     4000h           ; takes IOCTL read and write (02h-05h)
+DEV_ATTR_OCRM   EQU     0800h           ; wants to hear about opens and closes
+DEV_ATTR_GENIOCTL EQU   0040h           ; takes the generic IOCTL (0Ch/0Dh)
 DEV_ATTR_BIG    EQU     0002h           ; block only: understands a 32-bit
                                         ; sector number in a request packet
 
@@ -1302,6 +1471,16 @@ DEVC_OPEN       EQU     13
 DEVC_CLOSE      EQU     14
 DEVC_REMOVABLE  EQU     15
 DEVC_OUTBUSY    EQU     16
+DEVC_GENIOCTL   EQU     19
+
+; The generic IOCTL (command 19, 13h): what 440Ch hands the driver.
+REQG_CAT        EQU     0Dh             ; db - the category, from CH
+REQG_MINOR      EQU     0Eh             ; db - the function, from CL
+REQG_SI         EQU     0Fh             ; dw - the caller's SI and DI,
+REQG_DI         EQU     11h             ; dw   passed through
+REQG_PKTOFF     EQU     13h             ; dw } the caller's block
+REQG_PKTSEG     EQU     15h             ; dw }
+REQG_LEN        EQU     17h
 
 DEVS_DONE       EQU     0100h           ; the driver is finished
 DEVS_BUSY       EQU     0200h
@@ -1335,14 +1514,20 @@ ENDIF
 IF GLOL_TAIL NE GLOL_EXTMEM + 2
         .ERR    <GLOL: the documented structure does not end at LoL+47h>
 ENDIF
-IF GLOL_RETF LT GLOL_TAIL
-        .ERR    <GLOL: ours has been put inside the part DOS defines>
+IF GLOL_UMBHEAD LT GLOL_TAIL
+        .ERR    <GLOL: UMB_HEAD is inside the list of lists>
+ENDIF
+IF GLOL_JSHARE LT GLOL_UMBHEAD + 4
+        .ERR    <GLOL: SHARE's jump table is not past UMB_HEAD and START_ARENA>
+ENDIF
+IF GLOL_RETF LT GLOL_JSHARE + 15 * 4
+        .ERR    <GLOL: ours has been put inside SHARE's jump table>
 ENDIF
 IF GLOL_MEDIA NE GLOL_RETF + 1
         .ERR    <GLOL: the media byte does not follow the driver return>
 ENDIF
-IF GLOL_HCON LT GLOL_DBCS + 2
-        .ERR    <GLOL: the device chain overlaps the DBCS table>
+IF GLOL_HCON LT GLOL_DBCS + 8
+        .ERR    <GLOL: the device chain overlaps the DBCS table or the FCB table after it>
 ENDIF
 IF GLOL_HAUX NE GLOL_HCON + DEVH_LEN
         .ERR    <GLOL: the CON header is not 18 bytes>
@@ -1350,29 +1535,20 @@ ENDIF
 IF GLOL_HPRN NE GLOL_HAUX + DEVH_LEN
         .ERR    <GLOL: the AUX header is not 18 bytes>
 ENDIF
-IF GLOL_UMBHEAD LT GLOL_HPRN + DEVH_LEN
-        .ERR    <GLOL: UMB_HEAD is underneath the PRN device header>
+IF GNLS_OFF LT GLOL_SIZE + 1Ch
+        .ERR    <GNLS: the country tables are on top of the device headers or RMDOS's DOSMGR table>
 ENDIF
-IF GLOL_SIZE NE GLOL_UMBHEAD + 2
-        .ERR    <GLOL: GLOL_SIZE does not cover the whole structure>
-ENDIF
-IF GLOL_SIZE GT DOSDATA_SIZE
-        .ERR    <GLOL: the structure does not fit in the DOS data segment>
+IF GNLS_END GT GLOL_FSHARE
+        .ERR    <GNLS: the country tables run into SHARE's flag>
 ENDIF
 IF DOSDATA + DOSDATA_SIZE NE V86_TPA
         .ERR    <GLOL: the DOS data segment does not end where the arena begins>
 ENDIF
-IF GSFT_OFF LT GLOL_SIZE
-        .ERR    <GSFT: the file table starts inside the list of lists>
+IF GSFT_OFF + GSFT_SIZE GT GCDS_OFF
+        .ERR    <GSFT: block 1 of the file table runs into the current directories>
 ENDIF
-IF GSFT_OFF + GSFT_SIZE GT DOSDATA_SIZE
-        .ERR    <GSFT: the file table does not fit in the DOS data segment>
-ENDIF
-IF GNLS_OFF LT GSFT_OFF + GSFT_SIZE
-        .ERR    <GNLS: the country tables start inside the file table>
-ENDIF
-IF GNLS_END GT DOSDATA_SIZE
-        .ERR    <GNLS: the country tables do not fit in the DOS data segment>
+IF GSFT2_OFF + GSFT2_SIZE GT GDPB_OFF
+        .ERR    <GSFT: block 2 of the file table runs into the drive parameter blocks>
 ENDIF
 
 ;---------------------------------------------------------------------
@@ -1489,6 +1665,7 @@ P_BXD           EQU     10h                     ; ...but DS:BX, with P_BX.
 ;---------------------------------------------------------------------
 EFL_IF          EQU     00000200h
 EFL_TF          EQU     00000100h
+EFL_DF          EQU     00000400h
 EFL_OF          EQU     00000800h
 EFL_IOPL        EQU     00003000h
 EFL_NT          EQU     00004000h
@@ -1612,7 +1789,7 @@ XFER_BUF        EQU     00002000h               ; below 1M, for BIOS transfers
 XFER_SEG        EQU     0200h                   ; ...as a real-mode segment
 XFER_SIZE       EQU     00002000h               ; 8K = 16 sectors
 
-; SP, not a buffer: the stack runs DOWN from here to 0530h, which is
+; SP, not a buffer: the stack runs DOWN from here to 0640h, which is
 ; where the thunk's register frame ends.  It used to be 7C00h, which
 ; put twenty-five kilobytes of untouched stack in the middle of what a
 ; DOS program wanted, purely because 7C00h is the number a boot sector
@@ -1659,9 +1836,20 @@ MEMMAP_MAX      EQU     32                      ; 32 * 24 = 768 bytes
 ;---------------------------------------------------------------------
 ; Thunk interface (see RMCALL.INC / IORM.ASM)
 ;---------------------------------------------------------------------
-RMSAVE_ESP      EQU     000004E8h               ; caller's 32-bit ESP
-RMRET           EQU     000004F0h               ; dd offset32, dw selector
-RMFRAME         EQU     00000500h               ; RMR_* offsets below
+;
+; NOT AT 500h, WHERE THEY WERE UNTIL 0.62.  500h-5FFh is the area DOS
+; and BASIC have kept things in since the PC: the print-screen status
+; byte at 500h, and from 510h BASIC's data segment and the INT 1Ch,
+; 23h and 24h vectors it hooks and must put back.  QuickBASIC 4.5 keeps
+; the timer vector there; every BIOS call the kernel made overwrote it,
+; QB put the result back on the way out, and the next timer tick jumped
+; into whatever program had been loaded there.  Nothing below 600h is
+; the kernel's now.
+RMSAVE_ESP      EQU     00000600h               ; caller's 32-bit ESP
+RMRET           EQU     00000608h               ; dd offset32, dw selector
+RMFRAME         EQU     00000610h               ; RMR_* offsets below
+.ERRE KBUF_LO1 EQ RMSAVE_ESP, <KBUF_LO1 must start at the thunk's frame>
+.ERRE (RMFRAME + 2Ch) LE 640h, <the stack's floor is 640h>
 
 ;---------------------------------------------------------------------
 ; THE SWAPPABLE DATA AREA, and with it the two DOS status flags.
@@ -1705,8 +1893,9 @@ RMFRAME         EQU     00000500h               ; RMR_* offsets below
 ; zeroes at those offsets would be worse than a short answer, for the
 ; same reason the list of lists says FFFF:FFFF where it has nothing.
 ;---------------------------------------------------------------------
-SDA_OFF         EQU     00000090h               ; within the DOS data segment,
-                                                ; above the list of lists
+SDA_OFF         EQU     00000320h               ; within the DOS data segment,
+                                                ; where DOS 5 has it - see
+                                                ; DOSDATA for why that matters
 SDA_BASE        EQU     DOSDATA + SDA_OFF
 SDA_SEG         EQU     DOSDATA_SEG             ; what 5D06h answers in DS...
 SDA_PTR         EQU     SDA_OFF                 ; ...and in SI
@@ -1739,8 +1928,8 @@ DOS_INDOS       EQU     SDA_BASE + SDA_INDOS    ; byte - INT 21h nesting depth
 ; grows either one into the other is a bug the assembler should catch
 ; rather than something a DOS box discovers by reading its own InDOS
 ; flag out of the middle of a device header.
-IF SDA_OFF LT GLOL_SIZE
-        .ERR    <SDA: the swappable data area overlaps the list of lists>
+IF SDA_OFF LT GLOL_FSHARE + 1
+        .ERR    <SDA: the swappable data area overlaps SHARE's flag>
 ENDIF
 IF SDA_OFF + SDA_LEN GT DOSDATA_SIZE
         .ERR    <SDA: the swappable data area runs past the DOS data segment>
@@ -1796,6 +1985,9 @@ GVP_ES          EQU     06h                     ; dw
 GVP_SS          EQU     08h                     ; dw
 GVP_SP          EQU     0Ah                     ; dw
 GVP_ACTIVE      EQU     0Ch                     ; db - 1 while parked
+GVP_XT          EQU     0Dh                     ; db - BUILD exittrace: 1 from
+                                                ; rm_unpark to the first key
+                                                ; asked for (XTRACE.INC)
 GVP_AX          EQU     0Eh                     ; dw - handed over in AX
 GVP_LEN         EQU     10h
 
@@ -2345,8 +2537,10 @@ PLOG_LEN        EQU     128
 IOS_CDUNIT      EQU     IOSVC + 0E0h            ; AL = ATAPI unit -> EDX = its
                                                 ; ATA device index (the one
                                                 ; IOS_ATAINFO takes), EBX = its
-                                                ; channel's base port, ECX =
-                                                ; units there are.  CF if AL
+                                                ; channel's base port and, in
+                                                ; the high word, its control
+                                                ; port, ECX = units there
+                                                ; are.  CF if AL
                                                 ; names none, ECX still valid.
                                                 ; Asks the drive nothing, so
                                                 ; it answers with the tray
@@ -2840,6 +3034,12 @@ PIT_CH0         EQU     40h                     ; channel 0's count
 PIT_CTRL        EQU     43h                     ; the control word
 PIT_FULL        EQU     10000h                  ; the BIOS's divisor: 18.2 Hz
 
+; A DPMI client's interrupt flag, when a POPF put it back unseen
+; (pm3_ifwatch, IO\VM86.INC).
+PM3_OFFMAX      EQU     2 * PIT_FULL            ; off this long: on again
+PM3_OFFLONG     EQU     18 * PIT_FULL           ; ...whatever the stack says
+PM3_SITES       EQU     16                      ; CLIs a POPF is known to undo
+
 ;---------------------------------------------------------------------
 ; Console
 ;
@@ -3150,13 +3350,11 @@ F73_SIZE        EQU     2Ch             ; ...and eight reserved bytes
 ; per-FAT at 0Fh is ZERO on a FAT32 volume, which is how a reader tells
 ; the two apart.  Every number is in the volume's own LOGICAL sectors.
 ;
-; PM-DOS HAS NO DPBs, and says so where it matters: fn52's list of
-; lists answers FFFF:FFFF for the DPB chain, because a pointer into a
-; structure that does not exist is an invitation to walk it.  This call
-; COPIES a description into the caller's own memory, so there is
-; nothing to follow and nothing that outlives it.  The two pointer
-; fields - the driver and the next DPB - are the ones that would have
-; to lie, and they say FFFF:FFFF instead.
+; This call COPIES a description into the caller's own memory, so
+; there is nothing to follow and nothing that outlives it.  The two
+; pointer fields - the driver and the next DPB - say FFFF:FFFF.  A DOS
+; box's list of lists has a chain of the first 21h bytes of the same
+; block now (GDPB_, vdm_dpbfresh), which 1Fh and 32h point into.
 ;---------------------------------------------------------------------
 EDPB_DRIVE      EQU     00h             ; db - 0 = A:
 EDPB_UNIT       EQU     01h             ; db - unit within its driver
@@ -3193,6 +3391,39 @@ F72_LEN         EQU     00h             ; dw - EDPB_LEN
 F72_DPB         EQU     02h
 F72_SIZE        EQU     F72_DPB + EDPB_LEN      ; 3Fh
 ERR_BADLEN      EQU     18h             ; "bad request structure length"
+
+;---------------------------------------------------------------------
+; 21h/440Dh CX=0860h - GET DEVICE PARAMETERS: MS-DOS 3.2's block with
+; DOS 4's BPB in it, DS:DX -> DVP_LEN bytes.  See f44_genblk.
+;---------------------------------------------------------------------
+DVP_SPECIAL     EQU     00h             ; db - bit 0: the medium in the
+                                        ; drive now, not the drive's own
+DVP_TYPE        EQU     01h             ; db - DVT_*
+DVP_ATTR        EQU     02h             ; dw - DVA_*
+DVP_CYLS        EQU     04h             ; dw - the drive's cylinders
+DVP_MEDIATYPE   EQU     06h             ; db - 0: the drive's own density
+DVP_BPS         EQU     07h             ; dw - and the BPB from here on
+DVP_SPC         EQU     09h             ; db
+DVP_RSVD        EQU     0Ah             ; dw
+DVP_NFATS       EQU     0Ch             ; db
+DVP_ROOT        EQU     0Dh             ; dw
+DVP_TOTSEC16    EQU     0Fh             ; dw - 0 when it takes 32 bits
+DVP_MEDIA       EQU     11h             ; db
+DVP_SPF         EQU     12h             ; dw - 0 on FAT32
+DVP_SPT         EQU     14h             ; dw
+DVP_HEADS       EQU     16h             ; dw
+DVP_HIDDEN      EQU     18h             ; dd
+DVP_TOTSEC32    EQU     1Ch             ; dd
+DVP_LEN         EQU     26h             ; and six reserved bytes end it
+DVP_BPBLEN      EQU     DVP_HIDDEN + 8 - DVP_BPS        ; 19h, BPS to TOTSEC32
+
+DVT_360         EQU     0               ; DVP_TYPE: what DOS calls the drive
+DVT_1200        EQU     1
+DVT_720         EQU     2
+DVT_FIXED       EQU     5
+DVT_OTHER       EQU     7               ; a 1.44M drive, to DOS 3.3's list
+DVT_2880        EQU     9
+DVA_FIXED       EQU     0001h           ; DVP_ATTR: not removable
 
 ;---------------------------------------------------------------------
 ; 21h/7304h - SET DPB TO USE FOR FORMATTING, which DOS 7.1 gives a
@@ -3770,6 +4001,12 @@ VMA_LFB         EQU     0080h                   ; ...through a linear buffer
 ; one.  21h/0Eh reports this number; nothing should assume it.
 ;---------------------------------------------------------------------
 LASTDRIVE       EQU     16              ; A: to P:
+IF GCDS_OFF + LASTDRIVE * GCDS_LEN GT GSFT2_OFF
+        .ERR    <GCDS: the current directories run into block 2 of the file table>
+ENDIF
+IF GDPB_OFF + LASTDRIVE * GDPB_LEN GT DOSDATA_SIZE
+        .ERR    <GDPB: a drive parameter block for every letter does not fit in the DOS data segment>
+ENDIF
                                         ;
                                         ; RAISED FROM 8 WHEN CD-ROMs GOT
                                         ; LETTERS.  Two disks with a handful of

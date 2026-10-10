@@ -1,12 +1,33 @@
-PM-DOS - Protected Mode DOS, a 32-bit DOS kernel
-================================================
+PM-DOS - Protected Mode DOS
+===========================
 
-If you can read this with TYPE README.TXT, then the whole file I/O
-stack is working:
+A full featured 32-bit operating system with backward
+compatibility with 16-bit DOS applications.
 
-  INT 21h 3Dh open -> FAT12 root directory search
-  INT 21h 3Fh read -> cluster chain walk -> protected-mode to
-  real-mode thunk -> BIOS INT 13h -> back again
-  INT 21h 40h write -> console driver at B8000h
+System Requirements
+===================
+CPU: 80386
+RAM: 4MB
+HDD: 1.5MB
 
-All in 32-bit flat protected mode, with the BIOS none the wiser.
+Features
+========
+PnP device support
+File delete protection
+Built-in disk cache
+Up to UltraDMA/133 support
+Built-in optical drive support
+FAT12/16/32 bit file systems
+Long File Names
+FAT partition resizing
+ACPI-aware shutdown command
+VBE 2.0 with linear frame buffer
+
+What PM-DOS is NOT
+==================
+
+PM-DOS was not designed with security in mind.
+It's goal was to be a natural evolution to
+MS-DOS 16-bit as a single user operating
+system.  PM-DOS is not multi-threaded and
+does not support multi-CPUs or cores.

@@ -3334,7 +3334,33 @@ fc_ch:
         je      fc_star
         cmp     ah,' '                  ; a space cannot live in 8.3
         jne     fc_case
+        ; ...EXCEPT AT THE END, where it is what 8.3 is padded with.
+        ; MS-DOS packs a component into its eleven blank-filled bytes
+        ; and a blank after the last character is indistinguishable
+        ; from the padding, so "DOSX.EXE " opens DOSX.EXE (DOS6SRC
+        ; fcb.asm, NameTrans).  WfW 3.11's Setup depends on it: SETUP.INF
+        ; spells the program it starts Windows with "dosx.exe ", and an
+        ; EXEC of that came back "file not found" here, so Setup copied
+        ; its files and then quietly gave up (2026-10-07).  A blank in
+        ; the MIDDLE of a name is still long-name territory.
+        push    esi
+fc_trail:
+        inc     esi
+        mov     al,[esi]
+        cmp     al,' '
+        je      fc_trail
+        or      al,al
+        jz      fc_trailend
+        cmp     al,'\'
+        je      fc_trailend
+        cmp     al,'/'
+        je      fc_trailend
+        pop     esi                     ; more name follows: long
         mov     byte ptr [fc_long],1
+        jmp     short fc_case
+fc_trailend:
+        add     esp,4                   ; trailing blanks: skip them all
+        jmp     fc_ch
 fc_case:
         cmp     ah,'a'
         jb      fc_store

@@ -212,7 +212,7 @@ vr_noif:
         ; ...and its idea of IOPL and NT, which it may read but must
         ; never run under.  Same shadow treatment as IF above.
         mov     eax,[esi+V86C_FLAGS]
-        and     eax,V86_VFLAGS
+        and     eax,V86_VFLAGS OR EFL_AC OR EFL_ID
         mov     dword ptr ds:[v86_vpriv],eax
 
         ; A KEY THAT ARRIVED WHILE THE GUEST WAS NOT RUNNING.  The DOS
@@ -694,13 +694,14 @@ vf_isgp:
         add     esi,eax
 
         xor     ecx,ecx                 ; step over any prefixes
+        mov     byte ptr ds:[v86_o32],0 ; and remember a 66h among them
 vf_pfx:
         cmp     ecx,8                   ; a real instruction is shorter
         jae     vf_bad
         mov     al,[esi+ecx]
         inc     ecx
         cmp     al,66h                  ; operand size
-        je      vf_pfx
+        je      vf_o32
         cmp     al,67h                  ; address size
         je      vf_pfx
         cmp     al,0F2h
@@ -719,6 +720,11 @@ vf_pfx:
         je      vf_pfx
         cmp     al,65h
         je      vf_pfx
+        jmp     vf_op
+vf_o32:
+        mov     byte ptr ds:[v86_o32],1
+        jmp     vf_pfx
+vf_op:
                                         ; AL = opcode, ECX = length so far
         cmp     al,0CDh
         je      vf_int
@@ -1478,6 +1484,7 @@ v86_deliverto:
         mov     eax,[ebp+FR_FLAGS]
         and     eax,V86_UFLAGS
         or      eax,dword ptr ds:[v86_vpriv]
+        or      eax,2                   ; bit 1, as the CPU pushes it
         cmp     byte ptr ds:[v86_vif],0
         je      vr_ioff
         or      eax,EFL_IF
@@ -1634,26 +1641,54 @@ vf_sti:
         jmp     v86_resume
 
 ;--- PUSHF / POPF -----------------------------------------------------
+; WITH A 66h IN FRONT THEY ARE PUSHFD AND POPFD, four bytes and not two,
+; and the decoder used to step over the prefix and do the two-byte
+; thing.  The stack then came back two bytes out, and the RET at the
+; end of the routine went somewhere else.  DOS/4GW tells a 486 from a
+; 386 with exactly that pair, just before it asks for DPMI: every
+; DOS/4GW program in a box - DOOM, Rise of the Triad, Magic Carpet -
+; returned into its own raw mode switch and died on its LGDT.
+;
+; Bit 1 is set in every image a guest is shown, as every x86 sets it.
 vf_pushf:
         mov     eax,[ebp+FR_FLAGS]
         and     eax,V86_UFLAGS
-        or      eax,dword ptr ds:[v86_vpriv]
+        or      eax,dword ptr ds:[v86_vpriv]    ; IOPL, NT, and AC and ID
+        or      eax,2
         cmp     byte ptr ds:[v86_vif],0
         je      vp_ioff
         or      eax,EFL_IF
 vp_ioff:
+        cmp     byte ptr ds:[v86_o32],0
+        je      vp_16
+        push    eax                     ; PUSHFD: the high word first, so
+        shr     eax,16                  ; that the dword lies the right way
+        call    v86_push                ; round on the guest's stack
+        pop     eax
+vp_16:
         call    v86_push
         call    v86_skip
         jmp     v86_resume
 
 vf_popf:
+        cmp     byte ptr ds:[v86_o32],0
+        jne     vpf_32
         call    v86_pop
         call    v86_setflags
         call    v86_skip
         jmp     v86_resume
+vpf_32:
+        call    v86_pop32
+        call    v86_setfl32
+        call    v86_skip
+        jmp     v86_resume
 
 ;--- IRET -------------------------------------------------------------
+; ...and IRETD the same: three dwords.  The offset is still an offset
+; in a 64K segment, and the CS is still a paragraph.
 vf_iret:
+        cmp     byte ptr ds:[v86_o32],0
+        jne     vfi_32
         call    v86_pop
         movzx   eax,ax
         mov     [ebp+FR_EIP],eax
@@ -1662,6 +1697,16 @@ vf_iret:
         mov     [ebp+FR_CS],eax
         call    v86_pop
         call    v86_setflags
+        jmp     v86_resume
+vfi_32:
+        call    v86_pop32
+        movzx   eax,ax
+        mov     [ebp+FR_EIP],eax
+        call    v86_pop32
+        movzx   eax,ax
+        mov     [ebp+FR_CS],eax
+        call    v86_pop32
+        call    v86_setfl32
         jmp     v86_resume
 
 ;---------------------------------------------------------------------
@@ -1679,21 +1724,52 @@ vf_iret:
 ; entire method is exactly that.  Storing them costs one dword and
 ; buys every 386 test in DOS.
 ;---------------------------------------------------------------------
+;
+; AC AND ID ARE SHADOWED THE SAME WAY, for the 486 test and the CPUID
+; test, which are the same method one bit further up: flip it with
+; POPFD, read it back with PUSHFD.  A 16-bit image cannot reach them,
+; so v86_setflags keeps whatever the shadow held.  And they stick only
+; where the processor's own would (fpu_cpu, from fpu_init): a shadow
+; that let AC stick on a 386 would turn it into a 486 to every program
+; that asks.
+;---------------------------------------------------------------------
 v86_setflags:
         push    eax
+        push    edx
+        movzx   eax,ax
+        mov     edx,dword ptr ds:[v86_vpriv]
+        and     edx,EFL_AC OR EFL_ID
+        or      eax,edx
+        call    v86_setfl32
+        pop     edx
+        pop     eax
+        ret
+
+;--- v86_setfl32 - EAX = all 32 bits the guest wants (POPFD, IRETD) ---
+v86_setfl32:
+        push    eax
+        push    edx
         mov     byte ptr ds:[v86_vif],0
         test    ax,EFL_IF
         jz      vs_off
         mov     byte ptr ds:[v86_vif],1
 vs_off:
-        movzx   eax,ax
+        mov     edx,V86_VFLAGS          ; what it may think it has: IOPL
+        test    byte ptr ds:[fpu_cpu],FPC_486   ; and NT always, AC on a
+        jz      vs_x                            ; 486, ID where there is a
+        or      edx,EFL_AC                      ; CPUID
+        test    byte ptr ds:[fpu_cpu],FPC_CPUID
+        jz      vs_x
+        or      edx,EFL_ID
+vs_x:
         push    eax
-        and     eax,V86_VFLAGS          ; what it thinks IOPL and NT are
+        and     eax,edx
         mov     dword ptr ds:[v86_vpriv],eax
         pop     eax
         and     eax,V86_UFLAGS          ; and what it actually runs under
         or      eax,EFL_VM OR EFL_IF OR 2
         mov     [ebp+FR_FLAGS],eax
+        pop     edx
         pop     eax
         ret
 
@@ -1744,6 +1820,17 @@ v86_pop:
         pop     ebx
         ret
 
+;--- v86_pop32 - EAX off it, as two words, low first -------------------
+v86_pop32:
+        push    edx
+        call    v86_pop
+        movzx   edx,ax
+        call    v86_pop
+        shl     eax,16
+        mov     ax,dx
+        pop     edx
+        ret
+
 ;---------------------------------------------------------------------
 ; v86_resume - back into the guest, exactly where it left off
 ;---------------------------------------------------------------------
@@ -1762,9 +1849,12 @@ v86_ctx         dd      0               ; the context being run
 v86_kesp        dd      0               ; where v86_run must unwind to
 v86_reason      dd      0
 v86_rvec        dd      0
-v86_vpriv       dd      0               ; the guest's virtual IOPL and NT: what
-                                        ; it may read back, never what it runs
-                                        ; under - see v86_setflags
+v86_vpriv       dd      0               ; the guest's virtual IOPL and NT (and
+                                        ; AC and ID): what it may read back,
+                                        ; never what it runs under - see
+                                        ; v86_setflags
+v86_o32         db      0               ; the instruction in hand had a 66h
+                db      0,0,0
 v86_fltcs       dd      -1              ; the last exception reflected into the
 v86_flteip      dd      -1              ; guest, and how many times running -
 v86_fltvec      dd      -1              ; see vf_exc.  -1 so that the first one
@@ -1941,11 +2031,24 @@ pm3_stop:
 
 ;--- the six that are emulated ---------------------------------------
 pm3_cli:
+        cmp     byte ptr ds:[pm3_vif],0         ; already off: inside
+        je      pm3_cli1                        ; something that ends first
         mov     byte ptr ds:[pm3_vif],0
+        mov     dword ptr ds:[pm3_offcnt],0     ; see pm3_ifwatch
+        mov     dword ptr ds:[pm3_clia],ebx
+        mov     eax,[ebp+P3_ESP]                ; where the stack was
+        mov     dx,word ptr [ebp+P3_SS]
+        call    pm3_offat
+        call    pm3_known                       ; one a POPF undoes: the
+        jnc     pm3_cli1                        ; stack says when
+        mov     byte ptr ds:[pm3_watch],0       ; any other: it only teaches
+pm3_cli1:
         inc     ecx
         jmp     pm3_done
 pm3_sti:
         mov     byte ptr ds:[pm3_vif],1
+        mov     byte ptr ds:[pm3_watch],0
+        mov     dword ptr ds:[pm3_clia],0
         inc     ecx
         jmp     pm3_done
 
@@ -2113,7 +2216,205 @@ pm3_sethook:
         mov     dword ptr ds:[pm3_hook],edi
         ret
 
+;=====================================================================
+; A CLIENT'S POPF CANNOT TURN INTERRUPTS BACK ON, and nobody is told.
+; At IOPL 0 a CLI faults and comes here, but a POPF or an IRET at ring
+; 3 simply leaves IF alone - no fault, nothing to emulate - so a
+; client that saves its flags, says CLI and puts the flags back is left
+; with pm3_vif off for good, and so is one whose interrupt handler ends
+; with a plain IRETD.  Both are the commonest way there is of writing
+; the thing, and the specification's rule (STI, or 0900h-0902h) is not
+; the one most extenders' libraries were written to: DMX, the sound
+; library in DOOM and its relations, saves, CLIs and POPFs in the code
+; that adds a timer service, and the game stopped dead at
+; I_StartupTimer() with its next tick owed and never taken.
+;
+; THE STACK SAYS WHEN.  A handler's IRETD takes the frame off, and a
+; routine's POPF comes before it returns: either way, once the client's
+; ESP is above where it was when the flag went off, the flag has been
+; put back.  So the moment it goes off is noted (pm3_offat) - the frame
+; vpc_pmchk built, or a CLI already known to be one of these - and the
+; first look after that (pm3_ifcheck: every tick, and every chance the
+; monitor has to deliver an interrupt) that finds the stack above it
+; turns the flag on again.  Only the outermost moment counts: a CLI
+; with the flag already off is inside something that will end first.
+;
+; A CLI THAT IS NOT KNOWN YET is taken at its word, because most are
+; paired with an STI, and a routine that turns interrupts off and
+; returns leaving them off for its caller is a pattern too.  The timer
+; watches instead (pm3_ifwatch).  Off for two clock ticks' worth of the
+; timer's input - 110ms, however fast the program has it running -
+; with the routine that said CLI already returned is a flag that was
+; put back by an instruction that could not say so.  It is believed on
+; again, once, and that CLI goes into pm3_sitetab, so that next time
+; the stack is watched and nothing waits.  DOSEMU keeps a list of such
+; CLIs for the same reason.  A program that keeps them off on purpose
+; and waits where it is - DPMIIRQ's check 4 does, for a third of a
+; second - is left alone, up to a second (PM3_OFFLONG), which nothing
+; real ever asks for.  A watched one whose stack never comes back up
+; within 110ms is given up on the same way.  Single-stepping to the
+; POPF would be exact and was tried: DMX builds a volume table inside
+; one of these, and a hundred thousand debug traps to start a sound is
+; not a price.
+;
+; PM3_OFFMAX and PM3_SITES are in PMDOS.INC.
+;=====================================================================
+
+;---------------------------------------------------------------------
+; pm3_ifwatch - irq_timer, once an interrupt.  EBX -> the IRETD frame
+;               it took.  EAX is changed.
+;---------------------------------------------------------------------
+pm3_ifwatch:
+        test    dword ptr [ebx+8],EFL_VM
+        jnz     piw_none                ; a DOS box: its flag is exact
+        mov     eax,dword ptr [ebx+4]
+        test    al,4
+        jz      piw_out                 ; the kernel: not the client's time
+        and     al,3
+        cmp     al,3
+        jne     piw_out
+        call    pm3_ifcheck
+        cmp     byte ptr ds:[pm3_vif],0
+        jne     piw_none
+        mov     eax,dword ptr ds:[vt_div]       ; this interrupt's share
+        add     eax,dword ptr ds:[pm3_offcnt]
+        mov     dword ptr ds:[pm3_offcnt],eax
+        cmp     eax,PM3_OFFLONG
+        jae     piw_on                          ; nothing is off this long
+        cmp     eax,PM3_OFFMAX
+        jb      piw_out
+        cmp     byte ptr ds:[pm3_watch],0       ; watched, and the stack
+        jne     piw_on                          ; never came back up
+        mov     eax,dword ptr [ebx+16]          ; a CLI not known yet: only
+        cmp     ax,word ptr ds:[pm3_offss]      ; once its routine has
+        jne     piw_out                         ; returned - which a POPF
+        mov     eax,dword ptr [ebx+12]          ; section's does, and a
+        cmp     eax,dword ptr ds:[pm3_offesp]   ; program waiting with them
+        jbe     piw_out                         ; off on purpose does not
+piw_on:
+        mov     byte ptr ds:[pm3_vif],1
+        mov     byte ptr ds:[pm3_watch],0
+        inc     dword ptr ds:[pm3_revived]
+        mov     eax,dword ptr ds:[pm3_clia]
+        or      eax,eax
+        jz      piw_none
+        call    pm3_remember
+piw_none:
+        mov     dword ptr ds:[pm3_offcnt],0
+piw_out:
+        ret
+
+;---------------------------------------------------------------------
+; pm3_ifcheck - EBX -> a ring-3 client's IRETD frame (EIP, CS, EFLAGS,
+;               ESP, SS).  If the flag is off and the stack has come
+;               back above where it went off, it is on.  Everything
+;               preserved.
+;---------------------------------------------------------------------
+pm3_ifcheck:
+        cmp     byte ptr ds:[pm3_vif],0
+        jne     pic_out
+        cmp     byte ptr ds:[pm3_watch],0
+        je      pic_out
+        push    eax
+        mov     eax,dword ptr [ebx+16]
+        cmp     ax,word ptr ds:[pm3_offss]
+        jne     pic_no
+        mov     eax,dword ptr [ebx+12]
+        cmp     eax,dword ptr ds:[pm3_offesp]
+        jbe     pic_no
+        mov     byte ptr ds:[pm3_vif],1
+        mov     byte ptr ds:[pm3_watch],0
+        mov     dword ptr ds:[pm3_offcnt],0
+pic_no:
+        pop     eax
+pic_out:
+        ret
+
+;---------------------------------------------------------------------
+; pm3_offat - the flag has just gone off, and comes back on when SS:ESP
+;             is above DX:EAX.  Everything preserved.
+;---------------------------------------------------------------------
+pm3_offat:
+        mov     dword ptr ds:[pm3_offesp],eax
+        mov     word ptr ds:[pm3_offss],dx
+        mov     byte ptr ds:[pm3_watch],1
+        ret
+
+;---------------------------------------------------------------------
+; pm3_remember - EAX = the linear address of a CLI a POPF undoes.  Into
+;                pm3_sitetab if it is not there already, over the oldest
+;                if the table is full.  Everything preserved.
+;---------------------------------------------------------------------
+pm3_remember:
+        push    ebx
+        push    ecx
+        mov     ebx,eax
+        call    pm3_known
+        jnc     prm_out
+        mov     ecx,dword ptr ds:[pm3_snext]
+        mov     dword ptr ds:[pm3_sitetab + ecx*4],eax
+        inc     ecx
+        cmp     ecx,PM3_SITES
+        jb      prm_next
+        xor     ecx,ecx
+prm_next:
+        mov     dword ptr ds:[pm3_snext],ecx
+prm_out:
+        pop     ecx
+        pop     ebx
+        ret
+
+;---------------------------------------------------------------------
+; pm3_known - EBX = the linear address of a CLI.  CF clear if it is one
+;             of pm3_sitetab.  Everything preserved.
+;---------------------------------------------------------------------
+pm3_known:
+        push    ecx
+        push    edi
+        mov     edi,OFFSET pm3_sitetab
+        mov     ecx,PM3_SITES
+pkn_lp:
+        cmp     dword ptr [edi],ebx
+        je      pkn_yes
+        add     edi,4
+        loop    pkn_lp
+        pop     edi
+        pop     ecx
+        stc
+        ret
+pkn_yes:
+        pop     edi
+        pop     ecx
+        clc
+        ret
+
+;---------------------------------------------------------------------
+; pm3_forget - a new program in the box: no sites, nothing watched.
+;              From vpc_boxreset.  Everything preserved.
+;---------------------------------------------------------------------
+pm3_forget:
+        push    eax
+        push    ecx
+        xor     eax,eax                 ; no string instruction: this is
+        mov     ecx,PM3_SITES           ; called with whatever ES and DF
+pfg_lp:                                 ; the DOS side had
+        mov     dword ptr ds:[pm3_sitetab + ecx*4 - 4],eax
+        loop    pfg_lp
+        mov     dword ptr ds:[pm3_snext],eax
+        mov     dword ptr ds:[pm3_clia],eax
+        mov     byte ptr ds:[pm3_watch],al
+        pop     ecx
+        pop     eax
+        ret
+
 pm3_hook        dd      0
+pm3_offcnt      dd      0               ; timer input since IF went off
+pm3_revived     dd      0               ; how often pm3_ifwatch stepped in
+pm3_clia        dd      0               ; the CLI that turned it off, or 0
+pm3_offesp      dd      0               ; where the stack was when it did
+pm3_snext       dd      0               ; where the next site goes
+pm3_sitetab     dd      PM3_SITES dup(0)
+pm3_offss       dw      0               ; ...in this stack segment
 pm3_vif         db      1               ; the client's virtual interrupt flag
-                db      0,0,0
+pm3_watch       db      0               ; 1 = pm3_offesp says when it is on
 msgPm3          db      13,10,'PM-DOS: ring-3 fault with no handler, vector ',0

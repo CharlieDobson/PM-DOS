@@ -257,7 +257,6 @@ dc_bye:
 no_cache:
         cmp     byte ptr [sw_q],0
         jne     dc_bye
-        call    banner
         mov     edx,OFFSET msg_nocache
         call    print
         mov     edx,OFFSET msg_forhelp
@@ -268,8 +267,6 @@ no_cache:
 ; report - the screen SMARTDRV /S prints, from the record in cst.
 ;=====================================================================
 report:
-        call    banner
-
         cmp     byte ptr [sw_s],0
         je      rp_sizes
         mov     edx,OFFSET msg_room
@@ -359,34 +356,6 @@ rp_lazy:
 rp_noerr:
         mov     edx,OFFSET msg_forhelp
         call    print
-        ret
-
-;---------------------------------------------------------------------
-; banner - the first line: whose cache this is, and the kernel's
-;          version, which is the cache's version.
-;---------------------------------------------------------------------
-banner:
-        mov     edx,OFFSET msg_banner
-        call    print
-        mov     ax,0F100h
-        int     21h
-        movzx   eax,bh
-        push    ebx
-        call    pdec32
-        mov     al,'.'
-        call    putc
-        pop     ebx
-        movzx   eax,bl
-        cmp     eax,10
-        jae     bn_minor
-        push    eax
-        mov     al,'0'
-        call    putc
-        pop     eax
-bn_minor:
-        call    pdec32
-        call    crlf
-        call    crlf
         ret
 
 ;---------------------------------------------------------------------
@@ -540,7 +509,6 @@ cst         db  CST_LEN dup(0)
 ctry        db  40 dup(0)
 numbuf      db  32 dup(0)
 
-msg_banner  db  'PM-DOS Disk Cache version ','$'
 msg_room    db  'Room for    ','$'
 msg_elements db ' elements of   ','$'
 msg_each    db  ' bytes each',13,10,'$'

@@ -11,4 +11,4 @@
 ; for why that print exists.
 ;=====================================================================
 PMDOS_MAJOR     EQU     0
-PMDOS_MINOR     EQU     62
+PMDOS_MINOR     EQU     63

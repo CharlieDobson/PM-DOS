@@ -61,6 +61,11 @@ FDS_LOGICAL     EQU     0001h
 FD_MAXARGS      EQU     6
 FD_ARGLEN       EQU     16
 
+;--- /P's report, which is the screen's Details page -----------------
+PR_LABW         EQU     22              ; a label this wide, after two spaces,
+PR_NUMW         EQU     14              ; its value right-aligned in this,
+PR_MBW          EQU     11              ; and the megabytes in this
+
 ;--- the FAT specification's own cluster-count boundaries ------------
 ; THE TYPE IS DECIDED HERE AND NOWHERE ELSE.  Not by the partition
 ; type byte, not by the string in the boot sector: a 32MB FAT12
@@ -237,6 +242,19 @@ fd_entry:
         mov     edx,OFFSET fd_crit
         mov     eax,2524h
         int     21h
+
+;--- the country's thousands separator, for the report's counts -----
+; From 38h, which answers for the one country the kernel knows; the
+; comma if it will not say.  DIR groups its numbers the same way.
+        mov     edx,OFFSET ctry_buf
+        mov     ax,3800h
+        int     21h
+        jc      fde_nosep
+        mov     al,[ctry_buf+7]
+        or      al,al
+        jz      fde_nosep
+        mov     [dec_sep],al
+fde_nosep:
 
         call    fd_parse
         jc      fd_usage
@@ -2811,8 +2829,15 @@ fd_plan:
         cmp     dword ptr [pl_status],RL_CHAIN
         je      fdp_chbad
 
-;--- the heading -----------------------------------------------------
+;--- the report ------------------------------------------------------
+; A TABLE: a label on the left, its value right-aligned in one column
+; (pr_label, putg), and a unit or a note after it.  The screen shows
+; this text as the Details page, so every line fits in 80 columns and
+; the whole of it - with the cluster note at the end - in the viewer's
+; 23 rows.  The counts are grouped with the country's thousands
+; separator, as DIR's are (dec_sep, asked of 38h at the start).
         call    crlf
+        call    sp2
         mov     edx,OFFSET msg_disk
         call    puts
         movzx   eax,byte ptr [pl_drive]
@@ -2821,134 +2846,138 @@ fd_plan:
         mov     edx,OFFSET msg_part
         call    puts
         call    fd_putnum
-        mov     edx,OFFSET msg_sp3
-        call    puts
+        call    crlf
+        call    crlf
+
+        mov     edx,OFFSET msg_ltype    ; "Type        04h  FAT16"
+        call    pr_label
+        mov     ecx,PR_NUMW - 3
+        call    pr_spaces
         mov     esi,[pl_ent]
         movzx   eax,byte ptr [esi+PE_TYPE]
         call    put2
-        call    sp1
+        mov     al,'h'
+        call    putc
+        call    sp2
         movzx   eax,byte ptr [esi+PE_TYPE]
         call    typename
-        mov     edx,OFFSET msg_at
-        call    puts
+        call    crlf
+        mov     edx,OFFSET msg_lstart
+        call    pr_label
         mov     eax,[pl_ostart]
-        call    put1
-        mov     edx,OFFSET msg_comma
-        call    puts
+        call    putg
+        call    crlf
+        mov     edx,OFFSET msg_lsize
+        call    pr_label
         mov     eax,[pl_olen]
-        call    put1
-        mov     edx,OFFSET msg_secmb
-        call    puts
-        mov     eax,[pl_olen]
-        call    sec2mb
-        call    put1
-        mov     edx,OFFSET msg_mbclose
-        call    puts
+        call    pr_secmb
+        call    crlf
         cmp     byte ptr [pl_cont],0
         jne     fdp_cx
         cmp     byte ptr [pl_raw],0
         jne     fdp_raw
 
 ;--- the volume ------------------------------------------------------
-        mov     edx,OFFSET msg_vol
-        call    puts
-        mov     edx,OFFSET msg_fat
-        call    puts
+        call    crlf
+        mov     edx,OFFSET msg_lfs
+        call    pr_label
         mov     eax,[fv_bits]
-        call    put2d
-        mov     edx,OFFSET msg_sp2
-        call    puts
+        call    pr_fat
+        call    crlf
+        mov     edx,OFFSET msg_lspc
+        call    pr_label
         mov     eax,[fv_spc]
-        call    put3
-        mov     edx,OFFSET msg_spclus
-        call    puts
+        call    putg
+        call    crlf
+        mov     edx,OFFSET msg_lfats    ; "FATs          2   125 sectors each"
+        call    pr_label
         mov     eax,[fv_nfats]
-        call    put1
-        mov     edx,OFFSET msg_fats
-        call    puts
-        mov     eax,[fv_rootent]
-        call    put5
-        mov     edx,OFFSET msg_rootent
-        call    puts
+        call    putg
+        mov     ecx,3
+        call    pr_spaces
         mov     eax,[fv_spf]
-        call    put5
-        mov     edx,OFFSET msg_spfat
+        call    putg1
+        mov     edx,OFFSET msg_lfateach
         call    puts
-
-        mov     edx,OFFSET msg_vol
-        call    puts
+        call    crlf
+        ; FAT32 KEEPS ITS ROOT IN THE DATA AREA, so the line that says
+        ; how many entries the root holds says where it starts instead
+        mov     edx,OFFSET msg_lroot
+        mov     eax,[fv_rootent]
+        cmp     dword ptr [fv_bits],32
+        jne     fdp_root
+        mov     edx,OFFSET msg_lrootc
+        mov     eax,[fv_rootclus]
+fdp_root:
+        call    pr_label
+        call    putg
+        call    crlf
+        mov     edx,OFFSET msg_lclus
+        call    pr_label
         mov     eax,[fv_clusters]
-        call    put8
-        mov     edx,OFFSET msg_clusters
-        call    puts
-        mov     eax,[fv_datasec]
-        call    put8
-        mov     edx,OFFSET msg_datasec
-        call    puts
+        call    putg
+        call    crlf
 
 ;--- what is in the way ----------------------------------------------
-        mov     edx,OFFSET msg_inuse
-        call    puts
+        call    crlf
+        mov     edx,OFFSET msg_linuse
+        call    pr_label
+        mov     eax,[fv_usedsec]
         cmp     dword ptr [fv_usedhigh],0
         jne     fdp_used
-        mov     edx,OFFSET msg_empty2
-        call    puts
-        jmp     short fdp_limits
+        xor     eax,eax
 fdp_used:
+        call    pr_secmb
+        call    crlf
+        mov     edx,OFFSET msg_lhigh
+        call    pr_label
         mov     eax,[fv_usedhigh]
-        call    put8
-        mov     edx,OFFSET msg_upto
-        call    puts
-        mov     eax,[fv_usedsec]
-        call    put8
-        mov     edx,OFFSET msg_secmb
-        call    puts
-        mov     eax,[fv_usedsec]
-        call    sec2mb
-        call    put1
-        mov     edx,OFFSET msg_mbclose
+        or      eax,eax
+        jz      fdp_nohigh
+        call    putg
+        jmp     short fdp_limits
+fdp_nohigh:
+        mov     edx,OFFSET msg_none
         call    puts
 
 ;--- and how far it can go -------------------------------------------
 fdp_limits:
+        call    crlf
         cmp     byte ptr [fv_valid],0
         je      fdp_done
 
         call    rl_room
         mov     [pl_room],eax
 
-        mov     edx,OFFSET msg_cursize
-        call    puts
+        call    crlf
+        mov     edx,OFFSET msg_lcur
+        call    pr_label
         mov     eax,[pl_olen]
-        call    put10
-        call    fdp_mb
+        call    pr_secmb
+        call    crlf
 
         mov     ebx,[pl_room]
         call    rl_minsize
         mov     [pl_minsz],eax          ; and kept, for the screen's resize
-        mov     edx,OFFSET msg_shrink
-        call    puts
+        mov     edx,OFFSET msg_lmin
+        call    pr_label
         or      eax,eax
         jz      fdp_noshrink
-        push    eax
-        call    put10
-        pop     eax
-        call    fdp_mb
+        call    pr_secmb
         jmp     short fdp_grow
 fdp_noshrink:
-        mov     edx,OFFSET msg_nolimit
+        mov     edx,OFFSET msg_none
         call    puts
 
 fdp_grow:
+        call    crlf
         mov     ebx,[pl_room]
         call    rl_maxsize
         mov     [pl_maxsz],eax
-        mov     edx,OFFSET msg_grow
-        call    puts
-        push    eax
-        call    put10
-        pop     eax
-        call    fdp_mb
+        mov     edx,OFFSET msg_lmax
+        call    pr_label
+        call    pr_secmb
+        call    crlf
 
 ;--- and what the specification would have preferred -----------------
 ; Computed HERE and not taken from the plan, because the plan this
@@ -2986,41 +3015,45 @@ fdp_done:
 ; it and the cylinder it starts in: it can shrink to the first boundary
 ; past its start, and grow into all of the room.
 fdp_raw:
-        mov     edx,OFFSET msg_vol
+        call    crlf
+        mov     edx,OFFSET msg_lfs
+        call    pr_label
+        mov     edx,OFFSET msg_none
         call    puts
-        mov     edx,OFFSET msg_raw
+        mov     edx,OFFSET msg_lrawnote
         call    puts
+        call    crlf
         jmp     short fdp_free
 
 ;--- the extended container ------------------------------------------
 ; THE SAME LIMITS, with one more: it cannot end before its chain does,
-; which rl_plan has measured as pl_cxend.
+; which rl_plan has measured as pl_cxend - one past the last sector
+; any link uses, so the sector printed is the one before that.
 fdp_cx:
-        mov     edx,OFFSET msg_vol
-        call    puts
-        mov     edx,OFFSET msg_cxnone
+        call    crlf
+        mov     edx,OFFSET msg_llogs
+        call    pr_label
         mov     eax,[pl_cxn]
+        call    putg
+        call    crlf
         or      eax,eax
-        jz      fdx_said
-        mov     edx,OFFSET msg_cxsome
-        call    puts
-        call    put1
-        mov     edx,OFFSET msg_cxlast
-        call    puts
+        jz      fdp_free
+        mov     edx,OFFSET msg_llast
+        call    pr_label
         mov     eax,[pl_cxend]
-        call    put1
-        jmp     short fdp_free
-fdx_said:
-        call    puts
+        dec     eax
+        call    putg
+        call    crlf
 
 fdp_free:
         call    rl_room
         mov     [pl_room],eax
-        mov     edx,OFFSET msg_cursize
-        call    puts
+        call    crlf
+        mov     edx,OFFSET msg_lcur
+        call    pr_label
         mov     eax,[pl_olen]
-        call    put10
-        call    fdp_mb
+        call    pr_secmb
+        call    crlf
 
         mov     eax,[pl_ostart]
         inc     eax
@@ -3036,30 +3069,81 @@ fdr_end:
         mov     eax,[pl_olen]           ; it is smaller than that already
 fdr_min:
         mov     [pl_minsz],eax
-        mov     edx,OFFSET msg_shrink
-        call    puts
-        call    put10
-        call    fdp_mb
+        mov     edx,OFFSET msg_lmin
+        call    pr_label
+        call    pr_secmb
+        call    crlf
 
         mov     eax,[pl_room]
         mov     [pl_maxsz],eax
-        mov     edx,OFFSET msg_grow
-        call    puts
-        call    put10
-        call    fdp_mb
+        mov     edx,OFFSET msg_lmax
+        call    pr_label
+        call    pr_secmb
+        call    crlf
         jmp     fdp_done
 
-fdp_mb:
+;--- pr_label - EDX -> a label: two spaces, the label, and spaces out
+;--- to the value column.  The cursor is left where the value goes.
+pr_label:
         push    eax
+        push    ecx
         push    edx
-        mov     edx,OFFSET msg_secmb
+        call    sp2
         call    puts
-        call    sec2mb
-        call    put1
-        mov     edx,OFFSET msg_mbclose
+        xor     ecx,ecx
+prl_len:
+        cmp     byte ptr [edx+ecx],'$'
+        je      prl_pad
+        inc     ecx
+        jmp     short prl_len
+prl_pad:
+        cmp     ecx,PR_LABW
+        jae     prl_out
+        call    sp1
+        inc     ecx
+        jmp     short prl_pad
+prl_out:
+        pop     edx
+        pop     ecx
+        pop     eax
+        ret
+
+;--- pr_secmb - EAX sectors: the count in the value column, " sectors",
+;--- and the megabytes to one place in a column of their own
+pr_secmb:
+        push    edx
+        call    putg
+        mov     edx,OFFSET msg_lsecs
+        call    puts
+        call    putmb
+        mov     edx,OFFSET msg_lmb
         call    puts
         pop     edx
-        pop     eax
+        ret
+
+;--- pr_fat - EAX = a width, as "FAT16" right-aligned in the column ---
+pr_fat:
+        push    ecx
+        push    edx
+        mov     ecx,PR_NUMW - 5
+        call    pr_spaces
+        mov     edx,OFFSET msg_fat
+        call    puts
+        call    put2d
+        pop     edx
+        pop     ecx
+        ret
+
+;--- pr_spaces - ECX of them -----------------------------------------
+pr_spaces:
+        push    ecx
+prsp_one:
+        jecxz   prsp_out
+        call    sp1
+        dec     ecx
+        jmp     short prsp_one
+prsp_out:
+        pop     ecx
         ret
 
 fdp_usage:
@@ -7260,6 +7344,145 @@ pn_out:
         pop     eax
         ret
 
+;--- EAX in decimal with the thousands separator, right aligned ------
+putg:                                   ; in the report's value column
+        push    ebx
+        mov     ebx,PR_NUMW
+        jmp     short putg_n
+putg1:                                  ; as wide as it is
+        push    ebx
+        mov     ebx,1
+putg_n:
+        push    edx
+        call    fmt_g
+        call    puts
+        pop     edx
+        pop     ebx
+        ret
+
+;--- fmt_g - EAX in decimal, grouped in threes with dec_sep between,
+;--- right-aligned in EBX, as EDX -> a '$' string in num_buf.
+;--- Everything but EDX comes back as it was.  A 32-bit value is 13
+;--- characters with its separators, and the buffer holds 19.
+fmt_g:
+        push    eax
+        push    ecx
+        push    edi
+        push    ebp
+        mov     edi,OFFSET num_buf + 19
+        mov     byte ptr [edi],'$'
+        xor     ecx,ecx                 ; characters so far
+        xor     ebp,ebp                 ; digits since a separator
+fgr_div:
+        xor     edx,edx
+        push    ebx
+        mov     ebx,10
+        div     ebx
+        pop     ebx
+        add     dl,'0'
+        dec     edi
+        mov     [edi],dl
+        inc     ecx
+        inc     ebp
+        or      eax,eax
+        jz      fgr_pad
+        cmp     ebp,3
+        jb      fgr_div
+        xor     ebp,ebp
+        dec     edi
+        mov     dl,[dec_sep]
+        mov     [edi],dl
+        inc     ecx
+        jmp     short fgr_div
+fgr_pad:
+        cmp     ecx,ebx
+        jae     fgr_out
+        dec     edi
+        mov     byte ptr [edi],' '
+        inc     ecx
+        jmp     short fgr_pad
+fgr_out:
+        mov     edx,edi
+        pop     ebp
+        pop     edi
+        pop     ecx
+        pop     eax
+        ret
+
+;--- putmb - EAX sectors as megabytes to one place, the whole ones
+;--- grouped like fmt_g's, right-aligned in the report's MB column
+putmb:
+        push    ebx
+        push    edx
+        mov     ebx,PR_MBW
+        call    fmt_mbg
+        call    puts
+        pop     edx
+        pop     ebx
+        ret
+
+;--- fmt_mbg - EAX sectors -> EDX -> "15.8" in mbg_buf, right-aligned
+;--- in EBX.  Rounded to the nearest tenth, as the screen's fmt_mb is;
+;--- 2,097,152.0 - two terabytes - is the longest it makes, 11 wide.
+fmt_mbg:
+        push    eax
+        push    ecx
+        push    edi
+        push    ebp
+        mov     ecx,10
+        mul     ecx                     ; EDX:EAX = sectors * 10
+        add     eax,1024
+        adc     edx,0
+        mov     ecx,2048
+        div     ecx                     ; EAX = tenths of a megabyte
+        mov     edi,OFFSET mbg_buf + 23
+        mov     byte ptr [edi],'$'
+        xor     edx,edx
+        mov     ecx,10
+        div     ecx                     ; EAX = whole megabytes, EDX = the tenth
+        add     dl,'0'
+        dec     edi
+        mov     [edi],dl
+        dec     edi
+        mov     byte ptr [edi],'.'
+        mov     ecx,2                   ; characters so far
+        xor     ebp,ebp                 ; digits since a separator
+fmg_div:
+        xor     edx,edx
+        push    ebx
+        mov     ebx,10
+        div     ebx
+        pop     ebx
+        add     dl,'0'
+        dec     edi
+        mov     [edi],dl
+        inc     ecx
+        inc     ebp
+        or      eax,eax
+        jz      fmg_pad
+        cmp     ebp,3
+        jb      fmg_div
+        xor     ebp,ebp
+        dec     edi
+        mov     dl,[dec_sep]
+        mov     [edi],dl
+        inc     ecx
+        jmp     short fmg_div
+fmg_pad:
+        cmp     ecx,ebx
+        jae     fmg_out
+        dec     edi
+        mov     byte ptr [edi],' '
+        inc     ecx
+        jmp     short fmg_pad
+fmg_out:
+        mov     edx,edi
+        pop     ebp
+        pop     edi
+        pop     ecx
+        pop     eax
+        ret
+
 ;=====================================================================
 ; Data
 ;=====================================================================
@@ -7420,6 +7643,9 @@ rzf_dst     dd  0
 vol_tbl     db  LASTDRIVE * DRV_LEN dup(0)
 fd_args     db  FD_MAXARGS * FD_ARGLEN dup(0)
 num_buf     db  20 dup(0)
+mbg_buf     db  24 dup(0)               ; fmt_mbg's "2,097,152.0"
+dec_sep     db  ','                     ; the thousands separator, 38h's
+ctry_buf    db  34 dup(0)               ; 38h's answer
 
 msg_usage   db  'Configures a hard disk for use with PM-DOS.',13,10,13,10
             db  'FDISK [/C d:p n tt] [/D d:p] [/A d:p] [/M d:p n] [/S d:p n]',13,10
@@ -7465,32 +7691,31 @@ msg_alnote  db  '         * begins or ends off a cylinder boundary',13,10,'$'
 msg_chlong  db  '         the extended chain is longer than this walk '
             db  'follows',13,10,'$'
 msg_unknown db  'unknown  $'
-msg_part    db  ' partition $'
-msg_sp3     db  '   $'
-msg_at      db  '  at $'
-msg_comma   db  ', $'
-msg_secmb   db  ' sectors ($'
-msg_mbclose db  ' MB)$'
-msg_vol     db  13,10,'  $'
+msg_part    db  ', partition $'
 msg_fat     db  'FAT$'
-msg_spclus  db  ' sectors/cluster   $'
-msg_fats    db  ' FATs   $'
-msg_rootent db  ' root entries   $'
-msg_spfat   db  ' sectors/FAT$'
-msg_clusters db ' clusters   $'
-msg_datasec db  ' data sectors$'
-msg_inuse   db  13,10,13,10,'  in use            $'
-msg_empty2  db  'nothing - the partition is empty',13,10,'$'
-msg_raw     db  'not formatted, so no files are stored on the partition$'
-msg_cxnone  db  'extended, with no logical drives inside$'
-msg_cxsome  db  'extended, holding $'
-msg_cxlast  db  ' logical drive(s), the last ending at sector $'
-msg_upto    db  ' is the highest cluster,$'
-msg_cursize db  13,10,13,10,'  Current size   $'
-msg_shrink  db  13,10,'  Smallest size  $'
-msg_grow    db  13,10,'  Largest size   $'
-msg_nolimit db  'not at all - see what is in use above$'
-msg_ideal   db  13,10,13,10,'  The smallest cluster this size could take is $'
+;--- the report's labels: pr_label pads each to PR_LABW --------------
+msg_ltype   db  'Type$'
+msg_lstart  db  'Start sector$'
+msg_lsize   db  'Size$'
+msg_lfs     db  'File system$'
+msg_lspc    db  'Sectors per cluster$'
+msg_lfats   db  'FATs$'
+msg_lfateach db ' sectors each$'
+msg_lroot   db  'Root directory entries$'
+msg_lrootc  db  'Root directory cluster$'
+msg_lclus   db  'Clusters$'
+msg_linuse  db  'In use$'
+msg_lhigh   db  'Highest cluster in use$'
+msg_lcur    db  'Current size$'
+msg_lmin    db  'Smallest size$'
+msg_lmax    db  'Largest size$'
+msg_llogs   db  'Logical drives$'
+msg_llast   db  'Last sector used$'
+msg_lsecs   db  ' sectors$'
+msg_lmb     db  ' MB$'
+msg_none    db  '          none$'       ; PR_NUMW wide, like a number
+msg_lrawnote db '   not formatted$'
+msg_ideal   db  13,10,'  The smallest cluster this size could take is $'
 msg_idealto db  ' sector(s), which',13,10,'  would make the partition $'
 msg_idealend db '.  FDISK changes the cluster size only when a',13,10
             db  '  new size needs a different one.',13,10,'$'

@@ -1,17 +1,17 @@
 
 LOLTEST - the list of lists, and the flags a guest reads back
-  52h list of lists at 0400:0002 ok
-  first MCB at [BX-2] is 0520 ok
-  the arena walks: 000B blocks, ending in Z ok
-  block devices / LASTDRIVE 03/10 ok
-  system file table at 0400:0100, handles 0040 ok
-  device chain: NUL      CON      AUX      PRN      0004 headers, terminated ok
-  1Bh media byte at 0404:000A, which is F8 ok
+  52h list of lists at 0400:0026 ok
+  first MCB at [BX-2] is 059D ok
+  the arena walks: 000F blocks, ending in Z ok
+  block devices / LASTDRIVE 04/10 ok
+  system file table at 0400:0340, handles 0040 ok
+  device chain: NUL              IOCDEV$  CON      AUX      PRN      0006 headers, terminated ok
+  1Bh media byte at 0400:00D1, which is F8 ok
   1Bh geometry 02 x 0200 bytes, 7F44 ok
   38h country separators .- ok
   67h set handle count is not refused ok
   5Ch lock and unlock a region ok
-  63h DBCS table at 0404:000C ok
+  63h DBCS table at 0400:00D2 ok
   6Ch create/open/truncate say 030102 ok
   65h capitalises 41PM-DOS ok
   65h knows yes from no ok

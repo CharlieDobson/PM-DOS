@@ -745,6 +745,8 @@ irq_fpnow:
 ; seventy (vpc_tick).
 ;---------------------------------------------------------------------
 irq_timer:
+        lea     ebx,[esp+48]            ; what it interrupted: past ret, es,
+        call    pm3_ifwatch             ; ds, pushad and irq#, the frame
         call    vpc_tick
         call    vt_tick
         setnc   byte ptr ds:[vt_whole]

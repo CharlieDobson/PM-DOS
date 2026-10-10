@@ -999,11 +999,9 @@ rdbg_xpool:
         add     si,OFFSET rdbg_xms
         mov     byte ptr [si],0FEh      ; and what the arena had to give
         mov     byte ptr [si+1],0
-        mov     eax,dword ptr [h_rsvd]  ; the owner of the largest block
-        mov     [si+4],ax
-        shr     eax,16
-        mov     [si+2],ax
-        mov     eax,dword ptr [h_rsvd+4]
+        mov     word ptr [si+2],0       ; the owner probe went when
+        mov     word ptr [si+4],0       ; RMH_LOWSEG took its dword
+        mov     eax,dword ptr [h_rsvd]
         mov     [si+6],ax               ; its size in KB
         shr     eax,16
         mov     [si+8],ax               ; and who the park ran as

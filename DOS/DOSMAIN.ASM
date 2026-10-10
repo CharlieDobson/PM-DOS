@@ -117,6 +117,8 @@ ENDIF
                                         ; on crit_guest
         call    dpmi_init               ; and the protected-mode interface
         call    sft_init
+        call    prn_init                ; the printer ports as IO.SYS leaves
+                                        ; them - see prn_init in INT21.INC
 
         ; Tell PMIO where to go when a ring-0 fault has been reported.
         ; THAT NOW MEANS THE KERNEL'S OWN BUG AND NOTHING ELSE: native
@@ -266,16 +268,40 @@ shell_restart:
                                         ; freed, and owner 0 is never swept
 
         mov     dword ptr ds:[cur_psp],SHELL_PSP
-        xor     eax,eax                 ; depth zero: the interpreter's own
-        call    r3_useslot              ; slot, and its two descriptors
+        xor     eax,eax                 ; the boot check's slot, if the
+        call    slot_free               ; last round ran one (slot_sweep
+        mov     dword ptr ds:[r3_slbase],SHELL_SLOT    ; stops at depth 1),
+        mov     dword ptr ds:[r3_slsize],SHELL_SIZE    ; and the row is the
+                                                       ; interpreter's again
 
         ; A DRIVE NOT SHUT DOWN PROPERLY IS CHECKED BEFORE THE SHELL
-        ; STARTS, by CHKDSK run in the shell's place: same slot, same
-        ; start, and its 4Ch at depth zero comes back to this label like
-        ; the shell's would - so the next drive comes round, and then
-        ; the shell (vfl_bootscan and ack_next, VOLFLAG.INC).
+        ; STARTS, by CHKDSK run in the shell's place: same start, and
+        ; its 4Ch at depth zero comes back to this label like the
+        ; shell's would - so the next drive comes round, and then the
+        ; shell (vfl_bootscan and ack_next, VOLFLAG.INC).
+        ;
+        ; NOT THE SAME SLOT, SINCE 2026-10-08.  The interpreter's slot
+        ; is SHELL_SIZE and fixed - slot_grow refuses depth zero's - and
+        ; CHKDSK keeps a byte a cluster and reads each directory whole,
+        ; so on a FAT32 volume of any size the check that ran there
+        ; said "Insufficient memory" and never finished (the real-
+        ; hardware test).  So the check gets a slot out of the arena at
+        ; depth zero, which grows as a program run from the prompt
+        ; does; it is taken before ack_next, which loads into whichever
+        ; slot is current, and given back if there is nothing to check.
+        ; If the arena has not got one, the interpreter's slot it is.
+        xor     eax,eax
+        call    slot_new
+        xor     eax,eax
+        call    r3_useslot              ; the slot, and its two descriptors
         call    ack_next                ; -> CF clear, ESI = CHKDSK's tail
         jnc     shell_go
+        xor     eax,eax                 ; nothing to check: the slot goes
+        call    slot_free               ; back, and depth zero is the
+        mov     dword ptr ds:[r3_slbase],SHELL_SLOT    ; interpreter's
+        mov     dword ptr ds:[r3_slsize],SHELL_SIZE
+        xor     eax,eax
+        call    r3_useslot
         mov     edx,OFFSET shell_name
         call    exec_load
         jnc     shell_loaded
@@ -306,6 +332,9 @@ shell_loaded:
         mov     esi,OFFSET shell_tail
 shell_go:
         call    build_psp
+        mov     eax,dword ptr ds:[exec_psp]     ; whose handles: the PSP just
+        mov     dword ptr ds:[cur_psp],eax      ; built, wherever the slot is
+                                                ; (SHELL_PSP for the shell)
 
         ; AND THE MASTER ENVIRONMENT, which CONFIG.SYS's SET= lines
         ; filled in.  The interpreter is a program like any other and

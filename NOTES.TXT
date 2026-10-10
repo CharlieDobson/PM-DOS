@@ -1435,7 +1435,9 @@ FINISHED MEDIA - and eight of them, 300MB, were sitting in a directory
 whose other twenty entries are all a few kilobytes.  They live in
 IMAGES\ now:
 
-    IMAGES\PMDOS.IMG      the bootable 1.44M floppy (BUILD.CMD)
+    IMAGES\PMDOS.IMG      the bootable 1.44M floppy (BUILD.CMD) - and
+    IMAGES\TESTS.IMG      the tests, on a floppy of their own since
+                          2026-10-08 (BUILD.CMD too)
     IMAGES\HD16.IMG       32MB FAT16, bootable      \
     IMAGES\HD32.IMG       40MB FAT32, bootable       } MKHD.CMD
     IMAGES\MULTI.IMG      the multi-partition disk  /
@@ -7810,6 +7812,3138 @@ NOT VERIFIED, from the entries above: none of the new hardware work
 has run on a real machine (SCSI, ACPI power-off, DMF formatting,
 VBE).  No real LIM 4.0 program has run.  Windows 98 has not met a disk
 PM-DOS left dirty.  NOT DONE: F8 at boot, banked VBE modes.
+
+DOS PROGRAMS OFF THE SHELF: A COMPATIBILITY SWEEP (2026-10-04)
+---------------------------------------------------------------------
+
+Charlie asked for as many ordinary 16-bit DOS programs as it took to
+find what PM-DOS gets wrong, downloaded from the Internet Archive and
+WinWorld and deleted afterwards.  He was at the machine, so all of it
+ran in DOSBox-X with no window (486, 32MB, a fresh 64MB HD16 per run,
+the program grafted on with FATPUT), and every difference was checked
+against the same lines run under DOSBox-X's own DOS before it was
+called a bug.  Keys went in through the rig's KEYFEED; sound was
+measured off the capture's audio track.
+
+WHAT RAN.  Real mode: Commander Keen 1, Wolfenstein 3D, Prince of
+Persia, Scorched Earth, Lemmings, SimCity, Monkey Island (EGA), Leisure
+Suit Larry 1, Digger, Norton Commander 5, DOS Navigator 1.51, QEdit,
+Turbo C 2.01 (TCC and the IDE), Turbo Pascal 7 (TPC), QuickBASIC 4.5
+(the IDE, BC, LINK, and the program they made), ARJ 2.82 (add, test,
+extract, list), the Word 5.5 and QuickBASIC self-extractors, and the
+Heretic, Descent, Duke Nukem 3D and Warcraft installers.  Protected
+mode: PKZIP/PKUNZIP 2.04g, DOOM 1.9, Heretic, Rise of the Triad,
+Magic Carpet, Warcraft, Quake 1.06, Descent, Duke Nukem 3D.  With a
+Sound Blaster 16: Wolfenstein, DOOM, Heretic, Quake, Duke.
+
+FIXED, DPMI.  Most of what broke was the host.
+  - 0306h, the raw mode switch, did not exist; PKZIP 2.04g uses
+    nothing else.  Real mode now runs at the box loop's own level and
+    protected mode is entered afresh from it, so nothing is parked and
+    the real-mode half may even go resident (dpmi_rawrm, dpmi_rawpm).
+  - The first switch kept the client's general registers, as the
+    specification says it must; PKUNZIP read its arguments off BP.
+  - 0202h/0203h, exception handlers, with a frame on a locked stack
+    and the default handler reporting as before.  0301h/0302h.  000Ch
+    had never worked.  0009h no longer forces Present and 0006h reads
+    a descriptor that is not present (RTM loads segments on demand).
+    0503h moves a block it cannot grow, which DJGPP's sbrk expects.
+  - PSP:2Ch is the environment's selector while a client runs, and
+    selector 0040h is the BIOS data area, both by convention.
+  - A selector the client has freed is nulled on the way back rather
+    than faulting the kernel: Quake frees its own DS.
+  - INT 21h from a client: 25h and 35h are the protected-mode vectors
+    (the kernel's 25h used to build a RING-0 gate to client code), 50h
+    takes a selector, and 2Fh, 34h, 52h, 51h/62h, 1Bh/1Ch, 63h and
+    5D06h answer in selectors.
+  - The "MS-DOS" extension (INT 2Fh 168Ah, the LDT alias) is built
+    and GATED OFF.  Borland's RTM finds it and then unloads itself
+    with 50h to its own PSP and 4Ch, expecting DOS to resume at PSP:0Ah
+    on the parent's PSP:2Eh stack.  PM-DOS keeps neither, so with the
+    extension on, the wrong program ended.  Without it RTM says there
+    are no DOS extensions and stops cleanly.
+
+THE INTERRUPT FLAG A POPF PUTS BACK.  DOOM with a Sound Blaster
+configured stopped at I_StartupTimer(), even with no card in the
+machine.  DMX saves its flags, says CLI and later POPFs them.  At IOPL
+0 the CLI faults and is emulated, but the POPF neither faults nor
+changes IF, so the client's virtual flag stayed off and its next tick
+was owed for ever.  The same goes for a handler that ends with a plain
+IRETD.  The stack says when either has happened: once ESP is back
+above where it was when the flag went off, the routine has returned or
+the frame has been popped.  So that point is noted, for a handler's
+frame and for a CLI already known to be one of these, and the next
+look (every tick, and every chance to deliver an interrupt) turns the
+flag back on.  A CLI not known yet is learned by the timer: off for
+110ms with its routine already returned, it is believed on and the CLI
+goes into a table of sixteen.  DMX needed four, once each.  A program
+that keeps interrupts off on purpose and waits where it is, as
+DPMIIRQ's check 4 does for a third of a second, is left alone up to a
+second.  Single-stepping to the POPF was tried first and dropped: DMX
+builds a volume table inside one of these sections.  DOOM, Heretic and
+Quake now play with sound throughout (pm3_ifwatch, VM86.INC).
+
+FIXED, THE DOS BOX.
+  - PUSHFD, POPFD and IRETD were emulated sixteen bits wide, which
+    unbalanced DOS/4GW's stack in its 486 test; it then went raw and
+    died on LGDT.  The 66h prefix is honoured now, AC and ID are kept
+    where the processor has them, and FLAGS bit 1 reads as set.
+  - THE THUNK'S FRAME SAT IN DOS'S COMMUNICATION AREA.  RMFRAME was at
+    500h, where BASIC keeps the INT 1Ch vector it hooks (0512h).
+    QuickBASIC saved the timer vector there, every BIOS call the
+    kernel made overwrote it, and QB put the result back on its way
+    out.  The next timer tick then ran whatever program was loaded
+    where that pointed, so BC crashed after QB had run.  The thunk's
+    data is at 600h now, and nothing below 600h is the kernel's.
+  - INT 21h 37h (the switch character) answers as MS-DOS 6 does.
+
+FIXED, CMD.EXE.  "IF ERRORLEVEL == 1" was a syntax error.  COMMAND.COM
+skips any of its delimiters after NOT, ERRORLEVEL and EXIST, so "==",
+"=" and "," all read as a blank there; Heretic's INSTALL.BAT is
+written that way.  CMD.EXE does the same now (if_kw).  PM-DOS's
+COMMAND.COM was already right.
+
+NOT FIXED.
+  - Turbo Pascal 7's TPX, and anything else on Borland's RTM, until
+    EXEC keeps PSP:0Ah and PSP:2Eh the way DOS does.
+  - Duke Nukem 3D's sound says "not responding" here, but the control
+    hung too with the configuration I wrote by hand, so nothing is
+    proven either way.
+  - Anything that reads keys through its own INT 09h could only be
+    watched, not played: Descent was left at its pilot name.  Nothing
+    was tried with a mouse.
+
+TESTS.  RUNTESTS: CTRYDMP and PROBE13 differ by FLAGS bit 1 and RMTEST
+by four clusters (the kernel grew), and all three were re-recorded on
+all seven rows; then 78/78 on each.  DPMIIRQ and DPMII32 caught the
+first version of the interrupt-flag change.  SYMCASE is clean, and
+MASM 6.13 assembles IOPM, IORM, DOSMAIN, CMD, COMMAND and the boot
+sectors; three "jmp short i21_return" had grown out of its reach.
+
+PMIO.SYS is 57,267 bytes and PMDOS.SYS 149,686.  S:\BIN (PMIO.SYS,
+PMDOS.SYS, CMD.EXE), IMAGES\PMDOS.IMG (the scratch BUILD's floppy),
+IMAGES\HD16.IMG (FATREPL, then a copy booted headless: VER in both
+shells, DPMIIRQ and DPMII32 pass) and the 86Box VM's two copies carry
+it.  HD32 and HDBIG were not rebuilt.  Nothing here has run on real
+hardware.  Still v0.62.
+
+
+WINDOWS 3.1 IN 386 ENHANCED MODE (2026-10-05)
+---------------------------------------------------------------------
+
+Charlie asked for PM-DOS to get on with Windows 3.1's 386 enhanced
+mode.  Until now 1605h with DX bit 0 clear was vetoed (WINDOWS.INC),
+with a message saying WIN386 wanted the ring-0 seat PM-DOS was in.
+True, and beside the point: standard mode already got the machine by
+PARKING - PM-DOS leaves protected mode, RMDOS.SYS serves DOS from
+conventional memory, and the guest's INT 2Fh returns in real mode - and
+an empty seat is exactly what a V86 monitor wants too.  So the veto is
+gone, both modes park, and everything that follows is what WIN386 then
+asks of the DOS underneath it, which is RMDOS.
+
+WHAT RUNS.  On 86Box (p3bf, Pentium II 450, 64MB, GD5436), from
+AUTOEXEC.BAT: WIN /3 starts, the desktop comes up, WINDRV.EXE (run=
+in WIN.INI) WinExecs a batch file, which runs in a DOS virtual machine
+through the 16-bit COMMAND.COM - VER, DIR, a program and its
+errorlevel, COPY/TYPE/REN/DEL, a pipe, a nested COMMAND /C - to the
+end, WINDRV asks Windows to exit, Windows exits, RMDOS hands back,
+PM-DOS unparks and AUTOEXEC carries on - and the DOS boxes after it
+work (HELLO, ARGS, TIMERTST, a COMMAND /C batch: run e35).  Windows' own clock runs
+(GetTickCount advances with the BIOS count, and a 1000ms timer
+delivers one WM_TIMER a second, to the queue and to a TimerProc).  WINDRV
+now polls with PeekMessage and writes a sample line every so many
+turns - the three clocks it can see - instead of waiting on the timer
+it is measuring.
+
+THE TRAPS, IN THE ORDER THEY CAME.  Each one stopped the startup dead
+with a message that named something else; the real cause was found by
+tracing RMDOS on port E9h under DOSBox-X (BUILD rme9) and by reading
+WIN386.EXE's real-mode half with MS-DOS 6.22's DEBUG, and the fix was
+then proved on 86Box.
+
+  1. XMS PRESERVES WHAT IT DOES NOT RETURN.  WIN386's loader reads
+     itself into extended memory with 0Bh (move) in a loop whose
+     running count is in ECX - the upper half included - and RMDOS's
+     XMS driver (RMXMS.INC) came back with ECX and the upper halves of
+     EAX/EBX/EDX changed.  "Cannot load WIN386.EXE" at once.  rx_entry
+     now saves and restores every register it is not defined to
+     return: 88h keeps EAX/ECX/EDX whole, 8Eh keeps EDX, all else only
+     AX/BX/DX.  The spec says so; HIMEM does so; nothing before Windows
+     noticed.
+  2. THE UNPARK TRIPLE-FAULTED on its first V86 entry.  rm_park kept
+     GDT, IDT and CR3 for the way back (a BIOS call needs those too)
+     and nothing else, because DOSX leaves the rest alone.  WIN386
+     loads its own TSS, LDT, CR0 and CR4.  rmp_back (RMCALL.INC) now
+     puts back CR0 whole, CR4's PSE bit (pg_cr4back, PAGING.INC), the
+     task register - busy bit cleared in the descriptor first, or LTR
+     refuses - and the LDT.
+  3. "CANNOT USE A DEVICE SPECIFIED IN THE SYSTEM.INI FILE" meant
+     DOSMGR's real-mode init returned error 2, which it does when the
+     list of lists is not below 64K linear: it wants to patch and
+     instance DOS's data through 16-bit offsets from zero.  RMDOS's
+     published data (LoL, SDA, the Win386_DOSVars table, the CDS, the
+     NUL/CON/AUX/PRN headers) now lives in PM-DOS's own DOS data
+     segment at 0400:0000, which RMDOS saves on entry and puts back on
+     the way home (rd_lowsave/rd_lowrest; RL_* in RMDOS.INC lays it
+     out; PARK.INC checks the sizes at assembly time).
+  4. "THE XMS DRIVER COULD NOT BE INSTALLED" / "cannot find an XMS
+     driver": V86MMGR hooks the XMS entry by patching the HIMEM-shaped
+     prologue - jmp short, three NOPs - and will not hook one above
+     1MB.  RMDOS was in the HMA because WIN386's header asks for every
+     paragraph (MAXALLOC FFFF) and left nothing low.  Two fixes: the
+     entry has the prologue, and vl_winres (VDM.INC) reserves 64K
+     under WIN386.EXE's own block at EXEC time - it knows the name -
+     which park_loadrm then takes (park_resseg).
+  5. "INSUFFICIENT MEMORY OR ADDRESS SPACE": V86MMGR splits
+     conventional memory at WIN386's PSP into "DOS, global" below and
+     "VM, local" above, and a DOS above the PSP is in the wrong half.
+     Hence BELOW WIN386, which is what 4 does.
+  6. THE SYSTEM FILE TABLE SCAN.  DOSMGR opens CON five times and
+     looks for the five handles in the SFT to learn the entry size;
+     RMDOS's entries are now DOS 4's 3Bh bytes with the fields where
+     DOS keeps them (SFT_* in RMFILE.INC, sft_setdev).  The LoL's
+     SFT pointer, CDS pointer (DOS-shaped, 58h a drive, RL_CDS) and
+     device chain are all real.
+  7. "KERNEL: UNABLE TO OPEN KERNEL EXECUTABLE".  KRNL386.EXE finds
+     its own path after its environment's strings, and had no
+     environment: RMDOS made it AFTER the program's block, and a
+     MAXALLOC-0 program is given the largest block entire, so there was
+     nowhere left.  fn4B (RMMEM.INC) now makes the environment first,
+     as msproc.asm does, stamps it the parent's until the PSP exists
+     and gives it back if the EXEC fails.  Standard mode never showed
+     it because its memory happened to be in two pieces.
+  8. TWO MACHINES INSIDE ONE DOS.  Once a DOS VM ran, the System VM
+     and the DOS VM were both in INT 21h at once - 0Ah at a prompt is
+     a call that waits - and RMDOS gave the second caller "the next
+     stack", which was the one the first was standing on.  Stacks are
+     SLOTS now (stk_take/stk_free, six of them, first free, given back
+     by where SP is), and every call is a DOSMGR critical section
+     (crit_in/crit_out: INT 2Ah 8001h/8101h, as MS-DOS 5 does, which
+     RMDOS claims to be) released only round the console wait's INT
+     28h.  INT 25h/26h take one too.  The SDA is synced into the
+     published copy at the places DOSMGR may swap it.
+  9. THE FIRST DOS BOX AFTER WINDOWS WAS DEAD.  HELLO ran, printed
+     nothing and came back with errorlevel 0; so did everything 16-bit
+     after it, while CMD.EXE's own commands were fine and MEM /D showed
+     the arena untouched.  park_restvecs put the whole 20h-2Fh snapshot
+     back - the table as it stood at 1605h, when WIN386's real-mode
+     half still had its hooks in - after Windows had unhooked them and
+     just before park_release freed the block they pointed into.  Only
+     the vectors RMDOS took (the ones pointing into its image) go back
+     from the snapshot now; the rest stay as Windows left them.
+     Standard mode never showed it: DOSX hooks nothing there first.
+ 10. ODDS AND ENDS found on the way: fn30 AL=1 answers BX=0 (OEM, and
+     the 'DOS in HMA' flag clear); fn34/fn52/fn5D point into the low
+     block; 1607h/BX=15h callouts answered (RMINFO.INC i2F_devcall:
+     CX=0 version, 1 SDA, 3 instance list, 4 and 5 patching, none);
+     XMS 10h answers B1h not B0h when there are no UMBs; the NUL
+     device's name was " NUL" from a dword constant.
+
+WHAT DOSBOX-X CANNOT DO.  Enhanced mode does not run under DOSBox-X:
+in the System VM a plain byte store into RMDOS's own data - the same
+instruction, address and value that succeed on the previous call -
+ends Windows, every time, at the same place.  86Box runs the same
+image through without it.  So every enhanced-mode proof is an 86Box
+run (rig: winrun.ps1 -On86 -> run86.ps1, 86Box minimized and never
+touched, closed with WM_CLOSE, files read back out of the image), and
+the port E9h trace is standard-mode only.  Standard mode still starts
+and exits under both (s1, with nothing started from it).
+
+A DOS SESSION FROM STANDARD MODE DOES NOT COME BACK ON DOSBOX-X, and
+did not before this work either: with the 0.62 binaries in the same
+rig (run c62) WINDRV starts WINDOS.BAT, WINOLDAP writes its swap file
+(~WOA100F.TMP), sets the break flag, and the next thing the machine
+does is run into an invalid opcode for ever, with no INT 21h in
+between - the same picture with and without this work (s3, s4, c62).
+Found while checking that standard mode was not broken; not chased.
+RMDOS sits first fit above DOSX, which is inside what WSWAP swaps
+out, and that is the first thing to look at.
+
+NOT DONE.
+  - A DOS session started from standard mode, on DOSBox-X: see above.
+    Not tried on 86Box.
+  - A park with a file open is allowed when the file is CMD.EXE's own
+    redirection (WINTEST showed it: its output after the park went to
+    RMDOS's console).  park_filesopen looks at the box's handles only.
+  - RMDOS still starts every drive at the root; the current directory
+    the box had is not carried across.  As before.
+  - The HWPROBE output for the 486's PS/2 mouse is still awaited.
+
+TESTS.  WINTEST used to send 1605h with DX bit 0 clear and expect the
+veto; sent now, it parks the test run - the rest of its output went
+to RMDOS's console - so it prints a line and leaves the question to
+PARKWIN.COM.  RUNTESTS -All, seven rows: four answers moved and were
+re-recorded, WINTEST (the new line), RMTEST (nine fewer free clusters:
+RMDOS.SYS is 8K bigger on the test disk), CACHETST ("a write is owed"
+0005 for 0004 on every row but the 386: the same layout shift) and
+SFTSCAN, which scans conventional memory after PARKWIN has parked once
+and finds RMDOS's own file table in the freed image - its entries are
+3Bh apart now, and it has two more with names.  Then 78/78 on each
+row.  wasm and MASM 6.13 both
+assemble RMDOS.ASM (with and without RMDOS_E9), DOSMAIN, IOPM and
+IORM.  The one-letter progress marks that found the DOSBox-X store are
+gone again; the E9 trace keeps its instruments (INT 21h lines, XMS,
+INT 15h, 2Fh, EXEC environments, disk requests, the MCB chain, the
+invalid-opcode hook).
+
+FILES.  DOS\WINDOWS.INC (1605h parks in either mode, veto and message
+gone), VDM.INC (vl_winres), PARK.INC, RMDOS.ASM, RMINFO.INC,
+RMFILE.INC, RMFILE2.INC, RMNAME.INC, RMCON.INC, RMMEM.INC, RMDISK.INC,
+RMXMS.INC, RME9.INC, RMDBG.INC, INT21.INC, VOLFLAG.INC (comment),
+IO\RMCALL.INC, IO\PAGING.INC, INC\RMDOS.INC (RMDOS_VER 0103h),
+TOOLS\WINDRV.C, TOOLS\WINTEST.ASM, BASELINE\*\ (RMTEST, WINTEST, CACHETST
+and SFTSCAN re-recorded), DISK\CONFIG.TXT (two sentences: Windows, not
+"enhanced mode").
+
+PMIO.SYS is 57,347 bytes, PMDOS.SYS 149,593 and RMDOS.SYS 36,705.
+S:\BIN (PMIO.SYS, PMDOS.SYS, RMDOS.SYS, TESTS\WINDRV.EXE and WINTEST.COM),
+IMAGES\PMDOS.IMG (the scratch BUILD's floppy), IMAGES\HD16.IMG (FATREPL,
+CONFIG.TXT too) and the 86Box VM's two copies carry it.  HD32 and
+HDBIG were not rebuilt.  Nothing here has run on real hardware.  Still
+v0.62.
+
+
+WINDOWS PROGRAMS OFF THE SHELF: THE ENHANCED-MODE SWEEP (2026-10-05)
+---------------------------------------------------------------------
+
+Charlie asked for Windows 3.1 in 386 enhanced mode to be tested the
+way the DOS boxes were: programs fetched from the Internet Archive and
+WinWorld, run, and seen to work - most of them, not every edge.  He was
+away from the keyboard, so 86Box could be used; it was never clicked
+or typed at.
+
+THE RIG.  TOOLS\WINSWEEP.C (WINSWEEP.EXE, Win16): named in WIN.INI's
+run=, it reads C:\SWEEP.LST, one program a line (NAME|command|seconds|
+keys), makes the program's directory current, WinExecs it, waits,
+writes the screen to C:\SHOTS\NAME.BMP (a DIB at the display's own
+depth), lists its windows, closes it (one WM_CLOSE to its main window,
+a "save changes?" box answered by button id), and logs every step to
+C:\SWEEP.TXT a line at a time.  NAME?file skips a line once the file
+exists (an installer), NAME!file until it does.  A DOS box (a window of
+class tty) is left to end by itself - WINOLDAP answers WM_CLOSE with a
+system-modal box that stops everything.  The scratch script wsweep.ps1
+builds a 128MB disk with the system, the Windows tree, the programs
+(FATPUT, one root directory each), the list and the PIFs, runs it on
+86Box through run86.ps1 (now with -Visible, -Shot, a PrintWindow of the
+86Box window at the end, and -Geometry), and brings the pictures back
+(fatx.pl, BMP -> PNG).  Under WIN /S on DOSBox-X the same script runs
+with the port E9h trace (-Dbx -E9), which is how the two RMDOS bugs
+below were found.
+
+THE CONTROL.  C:\DOSBoxRoot\RIG\dos5.vhd, the real MS-DOS 5 disk, is a
+dynamic VHD; vhd2raw.pl writes it out flat, FATPUT grafts the same
+Windows tree onto it as \WIN with the same programs and driver, and
+run86 -Geometry '63, 16, 1024' boots it.  Every failure was run there
+before it was blamed on PM-DOS, and three of five were the program.
+
+WHAT RAN (86Box, p3bf, PII-450, 64MB, the VGA driver at 640x480x16, no
+sound card).  Windows' own: Write, File Manager, Control Panel,
+Windows Help, Clipboard Viewer, PIF Editor, Registration Editor.  Two
+windowed DOS boxes at once, each running a batch (VER, DIR, TIMERTST)
+through PM-DOS's COMMAND.COM and closing by itself; a file handle held
+open across both still read afterwards.  Games: SkiFree, Chip's
+Challenge, JezzBall, Rodent's Revenge (VB1), Tetris 2.0, Taipei, Pipe
+Dream, WinRisk, Minesweeper, Reversi, Memory Blocks, Neko, Castle of
+the Winds, WinTrek, TDK Pinball, Glider 4.0, SimEarth, The Even More
+Incredible Machine, Shanghai II, Brickbuster, Monopoly Deluxe.
+Applications: Mortgage Designer, Micrografx Designer 3.1, ToolBook
+1.5, FormTool Gold, Calmira 3.31, ASCII Chart, a VB2 calendar
+(VBRUN200), FreeCell Plus (VB3), Windsock, WinSpeed, the PC Magazine
+Windows benchmark.  MSD and a full-screen DOS box take the display, and
+the in-guest pictures cannot show them - not tried further.
+
+WHAT PM-DOS HAD WRONG, all in RMDOS, all found through the trace under
+WIN /S and confirmed on 86Box:
+
+  1. IOCTL 4408h/4409h/440Dh/440Eh were "invalid function".  Calmira
+     asks all four for every drive letter while it starts and raised an
+     "Error" form for each refusal - fifteen of them before the Delphi
+     "An error has occurred in your application" box.  fn44 (RMFILE2.INC)
+     now answers 08h (removable, from the volume table, no mount), 09h
+     (remote: no, after checking the drive), 0Bh (retry count,
+     accepted), 0Eh (one letter), and 0Dh/60h (device parameters from
+     the volume's BPB).  The first version of 60h mounted the drive,
+     which READ A: - an empty drive under Windows is a critical error
+     nobody can answer, and Calmira stopped there instead.  A floppy
+     drive now answers with a 1.44M default, unmounted, as DOS does.
+  2. 2Ah GAVE THE DATE AS 2026-00-00.  fn2A made the year with "mul
+     cx", which writes DX, and DX held the BIOS's month and day.  Every
+     program under Windows on PM-DOS got month 0, day 0; a C runtime
+     turning that into a day of the year gets -1 and searches its
+     months table for ever - that was Monopoly Deluxe and Brickbuster,
+     "WinExec never returns, no window".  Found with TOOLS\SPYTICK.C
+     (an INT 8 hook in protected mode that writes the interrupted
+     CS:IP to port E9h; the loop was in Monopoly's own code, decoded
+     from POLY.EXE) and confirmed by TOOLS\TIMEPROB.C, which prints the
+     DOS date and time and every clock a Windows program can see.
+     Now imul, and 2Ah answers the day of the week too (rd_weekday).
+  3. INT 2Fh 1000h, "is SHARE loaded?", was not answered.  Win32s
+     Setup stops to say SHARE.EXE is not loaded (and goes on); Office's
+     installers refuse.  RMDOS says yes now (i2F_share): 5Ch has always
+     succeeded there, and there is one program and one DOS, so nothing
+     to conflict with - what is NOT there is the refusal of a
+     conflicting open, said plainly in the source.
+
+THE CLOCKS ARE OTHERWISE RIGHT.  TIMEPROB on PM-DOS and on MS-DOS 5:
+GetTickCount, GetCurrentTime, 40:6C, MMSYSTEM's timeGetTime, the 8254
+(mode 2 as VTD shows it) and the RTC all move at the same rates; a
+protected-mode INT 1Ch hook is called on neither (Windows does not
+reflect a V86 INT 1Ch upward) and an INT 08h hook on both.  The one
+difference: PM-DOS leaves IRQ 8, the RTC, unmasked at the slave PIC
+(1Ch against 1Dh).  Nothing was seen to mind.
+
+WHAT WAS NOT PM-DOS, by the control: Shanghai II's close wedged the
+first driver on MS-DOS 5 too (two WM_CLOSEs at once, one inside the
+other's "save?" box); SimEarth and The Incredible Machine want their
+own directory current, as Program Manager would give them; Tetris
+needs its mnemonic as a character; VB programs need VBRUN100/200/300
+in SYSTEM; a windowed DOS box must be left to end by itself.  All of
+that is the driver's, and it learned each one.  Brickbuster hung on
+MS-DOS 5 as well in its one control run and runs here now with the
+date fixed; whatever the control saw was not looked into.
+
+OPEN.
+  - Monopoly Deluxe runs (the board, its About box) but WinExec does
+    not return to the driver on PM-DOS until it ends, as it does at
+    once on MS-DOS 5.  Not understood; with or without its directory
+    current.
+  - MSD and full-screen DOS boxes: not observable from inside Windows,
+    so not tried further.
+  - The installers were not got through.  Win32s 1.30, Paint Shop Pro
+    3.12, After Dark 2.0c, Video for Windows 1.1e and QuickTime 2.1.2
+    all start, draw their dialogs and copy files (Win32s got through
+    Disk 1 and into Disk 2; Paint Shop Pro filled C:\PSP and asked for
+    a Program Manager group), but driving a setup from a list of keys
+    sent at fixed times is a project of its own: Enter on a copy
+    dialog is Cancel, Microsoft Setup's dialogs are not dialogs (class
+    "Stuff-Shell"), and each product has its own flow.  Nothing in
+    what they did do looked like PM-DOS's fault once SHARE was
+    answered.  Word 2.0 and Excel 4.0 were fetched and unpacked (their
+    disks merged into one directory each) but not started.
+  - WINSWEEP's picture names are 8.3: NAME_10 and up fail.
+
+TESTS.  RUNTESTS -All after the three RMDOS changes: RMTEST (one
+cluster of free space), CACHETST (the owed count) and SFTSCAN (RMDOS's
+addresses in freed memory) moved with RMDOS's size and layout, as they
+did yesterday, RMFIND counts three more entries in \TESTS (the three
+new tools), and all four were re-recorded; then 78/78 on every row.
+wasm and MASM 6.13 assemble RMDOS both ways.
+
+FILES.  DOS\RMFILE2.INC (fn44), DOS\RMINFO.INC (fn2A, rd_weekday,
+i2F_share), TOOLS\WINSWEEP.C, TOOLS\TIMEPROB.C, TOOLS\SPYTICK.C (new;
+BUILD.CMD makes them beside WINDRV, into BIN\TESTS), BASELINE\*\
+(RMTEST, CACHETST, SFTSCAN, RMFIND re-recorded).  RMDOS.SYS is 37,284 bytes;
+PMIO.SYS and PMDOS.SYS are unchanged from this morning.  S:\BIN,
+IMAGES\PMDOS.IMG, IMAGES\HD16.IMG (FATREPL: RMDOS.SYS and the three
+tools) and the 86Box VM's two copies carry it.  Still v0.62.
+
+
+A DISK CACHE UNDER WINDOWS: RMDOS GETS SMARTDRV'S JOB (2026-10-06)
+---------------------------------------------------------------------
+
+Charlie asked for disk caching in RMDOS to help Windows along - a new
+cache started when Windows starts was fine by him - and that it look
+like SMARTDRV to the programs that ask: shrinkable for Windows, and
+switchable off for Windows for Workgroups 3.11's 32-bit file access.
+
+WHAT THERE WAS.  The kernel's cache (CACHE.INC) gives its chunks back
+at the park (cache_park), because the pool RMDOS hands Windows is the
+arena's free memory and a cache still holding chunks is memory Windows
+never sees.  So from 1605h to the unpark every sector Windows wanted
+of its DOS went to the BIOS - one INT 13h per sector (rd_xfer said so
+and meant it), and under WIN386 every INT 13h is a trip through the
+monitor.  RMFILE2's file_io moved one sector at a time through
+rd_datbuf as well, so KRNL386 loading a 40K segment was eighty BIOS
+calls and eighty copies.
+
+WHAT SMARTDRV IS, read rather than remembered.  S:\DOS6SRC has
+dev\smartdrv - SMARTDRV 4.10, "BAMBI" - and its int2f.asm is the whole
+INT 2Fh AX=4A10h interface: BX=0 (AX=BABEh, DX:BX hits, DI:SI misses,
+CX dirty, BP the version), 1 commit, 2 reset, 3 a drive's read/write
+caching on or off (BP = the letter, DL = the verb, DL back = the
+state: 80h no reads, 40h no writes, FFh not a drive it caches), 4 the
+sizes.  THE SHRINK FOR WINDOWS IS SMARTDRV'S OWN DOING: on INT 2Fh
+1605h it re-sizes itself to its second number, on 1606h back to the
+first.  Windows asks for nothing.  WIN386.EXE's two 4A10h bytes are
+"mov dx,[bx+10h] / dec dx"; Windows 3.1 only opens the SMARTAAR device
+of the 3.x SMARTDRV.SYS (the open is in every trace), finds none, and
+goes on.  And the WfW 3.11 side is in IFSMGR.386, not VFAT: at start,
+for each drive it takes, BX=0 (is it there?), BX=1 (commit), BX=3 DL=0
+(the state, kept), then BX=3 DL=4 and DL=2 (writes off, reads off);
+at the end BX=3 DL=1 and DL=3 put back what it found.  Decoded from
+the expanded VxD (the WfW disks are KWAJ-compressed; EXPAND.EXE under
+headless DOSBox-X did them): 66 C7 45 1C 10 4A is Client_AX = 4A10h,
+45 10 is BX, 45 14 is DX, 89 4D 08 is BP, then mov eax,2Fh / VMMcall
+Exec_Int.
+
+WHAT WAS BUILT: DOS\RMCACHE.INC.
+  - A sector cache under rd_xfer, keyed by BIOS drive and absolute
+    LBA like the kernel's, in elements of eight sectors with a bit per
+    sector held.  Up to 1024 elements (4MB) from RMH_WINCACHE, which
+    PARK.INC fills from WINCACHE= in CONFIG.SYS or an eighth of the
+    pool.  The memory is an XMS block from RMDOS's own driver, taken
+    in rd_entry BEFORE the IRET into Windows' loader, so that "how
+    much is free" is already answered without it; locked, so its
+    physical address is known.  Directory, chain heads and the 4K
+    read-ahead buffer are in the image: the segment is 64K, the image
+    was 37K, and it is 56K now (58K with the E9 trace) - inside
+    PARK's 60K.
+  - Read-through with read-ahead: a miss on less than an element reads
+    the whole element into the buffer and keeps it (clipped at the
+    volume's end; not while mounting, when the end is unknown).  A
+    whole aligned element or more goes straight to the caller and is
+    kept from there.  Write-through, always, write-allocate: the disk
+    first, then the cache; nothing is ever owed and nothing can be
+    lost by the cache being wrong, turned off or forgotten.  Floppies
+    are never cached (no change line; rd_getvol re-mounts them).
+    Replacement is a clock bit.
+  - THE MOVER.  In real mode (standard mode, and WIN386's real-mode
+    loader) rx_domove, RMXMS's own.  Under WIN386 the DOS is in V86
+    mode and CR0 is not ours, so INT 15h AH=87h (rx_move15), which the
+    monitor emulates - and the first V86 transfer proves it on a
+    spare element (cm_selftest, a 512-byte pattern out and back)
+    before any data depends on it; a mover that fails turns the cache
+    off.  NOT the XMS entry under Windows: V86MMGR owns it, and what it
+    does with a handle older than Windows is not a thing to lean on.
+  - 4A10h answered as SMARTDRV 4.10 (cm_api): BX=0/1/2/3/4 as above;
+    BX=3's off drops what is held for the drive and VF_NOREAD /
+    VF_NOWRITE in the volume record keep it off; everything else is an
+    IRET with nothing changed, which is what SMARTDRV chaining into
+    nothing comes to.  No cache configured = no SMARTDRV (AX comes back
+    as it went).
+  - 1606h: with WINCACHE=...,LOG, RMCACHE.LOG on the boot drive - the
+    counts and every 4A10h made (BX, DX, BP), written through RMDOS's
+    own INT 21h from inside the broadcast.
+  - rd_raw (RMDISK.INC), the BIOS transfer, now moves runs: cut at the
+    track end on the CHS path, at a 64K boundary in memory, and at 127
+    sectors.  file_io (RMFILE2.INC) moves whole sectors straight to
+    and from the caller's buffer, as many as the cluster has left; the
+    partial sector at either end still goes through rd_datbuf.
+  - TOOLS: SDSTAT.COM (what 4A10h answers: version, hits, misses,
+    sizes, a letter per drive with r/w) and TICKS.COM (40:6C as a
+    number, for timing a batch from the outside).  WINSWEEP stamps
+    every log line with GetTickCount now.
+
+TWO BUGS OF THE FIRST BUILD, both found in one E9 trace under WIN /S:
+  - cm_mask answered in AL, and AL is the low byte of EAX, which is
+    the LBA in every caller.  An element found but not wholly held
+    re-read sector 0xFE instead of 0x248: zeros, which a directory
+    scan reads as its end - "Cannot find files needed to run Windows
+    in standard mode" - and which the create of RMCACHE.LOG then
+    WROTE BACK over the root directory's first sector.  The mask is in
+    DL now.
+  - rd_raw renormalised ES:BX and left ES changed for its caller, which
+    the old one-sector loop also did, and which nothing minded until
+    file_io's new run path used ES:DI again on the next pass.  Every
+    register kept, ES included.
+  The hit test was also inverted (any OTHER sector held read as a
+  miss), so the first build never hit at all.
+
+THE MOVER UNDER WIN386, which took three runs to settle.  The first
+cache-on run (e3) ran every program and exited cleanly - the INT 15h
+self-test passed - but its DOS-box batch, two COPYs of WIN386.EXE and
+two DIR /S, took 81 s against 48 s with no cache at all.  So a second
+mover was tried: the XMS entry, which under WIN386 is V86MMGR's
+breakpoint and could do the copy in ring 0.  Its round trip PASSED
+and Windows never left its logo (e4): V86MMGR took RMDOS's handle for
+one of its own, moved the pattern into somebody else's memory and
+read it back from there, which a round trip cannot tell from the
+truth.  A handle issued before Windows is only V86MMGR's to serve
+when it can read the driver's table - INT 2Fh 4309h, HIMEM's
+HandleInfo, which RMXMS does not publish and whose semantics (V86MMGR
+writes into it) were not going to be guessed at 1 AM.  cm_xmove stays
+in the file for the day that is done; cm_selftest takes 87h only.
+TOOLS\MOVEPROB.C is the instrument this left behind: 1000 XMS 0Bh
+moves and 1000 INT 15h 87h moves of 2K from a DOS box, timed off
+40:6C, with the 87h pair between two conventional buffers when the
+monitor refuses the lock (V86MMGR does: error ADh).
+
+AND ONE OF RMDOS'S, found by the timing batch: 02h, 06h and 09h wrote
+straight to con_out, so "SDSTAT >> CACHEBOX.TXT" in a DOS box printed
+on the box's screen and left the file with only COPY's lines in it -
+COMMAND.COM's own ECHO and COPY go through 40h and were fine, which is
+why nothing had noticed.  DOS sends all three through handle 1, and
+so does RMCON.INC now (con_write): the file when redirected, the
+console through dev_write otherwise, and a program with no handle 1
+still gets the console.
+
+WINDOWS FOR WORKGROUPS 3.11, which is where "disabled entirely"
+comes from.  The eight disks (archive.org's MS_Windows-3, the retail
+3.11) merged into one \WFW and SETUP /H:PMDOS.SHH - the automated
+setup, network=nonet, Charlie's PMDOS.SHH for Windows 3.1 with a
+[network] section - from AUTOEXEC on PM-DOS.  The first run stopped
+on Setup's first screen: "The XMS driver you have on your system is
+not compatible with Windows."  Its DOS half asks XMS 00h and wants
+the driver revision in BX to be 0260h or more (SETUP.EXE 122AAh:
+cmp ax,0200h / cmp dx,0260h), which HIMEM 2.60 - Windows 3.0's - was,
+and the kernel's host said 0029h, PM-DOS 0.29.  Both hosts say 030Ah
+now, HIMEM 3.10's number; the field means nothing else to anyone.
+The second run got to Setup's next screen and stopped there: "The
+programs below have been detected on your computer ... SUBST.EXE
+(Unknown), JOIN.EXE (Unknown) ... press C to continue", which an
+automated setup cannot.  Neither is loaded; Setup's DOS half reads
+the current directory structures through the list of lists, the
+kernel says FFFF:FFFF there because it has none, and whatever Setup
+read at FFFF:FFFF had the SUBST and JOIN bits set.  OPEN: a CDS array
+for the kernel's guests, in DOSDATA, like the one RMDOS builds for
+Windows (RL_CDS).  So the install was done on real MS-DOS 5 instead
+(the control disk, SETUP /H from AUTOEXEC, an upgrade over the DOS
+VM's own Windows 3.1 - 273 files, 01:17 on 2026-10-06) and the
+resulting C:\WINDOWS grafted onto PM-DOS's disk by the sweep rig
+(-WinSrc), which is the WfW that then ran on PM-DOS.
+
+AND THEN VSHARE.  The first WfW runs on PM-DOS stopped at "Cannot
+load a device file that is specified in SYSTEM.INI:
+C:\WINDOWS\SYSTEM\vshare.386 - Press a key to continue".  On a real
+DOS with SHARE.EXE loaded VSHARE does the same, so the first guess was
+RMDOS's "SHARE is loaded" (i2F_share, from the Win32s finding of the
+day before): the answer was made "no" under enhanced mode until 1608h
+and "yes" after, which would have suited VSHARE and Win32s both.  It
+changed nothing, and the expanded VSHARE.386 has no 1000h in it
+anywhere - it never asks.  What it wants is DOS's own SHARE hook
+table, which SHARE.EXE fills in DOS's data segment and which RMDOS
+has not got; the gating was taken out again rather than left in on a
+theory.  SETTLED that evening - see the entry below.  For the runs
+below VSHARE was commented out of the grafted SYSTEM.INI.
+
+WHERE WFW 3.11 STANDS ON RMDOS: ON ITS LOGO.  With VSHARE out it
+loads its devices and puts the logo up, and stays there for the whole
+run - with the cache (wfw_e), with the cache and device=vfat.386
+(wfw_f), and with WINCACHE=OFF (wfw_g) alike, so whatever stops it is
+not the cache's and was there before this work: RMDOS had never been
+asked to run Windows for Workgroups until tonight.  No RMCACHE.LOG,
+because 1606h never came, and so no record yet of IFSMGR's 4A10h
+calls on this DOS - the IFSMGR half of "disabled entirely" is
+answered by reading IFSMGR.386 rather than by seeing it done.  OPEN,
+and the first thing to put the E9 trace on is not possible either:
+enhanced mode does not run under DOSBox-X.  The WfW tree, installed
+and ready to graft, is kept at S:\WFW311HD\WINDOWS beside the
+Windows 3.1 one at S:\WIN31HD, with the PMDOS.SHH that made it; its
+SYSTEM.INI has the VSHARE line commented out.  BOTH SETTLED THE SAME
+EVENING, AND THE LINE IS BACK IN: see the entry below.
+
+WHAT IT DOES FOR WINDOWS 3.1, measured on 86Box (p3bf, PII-450, 64MB,
+the 1994 4500rpm disk model) with the sweep rig of 2026-10-05, the
+same eleven-program list run with WINCACHE=2048 and with WINCACHE=OFF,
+WINSWEEP stamping every log line with GetTickCount:
+
+                          cache 2MB    no cache
+  Windows up to run=         494 ms     1867 ms
+  Write opens               8019       8513   (6 s of that is the
+  File Manager              9887      10326    rig's own wait, so
+  Control Panel             7964       9118    the difference is
+  Help                      7910       8293    the load)
+  Clipboard                 5657       5877
+  PIF Editor                5712       6151
+  Regedit                   6756       7030
+  Write, second time        8074       8404
+  File Manager, second      9777      10051
+  the whole list         196851     206737
+
+So every program comes up a quarter to one second sooner and Windows
+itself 1.4 s sooner; the cache answered 16,795 of 18,092 reads (93%)
+in that session, all 512 elements in use, tested=1 (the 87h round trip
+passed), and standard mode on DOSBox-X answered 6,725 of 7,608 (88%).
+Not more than that on 86Box, and the DOS-box batch says why: two
+COPYs of WIN386.EXE and two DIR /S take 49 s with the cache and 49 s
+without.  The emulated disk has no seek to speak of and INT 13h from a
+DOS box costs about the same as INT 15h does there; DIR /S reads 3,571
+sectors for 110 files (RMDOS's FindNext walks the directory from the
+top each time, which is its own entry on the list) and both runs spend
+their 20 s on that walk in a background VM, not on the disk.
+MOVEPROB from the box: 1000 XMS moves and 1000 INT 15h moves each
+inside one tick, so under 55 us a call either way - the mover was
+never the cost.  A real disk is where the misses cost something, and
+this machine has not got one; nothing here has run on real hardware.
+
+TESTS.  RUNTESTS -All, seven rows, with the cache on by default under
+PARKWIN and RMTEST (WINCACHE= is not in the test CONFIG.SYS, so the
+park's own eighth applies): RMTEST (37 fewer free clusters - the
+bigger RMDOS.SYS and three more tools on the test disk), RMFIND
+(three more entries in \TESTS) and SFTSCAN (RMDOS's file table at
+new addresses) moved as they do with every RMDOS layout change and
+were re-recorded; then 78/78 on every row, twice.  RMFSTEST and
+RMSPEED, which read and write files on RMDOS, are "same" - the cache
+underneath them changed nothing they could see.  wasm and MASM 6.13
+assemble RMDOS.ASM both ways.  On 86Box: Windows 3.1 enhanced mode
+with the eleven-program list six times over (cache_e2..e8), standard
+mode under DOSBox-X with the E9 trace twice (cache_s1, s2), real
+MS-DOS 5 with SMARTDRV 4.0 once as the control (ctl_cache), and WfW
+3.11 as below.
+
+FILES.  DOS\RMCACHE.INC (new), DOS\RMDISK.INC (rd_xfer, rd_raw,
+VF_NOREAD/VF_NOWRITE, rd_run), DOS\RMFILE2.INC (file_io runs),
+DOS\RMINFO.INC (i2F: 4A10h, 1606h), DOS\RMDOS.ASM (header fields,
+cm_init, the include), DOS\CONFIG.INC (WINCACHE=), DOS\PARK.INC
+(RMH_WINCACHE from cfgc_winkb or the pool), INC\RMDOS.INC (1.04:
+RMH_WINCACHE, RMH_WCFLAGS, RMWC_LOG), TOOLS\SDSTAT.ASM, TOOLS\TICKS.ASM
+(new), TOOLS\WINSWEEP.C (tick stamps), BUILD.CMD, DISK\CONFIG.TXT
+(WINCACHE=).  RMDOS.SYS is 56,596 bytes (58,228 with the E9 trace),
+PMDOS.SYS 149,837; PMIO.SYS and CMD.EXE are unchanged.  S:\BIN,
+IMAGES\PMDOS.IMG, IMAGES\HD16.IMG (FATREPL: the kernel, RMDOS.SYS,
+CONFIG.TXT and the four tools) and the 86Box VM's two copies carry
+it.  Still v0.62, and nothing here has run on real hardware.
+
+
+WINDOWS FOR WORKGROUPS 3.11 RUNS ON RMDOS (2026-10-06, evening)
+---------------------------------------------------------------------
+
+Charlie asked whether the WfW 3.11 items the cache entry above left
+open could be fixed at all.  Two of the three could, and were, the
+same evening: WfW 3.11 now comes up on RMDOS exactly as it installs
+itself, VPD and VSHARE and all.  What stopped it, and how it was found
+without a debugger that runs 386 enhanced mode, is below.
+
+A TRACE FOR 386 ENHANCED MODE AT LAST.  The E9 trace (RME9.INC) needs
+DOSBox-X, which cannot run enhanced mode, and the disk trace
+(RMDBG.INC) stops what it watches.  Every character of the E9 trace
+now goes through one routine, e9_putc, and two build targets give it
+a second way out that 86Box can keep:
+
+  rme9com   COM1, 115200 8N1, set up on the first character.  86Box
+            4.2.1's serial passthrough (serial1_passthrough_enabled = 1
+            and a [Serial Passthrough Device #1] section with mode = 0)
+            serves the port as a named pipe, \\.\pipe\86Box\<name>,
+            and a reader copies the pipe to a file until 86Box closes.
+            THIS IS THE ONE THAT WORKS.  Windows takes the UART for
+            itself as it initialises - VCD in 3.1, serial.386 and
+            vcomm.386 as well in WfW - and the trace turns to noise from
+            there, so a traced run comments out device=*vcd, *combuff,
+            serial.386 and vcomm.386; nothing else changes.
+  rme9lpt   LPT1, for 86Box's Generic Text Printer.  On the p3bf it
+            records only the control bytes whatever order the data and
+            STROBE are written in - the BIOS's own INT 17h too - so it
+            is kept for another machine and not used.
+
+The rig (in the session scratchpad: wsweep\tracerun.ps1 and
+rig\pipe_reader.ps1, with wsweep.ps1's new -More, -Before and the
+others) takes a Windows tree, comments out or overrides SYSTEM.INI
+lines, runs it traced and prints what followed the 1608h broadcast.
+
+AN ANSWER OF MS-DOS'S THAT RMDOS HAD WRONG.  WIN386 asks INT 21h
+AH=DCh - NetWare's "connection number" - as it starts.  RMDOS failed
+any function past its table with ERR_FUNC and the carry; MS-DOS
+answers AL=0 and leaves the carry clear (DOS6SRC dos/msdisp.asm,
+BadCall: setting it "may break some programs").  WfW read the 1 in AL
+as a connection and took a different path through its file checks.
+RMDOS now answers as DOS does (RMDOS.ASM, i21_bad).  Functions inside
+the table that RMDOS does not serve still fail with ERR_FUNC.
+
+WHERE IT STOPPED.  The trace runs up to the 1608h "Windows init
+complete" broadcast and then stops for good: no INT 21h, no 2Fh, no
+XMS call, nothing.  Windows 3.1 on the same rig follows 1608h at once
+with VKD's keyboard flush (21h 0C06h) and the EXEC of KRNL386.  So the
+stop was inside WIN386, with no DOS call to see.  SYSTEM.INI alone
+narrowed it no further: every WfW-only VxD out, the network out,
+WINCACHE=OFF, /D:X and /D:FSV all stopped the same way.  Then, by
+moving whole pieces between the two Windows (dis\w3get.pl writes any
+VxD out of WIN386.EXE's W3 bundle as a stand-alone .386, so that
+device=*name can become device=C:\VX31\NAME.386):
+
+  - WfW's own KRNL386, USER, GDI and shell on Windows 3.1's WIN386.EXE
+    started and were loading Program Manager when the run's time ran
+    out (wfw_n3).
+  - WfW's WIN386.EXE with all twenty-five of its bundled VxDs swapped
+    for 3.1's came up (wfw_a1) - and so did each half (a2, a3).  The
+    one line every working run had lost and every stuck run had kept
+    was device=*vpd: WfW's virtual printer device, which Windows 3.1
+    has no copy of.
+  - WfW as installed with only *vpd out came up (a4), and so did WfW
+    with *vpd in and 86Box's LPT1 switched off (a5).
+
+THE PRINTER PORT, A RED HERRING THAT FIXED SOMETHING ANYWAY.  A probe
+of the state each DOS leaves (a scratch PICPROBE.COM on real MS-DOS 5,
+and a new line of the E9 trace at RMDOS's birth, e9_ports, with all of
+0:0-0:4FF) found one real difference: 378h's control
+register.  POST leaves it with only the interrupt enable set - INIT low,
+the printer held in reset - and IO.SYS's printer driver initialises
+every port as it loads, leaving 0Ch.  PM-DOS never touched the ports.
+The kernel now does what IO.SYS does, INT 17h AH=01h on each port the
+BIOS listed, once at boot (prn_init in INT21.INC, called from
+DOSMAIN.ASM after sft_init).  It changed the register to IO.SYS's
+value and did not change WfW: it still stopped.  Kept, because it is
+what every DOS program has been able to assume since 1981.
+
+WHAT VPD REALLY DOES.  Its start-up (0x1B8 bytes, read with wdis
+through a COFF wrapper and the VMM service names) reads SGRABLPT and
+LPTxAUTOASSIGN, traps each printer port the BIOS lists, hooks INT 17h,
+and asks DOSMGR to instance four DOS devices by name: LPT1, LPT2, LPT3
+and PRN.  DOSMGR finds PRN in RMDOS's chain and asks DOS how big its
+driver is - INT 2Fh 1607h CX=5 with ES:DI on the header (the trace now
+prints ES:DI on 1607h lines: 0400:0340 is CON, which DOSMGR instances
+for itself, 0400:0364 is PRN, which only VPD asks for).  MS-DOS sizes
+a driver from the 'D' arena in front of it and answers 0 - "use your
+own methods" - when there is none.  RMDOS answered 0 for everything.
+Its four headers live in the borrowed DOS data block with no arena,
+and DOSMGR's own method got PRN wrong; Windows then never returned
+from the 1608h broadcast.  RMDOS now answers its own NUL, CON, AUX and
+PRN with the exact size, the 18-byte header that is the whole driver
+(RMINFO.INC, i2F_dm5), and WfW with *vpd active comes up.  The LPTn
+names are not in RMDOS's chain; VPD's requests for them fail quietly.
+Printing through VPD is untested - there is no printer in the rig.
+
+VSHARE, AND THE DOS 5 LAYOUT.  VSHARE.386's real-mode start-up does
+INT 21h 52h and reads the byte at offset 4 of the segment it gets:
+DOS 5's DataVersion, 1 in DOS 5 and 6, which the DOS 6 source says SHARE
+and the redirector check for compatibility (dos/msconst.asm).  Above 1
+it refuses to load.  RMDOS's list of lists began at 0, so offset 4 was the
+DPB pointer, FFh.  Its protected-mode start-up then works from a table
+of DOS 5 offsets in that segment: the list of lists at 26h (the file
+table chain, and the FCB table at +1Ah, which it reallocates if it
+has the default four entries), SHARE's jump table at 90h (fifteen far
+pointers, which it saves and fills with callbacks into itself, and
+restores at exit), the SHARE flag at 303h (set to FFh), and SDA fields
+from 320h up.  MS-DOS 5's own MSDOS.SYS agrees with the DOS 6 source
+wherever it was checked (its data segment image starts at file offset
+7EB0h: 90h holds the fifteen BadCall/OKCall pointers, 303h the SHARE
+flag between CharCo, the switch character and MYNAME, 320h the SDA).
+
+So RMDOS's block is laid out as DOS 5's now (RMDOS.INC): DataVersion 1
+at 4, the MCB head at 24h and the list of lists at 26h, the DOSMGR
+table and its variables at 60h-7Ah as before, an empty FCB table at
+80h that the list's FCB pointer names, the jump table at 90h full of
+far pointers to a RETF, the SHARE flag at 303h, the SDA at 320h (which
+puts InDOS at 321h, where DOS 5 has it), the CDS array moved to 600h
+and the CON/AUX/PRN headers after it.  RMDOS calls none of the jump
+table and reads neither flag, and VSHARE's records of who has what
+open are made only when DOS calls SHARE through that table - so,
+loaded, VSHARE answers 2Fh/1000h itself and otherwise does nothing.
+Which is what SHARE amounts to with one DOS and one machine under it.
+VSHARE loads, and WfW with both lines active comes up (wfw_q1).
+
+THE REGRESSION AND THE SWEEPS.  The regression is 78 of 78 on all seven
+rows, twice, after SFTSCAN's baselines were re-recorded: its last two
+lines are where "CON " turns up inside a loaded program's code, and
+they move whenever RMDOS.SYS changes size.  MASM 6.13 assembles
+RMDOS.ASM as released and in both trace builds.  On 86Box with the
+release build, WfW 3.11 exactly as Setup left it - VPD, VSHARE and
+the serial VxDs all in - ran the ten Windows programs of the cache
+list and the CACHEBOX DOS box, with VSHARE loaded across that box's
+start and end; the cache answered the box 18,570 hits to 1,204
+misses.  Windows 3.1 ran the same list as well as it did this
+morning.
+
+AND ONE THING THAT IS NOT NEW BUT IS NOT RIGHT EITHER.  In all four
+full-list runs this evening the second DOS box, DOSBOX1, stalled:
+TIMERTST stops at "clock ticks in 2 RTC s" (it reads ports 70h/71h
+until the RTC's seconds change) or the box closes and WINSWEEP never
+logs another line, and Windows does not exit.  This morning's
+delivered build does exactly the same today (full_old2), so it is
+not tonight's; this morning's three runs of the same list, at 2-3 AM
+with the host idle, never did it, and 86Box ran at 36-60% of real
+speed tonight with the machine in use.  DOSBOX1 alone and CACHEBOX
+then DOSBOX1 pass on both builds.  OPEN, and timing-dependent.
+
+
+STILL OPEN:
+  - IFSMGR.386 never loads on RMDOS.  Its real-mode start-up opens the
+    "IFS$HLP$" device - IFSHLP.SYS, which WfW's Setup puts in
+    CONFIG.SYS - and declines silently when the open fails.  RMDOS's
+    device chain is NUL, CON, AUX and PRN, so WfW runs on RMDOS without
+    its file system manager or 32-bit file access, and IFSMGR's 4A10h
+    calls to the cache have still not been seen happen.  Making a
+    CONFIG.SYS driver of the kernel's visible in RMDOS's chain, and
+    passing IFSMGR's calls to it, is the work.
+  - WfW's Setup still cannot run on the kernel (the FFFF:FFFF CDS of
+    the kernel's own list of lists, above); the install at
+    S:\WFW311HD was made on real MS-DOS 5.
+  - Nothing here has run on real hardware.
+
+S:\WFW311HD\WINDOWS\SYSTEM.INI has device=*vpd and device=vshare.386
+back in, as Setup wrote them.  Files: DOS\RMDOS.ASM (i21_bad),
+DOS\RMINFO.INC (i2F_dm5, rd_sysinit, the 1000h note), INC\RMDOS.INC
+(the layout), DOS\INT21.INC (prn_init), DOS\DOSMAIN.ASM, DOS\RME9.INC
+(e9_putc, rme9com/rme9lpt, e9_ports, ES:DI on 1607h), BUILD.CMD (the
+two targets).  RMDOS.SYS is 56,690 bytes (58,736 with the
+COM trace), PMDOS.SYS 149,895; PMIO.SYS, CMD.EXE and COMMAND.COM are
+unchanged.  S:\BIN, IMAGES\PMDOS.IMG, IMAGES\HD16.IMG (FATREPL) and
+the 86Box VM's two copies carry it.  Still v0.62, and still nothing
+here has run on real hardware.
+
+
+CONFIG.SYS DRIVERS UNDER WINDOWS, A REAL CDS, AND WFW'S SETUP ON THE KERNEL (2026-10-06/07)
+---------------------------------------------------------------------
+
+Charlie asked for three things in order: the 16-bit drivers CONFIG.SYS
+loads to work under Windows as well as on the kernel, so that
+IFSHLP.SYS can load (and the rest); the kernel to have a current
+directory array; and the DOS-box stall the WfW entry above left open.
+
+ONE DOS DATA SEGMENT, MS-DOS 5'S SHAPE, ON BOTH SIDES.  A driver asks
+34h and 52h once, at its INIT, on the kernel, and keeps the answers:
+IFSHLP.SYS keeps InDOS, the SDA and the list of lists for as long as
+it is resident, which under Windows means for as long as RMDOS is the
+DOS.  So those addresses have to mean the same thing on both sides of
+the handover, and they do now.  Segment 0400h is laid out as MS-DOS 5
+lays its own out (DOS6SRC dos/msconst.asm), by both PMDOS.INC (DOSDATA)
+and RMDOS.INC (RL_*), and PARK.INC checks every offset against the
+other at assembly time:
+
+    4       DataVersion, 1          D4h      the FCB table
+    24h     MCB head, then LoL      DAh-10Fh CON, AUX, PRN headers
+    48h     NUL, inside the list    110h     DOSMGR's DOS variables
+    5Ah-6Ch the list's tail         130h     the country tables
+    8Ch     UMB_HEAD                303h     SHARE's flag
+    90h     SHARE's jump table      320h     the SDA (InDOS at 321h)
+    D0h     a RETF                  340h     file table block 1 (11)
+    600h    the CDS array           B80h     file table block 2 (53)
+
+The segment is 17C0h bytes now, so a DOS box's arena starts at 57C0h
+and conventional memory reads 618K, one less than before.  34h, 5D06h,
+1Bh/1Ch and 63h answer 0400:offset, as DOS does - not flat addresses -
+and RMDOS saves and puts back 0-BFFh around an excursion.
+
+THE DEVICE CHAIN IS THE SAME CHAIN.  NUL, then every driver CONFIG.SYS
+loaded, then CON, AUX and PRN, on the kernel and under RMDOS: RMDOS
+takes the kernel's chain as it finds it (rd_chain) and unlinks only
+the kernel's own devices whose entry points are HLTs into a kernel
+that is not there (MSCD001), linking them back on the way home.  A
+driver that hooked INT 21h or 2Fh at its INIT is still in front of
+RMDOS, which goes in under it through the DOS vector stub (rd_vecs).
+
+AND A HANDLE ON A DRIVER WORKS ON BOTH SIDES.  The kernel (DEVLOAD.INC,
+INT21.INC) and RMDOS (the new DOS\RMDEV.INC) now do for a loaded
+character driver what DOS6SRC's disk.asm does: open and close requests
+for an OCRM driver, 4400h/4401h device information (EOF bit cleared by
+a ^Z and set again by any write, even an empty one), 4402h/4403h IOCTL
+read and write (the kernel bounces a buffer above 1MB), 4406h/4407h
+status, 440Ch generic IOCTL, cooked reads that stop at CR or ^Z and
+keep them, cooked writes that stop before a ^Z, raw mode as one
+request, and a driver's error e as DOS error 13h+e.  A driver named
+CON takes the console (ANSI.SYS) and a block driver's units are drives
+under RMDOS too, uncached.  1607h CX=5 sizes a loaded driver from its
+memory block, as DOSMGR asks.  IFSHLP.SYS itself was asked, from a DOS
+program on both sides, exactly what IFSMGR asks it - the 8-byte
+handshake, function 0's pointer and its version byte, function 8's
+flags - and answers the same on RMDOS as on the kernel.
+
+THE KERNEL HAS A CDS ARRAY.  The list of lists said FFFF:FFFF at 16h,
+and WfW's Setup read its current directories out of whatever that
+named, found SUBST and JOIN in force, and stopped to ask.  Now 600h
+holds sixteen 58h-byte entries in MS-DOS 4's format - "C:\DIR" at 0,
+4000h (physical) in the flags at 43h for a drive that exists, the
+directory's cluster, 2 at 4Fh - refreshed from each volume's own
+current directory (vdm_cdsfresh) whenever the list is, and RMDOS
+starts each of its eight drives in the directory the kernel had.
+
+FOUND ON THE WAY: EVERY EXCURSION SENT EVERY DRIVE TO ITS ROOT.  The
+unpark remounts each volume, and a mount starts at the root, so a
+program that parked from C:\WORK came back in C:\.  park_remount now
+keeps each drive's directory across its mount and walks back into it
+(cwd_here, shared with 3Bh).  FCBTEST's wildcard delete in the wrong
+directory found it, by deleting its own output file.
+
+THE TESTS.  IOCDEV.SYS is a character driver spoken to the way IFSMGR
+speaks to IFSHLP; DRVTEST asks it fifteen things on the kernel and the
+same fifteen on RMDOS after a park.  BLKTEST writes a file on
+TESTBLK.SYS's RAM disk on the kernel, reads it and writes another on
+RMDOS, and reads that back on the kernel.  CDSTEST reads the array
+through the list of lists on both sides and checks the directory
+survives the trip.  RUNTESTS's CONFIG.SYS loads IOCDEV.SYS and
+TESTBLK.SYS from now on, which is why LOLTEST's chain rule is now "at
+least four headers, and the last is PRN", and why MEM, HELLO and every
+test that prints a segment moved: the RAM disk's 32K is below them.
+
+IFSHLP.SYS VISIBLE - AND WINDOWS FOR WORKGROUPS HUNG BEFORE ITS LOGO.
+With IFS$HLP$ in the chain, WfW stopped at the same place whether or
+not IFSMGR and VCACHE were in SYSTEM.INI: DOSMGR's 5803h, and no DOS
+call after it.  IFSHLP itself was innocent - with its hooks disabled,
+its device attribute changed, both, it still hung, and so did a
+do-nothing driver of the same size.  It was WHERE THE PARK LANDED, and
+86Box bisected it to the paragraph: a 2,784-byte dummy driver let WfW
+start and a 2,816-byte one did not (RMDOS at 0754h against 0756h).
+Dropping vshare.386 from SYSTEM.INI let the bigger one start; a VSHARE
+whose Device_Init returned at once started too, and one that returned
+after its file-table walk did not.
+
+VSHARE COUNTS A FILE TABLE THE WAY ONLY A TWO-BLOCK TABLE SURVIVES.  It
+adds up a block, follows its next pointer, and stops when the first
+word of the block it arrived at is FFFFh.  MS-DOS always has two
+blocks, so it never gets past the second; RMDOS had one, whose next
+pointer is FFFF:FFFF, and with A20 off in the virtual machine that is
+0FFEFh - inside the 64K RMDOS parks in, in the sector cache's
+directory.  An unused directory entry is all FFh, so VSHARE stopped if
+the entry under 0FFEFh was still unused and walked memory for ever if
+WIN386's own reads had filled it, which is where the size of a driver
+in CONFIG.SYS came in; with WINCACHE=OFF the directory is zeros and it
+would always have hung.  RMDOS's block now links to an empty last
+block of its own (rd_sftend: FFFF:FFFF, count 0), the shape DOSMGR
+expects too - it takes the empty block as the last and hangs its
+PerVMFiles= block off it.  Every configuration that hung starts.
+
+6504h.  IFSMGR asks for the file name upper-case table as it starts,
+and RMDOS refused every table subfunction of 65h.  6502h and 6504h-
+6507h now hand back the kernel's own tables, which RMDOS leaves where
+they are in the segment, as the kernel answers them.
+
+AND THEN IFSMGR ITSELF - STILL OPEN, AND FENCED OFF.  Past VSHARE,
+IFSMGR.386 opens IFS$HLP$, completes the handshake, and Windows halts
+inside IFSMGR's Device_Init: no message, and WIN386's real-mode exit
+spins on its own "halt" flag (jnz $ at 5F1h of the loader), which is
+what follows a fault, not a reported error.  An IFSMGR whose
+Device_Init does nothing lets Windows start; patched IFSMGRs without
+the version check, without the handshake checks, or cut off at
+several later points all halt, but cutting IFSMGR short breaks its
+later phases too, so those runs cannot place the fault.  It needs a
+debugger that runs 386 enhanced mode.  Before today IFS$HLP$ was
+invisible under RMDOS, IFSMGR never loaded and WfW ran without it; a
+CONFIG.SYS with IFSHLP.SYS in it - Setup writes one - would now stop
+Windows instead.  So drv_find (RMDEV.INC) refuses that one name for
+now: IFSMGR and VCACHE decline in their real-mode start-up exactly as
+before, IFSHLP stays loaded and in the chain, and WfW as Setup leaves
+it - IFSHLP.SYS in CONFIG.SYS, IFSMGR, VCACHE and VSHARE in SYSTEM.INI
+- runs the whole cache list on 86Box: the seven programs, the
+CACHEBOX and DOSBOX1 boxes, and out.
+
+WFW'S SETUP RUNS ON THE KERNEL.  With the CDS array it got past the
+SUBST/JOIN question, copied its files, said it was starting Windows,
+and came straight back.  A small TSR logging every EXEC to port E9h
+showed why: it runs "c:\windows\system\dosx.exe " - SETUP.INF's
+[winexec] spells the program "dosx.exe " - and the kernel said file
+not found.  MS-DOS packs a name into eleven blank-filled bytes, so a
+blank after the last character is padding (DOS6SRC fcb.asm,
+NameTrans); fn_conv (FAT.INC) took any blank for long-name territory.
+Trailing blanks are padding now and a blank inside a name is still
+long.  (RMDOS's rd_name83 already behaved like DOS.)  The whole
+unattended install then completes, under DOSBox-X and on 86Box alike:
+DOSX starts, the kernel parks, Windows-mode Setup copies the rest, and
+C:\WINDOWS has WIN.COM, WIN386.EXE, Program Manager and its groups,
+with CONFIG.WIN and AUTOEXEC.WIN saved as the answer file asked.
+And the Windows it installed runs: its C:\WINDOWS, taken off the
+86Box disk and grafted onto a fresh one with IFSHLP.SYS in
+CONFIG.SYS, ran the same cache list end to end.
+
+THE DOS-BOX STALL - NOT REPRODUCED, STILL OPEN.  In all four of the
+previous evening's full sweeps WINSWEEP stopped right after DOSBOX1
+closed - its screenshot of the moment was a 0-byte file.  Today the
+same list finished and exited every time: twice on the new build with
+the host idle and once on the evening's own build; then once each
+with seven DOSBox-X regression rows running beside 86Box the whole
+time.  The one-block file table is a candidate - a walker that goes
+one block too far reads cache-directory bytes that change as the
+cache fills, and the full list fills it furthest - but nothing in
+Windows 3.1 has been shown to walk that way, and a stall that will
+not happen proves nothing either way.
+
+Regression: RUNTESTS re-recorded twice on all seven rows (81 tests a
+row now), then 32 more passes beside the 86Box runs: one SFTSCAN
+difference on one row, once - the test reports where "CON " lies in
+memory, and leftovers move.  MASM 6.13 assembles RMDOS.ASM plain and
+in both trace builds.
+
+Files: INC\PMDOS.INC, INC\RMDOS.INC, DOS\VDM.INC, DOS\DEVLOAD.INC,
+DOS\INT21.INC, DOS\PARK.INC, DOS\FAT.INC, DOS\RMDOS.ASM,
+DOS\RMINFO.INC, DOS\RMDEV.INC (new), DOS\RMFILE.INC, DOS\RMFILE2.INC,
+DOS\RMCON.INC, DOS\RMDISK.INC, DOS\RMCACHE.INC, DOS\RME9.INC,
+TOOLS\IOCDEV.ASM, TOOLS\DRVTEST.ASM, TOOLS\CDSTEST.ASM,
+TOOLS\BLKTEST.ASM (new), TOOLS\LOLTEST.ASM, TOOLS\RUNTESTS.PS1,
+BUILD.CMD, BASELINE\.  PMDOS.SYS is 151,818 bytes, RMDOS.SYS 57,207
+(59,560 with the COM trace); PMIO.SYS, CMD.EXE and COMMAND.COM are
+unchanged.  S:\CPP\PM-DOS\BIN (the two kernels, LOLTEST and the four new
+tests), IMAGES\PMDOS.IMG (the scratch build's floppy, kernel files
+byte-checked), IMAGES\HD16.IMG (FATREPL in place, a copy booted
+headless to the prompt), BASELINE\ and the 86Box VM's two copies
+carry it.  Still v0.62, and nothing here has run on real hardware.
+
+
+IFSMGR.386 LOADS: TWO FILE TABLE BLOCKS WITH NOTHING IN THEM (2026-10-07)
+---------------------------------------------------------------------
+
+Charlie asked two things: whether WfW 3.11's IFSMGR.386 and 32-bit
+file access can be made to work, and whether the real-mode disk cache
+works.  The cache does, IFSMGR does now, and 32-bit file access is a
+project of its own - what it needs is at the end.
+
+THE CACHE WORKS, and IFSMGR leaves it alone.  The CACHEBOX step of the
+WfW sweep prints the cache's own figures from a DOS box under Windows:
+with IFSMGR loaded, 18,633 hits to 1,219 misses by the end, C: read-
+and write-cached, and copying WIN386.EXE a second time cost one miss.
+IFSMGR turns SMARTDRV's caching off drive by drive (4A10h BX=3) only
+when VFAT.386 - 32-bit file access - is loaded (obj3 CD84h, behind a
+flag set only when 1684h finds an API for device 0486h, VFAT's);
+without it, it makes no 4A10h call at all, as with SMARTDRV on DOS.
+
+WHY WINDOWS STOPPED.  The entry above left IFSMGR halting Windows in
+its Device_Init with no message, and RMDEV.INC refusing it IFS$HLP$ so
+that it never got that far.  The trace ended at IFSMGR's close of
+IFS$HLP$ after the handshake; the next DOS call was Windows on its way
+out.  The answer was in one of that night's patched IFSMGRs, unread:
+the one whose per-VM set-up (obj1 33DCh) returned at once got past
+the halt into its drive loop - 4408h, 440Dh and 3200h for every
+letter - and stopped later, for want of what that routine sets up.
+The routine's first call (obj1 0BCAh) copies the address of every
+entry in DOS's file table into a table of IFSMGR's own, a block at a
+time from LoL+4, and then every entry of the FCB table from LoL+1Ah:
+
+    movzx ecx,word [block+4]        ; the block's count
+    next: stosd / add eax,3Bh / loop next
+
+A count of 0 is four thousand million entries, and RMDOS had two
+blocks of 0: rd_sftend, the empty block added the night before so
+that VSHARE would stop walking off a one-block table, and the FCB
+table, a six-byte header at 0400:00D4 with no room for an entry.  The
+STOSD wrote over ring-0 memory until it met a page that was not
+there.  MS-DOS never builds either - FILES=5 or less makes no second
+block at all, and FCBS= runs from 1 to 255 (DOS6SRC
+bios/sysinit1.asm) - and the kernel already knew it: VDM.INC leaves
+its second block out of the chain rather than publish it empty, "a
+walker is entitled to stop at one or divide by it".
+
+THE FIX.  rd_sftend holds one entry.  RMDOS never hands it out
+(sft_alloc looks in rd_sfts) and its zero reference count says free to
+anything else; DOSMGR still hangs its PerVMFiles= block off it, and
+VSHARE's look one block ahead is satisfied as before.  The FCB table
+is MS-DOS 5's default, FCBS=4,0, in RMDOS's own segment beside the
+file table (rd_fcbtab), each entry 'A' throughout but for a zero
+reference count and position, as SYSINIT fills them.  Four with none
+protected (LoL+1Eh) is what VSHARE swaps for sixteen of its own, as it
+does on DOS.  0400:00D4-D9 is unused now.  drv_find gives out
+IFS$HLP$ like any other name, and IFSHLP.SYS in CONFIG.SYS - where
+WfW's Setup puts it - means what it means on DOS.
+
+WfW as Setup leaves it - IFSHLP.SYS in CONFIG.SYS, IFSMGR, VCACHE and
+VSHARE in SYSTEM.INI - now starts on RMDOS with IFSMGR loaded: IFSHLP
+is activated (it hooks 2Ah and 17h, which it does only when IFSMGR
+calls it), and the whole cache1 list ran and Windows exited, on the
+install made on real DOS and on the one Setup made on the kernel,
+both on 86Box.
+
+32-BIT DISK ACCESS, TRIED AND PUT BACK.  With 32BitDiskAccess=ON,
+Windows stopped on RMDOS before any VxD's Device_Init, at a message
+and a wait for a key: "The Microsoft Windows 32-bit disk driver
+(WDCTRL) requires MS-DOS version 3.10 or later."  The version was not
+the question.  WDCTRL's real-mode start-up (WIN386.EXE, its segment at
+26000h) asks DOS 3.2's "set disk interrupt handler", 2Fh AH=13h -
+DS:DX the INT 13h handler the DOS's disk calls reach, ES:BX the vector
+put back at a reboot, both swapped for the caller's pair (DOS6SRC
+bios/msint13.asm, Orig13 and Old13) - and a DS that comes back
+unchanged reads to it as a DOS too old to have the call.
+
+Answering it was tried: both pointers from the INT 13h vector at
+rd_vecs, kept and reported, never called.  WDCTRL then got the ROM's
+F000:1CD6, put the pair back, and stopped on the hardware instead -
+"validation failed at phase 03, 3F".  Its phases compare INT 13h
+AH=08h, called straight into the ROM, with the BIOS's own fixed-disk
+table at INT 41h: heads, sectors, and at phase 3 the cylinders, where
+it wants the table to count two or three more than AH=08h's highest,
+the IBM AT's arithmetic.  Phases 0 to 2 passed - the ROM call worked,
+and the heads and sectors agreed with the table - so the table it read
+is the BIOS's own, and only the BIOS's cylinder arithmetic is off.
+This machine's BIOS (86Box p3bf) is the one WDCTRL refuses, and RMDOS
+has no part in that comparison.  (A real MS-DOS 5 control on the same
+machine never reported either way: the rig - WINSWEEP from C:\WFW on
+the DOS VM's disk, no window - produced nothing even with 32-bit disk
+access off, so it proves nothing.)
+
+And the answer broke the ordinary path, with 32BitDiskAccess=OFF.
+BLOCKDEV's real-mode start-up asks the same question on every start
+(after looking for SMARTDRV's double buffer, SMARTAAR) and swaps the
+pair straight back; what it keeps is a flag for its protected-mode
+half that DOS has the call.  With that flag, BLOCKDEV allocates a V86
+call-back and has the code to make it the handler DOS's disk calls
+reach (obj1 0074h), telling INT13.386 that DOS disk I/O now comes
+through it (INT13 service 3) and chaining what INT13 does not take to
+the old pointer.  On MS-DOS it does come through it: IO.SYS's disk
+driver issues INT 13h, and IO.SYS's own INT 13h hook, in the vector
+table since boot, calls through Orig13 (msbio1.asm, call_orig13).
+RMDOS issues INT 13h straight at the vector and would never call the
+pointer it accepted.  Both WfW sweeps on that build lost the CACHEBOX
+DOS box in its second DIR /S - "This application has violated system
+integrity due to execution of an invalid instruction" - where the
+build without the answer had run the list clean twice.  That BLOCKDEV
+and INT13 acting on a promise RMDOS does not keep is the cause is the
+reading of the code, not something watched happening.  Windows 3.1
+ran its own list clean on the same build.
+
+So the answer is out again and 2Fh AH=13h is unanswered, as before.
+Doing it properly means doing what IO.SYS does: an INT 13h hook of
+RMDOS's own in the vector table that jumps through Orig13, taken off
+again on the way home (park_restvecs puts back only 20h-2Fh).  That is
+the first step of the work below, and it can only be proved on a
+machine whose BIOS WDCTRL accepts.
+
+32-BIT FILE ACCESS - WHAT IT TAKES.  Read out of IFSMGR, it is four
+things, and the fourth is most of the work:
+
+  1. 21h/32h has to answer a DPB.  For each fixed drive IFSMGR asks
+     4408h, 440Dh 0860h and 3200h, and a drive with no DPB is marked
+     as not its own (obj3 C925h).  RMDOS answers 32h with an error and
+     its list of lists says FFFF:FFFF where the DPB chain starts -
+     which IFSMGR also walks, from LoL+0 with the link at +19h, to
+     answer 32h for a drive it has taken (obj1 0989h).  From FFFF:FFFF
+     that walk leaves the virtual machine.  Nothing reaches it today:
+     IFSHLP sends 32h and 1Fh to DOS unless IFSMGR owns the drive.
+  2. Its INT 25h probe has to reach INT 13h as IO.SYS sends it.  It
+     hooks V86 INT 13h, reads each fixed drive's sector 0 through INT
+     25h, and learns the BIOS unit and the partition's CHS from the
+     call that comes through - but only an AX=0201h into its own
+     buffer (ES its segment, BX=0012h).  RMDOS's INT 25h goes through
+     the cache, which reads a 4K element ahead into its own memory,
+     and rd_raw renormalises every buffer to BX < 16.
+  3. BlockDev has to know the disk, which in WfW 3.11 means 32-bit
+     disk access: IFSMGR asks BlockDev for the INT 13h unit, and the
+     only other flag it would accept instead (08h in its drive table)
+     is set nowhere in IFSMGR.  That needs 2Fh AH=13h done as above,
+     and a BIOS WDCTRL accepts - another 86Box machine, or real
+     hardware.
+  4. Then the real work.  IFSMGR takes a drive by rewriting its CDS
+     entry (obj1 2514h): flags OR C000h, its own handle at +49h, 2EB2h
+     at +4Dh, the path cut to "C:\".  From then on a DOS sends every
+     operation on that drive - opens, finds, EXEC's own reads, the
+     closes at a process's end - to the redirector interface, INT 2Fh
+     11xxh, with the request in the SDA: the names, ThisSFT, ThisCDS,
+     the attributes (IFSHLP's own table points at SDA+1Ch, +24Bh and
+     +27Eh).  RMDOS has no redirector interface, and its SDA is the
+     first 1Ah bytes.  Without both it would go on reading and writing
+     a volume VFAT also owned - two file systems on one FAT, with two
+     caches over it.
+
+The fourth is also what WfW's own network client needs, and what
+MSCDEX-style CD-ROM redirection uses, so it is worth more than 32-bit
+file access alone.
+
+Regression: RUNTESTS on all seven rows differed from the old
+baselines only where RMDOS.SYS's size reaches - one more 2K cluster
+of it (RMTEST's free space), where a new file's clusters then land
+(CACHETST's dirty elements, five to four) and where "CON " lies in
+memory (SFTSCAN) - and was re-recorded and matched 81 of 81 on every
+row on a confirming pass.  On 86Box, with IFSHLP.SYS and IFSMGR: the
+cache1 list to the end on both WfW installs, and Windows 3.1's own
+list as the control.  MASM 6.13 assembles RMDOS.ASM plain and in both
+trace builds.
+
+Files: INC\RMDOS.INC, DOS\RMFILE.INC, DOS\RMINFO.INC, DOS\RMDEV.INC,
+BASELINE\.  RMDOS.SYS is 57,466 bytes (59,819 with the COM trace);
+PMDOS.SYS, PMIO.SYS, CMD.EXE and COMMAND.COM are unchanged.
+S:\CPP\PM-DOS\BIN\RMDOS.SYS, IMAGES\PMDOS.IMG (the scratch
+build's floppy), IMAGES\HD16.IMG (FATREPL in place; a copy boots
+headless to the prompt), BASELINE\ and the 86Box VM's two images
+carry it, each copy byte-checked against the RMDOS.SYS the sweeps
+ran.  Still v0.62, uncommitted, and nothing here has run on real
+hardware.
+
+
+32-BIT FILE ACCESS: A REDIRECTOR INTERFACE, PARAMETER BLOCKS, AND
+INT 13h AS IO.SYS HAS IT (2026-10-07)
+---------------------------------------------------------------------
+
+Charlie asked for the four things the entry above said 32-bit file
+access needs, the redirector first: INT 2Fh 11xxh and a whole SDA,
+drive parameter blocks, an INT 25h that reaches INT 13h as IO.SYS
+sends it, and 32-bit disk access.  RMDOS has all four now, and WfW
+3.11's 32-bit file access runs on it: IFSMGR takes C: - its CDS flags
+C000h, 4409h's answer 0840h - and the whole sweep list runs on top of
+VFAT, every file a DOS box copied coming back byte for byte.  It needs
+a 32-bit disk driver BlockDev knows the disk by: WfW's own WDCTRL, on a
+BIOS WDCTRL accepts, or LRGDISK.386 (the next entry) on any IDE disk.
+
+THE REDIRECTOR INTERFACE (DOS\RMNET.INC, new).  IFSMGR.386 takes a
+drive by marking its CDS entry as a network drive's (C000h), and from
+then on a DOS hands everything about that drive to INT 2Fh AH=11h,
+which IFSHLP.SYS passes up to IFSMGR.  What the redirector is given
+is MS-DOS's own working state, in the SDA at DOS 5's offsets: the
+name in OPENBUF and its offset in WFP_START, THISCDS, THISSFT, SFN,
+JFN and the handle's address, SATTRIB, the DTA - and for an open or a
+create one more word, pushed just before the INT, which IFSHLP takes
+from SS:SP+8 inside its own handler.  RMDOS's SDA was the first 1Ah
+bytes; it is laid out to 2E0h now, which is where the CDS array
+starts (RMINFO.INC, SD_*; RMDOS.INC, RL_SDALEN).  Read out of
+IFSHLP.SYS: its INT 2Fh handler (07A4h) sends AH=11h to a table at
+073Ah, whose path-call entries look at THISCDS (SDA+282h) and the
+name at WFP_START (SDA+292h), whose file calls check the entry's
+device pointer for IFSMGR's 0001:0001, and whose find-next reads the
+search block at the DTA; its INT 21h side (0498h) sends opens,
+creates, finds, renames, deletes, the directories and EXEC to DOS
+and only reads, writes, closes and seeks on IFSMGR's own handles
+straight to IFSMGR - so all of those reach RMDOS for a claimed drive.
+
+Each call fills in what MS-DOS 5 fills in, in its order, out of
+DOS6SRC dos/open.asm, create.asm, close.asm, disk.asm, dircall.asm,
+isearch.asm, search.asm, finfo.asm, dinfo.asm, delete.asm, rename.asm
+and handle.asm:
+
+  3Dh/3Ch/5Bh   net_open: an entry marked busy, a handle written to
+                point at it before the call, 1116h/1117h with ES:DI the
+                entry, the mode (no-inherit bit taken out and kept in
+                the flags afterwards) or the attribute and "create new"
+                pushed; a failure gives both back
+  3Fh/40h       1108h/1109h, the buffer in the SDA's DTA brought under
+                16 as $READ does, the count cut to its segment; a read
+                of nothing is not sent, a write of nothing is (truncate)
+  3Eh, closes   1106h - the redirector drops the count, not DOS
+  42h AL=2      1121h for a file opened deny-none or deny-read
+  57h set       DOS's flags word: not clean, do not stamp at close
+  41h 43h 39h   1113h, 110Fh/110Eh, 1103h, 1101h, 1105h (and the name
+  3Ah 3Bh 56h   copied into the CDS, as $CHDIR does), 1111h with the
+                new name as the SDA's second
+  4Eh/4Fh       111Bh/111Ch with the DTA pointed at SEARCHBUF, and the
+                twenty-one bytes and the entry turned into the caller's
+                DTA as FindSet does; 4Fh knows a redirector's search by
+                bit 7 of its first byte, which no drive of RMDOS's has
+  36h 1Ch 1Bh   110Ch
+  4409h 440Ah   1000h for a redirector's drive; the flags for a handle
+  EXEC          through the same open, read and close
+  4Ch, 31h      1122h for every process that ends, and 111Dh once its
+                handles are closed, as reset_environment and DOS_ABORT do
+
+and RMDOS's own INT 2Fh, the bottom of the chain, now fails any
+unanswered 11xxh with AX=1 and the carry, as MS-DOS's does - it used
+to answer AL=0 and no carry, which a request reads as done.
+
+A REDIRECTOR'S FILE IS NOT ONE OF RMDOS'S.  The redirector keeps what
+it likes in the bytes RMDOS keeps its own file state in, so every
+handle call asks first whether the entry is one (sft_isnet).  Not by
+bit 15 of the flags word alone, as MS-DOS asks: RMDOS's own devices
+keep 4400h's answer in that word, 80D3h for CON, whose high byte is
+the device header's and has bit 15 set - and the first test child to
+end had its inherited CON, AUX and PRN closed through the redirector.
+A redirector's entry is a file, so bit 7 tells them apart.
+
+AND A DRIVE THE REDIRECTOR HAD COMES BACK STALE.  While IFSMGR holds C:,
+VFAT writes its FAT and directories through the disk driver; when
+Windows ends the letter is RMDOS's again, and its FAT window,
+directory sector and cached sectors are from before.  So a volume is
+marked VF_STALE when rd_getvol finds its letter a redirector's, when
+SMARTDRV's interface is told to start or stop caching it (what IFSMGR
+says round VFAT's use of a disk), or when its parameter block's access
+byte says FFh; the first use after the letter is RMDOS's again writes
+anything RMDOS itself dirtied, drops the rest and the cache's copy, and
+mounts the volume again (RMDISK.INC, vol_forget).
+
+FOUND ON THE WAY: AN EXEC'D CHILD RETURNED TO ITS PARENT ON THE CHILD'S
+STACK.  fn4B puts RMDOS's call depth back to nought before it jumps to
+the child, and the terminate code decided "the parent is waiting in a
+call" from that depth, so it never was: every EXEC'd parent resumed on
+the stack its child had been standing on, in the child's freed memory.
+COMMAND.COM reloads its own stack after an EXEC, as DOS 2 made everyone
+do, and never showed it; PARKEXEC had been passing on the child's
+leftovers.  MS-DOS resumes the parent on the stack its PSP stamp names.
+RMDOS now asks whether the parent's stamped frame returns to exactly
+this process's terminate address - which exec_psp copied out of that
+frame - and if so the parent is waiting in the EXEC that started it.
+No table, so the same segment being a PSP in two virtual machines
+cannot confuse it.
+
+PARAMETER BLOCKS.  IFSMGR asks 4408h and 3200h for every hard disk and
+will not take a drive without a block; it then reads the header the
+block's driver pointer names, to see whether the drive is Stacker's or
+DoubleSpace's (obj3 C6B3h).  RMDOS has DOS 4's 21h-byte blocks now,
+after its CDS array in the low block (RL_DPB), chained from LoL+0, each
+present drive's CDS pointing at its own, filled in at every mount
+(dpb_fill), and naming a header of RMDOS's own, RMDISK, whose entries
+answer any request "unknown command, done".  1Fh and 32h answer with
+them; a redirector's drive gets FFh, as DOS gives it, and so does
+FAT32, which a DOS 4 block cannot describe.  The block's access byte
+set to FFh means build it again, as in DOS.
+
+INT 25h AS IO.SYS READS.  IFSMGR learns which BIOS disk a letter is on,
+and where on it the drive starts, by hooking INT 13h and reading the
+drive's sector 0 through INT 25h into its buffer at offset 0012h; the
+answer it takes is an AX=0201h at exactly that ES:BX (obj3 C578h).
+RMDOS's INT 25h went through the cache, which reads a 4K element into
+its own memory, and rd_raw brings every offset under 16.  A read now
+goes to the BIOS as IO.SYS's disk driver sends it - AH=02h, a track's
+worth at most, straight into the caller's buffer (i25_bios) - and falls
+back to the old way for a diskette, a driver's unit, a sector past
+cylinder 1023 or a refusal.  The cache writes through, so going round
+it reads what it would have.
+
+2Fh AH=13h, DONE THE WAY IT HAD TO BE.  The entry above answered it and
+took it out again: WfW's BLOCKDEV.386 put a handler of its own in as
+Orig13 and told INT13.386 that DOS's disk calls came through it, and
+they did not.  IO.SYS keeps a hook on INT 13h from boot that goes on
+through Orig13; RMDOS has one now (i13 in RMDOS.ASM, in the table while
+RMDOS is the DOS and taken out on the way home, since PM-DOS puts back
+only 20h-2Fh), every INT 13h it makes goes through it, and 2Fh AH=13h
+swaps Orig13 and Old13 exactly as int2f_replace_int13 does.
+
+32-BIT DISK ACCESS NEEDS A BIOS WDCTRL ACCEPTS, and that is now
+measured rather than guessed.  WDCTRL's real-mode start-up (WIN386.EXE
++26000h, 0818h) calls INT 13h AH=08h through Orig13 and compares it
+with the table INT 41h names: heads, sectors, and the table's cylinders
+against AH=08h's highest plus 2 or plus 3 - the IBM AT's arithmetic,
+which keeps a cylinder for diagnostics.  WDPROBE (scratch) prints the
+three under real MS-DOS 5: 86Box's p3bf fails the third; the asus386
+(highest 3FDh, table 3FFh) and the vli486sv2g, ASUS's VL/I-486SV2G
+(3FEh against 400h), pass - both with the NVRAM of Charlie's DOS VM,
+whose Windows 3.1 Setup had put device=*wdctrl in SYSTEM.INI for that
+reason.
+
+THE SWEEPS (86Box, WINSWEEP's list, scratch wsweep\run_vl.ps1 and
+run_lrg.ps1; IFSBOX now also prints INT 13h AH=08h and what 2Fh AH=13h
+holds, as seen from a DOS box):
+
+  vli486sv2g, 504MB, WfW as Setup leaves it - all twelve programs,
+  both DOS boxes, Windows out.  With 32-bit disk access (WDCTRL) the
+  same, and 2Fh AH=13h in a DOS box now names Windows' own handler
+  (FEDB:0D67) where the ROM's was.  With 32-bit file access as well:
+  C: is IFSMGR's (C000h), the list runs to the end, Windows exits, and
+  every copy and every INT 13h read and write in IFSBOX is right - WfW
+  as Microsoft shipped it, on RMDOS.
+  p3bf, 2047MB (BIOS 519 x 128 x 63), LRGDISK and VFAT: C: is IFSMGR's
+  (C000h), the list runs to the end, Windows exits, every copy
+  compares, and the cache's counts stand still through CACHEBOX - VFAT
+  has the drive and VCACHE is its cache.
+  p3bf, WfW as Setup leaves it, both installs, and Windows 3.1 as the
+  control - the sweeps that broke CACHEBOX when 2Fh AH=13h was first
+  answered: all three run the list to the end and Windows exits, as
+  they did before 2Fh AH=13h was answered at all.
+
+NETTEST.COM (TOOLS, new; RUNTESTS, after CDSTEST) is the test with no
+Windows in it.  On the kernel it parks itself; on RMDOS it takes the
+highest letter with no drive the way IFSMGR takes one, hooks INT 2Fh,
+and serves a handful of files out of its own memory, checking every
+call it is handed against what MS-DOS would have handed it - WFP_START
+and the name, THISCDS, ES:DI, the busy mark, the handle pointing at
+the entry, a transfer's offset under 16, a search's DTA at SEARCHBUF,
+PROC_ID - and printing the 11xxh calls each step caused: create,
+write, both seeks, close, open, read, the dates, the IOCTLs, dup,
+create-new refused, the attributes, find first and next, rename, the
+directories with a relative name inside one, free space, TRUENAME, a
+wildcard refused before the redirector hears, EXEC of a program on the
+drive and a child that ends with a file there still open, an open
+nobody answers giving its handle back, and the letter put back.  Then
+what IFSMGR asks of C: before it takes it: 4408h, 32h and the block's
+driver, the chain from LoL+0 and C:'s CDS naming the block, INT 25h of
+sector 0 into xxxx:0012h seen on INT 13h as 0201h at that buffer with
+DL=80h, and a handler given to 2Fh AH=13h seeing the next read.
+
+ALSO: PARK.INC's PARK_SLACK is 256 bytes (16 paragraphs), as the HMA
+path always allowed; it was 256 paragraphs from when the block was the
+image plus the slack, and refused an image 4K short of filling the
+fixed 64K block - which the COM1 trace build reached (61,428 of
+61,440).  RMDOS.INC's parameter blocks are laid out by RMDOS's own
+eight letters (RL_NDRV), not the LASTDRIVE of whoever includes it - the
+kernel's is sixteen, and MASM said so where wasm did not.  And
+park_remount's loop jump is a plain JMP: MASM will not stretch a short
+one, wasm already had, and PMDOS.SYS is the same bytes.
+
+Regression: RUNTESTS, 83 tests on all seven rows, re-recorded with
+this build (and the next two entries'); before recording, every answer
+that moved was layout - three more programs in \TESTS (RMFIND's count,
+RMTEST's free space, SFTSCAN's addresses).  MASM 6.13 assembles
+RMDOS.ASM, its COM1 trace build and DOSMAIN.ASM.
+
+Files: INC\RMDOS.INC, DOS\RMNET.INC (new), DOS\RMDOS.ASM, RMINFO.INC,
+RMFILE.INC, RMFILE2.INC, RMNAME.INC, RMMEM.INC, RMDISK.INC, RMCON.INC,
+RMCACHE.INC, DOS\PARK.INC, TOOLS\NETTEST.ASM (new), TOOLS\RUNTESTS.PS1,
+BUILD.CMD, BASELINE\.  RMDOS.SYS is 59,911 bytes (57,466 this
+morning, with the next entries' changes), PMDOS.SYS 151,939 (151,818).
+S:\CPP\PM-DOS\BIN (RMDOS.SYS, PMDOS.SYS, TESTS\NETTEST.COM),
+IMAGES\PMDOS.IMG (the scratch build's floppy), IMAGES\HD16.IMG
+(FATREPL in place), BASELINE\ and the 86Box VM's two images carry it,
+every copy byte-checked and the VM's HD16 read back file by file.
+Still v0.62, uncommitted, and nothing here has run on real hardware.
+
+
+LRGDISK.386: 32-BIT DISK ACCESS PAST 504MB, BY LBA, TO 128GB (2026-10-07)
+---------------------------------------------------------------------
+
+Charlie asked for a driver of our own to take the place of WfW's
+built-in one for 32-bit disk and file access, which stops at 504MB -
+first to 2GB, then, since PM-DOS reads FAT32, to everything 28-bit LBA
+reaches.  CMD\LRGDISK\LRGDISK.ASM is it: a BlockDev disk driver - a
+"FastDisk", as WDCTRL is - built as an LE VxD by wlink.  In SYSTEM.INI's
+[386Enh]:
+
+  device=lrgdisk.386        in place of device=*wdctrl
+  32BitDiskAccess=on        as for WDCTRL
+  LRGDiskReport=on          optional: LRGDISK.TXT in the boot root
+
+device=*int13 and device=*blockdev stay.  32-bit file access needs
+nothing more: VFAT reaches a disk through BlockDev and finds LRGDISK
+there as it would have found WDCTRL.  On p3bf's 2047MB disk WfW runs
+its whole sweep list with 32-bit disk and file access on LRGDISK, and
+on a 128GB one a DOS box writes and reads the last sectors 28-bit LBA
+has through INT 13h's extensions - and the host finds the bytes at
+those sectors of the image.
+
+WHY WDCTRL STOPS AT 504MB.  The Windows 3.1 DDK on S:\win16ddk has
+WDCTRL's source (386\WDCTRL), and WfW 3.11's built-in copy fills its
+descriptor the same way (WIN386.EXE 250B5h: BlockDev 3.0Ah, flags
+13h, its own fields from 64h).  It drives the controller with the
+geometry in the BIOS's fixed disk table - INT 13h's geometry - and its
+start-up proves that geometry is the drive's by reading sectors through
+the BIOS and looking at the controller's registers afterwards.  Past
+1024 x 16 x 63 a BIOS makes up a geometry of its own for INT 13h's
+ten-bit cylinder - p3bf turns a 2047MB disk into 519 x 128 x 63 - and
+talks to the drive by LBA, and WDCTRL finds head numbers that do not
+fit in four bits and refuses.  (p3bf refuses it even at 504MB: its
+tables put the cylinders at AH=08h's highest plus 1, and WDCTRL allows
+only plus 2 or plus 3.)
+
+WHAT LRGDISK DOES INSTEAD.  It keeps the BIOS's geometry for everything
+Windows sees - INT13.386 turns a DOS box's CHS into a sector number
+with it, and answers AH=08h from it - and talks to the drive by LBA,
+which reaches every sector the drive has, wherever that addresses the
+same sectors as the BIOS: when the BIOS itself uses LBA, and when the
+BIOS's CHS is the drive's own geometry (a BIOS that does not translate,
+or one that translates by CHS and sends the drive's real 16 heads).
+CHS, the BIOS's, only for a drive with no LBA.  None of that is
+guessed.  The real-mode start-up reads four sectors through the ROM's
+INT 13h (2Fh AH=13h's ES:BX) - the first; cylinder 1, head 1, sector 3;
+seven-eighths in; the last - with the registers poisoned first (sector
+0, cylinder FFFFh) so that a read through another cable or drive
+leaves them so, and narrows, read by read, what the registers the BIOS
+left are consistent with: an LBA equal to the sector number, the CHS of
+the BIOS's geometry, the CHS of the geometry the drive is set to
+(IDENTIFY's words 55-56).  Then it reads each sector again through the
+BIOS and itself, the chosen way, and compares; by LBA it also reads the
+drive's LAST sector through the BIOS's extensions, if the BIOS has
+them, and compares that.  The table INT 41h or 46h names must agree
+with AH=08h on heads and sectors, its cylinders 1 to 3 past the
+highest; the protected-mode side reads it again, so only four bits a
+drive cross over in the reference data - taken, LBA, and the cylinder
+difference.  It refuses, with a reason on the screen, a drive it cannot
+account for, a DOS that does not answer 2Fh AH=13h, a program between
+DOS and a ROM entry below A000h that does not answer BlockDev's chain
+check, IRQ 14 masked, and anything on the first cable it does not drive
+- a CD-ROM as the slave - because it takes the cable's ports from the
+DOS boxes as WDCTRL does.
+
+THE PROTECTED-MODE SIDE is WDCTRL's design, written again: a command at
+a time for both drives, one sector an interrupt, 127 a controller
+command, scatter/gather, three retries, a message if a command takes 20
+seconds or a DOS box touches the ports.  By LBA, BlockDev is given the
+drive's own last sector (IDENTIFY, polled with nIEN, before BlockDev
+has the IRQ), not the BIOS geometry's, so all of a big drive is
+there - and a partition laid out for 16 heads that runs past the BIOS's
+last whole cylinder (every MKDISK image) is all in reach.
+
+INT 13h's EXTENSIONS, WHICH INT13.386 NEVER HAD.  INT13.386 turns every
+INT 13h for a drive with a 32-bit driver into BlockDev commands from a
+table that stops at AH=1Ah, so with WDCTRL - or LRGDISK - loaded,
+AH=42h fails: and RMDOS reaches every sector past cylinder 1023 with
+it.  A FAT32 volume over 8GB, or one that starts there, could not be
+read from Windows at all.  LRGDISK hooks INT13.386's
+Int13_Translate_VM_Int (Hook_Device_Service) and answers AH=41h, 42h,
+43h, 44h, 47h and 48h for its own drives through BlockDev - pages
+locked as INT13.386 locks them, a semaphore per request in the command
+block's client field (BlockDev calls a completion with ESI -> the
+block) - and hands everything else on.  Hooked there, below DOS, rather
+than on V86 INT 13h, so that a disk cache hooked on INT 13h is not
+gone round.  A BIOS without the extensions (the vli486sv2g's, 1994)
+gets them from LRGDISK while Windows runs.
+
+BUILT BY wlink, which makes the same LE layout as LINK386: locked code
+and data, discardable start-up code, and a 16-bit real-mode object as
+the module's entry (a near RET ends it, as the DDK's do), the DDB
+exported as ordinal 1.  One difference: LINK386 resolves the 16-bit
+object's own offsets and leaves it no fixups, and wlink leaves them for
+a loader that may not apply them in real mode.  So no address in the
+real-mode code is named directly - every one is "label-rbase" - and the
+object has none (wdump).  It assembles with MASM 6.13 as well (.model
+flat).  wasm -dLRG_TRACE builds a version that writes a character a
+command and a line for anything unusual to LPT1.
+
+LRGTEST.COM (TOOLS, new; not in RUNTESTS - it needs a real controller)
+runs LRGDISK.386's own real-mode object under plain DOS, with a
+stand-in for WIN386's loader, and prints the report.  Under real MS-DOS
+5 (a copy of the DOS VM's disk, scratch lrg\lrgprobe86.ps1):
+
+  vli486sv2g, 504MB    1023/16/63, the table 1024; LBA, the BIOS's CHS
+                       being the drive's own; no BIOS extensions to
+                       check the end with
+  p3bf, 504MB          1024/16/63, the table 1024 (plus 1: WDCTRL's
+                       refusal); LBA, the end checked through AH=42h
+  p3bf, 2047MB         519/128/63, the table 519; LBA as the BIOS reads
+  p3bf, 128GB slave    1024/255/63, the table 1024, 268,435,440 sectors;
+                       LBA, and sector 268,435,439 read through AH=42h -
+                       which left the LBA bit clear (A0h) with the LBA in
+                       the three registers below: so the end check asks
+                       only for the low 24 bits
+
+An absent slave reads status 01h on 86Box, not the 00h ATA-2 gives, so
+only DRDY counts as "a drive is there"; anything else is given IDENTIFY
+DEVICE, and an ATAPI drive's refusal leaves its signature.
+
+MKDISK COULD NOT BUILD A 2GB DISK.  It held the whole image in memory,
+and a 32-bit process cannot have 2047MB; its size check allowed it and
+calloc said no.  It now holds the front - up to the data area and the
+clusters the file list fills, counted as the build loop uses them - and
+writes the rest as zeros; sec() refuses anything past what it holds.  A
+32MB FAT16 disk, a fragmented 600MB FAT32 one and a floppy come out
+byte-identical to the old tool's.
+
+THE SWEEPS (86Box; IFSBOX runs I13X - scratch lrg\I13X.ASM, INT 13h
+CHS or extensions, counts 1 to 129 so that a request takes more than
+one controller command, 3,500 calls - and copies compared with CMPF):
+
+  vli486sv2g, 504MB, by CHS and then by LBA: every I13X call right;
+  LRGDISK answers AH=41h and 48h on a BIOS that has no extensions, and
+  the pattern AH=43h left in the drive's last 512 sectors is in the
+  image (lrg\chk7.pl).  CACHEBOX stops there, at the same byte of its
+  output every time, with LRGDISK's LPT1 trace showing every command it
+  was given finished - when WINSWEEP looks in on the box while it is
+  still running (its 60 seconds are up at 63, and under LRGDISK the
+  box takes a few seconds longer than under WDCTRL).  Given 150
+  seconds it finishes, the list runs to the end and Windows exits.
+  That is the open DOS-box stall, and now one that happens on demand:
+  vli486sv2g, LRGDISK, CACHEBOX at 60 seconds (scratch wsweep\
+  run_lrg.ps1 -Box vli -List lrg3.lst).
+  p3bf, 2047MB: the whole list, Windows out - booted from it, with the
+  boot sector told 128 heads (MKDISK writes 16; wsweep -BpbHeads).
+  p3bf, 504MB and a 128GB slave, both LRGDISK's at once: the whole
+  list; I13X at the top of LBA28, and the host finds its pattern at
+  sectors 268,434,928-268,435,439.
+  p3bf, 2047MB with 32-bit file access: the entry above.
+
+WINSWEEP WAITS A MINIMIZED BOX'S WHOLE ALLOWANCE, in guest time, and
+p3bf runs slower than real time: an IFSBOX given 900 seconds ran two
+sweeps into the 1500-second limit, and they looked hung.  lrg3.lst
+gives it 240.
+
+OPEN: past 128GB, only the first 128GB (no LBA48); a device LRGDISK
+does not drive on the first cable keeps it out altogether; the second
+cable is not looked at; Control Panel's 32-bit disk access box was not
+tried with it (LRGDISK reads 32BitDiskAccess itself); nothing here has
+run on real hardware.
+
+Files: CMD\LRGDISK\LRGDISK.ASM (new), TOOLS\LRGTEST.ASM (new),
+TOOLS\MKDISK.C, BUILD.CMD, MKHD.CMD (LRGDISK.386 in HD16's root,
+LRGTEST in TESTS).  LRGDISK.386 is 15,557 bytes.  BIN\LRGDISK.386,
+BIN\TESTS\LRGTEST.COM, and HD16.IMG's root and TESTS (the VM's copy
+too) carry them.  To use it: LRGDISK.386 into WINDOWS\SYSTEM, and
+SYSTEM.INI as at the top of this entry.
+
+
+A WRITE PAST THE END LANDED IN THE WRONG CLUSTER, AND THE WRITE OF
+NOTHING MADE A FILE LONG WITH NOTHING BEHIND IT (2026-10-07)
+---------------------------------------------------------------------
+
+Found while chasing a stall in LRGDISK's sweeps on the vli486sv2g
+(16MB): the disk a stopped run left behind had \WINDOWS\WIN386.SWP,
+Windows' temporary swap file, 3MB long in its directory entry and one
+cluster long in the FAT (scratch lrg\fatchk.pl, a CHKDSK-like walker).
+
+Two RMDOS bugs, the second making the first matter:
+
+  40h with CX=0 - the write of nothing, which makes a file exactly as
+  long as its position - set the length and nothing else (RMFILE2.INC,
+  file_trunc).  MS-DOS's WRTEOF (DOS6SRC dos\disk3.asm) makes the chain
+  cover the new length: ALLOCATE to reach it, RELBLKS to give back what
+  is past it.  So a file made longer had no clusters behind its end,
+  and a file made shorter kept all of its clusters, lost once closed.
+
+  A write past the end of the chain (file_io) added ONE cluster and
+  wrote into it wherever the position was.  A write two clusters past
+  the end landed in the first cluster past it, and a read at the
+  position found no cluster at all.
+
+Windows makes its swap file with the first and pages into it with the
+second: created, seeked to 3MB, written nothing, then written in pages
+wherever they fall.  Fixing them did NOT end the stall (the LRGDISK
+entry has it); they are bugs on their own, which SEEKWR shows without
+Windows.
+
+Both now as MS-DOS has them.  file_trunc grows the chain to the
+cluster of the last byte (sft_grow until sft_clus finds it) or ends it
+there and gives the rest back (fat_freechain), then sets the length,
+and drops the SFT's place in the chain since it may be gone; a full
+volume leaves the length as it was.  file_io grows the chain a cluster
+at a time until it reaches the position.
+
+THE KERNEL had half of it: its write past the end grows the chain
+properly (file_wchunk, zeroing what it adds) and its truncate gives
+clusters back, but a write of nothing that makes a file longer set the
+length alone - so the free count did not drop and a disk with less
+free than the new length said yes.  INT21.INC's file_trunc now grows
+the chain as file_wchunk does (f40_extend).
+
+SEEKWR.COM (TOOLS, new; RUNTESTS, after NETTEST) makes the checks on
+the kernel and, parked, on RMDOS: 4 bytes at 100000 in an empty file,
+read back from there; nothing written at 300000, and the clusters for
+300000 gone from the free count; 4 bytes at 250000 read back and the
+ones at 100000 still there; nothing written at 50000 and the clusters
+past it back; the length after a close and an open; every cluster back
+after the delete.  Before: RMDOS failed five of them (the read back
+from 100000 among them - the bytes had gone into the wrong cluster)
+and the kernel one; now none.
+
+Files: DOS\RMFILE2.INC, DOS\INT21.INC, TOOLS\SEEKWR.ASM (new),
+TOOLS\RUNTESTS.PS1, BUILD.CMD, BASELINE\.  SEEKWR.COM is in BIN\TESTS
+and HD16.IMG's TESTS; RMDOS.SYS and PMDOS.SYS went out with the
+entries above.
+
+
+LRGDISK 1.1: LBA48, AND A CD-ROM ON THE SAME CABLE (2026-10-08)
+---------------------------------------------------------------------
+
+Charlie asked for 48-bit LBA in LRGDISK.386, and for the slave problem
+the entry above left open: anything on the first IDE cable that
+LRGDISK did not drive - a CD-ROM as the slave, the usual place for
+one - kept it from loading at all.
+
+LBA48.  A drive with the 48-bit feature set, supported and on
+(IDENTIFY words 83 and 86, bit 10), gives its size in words 100-103;
+past 2TB LRGDISK takes the first 2TB, a sector number in DOS and in a
+partition table being 32 bits.  A transfer that reaches sector
+0FFFFFFFh or past it goes as READ or WRITE SECTORS EXT (24h, 34h),
+each register written twice, the high-order byte first; everything
+below that is the 28-bit command it always was.  The start-up still
+reads the drive's last sector through the BIOS's AH=42h, and past 28
+bits it now looks at the high-order bytes too (device control's HOB
+bit) - poisoned with FFh first, so that a BIOS that drops the top bits
+and reads sector n mod 2^28 shows.  A BIOS that cannot read that far,
+or reads the wrong sector, has the last sector 28 bits reach checked
+instead, and LRGDISK goes on past where the BIOS stops, as it already
+went past the BIOS's last cylinder.
+
+SHARING THE CABLE.  WDCTRL takes the cable's ports from the virtual
+machines and keeps them, and so did LRGDISK.  Now, with something on
+the cable it does not drive, it lends them (ld_vmio, behind the port
+trap).  The VMs' I/O reaches the controller whenever LRGDISK has no
+command on it.  A command they write makes the cable theirs until a
+read of the status shows it over - and LRGDISK's next command is HELD
+till then (ld_held), with a look every 50ms in case nobody reads the
+status, and the cable taken back anyway after 30 seconds.  A command
+they write while LRGDISK's is on it waits (ld_vmwait) and goes out the
+moment LRGDISK's is done, ahead of LRGDISK's next.  What they wrote is
+kept two deep (a 48-bit command writes every register twice) and what
+they last read is kept, and both go back into the controller
+(ld_restore) before they touch it again after LRGDISK has used it;
+while LRGDISK has it, their reads find what they last saw, and the
+status BSY if their command is waiting.  Their interrupts are not
+LRGDISK's to claim: BlockDev ends an interrupt no driver claims as the
+BIOS's own handler would - 40:8Eh set and the waiting VM woken, or,
+with VirtualHDIrq=off, passed to the VM (BLOCKDEV.386 disassembled,
+WfW 3.11's).  LRGDISK's own drives stay out of their reach as before:
+with one of its units selected a read finds FFh, a write goes no
+further, and a command is refused with the message.  A device with no
+foreign neighbour gets the old behaviour exactly.
+
+WHICH UNIT.  BIOS disk 80h was taken to be the master and 81h the
+slave; now each one's unit is read off where the BIOS's own read of
+its first sector went (step 5 of the start-up), so a disk alone as
+the slave, or a CD-ROM as the master, is fine.  The check that refused
+anything but a ready master is gone.  The reference data is a byte a
+unit: taken, LBA, LBA48, BIOS disk 81h, the cylinder difference, and
+"something else is here".  The report says what the something is:
+
+  Unit 1 of the first IDE cable is a CD-ROM drive or other ATAPI
+  device (14EB4100).  DOS drivers share the cable with LRGDISK.
+
+THE SECTOR AFTER.  QEMU's IDE leaves the address of the sector AFTER
+the one read in the registers; WDCTRL and LRGDISK 1.0 both wanted the
+one read, and refused the disk.  ATA-4 and later leave the registers
+undefined after a read that worked, so a newer drive may do the same.
+Either is taken now, as the same numbering - which still catches a
+read that went to the other cable or another drive, or was addressed
+another way.
+
+QEMU.  86Box's IDE has no LBA48 (no EXT commands, no high-order bytes,
+disks to 128GB), and DOSBox-X does not run RMDOS in enhanced mode.
+QEMU 11.1 (scratch qemu\, unpacked from the weilnetz Windows build
+with 7-Zip, not installed) runs PM-DOS, RMDOS and WfW 3.11 in
+enhanced mode with NO WINDOW: -display none, LPT1 and port E9h to
+files, screendumps and the CPU's state through its monitor on a local
+port.  rig\runqemu.ps1 (-Catch pauses a reset and saves the registers)
+and wsweep\run_lrgq.ps1, the run_lrg.ps1 sweep on it; a copy of
+WINSWEEP takes -1 seconds as "start it and go on" (build2), so that a
+DOS box can run beside the ones after it.
+
+RESULTS (QEMU unless said):
+
+  504MB master + 200GB slave (sparse): the slave is "419430400
+  sectors, LBA and LBA48", its last sector checked through SeaBIOS's
+  AH=42h and the high-order bytes; I13X's extended reads and writes
+  at sectors 419,429,888-419,430,399 all right, one past the end AH
+  04h, and the host finds pattern 7 in exactly those sectors of the
+  image (lrg\chk7.pl) - and nothing at 150,994,432, where a 28-bit
+  wrap would have put it.  Windows out.
+  504MB master + a CD-ROM as the slave (16MB of seeded random data):
+  LRGDISK takes the master and says the slave is "a CD-ROM drive or
+  other ATAPI device (14EB4100)".  A box left running reads the disc
+  through the ports twelve times (ATAPIRD) while IFSBOX (I13X through
+  LRGDISK, copies compared) and CACHEBOX use the disk, and Windows
+  starts programs: every pass's checksum is BADF658F, which is the
+  image's, with no errors - passes 2 to 5, the ones beside the disk
+  work, taking three to four times as long.  LRGDISK's trace: 6,146 of
+  the box's commands (twelve passes of 512 READ(10)s, IDENTIFY and
+  READ CAPACITY), 1,508 of them waiting for LRGDISK's, 1,514 of
+  LRGDISK's held for theirs, no errors, no time-outs, nothing taken
+  back by force.  Windows out.
+
+  86Box, tree6: the vli486sv2g's 504MB disk (a BIOS without the
+  extensions; LRGDISK gives them), lrg3 with CACHEBOX at 60 seconds -
+  the stall's own list - the whole list and Windows out; p3bf's 2047MB
+  disk (519/128/63) with VFAT - 32-bit file access holding C: - the
+  whole list and Windows out; p3bf's 504MB master and the 128GB slave,
+  both LRGDISK's (the slave found as unit 1), I13X at sectors
+  268,434,928-268,435,439 and the host finding them in the image.  The
+  QEMU runs are of the final build.
+
+ATAPIRD.COM (TOOLS, new; BIN\TESTS and HD16's TESTS; not in RUNTESTS,
+it needs the drive) reads a CD-ROM on the first cable as a DOS
+CD-ROM driver does - ATAPI packets, PIO, polled with the interrupt
+left on - and gives a checksum a pass, which the host can work out
+from the image.
+
+OPEN: the second cable is still the BIOS's; PIO only (no bus-master
+DMA, so no Ultra DMA); a DOS CD-ROM driver that hooks IRQ 14 itself
+needs VirtualHDIrq=off; a VM that resets the cable (SRST) resets
+LRGDISK's drives too, and a CHS-only drive is not told its geometry
+again; nothing here has run on real hardware.
+
+Files: CMD\LRGDISK\LRGDISK.ASM, TOOLS\ATAPIRD.ASM (new), BUILD.CMD,
+MKHD.CMD.  LRGDISK.386 is 21,316 bytes.
+
+
+THE DOS-BOX STALL: TWO MACHINES IN ONE DOS CALL (2026-10-08)
+---------------------------------------------------------------------
+
+The stall three entries have left open - a DOS box's output stopping
+part way, WINSWEEP never logging another line, Windows not exiting -
+was RMDOS letting a second virtual machine into a call the first had
+not finished.
+
+FOUND UNDER QEMU.  The LRGDISK entry above brought QEMU into the rig,
+and the first sweep on it stalled exactly as the vli486sv2g did, with
+LRGDISK not even loaded: CACHEBOX's output ending after "the
+directory, twice", and on the screen a dialog nobody could answer -
+"WINOLDAP caused Segment Load Failure in module USER.EXE".  Windows
+had gone to read a discarded segment of USER.EXE through the handle
+KERNEL keeps on it, and the handle was no longer KERNEL's.  QEMU, with
+no window, sends port E9h to a file, so the rme9 build of RMDOS could
+watch every call of the run.  Just before the end: the box's
+COMMAND.COM writing "EXEC failure" to handle 2 and being told it was
+not a handle, opening CACHEBOX.TXT and being given handle 0, writing
+to handle 1 - not a handle either; and the System VM's close of
+WINSWEEP's picture file refused the same way.  Then the call that
+showed why: the box ending (4Ch, inside IFSHLP's 2Fh/1122h), and the
+next line a call from the System VM with InDOS and the depth both
+ZERO inside it.
+
+WHAT HAPPENED.  RMDOS keeps the process state a call works with - the
+current PSP, the DTA, the drive, the error, InDOS - in variables of
+its own, pulled out of the published SDA as a call comes in (DOSMGR
+gives every machine its own copy of those bytes) and put back as it
+leaves (RMINFO.INC, sda_pull and sda_sync).  Those variables, the depth
+counter and the stack slots are one of each for all the machines, and
+the DOSMGR critical section (INT 2Ah 8001h, crit_in) is what makes
+them one machine's at a time.  But i21 took the section AFTER pulling
+the state in, raising InDOS and the depth, and writing the caller's
+PSP - so a machine whose call was under way, holding the section,
+could be switched out and the next machine to call would pull ITS
+state over the working copies before waiting for the section.  Here
+the box was ending: its terminate then wrote the System VM's state
+into the box's own SDA, set InDOS and the depth to zero, let the
+section go, and the System VM's call went on with the box's parent as
+its process.  From then on each machine had the other's PSP: the box's
+handles were looked up in Windows' task and Windows' in the box.
+
+THE FIX is the order: crit_in first, before anything that is shared
+is read or written (RMDOS.ASM, i21).  A machine that calls while
+another is inside DOS now waits before it touches anything.  The
+console's wait (RMCON.INC), the one place a call lets the section go
+on purpose, already took it back before pulling the state.
+
+PROVED with the lrg3 list (CACHEBOX looked in on at 60 seconds), WfW
+3.11, under QEMU unless said:
+
+  rme9, old order    CACHEBOX ends after "the directory, twice";
+                     MOVEPROB's EXEC refused (0Bh) and "EXEC failure"
+                     to a handle that is not one; 335 calls run with
+                     InDOS and the depth at zero; Windows does not
+                     exit
+  rme9, new order    the whole list: CACHEBOX looked in on at 70.8
+                     seconds, still running, then ending by itself
+                     with all of its output; not one call with InDOS
+                     and the depth at zero; Windows out (545 s)
+  release, new order the same, with LRGDISK 1.1 under it (looked in
+                     on at 69 seconds; Windows out, 547 s)
+  86Box vli486sv2g   release, new order, LRGDISK 1.1 - the machine and
+                     list that stalled every time: CACHEBOX looked in
+                     on at 62.7 seconds and ending by itself four
+                     seconds later, all of its output there; the whole
+                     list, Windows out
+
+A DOS box reading a CD-ROM beside two others using the disk (the
+LRGDISK entry above) showed it the other way round before the fix:
+IFSBOX's six-file copy came out 0 bytes ("Insufficient disk space"),
+the CD box's redirected output went to its window, and Windows fell
+over into real mode.
+
+Regression: RUNTESTS 83 tests on all seven rows - SFTSCAN, RMFIND
+and RMTEST re-recorded: where "CON " lies moves up a byte with RMDOS,
+and TESTS has ATAPIRD.COM in it now (a file more, three clusters
+less).  The 86Box sweeps of the LRGDISK entry above ran on this fix
+too.  MASM 6.13 assembles RMDOS.ASM plain and with RMDOS_E9.
+
+Files: DOS\RMDOS.ASM.  RMDOS.SYS is 59,912 bytes (62,187 with the E9
+trace).
+
+
+LRGDISK 1.2: BOTH CABLES, BUS-MASTER DMA, TWO BUGGY CHIPS (2026-10-08)
+---------------------------------------------------------------------
+
+Charlie asked for the second IDE cable, bus-master DMA, something
+for a DOS CD-ROM driver that hooks IRQ 14 itself, and something for
+a DOS program's reset of the cable; then, with DMA in, for the CMD640
+and the RZ1000 to be found and their data corruption bugs kept out
+of the way.
+
+TWO CABLES.  LRGDISK drives the BIOS's disks 80h to 83h wherever
+they are: either unit of the first cable (1F0h, IRQ 14) or of the
+second (170h, IRQ 15).  Each cable has a state of its own (CBL_*,
+EBP -> it in every routine that works a cable): the command on it,
+and the DOS programs' view of it, so that one cable waits for
+nothing on the other.  Which cable and unit a BIOS disk is comes
+from where the BIOS's own read of its first sector went: both
+cables' registers are poisoned first, both units of each, and the
+cable whose selected drive is ready and shows cylinder 0 afterwards
+is the one.  BlockDev owns IRQ 14 and calls LRGDISK for it; IRQ 15
+LRGDISK takes from VPICD itself (VPICD_Virtualize_IRQ, with an EOI
+procedure that ends an interrupt it sent on to a VM).  Before a
+cable is taken its interrupt is TRIED: the vector pointed at a stub,
+the IRQ unmasked, and the drive given a read with its interrupt on -
+SeaBIOS polls and leaves IRQ 15 masked, and a mask is no proof the
+line is wired.  INT13.386 knows disks 80h and 81h only (it tests
+DL against 01111110b), so for 82h and 83h LRGDISK's hook on its
+translation answers the whole of INT 13h - 02h, 03h, 08h, 15h, the
+extensions, and the calls INT13.386 says yes to - the same way.
+
+BUS-MASTER DMA.  A PCI IDE controller's engine (BAR4: eight ports a
+cable) moves the data itself from a table of physical addresses (the
+PRDs): one interrupt a controller command instead of one a sector.
+LRGDISK uses it for a drive that has a DMA mode SELECTED - IDENTIFY
+words 88 (Ultra) and 63 (multiword), the high bytes - by whoever set
+the drive and the controller's timing up before Windows: the BIOS,
+or the kernel (IDEDMA=).  It sets no mode of its own; the kernel's
+IDEHOST.INC is the measure of what that would take.  The table lives
+in a page from _PageAllocate (two tables, a cable each; a page never
+crosses a 64K boundary, which a PRD table may not); the buffers'
+physical addresses come from _CopyPageTable, a page at a time, runs
+within one 64K merged into one entry.  A transfer the engine cannot
+be pointed at - an odd address, a page not present, more pieces than
+the table holds - goes by PIO, and a drive whose engine gets a
+transfer wrong once (the engine's error bit, or a table it had not
+finished when the drive stopped) is PIO from then on.  LRGDiskDMA=off
+in [386Enh] keeps the engine out of it; the engine's sixteen ports
+are taken from the VMs.  The engine is found by the real-mode
+start-up through the PCI BIOS (the report says where) and again by
+the protected-mode side through configuration mechanism 1, and told
+it may master the bus.
+
+WHAT WIN386'S LOADER LEAVES A REAL-MODE START-UP, which cost most of
+the night: nothing.  A record a unit was to be handed over in a block
+of DOS memory (AH=48h: no memory - the loader's MAXALLOC is FFFFh and
+it never shrinks), then in extended memory (XMS 09h: nothing left -
+the loader has taken it all for the VxDs' pages), then by a pointer
+into the start-up's own segment (gone by Sys_Critical_Init: the next
+device's start-up is loaded over it - "DOST" was found there), and
+loader service 7, Copy_Extended_Memory in later DDKs, comes back with
+CF set.  So EDX is all there is: a byte a unit (RF_*: taken, LBA,
+LBA48, something else there, DMA, bits 5-6 the BIOS disk less 80h;
+bit 7 of unit 0's byte "one cable at a time", of unit 1's "DMA
+allowed"), and the protected-mode side measures again what it needs:
+IDENTIFY for the sector count and the mode, the BIOS's AH=08h for
+the geometry.
+
+AND WHEN.  The geometry needs a VM to run the BIOS in, which
+Sys_Critical_Init has not got; but registering at Device_Init
+instead (first try) left the disk to the BIOS: BlockDev decides at
+ITS Device_Init, from the drives registered by then, whether to hook
+the VMs' INT 13h at all - and with none it does not, so every INT 13h
+went to the BIOS, whose first port write LRGDISK refused.  So the
+drives are registered at Sys_Critical_Init as WDCTRL registers them,
+with a stand-in geometry, and told the BIOS's at Device_Init - with
+an init order of 0D000000h, right after VPICD, because PageFile
+(18000000h) reads the disk in its Device_Init and a stand-in
+geometry would have sent its reads anywhere.  The AH=08h is run in
+the System VM with Exec_Int, and LRGDISK's own hook lets it past
+INT13.386 (ld_rawbios), which would otherwise answer it from the
+descriptor - the stand-in.  (A far call to the IVT's INT 13h, as
+INT13.386's comments suggest, reaches INT13.386 all the same: the
+IVT's entry is BlockDev's.)  And a shell message - the refusal, the
+20-second one - wants EBP -> the VM's registers: the VMM runs the VM
+for it, and with EBP left pointing at the cable's state it wrote a
+VM's registers over it, which looked like a command that never
+finished.
+
+THE AWARD BIOS AT THE PORTS.  With QEMU passing everything, 86Box's
+P3B-F would not start Windows at all - with DMA, with LRGDiskDMA=off,
+with the trace build, and with no trace on its printer (86Box's text
+printer writes the control characters and drops the letters; the trace
+build now writes to COM1 as well, and run_lrg -Com reads it off
+86Box's serial-passthrough named pipe, as the kernel's trace was
+read).  1.1 on the same rig started.  The difference is LRGDISK's own
+AH=08h at Device_Init: by then the cable's ports are trapped, and the
+Award BIOS's INT 13h touches them on its way to the table - SeaBIOS
+reads the table and touches nothing - so the trap refused the BIOS and
+put up the message, with nobody to press a key.  Now the trap lets the
+BIOS through while LRGDISK's question is running (ld_rawbios): nothing
+of LRGDISK's is on the cable then, and the real-mode start-up let the
+BIOS at the ports in the same way.  With that, the P3B-F runs the
+sweep with DMA (the BIOS's Ultra DMA mode 2).
+
+THE EMULATOR'S TRANSLATED CODE.  With everything above right, Windows
+still ended ten seconds in: KRNL386.EXE, loaded by the engine into
+memory at 8D000h-9E000h that had run the loader's programs, ran a
+few calls and quit.  The data was right - every sector read by the
+engine was read again by PIO and compared, and matched - and the
+same bytes by PIO worked.  QEMU's TCG keeps the code it has
+translated for a page until the PROCESSOR writes the page; a device's
+write does not throw it away, and the old code ran.  So ld_prdbuild
+reads a byte of every page and puts it back on its way through: a
+few hundred nanoseconds a page, nothing on hardware (a bus master's
+write reaches the memory the processor reads), and QEMU is a rig
+that is here to stay.
+
+THE DOS CD-ROM DRIVER THAT HOOKS IRQ 14.  A DOS program's device on a
+shared cable interrupts; with VirtualHDIrq on, BlockDev used to end
+it as the BIOS's handler would and nobody in the box saw it.  Now
+LRGDISK, knowing whose command is on the cable (CBL_VMBUSY), sends
+it on to that VM (VPICD_Set_Int_Request): the VM's own handler runs
+- the BIOS's INT 76h or 77h, or a driver's that hooked it - and
+BlockDev's EOI procedure (or LRGDISK's, on IRQ 15) ends it at the
+PIC when the VM has, which is what the VM would get with no 32-bit
+disk access at all.  VirtualHDIrq need not be set.
+
+A DOS PROGRAM'S RESET.  SRST written to a cable's control register
+resets LRGDISK's drives too.  Now it marks the cable (CBL_RESET) and
+before LRGDISK's next command on it each of its drives there is
+given its parameters again, polled with its interrupt off: a drive
+used by CHS its geometry (INITIALIZE DEVICE PARAMETERS), a drive
+used by DMA its transfer mode (SET FEATURES 03h).  A reset written
+while LRGDISK's command is on the cable is kept and done for the
+program when the command is over (CBL_VMSRST), and the program's
+status reads say BSY meanwhile.  TOOLS\SRSTTEST.COM (new, in
+BIN\TESTS) does the reset as a DOS driver would, for a DOS box.
+
+THE CMD640 AND THE RZ1000.  Both are PCI IDE controllers without an
+engine, so LRGDISK would be PIO on them, and both bugs are the kind
+Windows hits: the PC-Tech RZ1000 (1042h:1000h, and the RZ1001)
+corrupts a PIO read when its read-ahead is on and the processor is
+interrupted between sectors; the CMD640 (1095h:0640h) corrupts data
+when both its cables transfer at once, and with read-ahead on.  The
+real-mode start-up finds either through the PCI BIOS and does what
+Linux does: read-ahead off (RZ1000: register 40h bit 13; CMD640:
+CNTRL 51h bits 6 and 7, ARTTIM23 57h bits 2 and 3), and on a CMD640
+the cables are used ONE AT A TIME (ld_serial): a command, LRGDISK's
+or a DOS program's, waits while the other cable has one (CBL_XHELD;
+ld_xrelease lets it go when the other cable is idle).  LRGDiskSerial
+=on asks for that on any controller.  Neither chip is in 86Box or
+QEMU, so the detection ran against nothing; the serial mode ran
+under LRGDiskSerial=on.  The VLB CMD640 is not looked for.
+
+RESULTS (the final build, LRGDISK.386 23,798 bytes).  QEMU 11.1
+(PIIX3, SeaBIOS; the drives at Ultra DMA mode 5), the lrg3 sweep each
+time - IFSBOX (I13X's 24 checks of a disk's last sectors through
+INT 13h and the extensions, WIN386.EXE copied and compared, six copies
+end to end twice), CACHEBOX, DOSBOX1 and nine programs, 12 in all -
+Windows out at the end:
+  - the first cable alone, DMA: 0 wrong, copies the same (491 s);
+    LRGDiskDMA=off the same by PIO
+  - a 200GB LBA48 slave as 81h, DMA: I13X on its last 512 sectors,
+    the host's chk7 of the image 0 wrong
+  - THREE disks - a 20GB slave 81h, a 128GB secondary master 82h -
+    with I13X on 82h, which INT13.386 never sees: 0 wrong, the host's
+    chk7 of the 128GB image 0 wrong (the sectors zeroed first)
+  - a disk on each cable with LRGDiskSerial=on: I13X on the second
+    cable's disk 0 wrong, chk7 0 wrong
+  - a CD-ROM beside a 20GB disk on the SECOND cable, CDBOX in the
+    background: SRSTTEST's reset, ATAPIRD's 12 passes (BADF658F every
+    one, 0 errors), SRSTTEST again, while IFSBOX and CACHEBOX used the
+    disks; the trace build shows the two resets marked and the drives
+    given their parameters again.  The same on the first cable.
+86Box 4.x:
+  - P3B-F (PIIX4, the Award BIOS, Ultra DMA mode 2): the lrg3 sweep
+    with DMA, all 12, I13X 0 wrong, copies the same, Windows out
+  - P3B-F, a 504MB disk and a 128GB slave as 81h, DMA: all 12, I13X on
+    the slave 0 wrong, the host's chk7 of the image 0 wrong
+  - VL/I-486SV2G (ISA, no engine: PIO): all 12, I13X 0 wrong, copies
+    the same
+LRGTEST (TOOLS\LRGTEST.ASM, prints the answer's bytes) under real
+MS-DOS 5 on QEMU and 86Box: 80h, 81h and 82h found with their cables,
+units and modes; every real-mode message seen.  RUNTESTS 83 x 7 after
+re-recording RMFIND and RMTEST (SRSTTEST.COM in TESTS; ATAPIRD.COM and
+LRGTEST.COM changed size) and CACHETST on six of the seven rows (its
+file starts somewhere else now: one more cache element owed a write).
+MASM 6.13 clean: LRGDISK plain and trace, LRGTEST, ATAPIRD, SRSTTEST.
+Neither the CMD640 nor the RZ1000 could be run against: 86Box and QEMU
+have neither chip.
+
+Files: CMD\LRGDISK\LRGDISK.ASM, TOOLS\LRGTEST.ASM (prints the answer's
+bytes), TOOLS\ATAPIRD.ASM (units 2 and 3 are the second cable's),
+TOOLS\SRSTTEST.ASM (new), BUILD.CMD, MKHD.CMD.  LRGDISK.386 is 23,798
+bytes.
+
+
+TWO FLOPPIES: THE BOOT DISK AND THE TEST DISK (2026-10-08)
+---------------------------------------------------------------------
+
+Charlie asked for the floppy to be split, since PMDOS.IMG was getting
+full: PM-DOS on one disk, the tests on another.  Before today the one
+image held 186 files, 970,920 bytes, with 421,376 free - and the test
+list on it had stopped keeping up with the hard disk's: thirteen test
+programs and fifteen batch files were on HD16 and not on the floppy.
+
+WHAT THERE IS NOW.  BUILD.CMD makes two images in IMAGES\:
+
+  PMDOS.IMG   the boot disk: PMIO.SYS, PMDOS.SYS, the two shells, the
+              commands, RMDOS.SYS, LRGDISK.386 (which had never been
+              on the floppy), README.TXT, CONFIG.SYS, CONFIG.TXT and
+              AUTOEXEC.BAT.  33 files, 697,381 bytes, 752,128 free.
+  TESTS.IMG   the test disk: every program BUILD puts in BIN\TESTS -
+              the hard disk's thirteen included, and the six that were
+              on no list at all: SDSTAT, TICKS, MOVEPROB and the
+              Windows sweep's WINSWEEP, TIMEPROB and SPYTICK - and
+              every batch, key and data file in DISK\, all in \TESTS;
+              and the long-named fixtures in its root, where
+              LFNTEST.BAT looks.  187 files, 403,533 bytes, 989,184
+              free.  Its label is PM-DOS TEST, so VOL tells the two
+              apart.  Not on it: TESTIMG.IMG, which is a whole floppy
+              by itself, and the big 16-bit guests MKHD seeds, which
+              are not built and are 500K.
+
+\TESTS is the same directory on every disk - B:\TESTS with the test
+disk in B:, A:\TESTS after a swap on a one-drive machine, C:\TESTS on
+a hard disk - so a test starts the same way wherever it is: B:, then
+CD \TESTS, then its name.  The PATH is still A:\ and nothing else.
+The hard-disk images are as they were: MKHD.CMD puts the tests in
+C:\TESTS, and it was not re-run (HD16 carries the Windows graft).
+FMTTEST.BAT FORMATS THE DISKETTE IN B:, so the test disk must come
+out first - in the 86Box VM that is Floppy 2 now.
+
+MKDISK.C grew two switches and lost a habit.  -label NAME sets the
+volume label (the root entry and the BPB's copy; eleven characters,
+upper-cased, quote a space), on floppies and hard disks alike; -nolfn
+leaves the long-named test set off a floppy, which is how the boot
+disk is built.  The habit: the first two files ON THE COMMAND LINE
+got System+Hidden+ReadOnly, which is PMIO.SYS and PMDOS.SYS on a boot
+disk and would have been the first two tests on a disk whose files
+all go into -dir; now it is the first two files IN THE ROOT, and a
+disk with none has none.  MKHD's three images come out byte for byte
+the same with the old MKDISK and the new.
+
+Also: DISK\AUTOEXEC.BAT's "where everything is" says the above;
+CONFIG.TXT says the three REM'd \TESTS lines mean B:\TESTS when the
+machine booted from the floppy; TOOLS\DBXRUN.PS1 has -Floppy2 for the
+disk in B:; the 86Box VM has a second 3.5" drive with TESTS.IMG in it
+(fdd_02_fn; the old 86box.cfg is 86box.cfg.pre2fdd beside it).  The
+remark in AUTOEXEC.BAT that CHKDSK finds the long-named files
+cross-linked was stale twice over (they have had a cluster each since
+2026-09-26) and is gone.
+
+VERIFIED, DOSBox-X headless (TOOLS\DBXRUN.PS1 -Floppy -Floppy2), the
+boot disk rebuilt with an AUTOEXEC that logs to A:\T.TXT: VER; VOL A:
+"PM-DOS" and VOL B: "PM-DOS TEST"; DIR of both roots and of B:\TESTS
+(186 files), plain and /W; HELLO run from B:\TESTS by bare name;
+DRIVES listing A: and B: as FAT12 floppies; LFNTEST run from B:\ end
+to end - the three fixtures read, the long names created, copied,
+renamed, listed and deleted, and RECYCLED holding the four deleted
+ones afterwards; CHKDSK of both disks clean, with the free counts
+(1,516 and 1,921 units) the host's reader also gives.  Both images
+read back on the host file for file against BIN, BIN\TESTS and DISK:
+no differences, PMIO.SYS and PMDOS.SYS the only system files and
+only on the boot disk.
+IMAGES\PMDOS.IMG, IMAGES\TESTS.IMG, HD16.IMG (CONFIG.TXT and
+AUTOEXEC.BAT by FATREPL) and the VM's copies are this build; S:\BIN
+was already it (no kernel source changed).
+
+TWO RIG LESSONS, neither a kernel bug.  A line appended to a file on
+a floppy is written through - removable disks are read-cached only -
+so DIR B:\TESTS >> A:\T.TXT took 114 seconds in DOSBox-X and the first
+run's 100-second limit ended inside it: give a floppy log minutes, not
+seconds.  And a batch file started from AUTOEXEC.BAT without CALL is
+CHAINED to, as DOS does it, so nothing after that line runs: the
+"hang" after LFNTEST was the prompt.
+
+NOT VERIFIED: the real 486 with two diskettes (or one, swapped), and
+booting the VM from the floppies (its A: is empty: fdd_01_image_path
+is a key 86Box does not read, as noted before).
+
+Files: BUILD.CMD, TOOLS\MKDISK.C, DISK\AUTOEXEC.BAT, DISK\CONFIG.TXT,
+TOOLS\DBXRUN.PS1, NOTES.TXT (the image list, the layout section, the
+DOSBox recipe, the "copy it into the VM" items), BIN\HD\AUTOEXEC.BAT
+(regenerated), C:\86Box\VMs\PM-DOS\86box.cfg.
+
+
+THE HARDWARE TEST: RMDOS.SYS, DIR'S THOUSANDS, NO BANNERS (2026-10-08)
+---------------------------------------------------------------------
+
+Charlie ran the build on real hardware.  Everything worked but three
+things.
+
+RMDOS.SYS ON THE BOOT DRIVE.  Booted from the floppy, Windows started
+from the hard disk: "RMDOS.SYS is not in the root of the boot drive",
+and it was - on the floppy.  park_loadrm opened '\RMDOS.SYS', a name
+with no drive letter, which goes to the CURRENT drive; and the current
+drive when WIN is typed is wherever Windows is installed, C:, not
+the drive the machine booted from.  Every rig boots from the disk
+Windows is on, so nothing here had ever seen the two differ.  The name
+now carries the boot drive's letter (shell_dflt's, as the kernel's
+other "boot drive root" lookups do), and if the file is not there the
+current drive's root is tried as well, for a set of files copied to a
+hard disk.  The message says both.  Proven under QEMU with a floppy
+boot (rig\runqemu.ps1 -Floppy, new) and the sweep disk's RMDOS.SYS
+deleted: the old kernel stops at the message (no SWEEP.TXT), the new
+one runs the sweep.
+
+DIR'S THOUSANDS.  CMD.EXE's DIR printed every size and total as a
+plain run of digits; COMMAND.COM's grouped them from the start.  Now
+CMD.EXE asks 38h for the country's thousands separator when it starts
+- the kernel answers for the one country it has - and uses the comma
+if the call will not say (pgrp14/pgrp10 beside pdec10).  The size
+column is 14 wide, as MS-DOS 6.22's is, since a 32-bit size with its
+separators is 13 characters; the "<DIR>" marker is the same width; the
+totals' byte column and the "bytes free" line under it are 14 as
+well.  The file count is grouped in its ten columns.  Nothing a DOS
+program reads changed: that is COMMAND.COM's listing.
+
+NO BANNERS.  CACHE and CDEX opened with "PM-DOS Disk Cache version
+x.yy" and "PM-DOS CD-ROM Extensions version x.yy".  External programs
+do not announce themselves; the lines are gone.  No other external
+had one (FDISK's title is its screen, and "About" is on request).
+
+RESULTS.  QEMU, booted from a floppy built from the new BIN with the
+sweep disk (WfW grafted, its root's RMDOS.SYS deleted) as C:, WIN /3
+from the floppy's AUTOEXEC: the previous kernel ends in 5 seconds with
+no SWEEP.TXT; this one runs the sweep (WRITE, Windows out).  DOSBox-X:
+DIR C:\, DIR /S and /W of a directory with a 1,190,203-byte file,
+CACHE and CDEX, and COMMAND /C DIR, redirected and read back: every
+size, total and free figure grouped, the <DIR> marker in the size
+column, CACHE and CDEX starting with their reports.  RUNTESTS 83 x 7
+after re-recording RMTEST (one cluster less free: CMD.EXE grew one)
+and CACHETST (its file moved again).  MASM 6.13 clean: DOSMAIN, CMD,
+CACHE, CDEX.
+
+Files: DOS\PARK.INC, DOS\WINDOWS.INC, CMD\CMD.ASM, CMD\CACHE\CACHE.ASM,
+CMD\CDEX\CDEX.ASM; and UNDELETE.EXE rebuilt with the help text Charlie
+rewrote (CMD\UNDELETE\UNDELETE.ASM), shipped with these.  PMDOS.SYS is
+152,019 bytes, CMD.EXE 59,433, UNDELETE.EXE 9,424.
+
+
+THE FLOPPY BOOT ON HARDWARE: EMS, AND THE CHECK'S MEMORY (2026-10-08)
+---------------------------------------------------------------------
+
+Charlie's second run from the floppy: WIN said an expanded-memory
+driver was in the way; after a reboot the kernel wanted C: checked
+and CHKDSK C: /F stopped with "Insufficient memory"; with EMS off,
+Windows got nearly to the desktop and the machine hung with a
+blinking cursor and the floppy light on; WIN /D:C hung the same way.
+
+THE EXPANDED-MEMORY DRIVER.  Reproduced under QEMU in one run: a
+floppy boot with the shipped DISK\CONFIG.SYS, which says EMS=AUTO,
+and "ERROR: Unsupported expanded-memory driver already installed"
+on the screen.  Every sweep had run Windows with no EMS line.  With
+EMS on, INT 67h points at an IRET in a paragraph of conventional
+memory that carries EMMXXXX0 at offset 0Ah - the detection the LIM
+specification recommends - and the calls themselves are answered by
+the monitor, which traps INT 67h before the IRET is reached.  Parked
+there is no monitor: WIN386's loader reads the vector, finds the
+name, calls a manager that is nothing but an IRET, and refuses.  So
+park_savevecs blanks the eight bytes for the trip and park_restvecs
+puts them back (PARK.INC); a program under Windows finds no manager
+of ours, which is right - Windows brings its own.  The same floppy
+boot now runs the sweep with EMS=AUTO.
+
+THE CHECK'S MEMORY.  The boot-time CHKDSK ran "in the shell's place:
+same slot" - the interpreter's slot at SHELL_SLOT, SHELL_SIZE (256K)
+and fixed, because slot_grow refuses depth zero.  CHKDSK keeps a byte
+a cluster and reads each directory whole, so the check of a FAT32
+volume of any size said "Insufficient memory" and never finished;
+run from the prompt the same CHKDSK has a slot out of the arena that
+grows, and nobody had left a big volume dirty at boot before.  Now
+shell_restart takes an arena slot at depth zero before ack_next loads
+CHKDSK into it, gives it back when there is nothing to check, and
+frees the last round's at the top (slot_sweep stops at depth 1); the
+row for depth zero goes back to the interpreter's values each time,
+and cur_psp is taken from the PSP build_psp made rather than assumed
+(DOSMAIN.ASM).  Proven with a 2000MB FAT32 image (4,032,401 clusters
+of one sector, MKDISK's choice) left dirty by a file held open when
+DOSBox-X's time limit stopped the machine: the old kernel stops at
+"Insufficient memory", this one checks it to the end and the volume
+is marked clean (RESULTS).
+
+THE HANG WITH EMS OFF is not reproduced here.  The same floppy boot
+with EMS=NO in the shipped CONFIG.SYS runs the sweep under QEMU
+(Windows up, WRITE run, Windows out).  The floppy light staying on
+says only that the kernel's own read of RMDOS.SYS from A: left the
+motor running when the park took the machine - nothing on the far
+side counts the BIOS's motor timer down until the BIOS's INT 08h is
+running again - so it is not evidence of a floppy access at the
+crash.  What differs from the rig is the machine and the CONFIG.SYS
+on the floppy: whether it has DEVICE=C:\WINDOWS\IFSHLP.SYS (the
+shipped one does not; without it WfW 3.11 cannot start enhanced mode
+with 32-bit file access), and whether WINCACHE= is set.  Left open
+until the hardware says more - the memory size, the disk, and the
+floppy's CONFIG.SYS as booted.
+
+RESULTS.  QEMU, a floppy boot with the shipped DISK\CONFIG.SYS plus
+DEVICE=C:\WINDOWS\IFSHLP.SYS and WINCACHE=2048, Windows from the hard
+disk: EMS=AUTO, the old kernel - "Unsupported expanded-memory driver
+already installed", no Windows; EMS=AUTO, this kernel - the sweep
+runs (WRITE, Windows out); EMS=NO, the old kernel - the sweep runs.
+DOSBox-X, the 2000MB FAT32 volume left dirty: the old kernel - "Drive
+D: was not shut down properly. Running CHKDSK D: /F." then
+"Insufficient memory" and the shell; this kernel - the check runs to
+its report (3 files, 4,032,401 allocation units, CHKDSK's own slot
+grown to 4,587,520 bytes) and the volume is clean when the shell
+comes up.  RUNTESTS 83 x 7, no baseline changed.  MASM 6.13 clean on
+DOSMAIN.  Rig: rig\runqemu.ps1 -Floppy, hw\flopwin.ps1 (-ConfigFrom,
+-ShotEvery), hw\chktest.ps1 (dirty, check) with hw\HOLDOPEN.COM,
+which holds a file open until the time limit.
+
+Files: DOS\PARK.INC, DOS\DOSMAIN.ASM.  PMDOS.SYS is 152,151 bytes.
+
+
+FDISK: THE DETAILS PAGE IS A TABLE (2026-10-08)
+---------------------------------------------------------------------
+
+Charlie, after the hardware run: on Details "the text and numbers
+look all over the place and nothing is aligned".  The page is what
+/P prints, captured, so /P was rewritten (fd_plan's report in
+FDISK.ASM): a label on the left, every value right-aligned in one
+column, the unit or a note after it - the layout the info pane
+already had.  Counts are grouped with the country's thousands
+separator, as DIR's are since today: 38h is asked once at fd_entry
+(dec_sep, ctry_buf), the comma if it will not say; fmt_g and putg
+print them, fmt_mbg and putmb the megabytes to one place
+(2,097,152.0 - two terabytes - is the widest).  PR_LABW, PR_NUMW and
+PR_MBW at the top of the file set the columns: two spaces, 22, 14,
+" sectors", 11, " MB".
+
+    Disk 1, partition 5
+
+    Type                             04h  FAT16
+    Start sector                  91,854
+    Size                          32,256 sectors       15.8 MB
+
+    File system                    FAT16
+    Sectors per cluster                1
+    FATs                               2   125 sectors each
+    Root directory entries           512
+    Clusters                      31,973
+
+    In use                             1 sectors        0.0 MB
+    Highest cluster in use             2
+
+    Current size                  32,256 sectors       15.8 MB
+    Smallest size                     36 sectors        0.0 MB
+    Largest size                  32,256 sectors       15.8 MB
+
+A FAT32 volume says "Root directory cluster" instead of entries; an
+unformatted partition "File system  none   not formatted"; the
+container "Logical drives  3" and "Last sector used" (pl_cxend less
+one - the old text said "ending at sector" and gave the one past it).
+An empty volume prints 0 sectors and "none" for the highest cluster.
+The cluster note at the end ("The smallest cluster this size could
+take is...") reads as it did, with one blank line in front instead of
+two, so the whole page, note included, is 23 lines and fits the
+viewer without scrolling.  The viewer (vw_show, FDDLG.INC) now drops
+blank lines at the end of what it shows, so the report's closing
+blank line does not make a page that fits scroll by one; the help
+and the log get the same.  The viewer's title is "Partition 5 (E:)"
+(lb_namec), the name the boxes use.
+
+CHECKED in DOSBox-X headless: /P on FAT16, FAT12, FAT32, the
+container, a logical drive and an unformatted partition, and the
+Details page of each from the screen - the same text; FDRTEST and
+FD32TEST differ from their 2 October outputs only in the /P
+sections; FDMTEST's 38 pictures are the same but for the Details
+one.  wasm and ML 6.13 both clean.  Not on hardware.
+
+Files: CMD\FDISK\FDISK.ASM, FDTUI.INC, FDDLG.INC.  FDISK.EXE is
+61,934 bytes.  BIN, IMAGES\PMDOS.IMG (MKDISK's line from BUILD.CMD),
+HD16.IMG (FATREPL in place) and the VM's two copies carry it.
+
+
+AUTOEXEC.TXT, A BOX FROM THE DISKETTE, MSD, AND THE NETWORK (2026-10-09)
+---------------------------------------------------------------------
+
+Charlie's third run from the floppy: the boot-time CHKDSK C: /F now
+finished, but the machine came up with 361KB of conventional memory
+free, and Windows got as far as its start-up sound before the hang.
+He also asked for AUTOEXEC.BAT to be the commands and nothing else.
+Then, in the morning: WIN /N and Windows is fine, so the hang is the
+network start; Quarterdeck's Manifest for Windows crashes the machine;
+MSD crashes the DOS box; and a question about the dirty bit.
+
+AUTOEXEC.TXT.  DISK\AUTOEXEC.BAT had grown 469 REM lines - where
+everything is, the two shells, the tests, Windows, the CD-ROM, DOSKEY,
+what a boot says - around three commands.  The text is DISK\
+AUTOEXEC.TXT now, the REM prefixes gone and a short header first, as
+CONFIG.TXT is to CONFIG.SYS; the batch file is @ECHO OFF, PROMPT,
+PATH and one REM naming the text.  BUILD.CMD puts the text on the
+boot disk and MKHD.CMD on the hard disks, whose AUTOEXEC.BAT (BIN\HD\,
+made by MKHD from the diskette's with its own PATH) is four lines
+now.  Charlie's note for later: all of that text belongs in an online
+help system when there is one.
+
+THE CONVENTIONAL MEMORY is not lost on the rig.  The same kernel,
+booted with the 2000MB FAT32 volume dirty (the check runs CHKDSK D:
+/F to the end) and again with it clean (no check), and MEM run from
+AUTOEXEC each time: 617K of 618K free both times.  What the check
+does leave behind is in the XMS pool: 4,340K used against 1,372K,
+sixty-two blocks against thirteen - the disk cache holding what
+CHKDSK read, which it gives back when a program asks for memory it
+has not got (slot_grow, arena_alloc).  So the 361KB on the hardware
+is something the rig does not do, and the number itself - 618K less
+361K is 257K, which is SHELL_SIZE and a kilobyte - points at
+something sized like a slot.  Charlie's next boot after a check
+had the proper 617K, so the machine does not do it every time
+either; not reproduced, open.
+
+A DOS BOX WHOSE COMSPEC IS ON A: COULD NOT START.  Not the hang, but
+found looking for it: a floppy boot puts COMSPEC on A:, and under
+QEMU every DOS box then said "Cannot start application", while a
+box with COMSPEC=C:\COMMAND.COM ran, and a box already running could
+DIR, TYPE and COPY from A: and even run A:\COMMAND.COM /C VER.  The
+RMDOS trace (RME9.INC, which now prints the buffer with every BIOS
+transfer and the registers with every failed one) showed WIN386's
+EXEC of A:\COMMAND.COM reading its sectors one a call straight into
+the box's memory from 191B:0000 up, and the fifty-sixth, at
+191B:6E00 - linear 1FFB0h, which crosses the 64K boundary at 20000h -
+refused by the BIOS: a diskette is read by DMA, the DMA controller
+cannot carry one transfer across a 64K page, and the BIOS checks
+first.  rd_raw cut runs at the boundary but let THE SECTOR THAT
+ITSELF STRADDLES ONE go alone, as if alone were enough; RMDOS reads
+whole sectors straight into the caller's memory, so where a sector
+lands is wherever the file happens to fall in the program's image,
+and the first program ever to have one straddle was COMMAND.COM
+loaded at WIN386's box address.  A sector that straddles now goes
+through rd_bounce, two sectors long so that one half of it is within
+a page wherever RMDOS was loaded (rd_bncsel picks the half), read
+there and copied out, or copied in and written from there.  The
+first build of that clobbered EAX - the sector - with the flat
+address, so the BIOS was asked for cylinder 1023 of a diskette and
+the straddler still failed, with a different error, until the trace
+printed the registers.  With it right: a floppy boot, Windows from
+C:, COMSPEC on A:, and WINSWEEP's two DOS boxes run (hwbox11).
+
+TWO SECONDS, AS MS-DOS HAS IT.  The same trace showed every sector of
+that file costing three BIOS transfers: rd_getvol re-mounted a
+diskette on every call - geometry, boot sector - because "an
+excursion is short and one boot sector costs nothing".  Fifty-six
+sectors were a hundred and seventy transfers, two thirds of them of
+the boot sector on track 0 with the head travelling there and back,
+and a DOS box under a floppy boot loads COMMAND.COM from A: every
+time it opens.  So a diskette asked for again within two seconds of
+the last time is the same diskette (VOL_TICK, VOL_SAME_TICKS, the
+BIOS tick count read by rd_ticks) - MS-DOS's own rule for a drive
+with no change line, and nobody has swapped one faster.  The stamp
+is refreshed on every access; the count wraps at midnight and the
+subtraction comes out huge, which is one spare mount a day.
+
+MSD CRASHED THE BOX ON THE RIG TOO: "VDM: the guest faulted, vector
+0D at 0111:001D", linear 112Dh, the LIDT in the real-mode stub's road
+back to protected mode (IORM.ASM), reached in V86 mode by a transfer
+to 0111:0000.  Three instruments found the road there.  vdm_fault
+now prints a second line - SS:SP, twelve words of the stack, six
+bytes of code - and a third with the registers, so that a fault on
+real hardware can be read off a photograph; MSD's said SP was ODD
+(4786:35D3), which no compiled program does to itself.  The fault
+ring of a BUILD lptlow kernel (DBGSINK.INC, read back off the disk
+with scratch hw\dbgring.pl) gave the last five hundred faults: MSD
+selected drive A (0E00h), the kernel raised INT 24h through the
+callback paragraph, MSD's handler ran, and MSD went on; then four
+INT 2Fh questions and the fault, with no trap in between - MSD had
+got there on its own.  And QEMU's monitor disassembled MSD at the
+last question: the end of a C function, pops and a RETF, whose
+return address was whatever lay thirty bytes up the stack.
+
+THE CAUSE IS A FRAME DOS LEAVES AND THIS KERNEL DID NOT.  MS-DOS
+raises INT 24h on the caller's own stack with the caller's INT 21h
+return on top and, under it, the caller's registers as the
+dispatcher pushed them - AX, BX, CX, DX, SI, DI, BP, DS, ES - and
+the C library's _hardretn RELIES ON THE SHAPE: it drops its own
+frame and those nine words and IRETs through the caller's, straight
+back into the program with the error in AX and carry set.  MSD does
+that for every drive it probes.  The monitor had popped the caller's
+frame before serving the call (vdm_ciret) and kept the registers in
+vdm_ctx, so a handler doing the arithmetic landed thirty bytes above
+where it meant to and popped a local variable as its return.  Now
+crit_guest builds the frame below the caller's SP - the return, the
+nine words - and raises the interrupt beneath it; a handler that
+IRETs onto the landing pad leaves it as dead stack, and one that
+goes home the other way leaves SP at the caller's, which vdm_loop
+watches for (vdm_cgchk) and takes as the answer: the simulated
+interrupt is over without its HLT, the DOS call is over without its
+answer, and the kernel stack above the box loop's anchor is all of
+it, so crit_direct unwinds there and the box goes on from where the
+handler put it - as MS-DOS does.  MSD /P writes its whole report on
+the rig now.  Noted on the way: 0Eh (select drive) reads the medium
+here and raises a critical error for an empty A:, where MS-DOS only
+sets the letter; left as it is.
+
+THE HANG AFTER THE START-UP SOUND IS THE NETWORK, by Charlie's own
+test: WIN /N and Windows is fine.  The sound plays when PROGMAN
+starts; what runs after it is WFWNET.DRV's start of the network.  The
+QEMU rig had no network, so one was given it: the NDIS 3 drivers off
+the WfW disks (VNETSUP, VREDIR, VSERVER, NDIS, NE2000, NETBEUI,
+WFWNET.DRV, NETAPI.DLL; expanded under DOSBox-X, since Windows'
+EXPAND copies the KWAJ files unexpanded), SYSTEM.INI and
+PROTOCOL.INI written as Setup writes them for an NE2000 at 300h, IRQ
+9, and QEMU's ne2k_isa on its user-mode network (runqemu -Nic,
+flopwin -WinSrc/-Nic/-SysIniDrop; scratchpad wfwnet\).  Two things
+came of it before the rig ran out of likeness to the machine:
+
+  * VNETSUP.386 SETS THE MACHINE NAME as the network starts - INT 21h
+    5E01h - and RMDOS refused it with error 1, as it refused every
+    5Eh and 5Fh.  MS-DOS keeps the name itself ($UserOper, DOS6SRC
+    dos/macro.asm): fn5E (RMINFO.INC) now takes it (5E01h) and gives
+    it back (5E00h, CH = 1 once set, CL = the NetBIOS number); 5E02h
+    to 5E05h and 5Fh - redirected printers, the redirection list -
+    are the redirector's business through INT 2Fh 111Eh in MS-DOS and
+    stay refused.
+  * On QEMU Windows went no further than its logo and came back to
+    the prompt without a word: KRNL386 had loaded WFWNET.DRV and
+    NETAPI.DLL and then WIN386 unwound (XMS handles freed, vectors
+    restored, WIN386.SWP deleted, 4CFFh).  A hand-made network
+    install is not Charlie's; and the BOOTLOG.TXT he sent, which
+    was read here as a WIN /N run because it reached PROGMAN, was
+    the lockup's - the next entry has what that meant.  WDCTRL
+    must be dropped from SYSTEM.INI for the QEMU run (its validation
+    fails at phase 07 with the card in the machine); LRGDISK is the
+    answer there as everywhere.
+
+THE DIRTY BIT at the prompt: the prompt is a commit point, so a
+machine turned off there has every volume marked clean (VOLFLAG.INC,
+vfl_cleanall from dos_commit); only a program with a file half
+written when the power goes leaves its volume dirty, which is the
+truth.  While Windows runs, the park marks the hard disks dirty
+(vfl_parkmark) and the unpark cleans them, so power off inside
+Windows is a check at the next boot - as Windows 95 does it.
+
+Files: DOS\CRITERR.INC (crit_guest's frame), DOS\VDM.INC (vdm_cgchk,
+crit_direct, the fault report), DOS\RMDISK.INC (VOL_TICK, rd_ticks,
+rd_getvol, rd_raw and rd_bounce), DOS\RMINFO.INC (fn5E), DOS\RMDOS.ASM
+(the table), DOS\RME9.INC (the buffer and the registers in the disk
+trace), DISK\AUTOEXEC.BAT, DISK\AUTOEXEC.TXT (new), BUILD.CMD,
+MKHD.CMD, BIN\HD\AUTOEXEC.BAT (regenerated).  RUNTESTS: RMTEST and
+SFTSCAN re-recorded (RMDOS.SYS grew 1,387 bytes and PMDOS.SYS 624:
+two clusters less free, the "CON " scan moved) - and re-recorded
+AFTER the last syncbuild, which copies S:'s BASELINE over a tree;
+83 x 7.  MASM 6.13: RMDOS plain and traced, DOSMAIN.
+
+
+THE NETWORK START CALLED ZERO (2026-10-09)
+------------------------------------------
+
+Charlie, in the morning: the BOOTLOG.TXT he sent was the lockup's -
+the try after it was the one he gave WIN /N - and the card in the
+486 is a 3Com EtherLink III, a 3C509 on the ISA bus.  So the log
+ends where the hang is, at INITDONE=Installable Drivers with nothing
+after it; and on this kernel's rig, the same WfW tree with an NE2000,
+WIN /3 /B stops at the same line and Windows is back at the prompt
+with 4CFFh and not a word.  The same point, a different ending.
+
+WHAT ENDS THERE.  The kernel's LoadStart lines stop at Installable
+Drivers because USER tells the kernel the boot is over then; what
+runs next in Windows for Workgroups is the network driver, WFWNET.DRV
+and NETAPI.DLL, loaded after MMSYSTEM in the RMDOS trace.  It starts
+by asking DOS three things - the version, the collating table (6506h,
+then a selector set on the table's address), the extended country
+information (6501h, 36 bytes) - and then it CALLS THE CASE-MAP
+ROUTINE in that block, a far call into real mode through DPMI 0301h,
+to upper-case a name.  RMDOS's block had zero there ("the case-map
+call, which is none"), so the call went to 0000:0000 and the system
+VM ran the interrupt table as code.  On QEMU the fourth byte is an
+invalid opcode: the VMM takes a fault in the system VM as fatal and
+leaves for DOS with code FFh and no message, which is the quiet exit
+the earlier entry could not explain.  On the 486 the table's bytes
+are the BIOS's and the kernel's own vectors, and what they decode to
+runs until the machine stops: the blinking cursor.  WIN /N never
+loads the network driver, so it never asks.
+
+QEMU'S OWN LOG FOUND IT.  Nothing on the DOS side showed where
+Windows went after 6501h, and the kernel's fault ring is parked with
+the kernel.  runqemu -DLog int has the emulated CPU write every
+exception it takes - vector, privilege, CS:EIP, CR2, the registers -
+and hw\intlog.pl and hw\intwin.pl read the log: WIN386's ring 0 had
+no fault at all (fifteen page faults from the pager, the first-time
+VxD calls), and the ring-3 window before the exit read, in order,
+5100h, two DPMI 0303h callbacks, 3000h, 6506h, a selector on the
+table, 3000h, 6501h, then INT 31h 0301h from the same code segment -
+and the next exception was an invalid opcode in V86 mode at
+0000:0003.  Eighty megabytes of log for three minutes of boot; the
+digest is forty lines.  The screendumps of such a run show the boot
+text whatever Windows is doing, so the log is the witness.
+
+THE FIX IS THE KERNEL'S OWN.  PMDOS's 38h and 6501h point the
+case-map call at the far return in the guest block (GLOL_RETF; "zero
+there would be a call into the interrupt table", INT21.INC): a
+character comes back as it went, which is the whole of codepage
+437's case mapping beyond ASCII that this DOS does.  The same byte
+sits at the same offset in the low block RMDOS adopts (RL_DEVRET),
+so rd_lowsave writes rd_lowseg:RL_DEVRET into rd_country's case-map
+field each time it takes the block, and 38h and 6501h copy it out as
+before.  Nine bytes.  The two DOSes' country tables are checked
+against each other at assembly time (PARK.INC); the block's contents
+were not, and this is the field that differed.
+
+WITH IT, THE SAME RUN GOES ON.  The bootlog carries past Installable
+Drivers to INIT=TSRQuery and INITDONE=TSRQuery, which is where a WfW
+3.11 boot ends.  The network driver then put up "Networking
+functionality will not be available" - the same box, word for word,
+that the same tree gives on real MS-DOS 5 (hw\dos5net.ps1, the
+control), and the cause was the install, not the DOS: SYSTEM.INI
+had no "netmisc=ndis.386", so the NDIS 3 wrapper the card and
+protocol drivers bind through never loaded (the trace opens
+NE2000.386 and NETBEUI.386 and never NDIS.386; netini.pl writes the
+line now).  With it THE NETWORK STARTS UNDER PM-DOS on the rig:
+PROGMAN with its Network group, WINSWEEP runs its program and
+leaves, Windows exits with 4C00h and the floppy-boot AUTOEXEC runs
+to its end - with and without LRGDISK.386 loaded (hwnet8, hwnet9),
+and on real MS-DOS 5 the same (dos5net6).  runqemu -Keys sends the
+monitor's sendkey to the guest, which answered the box while it was
+there.  The screendumps of a -DLog run show the boot text whatever
+Windows is doing, so the log is the witness there.
+
+THE CRASH ON EXIT Charlie then reported from the 486 is therefore
+not what this stack does on the rig: the exit after a bound network
+session is clean here.  What the screen says at his, and whether
+WIN /N's exit does it too, is what the next round starts from.
+
+"THE NETWORK DRIVER WAS UNABLE TO LOAD".  Charlie's next boot from
+the floppy, with the new RMDOS: no lockup, but a box at startup -
+"The Windows for Workgroups network was not started ... The Windows
+for Workgroups network driver was unable to load" - and nothing
+about it in BOOTLOG.TXT.  The rig had never shown it because every
+rig floppy loaded C:\WINDOWS\IFSHLP.SYS from its CONFIG.SYS and the
+shipped DISK\CONFIG.SYS did not: booted from the shipped file, the
+rig puts up the same box word for word (hwnet10).  IFSHLP.SYS is
+the real-mode helper Workgroups' redirector and its 32-bit file
+access run through, and WIN.COM and WIN386 both open IFS$HLP$
+before the network driver comes to it.  So the shipped CONFIG.SYS
+loads it now, with a REM saying why; a machine with no Workgroups
+at C:\WINDOWS gets the line echoed with "Bad or missing device
+driver" and boots on, which is what cfg_device has always done and
+what MS-DOS does with the same line.  CONFIG.TXT says so under
+DEVICE=.  Booted from the new file, the rig loads the driver and
+leaves Windows clean (hwnet11).  Whether QEMU's NE2000 then binds
+is a coin toss there - byte-identical images pass and fail (hwb4
+against hwb9), and real MS-DOS 5 tosses the same coin (dos5net6
+bound, dos5net7 and 8 did not) - so that part is the emulator's
+and not the DOS's; eleven runs say so.  The crash on exit is still
+his word only; nothing here has shown one.
+
+THE 3C509.  Neither emulator here has one - 86Box has the 3C503 and
+the 3C501, QEMU the NE2000 - and the WfW disks carry ELNK3.386.
+Nothing on the road to the crash touches the card: the call comes
+before the card is bound.  What the 486 does after it is Charlie's to
+see.
+
+Files: DOS\RMDOS.ASM (rd_lowsave), DOS\RMINFO.INC (rd_country).  The
+rig: rig\runqemu.ps1 (-DLog, -Keys), hw\flopwin.ps1 (-WinArgs,
+-DLog, -Keys, BOOTLOG.TXT fetched), hw\dos5net.ps1 (the control on
+real DOS 5), hw\intlog.pl, hw\intwin.pl.  RUNTESTS: SFTSCAN
+re-recorded on every row (RMDOS.SYS is nine bytes longer and the
+"CON " addresses moved by nine), 83 x 7.  MASM 6.13: RMDOS.
+
+
+THE LETTERS UNDER WINDOWS, AND THE CD-ROM (2026-10-09)
+------------------------------------------------------
+
+Charlie, after IFSHLP.SYS went into the shipped CONFIG.SYS: the
+network starts, but the logon script that maps his network drives
+maps none; File Manager shows C: to H: on a machine with a C: and a
+CD-ROM; D: is the CD-ROM and shows nothing; and the prompt never
+comes back when Windows exits - that one is his next round, with
+LRGDISK.386.  The first three are here.
+
+THE PHANTOM LETTERS.  WINSWEEP now writes a line a letter as it
+starts - GetDriveType, 4409h, 4408h, MSCDEX's 150Bh - and on the rig
+it said what File Manager draws: D: to H: fixed disks, while every
+DOS question about them said "invalid drive".  Windows 3.1 tests a
+letter by SELECTING it (0Eh) and seeing whether 19h moved, and RMDOS
+let any letter below eight be selected.  MS-DOS selects only a letter
+whose current directory structure is in use ($SET_DEFAULT_DRIVE,
+GetVisDrv), and now so does RMDOS (cds_inuse, which 29h and 47h ask
+as well): a redirector's drive is in use, so a mapped network letter
+can still be made current.  The real MS-DOS 5, same Windows, same
+list, gave A:, C: and nothing else; PM-DOS now gives the same.
+
+B: went too.  The kernel gives B: a slot of its own on every machine
+(FAT.INC, disk_scan) and RMDOS answered 440Eh with "no other letter",
+so Windows drew a second diskette drive; MS-DOS answers 1 for both A:
+and B: when there is one drive, A: having it, and Windows takes a B:
+that is not its own owner for nothing.  RMDOS reads the BIOS's
+equipment word for it, as MS-DOS learns the count.  440Eh and 4408h
+on a redirector's drive are "invalid function", as DOS has them.
+
+LASTDRIVE.  RMDOS had eight letters, A: to H:, fixed, for its volumes
+AND for the current directory structures - and a network drive is a
+structure Windows for Workgroups writes into.  With eight, there was
+no I: to Z: to map, and D: to H: looked taken (they passed the test
+above).  The structures go to twenty-six now (RL_NCDS) while the
+volumes stay at eight; how many are in use is LASTDRIVE= as written -
+the kernel caps its own at P: and now hands the line over uncapped
+(RMH_LASTDRV) - never fewer than the volumes, and all twenty-six with
+no line, as the kernel takes all of its own with none.  The shipped
+CONFIG.SYS says LASTDRIVE=Z; CONFIG.TXT says why.
+
+THE KERNEL KEEPS ITS OWN BYTES NOW.  Twenty-six structures made the
+low block RMDOS builds in 4K, and RMDOS kept a copy of the kernel's
+bytes there in its own 64K to put back - and the traced build no
+longer fitted the segment.  The kernel keeps them instead, above the
+megabyte (park_lowkeep, saved in park_fillhdr, put back first thing
+in park_recover), and RMDOS keeps only what it reads before building:
+its volumes' current directories and NUL's link (RD_KEEPLEN).
+RMDOS.SYS came out smaller than before (61,148), the traced build
+fits (63,544), and PMDOS.SYS is 4K bigger.
+
+5FH AND 5E02H-5E05H go to the redirector now, as INT 2Fh 111Eh and
+111Fh with the caller's own registers, as MS-DOS's $AssignOper and
+$UserOper send them; 5F07h and 5F08h are DOS's own and are done here.
+A redirector answers those calls by writing the caller's register
+frame through the SDA's user_SP and user_SS - in MS-DOS's order,
+which RMDOS's frame is not in - so one in that order is built for the
+call and copied back (net_user).  5E00h/5E01h now keep fifteen bytes
+and a NUL and give CX back as it was set, as UserGet does.  Path
+roots: rd_canon and 47h take a redirector's root from its structure's
+curdir_end, so a drive whose root is \\SERVER\SHARE is spelled the
+way MS-DOS hands it to a redirector.
+
+WHAT THE RIG COULD SHOW OF THE NETWORK.  NET USE in a box on the rig,
+with NET.MSG and NETH.MSG expanded from the disks and a [Password
+Lists] section so that NET can log on, never reaches DOS at all: the
+trace has no 5F03h and no redirector call - Windows' own redirector
+answers it above DOS - and NET, having logged on, raised "General
+failure" for a server that does not exist, there being no server on
+the rig.  So the mapping itself is Charlie's to see.  What stopped it
+on the 486 is most likely what is fixed above: a letter past H: had
+no structure to be mapped into, and D: to H: looked taken.
+
+THE CD-ROM UNDER WINDOWS: RMCD.SYS (DOS\RMCD.ASM, new).  The kernel
+reads a CD itself - ISO9660.INC, UDF.INC, ATAPI.INC, all 32-bit - and
+none of it runs while it is parked, so under Windows the CD's letter
+was simply not there (on the 486 it was there only as a phantom).
+RMCD is that letter's other half the way MS-DOS had it: a redirector,
+as MSCDEX is.  The park loads it when the kernel has a CD-ROM on an
+IDE channel (park_cdfind, park_loadcd) into 8K after RMDOS's 64K in
+the same block - the block vl_winres reserves when WIN386.EXE loads
+is that much bigger then, so RMCD is below WIN386 with RMDOS and
+global to every virtual machine, as MSCDEX loaded before Windows was
+- and fills in its header: the letter, the command and control ports
+(IOS_CDUNIT gives the control port now, in EBX's high word) and
+master or slave.  RMDOS marks the letter's structure C080h - in use,
+redirected, and bit 7, which keeps it out of the network's list of
+connections - and calls cd_init, which hooks INT 2Fh on top of
+RMDOS's vectors.  The park restores a vector that points into RMCD's
+room as it restores RMDOS's.
+
+What it does: the 11xxh calls RMDOS makes for the letter - CHDIR,
+the attributes, open, read, seek from the end, close, find first and
+next, the drive's size - out of the primary ISO 9660 tree of the
+first session, names as 8.3 by the kernel's rule (";1" gone, the last
+dot the extension); everything that would write is "access denied",
+as MSCDEX has it; and MSCDEX 2.23's 1500h, 150Bh, 150Ch, 150Dh,
+1502h-1505h and 1508h.  The drive is driven by PIO, its interrupt off
+for each command and on again after, for a BIOS disk on the cable;
+LRGDISK lends the cable to it.  A disc spinning up is waited for, a
+changed disc is mounted again and a file opened on the old one says
+"invalid disk change".  The Office CD on the rig, D:: DIR of the root
+and of POWERPNT\DISK1, CD into WORD_NT\I386 and back, three files
+copied - 106,497, 39,856 and 2,778 bytes - IDENTICAL to tar's copies,
+writing refused; WINSWEEP's line for D: says remote, 4409h 1000h,
+150Bh FFFFh/ADADh; File Manager draws d with the CD-ROM icon and
+opens it - "D: CD-ROM", the tree, "0 bytes free, 116MB total".  The
+names are the ISO tree's: that disc's EXCEL.NT is EXCEL_NT there,
+which is what MSCDEX showed DOS too; the dotted name is Joliet's.
+
+Two bugs of RMCD's own on the way: open wrote the file table entry
+through ES:DI after the path walk had used DI - the entry stayed
+blank, RMDOS took the file for a local one and read nothing, and the
+fields went into RMDOS's own segment - and the walk borrowed FS,
+which RMDOS keeps no copy of for its caller.
+
+Not done: Joliet's long names, UDF-only discs and the later sessions
+of a multisession disc (the kernel's, outside Windows), a second
+CD-ROM drive, a SCSI CD-ROM (it would need an ASPI manager under
+Windows), and 1501h/1510h, which hand the caller a device driver.
+
+The rig: WINSWEEP's drive report; flopwin -List/-Root with RMCD.SYS
+on its floppy, -Cd2 for an ISO, -Keys for the guest; runqemu -Nic
+model:irq:iobase; the NE2000 binds on QEMU about half the time under
+load, on PM-DOS and on MS-DOS 5 alike (nineteen runs) - the network
+box it puts up is the emulator's.
+
+Files: INC\RMDOS.INC (RL_NCDS, RMH_LASTDRV, RMH_CDSEG, RCH_*,
+PARK_CDPARAS, RD_KEEPLEN), INC\RMSDA.INC (new: the SDA offsets, out
+of RMINFO.INC, for RMCD too), DOS\RMDOS.ASM, DOS\RMINFO.INC,
+DOS\RMDISK.INC, DOS\RMFILE.INC, DOS\RMFILE2.INC, DOS\RMNAME.INC,
+DOS\RMNET.INC, DOS\RMCD.ASM (new), DOS\PARK.INC, DOS\VDM.INC,
+DOS\CONFIG.INC, DOS\INT21.INC, IO\CDUNIT.INC, INC\PMDOS.INC,
+BUILD.CMD and MKHD.CMD (RMCD.SYS built and on the disks),
+DISK\CONFIG.SYS (LASTDRIVE=Z), DISK\CONFIG.TXT.  RUNTESTS 83 x 7
+with four re-recorded on every row: RMTEST (four clusters less free:
+PMDOS.SYS is bigger and RMCD.SYS is new), SFTSCAN (the "CON " scan
+moved), CDSTEST (LASTDRIVE in the list of lists is 26 with no line)
+and NETTEST (the highest letter with no drive is Z: now, and its
+test file's device word carries Z:).  MASM 6.13: RMDOS plain and
+traced, RMCD.  On the rig, besides the CD: Windows with the NE2000
+network and LRGDISK and an EMPTY CD-ROM drive starts and exits clean,
+D: there as a CD-ROM with no disc in it.
+
+
+MSD'S AARD CHECK, THE DPB CHAIN, AND THE WAY BACK (2026-10-09)
+--------------------------------------------------------------
+
+Charlie, with LRGDISK.386: the network works; the domain's logon
+script still maps nothing and goes by too fast to read, though NET USE
+and File Manager map the same drives by hand; Windows still hangs on
+exit at a blinking cursor; and MSD crashed the box - "VDM: the guest
+faulted, vector 0D at 4702:0744", ES:DI = FFFF:FFFF, code 26 03 05.
+
+MSD'S CRASH IS MICROSOFT'S AARD CODE.  The bytes are not in MSD.EXE,
+which is packed; a memory dump of MSD running under QEMU has them, in
+MSD's own stack segment - the check copies itself there, decrypts the
+next twenty words and runs, which is why CS, DS and SS were all 4702.
+Its stack matched the photograph word for word: the list of lists
+copied in, and at [BP+2] the first field, the first drive parameter
+block, which this kernel answered FFFF:FFFF ("PM-DOS has no DPBs").
+The check adds up the block's first twenty words without testing the
+pointer - ADD AX,ES:[DI] at FFFF:FFFF - and a word read at offset
+FFFFh is a general protection fault on a real processor, in V86 mode
+as in real mode.  QEMU does not check a real-mode segment's limit and
+reads on, which is why the rig ran MSD; DOSBox-X checks some forms of
+the access and not ES:[DI].  LOLDPB.COM (scratch segtest) does what
+the check does, and says "READ OK" now.
+
+THE DPB CHAIN (GDPB_, PMDOS.INC; vdm_dpbfresh, VDM.INC).  MS-DOS 4's
+21h-byte block for every drive letter with a FAT volume, in a slot of
+its own at 17C0h of the DOS data segment, chained in drive order from
+the list of lists' first field, the last one's next pointer FFFF:FFFF.
+Written from each volume's state on every 52h - nothing is selected
+and nothing read; a drive not mounted yet says so with FFh in the
+access byte, as DOS's does - and each current directory structure's
+45h points at its drive's slot.  A CD-ROM has none, as under MSCDEX.
+The segment is 210h bytes longer for it and the arena starts at 059Dh
+instead of 057Ch: 528 bytes of conventional memory, which MS-DOS spends
+on its blocks too.  1Fh and 32h answer now (they were "invalid
+function", AL=1, which a caller testing AL for FFh took for success):
+the volume is selected - mounted, as DOS's 32h reads the disk - its
+slot written, and DS:BX points at it.
+
+MSD /P STILL STOPPED AT "DISK DRIVES" - on the rig too, with "Error
+Writing" and "Invalid argument", and two causes, found with a trace of
+every DOS call a box makes written to port E9h (a scratch patch to
+vdm_result, never in the source):
+
+  * 440Dh CX=0860h, Get Device Parameters, was refused - all of 0Dh
+    was.  f44_genblk answers it now (DVP_, PMDOS.INC): a fixed disk's
+    type, the BIOS's cylinders, heads and sectors (IOS_DRVGEO) and the
+    volume's BPB; a diskette drive's type from the BIOS (FDF_TYPE) and
+    the BPB of its own format, or, with bit 0 of the first byte, of
+    the disk in it.  The rest of 0Dh is still refused.
+  * 0Eh read the disk.  MSD walks every letter with 0Eh and 19h, and
+    mounting an empty B: was a critical error; MSD's own handler
+    noted it in a flag and answered it, and its report writer turns
+    that flag into "Error Writing", with whatever errno says.  A DOS
+    box's 0Eh now selects any letter that names a drive without
+    touching it (vdm_seldrv), as MS-DOS's $SET_DEFAULT_DRIVE does; the
+    disk is read when something reads it.  CMD.EXE keeps the kernel's
+    own 0Eh, which mounts or leaves the drive alone, because its "A:"
+    is built on that; 16-bit COMMAND.COM's prompt asks 47h, as MS-DOS's
+    does, and an empty drive's critical error comes from there.
+
+And MSD listed the CD-ROM as a 1.44M diskette drive of 265 cylinders:
+under MSCDEX a CD letter is a redirector's, so 4409h says remote (bit
+12) and 4408h says "invalid function", and MSD tells a CD-ROM drive by
+exactly that.  The kernel's 4408h and 4409h give those two answers for
+a CD-ROM now, as RMDOS has under Windows, and its current directory
+structure is C080h, as MSCDEX and RMDOS mark one.  MSD /P writes its
+whole report on QEMU (CD-ROM in D:) and DOSBox-X: A: and B: floppies,
+C: "31 Cylinders, 16 Heads ... 63 Sectors/Track", D: "CD-ROM Drive".
+
+THE HANG ON EXIT: NOT REPRODUCED, AND NOW INSTRUMENTED.  What MSD showed
+is a class: a real 486 faults where both emulators here carry on, and in
+REAL mode the fault goes through vector 0Dh, which is IRQ 5's - whose
+handler returns to the instruction that faulted, for ever, at a blinking
+cursor.  BUILD exittrace (INC\XTRACE.INC) writes a letter on the top
+row, white on red, for each step home: W for Windows' exit broadcast, X
+for the end of the program that parked, G and J for rd_goback, a b c for
+PMIO's unpark and A20 (! for an A20 that would not open), K L M V C for
+park_go and park_recover, the letter of each drive park_remount mounts
+and a "-" after the last, R E U for the rest, Z when WIN.COM's box runs
+again, T when that box is over, and Q when the kernel waits for a key,
+which is the prompt.  And RMDOS takes 06h, 0Ch and 0Dh while it is the
+DOS: a fault in real mode that is not IRQ 4 or 5 (the PIC's in-service
+register) and not Windows' (SMSW's PE bit) writes F, the vector, CS:IP,
+four code bytes and the registers across the second row and
+stops.  BAD0D.COM (MOV AX,[FFFFh]) run by PARKTEST under DOSBox-X -
+which does check that form - shows "F000D 15D4 0100 A1FFFFB8 ...";
+HELLO.COM run the same way shows "XGJabcKLMVC-REU" and Q.  WIN.COM sets
+the screen's mode again as it leaves, so a good exit from Windows - the
+QEMU rig, network, LRGDISK, a disc in D: - leaves only T and Q beside
+the prompt, and a hang before WIN.COM runs again leaves the row as far
+as it got.  IMAGES\EXITTRC.IMG is that build's boot floppy; a photograph
+of the top two rows at the hang says where it stopped.
+
+THE LOGON SCRIPT.  NETAPI.DLL maps the domain controller's NETLOGON
+share to the highest free letter, Z: down, and runs LMSCRIPT.EXE in a
+box through LMSCRIPT.PIF: "LMSCRIPT.EXE <COMSPEC> /e:1024 /C Z:\<the
+script>", taking the drive away again afterwards.  LMSCRIPT.EXE
+(expanded from the disks into wfwnet\lms) EXECs that COMSPEC with
+that tail and 0000:0000 for both FCBs; COMMAND.COM takes /e:1024 /C.
+The PIF has "Close window on exit" set, which is why it goes by.  The
+rig has no domain controller, so what it says is Charlie's to read:
+PIF Editor, LMSCRIPT.PIF, that box cleared.
+
+Files: INC\PMDOS.INC (DOSDATA_SIZE 19D0h, V86_TPA 59D0h, GDPB_, DVP_,
+DVT_, GCDSF_CDROM, GVP_XT), DOS\VDM.INC (vdm_dpbfresh, vdm_dpbstate,
+vdm_dpbone, vdm_seldrv; 1Fh/32h to vdm_dsptr; 44h/0Dh's DS:DX),
+DOS\INT21.INC (fn1F, fn32, f44_genblk, 4408h/4409h for a CD-ROM).
+INC\XTRACE.INC (new), DOS\PARK.INC, DOS\RMDOS.ASM, DOS\RMINFO.INC,
+DOS\RMMEM.INC, IO\IORM.ASM (and a check that rm_unpark has not grown
+into the GDT) and BUILD.CMD (exittrace) are EXIT_TRACE only, as are a
+few lines in the first three; PMIO.SYS and RMDOS.SYS build byte for
+byte as before.  RUNTESTS 83 x 7, after re-recording fifteen tests on
+every row - MEM, ARGS, DPMITEST, EXECTST, HELLO, HELLOX, HNDTEST,
+LOLTEST, MCBTEST, PROBE13, RMTEST, SFTSCAN, WINTEST, XMSREPT, XMSTEST
+- every difference the arena starting 21h paragraphs higher, the 1K
+less conventional memory that is, and RMTEST's two clusters less free
+(PMDOS.SYS is 158,756 bytes).  MASM 6.13: DOSMAIN, IOPM, IORM, RMDOS
+and RMCD, plain and with EXIT_TRACE.
+
+
+THE WAY BACK FROM WINDOWS, AND A 7 AT EVERY PROMPT (2026-10-09)
+---------------------------------------------------------------
+
+Charlie booted IMAGES\EXITTRC.IMG on the 486 and started WfW: the
+logon script still mapped nothing, and on the way out of Windows the
+top row said W X G J and nothing more, at the blinking cursor.  And
+every boot - the ordinary floppy too - ended at "A:\>7".
+
+THE HANG WAS A JUMP PATCHED INTO THE CODE IN FRONT OF ITSELF.  After J
+(rd_goback, RMDOS.ASM) there was nothing left but six instructions and a
+far jump to PMIO's rm_unpark, whose first act is the a that never
+came.  Two of those instructions stored the target into the jump's own
+operand - JMP FAR <patched>:<patched>, 0000:0000 in the file - the last
+of them immediately in front of it.  A 386 or 486 fetches and decodes
+ahead of the instruction it is running; a store into those bytes changes
+memory and not what the processor already has, and Intel's rule is a
+jump between the store and the code it changed.  So the 486 took JMP FAR
+0000:0000, into the vector table, with interrupts off.  QEMU, 86Box and
+DOSBox-X all see the store.  DOSBox-X has CPU types that model the queue
+(486_prefetch, 386_prefetch, core=normal), and a scratch test, SMCQ.COM,
+shows them running stale bytes - 486_prefetch up to 12 bytes ahead of a
+store, 386_prefetch up to 4 - but PARKTEST came home on all of them, by
+the look of it because they refill the queue a block at a time and a
+refill fell between the stores and the jump.  A real 486 keeps fetching
+up to 32 bytes ahead.
+
+Three of these were in the real-mode code, and all three are now jumps
+through a pointer, which is data: rd_back (rd_backvec, the way home, the
+stores 0 and 6 bytes ahead), rd_go in RMDOS (rd_govec, PARKTEST's
+program, 22 bytes ahead) and park_go in IORM.ASM (park_vec, where the
+kernel hands over to RMDOS, 30 bytes ahead - inside a 486's 32, and
+working on Charlie's machine only by where the fetches fell).  The RMDOS
+header and GV_PARK keep the segment before the offset, so each pointer
+is copied the right way round for the jump.  pm2rm's INT number, patched
+60 bytes ahead of the INT, is left as it is; every BIOS call the kernel
+makes goes through it, the 486's included.  No far jump with a zero
+target is left in PMIO.SYS or RMDOS.SYS (scratch hw\farjmps.pl).
+
+THE 7 WAS THE CONTROLLER'S COMMAND BYTE.  The mouse probe (ms_kbcaux,
+MOUSE.INC) asks the 8042 for its command byte three times, with
+interrupts off, and reads the answers itself.  But the controller raises
+IRQ 1 for an answer as it does for a key, and the PIC holds the request
+until interrupts are on again; irq_keyboard then read port 60h without
+asking whether there was anything in it, and got the last answer
+again.  On Charlie's 486 it can only have been 47h - both ports'
+interrupts on, as a BIOS that drives a PS/2 mouse leaves them - which is
+the keypad's 7, and with no Num Lock tracking the keypad's keys are
+digits.  A QEMU run with the handler logging to port E9h (scratch
+hw\kbe9.pl, hw\e9kb.pl) shows exactly one IRQ 1 inside the probe, status
+1Ch - nothing in the buffer - and the old handler reading 41h, QEMU's
+command byte: F7, which a prompt ignores, which is why no rig ever
+showed it.  irq_keyboard now reads the status first and returns when bit
+0 is clear, as Linux's i8042 driver does; the same run shows the IRQ
+skipped.  Only bit 0: on an AT controller with no mouse port, bit 5 is a
+time-out flag and not "the mouse's byte", and a keyboard byte left
+unread in the buffer stops the keyboard.
+
+THE LOGON SCRIPT STILL MAPS NOTHING, and the part of it a rig without a
+domain controller can run works.  WfW on QEMU - the network, LRGDISK and
+a CD, booted from a floppy as Charlie's is - ran "C:\LMSCRIPT.EXE
+A:\COMMAND.COM /e:1024 /C C:\LOGON.BAT" through LMSCRIPT.PIF, exactly as
+NETAPI runs a logon script, and the batch file wrote its answers: ECHO,
+COMSPEC expanded, VER, IF EXIST and GOTO (scratch wsweep\lists\lms.lst
+and wsweep\root_lms).  What is left is what the rig cannot have: the
+NETLOGON share mapped by NetUseAdd, the script read off it, and its own
+NET USE lines.  Charlie is asked for the script's text and for what it
+says when run by hand from a DOS box after NET USE Z: \\<DC>\NETLOGON.
+
+Files: DOS\RMDOS.ASM (rd_go, rd_back, rd_govec, rd_backvec), IO\IORM.ASM
+(park_go, park_vec), IO\KEYBD.INC (irq_keyboard).  PMIO.SYS 57,363 bytes
+(8 more), RMDOS.SYS 61,156; PMDOS.SYS, CMD.EXE and COMMAND.COM are byte
+for byte as before.  RUNTESTS 83 x 7, after re-recording SFTSCAN on
+every row: its seven addresses past PMIO's code moved by those 8 bytes,
+and nothing else (scratch hw\sftshift.pl checks every changed line for
+exactly that).  MASM 6.13: IOPM, IORM and RMDOS, plain and with
+EXIT_TRACE.  PARKTEST HELLO on DOSBox-X comes home with cputype
+486_prefetch (the exittrace build's row: XGJabcKLMVC-REU, and Q) and
+386_prefetch, and WfW on QEMU runs the LMSCRIPT test and exits to the
+end of AUTOEXEC.
+
+
+NET.EXE AND "PROGRAM TOO BIG TO FIT IN MEMORY" (2026-10-09)
+-----------------------------------------------------------
+
+Charlie, on the build above: the way back from Windows works and the 7
+is gone.  He mapped Z: to the domain controller's NETLOGON share by hand
+and ran its LOGON.BAT, which is nothing but NET USE lines, and every one
+of them said "Program too big to fit in memory".
+
+That is COMMAND.COM's answer to an EXEC that failed with error 8, and
+NET.EXE is a program that loads high: MINALLOC and MAXALLOC both zero, a
+142,672-byte image and overlays after it.  RMDOS gives it the largest
+block with the image at the top (f4B_got), as DOS does, and its first
+instructions then move house: 51h for the PSP; the PSP's 256 bytes
+copied to the paragraphs just under the image, with its handle table
+pointer and its environment's owner made the new PSP's; 50h to make the
+new PSP current; 4Ah to shrink the block it was loaded in so that it
+ends where the new PSP begins - which leaves a free header exactly
+there; that header given the old block's owner; and the old block given
+back.
+
+MS-DOS'S 4AH SETS THE OWNER.  $SETBLOCK finishes in $ALLOC's
+alloc_set_owner, which writes CurrentPDB into the block on every resize
+that works (DOS6SRC dos/alloc.asm), so the owner NET copies is its new
+PSP, and 4Ch - which frees what CurrentPDB owns - frees the
+image.  RMDOS's 4Ah left the owner alone.  NET copied its OLD PSP into
+the image's header, the process that ended was the new one, and the
+image stayed: 22E5h paragraphs, 142,928 bytes, after every NET command.
+In a DOS box under Windows, after the NET USE Z:, the NET USEs that
+followed had no room left.
+
+Measured with a scratch tool, MCBWALK.COM (every MCB, and the largest
+block 48h will give), around two NET HELPs:
+  * RMDOS (PARKTEST running scratch RUNT.COM, which runs COMMAND /C on
+    a batch file, on DOSBox-X): the largest block 7E67h before, 5B81h
+    after the first, with 22E5h paragraphs at 7D19h owned by NET's old
+    PSP.  The second run looked clean only because MCBWALK's next PSP
+    landed on that same segment, 2097h, and its own exit freed the
+    leftover by owner - a coincidence worth knowing about before
+    trusting a second sample.
+  * Real MS-DOS 5 (the DOS5K rig): 9A41h before, between and after.
+  * A DOS box on PM-DOS itself: 9016h throughout - the kernel's box
+    gives back the block it was given (vdm_setpsp), whoever 50h says
+    owns it.
+
+fn4A (RMMEM.INC) now writes the current PSP into the block's owner on
+every resize that succeeds - the same size, smaller, or larger into the
+free space after it - as MS-DOS does, and RMDOS shows 7E67h before,
+between and after.  Not reproduced under Windows here: the rig's network
+never starts (the NE2000 does not bind), so NET sits at its logon
+prompt.
+
+Files: DOS\RMMEM.INC (fn4A).  RMDOS.SYS 61,163 bytes (7 more); nothing
+else changed.  RUNTESTS 83 x 7, after re-recording SFTSCAN on every row:
+two of its addresses moved by those 7 bytes and nothing else (scratch
+hw\sftshift.pl).  MASM 6.13: RMDOS, plain and with EXIT_TRACE.  WfW on
+QEMU (network, LRGDISK, a CD) runs the LMSCRIPT test and exits to the
+end of AUTOEXEC.
+
+
+v0.63 - WINDOWS IN 386 ENHANCED MODE, WINDOWS FOR WORKGROUPS 3.11,
+        LRGDISK.386, AND A REAL 486 (2026-10-09)
+---------------------------------------------------------------------
+
+Charlie, with the logon script mapping his drives: "Everything works",
+and for this to be tagged and committed as the new latest version.
+INC\PMVER.INC now says 63.  The entries above, from "DOS PROGRAMS OFF
+THE SHELF" on 2026-10-04 down to the NET.EXE one, are this release.
+Seven of them end "Still v0.62"; that is left as written.  This entry
+is the list.
+
+WINDOWS
+  - Windows 3.1 runs in 386 enhanced mode as well as standard mode.
+    Both park the kernel: RMDOS.SYS is the DOS under WIN386, and a DOS
+    box is the 16-bit COMMAND.COM.
+  - Windows for Workgroups 3.11 runs as it installs itself, with its
+    network, a domain logon and the logon script, and with 32-bit file
+    access: IFSMGR.386 and VFAT on RMDOS's redirector interface (INT
+    2Fh 11xxh, a whole SDA, drive parameter blocks, and an INT 25h
+    that reaches INT 13h as IO.SYS sends it).
+  - LRGDISK.386 1.2 is our 32-bit disk driver in WDCTRL's place: any
+    IDE disk past 504MB by LBA and LBA48, both cables, bus-master DMA,
+    a CD-ROM on the same cable, and the CMD640 and RZ1000 kept safe.
+  - RMDOS caches the disk under Windows and answers as SMARTDRV does
+    (RMCACHE.INC, INT 2Fh 4A10h, WINCACHE=).
+  - The drivers CONFIG.SYS loads work under Windows too.  Segment 0400h
+    is MS-DOS 5's DOS data segment on both sides of the handover, the
+    device chain is one chain, and the kernel has a current directory
+    array.  IFSHLP.SYS is in the shipped CONFIG.SYS.
+  - RMCD.SYS is the CD-ROM's letter under Windows, a redirector as
+    MSCDEX is.
+  - File Manager shows the letters that exist: 0Eh selects only a
+    letter in use, LASTDRIVE is honoured, and 5Fh and 5E02h-5E05h go
+    to the redirector.
+
+DOS PROGRAMS
+  - A sweep of ordinary DOS programs, real mode and protected, with
+    the DPMI host mended where they broke it: the raw mode switch
+    (0306h), exception handlers (0202h/0203h), 0301h/0302h, 000Ch,
+    0503h, and INT 21h from a client answering in selectors.
+  - The interrupt flag a POPF or an IRETD puts back is followed, so
+    DOOM, Heretic and Quake play with sound.  PUSHFD, POPFD and IRETD
+    are 32 bits wide in a DOS box.  Nothing below 600h is the kernel's.
+  - MSD runs and writes its whole report.  INT 24h is raised on the
+    frame MS-DOS leaves; the list of lists has a chain of drive
+    parameter blocks behind it (the AARD check read FFFF:FFFF); 1Fh,
+    32h and 440Dh/0860h answer; a box's 0Eh does not read the disk.
+  - RMDOS: a write of nothing makes a file that long with clusters
+    behind it; two virtual machines are kept out of one DOS call (the
+    DOS-box stall); 4Ah gives the block to the current PSP, which
+    WfW's NET.EXE counts on.
+  - CMD.EXE takes "IF ERRORLEVEL == 1".
+
+THE 486
+  - RMDOS.SYS is found on the boot drive, so Windows starts from C:
+    after a floppy boot.  A DOS box whose COMSPEC is on A: starts: a
+    sector that straddles a 64K DMA page is bounced.  A diskette seen
+    again within two seconds is the same diskette.
+  - Expanded memory no longer stops WIN386, and the boot-time CHKDSK of
+    a large FAT32 volume has the memory it needs.
+  - The network starts: the country block's case-map routine was zero.
+  - Windows comes back to the prompt.  Three far jumps were patched
+    into the code just ahead of themselves, and a 486 runs what it has
+    already fetched; they go through pointers now.
+  - No "7" at the prompt: an IRQ 1 with nothing in the 8042's output
+    buffer is not a key.
+  - DIR and FDISK group their counts with the country's separator, the
+    external commands print no banner, and FDISK's details page is a
+    table.
+
+BUILD, TESTS AND FILES
+  - Two floppies: PMDOS.IMG is the boot disk and TESTS.IMG the tests.
+    DISK\AUTOEXEC.TXT says what AUTOEXEC.BAT's REM lines used to.
+  - BUILD exittrace marks each step of the way home from Windows on
+    the top row of the screen (INC\XTRACE.INC).
+  - RUNTESTS: 83 tests on each of seven machines.  New: BLKTEST,
+    CDSTEST, DRVTEST, NETTEST and SEEKWR.  WINSWEEP.EXE runs a list of
+    programs under Windows and logs what happened.
+  - New in the tree: CMD\LRGDISK\LRGDISK.ASM, DOS\RMNET.INC,
+    RMCACHE.INC, RMDEV.INC and RMCD.ASM, INC\RMSDA.INC and XTRACE.INC,
+    and the sources of the new tests and probes in TOOLS\.
+
+PMIO.SYS is 57,363 bytes, PMDOS.SYS 158,756, RMDOS.SYS 61,163,
+RMCD.SYS 5,778 and LRGDISK.386 23,798.
+
+THE STAMP.  Three files read the equate.  PMDOS.SYS has it in two
+places, CMD.EXE and COMMAND.COM in one each.  The rebuild changed
+those four bytes and nothing else: the other 135 files the build
+makes, and TESTS.IMG, came out byte for byte as they were under 0.62.
+On a disk booted headless, VER, COMMAND /C VER and CMD /C VER all
+said "PM-DOS version 0.63", and RUNTESTS is 83 x 7 with no baseline
+changed.  S:\BIN, IMAGES\PMDOS.IMG, IMAGES\EXITTRC.IMG, IMAGES\HD16.IMG
+and the 86Box VM's two copies carry it; the delivered floppy and HD16,
+booted, say 0.63 to VER.  HD32, HDBIG, PMDOSATA and PMDOSFDD were not
+rebuilt.
+
+ON THE 486, by Charlie's own runs: the floppy boot, Windows for
+Workgroups in enhanced mode with LRGDISK.386, the network, the logon
+script, the CD-ROM, MSD, and the way back to the prompt.  NOT VERIFIED
+there: the DOS program sweep, Windows 3.1 itself, LBA48, bus-master
+DMA and the two buggy chips, which ran on emulators only.  STILL OPEN:
+Quarterdeck's Manifest for Windows crashes the machine; Turbo Pascal
+7's TPX and anything else on Borland's RTM.
+
 
 v0.61 - THE NUMBER CAUGHT UP (2026-09-30)
 ---------------------------------------------------------------------
@@ -17022,8 +20156,9 @@ Layout
                     The help moved out of CONFIG.SYS itself, which had
                     grown to 14K of a 16K read buffer.  A new
                     statement gets its entry here.
-  DISK\*.BAT        batch test files, written onto every disk image
-                    by BUILD.CMD and MKHD.CMD.  BATTEST is the broad
+  DISK\*.BAT        batch test files, written into \TESTS on the
+                    test floppy by BUILD.CMD and on the hard disks by
+                    MKHD.CMD.  BATTEST is the broad
                     one; GOTOTEST, LOOPTEST, SHIFT12, CHAIN1/CHAIN2
                     and NOLABEL each pin down one behaviour.
   INC\PMDOS.INC     the one shared header: memory map, selectors,
@@ -17036,7 +20171,8 @@ Layout
   TOOLS\MKUDF.PS1   ...and the one it could, through IMAPI2FS: a UDF
                     disc with NO ISO9660 bridge on it, which is the
                     only kind DOS\UDF.INC is for.
-  BUILD.CMD         assembles, links, checks sizes, makes PMDOS.IMG.
+  BUILD.CMD         assembles, links, checks sizes, makes PMDOS.IMG
+                    (the boot floppy) and TESTS.IMG (the test floppy).
   MKHD.CMD          makes IMAGES\HD16.IMG (bootable FAT16) + HD32.IMG.
   IMAGES\           every finished disk image.  BIN\ is what a disk is
                     MADE OF, BIN\TESTS\ is what proves it, IMAGES\ is
@@ -17063,7 +20199,8 @@ Testing
 -------
 DOSBox 0.74 boots the image:  dosbox -conf <conf with:
   [cpu] core=normal cycles=30000
-  [autoexec] imgmount a IMAGES\PMDOS.IMG -t floppy / boot -l a >
+  [autoexec] imgmount a IMAGES\PMDOS.IMG -t floppy /
+             imgmount b IMAGES\TESTS.IMG -t floppy / boot -l a >
 cycles=max starves DOSBox's event pump (window goes Not Responding);
 use fixed cycles.  Verified 2026-08-06 in DOSBox: boot, VER, DIR,
 MEM, TYPE README.TXT - i.e. keyboard IRQ, INT 21h, FAT12 reads and
@@ -17816,7 +20953,8 @@ Design notes / traps hit
 * THE 86Box VM DIRECTORY HAS ITS OWN COPIES OF THE DISK IMAGES.
   86box.cfg names HD16.IMG relative to C:\86Box\VMs\PM-DOS, not to
   BIN, so a rebuilt image is not a re-tested image - MKHD must be
-  followed by a copy into the VM directory.  Half an hour went into
+  followed by a copy into the VM directory, and BUILD by a copy of
+  PMDOS.IMG and TESTS.IMG (fdd_02_fn) likewise.  Half an hour went into
   wondering why a fix had not taken effect before VER said "PM-DOS
   version 0.30" and settled it.  When an emulator seems to be running
   old code, it is running old code.
@@ -18064,7 +21202,8 @@ Design notes / traps hit
 * 86Box keeps its OWN copy of the disk images inside the VM directory
   (hdd_NN_fn is relative to it).  Rebuilding IMAGES\HD16.IMG and
   booting the VM tests the previous build - the version banner caught
-  it.  Copy the image into C:\86Box\VMs\PM-DOS after every build.
+  it.  Copy the images - HD16.IMG, PMDOS.IMG and since 2026-10-08
+  TESTS.IMG - into C:\86Box\VMs\PM-DOS after every build.
 * IRQ remap must dodge BOTH the CPU exceptions (00-1F) and the DOS
   software interrupts (20-2F).  First cut used base 20h and the
   keyboard IRQ1 landed on vector 21h - the INT 21h hook wiped it.

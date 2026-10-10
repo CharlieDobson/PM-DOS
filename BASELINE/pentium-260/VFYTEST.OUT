@@ -1,6 +1,16 @@
 VFYTEST - does VERIFY verify?
 
- 1 a block driver has a drive letter      skipped
-  No drive is served by a loaded block driver, so VERIFY cannot
-  be tested: uncomment DEVICE=\TESTS\TESTBLK.SYS in CONFIG.SYS.
-VFYTEST: skipped
+ 1 a block driver has a drive letter      ok
+    (it is D:)
+ 2 2Eh and 54h agree, both ways           ok
+ 3 poisoned write, VERIFY off: succeeds   ok
+ 4 the poison lies once, and only once    ok
+ 5 poisoned write, VERIFY ON: FAILS       ok
+ 6 ...and the write still happened        ok
+ 7 clean write, VERIFY on: succeeds       ok
+ 8 a file, VERIFY OFF, reads back right   ok
+ 9 the same file, VERIFY ON               ok
+10 ...and on the boot disk, VERIFY ON     ok
+
+Result: ..........
+VFYTEST: all checks passed

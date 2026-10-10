@@ -1320,7 +1320,10 @@ cfg_lastdrv:
         call    cfg_upcase
         sub     al,'A' - 1              ; A: is one drive, not none
         jbe     cfg_badparm
-        movzx   eax,al
+        cmp     al,26
+        ja      cfg_badparm             ; past Z: is not a letter
+        mov     [lastdrive_cfg],al      ; as written, for RMDOS - which
+        movzx   eax,al                  ; has letters to Z: for a network
         cmp     eax,MAX_DRIVES
         jbe     cld_ceil
         mov     eax,MAX_DRIVES
@@ -2136,6 +2139,68 @@ cz_bad:
         stc
         ret
 
+;---------------------------------------------------------------------
+; WINCACHE=size[,LOG] / WINCACHE=OFF - the cache RMDOS keeps while
+; Windows runs (DOS\RMCACHE.INC).  One size, because RMDOS only exists
+; while Windows does: in KB, or with K or M as CACHE= takes them, and
+; at most 4M.  Without the line the park sizes it from what it hands
+; over - an eighth.  LOG writes RMCACHE.LOG on the boot drive when
+; Windows exits: the hit count and every SMARTDRV call that was made,
+; which is how a file system's use of the interface is read without a
+; debugger.
+;---------------------------------------------------------------------
+cfg_wincache:
+        mov     edi,OFFSET cfgw_off
+        call    cfg_iskw
+        jnc     cfw_off
+        mov     edi,OFFSET cfgw_no
+        call    cfg_iskw
+        jnc     cfw_off
+        mov     edi,OFFSET cfgw_disable
+        call    cfg_iskw
+        jnc     cfw_off
+        cmp     byte ptr [esi],0
+        je      cfw_ok                  ; "WINCACHE=": as it stands
+        mov     edi,OFFSET cfgw_log
+        call    cfg_iskw
+        jnc     cfw_log                 ; LOG alone: the size as it stands
+        mov     edi,OFFSET cfgw_on
+        call    cfg_iskw
+        jnc     cfw_skipword
+        call    cfg_size                ; -> EAX bytes
+        jc      cfg_badparm
+        shr     eax,10
+        cmp     eax,4096
+        jbe     cfw_size
+        mov     eax,4096
+cfw_size:
+        mov     [cfgc_winkb],eax
+        jmp     short cfw_more
+cfw_skipword:
+        mov     al,[esi]                ; past ON, to whatever follows
+        cmp     al,','
+        je      cfw_more
+        cmp     al,' '
+        jbe     cfw_more
+        inc     esi
+        jmp     short cfw_skipword
+cfw_more:
+        call    cfg_blanks
+        cmp     byte ptr [esi],','
+        jne     cfw_ok
+        inc     esi
+        call    cfg_blanks
+        mov     edi,OFFSET cfgw_log
+        call    cfg_iskw
+        jc      cfg_badparm
+cfw_log:
+        or      word ptr [cfgc_winflg],RMWC_LOG
+cfw_ok:
+        ret
+cfw_off:
+        mov     dword ptr [cfgc_winkb],0
+        ret
+
 ;=====================================================================
 ; Helpers
 ;=====================================================================
@@ -2266,6 +2331,7 @@ cfg_table:
         dd      OFFSET cfgn_cdrom,   OFFSET cfg_cdrom
         dd      OFFSET cfgn_scsi,    OFFSET cfg_scsi
         dd      OFFSET cfgn_cache,   OFFSET cfg_cache
+        dd      OFFSET cfgn_wincache,OFFSET cfg_wincache
         dd      OFFSET cfgn_share,   OFFSET cfg_share
         dd      OFFSET cfgn_undel,   OFFSET cfg_undelete
         dd      OFFSET cfgn_autochk, OFFSET cfg_autocheck
@@ -2305,6 +2371,7 @@ cfgn_idecbl   db  'IDECABLE',0
 cfgn_cdrom    db  'CDROM',0
 cfgn_scsi     db  'SCSI',0
 cfgn_cache    db  'CACHE',0
+cfgn_wincache db  'WINCACHE',0
 cfgn_share    db  'SHARE',0
 cfgn_undel    db  'UNDELETE',0
 cfgn_autochk  db  'AUTOCHECK',0
@@ -2345,6 +2412,7 @@ cfgw_umb      db  'UMB',0
 cfgw_noumb    db  'NOUMB',0
 cfgw_high     db  'HIGH',0
 cfgw_low      db  'LOW',0
+cfgw_log      db  'LOG',0
 
 ;--- the transfer modes IDEDMA= will name, and the byte SET FEATURES
 ;--- takes for each.  UDMA3 and up are 44, 66, 100 and 133 megabytes a
@@ -2389,6 +2457,10 @@ cfgc_max    dd  0
 cfgc_min    dd  0
 cfgc_lazy   db  0
             db  0,0,0
+cfgc_winkb  dd -1                      ; WINCACHE= in KB; -1 = the park
+                                        ; decides.  PARK.INC reads both
+cfgc_winflg dw  0                       ; RMWC_*
+            dw  0
 cfg_pass    dd  0                       ; which walk over the file this is
 
 MENV_MAX    EQU 1024                    ; the master environment, which is the

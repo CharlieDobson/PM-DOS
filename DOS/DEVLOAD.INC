@@ -79,7 +79,11 @@ DL_BASE         EQU     0090h
 DL_PKTLEN       EQU     0020h
 DL_STRIDE       EQU     0120h           ; the packet and its stack
 DL_STK          EQU     0120h           ; stack top, measured from the packet
-DL_SIZE         EQU     DL_BASE + DL_LEVELS * DL_STRIDE
+DL_XBUF         EQU     DL_BASE + DL_LEVELS * DL_STRIDE
+DL_XBUFLEN      EQU     0200h           ; an IOCTL transfer for a native
+                                        ; program, whose buffer is above the
+                                        ; megabyte - see dl_ioctl
+DL_SIZE         EQU     DL_XBUF + DL_XBUFLEN
 DL_PARAS        EQU     (DL_SIZE + 15) / 16
 
 DLERR_NOFILE    EQU     1
@@ -995,6 +999,363 @@ dlin_none:
         pop     ebx
         stc
         ret
+
+;=====================================================================
+; THE REST OF WHAT DOS SENDS A CHARACTER DRIVER (2026-10-06): IOCTL
+; read and write, the generic IOCTL, the two status requests, and open
+; and close.  Until now a loaded driver could be read and written a
+; byte at a time and asked nothing else, and 44h said so: "PM-DOS has
+; no installable drivers to pass one to".  It has had them since v0.37.
+; The call that made it matter is 4402h on IFS$HLP$, which Windows for
+; Workgroups' file system manager makes of IFSHLP.SYS - under RMDOS,
+; whose RMDEV.INC answers it there; this is the same thing for a DOS
+; box and a native program.
+;=====================================================================
+
+;---------------------------------------------------------------------
+; dl_rowhdr - EDX = a loaded device's id -> EBX = its header, flat, and
+;             EAX = its row in dl_tab.  CF if there is no such row.
+;---------------------------------------------------------------------
+dl_rowhdr:
+        mov     eax,edx
+        shr     eax,8                   ; DEV_UNIT is 256: what is left is
+        cmp     eax,[dl_count]          ; the row
+        jae     drh_bad
+        push    eax
+        imul    eax,DLE_LEN
+        add     eax,OFFSET dl_tab
+        movzx   ebx,word ptr [eax+DLE_SEG]
+        shl     ebx,4
+        movzx   eax,word ptr [eax+DLE_HDR]
+        add     ebx,eax
+        pop     eax
+        clc
+        ret
+drh_bad:
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; dl_errcode - AX = a status word with the error bit set -> EAX = the DOS
+;          error for it: the driver's code, 0-0Fh, is 13h-22h, as
+;          MS-DOS's SET_I24_EXTENDED_ERROR makes it.
+;---------------------------------------------------------------------
+dl_errcode:
+        and     eax,0Fh
+        add     eax,13h
+        ret
+
+;---------------------------------------------------------------------
+; dl_ioctl - IOCTL read or write.  EDX = the device id, ECX = DEVC_IOCTLIN
+;            or DEVC_IOCTLOUT, EDI = the caller's buffer, flat, EAX =
+;            the count.  -> EAX = bytes moved; CF and EAX = the error.
+;
+; BELOW THE MEGABYTE the driver is handed the buffer where it is, as a
+; segment and an offset: a DOS box's, and the only kind it has.  ABOVE
+; it - a native program's - the bytes go through DL_XBUF in the scratch
+; block, and an IOCTL longer than that is refused: these are control
+; blocks, a few bytes to a few hundred, and one cannot be split in two.
+;---------------------------------------------------------------------
+dl_ioctl:
+        push    ebx
+        push    ecx
+        push    edx
+        push    esi
+        push    edi
+        mov     [dli_cmd],ecx
+        mov     [dli_buf],edi
+        mov     [dli_cnt],eax
+        mov     byte ptr [dli_bounce],0
+        lea     esi,[edi+eax]
+        cmp     esi,100000h
+        jbe     dli_low
+        cmp     eax,DL_XBUFLEN
+        ja      dli_func
+        mov     byte ptr [dli_bounce],1
+dli_low:
+        call    dl_rowhdr               ; -> EAX = the row
+        jc      dli_func
+        test    word ptr [ebx+DEVH_ATTR],DEV_ATTR_IOCTL
+        jz      dli_func                ; the header says it takes none
+        mov     ecx,[dli_cmd]
+        call    dl_prep                 ; -> EDI = the packet
+        jc      dli_func
+        mov     eax,[dli_cnt]
+        mov     word ptr [edi+REQC_COUNT],ax
+        cmp     byte ptr [dli_bounce],0
+        jne     dli_viabuf
+        mov     eax,[dli_buf]
+        mov     edx,eax
+        shr     edx,4
+        and     eax,0Fh
+        mov     word ptr [edi+REQC_BUFOFF],ax
+        mov     word ptr [edi+REQC_BUFSEG],dx
+        jmp     short dli_go
+dli_viabuf:
+        mov     word ptr [edi+REQC_BUFOFF],DL_XBUF
+        mov     eax,[dl_seg]
+        mov     word ptr [edi+REQC_BUFSEG],ax
+        cmp     dword ptr [dli_cmd],DEVC_IOCTLOUT
+        jne     dli_go
+        push    edi                     ; out: the caller's bytes first
+        mov     esi,[dli_buf]
+        mov     edi,[dl_seg]
+        shl     edi,4
+        add     edi,DL_XBUF
+        mov     ecx,[dli_cnt]
+        cld
+        rep     movsb
+        pop     edi
+dli_go:
+        call    dl_fire                 ; -> AX, CF; EDI still the packet
+        jc      dli_err
+        movzx   eax,word ptr [edi+REQC_COUNT]
+        cmp     byte ptr [dli_bounce],0
+        je      dli_ok
+        cmp     dword ptr [dli_cmd],DEVC_IOCTLIN
+        jne     dli_ok
+        push    eax                     ; in: the driver's bytes back
+        mov     ecx,eax
+        mov     esi,[dl_seg]
+        shl     esi,4
+        add     esi,DL_XBUF
+        mov     edi,[dli_buf]
+        cld
+        rep     movsb
+        pop     eax
+dli_ok:
+        clc
+        jmp     short dli_out
+dli_err:
+        call    dl_errcode
+        stc
+        jmp     short dli_out
+dli_func:
+        mov     eax,ERR_FUNC
+        stc
+dli_out:
+        pop     edi
+        pop     esi
+        pop     edx
+        pop     ecx
+        pop     ebx
+        ret
+
+;---------------------------------------------------------------------
+; dl_genioctl - the generic IOCTL for a character device, 440Ch.  EDX =
+;               the device id, ECX = CH category and CL function, ESI
+;               and EDI the caller's SI and DI, EAX = its parameter
+;               block, flat.  -> CF and EAX = the error.
+;
+; The block's length belongs to the category and is not ours to know,
+; so it is passed only from below the megabyte: a native program's is
+; refused rather than half copied.
+;---------------------------------------------------------------------
+dl_genioctl:
+        push    ebx
+        push    ecx
+        push    edx
+        push    edi
+        cmp     eax,100000h
+        jae     dgi_func
+        mov     [dli_buf],eax
+        mov     [dli_cnt],ecx
+        mov     [dli_cmd],esi           ; the caller's SI, kept a moment
+        push    edi
+        call    dl_rowhdr               ; -> EAX = the row, EBX = header
+        pop     edi
+        jc      dgi_func
+        test    word ptr [ebx+DEVH_ATTR],DEV_ATTR_GENIOCTL
+        jz      dgi_func
+        push    edi                     ; the caller's DI
+        mov     ecx,DEVC_GENIOCTL
+        call    dl_prep                 ; -> EDI = the packet
+        pop     edx
+        jc      dgi_func
+        mov     byte ptr [edi+REQ_LEN],REQG_LEN
+        mov     eax,[dli_cnt]
+        mov     byte ptr [edi+REQG_MINOR],al
+        mov     byte ptr [edi+REQG_CAT],ah
+        mov     eax,[dli_cmd]
+        mov     word ptr [edi+REQG_SI],ax
+        mov     word ptr [edi+REQG_DI],dx
+        mov     eax,[dli_buf]
+        mov     edx,eax
+        shr     edx,4
+        and     eax,0Fh
+        mov     word ptr [edi+REQG_PKTOFF],ax
+        mov     word ptr [edi+REQG_PKTSEG],dx
+        call    dl_fire
+        jnc     dgi_out
+        call    dl_errcode
+        stc
+        jmp     short dgi_out
+dgi_func:
+        mov     eax,ERR_FUNC
+        stc
+dgi_out:
+        pop     edi
+        pop     edx
+        pop     ecx
+        pop     ebx
+        ret
+
+;---------------------------------------------------------------------
+; dl_short - EDX = a loaded device's id, ECX = a request that is the
+;            header alone: open, close, input or output status.
+;            -> EAX = the status word; CF if the driver failed it, or
+;            if there is no such device.
+;---------------------------------------------------------------------
+dl_short:
+        push    ebx
+        push    edi
+        call    dl_rowhdr
+        jc      dsh_none
+        call    dl_prep
+        jc      dsh_none
+        mov     byte ptr [edi+REQ_LEN],REQ_HDRLEN
+        call    dl_fire                 ; -> AX, CF
+        movzx   eax,ax
+        pop     edi
+        pop     ebx
+        ret
+dsh_none:
+        xor     eax,eax
+        pop     edi
+        pop     ebx
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; dl_devopen / dl_devclose - ESI = an SFT entry.  If it is a loaded
+;            driver whose header asks to hear about opens and closes,
+;            tell it.  dl_devopen: CF and EAX = the error if the driver
+;            refused.  Both preserve everything else.
+;
+; ONE OPEN AND ONE CLOSE FOR EACH SLOT, and a DOS program's duplicate
+; handles share a slot (JFT.INC), so the driver hears about each file
+; it really has open.  A native program's 45h and 46h copy the slot,
+; and send another open for the copy so that the two closes it will
+; get are matched.
+;---------------------------------------------------------------------
+dl_devopen:
+        push    ebx
+        push    ecx
+        push    edx
+        push    eax                     ; the caller's - open_core's
+        call    dl_ocrm                 ; handle is in it
+        jc      dlo2_ok
+        mov     ecx,DEVC_OPEN
+        call    dl_short
+        jnc     dlo2_ok
+        call    dl_errcode
+        add     esp,4                   ; the error replaces it
+        stc
+        jmp     short dlo2_out
+dlo2_ok:
+        pop     eax
+        clc
+dlo2_out:
+        pop     edx
+        pop     ecx
+        pop     ebx
+        ret
+
+dl_devclose:
+        pushad
+        call    dl_ocrm
+        jc      dlc2_out
+        mov     ecx,DEVC_CLOSE
+        call    dl_short                ; a refusal to close is not one
+dlc2_out:                               ; anybody can act on
+        popad
+        ret
+
+;--- dl_ocrm - ESI = an SFT entry -> EDX = its device id, CF clear if
+;--- it is a loaded driver whose header has the open/close bit.
+dl_ocrm:
+        push    eax
+        push    ebx
+        test    dword ptr [esi+SFT_FLAGS],SFTF_DEVICE
+        jz      doc_no
+        mov     edx,[esi+SFT_DEVID]
+        cmp     dl,DEV_LOADED
+        jne     doc_no
+        call    dl_rowhdr
+        jc      doc_no
+        test    word ptr [ebx+DEVH_ATTR],DEV_ATTR_OCRM
+        jz      doc_no
+        pop     ebx
+        pop     eax
+        clc
+        ret
+doc_no:
+        pop     ebx
+        pop     eax
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; dl_devinfo - EDX = a loaded device's id -> DX = the device information
+;              word 4400h answers, as DOS builds it from the header:
+;              the attribute word's high byte (IOCTL, output until
+;              busy, open and close), "a device, input not at its end",
+;              and the attribute's low five bits.  CF if no such row.
+;---------------------------------------------------------------------
+dl_devinfo:
+        push    eax
+        push    ebx
+        call    dl_rowhdr
+        jc      ddi_out
+        movzx   edx,word ptr [ebx+DEVH_ATTR]
+        and     edx,0FF1Fh
+        or      dl,0C0h
+        clc
+ddi_out:
+        pop     ebx
+        pop     eax
+        ret
+
+;---------------------------------------------------------------------
+; dl_unitfar - AL = a driver unit's pseudo BIOS number (DL_UNIT_BASE
+;              and up) -> EAX = its driver's header as a far pointer,
+;              the segment in the high word, and CL = the driver's own
+;              number for the unit.  CF if it is not one.  For PARK.INC,
+;              which hands the unit to RMDOS - and which is assembled
+;              before the equates here, so it asks rather than looks.
+;---------------------------------------------------------------------
+dl_unitfar:
+        push    edx
+        movzx   eax,al
+        sub     eax,DL_UNIT_BASE
+        jb      duf_no
+        cmp     eax,[dl_nunits]
+        jae     duf_no
+        imul    edx,eax,DLU_LEN
+        add     edx,OFFSET dl_units
+        mov     cl,[edx+DLU_UNIT]
+        mov     eax,[edx+DLU_TAB]       ; the dl_tab row
+        cmp     eax,[dl_count]
+        jae     duf_no
+        imul    eax,DLE_LEN
+        add     eax,OFFSET dl_tab
+        movzx   edx,word ptr [eax+DLE_SEG]
+        shl     edx,16
+        mov     dx,word ptr [eax+DLE_HDR]
+        mov     eax,edx
+        pop     edx
+        clc
+        ret
+duf_no:
+        pop     edx
+        stc
+        ret
+
+dli_cmd     dd  0
+dli_buf     dd  0
+dli_cnt     dd  0
+dli_bounce  db  0
+            db  0,0,0
 
 ;=====================================================================
 ; state

@@ -837,17 +837,17 @@ if_again:
         cmp     byte ptr [esi],0
         je      if_syntax
         mov     edi,OFFSET lit_not
-        call    kw_match
+        call    if_kw
         jc      if_test
         xor     byte ptr [if_not],1     ; NOT NOT is not an error
         jmp     short if_again
 
 if_test:
         mov     edi,OFFSET lit_errlvl
-        call    kw_match
+        call    if_kw
         jnc     if_errlvl
         mov     edi,OFFSET lit_exist
-        call    kw_match
+        call    if_kw
         jnc     if_exist
         jmp     if_strcmp
 
@@ -927,6 +927,66 @@ if_none:
 if_syntax:
         mov     edx,OFFSET msg_syntax
         call    print
+        ret
+
+;---------------------------------------------------------------------
+; if_kw - kw_match for IF's own three words.  COMMAND.COM ends NOT,
+;         ERRORLEVEL and EXIST at any of DOS's delimiters - blank, tab,
+;         '=', ',' or ';' - and skips a run of them after the word, so
+;         "IF ERRORLEVEL == 1" is "IF ERRORLEVEL 1".  id's installers
+;         are written that way.  CF and ESI as kw_match.
+;---------------------------------------------------------------------
+if_kw:
+        push    eax
+        push    esi
+        push    edi
+ik_lp:
+        mov     ah,[edi]
+        or      ah,ah
+        jz      ik_end
+        mov     al,[esi]
+        call    upcase
+        cmp     al,ah
+        jne     ik_no
+        inc     esi
+        inc     edi
+        jmp     short ik_lp
+ik_end:
+        mov     al,[esi]                ; a whole word: the end, or a
+        or      al,al                   ; delimiter
+        jz      ik_yes
+        call    if_dl
+        jne     ik_no
+ik_skip:
+        inc     esi
+        mov     al,[esi]
+        call    if_dl
+        je      ik_skip
+ik_yes:
+        pop     edi
+        add     esp,4                   ; keep the advanced ESI
+        pop     eax
+        clc
+        ret
+ik_no:
+        pop     edi
+        pop     esi
+        pop     eax
+        stc
+        ret
+
+; if_dl - ZF if AL is one of DOS's delimiters
+if_dl:
+        cmp     al,' '
+        je      idl_out
+        cmp     al,9
+        je      idl_out
+        cmp     al,'='
+        je      idl_out
+        cmp     al,','
+        je      idl_out
+        cmp     al,';'
+idl_out:
         ret
 
 ;---------------------------------------------------------------------

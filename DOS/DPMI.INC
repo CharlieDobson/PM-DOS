@@ -57,9 +57,12 @@
 ;   though nothing had claimed it.  Eight may be allocated at once;
 ;   one may be in flight.
 ;
-;   0306h, the raw mode switch addresses.  A client that wants to
-;   change mode itself wants ring 0, and that is the one thing on
-;   offer nowhere here.
+;   (0306h, the raw mode switch, IS here now - see dpmi_rawrm.  It
+;   was left out on the grounds that a client changing mode itself
+;   wants ring 0, which is wrong: it wants the HOST to change mode for
+;   it, at an address the host chose.  PKZIP and PKUNZIP 2.04g jump
+;   through that address without checking 0306h's carry, and died on
+;   the garbage it left in BX:CX and SI:DI.)
 ;
 ;   Virtual memory.  There is no swapping, so 0600h/0601h - lock and
 ;   unlock - succeed by doing nothing, which is the correct answer
@@ -114,7 +117,15 @@ di_cbone:
         mov     byte ptr [edi+DPMICB_R3RET],0CDh        ; INT 31h - where a
         mov     byte ptr [edi+DPMICB_R3RET+1],31h       ; procedure's IRET goes
         mov     byte ptr [edi+DPMICB_RETF],0CBh ; RETF - 0305h's state save,
-di_nocb:                                        ; which has no state to save
+                                                ; which has no state to save
+        mov     byte ptr [edi+DPMICB_RAWRM],0F4h        ; HLT - and 0306h's two
+        mov     byte ptr [edi+DPMICB_RAWPM],0F4h        ; mode switches
+        mov     word ptr [edi+DPMICB_EXCRET],31CDh      ; INT 31h - an exception
+        mov     word ptr [edi+DPMICB_EXCDEF],31CDh      ; handler's way back, and
+                                                        ; the default handler
+        mov     word ptr [edi+DPMICB_MSDOS],31CDh       ; INT 31h, RETF - the
+        mov     byte ptr [edi+DPMICB_MSDOS+2],0CBh      ; "MS-DOS" API
+di_nocb:
 
         ; The vectors a protected-mode client expects to reach the
         ; BIOS through.  They are installed for good rather than per
@@ -315,6 +326,45 @@ dsw_16:
         mov     dh,DGRAN_16
         call    dpmi_setdesc
 
+        ; THE ENVIRONMENT WORD IN THE PSP BECOMES A SELECTOR, as the
+        ; specification says it does, and goes back to the segment it
+        ; was when the client ends (dpmi_drop) - DOS frees the block by
+        ; it.  DOS/4GW and DJGPP's start-up both read the environment
+        ; through PSP:2Ch, loaded 0556h into a segment register, and
+        ; died there: "General Protection Fault in DOOM.EXE", and
+        ; Quake's SIGSEGV.  The limit is the block's own size, from the
+        ; arena header in front of it, or 64K where there is none.
+        movzx   esi,word ptr ds:[vdm_pspseg]
+        shl     esi,4
+        mov     dword ptr ds:[dpmi_envpsp],0
+        movzx   ebx,word ptr [esi+2Ch]
+        or      ebx,ebx
+        jz      dsw_noenv
+        mov     dword ptr ds:[dpmi_envseg],ebx
+        mov     dword ptr ds:[dpmi_envpsp],esi
+        lea     edi,[ebx-1]
+        shl     edi,4
+        mov     ecx,0FFFFh
+        cmp     byte ptr [edi],'M'
+        je      dsw_envmcb
+        cmp     byte ptr [edi],'Z'
+        jne     dsw_envlim
+dsw_envmcb:
+        movzx   eax,word ptr [edi+3]
+        shl     eax,4
+        jz      dsw_envlim
+        cmp     eax,10000h
+        ja      dsw_envlim
+        lea     ecx,[eax-1]
+dsw_envlim:
+        shl     ebx,4
+        mov     ax,(DPMI_IDX_ENV SHL 3) + DPMI_SELBITS
+        mov     dl,DACC_DATA
+        mov     dh,DGRAN_16
+        call    dpmi_setdesc
+        mov     word ptr [esi+2Ch],(DPMI_IDX_ENV SHL 3) + DPMI_SELBITS
+dsw_noenv:
+
         ; The code segment a real-mode callback returns THROUGH.  It is
         ; the callback paragraph, and the two bytes at DPMICB_R3RET in
         ; it are an INT 31h - which is how the host takes control back
@@ -352,6 +402,10 @@ dsw_16:
         mov     ecx,256 * 2
         cld
         rep     stosd
+        mov     edi,OFFSET dpmi_exc             ; exception handlers too
+        mov     ecx,DPMI_MAXEXC * 2
+        rep     stosd
+        mov     word ptr ds:[dpmi_dtasel],0     ; and no DTA of its own yet
 
         ; AND 0002h REMEMBERS NOTHING, for the same reason.  It keeps
         ; the selector it made for a segment, so that asking twice gets
@@ -361,8 +415,25 @@ dsw_16:
         ; The second DPMI program run since boot, if both used 0002h.
         mov     dword ptr ds:[dpmi_segcnt],0
 
+        ; SELECTOR 0040h IS THE BIOS DATA AREA, for as long as the client
+        ; runs.  Windows' host gives every client that, extenders count
+        ; on it, and DOS/4GW Professional reads the clock as PUSH 40h /
+        ; POP ES / ES:[6Eh] - which here is GDT entry 8, SEL_PROG_DS, a
+        ; native program's slot: Rise of the Triad page-faulted reading
+        ; one.  No native program runs while a client does (the shell is
+        ; waiting in its 4Bh), so the entry is lent out and dpmi_drop
+        ; gives it back (r3_setdesc).
+        mov     edi,GDT_BASE + GDT_IDX_PROGDS * 8
+        mov     ebx,400h
+        mov     ecx,0FFFFh
+        mov     dl,DACC_DATA
+        xor     dh,dh
+        call    r3_wrdesc
+
 ;--- and go ----------------------------------------------------------
         mov     dword ptr ds:[dpmi_active],1
+        mov     eax,dword ptr ds:[vdm_depth]    ; (vdm_rmleave: whose 4Ch ends it)
+        mov     dword ptr ds:[dpmi_depth],eax
         movzx   eax,word ptr [vdm_ctx+V86C_ESP]
         mov     dword ptr ds:[dpmi_cesp],eax
 
@@ -418,12 +489,28 @@ dpmi_toring3:
         ; are done, IRETD reads its frame through SS, and SS is still
         ; the kernel's.
         mov     ax,(DPMI_IDX_PSP SHL 3) + DPMI_SELBITS
-        mov     bx,(DPMI_IDX_DS SHL 3) + DPMI_SELBITS
         mov     es,ax                           ; ES -> the PSP, as promised
-        mov     ds,bx
         xor     ax,ax
         mov     fs,ax
         mov     gs,ax
+
+        ; AND EVERY OTHER REGISTER IS THE CLIENT'S, which the
+        ; specification says in as many words: the switch changes the
+        ; segment registers and nothing else.  The client FAR CALLed
+        ; us from inside a routine of its own, with BP its frame
+        ; pointer; these used to arrive holding whatever the kernel had
+        ; in them last.  PKUNZIP 2.04g reads its argument list off
+        ; [bp+6] after the switch, found nothing there it could use,
+        ; and showed its usage screen for any command line at all.
+        mov     eax,dword ptr ss:[vdm_ctx+V86C_EAX]
+        mov     ebx,dword ptr ss:[vdm_ctx+V86C_EBX]
+        mov     ecx,dword ptr ss:[vdm_ctx+V86C_ECX]
+        mov     edx,dword ptr ss:[vdm_ctx+V86C_EDX]
+        mov     esi,dword ptr ss:[vdm_ctx+V86C_ESI]
+        mov     edi,dword ptr ss:[vdm_ctx+V86C_EDI]
+        mov     ebp,dword ptr ss:[vdm_ctx+V86C_EBP]
+        push    (DPMI_IDX_DS SHL 3) + DPMI_SELBITS
+        pop     ds
         iretd
 
 ;=====================================================================
@@ -582,8 +669,19 @@ dpmi_int31:
         ; host pushed for it, and that stub is an INT 31h.  The test is
         ; on where the call came FROM and not on what is in AX, because
         ; by then AX belongs to the client and means nothing to us.
+        ; The same segment holds the two stubs an EXCEPTION handler
+        ; comes back through: its RETF, and the default handler it may
+        ; have chained to.  Told apart by where the INT 31h was.
         cmp     word ptr [ebp+F_CS],(DPMI_IDX_CBRET SHL 3) + DPMI_SELBITS
-        je      dpmi_cbret
+        jne     d31_notcb
+        cmp     dword ptr [ebp+F_EIP],DPMICB_EXCRET + 2
+        je      dpmi_excret
+        cmp     dword ptr [ebp+F_EIP],DPMICB_EXCDEF + 2
+        je      dpmi_excdef
+        cmp     dword ptr [ebp+F_EIP],DPMICB_MSDOS + 2
+        je      dpmi_msapi
+        jmp     dpmi_cbret
+d31_notcb:
 
         ; A VECTOR'S DEFAULT HANDLER has been reached, by the same
         ; test: every one of them is an INT 31h in a segment nothing
@@ -634,18 +732,28 @@ d31_own:
         je      d31_getrmvec
         cmp     ax,0201h
         je      d31_setrmvec
+        cmp     ax,0202h
+        je      d31_getexc
+        cmp     ax,0203h
+        je      d31_setexc
         cmp     ax,0204h
         je      d31_getpmvec
         cmp     ax,0205h
         je      d31_setpmvec
         cmp     ax,0300h
         je      d31_simint
+        cmp     ax,0301h
+        je      d31_rmcall
+        cmp     ax,0302h
+        je      d31_rmcall
         cmp     ax,0303h
         je      d31_cballoc
         cmp     ax,0304h
         je      d31_cbfree
         cmp     ax,0305h
         je      d31_savest
+        cmp     ax,0306h
+        je      d31_rawaddr
         cmp     ax,0400h
         je      d31_version
         cmp     ax,0401h
@@ -670,6 +778,8 @@ d31_own:
         je      d31_pagesize
         cmp     ax,0800h
         je      d31_physmap
+        cmp     ax,0A00h
+        je      d31_vendor
         cmp     ax,0801h
         je      d31_ok                          ; nothing is ever unmapped
 
@@ -682,6 +792,30 @@ d31_fail:
 d31_ok:
         and     dword ptr [ebp+F_FLAGS],NOT FL_CF
 d31_return:
+        ; DS AND ES ARE RELOADED HERE, AT RING 0, from what the client
+        ; had when it called - and the call may have been the one that
+        ; took the descriptor away.  DJGPP's exit frees the selector its
+        ; own DS holds (0001h), and the POP DS below faulted the KERNEL:
+        ; Quake ended with "CPU exception 0D".  A register naming
+        ; something that is no longer a loadable segment comes back
+        ; null, which faults the client if it is ever used, and only
+        ; then.  The host's own selectors (TI clear) are left alone.
+        mov     ax,word ptr [ebp+F_DS]
+        test    al,4
+        jz      d31_dsok
+        mov     bl,2
+        call    dpmi_rawsel
+        jnc     d31_dsok
+        mov     word ptr [ebp+F_DS],0
+d31_dsok:
+        mov     ax,word ptr [ebp+F_ES]
+        test    al,4
+        jz      d31_esok
+        mov     bl,2
+        call    dpmi_rawsel
+        jnc     d31_esok
+        mov     word ptr [ebp+F_ES],0
+d31_esok:
         popad
         pop     ebp
         pop     es
@@ -747,6 +881,19 @@ d31_freesel:
 ;---------------------------------------------------------------------
 d31_seg2sel:
         movzx   ebx,word ptr [ebp+F_EBX]
+        call    dpmi_seg2sel
+        jc      d31_nodesc
+        mov     word ptr [ebp+F_EAX],ax
+        jmp     d31_ok
+
+;--- dpmi_seg2sel - EBX = a real-mode segment -> EAX = a selector over
+;--- it, 64K of data, and the same one every time it is asked for.  CF
+;--- if no descriptor is to be had.  (0002h, and dpmi_post21's answers.)
+dpmi_seg2sel:
+        push    ebx
+        push    ecx
+        push    edx
+        push    esi
         mov     esi,OFFSET dpmi_segmap
         mov     ecx,dword ptr ds:[dpmi_segcnt]
         or      ecx,ecx
@@ -758,37 +905,47 @@ d2s_look:
         loop    d2s_look
 d2s_new:
         cmp     dword ptr ds:[dpmi_segcnt],DPMI_SEGMAX
-        jae     d31_nodesc
+        jae     d2s_full
         push    ebx
         mov     ecx,1
         call    dpmi_getfree
         pop     ebx
-        jc      d31_nodesc
-        push    eax
+        jc      d2s_full
         shl     eax,3
         or      eax,DPMI_SELBITS
-        push    eax
+        push    eax                             ; the selector
+        push    ebx                             ; and the segment
         mov     ecx,0FFFFh
         shl     ebx,4
         mov     dl,DACC_DATA
         mov     dh,DGRAN_16
         call    dpmi_setdesc
-        pop     eax                             ; the selector
-        pop     ecx                             ; (index, no longer wanted)
+        pop     ebx
+        pop     eax
         mov     ecx,dword ptr ds:[dpmi_segcnt]
         mov     esi,OFFSET dpmi_segmap
-        shl     ecx,2
-        add     esi,ecx
-        mov     bx,word ptr [ebp+F_EBX]
+        lea     esi,[esi+ecx*4]
         mov     [esi],bx
         mov     [esi+2],ax
         inc     dword ptr ds:[dpmi_segcnt]
-        mov     word ptr [ebp+F_EAX],ax
-        jmp     d31_ok
+        movzx   eax,ax
+        jmp     d2s_out
 d2s_found:
-        mov     ax,[esi+2]
-        mov     word ptr [ebp+F_EAX],ax
-        jmp     d31_ok
+        movzx   eax,word ptr [esi+2]
+d2s_out:
+        pop     esi
+        pop     edx
+        pop     ecx
+        pop     ebx
+        clc
+        ret
+d2s_full:
+        pop     esi
+        pop     edx
+        pop     ecx
+        pop     ebx
+        stc
+        ret
 
 ;---------------------------------------------------------------------
 ; 0003h - how far apart two selectors are
@@ -801,9 +958,21 @@ d31_selinc:
 ; 0006h / 0007h - the base of the descriptor in BX
 ;---------------------------------------------------------------------
 d31_getbase:
+        ; THE DESCRIPTOR'S BASE, PRESENT OR NOT.  dpmi_base will not
+        ; follow one that is not present - right for a pointer about to
+        ; be used, wrong for a question about the descriptor.  A not-
+        ; present one keeps whatever 0007h put in it, and Borland's RTM
+        ; keeps a mark there ("TT" in the high word) that its #NP handler
+        ; reads back with this call: refused, it decided every fault was
+        ; somebody else's and passed it on.
         mov     ax,word ptr [ebp+F_EBX]
-        call    dpmi_base
+        call    dpmi_slot
         jc      d31_badsel
+        movzx   ebx,byte ptr [edi+7]
+        shl     ebx,8
+        mov     bl,[edi+4]
+        shl     ebx,16
+        mov     bx,[edi+2]
         mov     word ptr [ebp+F_EDX],bx
         shr     ebx,16
         mov     word ptr [ebp+F_ECX],bx
@@ -874,7 +1043,13 @@ d31_setacc:
         test    al,10h                          ; must be a code or data
         jz      d31_badval                      ; segment, never a gate
         or      al,60h                          ; DPL 3, always
-        or      al,80h                          ; and present
+        ; BUT PRESENT ONLY IF IT SAYS SO.  A descriptor that is not
+        ; present is the client's own business and no danger to anyone:
+        ; loading it is a #NP, which goes to the client's handler
+        ; (0203h).  It is how Borland's RTM loads a segment the first
+        ; time it is touched, keeping its own notes in the base field
+        ; meanwhile - this used to make it present, and TPX wrote
+        ; through a "base" of 545404A8h.
         mov     [edi+5],al
         mov     al,byte ptr [ebp+F_ECX+1]
         and     al,0D0h                         ; G, D/B and the AVL bit
@@ -929,12 +1104,17 @@ d31_setdesc:
         mov     ax,word ptr [ebp+F_EBX]
         call    dpmi_slot
         jc      d31_badsel
-        push    edi
-        call    dpmi_esdi
-        pop     edi
+        ; THE CLIENT'S BUFFER IS WHAT dpmi_esdi RETURNS, and this used
+        ; to push EDI around the call and pop it straight back over the
+        ; answer - so both pointers were our own descriptor and the
+        ; copy below wrote it onto itself.  000Ch has never set
+        ; anything.  DOS/4GW builds its data segment with it, loaded
+        ; the zero-length descriptor 0000h had made, and faulted on
+        ; its first write.
+        mov     esi,edi                         ; ESI = ours
+        call    dpmi_esdi                       ; EDI = theirs
         jc      d31_badsel
-        mov     esi,edi                         ; ESI = ours, EDI = theirs
-        xchg    esi,edi
+        xchg    esi,edi                         ; theirs onto ours
         ; A CODE OR DATA SEGMENT, AS 0009h ALREADY INSISTS.  Forcing the
         ; DPL to 3 is no protection for a GATE: a call gate at DPL 3 is
         ; one any ring-3 code may use, and it goes wherever its own
@@ -1122,6 +1302,184 @@ d31_simint:
         jmp     d31_ok
 
 ;---------------------------------------------------------------------
+; 0301h / 0302h - call a real-mode procedure, at the CS:IP in the
+; structure at ES:(E)DI.  0301h's returns with a RETF and 0302h's with
+; an IRET, so the frame each is given to return through differs by the
+; flags; both end on the same HLT a simulated interrupt's IRET lands
+; on, and everything else is 0300h's (dpmi_simint, dpmi_rmcall says
+; which).  DOS/4GW reaches its real-mode half through 0302h, and gave
+; up with exit code 8 when the host had neither.
+;---------------------------------------------------------------------
+d31_rmcall:
+        cmp     byte ptr [ebp+F_EBX+1],0        ; BH must be zero
+        jne     d31_badval
+        mov     ecx,RMCS_LEN
+        call    dpmi_esdiw
+        jc      d31_badsel
+        mov     dword ptr ds:[dpmi_rmcs],edi
+        mov     al,DRC_RETF
+        cmp     byte ptr [ebp+F_EAX],01h
+        je      drc_kind
+        mov     al,DRC_IRET
+drc_kind:
+        mov     byte ptr ds:[dpmi_rmcall],al
+        mov     ax,word ptr [ebp+F_ECX]
+        mov     word ptr ds:[dpmi_rmwords],ax
+        call    dpmi_simint
+        mov     byte ptr ds:[dpmi_rmcall],DRC_INT       ; (MOV keeps CF)
+        jc      d31_badval
+        jmp     d31_ok
+
+;---------------------------------------------------------------------
+; 0202h / 0203h - a processor exception's handler, BL = 00h-1Fh, in
+; CX:(E)DX.  Until the client sets one, the answer is the default -
+; the INT 31h at DPMICB_EXCDEF, which a handler that chains there
+; reaches with the exception's frame still on its stack (dpmi_excdef).
+;---------------------------------------------------------------------
+d31_getexc:
+        movzx   ebx,byte ptr [ebp+F_EBX]
+        cmp     ebx,DPMI_MAXEXC
+        jae     d31_badval
+        cmp     word ptr ds:[dpmi_cbseg],0
+        je      d31_nocb
+        mov     eax,dword ptr [dpmi_exc + ebx * 8]
+        mov     edx,dword ptr [dpmi_exc + ebx * 8 + 4]
+        or      edx,edx
+        jnz     dge_have
+        mov     eax,DPMICB_EXCDEF
+        mov     edx,(DPMI_IDX_CBRET SHL 3) + DPMI_SELBITS
+dge_have:
+        mov     word ptr [ebp+F_ECX],dx
+        mov     word ptr [ebp+F_EDX],ax
+        cmp     byte ptr ds:[dpmi_is32],0
+        je      d31_ok
+        mov     dword ptr [ebp+F_EDX],eax
+        jmp     d31_ok
+
+d31_setexc:
+        movzx   ebx,byte ptr [ebp+F_EBX]
+        cmp     ebx,DPMI_MAXEXC
+        jae     d31_badval
+        mov     ax,word ptr [ebp+F_ECX]
+        movzx   edx,word ptr [ebp+F_EDX]
+        cmp     byte ptr ds:[dpmi_is32],0
+        je      dse_16
+        mov     edx,dword ptr [ebp+F_EDX]
+dse_16:
+        ; The default handed back is a selector of the host's: putting
+        ; it back means "no handler", and is stored that way.
+        cmp     ax,(DPMI_IDX_CBRET SHL 3) + DPMI_SELBITS
+        jne     dse_own
+        xor     eax,eax
+        xor     edx,edx
+        jmp     dse_put
+dse_own:
+        push    edi
+        call    dpmi_codeok                     ; one of its own code segments,
+        pop     edi                             ; or no handler at all
+        jc      d31_badsel
+        movzx   eax,ax
+dse_put:
+        mov     dword ptr [dpmi_exc + ebx * 8],edx
+        mov     dword ptr [dpmi_exc + ebx * 8 + 4],eax
+        jmp     d31_ok
+
+;---------------------------------------------------------------------
+; 0A00h - a vendor's API entry point, named by DS:(E)SI.  See
+;         dpmi_vendor: the one name this host answers to is "MS-DOS".
+;---------------------------------------------------------------------
+d31_vendor:
+        call    dpmi_vendor
+        jnc     d31_ok
+        mov     ax,DPE_UNSUPPORTED
+        jmp     d31_fail
+
+;---------------------------------------------------------------------
+; dpmi_vendor - DS:(E)SI in the frame at EBP is a vendor's name.  For
+;               "MS-DOS", ES:(E)DI in the frame becomes the extension's
+;               entry point and CF is clear; for anything else CF.
+;
+; THE "MS-DOS" EXTENSIONS ARE A PROMISE THAT INT 21h WORKS IN
+; PROTECTED MODE, pointers and all, which on this host it always has:
+; DOS here is protected-mode code (see the top of this file).  Windows
+; and the hosts after it answer for it on INT 2Fh AX=168Ah and 0A00h,
+; and Borland's RTM will not start without the answer - Turbo Pascal
+; 7's TPX said "no DOS extensions in the DPMI server" and stopped.
+; Its entry point has one function, the LDT's selector (dpmi_msapi).
+;---------------------------------------------------------------------
+dpmi_vendor:
+        pushad
+        ; NOT YET ANSWERED (dpmi_msdos is 0), and on purpose.  With the
+        ; answer, RTM gets as far as loading TPX and then unloads itself
+        ; the DOS way - 50h to its own resident PSP, then 4Ch, expecting
+        ; DOS to resume the program that loaded it at the address in
+        ; that PSP - and a DOS box keeps neither the terminate address
+        ; nor the parent's stack in a PSP (RSP_TERM is INT 22h's
+        ; vector, PSP:2Eh is never written).  It ended the wrong program
+        ; and left RTM's real-mode hooks pointing at nothing, which broke
+        ; every program after it in the session.  Without the answer RTM
+        ; stops at once with "no DOS extensions in the DPMI server", as
+        ; it always did.  Turn this on with the EXEC work that keeps
+        ; those two fields.
+        cmp     byte ptr ds:[dpmi_msdos],0
+        je      dvn_no
+        cmp     word ptr ds:[dpmi_cbseg],0
+        je      dvn_no
+        mov     ax,word ptr [ebp+F_DS]
+        call    dpmi_base
+        jc      dvn_no
+        mov     esi,dword ptr [ebp+F_ESI]
+        cmp     byte ptr ds:[dpmi_is32],0
+        jne     dvn_32
+        movzx   esi,si
+dvn_32:
+        add     esi,ebx
+        mov     eax,esi                         ; seven bytes the client
+        mov     ecx,7                           ; could have written: a
+        call    dword ptr ds:[IOS_USRWOK]       ; name in a page that is not
+        jc      dvn_no                          ; there faults the kernel
+        mov     edi,OFFSET dvn_name
+        mov     ecx,7
+        repe    cmpsb
+        jne     dvn_no
+        mov     word ptr [ebp+F_ES],(DPMI_IDX_CBRET SHL 3) + DPMI_SELBITS
+        mov     word ptr [ebp+F_EDI],DPMICB_MSDOS
+        cmp     byte ptr ds:[dpmi_is32],0
+        je      dvn_yes
+        mov     word ptr [ebp+F_EDI+2],0
+dvn_yes:
+        popad
+        clc
+        ret
+dvn_no:
+        popad
+        stc
+        ret
+dvn_name        db  'MS-DOS',0
+
+;---------------------------------------------------------------------
+; dpmi_msapi - the client has FAR CALLed the "MS-DOS" entry point, whose
+;              INT 31h brought it here; the RETF behind it takes it
+;              back.  AX = 0100h asks for a selector over the LDT,
+;              which comes back read-only (DPMI_IDX_LDTA).  Nothing
+;              else is defined.
+;---------------------------------------------------------------------
+dpmi_msapi:
+        cmp     word ptr [ebp+F_EAX],0100h
+        jne     dma_no
+        mov     ebx,DPMI_LDT
+        mov     ax,(DPMI_IDX_LDTA SHL 3) + DPMI_SELBITS
+        mov     ecx,DPMI_LDT_LIMIT
+        mov     dl,DACC_RODATA
+        mov     dh,DGRAN_16
+        call    dpmi_setdesc
+        mov     word ptr [ebp+F_EAX],ax
+        jmp     d31_ok
+dma_no:
+        mov     ax,DPE_UNSUPPORTED
+        jmp     d31_fail
+
+;---------------------------------------------------------------------
 ; 0303h - allocate a real-mode callback.
 ;
 ;   DS:ESI = the procedure to call, ES:EDI = the register structure it
@@ -1209,6 +1567,27 @@ d31_savest:
         mov     word ptr [ebp+F_ECX],DPMICB_RETF
         mov     word ptr [ebp+F_ESI],(DPMI_IDX_CBRET SHL 3) + DPMI_SELBITS
         mov     word ptr [ebp+F_EDI],DPMICB_RETF        ; SI:DI - protected
+        jmp     d31_ok
+
+;---------------------------------------------------------------------
+; 0306h - the raw mode switch addresses.  BX:CX is where real-mode code
+; jumps to get into protected mode, SI:(E)DI where protected-mode code
+; jumps to get out.  Both are HLTs in the callback paragraph - the
+; real-mode one reached as a segment, the protected-mode one through
+; the descriptor over the same paragraph - and dpmi_rawrm/dpmi_rawpm
+; below are what happens when somebody arrives.
+;---------------------------------------------------------------------
+d31_rawaddr:
+        cmp     word ptr ds:[dpmi_cbseg],0
+        je      d31_nocb
+        mov     ax,word ptr ds:[dpmi_cbseg]
+        mov     word ptr [ebp+F_EBX],ax                 ; BX:CX - real mode
+        mov     word ptr [ebp+F_ECX],DPMICB_RAWPM
+        mov     word ptr [ebp+F_ESI],(DPMI_IDX_CBRET SHL 3) + DPMI_SELBITS
+        mov     word ptr [ebp+F_EDI],DPMICB_RAWRM       ; SI:(E)DI - protected
+        cmp     byte ptr ds:[dpmi_is32],0
+        je      d31_ok
+        mov     word ptr [ebp+F_EDI+2],0
         jmp     d31_ok
 
 ;---------------------------------------------------------------------
@@ -1316,9 +1695,46 @@ d31_memresize:
         push    esi
         call    arena_resize                    ; in place where it can be
         pop     esi
+        jnc     dmr_put
+
+        ; AND WHERE IT CANNOT, IT MOVES: the specification gives the
+        ; host that right and hands the client the new address in BX:CX.
+        ; This refused instead, and DJGPP's sbrk grows its one block
+        ; with 0503h - every size failed, down to nothing, and Quake
+        ; said "Only -0.1 megs of memory reported".  A new block, the
+        ; contents carried over (as much as both hold), the old one
+        ; freed.  A client with a selector over the old address moves
+        ; it itself; that is the bargain 0503h has always been.
+        push    esi
+        push    ebx
+        call    arena_alloc                     ; EBX bytes -> EAX
+        pop     ebx
+        pop     esi
         jc      d31_nomem
+        push    esi                             ; the entry
+        push    eax                             ; the new block
+        mov     ecx,dword ptr [esi+DM_SIZE]
+        cmp     ecx,ebx
+        jbe     dmr_len
+        mov     ecx,ebx
+dmr_len:
+        mov     edx,dword ptr [esi+DM_ADDR]     ; the old block
+        mov     esi,edx
+        mov     edi,eax
+        cld
+        push    ecx
+        shr     ecx,2
+        rep     movsd
+        pop     ecx
+        and     ecx,3
+        rep     movsb
+        call    arena_free                      ; EDX: the old one goes
+        pop     edx                             ; EDX: the new one
+        pop     esi
+        mov     dword ptr [esi+DM_ADDR],edx
+dmr_put:
         mov     dword ptr [esi+DM_SIZE],ebx
-        mov     eax,edx                         ; the address does not move
+        mov     eax,edx                         ; where it is now
         mov     word ptr [ebp+F_ECX],ax         ; BX:CX, high then low
         shr     eax,16
         mov     word ptr [ebp+F_EBX],ax
@@ -1593,6 +2009,8 @@ dsi_nocopy:
 ; for any DOS program: to the kernel if the monitor claims it, and
 ; through the guest's own table, hooks and all, if it does not - which
 ; is where INT 21h goes now (vdm_stubs).
+        cmp     byte ptr ds:[dpmi_rmcall],DRC_INT
+        jne     dsi_proc
         movzx   edi,word ptr ds:[xms_cbseg]
         shl     edi,4
         mov     al,byte ptr ds:[dpmi_rmint]
@@ -1601,6 +2019,43 @@ dsi_nocopy:
         movzx   eax,word ptr ds:[xms_cbseg]
         mov     dword ptr [vdm_ctx+V86C_CS],eax
         mov     dword ptr [vdm_ctx+V86C_EIP],DPMICB_SIM
+        jmp     dsi_go
+
+;--- ...or at a procedure: 0301h and 0302h -----------------------------
+; The frame it returns through goes on the stack under the words the
+; client asked to have copied, and points at DPMICB_RET - the HLT the
+; INT xx above is followed by - so the way back is the same one.  An
+; IRET frame carries the flags in the structure, as 0300h's does.
+dsi_proc:
+        mov     eax,dword ptr [vdm_ctx+V86C_SS]
+        shl     eax,4
+        mov     edx,dword ptr [vdm_ctx+V86C_ESP]
+        mov     ecx,4                           ; CS:IP
+        cmp     byte ptr ds:[dpmi_rmcall],DRC_IRET
+        jne     dsi_cs
+        mov     ecx,6                           ; ...and the flags above them
+dsi_cs:
+        sub     dx,cx
+        mov     dword ptr [vdm_ctx+V86C_ESP],edx
+        movzx   edi,dx
+        add     edi,eax
+        mov     eax,edi
+        call    dword ptr ds:[IOS_USRWOK]       ; the client's stack, or ours
+        jc      dsi_undo
+        mov     word ptr [edi],DPMICB_RET
+        mov     ax,word ptr ds:[xms_cbseg]
+        mov     word ptr [edi+2],ax
+        mov     esi,dword ptr ds:[dpmi_rmcs]
+        cmp     byte ptr ds:[dpmi_rmcall],DRC_IRET
+        jne     dsi_target
+        mov     ax,word ptr [esi+RMCS_FLAGS]
+        mov     word ptr [edi+4],ax
+dsi_target:
+        movzx   eax,word ptr [esi+RMCS_CS]
+        mov     dword ptr [vdm_ctx+V86C_CS],eax
+        movzx   eax,word ptr [esi+RMCS_IP]
+        mov     dword ptr [vdm_ctx+V86C_EIP],eax
+dsi_go:
 
 ;--- and let the DOS box's own loop run it ---------------------------
         mov     dword ptr ds:[dpmi_rmact],1
@@ -1677,6 +2132,280 @@ dpmi_rmdone:
 
         popad
         clc
+        ret
+
+;=====================================================================
+; THE RAW MODE SWITCH (0306h)
+;
+; The client jumps to the protected-mode address 0306h gave it with the
+; real-mode registers it wants in AX (DS), CX (ES), DX:BX (SS:SP) and
+; SI:DI (CS:IP), and the DOS box's own loop runs that - INT 21h and all,
+; for as long as the client likes - until real-mode code jumps to the
+; real-mode address with the protected-mode registers in the same
+; places, and ring 3 is entered there afresh.
+;
+; NOTHING IS PARKED, and that is the design.  Real mode runs at the
+; box loop's own level (vdm_esp), exactly where it would be had the
+; client never left it, and protected mode is entered from there the
+; way the first switch entered it (dpmi_toring3).  So neither half owes
+; the other a stack frame, and the real-mode half may do anything a
+; DOS program does - including going resident.  Borland's RTM does: it
+; is the DPMI client, it ends with 31h from real mode, and the program
+; that loaded it calls it later through INT 2Fh, whose handler switches
+; back into the client.  (A switch that parked the protected-mode side
+; and unwound to it had nowhere to come back to once 31h had gone.)
+;
+; Not from inside a simulated interrupt or a callback procedure: both
+; of those ARE parked, on the stack the client's entries arrive on.
+;
+; The specification calls AX, BX, CX, DX, SI and DI undefined after a
+; switch and keeps EBP; FS and GS come out zero.  The arithmetic flags
+; cross as they are, and so does the interrupt flag the client
+; believes in.
+;=====================================================================
+DWR_EDI         EQU     HK_REGS + 0             ; the client's registers, as
+DWR_ESI         EQU     HK_REGS + 4             ; pm3_fault's PUSHAD left them
+DWR_EBP         EQU     HK_REGS + 8
+DWR_EBX         EQU     HK_REGS + 16
+DWR_EDX         EQU     HK_REGS + 20
+DWR_ECX         EQU     HK_REGS + 24
+DWR_EAX         EQU     HK_REGS + 28
+
+;---------------------------------------------------------------------
+; dpmi_rawrm - protected to real.  From dpmi_fault, which recognised
+;              the HLT at ring 3, with EBP on pm3_fault's frame.  It
+;              does not return: the fault frame is left where it is,
+;              and the box's loop carries on at its own level.
+;---------------------------------------------------------------------
+dpmi_rawrm:
+        cmp     dword ptr ds:[dpmi_rmact],0     ; not from inside a simulated
+        jne     dfa_real                        ; interrupt, or a callback
+        cmp     dword ptr ds:[dpmi_cbact],0     ; procedure: those are parked
+        jne     dfa_real                        ; on this very stack
+        cld                                     ; (the client's DF came in)
+
+        movzx   eax,word ptr [ebp+DWR_EAX]
+        mov     dword ptr [vdm_ctx+V86C_DS],eax
+        movzx   eax,word ptr [ebp+DWR_ECX]
+        mov     dword ptr [vdm_ctx+V86C_ES],eax
+        movzx   eax,word ptr [ebp+DWR_EDX]
+        mov     dword ptr [vdm_ctx+V86C_SS],eax
+        movzx   eax,word ptr [ebp+DWR_EBX]
+        mov     dword ptr [vdm_ctx+V86C_ESP],eax
+        movzx   eax,word ptr [ebp+DWR_ESI]
+        mov     dword ptr [vdm_ctx+V86C_CS],eax
+        movzx   eax,word ptr [ebp+DWR_EDI]
+        mov     dword ptr [vdm_ctx+V86C_EIP],eax
+        xor     eax,eax
+        mov     dword ptr [vdm_ctx+V86C_FS],eax
+        mov     dword ptr [vdm_ctx+V86C_GS],eax
+        mov     eax,[ebp+DWR_EAX]
+        mov     dword ptr [vdm_ctx+V86C_EAX],eax
+        mov     eax,[ebp+DWR_EBX]
+        mov     dword ptr [vdm_ctx+V86C_EBX],eax
+        mov     eax,[ebp+DWR_ECX]
+        mov     dword ptr [vdm_ctx+V86C_ECX],eax
+        mov     eax,[ebp+DWR_EDX]
+        mov     dword ptr [vdm_ctx+V86C_EDX],eax
+        mov     eax,[ebp+DWR_ESI]
+        mov     dword ptr [vdm_ctx+V86C_ESI],eax
+        mov     eax,[ebp+DWR_EDI]
+        mov     dword ptr [vdm_ctx+V86C_EDI],eax
+        mov     eax,[ebp+DWR_EBP]
+        mov     dword ptr [vdm_ctx+V86C_EBP],eax
+
+        mov     eax,dword ptr [ebp+HK_IRET+8]
+        and     eax,DPMI_ARITH
+        mov     edx,dword ptr ds:[dpmi_pvif]
+        or      edx,edx
+        jz      dwr_if
+        cmp     byte ptr [edx],0
+        je      dwr_flags
+dwr_if:
+        or      eax,EFL_IF
+dwr_flags:
+        mov     dword ptr [vdm_ctx+V86C_FLAGS],eax
+
+        cli
+        mov     esp,dword ptr ds:[vdm_esp]
+        sti                                     ; we came in through a gate
+        jmp     vdm_loop
+
+;---------------------------------------------------------------------
+; dpmi_israwpm - is this HLT 0306h's real-mode address?  CF if not.
+;---------------------------------------------------------------------
+dpmi_israwpm:
+        push    eax
+        movzx   eax,word ptr ds:[dpmi_cbseg]
+        or      eax,eax
+        jz      dwi_no
+        cmp     dword ptr [vdm_ctx+V86C_CS],eax
+        jne     dwi_no
+        cmp     dword ptr [vdm_ctx+V86C_EIP],DPMICB_RAWPM
+        jne     dwi_no
+        pop     eax
+        clc
+        ret
+dwi_no:
+        pop     eax
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; dpmi_rawpm - real to protected.  From vdm_halt, at the box loop's
+;              level; ring 3 is entered from here, as dpmi_toring3 does
+;              it, and nothing comes back through this routine.
+;
+; THE SELECTORS ARE LOOKED AT BEFORE ANYTHING MOVES.  The IRETD, and
+; the segment loads in front of it, run in the kernel; a selector there
+; that does not describe what it is loaded as faults ring 0.  A client
+; naming one is ended here instead, where somebody can be told.
+;---------------------------------------------------------------------
+dpmi_rawpm:
+        cmp     dword ptr ds:[dpmi_active],0
+        je      dwp_none                        ; a jump nobody was told of
+        cmp     dword ptr ds:[dpmi_rmact],0     ; and not out of a simulated
+        jne     dwp_bad                         ; interrupt: its frame is on
+        cmp     dword ptr ds:[dpmi_cbact],0     ; DPMI_KSTACK, which ring 3
+        jne     dwp_bad                         ; is about to be given
+
+        mov     ax,word ptr [vdm_ctx+V86C_ESI]  ; CS
+        mov     bl,0
+        call    dpmi_rawsel
+        jc      dwp_bad
+        mov     ax,word ptr [vdm_ctx+V86C_EDX]  ; SS
+        mov     bl,1
+        call    dpmi_rawsel
+        jc      dwp_bad
+        mov     ax,word ptr [vdm_ctx+V86C_EAX]  ; DS
+        mov     bl,2
+        call    dpmi_rawsel
+        jc      dwp_bad
+        mov     ax,word ptr [vdm_ctx+V86C_ECX]  ; ES
+        call    dpmi_rawsel
+        jc      dwp_bad
+
+        ; Where it carries on in real mode next time, if it ever comes
+        ; back here without a switch of its own: just past the HLT.
+        inc     dword ptr [vdm_ctx+V86C_EIP]
+
+        ; The interrupt flag it believes in, from real mode's.
+        mov     edx,dword ptr ds:[dpmi_pvif]
+        or      edx,edx
+        jz      dwp_frame
+        test    dword ptr [vdm_ctx+V86C_FLAGS],EFL_IF
+        setnz   byte ptr [edx]
+dwp_frame:
+        cli
+        mov     dword ptr ds:[TSS_BASE + TSS_ESP0],DPMI_KSTACK
+        movzx   eax,word ptr [vdm_ctx+V86C_EDX]         ; SS
+        or      al,3
+        push    eax
+        movzx   eax,word ptr [vdm_ctx+V86C_EBX]         ; (E)SP
+        cmp     byte ptr ds:[dpmi_is32],0
+        je      dwp_sp16
+        mov     eax,dword ptr [vdm_ctx+V86C_EBX]
+dwp_sp16:
+        push    eax
+        mov     eax,dword ptr [vdm_ctx+V86C_FLAGS]      ; the arithmetic
+        and     eax,DPMI_ARITH                          ; flags, and IOPL 0
+        or      eax,EFL_IF OR 2                         ; with IF, as for
+        push    eax                                     ; any client
+        movzx   eax,word ptr [vdm_ctx+V86C_ESI]         ; CS
+        or      al,3
+        push    eax
+        movzx   eax,word ptr [vdm_ctx+V86C_EDI]         ; (E)IP
+        cmp     byte ptr ds:[dpmi_is32],0
+        je      dwp_ip16
+        mov     eax,dword ptr [vdm_ctx+V86C_EDI]
+dwp_ip16:
+        push    eax
+
+        ; DS and ES now, at ring 0 - an inter-privilege IRETD would
+        ; null them (dpmi_toring3 says why) - and every general
+        ; register as real mode left it.  DS last of all: after it there
+        ; is no kernel data to read, only SS-relative.
+        mov     ax,word ptr [vdm_ctx+V86C_ECX]
+        or      al,3
+        test    ax,0FFFCh
+        jnz     dwp_es
+        xor     eax,eax
+dwp_es:
+        mov     es,ax
+        movzx   eax,word ptr [vdm_ctx+V86C_EAX]
+        or      al,3
+        test    ax,0FFFCh
+        jnz     dwp_ds
+        xor     eax,eax
+dwp_ds:
+        push    eax                                     ; for the POP DS
+        xor     eax,eax
+        mov     fs,ax
+        mov     gs,ax
+        mov     eax,dword ptr ss:[vdm_ctx+V86C_EAX]
+        mov     ebx,dword ptr ss:[vdm_ctx+V86C_EBX]
+        mov     ecx,dword ptr ss:[vdm_ctx+V86C_ECX]
+        mov     edx,dword ptr ss:[vdm_ctx+V86C_EDX]
+        mov     esi,dword ptr ss:[vdm_ctx+V86C_ESI]
+        mov     edi,dword ptr ss:[vdm_ctx+V86C_EDI]
+        mov     ebp,dword ptr ss:[vdm_ctx+V86C_EBP]
+        pop     ds
+        iretd
+
+dwp_bad:
+        mov     esi,OFFSET msgDpmiRaw
+        call    dword ptr ds:[IOS_CONSTR]
+        mov     eax,VDX_CRITERR
+        jmp     vdm_killprog
+dwp_none:
+        mov     esi,OFFSET msgDpmiRawNone
+        call    dword ptr ds:[IOS_CONSTR]
+        jmp     vdm_abend
+
+;---------------------------------------------------------------------
+; dpmi_rawsel - AX = a selector a raw switch is about to load, BL =
+;               what for: 0 CS, 1 SS, 2 DS or ES (which may be null).
+;               CF if it is not a present, ring-3 descriptor of the
+;               client's that can be loaded that way.
+;---------------------------------------------------------------------
+dpmi_rawsel:
+        push    eax
+        push    edi
+        cmp     bl,2
+        jne     dws_look
+        test    ax,0FFFCh
+        jz      dws_ok                          ; null loads, and faults
+dws_look:                                       ; only when it is used
+        call    dpmi_slot
+        jc      dws_bad
+        mov     al,byte ptr [edi+5]
+        and     al,0F0h                         ; present, DPL 3, and code
+        cmp     al,0F0h                         ; or data
+        jne     dws_bad
+        mov     al,byte ptr [edi+5]
+        and     al,0Ah                          ; executable, and writable
+        cmp     bl,1                            ; (data) or readable (code)
+        je      dws_ss
+        jb      dws_cs
+        cmp     al,08h                          ; DS and ES: anything but code
+        je      dws_bad                         ; that cannot be read
+        jmp     short dws_ok
+dws_cs:
+        test    al,08h
+        jz      dws_bad
+        jmp     short dws_ok
+dws_ss:
+        cmp     al,02h                          ; writable data
+        jne     dws_bad
+dws_ok:
+        pop     edi
+        pop     eax
+        clc
+        ret
+dws_bad:
+        pop     edi
+        pop     eax
+        stc
         ret
 
 ;=====================================================================
@@ -2027,6 +2756,20 @@ dpmi_reflect:
         cmp     dword ptr ds:[dpmi_active],0
         je      dre_nobody
 
+        ; INT 2Fh AX=168Ah is a question for the HOST, and a protected-
+        ; mode one: real mode has never heard of it (dpmi_vendor).  A
+        ; client with a handler of its own on 2Fh is asked first.
+        cmp     dword ptr [ebp+RF_VEC],2Fh
+        jne     dre_pass
+        cmp     word ptr [ebp+F_EAX],168Ah
+        jne     dre_pass
+        cmp     word ptr [dpmi_pmvec + 2Fh * 8 + 4],0
+        jne     dre_pass
+        call    dpmi_vendor
+        jc      dre_pass                        ; AL stays 8Ah: no such thing
+        mov     byte ptr [ebp+F_EAX],0
+        jmp     dre_out
+dre_pass:
         mov     eax,dword ptr [ebp+RF_VEC]
         lea     esi,[ebp+RF_EIP]
         call    dpmi_pmint
@@ -2047,7 +2790,7 @@ dre_nobody:
         call    vdm_hex8
         mov     esi,OFFSET msgDpmiCR
         call    dword ptr ds:[IOS_CONSTR]
-        jmp     short dre_out
+        jmp     dre_out
 
 ;=====================================================================
 ; A CLIENT'S OWN HANDLERS, AND WHAT IS THERE WHEN IT HAS NONE.
@@ -2835,6 +3578,483 @@ dux_done:
         ret
 
 ;=====================================================================
+; dpmi_pre21 - a client's INT 21h that is the HOST's to answer and not
+;              DOS's.  CF if it has been answered (the frame holds it).
+;
+; 25h AND 35h ARE THE PROTECTED-MODE VECTORS, as 0205h and 0204h are:
+; that is what the "MS-DOS" extensions promise (dpmi_vendor), and it is
+; the only answer that is not dangerous.  DOS's own 25h sets a gate in
+; the KERNEL'S table - to the client's code, translated to a flat
+; address and entered at ring 0.  DOS/4GW never let a 25h through to
+; the host (it hooks INT 21h itself); Borland's RTM does.
+;=====================================================================
+dpmi_pre21:
+        push    eax
+        mov     ax,word ptr [ebp+F_EAX]
+        mov     word ptr ds:[dpmi_fn],ax        ; for dpmi_post21: AH may be an
+        cmp     ah,25h                          ; answer by then
+        je      dp2_set
+        cmp     ah,35h
+        je      dp2_get
+        cmp     ah,50h
+        je      dp2_setpsp
+        pop     eax
+        clc
+        ret
+
+        ; 50h TAKES THE SELECTOR 51h AND 62h HAND OUT (dpmi_post21), and
+        ; sets the PSP a DOS box counts by, vdm_curpsp, as the box's own
+        ; 50h does.  The kernel's took 0027h for a segment: RTM set its
+        ; PSP that way, and its real-mode half read the "PSP" at 0027:0 -
+        ; the interrupt vector table - and built a selector out of it.
+        ; A value that is not a selector is a segment, as it always was.
+dp2_setpsp:
+        pushad
+        mov     ax,word ptr [ebp+F_EBX]
+        test    al,4
+        jz      dp2_pspseg
+        call    dpmi_base                       ; EBX = where it is
+        jc      dp2_done
+        test    bl,0Fh
+        jnz     dp2_done                        ; not a paragraph: not a PSP
+        cmp     ebx,110000h
+        jae     dp2_done
+        shr     ebx,4
+        mov     ax,bx
+dp2_pspseg:
+        mov     word ptr ds:[vdm_curpsp],ax
+        jmp     dp2_done
+dp2_set:
+        pushad
+        movzx   ebx,byte ptr [ebp+F_EAX]
+        lea     ebx,[dpmi_pmvec + ebx*8]
+        mov     ax,word ptr [ebp+F_DS]
+        cmp     ax,DPMI_SEL_DEFVEC
+        je      dp2_none
+        call    dpmi_codeok                     ; somewhere an interrupt can
+        jc      dp2_done                        ; go, or nothing changes
+        mov     eax,dword ptr [ebp+F_EDX]
+        call    dpmi_off
+        mov     dword ptr [ebx],eax
+        mov     ax,word ptr [ebp+F_DS]
+        mov     word ptr [ebx+4],ax
+        jmp     dp2_done
+dp2_none:
+        mov     dword ptr [ebx],0
+        mov     word ptr [ebx+4],0
+        jmp     dp2_done
+dp2_get:
+        pushad
+        movzx   eax,byte ptr [ebp+F_EAX]
+        lea     ebx,[dpmi_pmvec + eax*8]
+        cmp     word ptr [ebx+4],0
+        jne     dp2_have
+        shl     eax,1                           ; DST_LEN: its default
+        mov     word ptr [ebp+F_ES],DPMI_SEL_DEFVEC
+        jmp     dp2_bx
+dp2_have:
+        mov     cx,word ptr [ebx+4]
+        mov     word ptr [ebp+F_ES],cx
+        mov     eax,dword ptr [ebx]
+dp2_bx:
+        mov     word ptr [ebp+F_EBX],ax
+        cmp     byte ptr ds:[dpmi_is32],0
+        je      dp2_done
+        mov     dword ptr [ebp+F_EBX],eax
+dp2_done:
+        popad
+        pop     eax
+        stc
+        ret
+
+;=====================================================================
+; dpmi_post21 - and the calls whose ANSWER is an address.  DOS works out
+;               segment:offset, or the kernel's own flat address, and a
+;               program in protected mode can only follow a selector:
+;               each comes back as one (dpmi_seg2sel, which answers the
+;               same segment with the same selector every time).
+;
+;   1Ah        remembered, so that 2Fh can give back what was set
+;   2Fh        ES:BX - the DTA, as the client named it
+;   34h        ES:BX - the InDOS byte
+;   52h        ES:BX - the list of lists a DOS box is shown
+;   51h, 62h   BX - the PSP: its selector, if it is the client's own
+;   1Bh, 1Ch   DS:BX - the media byte
+;   63h, 5D06h DS:SI - the lead-byte table, the swappable data area
+;
+; Borland's RTM asks 34h and 5D06h before anything else, and was handed
+; the kernel's numbers in the client's registers.
+;=====================================================================
+dpmi_post21:
+        pushad
+        mov     al,byte ptr ds:[dpmi_fn+1]
+        cmp     al,1Ah
+        je      dpo_1A
+        test    dword ptr [ebp+F_FLAGS],FL_CF
+        jnz     dpo_out                         ; a call that failed answered
+        cmp     al,2Fh                          ; nothing
+        je      dpo_2F
+        cmp     al,34h
+        je      dpo_34
+        cmp     al,52h
+        je      dpo_52
+        cmp     al,51h
+        je      dpo_psp
+        cmp     al,62h
+        je      dpo_psp
+        cmp     al,1Bh
+        je      dpo_dsbx
+        cmp     al,1Ch
+        je      dpo_dsbx
+        cmp     al,63h
+        je      dpo_dssi
+        cmp     al,5Dh
+        jne     dpo_out
+        cmp     byte ptr ds:[dpmi_fn],06h
+        je      dpo_dssi
+dpo_out:
+        popad
+        ret
+
+dpo_1A:
+        mov     ax,word ptr [ebp+F_DS]
+        mov     word ptr ds:[dpmi_dtasel],ax
+        mov     eax,dword ptr [ebp+F_EDX]
+        call    dpmi_off
+        mov     dword ptr ds:[dpmi_dtaoff],eax
+        mov     eax,dword ptr [dta_ptr]
+        mov     dword ptr ds:[dpmi_dtaflat],eax
+        jmp     dpo_out
+
+dpo_2F:
+        mov     eax,dword ptr [dta_ptr]
+        cmp     word ptr ds:[dpmi_dtasel],0
+        je      dpo_esbx
+        cmp     eax,dword ptr ds:[dpmi_dtaflat]
+        jne     dpo_esbx                        ; moved since, by someone else
+        mov     ax,word ptr ds:[dpmi_dtasel]
+        mov     word ptr [ebp+F_ES],ax
+        mov     eax,dword ptr ds:[dpmi_dtaoff]
+        jmp     dpo_bx
+
+dpo_34:
+        mov     eax,DOS_INDOS
+dpo_esbx:                                       ; EAX = flat, below 1MB+64K
+        call    dpo_sel                         ; -> EAX selector, EDX offset
+        jc      dpo_out
+        mov     word ptr [ebp+F_ES],ax
+        mov     eax,edx
+dpo_bx:
+        mov     word ptr [ebp+F_EBX],ax
+        cmp     byte ptr ds:[dpmi_is32],0
+        je      dpo_out
+        mov     dword ptr [ebp+F_EBX],eax
+        jmp     dpo_out
+
+dpo_52:
+        call    vdm_lolfresh                    ; EAX = the copy's segment
+        jc      dpo_out
+        mov     ebx,eax
+        call    dpmi_seg2sel
+        jc      dpo_out
+        mov     word ptr [ebp+F_ES],ax
+        mov     eax,GLOL_PTR
+        jmp     dpo_bx
+
+dpo_psp:
+        movzx   ebx,word ptr ds:[vdm_curpsp]
+        mov     eax,(DPMI_IDX_PSP SHL 3) + DPMI_SELBITS
+        cmp     bx,word ptr ds:[vdm_pspseg]
+        je      dpo_pspsel
+        call    dpmi_seg2sel
+        jc      dpo_out
+dpo_pspsel:
+        mov     word ptr [ebp+F_EBX],ax
+        jmp     dpo_out
+
+dpo_dsbx:
+        mov     eax,dword ptr [ebp+F_EBX]
+        call    dpo_sel
+        jc      dpo_out
+        mov     word ptr [ebp+F_DS],ax
+        mov     eax,edx
+        jmp     dpo_bx
+dpo_dssi:
+        mov     eax,dword ptr [ebp+F_ESI]
+        call    dpo_sel
+        jc      dpo_out
+        mov     word ptr [ebp+F_DS],ax
+        mov     word ptr [ebp+F_ESI],dx
+        cmp     byte ptr ds:[dpmi_is32],0
+        je      dpo_out
+        mov     dword ptr [ebp+F_ESI],edx
+        jmp     dpo_out
+
+;--- dpo_sel - EAX = a flat address in the first megabyte (and the 64K
+;--- above it) -> EAX = a selector, EDX = the offset in it.  CF if it is
+;--- not one, or no descriptor is to be had.
+dpo_sel:
+        cmp     eax,10FFF0h
+        jae     dps_no
+        push    ebx
+        mov     edx,eax
+        and     edx,0Fh
+        mov     ebx,eax
+        shr     ebx,4
+        call    dpmi_seg2sel
+        pop     ebx
+        ret
+dps_no:
+        stc
+        ret
+
+;=====================================================================
+; PROCESSOR EXCEPTIONS (0202h / 0203h)
+;
+; A fault the client has a handler for is not the end of it: the
+; handler is entered on a locked stack of the host's, with a frame the
+; specification lays out - where to RETF to, the error code, and the
+; faulting CS:(E)IP, (E)FLAGS and SS:(E)SP, words for a 16-bit client
+; and dwords for a 32-bit one.  It may change any of those, and RETFs;
+; the RETF lands on an INT 31h (DPMICB_EXCRET) and the client carries
+; on from what the frame says now.  A handler that does not want the
+; fault jumps to the one 0202h gave it, which for a client that set
+; none is DPMICB_EXCDEF: the frame is still on its stack, and the
+; client is ended there with the fault reported as it always was.
+;
+; DOS/4GW sets handlers for every exception before it does anything
+; else, and did not look at the carry when 0202h/0203h were missing:
+; the error code they left in AX was the function number of its next
+; thirty calls.
+;=====================================================================
+
+;---------------------------------------------------------------------
+; dpmi_excgo - from dpmi_fault: EAX = the vector, EBP on pm3_fault's
+;              frame.  CF if the client has no handler for it (or the
+;              handler cannot be entered), with nothing changed;
+;              otherwise the frame is pointed at the handler and
+;              pm3_fault resumes ring 3 there.  Everything preserved.
+;---------------------------------------------------------------------
+dpmi_excgo:
+        cmp     eax,DPMI_MAXEXC
+        jae     deg_no
+        cmp     dword ptr [dpmi_exc + eax * 8 + 4],0
+        je      deg_no
+        pushad
+        mov     dword ptr ds:[dpmi_excvec],eax
+        mov     ax,word ptr [dpmi_exc + eax * 8 + 4]
+        mov     bl,0                            ; still a code segment of its
+        call    dpmi_rawsel                     ; own: it may have changed it
+        jc      deg_fail                        ; since 0203h
+        call    dpmi_excstack
+        jc      deg_fail
+
+        ; Its top, or - for a fault taken on it, which is a handler
+        ; faulting - under that handler's frame.
+        mov     edi,DPMI_EXCSTK - 16
+        mov     ax,word ptr [ebp+HK_IRET+16]
+        or      al,3
+        cmp     ax,(DPMI_IDX_EXCSS SHL 3) + DPMI_SELBITS
+        jne     deg_top
+        mov     edi,dword ptr [ebp+HK_IRET+12]
+        cmp     edi,DPMI_EXCSTK
+        ja      deg_fail
+        cmp     edi,64
+        jb      deg_fail                        ; out of room: no handler
+deg_top:
+        mov     esi,dword ptr ds:[dpmi_excbase]
+        cmp     byte ptr ds:[dpmi_is32],0
+        je      deg_16
+        sub     edi,32
+        add     esi,edi
+        mov     dword ptr [esi],DPMICB_EXCRET
+        mov     dword ptr [esi+4],(DPMI_IDX_CBRET SHL 3) + DPMI_SELBITS
+        mov     eax,dword ptr [ebp+HK_ERR]
+        mov     dword ptr [esi+8],eax
+        mov     eax,dword ptr [ebp+HK_IRET]
+        mov     dword ptr [esi+12],eax
+        mov     eax,dword ptr [ebp+HK_IRET+4]
+        mov     dword ptr [esi+16],eax
+        mov     eax,dword ptr [ebp+HK_IRET+8]
+        mov     dword ptr [esi+20],eax
+        mov     eax,dword ptr [ebp+HK_IRET+12]
+        mov     dword ptr [esi+24],eax
+        mov     eax,dword ptr [ebp+HK_IRET+16]
+        mov     dword ptr [esi+28],eax
+        jmp     deg_enter
+deg_16:
+        sub     edi,16
+        add     esi,edi
+        mov     word ptr [esi],DPMICB_EXCRET
+        mov     word ptr [esi+2],(DPMI_IDX_CBRET SHL 3) + DPMI_SELBITS
+        mov     ax,word ptr [ebp+HK_ERR]
+        mov     word ptr [esi+4],ax
+        mov     ax,word ptr [ebp+HK_IRET]
+        mov     word ptr [esi+6],ax
+        mov     ax,word ptr [ebp+HK_IRET+4]
+        mov     word ptr [esi+8],ax
+        mov     ax,word ptr [ebp+HK_IRET+8]
+        mov     word ptr [esi+10],ax
+        mov     ax,word ptr [ebp+HK_IRET+12]
+        mov     word ptr [esi+12],ax
+        mov     ax,word ptr [ebp+HK_IRET+16]
+        mov     word ptr [esi+14],ax
+deg_enter:
+        mov     eax,dword ptr ds:[dpmi_excvec]
+        mov     edx,dword ptr [dpmi_exc + eax * 8]
+        mov     dword ptr [ebp+HK_IRET],edx
+        mov     edx,dword ptr [dpmi_exc + eax * 8 + 4]
+        or      dl,3
+        mov     dword ptr [ebp+HK_IRET+4],edx
+        mov     dword ptr [ebp+HK_IRET+12],edi
+        mov     dword ptr [ebp+HK_IRET+16],(DPMI_IDX_EXCSS SHL 3) + DPMI_SELBITS
+        and     dword ptr [ebp+HK_IRET+8],NOT (EFL_TF OR EFL_NT)
+        popad
+        clc
+        ret
+deg_fail:
+        popad
+deg_no:
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; dpmi_excstack - the locked stack and its selector, made the first time
+;               and described again for each client (the table it is
+;               in is wiped by every mode switch).  CF if no memory.
+;---------------------------------------------------------------------
+dpmi_excstack:
+        pushad
+        cmp     dword ptr ds:[dpmi_excbase],0
+        jne     des_have
+        mov     ebx,DPMI_EXCSTK
+        call    arena_alloc
+        jc      des_none
+        mov     dword ptr ds:[dpmi_excbase],eax
+des_have:
+        mov     ebx,dword ptr ds:[dpmi_excbase]
+        mov     ax,(DPMI_IDX_EXCSS SHL 3) + DPMI_SELBITS
+        mov     ecx,DPMI_EXCSTK - 1
+        mov     dl,DACC_DATA
+        mov     dh,byte ptr ds:[dpmi_gran]
+        call    dpmi_setdesc
+        popad
+        clc
+        ret
+des_none:
+        popad
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; dpmi_excret - the handler has RETFed onto DPMICB_EXCRET.  From
+;               dpmi_int31: the rest of the frame is at its SS:(E)SP.
+;
+; The selectors in it are looked at before they are used, for
+; dpmi_rawpm's reason: the IRETD that goes back to the client runs in
+; the kernel, and a bad CS or SS there would be the kernel's fault.
+;---------------------------------------------------------------------
+dpmi_excret:
+        mov     ax,word ptr [ebp+F_SS3]
+        call    dpmi_base
+        jc      dxr_bad
+        mov     esi,dword ptr [ebp+F_ESP3]
+        cmp     byte ptr ds:[dpmi_is32],0
+        jne     dxr_32
+        movzx   esi,si
+        add     esi,ebx
+        movzx   eax,word ptr [esi+2]            ; (E)IP
+        mov     dword ptr ds:[dpmi_xeip],eax
+        movzx   eax,word ptr [esi+4]            ; CS
+        mov     dword ptr ds:[dpmi_xcs],eax
+        movzx   eax,word ptr [esi+6]            ; (E)FLAGS
+        mov     dword ptr ds:[dpmi_xfl],eax
+        movzx   eax,word ptr [esi+8]            ; (E)SP
+        mov     dword ptr ds:[dpmi_xesp],eax
+        movzx   eax,word ptr [esi+10]           ; SS
+        mov     dword ptr ds:[dpmi_xss],eax
+        jmp     dxr_check
+dxr_32:
+        add     esi,ebx
+        mov     eax,dword ptr [esi+4]
+        mov     dword ptr ds:[dpmi_xeip],eax
+        movzx   eax,word ptr [esi+8]
+        mov     dword ptr ds:[dpmi_xcs],eax
+        mov     eax,dword ptr [esi+12]
+        mov     dword ptr ds:[dpmi_xfl],eax
+        mov     eax,dword ptr [esi+16]
+        mov     dword ptr ds:[dpmi_xesp],eax
+        movzx   eax,word ptr [esi+20]
+        mov     dword ptr ds:[dpmi_xss],eax
+dxr_check:
+        mov     ax,word ptr ds:[dpmi_xcs]
+        mov     bl,0
+        call    dpmi_rawsel
+        jc      dxr_bad
+        mov     ax,word ptr ds:[dpmi_xss]
+        mov     bl,1
+        call    dpmi_rawsel
+        jc      dxr_bad
+
+        mov     eax,dword ptr ds:[dpmi_xeip]
+        mov     dword ptr [ebp+F_EIP],eax
+        mov     eax,dword ptr ds:[dpmi_xcs]
+        or      al,3
+        mov     dword ptr [ebp+F_CS],eax
+        mov     eax,dword ptr ds:[dpmi_xesp]
+        mov     dword ptr [ebp+F_ESP3],eax
+        mov     eax,dword ptr ds:[dpmi_xss]
+        or      al,3
+        mov     dword ptr [ebp+F_SS3],eax
+        ; The flags a program may have: the arithmetic ones and DF,
+        ; from the frame.  IF and IOPL stay the host's (pm3_vif is the
+        ; client's interrupt flag, and nothing here touches it).
+        mov     eax,dword ptr ds:[dpmi_xfl]
+        and     eax,DPMI_ARITH OR EFL_DF
+        mov     edx,dword ptr [ebp+F_FLAGS]
+        and     edx,NOT (DPMI_ARITH OR EFL_DF OR EFL_TF OR EFL_NT)
+        or      eax,edx
+        mov     dword ptr [ebp+F_FLAGS],eax
+        jmp     d31_return
+
+        ; A frame that names something the client cannot be resumed on:
+        ; reported as the exception it came from, and the client ends.
+dxr_bad:
+        mov     eax,dword ptr ds:[dpmi_excvec]
+        xor     edx,edx
+        mov     ecx,dword ptr [ebp+F_EIP]
+        movzx   ebx,word ptr [ebp+F_CS]
+        jmp     dfa_real
+
+;---------------------------------------------------------------------
+; dpmi_excdef - a handler chained to 0202h's default.  The whole frame
+;               is still on its stack, return address and all; the
+;               fault it describes is reported and the client ends,
+;               which is what the fault would have done with no handler.
+;---------------------------------------------------------------------
+dpmi_excdef:
+        mov     ax,word ptr [ebp+F_SS3]
+        call    dpmi_base
+        jc      dxr_bad
+        mov     esi,dword ptr [ebp+F_ESP3]
+        cmp     byte ptr ds:[dpmi_is32],0
+        jne     dxd_32
+        movzx   esi,si
+        add     esi,ebx
+        movzx   edx,word ptr [esi+4]            ; the error code
+        movzx   ecx,word ptr [esi+6]            ; (E)IP
+        movzx   ebx,word ptr [esi+8]            ; CS
+        jmp     dxd_say
+dxd_32:
+        add     esi,ebx
+        mov     edx,dword ptr [esi+8]
+        mov     ecx,dword ptr [esi+12]
+        movzx   ebx,word ptr [esi+16]
+dxd_say:
+        mov     eax,dword ptr ds:[dpmi_excvec]
+        jmp     dfa_real
+
+;=====================================================================
 ; dpmi_exit - the client has called 21h/4Ch, or something has killed
 ;             it.  AL = the exit code.
 ;
@@ -2868,6 +4088,21 @@ dpmi_exit:
 dpmi_drop:
         call    dpmi_cbclr              ; its callbacks go with it: the
                                         ; addresses stay, and answer nobody
+        ; The environment word back to the segment it was, if it still
+        ; holds our selector - the sweep that frees the program's memory
+        ; reads it next.
+        mov     eax,dword ptr ds:[dpmi_envpsp]
+        or      eax,eax
+        jz      ddr_noenv
+        cmp     word ptr [eax+2Ch],(DPMI_IDX_ENV SHL 3) + DPMI_SELBITS
+        jne     ddr_noenv
+        push    edx
+        mov     edx,dword ptr ds:[dpmi_envseg]
+        mov     word ptr [eax+2Ch],dx
+        pop     edx
+ddr_noenv:
+        mov     dword ptr ds:[dpmi_envpsp],0
+        call    r3_setdesc              ; GDT entry 8 back to the native slot
         xor     eax,eax
         lldt    ax                              ; no client, no table
         mov     dword ptr ds:[dpmi_active],0
@@ -2887,12 +4122,26 @@ dpmi_drop:
 dpmi_fault:
         cmp     eax,16
         je      dfa_fperr
-        cmp     eax,13
-        jne     dfa_real
         cmp     dword ptr ds:[dpmi_active],0
         je      dfa_real
+        cmp     eax,13
+        jne     dfa_exc
+        ; 0306h's protected-mode address, which is a HLT and so a #GP
+        ; at ring 3.  Before anything is pushed: dpmi_rawpm returns
+        ; from this stack.
+        cmp     ebx,(DPMI_IDX_CBRET SHL 3) + DPMI_SELBITS
+        jne     dfa_notraw
+        cmp     ecx,DPMICB_RAWRM
+        je      dpmi_rawrm
+dfa_notraw:
         call    dpmi_swint
+        jnc     dfa_back
+        ; A REAL FAULT, and the client may have a handler for it
+        ; (0203h).  Only when it has not is the client finished here.
+dfa_exc:
+        call    dpmi_excgo
         jc      dfa_real
+dfa_back:
         ret
 
         ; THE COPROCESSOR'S ERROR IS THE CLIENT'S INTERRUPT 13, as it
@@ -2970,6 +4219,16 @@ dfa_real:
         call    dword ptr ds:[IOS_CONSTR]
         mov     eax,dword ptr ds:[dpmi_ferr]
         call    vdm_hex8
+        ; A page fault says where it was reaching, as a box's report
+        ; does (vdm_fault): "0E at x err 06" names the instruction and
+        ; not the address, which is the half that finds the bug.
+        cmp     dword ptr ds:[dpmi_fvec],14
+        jne     dfa_nocr2
+        mov     esi,OFFSET msgVdmCR2
+        call    dword ptr ds:[IOS_CONSTR]
+        mov     eax,cr2
+        call    vdm_hex32
+dfa_nocr2:
         mov     esi,OFFSET msgDpmiCR
         call    dword ptr ds:[IOS_CONSTR]
 
@@ -2980,12 +4239,8 @@ dfa_real:
         ; the same unwind a ^C does, for the same reason: we are deep
         ; inside a fault handler on a stack that is about to stop
         ; meaning anything.
-        call    dpmi_cbclr
         cli
-        xor     eax,eax
-        lldt    ax
-        mov     dword ptr ds:[dpmi_active],0
-        mov     dword ptr ds:[dpmi_rmact],0
+        call    dpmi_drop
         mov     esp,dword ptr ds:[vdm_esp]
         mov     eax,dword ptr ds:[vdm_indos]
         mov     byte ptr ds:[DOS_INDOS],al
@@ -3014,6 +4269,23 @@ dpmi_rmesp      dd  0                   ; where dpmi_simint must come back to
 dpmi_rmesp0     dd  0                   ; and where ring 3 was coming in
 dpmi_rmflags    dd  0                   ; the flags a reflected one goes in with
 dpmi_rmdepth    dd  0                   ; the box level it was made from
+dpmi_depth      dd  0                   ; the box level the client's program is on
+dpmi_rmcall     db  DRC_INT             ; how dpmi_simint enters real mode
+dpmi_msdos      db  0                   ; answer "MS-DOS" (dpmi_vendor): not yet
+                db  0,0
+dpmi_envpsp     dd  0                   ; the PSP whose environment word holds
+dpmi_envseg     dd  0                   ; DPMI_IDX_ENV, and the segment it held
+dpmi_fn         dw  0                   ; the INT 21h in hand, as AX came in
+dpmi_dtasel     dw  0                   ; the DTA as the client set it (1Ah),
+dpmi_dtaoff     dd  0                   ; for 2Fh to give back, and where that
+dpmi_dtaflat    dd  0                   ; was in the kernel's terms
+dpmi_excvec     dd  0                   ; the exception last handed to a handler
+dpmi_excbase    dd  0                   ; its locked stack, 0 until the first
+dpmi_xeip       dd  0                   ; the frame a handler came back with
+dpmi_xcs        dd  0
+dpmi_xfl        dd  0
+dpmi_xesp       dd  0
+dpmi_xss        dd  0
 dpmi_rmcs       dd  0                   ; the register structure it is using
 dpmi_rmwords    dw  0
 dpmi_stkseg     dw  0                   ; the scratch real-mode stack
@@ -3053,6 +4325,7 @@ dpmi_segmap     dw  (DPMI_SEGMAX * 2) dup(0)    ; segment, selector
 
 dpmi_cbtab      db  (DPMI_MAXCB * DCB_LEN) dup(0)
 dpmi_pmvec      dd  (256 * 2) dup(0)    ; offset, then selector, per vector
+dpmi_exc        dd  (DPMI_MAXEXC * 2) dup(0)    ; ...and per exception, 0203h
 dpmi_memtab     db  (DPMI_MAXMEM * DM_LEN) dup(0)
 dpmi_refcs      db  RMCS_LEN dup(0)
 dpmi_savectx    db  V86C_SIZE dup(0)
@@ -3063,3 +4336,5 @@ msgDpmiErr      db  ' err ',0
 msgDpmiCR       db  13,10,0
 msgDpmiStray    db  13,10,'PM-DOS: protected-mode interrupt with no client: ',0
 msgDpmiNoClient db  'a ring-3 fault with no DPMI client running',0
+msgDpmiRaw      db  13,10,'DPMI client switched to protected mode with a bad selector',13,10,0
+msgDpmiRawNone  db  13,10,'Real-mode code switched to protected mode with no DPMI client',13,10,0

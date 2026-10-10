@@ -124,7 +124,10 @@ RXE_NOTLOCKED   EQU     0AAh
 RXE_LOCKED      EQU     0ABh
 RXE_LOCKCOUNT   EQU     0ACh
 RXE_LOCKFAIL    EQU     0ADh
-RXE_NOUMB       EQU     0B0h
+RXE_NOUMB       EQU     0B1h            ; "no UMBs are available" - B0h is
+                                        ; "a smaller one is", with DX its
+                                        ; size, and B0h with DX=0 was what
+                                        ; Windows got here until v0.63
 RXE_UMBTOOBIG   EQU     0B1h
 RXE_BADUMB      EQU     0B2h
 
@@ -495,6 +498,9 @@ rxi_lowgate:
         ; trusting what it finds.
         mov     word ptr [rx_a20cnt],0
         call    rx_a20lower
+IFDEF RMDOS_E9
+        call    e9_a20init              ; which method, and did it shut
+ENDIF
 rxi_gated:
 
 IFDEF XMSPOOLSTAMP
@@ -536,12 +542,16 @@ ENDIF
 rx_done:
         push    ax
         push    es
+        cmp     word ptr [rx_oldi15 + 2],0
+        je      rxd_never               ; rx_init never ran: a header this
+                                        ; image refused, going straight back
         xor     ax,ax
         mov     es,ax
         mov     ax,word ptr [rx_oldi15]
         mov     word ptr es:[15h*4],ax
         mov     ax,word ptr [rx_oldi15 + 2]
         mov     word ptr es:[15h*4 + 2],ax
+rxd_never:
         pop     es
         pop     ax
         ret
@@ -550,6 +560,9 @@ rx_done:
 ; INT 15h - AH=88h only, and everything else goes where it was going.
 ;=====================================================================
 i15:
+IFDEF RMDOS_E9
+        call    e9_i15
+ENDIF
         cmp     ah,88h
         je      i15_ext
         jmp     dword ptr cs:[rx_oldi15]
@@ -1011,20 +1024,55 @@ rt_next:
 ; is.  The kernel's own XMS host has to go to some trouble over the
 ; same requirement; see the note on the HLT trick in XMS.INC.
 ;
-; The XMS specification says a driver preserves every register it does
-; not return a value in, so the five that no function returns are
-; saved and restored around the lot.
+; THE XMS SPECIFICATION SAYS A DRIVER PRESERVES EVERY REGISTER IT DOES
+; NOT RETURN A VALUE IN, AND WINDOWS HOLDS IT TO THAT - ALL THIRTY-TWO
+; BITS OF EACH.  Until v0.63 this saved the five sixteen-bit registers
+; no function returns and let the rest fall where the function left
+; them, which is what every caller before WIN386.EXE could live with.
+; WIN386's loader cannot.  It reads itself into extended memory 32K at
+; a time, keeping the running byte count in ECX ACROSS the 0Bh call -
+; it stores the destination offset out of ECX, adds the chunk, calls
+; the driver, and then compares ECX with the file size to decide
+; whether to go round again.  HIMEM gives ECX back untouched; this
+; driver used it as the move length and handed back zero, so the
+; comparison never ended the loop and Windows read the end of its own
+; file eight hundred thousand times before the time limit.
+;
+; So the whole set is saved on the way in: ECX, ESI, EDI and EBP on
+; the stack, and EAX, EBX and EDX in three dwords, so that rx_ret can
+; put back the HALVES a sixteen-bit function did not answer in.  The
+; 3.0 functions answer in whole registers and keep what they computed.
 ;=====================================================================
 RX_MAXFN        EQU     12h
-RX_REV          EQU     0046h           ; the driver revision 00h reports,
-                                        ; which is PM-DOS's own version
+RX_REV          EQU     030Ah           ; the driver revision 00h reports:
+                                        ; HIMEM 3.10's, not PM-DOS's own, as
+                                        ; XMS.INC's xf_00 says why - the WfW
+                                        ; 3.11 Setup wants 0260h or more
 
 rx_entry:
+        ; A SHORT JUMP AND THREE NOPS FIRST, as HIMEM has them ("for
+        ; hookability", himem.asm): five bytes that a program hooking
+        ; the driver may overwrite with a far jump of its own, and
+        ; which say, by being a short jump, that the chain ends here.
+        ; Windows in 386 enhanced mode is such a program - V86MMGR
+        ; takes XMS over by planting a breakpoint on the entry - and an
+        ; entry that began with PUSH DS was refused with "Cannot install
+        ; the 386 enhanced mode XMS driver."
+        jmp     short rx_entry2
+        nop
+        nop
+        nop
+rx_entry2:
         push    ds
         push    es
-        push    si
-        push    di
-        push    bp
+        push    esi
+        push    edi
+        push    ebp
+        push    ecx
+        mov     byte ptr cs:[rx_svfn],ah
+        mov     dword ptr cs:[rx_sveax],eax
+        mov     dword ptr cs:[rx_svebx],ebx
+        mov     dword ptr cs:[rx_svedx],edx
 
         cmp     ah,0Bh
         jne     rx_nodesc
@@ -1049,6 +1097,9 @@ rx_nodesc:
         mov     es,si
 IFDEF DBG_LPT
         call    rdbg_xin                ; the question, held until the answer
+ENDIF
+IFDEF RMDOS_E9
+        call    e9_xin                  ; the same question on port E9h
 ENDIF
         cmp     ah,RX_MAXFN
         ja      rx_high
@@ -1078,12 +1129,43 @@ rx_ret:
 IFDEF DBG_LPT
         call    rdbg_xout               ; ...and both, recorded together
 ENDIF
-        pop     bp
-        pop     di
-        pop     si
+IFDEF RMDOS_E9
+        call    e9_xout
+ENDIF
+        ; What goes back: see the head of rx_entry.  88h answers in
+        ; EAX, ECX and EDX whole; 8Eh in EDX whole; everything else in
+        ; sixteen-bit halves, so the top halves are the caller's and go
+        ; back to it, and ECX goes back to every function but 88h.
+        cmp     byte ptr cs:[rx_svfn],88h
+        je      rxr_whole
+        cmp     byte ptr cs:[rx_svfn],8Eh
+        je      rxr_edx
+        and     dword ptr cs:[rx_svedx],0FFFF0000h
+        and     edx,0FFFFh
+        or      edx,dword ptr cs:[rx_svedx]
+rxr_edx:
+        and     dword ptr cs:[rx_sveax],0FFFF0000h
+        and     eax,0FFFFh
+        or      eax,dword ptr cs:[rx_sveax]
+        and     dword ptr cs:[rx_svebx],0FFFF0000h
+        and     ebx,0FFFFh
+        or      ebx,dword ptr cs:[rx_svebx]
+        pop     ecx
+        jmp     short rxr_out
+rxr_whole:
+        add     sp,4                    ; the saved ECX, not wanted
+rxr_out:
+        pop     ebp
+        pop     edi
+        pop     esi
         pop     es
         pop     ds
         retf
+
+rx_svfn     db  0                       ; the function, for rx_ret
+rx_sveax    dd  0                       ; the caller's EAX, EBX and EDX,
+rx_svebx    dd  0                       ; whose top halves no sixteen-bit
+rx_svedx    dd  0                       ; function answers in
 
 ;=====================================================================
 ; 00h - what this driver is.
@@ -1094,13 +1176,9 @@ ENDIF
 ;=====================================================================
 rxf00:
         mov     bx,RX_REV
-        xor     dx,dx
-        test    byte ptr [h_flags],RMHF_HIGH
-        jnz     f00_nohma
-        inc     dx                      ; low: the HMA is the guest's
-f00_nohma:
-        mov     ax,0300h
-        jmp     rx_ret
+        mov     dx,1                    ; an HMA exists either way: low it is
+        mov     ax,0300h                ; the guest's, high it is this driver's
+        jmp     rx_ret                  ; own - see rxf01
 
 ;=====================================================================
 ; 01h / 02h - the HMA.
@@ -1146,7 +1224,11 @@ f01_grant:
         mov     byte ptr [rx_hmaown],1
         jmp     rxr_ok
 f01_nohma:
-        mov     bl,RXE_NOHMA
+        ; IN USE, NOT ABSENT.  The HMA exists and this driver is standing
+        ; in it, which is the answer a DOS loaded high gives and the one
+        ; Windows understands: V86MMGR takes a refused HMA to mean that
+        ; something lives there and keeps A20 on for every machine.
+        mov     bl,RXE_HMAINUSE
         jmp     rxr_err
 f01_inuse:
         mov     bl,RXE_HMAINUSE

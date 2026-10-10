@@ -1,7 +1,7 @@
 HELLO.COM here - a 16-bit .COM, running on PM-DOS.
   INT 21h/30h says DOS version 6.16
-  INT 21h/62h says my PSP is 055B
+  INT 21h/62h says my PSP is 1095
   INT 21h/4Ah shrank me to 64K
-  INT 21h/48h gave me a block at 155C
+  INT 21h/48h gave me a block at 2096
   could not read README.TXT
 HELLO.COM exiting through AH=4Ch.

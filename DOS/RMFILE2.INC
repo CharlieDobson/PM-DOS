@@ -69,7 +69,35 @@ sfti_dev:
         mov     byte ptr [si+SFT_FLAGS],SFF_DEVICE
         mov     [si+SFT_DRIVE],al
         call    sft_devname
+        call    sft_setdev
         mov     word ptr [si+SFT_MODE],2
+        ret
+
+;--- sft_setdev - AL = a device index, SI = its entry: the device
+;--- (not sft_devinfo: wasm folds case, and that is the equate above)
+;--- information word 4400h answers with, and the far pointer to the
+;--- device's header in the block below 64K (RMINFO.INC, rd_sysinit).
+sft_setdev:
+        push    ax
+        push    bx
+        mov     word ptr [si+SFT_DEVINFO],8080h  ; a character device
+        movzx   bx,al
+        imul    bx,bx,RL_DEVLEN
+        add     bx,RL_DEVS                      ; CON, AUX, PRN in that order
+        cmp     al,DEV_CON
+        jne     sdi_notcon
+        mov     word ptr [si+SFT_DEVINFO],80D3h  ; ...the console, with
+sdi_notcon:                                     ; standard in and out
+        cmp     al,DEV_NUL
+        jne     sdi_notnul
+        mov     word ptr [si+SFT_DEVINFO],8084h  ; ...the bit bucket
+        mov     bx,RL_NULDEV
+sdi_notnul:
+        mov     [si+SFT_DEVPTR],bx
+        mov     ax,[rd_lowseg]
+        mov     [si+SFT_DEVPTR+2],ax
+        pop     bx
+        pop     ax
         ret
 
 ;---------------------------------------------------------------------
@@ -218,6 +246,18 @@ dvn_store:
         jne     dvn_no
 
 dvn_cmp:
+        ; A DRIVER CONFIG.SYS LOADED, FIRST - see drv_find in RMDEV.INC,
+        ; which leaves its header in rd_drvhdr for sub_devopen.
+        call    drv_find
+        jc      dvn_table
+        mov     al,DEV_DRV
+        pop     si
+        pop     di
+        pop     dx
+        pop     cx
+        clc
+        ret
+dvn_table:
         mov     si,OFFSET rd_devtab
 dvn_try:
         mov     al,cs:[si]
@@ -277,10 +317,31 @@ sub_devopen:
         mov     byte ptr [si+SFT_FLAGS],SFF_DEVICE
         mov     al,[rd_opdev]
         mov     [si+SFT_DRIVE],al
-        call    sft_devname
         mov     word ptr [si+SFT_MODE],2
         mov     dword ptr [si+SFT_SIZE],0
         mov     dword ptr [si+SFT_POS],0
+        cmp     al,DEV_DRV
+        je      sdo_driver
+        call    sft_devname
+        call    sft_setdev
+        jmp     short sdo_jft
+sdo_driver:
+        ; A LOADED DRIVER: its header, its name, its attributes - and an
+        ; OPEN request if the header asks for one, which it may refuse.
+        ; Refused, the entry goes back unused and so does the handle,
+        ; which has not been written into the table yet.
+        call    drv_setsft
+        call    drv_open
+        jnc     sdo_jft
+        mov     word ptr [si+SFT_REF],0
+        mov     [rd_opfail],ax
+        pop     di
+        pop     si
+        pop     ax
+        mov     ax,[rd_opfail]
+        stc
+        ret
+sdo_jft:
         push    es                      ; the handle points at the entry -
         push    cx                      ; written the same way sub_fromdir
         push    di                      ; writes it, because there is no
@@ -305,6 +366,7 @@ sdo_bad:
         stc
         ret
 
+rd_opfail   dw  0
 rd_devname  db  8 dup (' ')
 rd_devtab   db  DEV_CON,'CON     '
             db  DEV_AUX,'AUX     '
@@ -368,6 +430,28 @@ sg_bad:
         stc
         ret
 
+;=====================================================================
+; sft_isnet - SI = a table entry.  ZF if it is a redirector's file:
+;             bit 15 of DOS's flags word set and bit 7, a device, clear.
+;             Every register is kept.
+;
+; BIT 15 ALONE IS NOT ENOUGH HERE, though it is in MS-DOS.  This DOS's
+; own devices keep in that word what 4400h answers - 80D3h for CON,
+; 8080h for AUX and PRN - and 4400h's high byte is the device header's,
+; whose bit 15 means "a character device".  MS-DOS keeps the flags alone
+; in the entry and builds 4400h's answer when asked; here the answer is
+; kept, so a device's bit 15 is set, and the first child to end with
+; CON inherited closed it through the redirector (NETTEST, 2026-10-07).
+; A redirector's entry is a file, so bit 7 tells them apart.
+;=====================================================================
+sft_isnet:
+        push    ax
+        mov     ax,word ptr [si+SFT_DEVINFO]
+        and     ax,8080h
+        cmp     ax,8000h
+        pop     ax
+        ret
+
 ;--- sft_alloc - a free table entry -> SI, AL = its index.  CF if full
 sft_alloc:
         push    cx
@@ -429,16 +513,36 @@ sft_release:
         push    ax
         call    sft_get
         jc      srl_done
+        call    sft_isnet
+        je      srl_net
         cmp     word ptr [si+SFT_REF],0
         je      srl_done
         dec     word ptr [si+SFT_REF]
         cmp     word ptr [si+SFT_REF],0
         jne     srl_done
         call    file_commit
+        test    byte ptr [si+SFT_FLAGS],SFF_DEVICE
+        jz      srl_done
+        cmp     byte ptr [si+SFT_DRIVE],DEV_DRV
+        jne     srl_done
+        call    drv_close               ; the last handle on a loaded driver
 srl_done:
         pop     ax
         pop     si
         ret
+srl_net:
+        ; A REDIRECTOR'S FILE: THE REDIRECTOR DROPS THE COUNT, not this DOS.
+        ; MS-DOS's DOS_CLOSE hands a network file's close over whole
+        ; (DOS6SRC dos/close.asm) and the redirector frees the entry when
+        ; the count reaches nought.  What it answers is not this caller's
+        ; business: the handle is gone either way, as it is in DOS.
+        pusha
+        push    es
+        mov     ax,1106h
+        call    net_sft
+        pop     es
+        popa
+        jmp     short srl_done
 
 ;--- jft_alloc - a free slot in the process's table -> BX ------------
 ;=====================================================================
@@ -702,8 +806,16 @@ fio_wr:
         jnc     fio_have
         cmp     byte ptr [rd_iowr],0
         je      fio_done                ; reading past the chain: stop
-        call    sft_grow                ; writing past it: extend
+        ; Writing past it: extend - until the chain REACHES the
+        ; position, a cluster at a time.  One cluster used to be added
+        ; and the data written into it wherever the position was, so a
+        ; write two clusters past the end went into the first cluster
+        ; past it, and a read of that position found no cluster at all.
+        ; Windows' swap file is written that way: 3MB long from its
+        ; first moment, one cluster of chain (file_trunc, below).
+        call    sft_grow
         jc      fio_full
+        jmp     fio_wr
 fio_have:
         ; Which sector of that cluster, and how far into it?
         push    si
@@ -727,6 +839,57 @@ fio_have:
         mov     eax,dword ptr [bp+SFT_POS]
         and     eax,1FFh                ; where in the sector
         mov     dword ptr [rd_iooff],eax
+
+        ; WHOLE SECTORS GO STRAIGHT BETWEEN THE DISK AND THE CALLER.
+        ; The note at the head of this routine was written when one
+        ; BIOS call per sector was the price of everything and a copy
+        ; through rd_datbuf cost nothing beside it.  With RMCACHE.INC
+        ; underneath, a run of sectors is one lookup and one move, and
+        ; KRNL386 loading a 40K segment is ten of those instead of
+        ; eighty copies.  So a request that starts on a sector boundary
+        ; with at least a sector to go takes as many whole sectors as
+        ; the cluster has left, straight to or from ES:DI; what is left
+        ; over - a partial sector at either end - still goes through
+        ; the buffer below, as it always did.
+        or      eax,eax
+        jnz     fio_part
+        cmp     ecx,SECSIZE
+        jb      fio_part
+        movzx   eax,byte ptr [si+VOL_SPC]
+        sub     eax,edx                 ; sectors left in the cluster
+        mov     ebx,ecx
+        shr     ebx,9                   ; whole sectors asked for
+        cmp     eax,ebx
+        jbe     fio_run
+        mov     eax,ebx
+fio_run:
+        cmp     eax,127
+        jbe     fio_run2
+        mov     eax,127
+fio_run2:
+        shl     eax,9
+        mov     dword ptr [rd_iolen],eax
+        push    ecx
+        shr     eax,9
+        mov     cx,ax
+        mov     eax,dword ptr [rd_iolba]
+        mov     bx,di                   ; ES:BX = the caller's buffer
+        cmp     byte ptr [rd_iowr],0
+        jne     fio_runw
+        call    rd_rdsec
+        jmp     short fio_rund
+fio_runw:
+        call    rd_wrsec
+fio_rund:
+        pop     ecx
+        jc      fio_poperr
+        pop     si                      ; the SFT again
+        cmp     byte ptr [rd_iowr],0
+        je      fio_written
+        or      byte ptr [si+SFT_FLAGS],SFF_WRITTEN
+        jmp     fio_written
+fio_part:
+        mov     eax,dword ptr [rd_iooff]
         ; THE CHUNK IS CLAMPED TO THE SECTOR.  THE REQUEST IS NOT.
         ;
         ; This used to clamp ECX itself - and ECX is not the size of
@@ -941,6 +1104,11 @@ fn3F:
         mov     bx,[bp+F_BX]
         call    sft_get
         jc      f3F_bad
+        call    sft_isnet
+        jne     f3F_ours
+        mov     ax,1108h                ; a redirector's file - RMNET.INC
+        jmp     net_rwfn
+f3F_ours:
         movzx   ecx,word ptr [bp+F_CX]
         mov     es,[bp+F_DS]
         mov     di,[bp+F_DX]
@@ -953,8 +1121,11 @@ fn3F:
         jmp     i21_ok
 f3F_dev:
         call    dev_read
+        jc      f3F_deverr              ; only a loaded driver can fail
         mov     [bp+F_AX],cx
         jmp     i21_ok
+f3F_deverr:
+        jmp     i21_fail
 f3F_bad:
         mov     ax,ERR_BADHANDLE
         jmp     i21_fail
@@ -968,6 +1139,11 @@ fn40:
         mov     bx,[bp+F_BX]
         call    sft_get
         jc      f40_bad
+        call    sft_isnet
+        jne     f40_ours
+        mov     ax,1109h                ; a redirector's file - RMNET.INC
+        jmp     net_rwfn
+f40_ours:
         movzx   ecx,word ptr [bp+F_CX]
         mov     es,[bp+F_DS]
         mov     di,[bp+F_DX]
@@ -1003,8 +1179,11 @@ stt_out:
         ret
 f40_dev:
         call    dev_write
+        jc      f40_deverr              ; only a loaded driver can fail
         mov     [bp+F_AX],cx
         jmp     i21_ok
+f40_deverr:
+        jmp     i21_fail
 f40_bad:
         mov     ax,ERR_BADHANDLE
         jmp     i21_fail
@@ -1012,19 +1191,58 @@ f40_ioerr:
         mov     ax,ERR_BADBLOCK
         jmp     i21_fail
 
-;--- file_trunc - SI = SFT.  Cut the file at the current position ----
+;--- file_trunc - SI = SFT.  The file ends at the current position -----
+;
+; AS MS-DOS's WRTEOF HAS IT: the chain is made to cover exactly the new
+; length - clusters added up to it, those past it given back - and only
+; then is the length set.  Until v0.63 only the length was set: a file
+; made longer this way had no clusters behind its new end (Windows makes
+; its swap file 3MB long so, and had one cluster of it), and a file made
+; shorter kept every cluster it had, lost to everything once closed.  If
+; the volume fills first the length stays as it was; the write of
+; nothing reports nothing written either way.
 file_trunc:
-        pusha
+        pushad
         mov     eax,dword ptr [si+SFT_POS]
-        mov     dword ptr [si+SFT_SIZE],eax
-        or      byte ptr [si+SFT_FLAGS],SFF_WRITTEN
         or      eax,eax
-        jnz     ft_keep
+        jz      ft_none
 
-        ; Truncated to nothing: the whole chain goes back
+        dec     eax                     ; the cluster of the last byte
+ft_reach:
+        push    eax
+        call    sft_clus                ; -> EBX
+        pop     eax
+        jnc     ft_have
+        call    sft_grow                ; not there yet: one more
+        jc      ft_done                 ; (the volume is full)
+        jmp     ft_reach
+ft_have:
+        ; ...and nothing after it
+        push    si
+        mov     al,[si+SFT_DRIVE]
+        call    rd_getvol               ; SI = the volume
+        jc      ft_popset
+        mov     eax,ebx
+        call    fat_get                 ; what follows it
+        call    fat_eoc
+        jc      ft_popset               ; nothing: it was the last
+        cmp     eax,2
+        jb      ft_popset
+        push    eax
+        mov     eax,ebx
+        mov     edx,0FFFFFFFh
+        call    fat_put                 ; it is the last now
+        pop     eax
+        call    fat_freechain           ; and the rest go back
+ft_popset:
+        pop     si
+        jmp     short ft_set
+
+ft_none:
+        ; Cut to nothing: the whole chain goes back
         mov     ebx,dword ptr [si+SFT_START]
         cmp     ebx,2
-        jb      ft_done
+        jb      ft_set
         push    si
         mov     al,[si+SFT_DRIVE]
         call    rd_getvol
@@ -1034,11 +1252,14 @@ file_trunc:
 ft_pop:
         pop     si
         mov     dword ptr [si+SFT_START],0
-        mov     dword ptr [si+SFT_CURCLUS],0
-        mov     dword ptr [si+SFT_CURIDX],0
-ft_keep:
-ft_done:
-        popa
+ft_set:
+        mov     eax,dword ptr [si+SFT_POS]
+        mov     dword ptr [si+SFT_SIZE],eax
+        or      byte ptr [si+SFT_FLAGS],SFF_WRITTEN
+        mov     dword ptr [si+SFT_CURCLUS],0    ; walks start again from
+        mov     dword ptr [si+SFT_CURIDX],0     ; the front: the one it was
+ft_done:                                        ; at may be gone
+        popad
         ret
 
 ;--- 42h seek --------------------------------------------------------
@@ -1062,6 +1283,30 @@ f42_cur:
         add     eax,dword ptr [si+SFT_POS]
         jmp     short f42_set
 f42_end:
+        ; A REDIRECTOR'S FILE opened deny-none or deny-read is the one case
+        ; where somebody else may have moved its end since it was opened,
+        ; so DOS asks the redirector where the end is (1121h; DOS6SRC
+        ; dos/handle.asm, $LSEEK).  Anything else is measured against the
+        ; size in the entry, which is DOS's field in either kind.
+        call    sft_isnet
+        jne     f42_size
+        mov     dl,byte ptr [si+SFT_MODE]
+        and     dl,70h
+        cmp     dl,40h                  ; deny none
+        je      f42_net
+        cmp     dl,30h                  ; deny read
+        jne     f42_size
+f42_net:
+        mov     cx,[bp+F_CX]
+        mov     dx,[bp+F_DX]
+        mov     ax,1121h
+        call    net_sft                 ; -> DX:AX, the new position
+        jc      f42_fail
+        shl     edx,16
+        mov     dx,ax
+        mov     eax,edx
+        jmp     short f42_set
+f42_size:
         add     eax,dword ptr [si+SFT_SIZE]
 f42_set:
         mov     dword ptr [si+SFT_POS],eax
@@ -1071,6 +1316,7 @@ f42_set:
         jmp     i21_ok
 f42_bad:
         mov     ax,ERR_BADHANDLE
+f42_fail:
         jmp     i21_fail
 
 ;--- 45h duplicate a handle ------------------------------------------
@@ -1154,6 +1400,9 @@ f46_bad:
 fn41:
         mov     es,[bp+F_DS]
         mov     si,[bp+F_DX]
+        call    net_canon
+        jc      f41_bad
+        jnz     f41_net
         call    rd_path
         jc      f41_bad
         mov     di,OFFSET rd_fcb
@@ -1192,11 +1441,23 @@ f41_nofile:
         jmp     i21_fail
 f41_bad:
         jmp     i21_fail
+f41_net:
+        ; A redirector's: $UNLINK's search attribute, hidden and system
+        ; files may go, and no wildcards (RMNET.INC)
+        call    net_nometa
+        jc      f41_nofile
+        mov     al,ATTR_HIDDEN OR ATTR_SYSTEM
+        call    net_sattr
+        mov     ax,1113h
+        jmp     net_simple
 
 ;--- 43h get or set attributes ---------------------------------------
 fn43:
         mov     es,[bp+F_DS]
         mov     si,[bp+F_DX]
+        call    net_canon
+        jc      f43_bad
+        jnz     f43_net
         call    rd_path
         jc      f43_bad
         mov     di,OFFSET rd_fcb
@@ -1228,6 +1489,38 @@ f43_nofile:
 f43_bad:
         jmp     i21_fail
 
+        ; A REDIRECTOR'S: 110Fh answers the attributes in AX, and 110Eh
+        ; is pushed the new ones, which DOS lets be only read-only,
+        ; hidden, system and archive (DOS6SRC dos/finfo.asm and $CHMOD)
+f43_net:
+        call    net_nometa
+        jc      f43_netpath
+        mov     al,ATTR_HIDDEN OR ATTR_SYSTEM OR ATTR_DIR
+        call    net_sattr
+        mov     al,byte ptr [bp+F_AX]
+        or      al,al
+        jnz     f43_netset
+        mov     ax,110Fh
+        call    net_pcall               ; -> AX = the attributes
+        jc      f43_bad
+        mov     [bp+F_CX],ax
+        jmp     i21_ok
+f43_netset:
+        cmp     al,1
+        jne     f43_fn
+        mov     ax,[bp+F_CX]
+        test    al,NOT (ATTR_READONLY OR ATTR_HIDDEN OR ATTR_SYSTEM OR ATTR_ARCHIVE)
+        jnz     f43_netacc
+        mov     word ptr [net_parm],ax
+        mov     ax,110Eh
+        jmp     net_simple
+f43_netacc:
+        mov     ax,ERR_ACCESS
+        jmp     i21_fail
+f43_netpath:
+        mov     ax,ERR_NOPATH
+        jmp     i21_fail
+
 ;--- 57h a file's time and date --------------------------------------
 fn57:
         mov     bx,[bp+F_BX]
@@ -1248,7 +1541,16 @@ f57_set:
         mov     [si+SFT_TIME],ax
         mov     ax,[bp+F_DX]
         mov     [si+SFT_DATE],ax
+        call    sft_isnet
+        je      f57_netset
         or      byte ptr [si+SFT_FLAGS],SFF_WRITTEN OR SFF_STAMPED
+        jmp     i21_ok
+f57_netset:
+        ; A redirector's file says it in DOS's flags word, where the
+        ; redirector looks at its close: not clean, and do not stamp it
+        ; (DOS6SRC dos/handle.asm, $File_Times)
+        and     byte ptr [si+SFT_DEVINFO],NOT NF_CLEAN AND 0FFh
+        or      byte ptr [si+SFT_DEVINFO+1],NF_NODATE
         jmp     i21_ok
 f57_fn:
         mov     ax,ERR_FUNC
@@ -1260,57 +1562,436 @@ f57_bad:
 ;--- 44h IOCTL, and only the parts that say what a handle IS ---------
 ; Windows asks 4400h about every handle it opens to find out whether
 ; it is talking to a file or to the console, and behaves differently
-; for the answer.  The rest of the family is device control that has
-; no device here to control.
+; for the answer.  The rest of the family is device control, and the
+; only devices here that can be controlled are the drivers CONFIG.SYS
+; loaded: 01h, 02h, 03h, 06h, 07h and 0Ch reach those (f44_drv*).
 fn44:
         mov     al,byte ptr [bp+F_AX]
         or      al,al
         jz      f44_get
         cmp     al,1
         je      f44_set
+        cmp     al,2
+        je      f44_ioin
+        cmp     al,3
+        je      f44_ioout
+        cmp     al,0Ch
+        je      f44_genchar
         cmp     al,6
         je      f44_instat
         cmp     al,7
         je      f44_outstat
         cmp     al,8
         je      f44_changeable
+        cmp     al,9
+        je      f44_remote
+        cmp     al,0Ah
+        je      f44_hremote
+        cmp     al,0Bh
+        je      f44_retry
+        cmp     al,0Dh
+        je      f44_generic
+        cmp     al,0Eh
+        je      f44_drvmap
         mov     ax,ERR_FUNC
         jmp     i21_fail
 f44_get:
         mov     bx,[bp+F_BX]
         call    sft_get
         jc      f44_bad
-        test    byte ptr [si+SFT_FLAGS],SFF_DEVICE
-        jz      f44_isfile
-        mov     dx,80D3h                ; a character device: console, and
-        mov     al,[si+SFT_DRIVE]       ; not the end of a file
-        cmp     al,DEV_CON
-        je      f44_havedx
-        mov     dx,8080h
-        jmp     short f44_havedx
-f44_isfile:
-        movzx   dx,byte ptr [si+SFT_DRIVE]
-f44_havedx:
+        mov     dx,[si+SFT_DEVINFO]     ; a device's word, or a file's
+                                        ; drive - sft_setdev and
+                                        ; sub_fromdir wrote it
         mov     [bp+F_DX],dx
         mov     [bp+F_AX],dx
         jmp     i21_ok
 f44_set:
+        ; RAW OR COOKED, for a loaded driver: the one bit DOS lets a
+        ; program change, and READDEV and WRTDEV's rules turn on it.
+        ; This DOS's own devices go on ignoring it, as they always have.
+        mov     bx,[bp+F_BX]
+        call    sft_get
+        jc      f44_bad
+        call    f44_isdrv
+        jc      f44_setown
+        cmp     byte ptr [bp+F_DX+1],0
+        jne     f44_unsup
+        and     byte ptr [si+SFT_DEVINFO],NOT DIF_RAW
+        mov     al,byte ptr [bp+F_DX]
+        and     al,DIF_RAW
+        or      byte ptr [si+SFT_DEVINFO],al
+f44_setown:
         jmp     i21_ok
 f44_instat:
         mov     bx,[bp+F_BX]
         call    sft_get
         jc      f44_bad
-        mov     byte ptr [bp+F_AX],0FFh ; ready
-        jmp     i21_ok
+        mov     al,DVC_INSTAT
+        call    f44_drvstat
+        mov     byte ptr [bp+F_AX],al   ; FFh ready, unless a driver says
+        jmp     i21_ok                  ; it is busy
 f44_outstat:
         mov     bx,[bp+F_BX]
         call    sft_get
         jc      f44_bad
-        mov     byte ptr [bp+F_AX],0FFh
+        mov     al,DVC_OUTSTAT
+        call    f44_drvstat
+        mov     byte ptr [bp+F_AX],al
         jmp     i21_ok
+
+;--- f44_isdrv - SI = an SFT -> CF clear if it is a loaded driver ----
+;--- A redirector's file is not, whatever it keeps where SFF_* would be.
+f44_isdrv:
+        call    sft_isnet
+        je      f44i_no
+        test    byte ptr [si+SFT_FLAGS],SFF_DEVICE
+        jz      f44i_no
+        cmp     byte ptr [si+SFT_DRIVE],DEV_DRV
+        jne     f44i_no
+        clc
+        ret
+f44i_no:
+        stc
+        ret
+
+;--- f44_drvstat - SI = an SFT, AL = the status request -> AL = 00h if
+;--- a loaded driver answers busy, FFh otherwise.  A driver that fails
+;--- the request is not busy for the asking.
+f44_drvstat:
+        call    f44_isdrv
+        jc      f44s_ready
+        call    drv_short
+        jc      f44s_ready
+        test    ax,DVS_BUSY
+        jz      f44s_ready
+        mov     al,00h
+        ret
+f44s_ready:
+        mov     al,0FFh
+        ret
+
+;--- 02h and 03h: IOCTL read and write, DS:DX the buffer, CX the count,
+;--- AX what moved.  Only a loaded driver whose header says it takes
+;--- IOCTL requests; anything else is "invalid function", as DOS says
+;--- of a device without the bit.  This is the call IFSMGR.386 makes
+;--- of IFSHLP.SYS (RMDEV.INC).
+f44_ioin:
+        mov     al,DVC_IOCTLIN
+        jmp     short f44_io
+f44_ioout:
+        mov     al,DVC_IOCTLOUT
+f44_io:
+        mov     bx,[bp+F_BX]
+        push    ax
+        call    sft_get
+        pop     ax
+        jc      f44_bad
+        call    f44_isdrv
+        jc      f44_unsup
+        test    word ptr [si+SFT_DEVINFO],DVA_IOCTL
+        jz      f44_unsup
+        mov     cx,[bp+F_CX]
+        mov     es,[bp+F_DS]
+        mov     di,[bp+F_DX]
+        call    drv_xfer
+        jc      f44_drverr
+        mov     [bp+F_AX],cx
+        jmp     i21_ok
+f44_drverr:
+        call    drv_err
+        jmp     i21_fail
+
+;--- 0Ch: the generic IOCTL for a character device.  CH the category,
+;--- CL the function, DS:DX the parameter block, SI and DI passed on.
+;--- A loaded driver whose header has the generic IOCTL bit.
+f44_genchar:
+        mov     bx,[bp+F_BX]
+        call    sft_get
+        jc      f44_bad
+        call    f44_isdrv
+        jc      f44_unsup
+        call    drv_attr
+        test    ax,DVA_GENIOCTL
+        jz      f44_unsup
+        push    fs
+        push    bp
+        mov     bx,bp                   ; BX = the frame, BP = the packet
+        sub     sp,RQ_ROOM
+        mov     bp,sp
+        call    rq_zero
+        mov     byte ptr [bp+RQ_LEN],RQ_GLEN
+        mov     byte ptr [bp+RQ_CMD],DVC_GENIOCTL
+        mov     ax,[bx+F_CX]
+        mov     byte ptr [bp+RQ_GMINOR],al
+        mov     byte ptr [bp+RQ_GCAT],ah
+        mov     ax,[bx+F_SI]
+        mov     word ptr [bp+RQ_GSI],ax
+        mov     ax,[bx+F_DI]
+        mov     word ptr [bp+RQ_GDI],ax
+        mov     ax,[bx+F_DX]
+        mov     word ptr [bp+RQ_GPKT],ax
+        mov     ax,[bx+F_DS]
+        mov     word ptr [bp+RQ_GPKT+2],ax
+        lfs     di,dword ptr [si+SFT_DEVPTR]
+        mov     ax,ss
+        mov     es,ax
+        push    bx
+        mov     bx,bp
+        call    drv_call
+        pop     bx
+        lea     sp,[bp+RQ_ROOM]
+        pop     bp
+        pop     fs
+        jc      f44_drverr
+        jmp     i21_ok
+;--- 08h: can the media be changed?  AX = 0 removable, 1 fixed.  Out of
+;--- the volume table, with no mount: a floppy drive with no disk in it
+;--- must answer, not read.
 f44_changeable:
-        mov     word ptr [bp+F_AX],1    ; fixed, which every volume here is
+        call    f44_notnet
+        call    f44_vol
+        jc      f44_baddrv
+        mov     word ptr [bp+F_AX],1
+        test    byte ptr [si+VOL_FLAGS],VF_FLOPPY
+        jz      f44_fixed
+        mov     word ptr [bp+F_AX],0
+f44_fixed:
         jmp     i21_ok
+
+;--- 09h: is the drive somebody else's?  DX = the device attributes,
+;--- bit 12 remote: 1000h and nothing else for a redirector's drive, as
+;--- DOS answers it (Ioctl_Drive_attr in DOS6SRC dos/ioctl.asm), and 0
+;--- for a drive of this DOS's own, which is still checked.
+f44_remote:
+        mov     al,byte ptr [bp+F_BX]
+        or      al,al
+        jnz     f44r_named
+        mov     al,[rd_drive]
+        inc     al
+f44r_named:
+        dec     al
+        call    net_drive
+        jz      f44r_ours
+        mov     word ptr [bp+F_DX],1000h
+        jmp     i21_ok
+f44r_ours:
+        call    f44_vol
+        jc      f44_baddrv
+        mov     word ptr [bp+F_DX],0
+        jmp     i21_ok
+
+;--- 0Ah: is the HANDLE somebody else's?  DX = DOS's flags word for it,
+;--- whose bit 15 says a redirector's file - for a device or a file of
+;--- this DOS's own, the same word 00h answers.
+f44_hremote:
+        mov     bx,[bp+F_BX]
+        call    sft_get
+        jc      f44_bad
+        mov     dx,[si+SFT_DEVINFO]
+        mov     [bp+F_DX],dx
+        jmp     i21_ok
+
+;--- 0Bh: how hard to retry a locked region.  Accepted and forgotten.
+f44_retry:
+        jmp     i21_ok
+
+;--- 0Eh: does the drive answer to another letter?  AL = 0 if it is the
+;--- only one; otherwise the letter that has the drive now, 1 = A.
+;--- A MACHINE WITH ONE DISKETTE DRIVE HAS IT AS A: AND B:, and MS-DOS
+;--- says so here: 1 for both, A: having it.  Windows 3.1 asks, and
+;--- takes a B: whose answer is not its own letter for no drive at all
+;--- - the kernel gives B: a slot of its own whatever the machine has
+;--- (FAT.INC, disk_scan), so RMDOS answered 0 and File Manager showed
+;--- a second diskette drive.  How many there are is the BIOS's
+;--- equipment word, which is where MS-DOS learns it too.
+f44_drvmap:
+        call    f44_notnet
+        call    f44_vol                 ; -> SI, AL = the drive (0 = A)
+        jc      f44_baddrv
+        mov     byte ptr [bp+F_AX],0
+        test    byte ptr [si+VOL_FLAGS],VF_FLOPPY
+        jz      f44m_out
+        cmp     al,1
+        ja      f44m_out                ; past B: is nobody's alias
+        int     11h                     ; AX = the equipment word
+        test    al,01h                  ; no diskette drives at all, or
+        jz      f44m_out
+        test    al,0C0h                 ; two or more (bits 6-7 = the count
+        jnz     f44m_out                ; less one): each has its letter
+        mov     byte ptr [bp+F_AX],1    ; one drive, two letters, A:'s
+f44m_out:
+        jmp     i21_ok
+
+;--- 0Dh: the generic block device request.  CH = 08h is the disk
+;--- category, and CL = 60h, get device parameters, is the one that
+;--- is asked: DS:DX -> the block, special byte, device type, the
+;--- attributes, the cylinders, the media type and then the BPB as
+;--- the volume has it.  The volume is mounted for it, as DOS reads the
+;--- disk for it too.  Everything else in the category is refused.
+;---
+;--- CALMIRA ASKS ALL OF THESE, 08h, 09h, 0Eh and 0Dh/60h, for every
+;--- letter while it starts, and put up an "Error" form for each of
+;--- the thirty-odd refusals (2026-10-05, the enhanced-mode sweep).  On
+;--- MS-DOS 5 it starts clean.
+f44_generic:
+        cmp     byte ptr [bp+F_CX+1],08h
+        jne     f44_unsup
+        cmp     byte ptr [bp+F_CX],60h
+        jne     f44_unsup
+        mov     al,byte ptr [bp+F_BX]
+        or      al,al
+        jnz     f44g_named
+        mov     al,[rd_drive]
+        inc     al
+f44g_named:
+        dec     al
+        ; A FLOPPY DRIVE IS NOT READ FOR THIS.  DOS answers 60h out of
+        ; the driver's default table for a diskette drive, and so does
+        ; this: a 1.44M diskette's BPB, whether or not there is a disk
+        ; in the drive.  Mounting it here would read it, and an empty
+        ; drive under Windows is a critical error nobody can answer -
+        ; Calmira asks about A: while it starts, and did stop there.
+        ; A hard disk is mounted (once, at the first use) and answers
+        ; with its own BPB.
+        push    ax
+        call    f44_vol                 ; -> SI, no mount
+        pop     ax
+        jc      f44_baddrv
+        test    byte ptr [si+VOL_FLAGS],VF_FLOPPY
+        jnz     f44g_floppy
+        call    rd_getvol               ; a hard disk: mounted, the BPB real
+        jc      f44_baddrv
+        mov     es,[bp+F_DS]
+        mov     di,[bp+F_DX]
+        mov     byte ptr es:[di+1],5    ; a fixed disk...
+        mov     word ptr es:[di+2],1    ; ...which cannot be changed
+        jmp     short f44g_type
+f44g_floppy:
+        mov     es,[bp+F_DS]
+        mov     di,[bp+F_DX]
+        mov     byte ptr es:[di+1],7    ; a 1.44M diskette drive
+        mov     word ptr es:[di+2],0    ; changeable
+        mov     word ptr es:[di+4],80   ; cylinders
+        mov     byte ptr es:[di+6],0    ; media type: 1.44M
+        mov     word ptr es:[di+7],SECSIZE
+        mov     byte ptr es:[di+9],1    ; sectors per cluster
+        mov     word ptr es:[di+0Ah],1  ; reserved
+        mov     byte ptr es:[di+0Ch],2  ; FATs
+        mov     word ptr es:[di+0Dh],224
+        mov     word ptr es:[di+0Fh],2880
+        mov     byte ptr es:[di+11h],0F0h
+        mov     word ptr es:[di+12h],9  ; sectors per FAT
+        mov     word ptr es:[di+14h],18 ; per track
+        mov     word ptr es:[di+16h],2  ; heads
+        mov     dword ptr es:[di+18h],0 ; hidden
+        mov     dword ptr es:[di+1Ch],0 ; the 32-bit total: none
+        jmp     i21_ok
+f44g_type:
+        movzx   eax,word ptr [si+VOL_SPT]
+        movzx   ebx,word ptr [si+VOL_HEADS]
+        mul     ebx                     ; EAX = sectors per cylinder
+        mov     ebx,eax
+        xor     ecx,ecx                 ; cylinders, 0 if there is no geometry
+        or      ebx,ebx
+        jz      f44g_cyl
+        mov     eax,dword ptr [si+VOL_TOTSEC]
+        xor     edx,edx
+        div     ebx
+        mov     ecx,eax
+        cmp     ecx,0FFFFh
+        jbe     f44g_cyl
+        mov     ecx,0FFFFh
+f44g_cyl:
+        mov     es:[di+4],cx            ; cylinders
+        mov     byte ptr es:[di+6],0    ; media type: other
+        mov     word ptr es:[di+7],SECSIZE
+        mov     al,[si+VOL_SPC]
+        mov     es:[di+9],al
+        mov     ax,[si+VOL_RSVD]
+        mov     es:[di+0Ah],ax
+        mov     al,[si+VOL_NFATS]
+        mov     es:[di+0Ch],al
+        mov     ax,[si+VOL_ROOTENT]
+        mov     es:[di+0Dh],ax
+        mov     eax,dword ptr [si+VOL_TOTSEC]
+        xor     cx,cx                   ; the 16-bit count, when it fits
+        cmp     eax,10000h
+        jae     f44g_big
+        mov     cx,ax
+        xor     eax,eax                 ; ...and then the 32-bit one is 0
+f44g_big:
+        mov     es:[di+0Fh],cx
+        mov     dword ptr es:[di+1Ch],eax
+        mov     al,[si+VOL_MEDIA]
+        mov     es:[di+11h],al
+        mov     eax,dword ptr [si+VOL_SPF]
+        cmp     byte ptr [si+VOL_FATTYPE],32
+        jne     f44g_spf
+        xor     eax,eax                 ; FAT32 says 0 here
+f44g_spf:
+        mov     es:[di+12h],ax
+        mov     ax,[si+VOL_SPT]
+        mov     es:[di+14h],ax
+        mov     ax,[si+VOL_HEADS]
+        mov     es:[di+16h],ax
+        mov     eax,dword ptr [si+VOL_START]
+        mov     dword ptr es:[di+18h],eax       ; hidden: the sectors before it
+        jmp     i21_ok
+
+;--- f44_notnet - BL = the drive (0 = default, 1 = A:).  Returns if it is
+;--- not a redirector's; if it is, the call ends "invalid function", as
+;--- MS-DOS ends 08h and 0Eh for one (Check_If_Net in DOS6SRC
+;--- dos/ioctl.asm): the media is not this DOS's to describe.  Called,
+;--- so the return address is thrown away on that way out.
+f44_notnet:
+        mov     al,byte ptr [bp+F_BX]
+        or      al,al
+        jnz     f44n_named
+        mov     al,[rd_drive]
+        inc     al
+f44n_named:
+        dec     al
+        call    net_drive
+        jnz     f44n_net
+        ret
+f44n_net:
+        pop     ax                      ; our return address
+        jmp     f44_unsup
+
+;--- f44_vol - BL = the drive (0 = default, 1 = A:) -> SI = its row in
+;--- the volume table, CF if there is no such drive.  The table only:
+;--- no mount, no read.
+f44_vol:
+        mov     al,byte ptr [bp+F_BX]
+        or      al,al
+        jnz     f44v_named
+        mov     al,[rd_drive]
+        inc     al
+f44v_named:
+        dec     al
+        cmp     al,LASTDRIVE
+        jae     f44v_none
+        push    ax
+        movzx   si,al
+        mov     ax,VOL_LEN
+        mul     si
+        mov     si,ax
+        pop     ax
+        add     si,OFFSET rd_vols
+        test    byte ptr [si+VOL_FLAGS],VF_PRESENT
+        jz      f44v_none
+        clc
+        ret
+f44v_none:
+        stc
+        ret
+
+f44_baddrv:
+        mov     ax,ERR_BADDRIVE
+        jmp     i21_fail
+f44_unsup:
+        mov     ax,ERR_FUNC
+        jmp     i21_fail
 f44_bad:
         mov     ax,ERR_BADHANDLE
         jmp     i21_fail
@@ -1319,6 +2000,9 @@ f44_bad:
 fn3B:
         mov     es,[bp+F_DS]
         mov     si,[bp+F_DX]
+        call    net_canon
+        jc      f3B_bad
+        jnz     f3B_net
         call    rd_path
         jc      f3B_bad
         ; rd_path stopped at the last component, so look it up and
@@ -1358,13 +2042,12 @@ f3B_fits:
         mov     ax,CDS_LEN
         mul     di
         mov     di,ax
-        add     di,OFFSET rd_cds
-        mov     dword ptr [di+CDS_CLUS],ebx
+        add     di,RL_CDS
+        push    es
+        mov     es,[rd_lowseg]          ; the CDS is in the block below 64K
+        mov     dword ptr es:[di+CDS_CLUS],ebx
         add     di,CDS_PATH
         mov     si,OFFSET rd_canbuf + 3
-        push    es
-        push    cs
-        pop     es
         cld
 f3B_copy:
         lodsb
@@ -1379,6 +2062,9 @@ f3B_nopath:
 f3B_bad:
         jmp     i21_fail
 
+f3B_net:
+        jmp     net_chdir               ; a redirector's drive - RMNET.INC
+
 ;--- 47h where am I?  DL = drive, DS:SI -> 64 bytes ------------------
 ; The text path is kept alongside the cluster because there is no way
 ; to reconstruct it: a directory knows its parent through "..", but
@@ -1392,23 +2078,39 @@ fn47:
         inc     al
 f47_named:
         dec     al
-        cmp     al,LASTDRIVE
-        jae     f47_bad
+        call    cds_inuse               ; a letter in use, ours or a
+        jz      f47_bad                 ; redirector's
         push    es
         movzx   si,al
         mov     ax,CDS_LEN
         mul     si
         mov     si,ax
-        add     si,OFFSET rd_cds
-        add     si,CDS_PATH
+        add     si,RL_CDS
         mov     es,[bp+F_DS]
         mov     di,[bp+F_SI]
         mov     cx,64
         push    ds
-        push    cs
-        pop     ds
-        cld
-        rep     movsb
+        mov     ds,word ptr cs:[rd_lowseg]      ; the CDS is in the block
+        ; FROM THE END OF THE DRIVE'S OWN ROOT, as $CURRENT_DIR takes it
+        ; (curdir_end): "C:\" ends at 2, and a redirector's root can be
+        ; longer - "\\SERVER\SHARE" - and is not part of the answer
+        mov     ax,word ptr [si+CDS_BACK]
+        cmp     ax,64
+        jbe     f47_root
+        mov     ax,2
+f47_root:
+        add     si,ax
+        cmp     byte ptr [si],'\'
+        jne     f47_copy
+        inc     si
+f47_copy:
+        cld                                     ; below 64K
+f47_byte:
+        lodsb                                   ; up to its NUL, and no
+        stosb                                   ; further into the
+        or      al,al                           ; structure
+        loopnz  f47_byte
+        mov     byte ptr es:[di-1],0            ; 64 without one: ended
         pop     ds
         pop     es
         mov     word ptr [bp+F_AX],0100h
@@ -1421,6 +2123,9 @@ f47_bad:
 fn4E:
         mov     es,[bp+F_DS]
         mov     si,[bp+F_DX]
+        call    net_canon
+        jc      f4E_bad
+        jnz     f4E_net
         call    rd_path
         jc      f4E_bad
         mov     [rd_ffdrv],al           ; which drive - the DTA records it,
@@ -1461,8 +2166,24 @@ f4E_none:
         jmp     i21_fail
 f4E_bad:
         jmp     i21_fail
+f4E_net:
+        mov     al,byte ptr [bp+F_CX]   ; a redirector's drive: the search
+        call    net_sattr               ; attribute is the caller's CL
+        mov     ax,111Bh
+        jmp     net_find
 
 fn4F:
+        ; A SEARCH A REDIRECTOR STARTED says so in the first of its
+        ; twenty-one bytes, bit 7, which no drive number of this DOS's
+        ; own has; DOS gives the twenty-one back to it in SEARCHBUF.
+        push    es
+        mov     es,[rd_dtaseg]
+        mov     di,[rd_dtaoff]
+        test    byte ptr es:[di],80h
+        pop     es
+        jz      f4F_ours
+        jmp     net_findnext            ; RMNET.INC
+f4F_ours:
         ; THE SEARCH IS IN THE CALLER'S DTA, not in these globals - see
         ; ff_seek for why that distinction is the whole of this bug.
         call    ff_seek
@@ -1949,12 +2670,19 @@ sub_open:
         push    si
         push    es
         mov     [rd_opmode],ax
-        call    dev_name                ; CON, AUX, PRN, NUL, LPTn, COMn?
-        jc      so_notdev
+        call    dev_name                ; CON, AUX, PRN, NUL, LPTn, COMn,
+        jc      so_notdev               ; or a driver CONFIG.SYS loaded?
+        mov     word ptr [rd_opfail],0
         call    sub_devopen             ; AL = which one
-        jc      so_nohandles
-        jmp     short so_good
+        jnc     so_good
+        cmp     word ptr [rd_opfail],0  ; the driver said no, and why
+        je      so_nohandles
+        mov     ax,[rd_opfail]
+        jmp     short so_out
 so_notdev:
+        call    net_canon
+        jc      so_bad
+        jnz     so_net
         call    rd_path
         jc      so_bad
         mov     [rd_opvol],si
@@ -1994,6 +2722,21 @@ so_out:
         pop     cx
         stc
         ret
+so_net:
+        ; A REDIRECTOR'S DRIVE: DOS_Open's 1116h, pushed the mode without
+        ; its no-inherit bit, with $Open's search attribute - and no
+        ; wildcard in the name (RMNET.INC, net_open)
+        call    net_nometa
+        jc      so_nofile
+        mov     al,ATTR_HIDDEN OR ATTR_SYSTEM OR ATTR_DIR
+        call    net_sattr
+        mov     ax,[rd_opmode]
+        and     ax,007Fh
+        mov     word ptr [net_parm],ax
+        mov     ax,1116h
+        call    net_open                ; -> BX = the handle
+        jc      so_out
+        jmp     so_good
 
 ;--- sub_fromdir - the entry found in rd_dirbuf at rd_deoff becomes an
 ;--- open file.  -> BX = the handle, SI = its SFT.  CF: SI unchanged.
@@ -2020,6 +2763,9 @@ sub_fromdir:
 
         mov     al,[rp_drv]
         mov     [si+SFT_DRIVE],al
+        mov     byte ptr [si+SFT_DEVINFO],al    ; a file: its drive, and
+        mov     byte ptr [si+SFT_DEVINFO+1],0   ; no device bit
+        mov     dword ptr [si+SFT_DEVPTR],0FFFFFFFFh
         mov     ax,[rd_opmode]
         mov     [si+SFT_MODE],ax
         mov     al,byte ptr [rd_dirbuf + di + DE_ATTR]
@@ -2032,6 +2778,7 @@ sub_fromdir:
         shl     eax,16
         mov     ax,word ptr [rd_dirbuf + di + DE_CLUSLO]
         mov     dword ptr [si+SFT_START],eax
+        mov     [si+SFT_CLUSLO],ax
         mov     dword ptr [si+SFT_CURCLUS],0
         mov     dword ptr [si+SFT_CURIDX],0
         mov     ax,word ptr [rd_dirbuf + di + DE_TIME]
@@ -2073,6 +2820,9 @@ sub_create:
         push    di
         push    si
         push    es
+        call    net_canon
+        jc      sc2_bad
+        jnz     sc2_net
         call    rd_path
         jc      sc2_bad
         mov     [rd_opvol],si
@@ -2178,6 +2928,35 @@ sc2_out:
         stc
         ret
 
+        ; A REDIRECTOR'S DRIVE: DOS_Create's 1117h, pushed the attribute
+        ; in AL - a volume label alone, or the file bits, and archive
+        ; either way - and in AH whether an existing file is refused (5Bh)
+        ; rather than truncated.  The entry's mode is read and write,
+        ; compatibility, as DOS gives every create; the search attribute
+        ; is $Creat's, and no wildcards.
+sc2_net:
+        call    net_nometa
+        jc      sc2_nofile
+        mov     al,ATTR_HIDDEN OR ATTR_SYSTEM
+        call    net_sattr
+        mov     al,[rd_crattr]
+        test    al,ATTR_VOLUME
+        jz      sc2_nvol
+        mov     al,ATTR_VOLUME
+sc2_nvol:
+        and     al,ATTR_READONLY OR ATTR_HIDDEN OR ATTR_SYSTEM OR ATTR_VOLUME
+        or      al,ATTR_ARCHIVE
+        mov     ah,[rd_crnew]
+        mov     word ptr [net_parm],ax
+        mov     word ptr [rd_opmode],2
+        mov     ax,1117h
+        call    net_open                ; -> BX = the handle
+        jc      sc2_out
+        jmp     sc2_ok
+sc2_nofile:
+        mov     ax,ERR_NOFILE
+        jmp     short sc2_out
+
 ;--- rd_stamp - now, in directory-entry form -> AX = time, DX = date.
 ;--- Every other register is preserved.
 ;
@@ -2265,6 +3044,8 @@ sub_read:
         mov     di,dx                   ; BEFORE sft_get, not after: the
         call    sft_get                 ; argument is taken out of the
         jc      sr_bad                  ; register while it is still ours
+        call    sft_isnet
+        je      sr_net                  ; a program on a redirector's drive
 IFDEF RMDOS_EDBG
         push    eax
         mov     eax,dword ptr [si+SFT_SIZE]
@@ -2286,6 +3067,11 @@ sr_bad:
         pop     di
         pop     si
         stc
+        ret
+sr_net:
+        call    net_readall             ; -> ECX, CF; ES:DI the buffer
+        pop     di
+        pop     si
         ret
 
 sub_seek:
@@ -2320,7 +3106,15 @@ sc3_done:
 ;=====================================================================
 ; The devices
 ;=====================================================================
+; dev_read and dev_write: SI = the SFT, ES:DI = the buffer, ECX = the
+; count -> ECX = what moved.  CF and AX = an error only from a driver
+; CONFIG.SYS loaded (RMDEV.INC); the devices of this DOS's own do not
+; fail.
 dev_read:
+        cmp     byte ptr [si+SFT_DRIVE],DEV_DRV
+        jne     dr_own
+        jmp     drv_read
+dr_own:
         push    di
         push    es
         mov     al,[si+SFT_DRIVE]
@@ -2361,14 +3155,20 @@ dr_fin:
 dr_done:
         pop     es
         pop     di
+        clc
         ret
 dr_none:
         xor     ecx,ecx
         pop     es
         pop     di
+        clc
         ret
 
 dev_write:
+        cmp     byte ptr [si+SFT_DRIVE],DEV_DRV
+        jne     dw_own
+        jmp     drv_write
+dw_own:
         push    si
         push    ds
         mov     al,[si+SFT_DRIVE]
@@ -2400,10 +3200,12 @@ dw_loop:
 dw_done:
         pop     ds
         pop     si
+        clc
         ret
 dw_sink:
         pop     ds
         pop     si
+        clc
         ret
 
 ;=====================================================================

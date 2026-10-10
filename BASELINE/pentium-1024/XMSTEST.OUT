@@ -1,5 +1,5 @@
 XMSTEST.COM - extended memory and the A20 gate
-  entry point at 0522:0000
+  entry point at 059F:0000
   version 0300, HMA flag 0000
   request the HMA:     OK   refused, no HMA here
   free (16-bit): largest 65535 KB of 65535 KB total

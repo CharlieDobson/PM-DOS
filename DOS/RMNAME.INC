@@ -119,6 +119,12 @@ rdl_out:
 fn39:
         mov     es,[bp+F_DS]
         mov     si,[bp+F_DX]
+        call    net_canon               ; a redirector's drive?  1103h
+        jc      md_nopath
+        jz      md_ours
+        mov     ax,1103h
+        jmp     net_simple
+md_ours:
         call    rd_path                 ; -> EBX parent, rd_fcb, SI volume
         jc      md_nopath
         call    rn_badname
@@ -189,6 +195,12 @@ md_nopath:
 fn3A:
         mov     es,[bp+F_DS]
         mov     si,[bp+F_DX]
+        call    net_canon               ; a redirector's drive?  1101h
+        jc      rmd_nopath
+        jz      rmd_ours
+        mov     ax,1101h
+        jmp     net_simple
+rmd_ours:
         call    rd_path
         jc      rmd_nopath
         call    rn_badname              ; the root, ".", or wildcards
@@ -208,22 +220,30 @@ fn3A:
         ; Somebody's current directory?  Every drive's, not just this
         ; one's: two letters can be one volume.
         xor     cx,cx
-rmd_cds:
+        push    fs
+        mov     fs,word ptr cs:[rd_lowseg]      ; the CDS is in the block
+rmd_cds:                                        ; below 64K
         mov     ax,CDS_LEN
         mul     cx
         mov     di,ax
-        mov     eax,dword ptr [rd_cds + di + CDS_CLUS]
+        test    byte ptr fs:[RL_CDS + di + CDS_FLAGS + 1],NC_ISNET
+        jnz     rmd_cdsnext             ; a redirector's: the cluster word
+                                        ; there is its own, not a cluster
+        mov     eax,dword ptr fs:[RL_CDS + di + CDS_CLUS]
         cmp     eax,dword ptr [rn_clus]
         jne     rmd_cdsnext
         mov     al,cl
         call    rd_getvol               ; -> SI
         jc      rmd_cdsnext
         cmp     si,[rn_vol]
-        je      rmd_curdir
+        jne     rmd_cdsnext
+        pop     fs
+        jmp     rmd_curdir
 rmd_cdsnext:
         inc     cx
         cmp     cx,LASTDRIVE
         jb      rmd_cds
+        pop     fs
 
         ; Empty?  Nothing in it but ".", ".." and deleted entries.
         mov     si,[rn_vol]
@@ -290,6 +310,29 @@ rmd_nopath:
 ; refuses that too.  No wildcards: COMMAND.COM expands REN's itself.
 ;=====================================================================
 fn56:
+        ; A REDIRECTOR'S DRIVE FIRST: 1111h, the old name as the SDA's
+        ; first and the new one as its second, and both on the one drive
+        ; (DOS6SRC dos/rename.asm and $RENAME, whose search attribute this
+        ; is).  Wildcards are the redirector's to refuse or not.
+        mov     es,[bp+F_DS]
+        mov     si,[bp+F_DX]
+        call    net_canon
+        jc      ren_nopath
+        jz      ren_ours
+        mov     [rn_drv2],al
+        mov     es,[bp+F_ES]
+        mov     si,[bp+F_DI]
+        call    rd_canon                ; -> rd_canbuf, AL = drive
+        jc      ren_nopath
+        cmp     al,[rn_drv2]
+        jne     ren_notsame
+        call    net_name2
+        mov     al,ATTR_DIR OR ATTR_HIDDEN OR ATTR_SYSTEM
+        call    net_sattr
+        mov     ax,1111h
+        jmp     net_simple
+
+ren_ours:
         ; the new name first, while its pointer is in hand
         mov     es,[bp+F_ES]
         mov     si,[bp+F_DI]
@@ -549,16 +592,8 @@ p29_drive:
         sub     al,'A'
         add     si,2
         push    si
-        push    ax
-        movzx   si,al
-        mov     ax,VOL_LEN
-        mul     si
-        mov     si,ax
-        pop     ax
-        cmp     al,LASTDRIVE
-        jae     p29_baddrv
-        test    byte ptr [rd_vols + si + VOL_FLAGS],VF_PRESENT
-        jnz     p29_gooddrv
+        call    cds_inuse               ; a drive of ours or a redirector's,
+        jnz     p29_gooddrv             ; as DOS's GetThisDrv sees it
 p29_baddrv:
         mov     byte ptr [p29_res],0FFh
 p29_gooddrv:

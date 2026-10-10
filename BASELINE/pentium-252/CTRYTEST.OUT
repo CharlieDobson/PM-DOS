@@ -2,11 +2,11 @@
 CTRYTEST - the country block a number is formatted with
 
   1 38h answers                        ok
-      00 00 24 00 00 00 00 2C 00 2E 00 2D 00 3A 00 00 02 00 49 00 00 04 2C 00 00 00 00 00 00 00 00 00 00 00 
+      00 00 24 00 00 00 00 2C 00 2E 00 2D 00 3A 00 00 02 00 D0 00 00 04 2C 00 00 00 00 00 00 00 00 00 00 00 
   2 thousands separator is a string   ','  ok
   3 decimal, date, time, list         '.' '-' ':' ','  ok
   4 and the country code in BX        0001 ok
-  5 the case map can be CALLED        0400:0049 a ok
+  5 the case map can be CALLED        0400:00D0 a ok
   6 65h/01h says the same thing       01','  ok
 
 CTRYTEST done.

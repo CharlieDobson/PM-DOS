@@ -1,0 +1,27 @@
+CDSTEST - the current directory array, through 52h
+  52h: an array at LoL+16h, entries at LoL+21h 10 ok
+  the drives it has, flags and path:
+    4000 A:\
+    4000 B:\
+    4000 C:\
+    4000 D:\
+  none of them network, JOIN or SUBST ok
+  the current drive: X:\, 47h after it, backslash at 2 C:\ ok
+  3Bh to \TESTS and back moves it: C:\TESTS C:\WORK ok
+  checks failed here: 00
+parking the kernel, to ask again...
+and on the DOS under Windows, after the handover:
+  52h: an array at LoL+16h, entries at LoL+21h 1A ok
+  the drives it has, flags and path:
+    4000 A:\
+    4000 B:\
+    4000 C:\WORK
+    4000 D:\
+  none of them network, JOIN or SUBST ok
+  the current drive: X:\, 47h after it, backslash at 2 C:\WORK ok
+  3Bh to \TESTS and back moves it: C:\TESTS C:\WORK ok
+  checks failed here: 00
+the far side ended with 00
+  back on the kernel, 47h still says WORK ok
+all checks passed.
+CDSTEST done

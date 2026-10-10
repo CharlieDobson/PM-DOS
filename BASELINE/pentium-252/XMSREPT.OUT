@@ -1,7 +1,7 @@
 
 XMSREPT - what this XMS host offers, and WHERE
 
-entry point   0522:0000
+entry point   059F:0000
 version       0300   HMA flag 0000
 08h  total  FFFFK  largest  FFFFK
 88h  highest 0FBFFFFF  total 0003E427K  largest 0003E427

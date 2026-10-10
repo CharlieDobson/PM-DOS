@@ -811,6 +811,120 @@ vl_fail:
         ret
 
 ;=====================================================================
+; vl_winres - the program vl_exe is about to load is named at
+;             [vdm_pathp].  If it is WIN386.EXE, reserve the segment
+;             RMDOS.SYS will park in FIRST, so that it lies below the
+;             block WIN386 is given.
+;
+; WHY THERE IS NOTHING FREE WHEN WINDOWS ASKS.  WIN386.EXE is linked
+; with MAXALLOC = FFFFh, so it gets every paragraph in the box - and
+; keeps them: its INT 2Fh 1605h comes with nothing free, the same thing
+; v0.49 learned of DOSX's 4Ah.  DOSX asks for a fixed 14E8h and leaves
+; the rest, which is why standard mode never met this.  A real DOS has
+; nothing to load at that moment, its EMM386 being resident; PM-DOS has
+; RMDOS, and the HMA will not do for this customer: V86MMGR takes XMS
+; over by planting a breakpoint on the driver's entry, which has to be
+; below 1MB, and KRNL386 finds the file table by scanning memory below
+; 512K.  Parked in the HMA, Windows says "Cannot install the 386
+; enhanced mode XMS driver" and leaves.
+;
+; WHY BELOW WIN386 AND NOT ABOVE.  Handing WIN386 less than everything
+; and parking RMDOS in what was left was tried first, and Windows then
+; stopped with "Insufficient memory or address space to initialize
+; Windows in 386 enhanced mode".  V86MMGR divides conventional memory
+; at WIN386's own PSP: everything below it was there before Windows and
+; is GLOBAL, one copy seen by every virtual machine; everything from
+; the PSP up is LOCAL, and each machine gets its own.  A DOS above that
+; line is a DOS per machine, each with its own file table and its own
+; idea of the disk, which is not a thing V86MMGR will set up.  A real
+; DOS is below the line because it was loaded first, and this puts
+; RMDOS's segment there for the same reason: it is allocated before
+; WIN386's block, first fit, so WIN386 lands above it.
+;
+; The block is owned by the program loading WIN386 - WIN.COM - and
+; wears RMDOS's name.  park_loadrm takes it if it is still that block;
+; if the park never comes, WIN.COM's exit frees it like any other.  The
+; name is the whole of the test for WIN386.EXE, which is also how
+; Windows recognises EMM386, SMARTDRV and the rest of its own.
+;=====================================================================
+vl_winres:
+        push    eax
+        push    ebx
+        push    esi
+        push    edi
+        mov     esi,dword ptr ds:[vdm_pathp]
+        or      esi,esi
+        jz      vwr_out
+        mov     ebx,esi                         ; the last component
+vwr_scan:
+        mov     al,[esi]
+        or      al,al
+        jz      vwr_name
+        inc     esi
+        cmp     al,'\'
+        je      vwr_sep
+        cmp     al,'/'
+        je      vwr_sep
+        cmp     al,':'
+        jne     vwr_scan
+vwr_sep:
+        mov     ebx,esi
+        jmp     short vwr_scan
+vwr_name:
+        mov     esi,OFFSET vwr_win386
+vwr_cmp:
+        mov     al,[ebx]
+        cmp     al,'a'
+        jb      vwr_up
+        cmp     al,'z'
+        ja      vwr_up
+        sub     al,20h
+vwr_up:
+        cmp     al,[esi]
+        jne     vwr_out
+        or      al,al
+        jz      vwr_match
+        inc     ebx
+        inc     esi
+        jmp     short vwr_cmp
+vwr_match:
+        ; RMDOS's 64K, and RMCD.SYS's room after it when there is a
+        ; CD-ROM for it to serve (PARK.INC, park_loadcd) - in the same
+        ; block, so that it too is below WIN386 and global to every
+        ; virtual machine, as MSCDEX loaded before Windows was.  Without
+        ; the room for both, RMDOS's alone.
+        mov     ebx,PARK_RMPARAS
+        call    park_cdfind
+        jc      vwr_alloc
+        add     ebx,PARK_CDPARAS
+        call    lm_alloc
+        jnc     vwr_have
+        mov     ebx,PARK_RMPARAS
+vwr_alloc:
+        call    lm_alloc                        ; -> AX = the segment
+        jc      vwr_out                         ; no room: the park will say
+vwr_have:
+        mov     word ptr ds:[park_resseg],ax
+        movzx   edi,ax
+        dec     edi
+        shl     edi,4                           ; its header
+        push    ax
+        mov     ax,word ptr ds:[vdm_curpsp]     ; the parent's, so that the
+        mov     word ptr [edi+RMCB_OWN],ax      ; parent's exit frees it
+        pop     ax
+        mov     esi,OFFSET vwr_rmname
+        call    lm_setname                      ; and MEM says whose it is
+vwr_out:
+        pop     edi
+        pop     esi
+        pop     ebx
+        pop     eax
+        ret
+
+vwr_win386  db  'WIN386.EXE',0
+vwr_rmname  db  'RMDOS.SYS',0
+
+;=====================================================================
 ; The .EXE path: a header, a load module, and a table of fixups.
 ;
 ; The whole job is arithmetic and one loop.  Work out how much of the
@@ -858,6 +972,7 @@ vx_whole:
         jbe     vx_ask                          ; be bigger than 1MB anyway
         mov     ecx,0FFFFh
 vx_ask:
+        call    vl_winres                       ; WIN386.EXE: RMDOS's segment
         mov     ebx,ecx
         call    lm_alloc
         jnc     vx_got
@@ -1323,6 +1438,10 @@ vdm_lolinit:
         pop     ecx
         pop     edi
 
+        ; DOS 5's version word at offset 4, which SHARE and VSHARE read
+        ; before they believe anything else here - see DOSDATA.
+        mov     word ptr [edi+GLOL_DOSVER],1
+
         ; THE ONE FIELD THAT IS A CONTRACT.  The guest's arena starts
         ; at V86_TPA, which is where lm_init put the first header - and
         ; NOT at ARENA_BASE, which is what fn52 publishes to a 32-bit
@@ -1330,24 +1449,39 @@ vdm_lolinit:
         ; reason a guest could not be given the kernel's answer.
         mov     word ptr [edi+GLOL_MCBSEG],V86_TPA_SEG
 
-        ; The structures PM-DOS does not have, said plainly.
+        ; The structures PM-DOS does not have, said plainly - and the
+        ; drive parameter blocks, which it has once vdm_dpbfresh has
+        ; looked at the volumes, on the first 52h.
         mov     eax,0FFFFFFFFh
         mov     [edi+GLOL_DPB],eax
         mov     [edi+GLOL_BUFFERS],eax
-        mov     [edi+GLOL_CDS],eax
         mov     [edi+GLOL_FCB],eax
+
+        ; ...AND ONE IT HAS NOW: the current directory array, whose
+        ; entries vdm_cdsfresh writes whenever 52h is asked.  It said
+        ; FFFF:FFFF until 2026-10-06, and Windows for Workgroups' Setup
+        ; read its current directories out of whatever was there and
+        ; found SUBST and JOIN in force - and stopped to ask about them.
+        movzx   eax,word ptr ds:[vdm_lolseg]
+        shl     eax,16
+        mov     ax,GCDS_OFF
+        mov     [edi+GLOL_CDS],eax
 
         ; ...AND ONE THAT IT DOES, because FFFF:FFFF was not an
         ; honest answer for this one - it is a CHAIN HEAD, and a
         ; walker does not read it as "nothing here", it follows it.
-        ; One block, terminated the way DOS terminates one, with
-        ; MAX_HANDLES entries after it that the zero-fill above has
-        ; already made "not open".  See GSFT_ in PMDOS.INC for what
-        ; this cost and what it bought.
-        mov     dword ptr ds:[GSFT_BASE + GSFT_NEXT],0FFFFFFFFh
-        mov     word ptr ds:[GSFT_BASE + GSFT_COUNT],GSFT_ENTRIES
+        ; Two blocks, the second terminated the way DOS terminates one,
+        ; with MAX_HANDLES entries between them that the zero-fill above
+        ; has already made "not open".  See GSFT_ in PMDOS.INC for what
+        ; this cost and what it bought; vdm_lolfresh shares FILES= out
+        ; between the two.
         movzx   eax,word ptr ds:[vdm_lolseg]
         shl     eax,16
+        mov     ax,GSFT2_OFF
+        mov     dword ptr ds:[GSFT_BASE + GSFT_NEXT],eax
+        mov     word ptr ds:[GSFT_BASE + GSFT_COUNT],GSFT_N1
+        mov     dword ptr ds:[GSFT2_BASE + GSFT_NEXT],0FFFFFFFFh
+        mov     word ptr ds:[GSFT2_BASE + GSFT_COUNT],GSFT_N2
         mov     ax,GSFT_OFF
         mov     [edi+GLOL_SFT],eax
 
@@ -1357,10 +1491,14 @@ vdm_lolinit:
         ; device's header would be the exact half-truth that comment
         ; refuses.  Nothing walks the chain from here anyway; walkers
         ; start at NUL, which is what the +22h header is for.
+        ;
+        ; ...AND IT DOES NOW.  It said GLOL_CON, which is this field's
+        ; own offset, so the console device was a far pointer to
+        ; itself until the layout moved under it (2026-10-06).
         mov     dword ptr [edi+GLOL_CLOCK],0FFFFFFFFh
         movzx   eax,word ptr ds:[vdm_lolseg]
         shl     eax,16
-        mov     ax,GLOL_CON
+        mov     ax,GLOL_HCON
         mov     [edi+GLOL_CON],eax
 
         mov     word ptr [edi+GLOL_MAXSEC],512
@@ -1771,6 +1909,9 @@ vdm_loop:
         jne     dlx_back21
         mov     esi,OFFSET vdm_ctx
         call    dword ptr ds:[IOS_V86RUN]
+        cmp     byte ptr [cg_inflight],0        ; a critical error's handler is
+        jne     vdm_cgchk                       ; running: has it gone home?
+vdm_cgback:
         cmp     eax,V86R_INT
         je      vdm_int
         cmp     eax,V86R_HLT
@@ -1778,6 +1919,55 @@ vdm_loop:
         cmp     eax,V86R_FLTLOOP
         je      vdm_fltloop
         jmp     vdm_fault
+
+;---------------------------------------------------------------------
+; vdm_cgchk - a box's INT 24h handler is running on the frame crit_guest
+;             built, and the guest has just come back to the monitor
+;             for something.  If its stack is back at the caller's SP,
+;             the handler did not IRET onto the landing pad at all: it
+;             dropped the frame and returned INTO THE PROGRAM, with the
+;             error in AX, as the C library's _hardretn does and as
+;             MS-DOS allows.  The program is where its handler put it,
+;             so that is where the box goes on from - and the DOS call
+;             the error was raised in is abandoned, as it is on MS-DOS.
+;
+; Only at the depth the error was raised at: a program the handler
+; started would be measured against a stack that is not its own.
+;---------------------------------------------------------------------
+vdm_cgchk:
+        push    eax
+        mov     eax,dword ptr ds:[vdm_depth]
+        cmp     eax,dword ptr ds:[dpmi_rmdepth]
+        jne     vcg_not
+        mov     eax,dword ptr [vdm_ctx+V86C_SS]
+        cmp     eax,[cg_ss]
+        jne     vcg_not
+        movzx   eax,word ptr [vdm_ctx+V86C_ESP]
+        cmp     eax,[cg_sp]
+        jb      vcg_not                         ; still below: still inside
+        pop     eax
+        jmp     crit_direct
+vcg_not:
+        pop     eax
+        jmp     vdm_cgback
+
+;---------------------------------------------------------------------
+; crit_direct - the handler returned straight into the program.  The
+;               simulated interrupt is over without its HLT, the DOS
+;               call that raised the error is over without its answer,
+;               and the kernel stack above the box loop's anchor is all
+;               of it: unwind there, as vdm_abort would, and go on.
+;---------------------------------------------------------------------
+crit_direct:
+        mov     byte ptr [cg_inflight],0
+        mov     dword ptr ds:[dpmi_rmact],0     ; as dpmi_rmdone leaves them
+        mov     eax,dword ptr ds:[dpmi_rmesp0]
+        mov     dword ptr ds:[TSS_BASE + TSS_ESP0],eax
+        mov     byte ptr [crit_busy],0          ; as crit_raise leaves them
+        mov     byte ptr ds:[DOS_ERRFLG],0
+        mov     byte ptr ds:[DOS_INDOS],0       ; and the call is not in DOS
+        mov     esp,dword ptr ds:[vdm_esp]
+        jmp     vdm_loop
 
 ;---------------------------------------------------------------------
 ; A HLT, which is either a program that has genuinely stopped or one
@@ -1809,6 +1999,9 @@ vdm_halt:
         jnc     vh_dpmiret
         call    dpmi_iscall             ; EAX = which callback, if it is one
         jnc     vh_dpmicb
+        call    dpmi_israwpm            ; 0306h's way back to protected
+        jnc     vh_rawpm                ; mode
+
         call    cdd_iscb                ; EAX = which entry, if it is one of
         jnc     vh_cdd                  ; the MSCD001 device's two
         call    ems_iscb                ; or the RETF of a routine EMS 56h
@@ -1851,6 +2044,8 @@ vh_dpmiret:
         jmp     dpmi_rmdone
 vh_dpmicb:
         jmp     dpmi_docall
+vh_rawpm:
+        jmp     dpmi_rawpm
 vh_cdd:
         call    cdd_call
         jmp     vdm_loop
@@ -2041,10 +2236,10 @@ dvs_do2F:
         call    share_int2F             ; AX=1000h: SHARE is installed, and
                                         ; SHARE.EXE must be told so
         jnc     d2f_out
-        call    win_int2F               ; and the 16xx Windows family, which
-                                        ; vetoes ENHANCED mode's 1605h - and
-                                        ; may ask for a park: the caller
-                                        ; looks at win_parkreq
+        call    win_int2F               ; and the 16xx Windows family, whose
+                                        ; 1605h asks for a park in either
+                                        ; mode: the caller looks at
+                                        ; win_parkreq
 d2f_out:
         ret
 
@@ -2449,7 +2644,7 @@ vdm_reflect:
         jmp     vdm_loop
 
 ;=====================================================================
-; vdm_winpark - Windows in standard mode broadcast 1605h and PM-DOS
+; vdm_winpark - Windows broadcast 1605h, in either mode, and PM-DOS
 ;               said yes.  Now it has to mean it.
 ;
 ; WHY SAYING YES IS NOT ENOUGH, and why this is a handover rather than
@@ -2469,12 +2664,21 @@ vdm_reflect:
 ; stop being in protected mode - which is what parking is, and what
 ; RMDOS.SYS is underneath it.
 ;
+; WIN386.EXE, THE ENHANCED-MODE HALF, wants more than a real-mode
+; machine: it is a V86 monitor, and it wants the ring-0 seat, its own
+; page tables, GDT and IDT.  The same park gives it those - the seat
+; is empty once PM-DOS has left it - and what WIN386 then asks of the
+; DOS underneath (the head of RMINFO.INC) is RMDOS's to answer, not
+; ours.  Where the two modes differ for PM-DOS is rm_park and rmp_back
+; (RMCALL.INC): WIN386 loads system registers DOSX never touches, and
+; the unpark has to put every one of them back.
+;
 ; THE GUEST IS NOT TOLD, AND CANNOT TELL.  It executed an INT and it
 ; gets a return from that INT with its registers intact; that the
 ; return arrives in real mode, on a machine whose DOS is now a
 ; different and much smaller one, is not a thing an 8086 instruction
 ; stream can observe.  It observes only what it went looking for: PE
-; clear, and a machine it may have.
+; clear and a machine it may have, or a seat with nobody in it.
 ;=====================================================================
 vdm_winpark:
         mov     byte ptr ds:[win_parkreq],0
@@ -2489,6 +2693,9 @@ vdm_winpark:
         ; itself - 4Ch, carrying the code RMDOS brought back - and let
         ; the ordinary exit path unwind it.  Its parent's EXEC returns,
         ; and nothing in the box has to know where it has been.
+IFDEF EXIT_TRACE
+        XTMARK32 66,05Ah                ; 'Z'
+ENDIF
         mov     byte ptr [vdm_ctx+V86C_EAX],al
         jmp     vdm_term
 
@@ -2563,11 +2770,17 @@ vdm_dos_v86:                             ; dl_excur comes in here
         je      vdm_indosptr
         cmp     al,52h
         je      vdm_lol
+        cmp     al,0Eh
+        je      vdm_seldrv
         cmp     al,5Dh
         je      vdm_sda
         cmp     al,1Bh
         je      vdm_dsptr
         cmp     al,1Ch
+        je      vdm_dsptr
+        cmp     al,1Fh
+        je      vdm_dsptr
+        cmp     al,32h
         je      vdm_dsptr
         cmp     al,63h
         je      vdm_dsptrsi
@@ -2881,11 +3094,15 @@ vdm_getdta:                                     ; 2Fh - ES:BX = the DTA
 ; segment and an offset, which is the entire reason the flag lives at
 ; DOS_INDOS in the BIOS data area rather than in the kernel's data
 ; with everything else it belongs with.  0040:00F7 is what a TSR sees.
+;
+; ...IN THE DOS DATA SEGMENT NOW, AND AS DOS SAYS IT: the segment is
+; the DOS data segment's own and the offset is the flag's in it,
+; 0400:0321, not the same byte normalised to 0432:0001.  A program that
+; takes ES from here as the DOS data segment - IFSMGR.386 adds DOS 5's
+; offsets to it - is entitled to (2026-10-06; dd_split).
 vdm_indosptr:
         mov     eax,DOS_INDOS
-        mov     edx,eax
-        shr     edx,4
-        and     eax,0Fh
+        call    dd_split                        ; -> DX:AX
         mov     word ptr [vdm_ctx+V86C_EBX],ax
         mov     dword ptr [vdm_ctx+V86C_ES],edx
         and     dword ptr [vdm_ctx+V86C_FLAGS],NOT FL_CF
@@ -3023,7 +3240,7 @@ vce_run:
 ; writes the ANSWER's AX into the context, so by the time the pointer
 ; needs splitting there is no function number left to test - reading
 ; AH there would be reading whatever the call returned.
-vdm_dsptr:                                      ; 1Bh, 1Ch - offset in BX
+vdm_dsptr:                                      ; 1Bh, 1Ch, 1Fh, 32h - in BX
         mov     byte ptr ds:[vdm_dssi],0
         jmp     short vd_go
 ; 5D06h - ES:BX would be wrong here and DS:SI is right: the swappable
@@ -3059,17 +3276,16 @@ vd_go:
         jnz     vdm_loop                        ; it failed, and the pointer
                                                 ; in it means nothing
         cmp     byte ptr [vdm_ctx+V86C_EAX],0FFh
-        je      vdm_loop                        ; 1Bh/1Ch's bad-drive answer,
-                                                ; which is not a carry
+        je      vdm_loop                        ; 1Bh, 1Ch, 1Fh and 32h's
+                                                ; bad-drive answer, which is
+                                                ; not a carry
 
         mov     eax,dword ptr ds:[k21_ebx]
         cmp     byte ptr ds:[vdm_dssi],0
         je      vd_split
         mov     eax,dword ptr ds:[k21_esi]
 vd_split:
-        mov     edx,eax
-        shr     edx,4
-        and     eax,0Fh
+        call    dd_split
         cmp     byte ptr ds:[vdm_dssi],0
         jne     vd_si
         mov     word ptr [vdm_ctx+V86C_EBX],ax
@@ -3080,10 +3296,84 @@ vd_ds:
         mov     dword ptr [vdm_ctx+V86C_DS],edx
         jmp     vdm_loop
 
+;---------------------------------------------------------------------
+; vdm_seldrv - 0Eh, select the default drive, for a DOS box: a letter
+;              that names a drive becomes the default WITHOUT A LOOK AT
+;              THE DISK, as MS-DOS's $SET_DEFAULT_DRIVE does it.
+;
+; The kernel's fn0E mounts the volume first, and leaves the default
+; alone if it will not mount - which is what CMD.EXE's "A:" is built
+; on, and it stays that way for the native shell.  A DOS program was
+; never promised it.  MSD walks every letter with 0Eh and 19h to see
+; which exist, and on an empty diskette drive the mount was a critical
+; error, which MSD's own handler noted and answered and which then
+; ended MSD /P's report at Disk Drives with "Error Writing" (2026-10-09).
+; Under MS-DOS the disk is read when something reads it, and a
+; program's INT 24h handler hears about it then; that is so here now,
+; and 16-bit COMMAND.COM's prompt asks 47h, as MS-DOS's does.
+;---------------------------------------------------------------------
+vdm_seldrv:
+        mov     al,byte ptr [vdm_ctx+V86C_EDX]  ; DL, 0 = A:
+        cmp     al,MAX_DRIVES
+        jae     vsl_out
+        call    drv_slot                        ; AL -> EBX, the row
+        test    byte ptr [ebx+DRV_FLAGS],DRVF_PRESENT
+        jz      vsl_out
+        mov     byte ptr ds:[cur_drive],al
+vsl_out:
+        mov     byte ptr [vdm_ctx+V86C_EAX],MAX_DRIVES  ; as fn0E answers
+        jmp     vdm_loop
+
 vdm_lol:
+        call    vdm_lolfresh
+        jc      vl_nolol
+        mov     word ptr [vdm_ctx+V86C_EBX],GLOL_PTR
+        mov     dword ptr [vdm_ctx+V86C_ES],eax
+        and     dword ptr [vdm_ctx+V86C_FLAGS],NOT FL_CF
+        jmp     vdm_loop
+vl_nolol:
+        ; No low memory at boot, so there is nothing to point at.  CF
+        ; set is not an answer real DOS ever gives to 52h, but a caller
+        ; that checks it is stopped, and one that does not is no worse
+        ; off than it was before this handler existed.
+        or      dword ptr [vdm_ctx+V86C_FLAGS],FL_CF
+        jmp     vdm_loop
+
+;---------------------------------------------------------------------
+; vdm_lolfresh - the list of lists a guest is shown, brought up to date
+;                -> EAX = its segment (GLOL_PTR into it is what 52h
+;                hands out).  CF if there is none.  A DPMI client's 52h
+;                is shown the same one (dpmi_post21).
+;---------------------------------------------------------------------
+;---------------------------------------------------------------------
+; dd_split - EAX = a flat address below the megabyte -> DX = a segment
+;            and AX = an offset for a guest to hold it by.  Inside the
+;            DOS data segment the segment is DOSDATA_SEG and the offset
+;            the address's place in it, as MS-DOS answers 34h, 5D06h,
+;            1Bh, 1Ch and 63h; anywhere else, the paragraph and the
+;            remainder.  The high halves of EAX and EDX come back 0.
+;---------------------------------------------------------------------
+dd_split:
+        cmp     eax,DOSDATA
+        jb      dds_para
+        cmp     eax,DOSDATA + DOSDATA_SIZE
+        jae     dds_para
+        sub     eax,DOSDATA
+        mov     edx,DOSDATA_SEG
+        ret
+dds_para:
+        mov     edx,eax
+        shr     edx,4
+        and     eax,0Fh
+        ret
+
+vdm_lolfresh:
         movzx   eax,word ptr ds:[vdm_lolseg]
         or      eax,eax
-        jz      vl_nolol
+        jz      vlf_none
+        push    ecx
+        push    edx
+        push    edi
         mov     edi,eax
         shl     edi,4
         mov     dl,byte ptr ds:[drv_count]
@@ -3121,23 +3411,312 @@ vl_lastok:
         ; code was written under it and used EAX anyway.  The
         ; symptom was a guest reading its list of lists at
         ; 0028:0002 - forty, which is what FILES= says.
+        ;
+        ; TWO BLOCKS, and the second is only in the chain when the
+        ; first cannot hold them all: a block with no entries in it is
+        ; not a thing DOS ever made, and a walker is entitled to stop
+        ; at one or divide by it.
         mov     ecx,dword ptr ds:[files_max]
         cmp     ecx,GSFT_ENTRIES
         jbe     vl_filesok
         mov     ecx,GSFT_ENTRIES
 vl_filesok:
-        mov     word ptr ds:[GSFT_BASE + GSFT_COUNT],cx
-        mov     word ptr [vdm_ctx+V86C_EBX],GLOL_PTR
-        mov     dword ptr [vdm_ctx+V86C_ES],eax
-        and     dword ptr [vdm_ctx+V86C_FLAGS],NOT FL_CF
-        jmp     vdm_loop
-vl_nolol:
-        ; No low memory at boot, so there is nothing to point at.  CF
-        ; set is not an answer real DOS ever gives to 52h, but a caller
-        ; that checks it is stopped, and one that does not is no worse
-        ; off than it was before this handler existed.
-        or      dword ptr [vdm_ctx+V86C_FLAGS],FL_CF
-        jmp     vdm_loop
+        mov     edx,ecx
+        cmp     edx,GSFT_N1
+        jbe     vl_files1
+        mov     edx,GSFT_N1
+vl_files1:
+        mov     word ptr ds:[GSFT_BASE + GSFT_COUNT],dx
+        sub     ecx,edx
+        mov     word ptr ds:[GSFT2_BASE + GSFT_COUNT],cx
+        mov     edx,0FFFFFFFFh
+        jz      vl_files2               ; SUB's zero: nothing for block 2
+        movzx   edx,word ptr ds:[vdm_lolseg]
+        shl     edx,16
+        mov     dx,GSFT2_OFF
+vl_files2:
+        mov     dword ptr ds:[GSFT_BASE + GSFT_NEXT],edx
+
+        ; AND EVERY DRIVE'S CURRENT DIRECTORY, for the same reason as
+        ; the three above: it changes, and this is when it is looked at.
+        call    vdm_cdsfresh
+        ; ...and its drive parameter block, which the list of lists'
+        ; first field and each current directory's 45h point at.
+        call    vdm_dpbfresh
+        pop     edi
+        pop     edx
+        pop     ecx
+        clc
+        ret
+vlf_none:
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; vdm_cdsfresh - the current directory array, rewritten from what the
+;                kernel knows now.  Everything preserved.
+;
+; MS-DOS 4'S ENTRY, 58h BYTES, AND THE FIELDS A PROGRAM READS ARE DOS'S:
+; the path at 0 as DOS keeps it - "C:\DOS\BIN", drive and all - the
+; flags word at 43h, the drive parameter block at 45h, the directory's
+; start cluster at 49h, and at 4Fh the offset of the backslash that
+; begins the path, which is 2 because there is no SUBST here to move
+; it.  Every letter up to LASTDRIVE gets "X:\", as DOS's SYSINIT gives
+; them; the ones with a volume behind them say so with 4000h, physical,
+; and the rest say nothing with 0.  No JOIN, no SUBST, no network bit -
+; which is what Windows for Workgroups' Setup was asking.
+;
+; THE DPB POINTER is the drive's slot in GDPB_ (vdm_dpbfresh) when it
+; has one, and FFFF:FFFF for a CD-ROM, as MSCDEX's letters have none.
+; It said FFFF:FFFF for every drive until 2026-10-09; see GDPB_ in
+; PMDOS.INC for what that cost.
+;
+; Each drive's own directory, not the current drive's only.  The kernel
+; keeps every volume's current directory in that volume's state, the
+; live one in vol_state and the rest in their slots (FAT.INC,
+; vol_swap), so nothing has to be selected - and nothing is, because
+; selecting a floppy drive is a disk access.
+;
+; Refreshed on 52h, which is when a program finds the array.  RMDOS
+; starts each drive where this left it (RMINFO.INC, rd_sysinit).
+;---------------------------------------------------------------------
+vdm_cdsfresh:
+        pushad
+        xor     ebx,ebx                         ; the drive
+vcf_one:
+        mov     edi,ebx
+        imul    edi,GCDS_LEN
+        add     edi,GCDS_BASE
+        push    edi
+        xor     eax,eax
+        mov     ecx,GCDS_LEN / 4
+        rep     stosd
+        pop     edi
+        mov     al,'A'
+        add     al,bl
+        mov     [edi],al
+        mov     word ptr [edi+1],'\:'           ; ":\" as it lies in memory
+        mov     dword ptr [edi+GCDS_DPB],0FFFFFFFFh
+        mov     word ptr [edi+GCDS_BACK],2
+
+        movzx   eax,byte ptr ds:[drv_count]
+        cmp     ebx,eax
+        jae     vcf_next
+        mov     eax,ebx
+        imul    eax,DRV_LEN
+        test    byte ptr [drv_tbl + eax + DRV_FLAGS],DRVF_PRESENT
+        jz      vcf_next
+        mov     word ptr [edi+GCDS_FLAGS],GCDSF_PHYS
+        mov     eax,ebx
+        imul    eax,DRV_LEN
+        test    byte ptr [drv_tbl + eax + DRV_FLAGS],DRVF_CDROM
+        jz      vcf_notcd
+        mov     word ptr [edi+GCDS_FLAGS],GCDSF_CDROM
+vcf_notcd:
+        call    vdm_dpbstate                    ; a drive parameter block?
+        jc      vcf_nodpb
+        mov     eax,ebx
+        imul    eax,GDPB_LEN
+        add     eax,(DOSDATA_SEG SHL 16) + GDPB_OFF
+        mov     [edi+GCDS_DPB],eax
+vcf_nodpb:
+
+        ; this drive's state: the live one, or its slot
+        mov     esi,OFFSET vol_state
+        cmp     bl,byte ptr ds:[cur_vol]
+        je      vcf_state
+        mov     esi,ebx
+        imul    esi,VOL_STATE_SIZE
+        add     esi,[vol_slotp]
+vcf_state:
+        mov     eax,[esi + (cwd_clus - vol_state)]
+        mov     [edi+GCDS_CLUS],eax
+        mov     ecx,[esi + (cwd_cnt - vol_state)]
+        cmp     ecx,MAX_DEPTH
+        ja      vcf_next                        ; a slot never filled in
+        add     esi,cwd_names - vol_state
+        push    edi
+        add     edi,3                           ; after "X:\"
+        call    names_string
+        pop     edi
+vcf_next:
+        inc     ebx
+        cmp     ebx,LASTDRIVE
+        jb      vcf_one
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; vdm_dpbfresh - the drive parameter blocks, written from what each
+;                volume's state says now, and chained in drive order
+;                from the list of lists' first field.  Everything
+;                preserved.
+;
+; See GDPB_ in PMDOS.INC.  The same states vdm_cdsfresh reads, and
+; nothing is selected, so nothing is read off a disk: a drive nobody
+; has read yet gets a block that says so (vdm_dpbone).  Every letter
+; keeps its own slot and only the ones with a block are linked; no
+; drive with one leaves the list of lists' FFFF:FFFF as it was.
+;---------------------------------------------------------------------
+vdm_dpbfresh:
+        pushad
+        mov     ecx,DOSDATA + GLOL_DPB          ; where the next link goes
+        xor     ebx,ebx                         ; the drive
+vdf_one:
+        call    vdm_dpbstate                    ; -> ESI
+        jc      vdf_next
+        mov     edi,ebx
+        imul    edi,GDPB_LEN
+        add     edi,GDPB_BASE
+        call    vdm_dpbone
+        mov     eax,ebx
+        imul    eax,GDPB_LEN
+        add     eax,(DOSDATA_SEG SHL 16) + GDPB_OFF
+        mov     [ecx],eax
+        lea     ecx,[edi+EDPB_NEXT]
+vdf_next:
+        inc     ebx
+        cmp     ebx,LASTDRIVE
+        jb      vdf_one
+        mov     dword ptr [ecx],0FFFFFFFFh      ; and there the chain ends
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; vdm_dpbstate - EBX = a drive -> ESI = its volume state, the live one
+;                or its slot.  CF if the letter gets no drive parameter
+;                block: no volume behind it, or a CD-ROM or a mounted
+;                ISO image, which have none under MSCDEX either.  EAX
+;                is destroyed.
+;---------------------------------------------------------------------
+vdm_dpbstate:
+        movzx   eax,byte ptr ds:[drv_count]
+        cmp     ebx,eax
+        jae     vds_none
+        mov     eax,ebx
+        imul    eax,DRV_LEN
+        test    byte ptr [drv_tbl + eax + DRV_FLAGS],DRVF_PRESENT
+        jz      vds_none
+        test    byte ptr [drv_tbl + eax + DRV_FLAGS],DRVF_CDROM
+        jnz     vds_none
+        mov     esi,OFFSET vol_state
+        cmp     bl,byte ptr ds:[cur_vol]
+        je      vds_state
+        mov     esi,ebx
+        imul    esi,VOL_STATE_SIZE
+        add     esi,[vol_slotp]
+vds_state:
+        cmp     byte ptr [esi + (fat_ok - vol_state)],0
+        je      vds_ok                          ; not read yet
+        cmp     byte ptr [esi + (vol_fs - vol_state)],FS_FAT
+        jne     vds_none
+vds_ok:
+        clc
+        ret
+vds_none:
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; vdm_dpbone - EBX = a drive, ESI = its volume state, EDI = its slot:
+;              MS-DOS 4's drive parameter block for it, every number
+;              in the volume's own LOGICAL sectors as 7302h's are.
+;              Registers preserved; the next pointer is the caller's.
+;
+; A volume that has not been mounted is a drive nobody has read yet,
+; and its block says that and no more: 512-byte sectors, and FFh in
+; the access byte, which is how DOS marks a block it must build again
+; before it believes it.  32h mounts the volume first, so it never
+; hands one of these out.
+;
+; Sixteen-bit fields saturate at FFFFh, as 1Bh's cluster count does.
+; FAT32's sectors per FAT is ZERO here, as in 7302h's block, which is
+; how a reader of this layout tells that the rest is in 7302h's.  The
+; free count is FFFFh, "not known", which DOS's own block says until
+; something has counted - counting is a walk of the whole FAT, and
+; this is written on every 52h.  The driver is FFFF:FFFF: the volumes
+; are served by the kernel, and no header in the chain is theirs.
+;---------------------------------------------------------------------
+vdm_dpbone:
+        push    eax
+        push    ecx
+        push    edi
+        xor     eax,eax
+        mov     ecx,GDPB_LEN
+        rep     stosb
+        pop     edi
+        mov     [edi+EDPB_DRIVE],bl
+        mov     [edi+EDPB_UNIT],bl
+        mov     word ptr [edi+EDPB_BPS],512
+        mov     dword ptr [edi+EDPB_DRIVER],0FFFFFFFFh
+        mov     byte ptr [edi+EDPB_ACCESS],0FFh
+        mov     word ptr [edi+EDPB_FREE16],0FFFFh
+        cmp     byte ptr [esi + (fat_ok - vol_state)],0
+        je      vdo_out
+        mov     byte ptr [edi+EDPB_ACCESS],0
+
+        ; CL is the volume's sector size as a shift from 512 all the way
+        ; down: everything in the state counts in 512-byte units
+        movzx   ecx,byte ptr [esi + (fat_lshift - vol_state)]
+        mov     eax,512
+        shl     eax,cl
+        mov     [edi+EDPB_BPS],ax
+        mov     eax,[esi + (fat_spc - vol_state)]
+        shr     eax,cl
+        dec     eax
+        mov     [edi+EDPB_SPCM1],al
+        mov     ch,0                    ; and as a shift: a cluster is a
+vdo_shift:                              ; power of two sectors, so the bits
+        or      al,al                   ; of one less are the shift
+        jz      vdo_shifted
+        shr     al,1
+        inc     ch
+        jmp     short vdo_shift
+vdo_shifted:
+        mov     [edi+EDPB_SHIFT],ch
+
+        mov     eax,[esi + (fat_rsvd - vol_state)]
+        shr     eax,cl
+        mov     [edi+EDPB_RSVD],ax
+        mov     eax,[esi + (fat_nfats - vol_state)]
+        mov     [edi+EDPB_NFATS],al
+        mov     eax,[esi + (fat_rootent - vol_state)]
+        mov     [edi+EDPB_ROOTENT],ax
+        mov     eax,[esi + (fat_datalba - vol_state)]
+        sub     eax,[esi + (fat_partlba - vol_state)]
+        shr     eax,cl
+        call    vdo_sat
+        mov     [edi+EDPB_DATA16],ax
+        mov     eax,[esi + (fat_totclus - vol_state)]
+        inc     eax                     ; the HIGHEST number, and they
+        call    vdo_sat                 ; start at two
+        mov     [edi+EDPB_MAXCL16],ax
+        cmp     byte ptr [esi + (fat_type - vol_state)],32
+        je      vdo_fat32
+        mov     eax,[esi + (fat_spf - vol_state)]
+        shr     eax,cl
+        mov     [edi+EDPB_SPF16],ax
+        mov     eax,[esi + (fat_rootlba - vol_state)]
+        sub     eax,[esi + (fat_partlba - vol_state)]
+        shr     eax,cl
+        mov     [edi+EDPB_ROOT16],ax
+vdo_fat32:
+        mov     al,[esi + (fat_media - vol_state)]
+        mov     [edi+EDPB_MEDIA],al
+        mov     eax,[esi + (fat_hint - vol_state)]
+        call    vdo_sat
+        mov     [edi+EDPB_HINT16],ax
+vdo_out:
+        pop     ecx
+        pop     eax
+        ret
+
+vdo_sat:
+        cmp     eax,0FFFFh
+        jbe     vdo_satok
+        mov     eax,0FFFFh
+vdo_satok:
+        ret
 
 ;=====================================================================
 ; 4Bh - EXEC.  A guest starting another program.
@@ -4021,6 +4600,11 @@ vdm_ret0:                                       ; 00h and INT 20h
 ;                parent's 4Bh return.
 ;---------------------------------------------------------------------
 vdm_exitprog:
+        xor     eax,eax                 ; (ending, not staying)
+        call    vdm_rmleave             ; a DPMI client ending from real
+        jnc     vep_go                  ; mode: back to the box's loop
+        mov     esp,eax
+vep_go:
         ; A PROGRAM THAT IS ITS OWN PARENT DOES NOT END.  DOS's rule -
         ; reset_environment in msctrlc.asm - leaves its memory and its
         ; files alone and sends it to its terminate address instead,
@@ -4086,6 +4670,11 @@ vs_noblk:
         call    vdm_termvecs                    ; DOS puts them back for a
                                                 ; TSR too - its handlers are
                                                 ; hooked by vector, not by PSP
+        mov     eax,1                           ; staying
+        call    vdm_rmleave                     ; (see vdm_exitprog)
+        jnc     vsk_go
+        mov     esp,eax
+vsk_go:
         call    vdm_outer
         jbe     vdm_done                        ; the box ends, the program
                                                 ; stays in low memory
@@ -4101,6 +4690,48 @@ vdm_toparent:
         mov     word ptr [vdm_ctx+V86C_EAX],0
         and     dword ptr [vdm_ctx+V86C_FLAGS],NOT FL_CF
         jmp     vdm_loop
+
+;---------------------------------------------------------------------
+; vdm_rmleave - the running program is ending (EAX = 0) or going
+;               resident (EAX = 1), and it may be a DPMI client's.  CF
+;               with EAX = the box loop's ESP if the caller is to stand
+;               there first.
+;
+; A CLIENT'S PROGRAM ENDING ENDS THE CLIENT, and its 4Ch may come from
+; real mode - after a raw switch (0306h), or inside a simulated
+; interrupt - as well as from protected mode (dpmi_exit).  GOING
+; RESIDENT DOES NOT: Borland's RTM is a DPMI client that ends with 31h
+; from real mode and is called back through INT 2Fh, whose handler
+; switches into the client again.  A resident client goes when its box
+; does (vdm_done).
+;
+; Either way a simulated interrupt in flight is over: it ran on the
+; stack the client's INT 31h came in on, and vdm_done returns from the
+; box loop's level, not from inside that.
+;---------------------------------------------------------------------
+vdm_rmleave:
+        cmp     dword ptr ds:[dpmi_active],0
+        je      vrl_no
+        push    edx
+        mov     edx,dword ptr ds:[vdm_depth]
+        cmp     edx,dword ptr ds:[dpmi_depth]
+        pop     edx
+        jne     vrl_no                  ; a program it started, or its parent
+        or      eax,eax
+        jnz     vrl_stay
+        call    dpmi_drop               ; (and dpmi_rmact with it)
+        jmp     vrl_esp
+vrl_stay:
+        cmp     dword ptr ds:[dpmi_rmact],0
+        je      vrl_no
+        mov     dword ptr ds:[dpmi_rmact],0
+vrl_esp:
+        mov     eax,dword ptr ds:[vdm_esp]
+        stc
+        ret
+vrl_no:
+        clc
+        ret
 ;---------------------------------------------------------------------
 ; vdm_fltloop - the guest's own handler for an exception is not getting
 ;               past the instruction that caused it.
@@ -4165,8 +4796,104 @@ vdm_fault:
         call    vdm_hex32
         mov     esi,OFFSET msgVdmCR
         call    dword ptr ds:[IOS_CONSTR]
+        ; AND A SECOND LINE WITH THE STACK AND THE CODE.  Where the guest
+        ; was is one thing; how it got there is the four words at its
+        ; stack pointer - a far return address, an interrupt frame - and
+        ; what it was doing is the six bytes at CS:IP.  A report from
+        ; real hardware is a photograph of the screen, and these are
+        ; what the photograph needs to have in it (MSD, 2026-10-08).
+        mov     esi,OFFSET msgVdmStk
+        call    dword ptr ds:[IOS_CONSTR]
+        mov     eax,dword ptr [vdm_ctx+V86C_SS]
+        call    vdm_hex4
+        mov     al,':'
+        call    dword ptr ds:[IOS_CONOUT]
+        mov     eax,dword ptr [vdm_ctx+V86C_ESP]
+        call    vdm_hex4
+        mov     esi,dword ptr [vdm_ctx+V86C_SS]
+        shl     esi,4
+        movzx   eax,word ptr [vdm_ctx+V86C_ESP]
+        add     esi,eax
+        mov     ecx,12
+vf_stack:
+        push    ecx
+        push    esi
+        mov     al,' '
+        call    dword ptr ds:[IOS_CONOUT]
+        pop     esi
+        movzx   eax,word ptr [esi]
+        push    esi
+        call    vdm_hex4
+        pop     esi
+        pop     ecx
+        add     esi,2
+        loop    vf_stack
+        mov     esi,OFFSET msgVdmCode
+        call    dword ptr ds:[IOS_CONSTR]
+        mov     esi,dword ptr [vdm_ctx+V86C_CS]
+        shl     esi,4
+        movzx   eax,word ptr [vdm_ctx+V86C_EIP]
+        add     esi,eax
+        mov     ecx,6
+vf_code:
+        push    ecx
+        push    esi
+        mov     al,' '
+        call    dword ptr ds:[IOS_CONOUT]
+        pop     esi
+        movzx   eax,byte ptr [esi]
+        push    esi
+        call    vdm_hex8
+        pop     esi
+        pop     ecx
+        inc     esi
+        loop    vf_code
+        mov     esi,OFFSET msgVdmCR
+        call    dword ptr ds:[IOS_CONSTR]
+        ; AND THE REGISTERS, a third line: which call the guest was in
+        ; the middle of is AX, and the rest say what it was holding.
+        mov     esi,OFFSET msgVdmRegs
+        call    dword ptr ds:[IOS_CONSTR]
+        mov     esi,OFFSET vf_order
+        mov     ecx,10
+vf_regs:
+        push    ecx
+        push    esi
+        mov     al,' '
+        call    dword ptr ds:[IOS_CONOUT]
+        pop     esi
+        push    esi
+        mov     al,[esi]
+        call    dword ptr ds:[IOS_CONOUT]
+        pop     esi
+        push    esi
+        mov     al,[esi+1]
+        call    dword ptr ds:[IOS_CONOUT]
+        pop     esi
+        push    esi
+        mov     al,'='
+        call    dword ptr ds:[IOS_CONOUT]
+        pop     esi
+        movzx   eax,byte ptr [esi+2]
+        mov     eax,dword ptr [vdm_ctx+eax]
+        push    esi
+        call    vdm_hex4
+        pop     esi
+        pop     ecx
+        add     esi,3
+        loop    vf_regs
+        mov     esi,OFFSET msgVdmExc
+        call    dword ptr ds:[IOS_CONSTR]
+        movzx   eax,byte ptr ds:[irx_busy]
+        call    vdm_hex8
+        mov     esi,OFFSET msgVdmCR
+        call    dword ptr ds:[IOS_CONSTR]
         jmp     vdm_abend               ; near: the hex helpers below sit
                                         ; between here and it
+
+vf_order    db  'ax',V86C_EAX, 'bx',V86C_EBX, 'cx',V86C_ECX, 'dx',V86C_EDX
+            db  'si',V86C_ESI, 'di',V86C_EDI, 'bp',V86C_EBP, 'ds',V86C_DS
+            db  'es',V86C_ES, 'fl',V86C_FLAGS
 
 ;---------------------------------------------------------------------
 ; vdm_hex4 / vdm_hex8 - EAX in hex, four or two digits.  The kernel has
@@ -4556,6 +5283,13 @@ vdm_done:
         ; interrupt in every box after this one, for the lifetime of
         ; the machine.  The box is over; nothing can still be in it.
         mov     dword ptr ds:[dpmi_rmact],0
+        ; AND A DPMI CLIENT THAT WENT RESIDENT (vdm_rmleave) GOES WITH
+        ; ITS BOX: there is one descriptor table, and the next box's
+        ; client wants it.
+        cmp     dword ptr ds:[dpmi_active],0
+        je      vd_nodpmi
+        call    dpmi_drop
+vd_nodpmi:
         mov     dword ptr ds:[vdm_gframe],0     ; nor any call a ^C could find
 
         ; AND THE STANDARD HANDLES ARE CMD.EXE'S AGAIN.  A guest's
@@ -4569,6 +5303,12 @@ vdm_done:
         call    vdm_pop                 ; the frame vdm_exec pushed: cur_own
                                         ; and dta_ptr go back to the 32-bit
                                         ; program that started the box
+IFDEF EXIT_TRACE
+        cmp     byte ptr ds:[GV_PARK + GVP_XT],0
+        je      vd_noxt                 ; the box WIN.COM ran in is over
+        XTMARK32 68,054h                ; 'T'
+vd_noxt:
+ENDIF
         cmp     dword ptr ds:[vdm_depth],0
         jne     vd_outer                ; ...and a box underneath keeps its
         mov     word ptr ds:[vdm_pspseg],0      ; guest's PSP - see vdm_exec
@@ -4829,10 +5569,30 @@ vdm_flags:
         ; into DS:DX, as 0Ah does, and every other 0Ch has no pointer at
         ; all - so a DX full of whatever must not be flattened for them.
         cmp     bl,0Ch
-        jne     vpf_table
+        jne     vpf_ioctl
         xor     bl,bl
         cmp     cl,0Ah
         jne     vpf_out
+        mov     bl,P_DX
+        jmp     short vpf_out
+        ; ...AND 44h IS THE OTHER.  02h, 03h and 0Ch hand a loaded
+        ; driver a buffer in DS:DX; 00h and 01h carry a device word in
+        ; DX, and the drive calls a drive in BL, neither of them an
+        ; address (2026-10-06, when the first three reached a driver).
+        ; 0Dh's block is in DS:DX too, with the drive in BL.
+vpf_ioctl:
+        cmp     bl,44h
+        jne     vpf_table
+        xor     bl,bl
+        cmp     cl,02h
+        je      vpf_iodx
+        cmp     cl,03h
+        je      vpf_iodx
+        cmp     cl,0Dh
+        je      vpf_iodx
+        cmp     cl,0Ch
+        jne     vpf_out
+vpf_iodx:
         mov     bl,P_DX
         jmp     short vpf_out
 vpf_table:
@@ -5110,6 +5870,10 @@ msgVdmFault db  'VDM: the guest faulted, vector ',0
 msgVdmAt    db  ' at ',0
 msgVdmLoop  db  'VDM: the guest is stuck on its own handler for vector ',0
 msgVdmCR2   db  ' cr2 ',0
+msgVdmStk   db  '     ss:sp ',0
+msgVdmCode  db  '  code',0
+msgVdmRegs  db  '    ',0
+msgVdmExc   db  ' excursion=',0
 msgVdmCR    db  13,10,0
 IFDEF VDM_DEBUG
 msgVdmEntry db  'VDM: entry ',0

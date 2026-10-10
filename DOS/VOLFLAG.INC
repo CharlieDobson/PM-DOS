@@ -52,7 +52,7 @@
 ; which can put the bit on underneath a volume the kernel has just
 ; marked; vfl_after puts it off again.
 ;
-; WINDOWS 3.1 IN ENHANCED MODE writes through RMDOS, which knows
+; WINDOWS 3.1, IN EITHER MODE, writes through RMDOS, which knows
 ; nothing of any of this.  So park_go marks every volume dirty on the
 ; way down (vfl_parkmark) and no commit marks anything clean until
 ; park_recover has mounted them all again.  A crash inside Windows

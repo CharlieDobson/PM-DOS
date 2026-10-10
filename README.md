@@ -3,7 +3,7 @@ A protected-mode 32bit disk operating system
 
 ## Project Goal:
 A fully backward compatible protected mode DOS with native 32bit
-application support (no need for DOS4G or DOS32/A).
+application support.
 
 ## Target System Requirements
 - 80386 CPU

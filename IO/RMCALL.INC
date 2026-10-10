@@ -277,6 +277,22 @@ rm_park:
         mov     dword ptr ds:[RMRET],OFFSET rmp_back
         mov     word ptr ds:[RMRET+4],SEL_CODE32
 
+        ; WHAT WINDOWS LOADS WITH ITS OWN, AND rmp_back HAS TO PUT BACK.
+        ; WIN386 is a protected-mode operating system: between the park
+        ; and the unpark it has had its own GDT, IDT, TSS, LDT, page
+        ; tables and control registers, and on its way out it restores
+        ; the real-mode machine - not ours.  rm_toprot reloads the GDT,
+        ; the IDT and CR3 because a BIOS call needs those back too; the
+        ; task register, the LDT and the rest of CR0 only a park loses,
+        ; so they are kept here and restored on the far side.  DOSX
+        ; never showed this - a DOS extender leaves CR0's paging bit
+        ; and the task register alone - which is why a standard-mode
+        ; park came back clean for forty releases and the first
+        ; enhanced-mode park triple-faulted on its first V86 entry.
+        sldt    word ptr ds:[park_ldtr]
+        mov     eax,cr0
+        mov     dword ptr ds:[park_cr0],eax
+
         ; What is about to own the machine expects the coprocessor the
         ; way the BIOS left it - its errors on interrupt line 13, where
         ; every DOS extender and Windows itself look for them.
@@ -297,6 +313,21 @@ rmp_back:
         mov     ss,ax
         mov     esp,dword ptr ds:[RMSAVE_ESP]
         cld
+
+        ; The system registers back - see rm_park.  CR0 was saved in
+        ; protected mode with paging on, which is where this is, so
+        ; writing it whole changes no mode and puts every other bit
+        ; back the way the kernel runs with it.  The TSS descriptor
+        ; has been busy since boot and LTR refuses a busy one, so the
+        ; bit comes off first; the LDT goes back to whatever it was,
+        ; which is a DPMI client's table or none.
+        mov     eax,dword ptr ds:[park_cr0]
+        mov     cr0,eax
+        call    pg_cr4back
+        and     byte ptr ds:[GDT_BASE + SEL_TSS + 5],NOT 02h
+        mov     ax,SEL_TSS
+        ltr     ax
+        lldt    word ptr ds:[park_ldtr]
         call    fpu_unpark
         push    eax
         mov     al,1
@@ -305,6 +336,10 @@ rmp_back:
         popfd
         popad
         ret
+
+park_ldtr       dw      0               ; the LDT selector at the park, and
+                dw      0
+park_cr0        dd      0               ; CR0 as the kernel runs with it
 
 ;=====================================================================
 ; rm_unparkaddr - where RMDOS has to jump to give the machine back.

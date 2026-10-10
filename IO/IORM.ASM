@@ -1026,16 +1026,17 @@ park_land:
         call    disk_reset              ; and the drives put back the way it
         cli                             ; left them
 
-        ; Hand over.  The far jump is built in the code stream rather
-        ; than done indirectly because DS is about to stop addressing
-        ; the globals: everything the target needs is loaded first and
-        ; the jump target is patched into the two words below.
-        mov     bx,IO_SEG
-        mov     es,bx
+        ; Hand over.  DS is about to stop addressing the globals, so
+        ; everything the target needs is loaded first, and the jump is
+        ; through a pointer in the stub, reached through CS.  It was a
+        ; far jump patched into the code 30 bytes ahead of the patch,
+        ; which a 486 can have fetched already - see rd_backvec in
+        ; RMDOS.ASM for the one that did.  GVP_CS comes first in GV_PARK,
+        ; so the pointer is copied the right way round for the jump.
         mov     ax,word ptr cs:[GVO_PARK + GVP_IP]
-        mov     word ptr es:[park_go + 1],ax
+        mov     word ptr cs:[park_vec],ax
         mov     ax,word ptr cs:[GVO_PARK + GVP_CS]
-        mov     word ptr es:[park_go + 3],ax
+        mov     word ptr cs:[park_vec + 2],ax
 
         mov     ax,word ptr cs:[GVO_PARK + GVP_SS]
         mov     bx,word ptr cs:[GVO_PARK + GVP_SP]
@@ -1048,9 +1049,9 @@ park_land:
         mov     ds,word ptr cs:[GVO_PARK + GVP_DS]
         sti
 park_go:
-        db      0EAh                    ; JMP FAR <patched>:<patched>
-        dw      0
-        dw      0
+        jmp     dword ptr cs:[park_vec]
+
+park_vec    dw  0, 0                    ; GVP_IP, GVP_CS
 
 ;---------------------------------------------------------------------
 ; rm_unpark - and back again.  FAR JMPed to from real mode by RMDOS,
@@ -1082,13 +1083,30 @@ rm_unpark:
         mov     ds,ax
         mov     es,ax
         mov     byte ptr cs:[GVO_PARK + GVP_ACTIVE],0
+IFDEF EXIT_TRACE
+        XTMARK16 54,061h                ; 'a'
+        mov     byte ptr cs:[GVO_PARK + GVP_XT],1
+ENDIF
         call    ata_toPM                ; the drives go quiet again: the
                                         ; driver waiting for them upstairs
                                         ; is polled and has no handler
+IFDEF EXIT_TRACE
+        XTMARK16 55,062h                ; 'b'
+ENDIF
         call    enable_a20
+IFDEF EXIT_TRACE
+        jc      xt_noa20
+        XTMARK16 56,063h                ; 'c'
+        jmp     short xt_a20ok
+xt_noa20:
+        XTMARK16 56,021h                ; '!'
+xt_a20ok:
+ENDIF
         cli
         jmp     rm_toprot
 
+gdt_mark:
+.ERRE   (gdt_mark - rm_base) LE GDT_OFF, <the unpark code has grown into the GDT>
         ORG     GDT_OFF
 gdt_start:
         ; 0000 - null

@@ -6,7 +6,7 @@ ARGS.COM - what a 16-bit program was handed:
   AX    0000
   FCB1  00 [           ]
   FCB2  00 [           ]
-  env   0629
+  env   1163
     COMSPEC=C:\COMMAND.COM
     PATH=C:\TESTS;C:\
   path  C:\TESTS\ARGS.COM

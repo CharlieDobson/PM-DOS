@@ -20,7 +20,7 @@
 ;   04F6h        the critical-error flag
 ;   04F7h        InDOS - incremented on EVERY SINGLE INT 21h, by the
 ;                third instruction of int21_entry
-;   0500h        RMFRAME, the register frame every real-mode thunk
+;   0610h        RMFRAME, the register frame every real-mode thunk
 ;                marshals its arguments through
 ;
 ; So unmapping page zero faults on the next DOS call the kernel makes,

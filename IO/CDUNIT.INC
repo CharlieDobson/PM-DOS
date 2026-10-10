@@ -504,8 +504,9 @@ ccg_yes:
 
 ;=====================================================================
 ; cun_svcunit - IOS_CDUNIT.  AL = unit -> EDX = its ATA device index,
-;               EBX = its channel's base port, ECX = units present.
-;               CF if there is no such unit.
+;               EBX = its channel's base port, and in the high word its
+;               control port, ECX = units present.  CF if there is no
+;               such unit.
 ;
 ; THE DRIVE IS NOT SPOKEN TO.  IOS_CDINFO is TEST UNIT READY and a
 ; capacity read, and fails with the tray open - which is right for a
@@ -525,7 +526,9 @@ cun_svcunit:
         je      csu_scsi
         movzx   edx,byte ptr [esi+CUE_DEVIDX]
         mov     esi,[esi+CUE_DEV]
-        movzx   ebx,word ptr [esi+ATD_BASE]
+        movzx   ebx,word ptr [esi+ATD_CTRL]     ; the control port above,
+        shl     ebx,16                          ; for RMCD.SYS - the park
+        mov     bx,word ptr [esi+ATD_BASE]      ; hands it the channel
         jmp     short csu_have
 csu_scsi:
         mov     edx,-1

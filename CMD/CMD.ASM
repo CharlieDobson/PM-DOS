@@ -120,6 +120,19 @@ cmd_entry:
         mov     ah,1Ah                  ; our DTA
         int     21h
 
+        ; The country's thousands separator, for DIR's numbers: from
+        ; 38h, which answers for the one country the kernel knows;
+        ; the comma if it will not say.
+        mov     edx,OFFSET ctry_buf
+        mov     ax,3800h
+        int     21h
+        jc      ce_nosep
+        mov     al,[ctry_buf+7]
+        or      al,al
+        jz      ce_nosep
+        mov     [dec_sep],al
+ce_nosep:
+
         ; ^C is OURS: hook INT 23h so a break lands back at the
         ; prompt (or terminates a running child) instead of taking
         ; the whole interpreter down through the kernel's default.
@@ -1655,11 +1668,11 @@ dir_go:
         mov     edx,OFFSET msg_totlist
         call    print
         mov     eax,[dir_total]
-        call    pdec10
+        call    pgrp10
         mov     edx,OFFSET msg_files
         call    print
         mov     eax,[dir_tbytes]
-        call    pdec10
+        call    pgrp14
         mov     edx,OFFSET msg_bytes
         call    print
         jmp     dir_free
@@ -1890,7 +1903,7 @@ dir_size:
         jmp     short dir_stamp
 dir_isfile:
         mov     eax,dword ptr [find_data+20h]
-        call    pdec10
+        call    pgrp14
 dir_stamp:
         mov     edx,OFFSET msg_2sp
         call    print
@@ -2013,11 +2026,11 @@ dir_subtot:
         call    dir_endline
 dir_totals:
         mov     eax,[dir_count]
-        call    pdec10
+        call    pgrp10
         mov     edx,OFFSET msg_files
         call    print
         mov     eax,[dir_bytes]
-        call    pdec10
+        call    pgrp14
         mov     edx,OFFSET msg_bytes
         call    print
         ret
@@ -2071,12 +2084,12 @@ dir_fsout:
         ; its own started at column 0 and lined up with the number of
         ; files - two quantities that have nothing to do with each other.
         ; The one it wants to be read against is the byte total above it,
-        ; which pdec10 put in columns 20 to 29 because " file(s)  " is
+        ; which pgrp14 put in columns 20 to 33 because " file(s)  " is
         ; ten characters wide.  So the line is indented by exactly that
         ; much and the two columns of bytes sit under one another.
         mov     edx,OFFSET msg_freepad
         call    print
-        call    pdec10
+        call    pgrp14
         mov     edx,OFFSET msg_free
         call    print
 dir_done:
@@ -6393,6 +6406,61 @@ pd_out:
         pop     ecx
         ret
 
+;---------------------------------------------------------------------
+; pgrp14 / pgrp10 - EAX in decimal with the thousands separator every
+; three digits - the country's (dec_sep, asked of 38h at start-up) or
+; the comma - right-justified in 14 or 10 columns.  DIR's sizes and
+; totals: a 32-bit size is 13 characters with its separators, which
+; is why the size column is 14 wide, as MS-DOS 6.22's is.
+;---------------------------------------------------------------------
+pgrp14:
+        push    ecx
+        mov     ecx,14
+        jmp     short pgrpN
+pgrp10:
+        push    ecx
+        mov     ecx,10
+pgrpN:
+        pushad
+        mov     edi,OFFSET dec_buf + 19
+        mov     byte ptr [edi],'$'
+        mov     ebx,10
+        mov     esi,ecx                 ; the width
+        xor     ecx,ecx                 ; characters so far
+        xor     ebp,ebp                 ; digits since a separator
+pg_div:
+        xor     edx,edx
+        div     ebx
+        dec     edi
+        add     dl,'0'
+        mov     [edi],dl
+        inc     ecx
+        inc     ebp
+        or      eax,eax
+        jz      pg_pad
+        cmp     ebp,3
+        jb      pg_div
+        xor     ebp,ebp
+        dec     edi
+        mov     dl,[dec_sep]
+        mov     [edi],dl
+        inc     ecx
+        jmp     short pg_div
+pg_pad:
+        cmp     ecx,esi
+        jae     pg_out
+        dec     edi
+        mov     byte ptr [edi],' '
+        inc     ecx
+        jmp     short pg_pad
+pg_out:
+        mov     edx,edi
+        mov     ah,09h
+        int     21h
+        popad
+        pop     ecx
+        ret
+
 ;=====================================================================
 ; Command table
 ;=====================================================================
@@ -6822,7 +6890,7 @@ msg_volis   db  ' is ','$'
 msg_nolabel db  ' has no label','$'
 msg_dirof   db  13,10,' Directory of ','$'
 msg_dirof2  db  13,10,13,10,'$'
-msg_isdir   db  '     <DIR>','$'
+msg_isdir   db  '         <DIR>','$'  ; as wide as a size, 14
 msg_totlist db  13,10,'Total files listed:',13,10,'$'
 msg_badattr db  'Invalid switch - /A accepts H, S, D, A and R',13,10,'$'
 env_dircmd  db  'DIRCMD',0
@@ -7016,7 +7084,9 @@ ext_lit     db  0                       ; 1: the verb has its own extension
             db  0,0,0
 path_buf    db  PATHDIR_MAX + QVERB_MAX + 8 dup(0)      ; dir + verb + ext
 tail_buf    db  130 dup(0)
-dec_buf     db  12 dup(0)
+dec_buf     db  20 dup(0)               ; 13 characters, padding, '$'
+dec_sep     db  ','                     ; the thousands separator
+ctry_buf    db  34 dup(0)               ; 38h's answer
 dta         db  43 dup(0)
 SCRATCH_MAX     EQU     176             ; wider than a CONFIG.SYS line, so
 set_scratch db  SCRATCH_MAX dup(0)      ; that inherit_env never has to trim

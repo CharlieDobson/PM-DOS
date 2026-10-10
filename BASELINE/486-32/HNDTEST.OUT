@@ -1,6 +1,6 @@
 HNDTEST - how many files can one process open?
-table before: 0014 entries at 055C:0018
+table before: 0014 entries at 1096:0018
 asking 67h for sixty... granted.
-table after:  003C entries at 05B3:0000
+table after:  003C entries at 10ED:0000
 opened: 0032 files, then error 0036
 done.

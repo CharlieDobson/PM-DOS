@@ -43,6 +43,12 @@
         .386p                   ; p, for the LGDT and CR0 the block
                                 ; move needs - see RMXMS.INC
         INCLUDE RMDOS.INC
+IFDEF EXIT_TRACE
+        INCLUDE XTRACE.INC              ; BUILD exittrace's markers
+ENDIF
+IF LASTDRIVE NE RL_NDRV
+        .ERR    <RMDOS.ASM: LASTDRIVE and RMDOS.INC's RL_NDRV disagree>
+ENDIF
 
 ;---------------------------------------------------------------------
 ; The INT 21h register frame, as this file builds it: PUSHA, then DS
@@ -74,7 +80,8 @@ FL_CF       EQU 0001h
 FL_ZF       EQU 0040h
 
 RD_STKSIZE  EQU 1024
-RD_STKLVL   EQU 3
+RD_STKLVL   EQU 3                       ; nesting levels rd_stkpsp remembers
+RD_STKSLOTS EQU 6                       ; stacks there are - see stk_take
 I21_MAX     EQU 6Dh
 
 _RD     SEGMENT USE16 PUBLIC 'CODE'
@@ -114,14 +121,22 @@ h_exitcode  dw  0
 h_why       dw  0
 h_xmsbase   dd  0
 h_xmslen    dd  0
-h_rsvd      dd  0, 0
+h_lowseg    dw  0
+h_lowlen    dw  0
+h_rsvd      dd  0
 h_stubs     dd  0
+h_wincache  dw  0                       ; RMH_WINCACHE - see RMCACHE.INC
+h_wcflags   dw  0
 
         ORG     RMH_IRET
 h_frame     db  RMI_LEN dup(0)
 
         ORG     RMH_DRIVES
 h_drives    db  (LASTDRIVE * RMD_LEN) dup(0)
+
+        ORG     RMH_LASTDRV
+h_lastdrv   db  0                       ; LASTDRIVE=, 0 for no line
+h_cdseg     dw  0                       ; RMCD.SYS, or 0 (RMINFO.INC)
 
 ;=====================================================================
 ; Code proper.  Everything above is a header PM-DOS writes into.
@@ -184,7 +199,20 @@ IFDEF RMDOS_BISECT
                                         ; whether the DOS does
 ENDIF
 
+        ; The block below 64K, kept so that it can be put back; no
+        ; block, or one of a size this image cannot keep, is a header
+        ; this image was not built for.  See RMDOS.INC, RMH_LOWSEG.
+        call    rd_lowsave
+        jnc     rd_lowok
+        mov     word ptr [h_why],RMW_NOTOURS
+        jmp     rd_goback
+rd_lowok:
+
         call    rd_vecs                 ; the vectors a DOS owns
+        call    rd_hook13               ; ...and IO.SYS's hook on the disk
+IFDEF EXIT_TRACE
+        call    xt_hook                 ; and a real-mode CPU fault, caught
+ENDIF
 IFDEF RMDOS_MARK
         mov     al,'4'
         call    rd_vmark
@@ -210,6 +238,7 @@ IFDEF RMDOS_MARK
 ENDIF
 IFDEF RMDOS_E9
         call    e9_hook6                ; an invalid opcode says where
+        call    e9_prehook              ; and what a driver's hook answers
 ENDIF
 IFDEF DBG_LPT
         mov     al,RDBGM_SYS
@@ -225,6 +254,11 @@ IFDEF DBG_LPT
         call    rdbg_mark
 ENDIF
         call    rx_init                 ; extended memory, and the A20 gate
+        call    cm_init                 ; and the sector cache out of it,
+                                        ; BEFORE Windows counts what is left
+IFDEF RMDOS_E9
+        call    e9_mcbs                 ; where we are, and what else is
+ENDIF
 IFDEF RMDOS_MARK
         mov     al,'8'
         call    rd_vmark
@@ -239,6 +273,7 @@ ENDIF
         mov     [rd_dtaseg],ax
         mov     al,[h_curdrv]
         mov     [rd_drive],al
+        call    sda_sync                ; ...and the published copy agrees
 
         test    byte ptr [h_flags],RMHF_VERBOSE
         jz      rd_quiet
@@ -261,10 +296,10 @@ IFDEF DBG_LPT
         mov     al,RDBGM_RUN
         call    rdbg_mark
 ENDIF
-        mov     ax,[h_runoff]
-        mov     word ptr [rd_go + 1],ax
-        mov     ax,[h_runseg]
-        mov     word ptr [rd_go + 3],ax
+        mov     ax,[h_runoff]           ; through a pointer, and not a jump
+        mov     word ptr [rd_govec],ax  ; patched into the code - see
+        mov     ax,[h_runseg]           ; rd_backvec below
+        mov     word ptr [rd_govec + 2],ax
 
         mov     ax,[h_runss]
         mov     bx,[h_runsp]
@@ -277,9 +312,9 @@ ENDIF
         xor     ax,ax
         sti
 rd_go:
-        db      0EAh                    ; JMP FAR <patched>:<patched>
-        dw      0
-        dw      0
+        jmp     dword ptr cs:[rd_govec]
+
+rd_govec    dw  0, 0                    ; the program's entry, offset first
 
 ;---------------------------------------------------------------------
 ; THE HANDOVER ITSELF.  WIN386 is already loaded and already running
@@ -342,6 +377,9 @@ ENDIF
 ;=====================================================================
 rd_goback:
         cli
+IFDEF EXIT_TRACE
+        XTMARK16 52,047h                ; 'G'
+ENDIF
 IFDEF RMDOS_MARK
         mov     al,'4'
         call    rd_vmark
@@ -354,13 +392,24 @@ ENDIF
         mov     ds,ax
         mov     ss,ax
         mov     sp,OFFSET rd_stktop
+IFDEF RMDOS_E9
+        call    e9_unhook6              ; the instrument's own vector first
+ENDIF
         call    rx_done                 ; the vector we took off the BIOS
+        call    rd_unhook13             ; and the one on the disk
+        call    rd_unchain              ; the links rd_chain made in drivers
+                                        ; - PM-DOS's DOS data the kernel
+                                        ; puts back itself (park_recover)
+IFDEF EXIT_TRACE
+        call    xt_unhook
+        XTMARK16 53,04Ah                ; 'J'
+ENDIF
         mov     ax,[rd_exitcode]
         mov     [h_exitcode],ax
         mov     ax,[h_unpoff]
-        mov     word ptr [rd_back + 1],ax
+        mov     word ptr [rd_backvec],ax
         mov     ax,[h_unpseg]
-        mov     word ptr [rd_back + 3],ax
+        mov     word ptr [rd_backvec + 2],ax
 IFDEF RMDOS_FREEZE
         ; STOP HERE INSTEAD, so that whatever the excursion left on the
         ; screen stays there.  The unpark resets this machine, and a
@@ -383,9 +432,318 @@ rd_freeze:
         jmp     short rd_freeze
 ENDIF
 rd_back:
-        db      0EAh                    ; JMP FAR <patched>:<patched>
-        dw      0
-        dw      0
+        jmp     dword ptr cs:[rd_backvec]
+
+;---------------------------------------------------------------------
+; THE WAY HOME WAS A JUMP PATCHED INTO THE CODE SIX BYTES AHEAD OF
+; ITSELF, and a 386 or 486 does not see that.  It has already fetched
+; and decoded the instructions in front of the one it is running, a
+; store into them changes memory and not its copy, and Intel's answer
+; is a jump between the store and the code it changed.  So the way back
+; ran the jump as it was in the file - JMP FAR 0000:0000, into the
+; vector table, with interrupts off: Charlie's 486 at a blinking cursor
+; after Windows, the exittrace build's row stopped at "J".  QEMU, 86Box
+; and DOSBox-X all see the store; even DOSBox-X's prefetch-queue CPUs
+; refill at places that happened to miss it.  rd_go did the same 22
+; bytes ahead.  Both jumps go through these instead, which are data.
+;---------------------------------------------------------------------
+rd_backvec  dw  0, 0                    ; RMH_UNPARK*, offset first
+
+IFDEF EXIT_TRACE
+;=====================================================================
+; xt_hook / xt_unhook - BUILD exittrace (INC\XTRACE.INC): vectors 06h,
+; 0Ch and 0Dh while RMDOS is the DOS, so that a CPU fault in REAL mode
+; says where it was instead of becoming the loop it becomes on a real
+; processor - 0Ch and 0Dh are IRQ 4's and IRQ 5's vectors there, whose
+; handlers return to the instruction that faulted.
+;
+; Two tests keep it to faults.  The processor's PE bit (SMSW, which a
+; V86 program may read): set, and this is Windows reflecting something
+; into a virtual machine, which is Windows' business.  And for 0Ch and
+; 0Dh the master PIC's in-service register: IRQ 4's or IRQ 5's bit set
+; and it is that interrupt, which goes where it always went.
+;=====================================================================
+xt_hook:
+        pushf
+        cli
+        push    ax
+        push    es
+        xor     ax,ax
+        mov     es,ax
+        mov     ax,es:[06h*4]
+        mov     word ptr cs:[xt_old06],ax
+        mov     ax,es:[06h*4+2]
+        mov     word ptr cs:[xt_old06+2],ax
+        mov     ax,es:[0Ch*4]
+        mov     word ptr cs:[xt_old0c],ax
+        mov     ax,es:[0Ch*4+2]
+        mov     word ptr cs:[xt_old0c+2],ax
+        mov     ax,es:[0Dh*4]
+        mov     word ptr cs:[xt_old0d],ax
+        mov     ax,es:[0Dh*4+2]
+        mov     word ptr cs:[xt_old0d+2],ax
+        mov     word ptr es:[06h*4],OFFSET xt_i06
+        mov     es:[06h*4+2],cs
+        mov     word ptr es:[0Ch*4],OFFSET xt_i0c
+        mov     es:[0Ch*4+2],cs
+        mov     word ptr es:[0Dh*4],OFFSET xt_i0d
+        mov     es:[0Dh*4+2],cs
+        pop     es
+        pop     ax
+        popf
+        ret
+
+xt_unhook:
+        pushf
+        cli
+        push    ax
+        push    es
+        xor     ax,ax
+        mov     es,ax
+        mov     ax,word ptr cs:[xt_old06]
+        mov     es:[06h*4],ax
+        mov     ax,word ptr cs:[xt_old06+2]
+        mov     es:[06h*4+2],ax
+        mov     ax,word ptr cs:[xt_old0c]
+        mov     es:[0Ch*4],ax
+        mov     ax,word ptr cs:[xt_old0c+2]
+        mov     es:[0Ch*4+2],ax
+        mov     ax,word ptr cs:[xt_old0d]
+        mov     es:[0Dh*4],ax
+        mov     ax,word ptr cs:[xt_old0d+2]
+        mov     es:[0Dh*4+2],ax
+        pop     es
+        pop     ax
+        popf
+        ret
+
+xt_i06:
+        push    bp
+        mov     bp,06h
+        jmp     short xt_real
+xt_i0c:
+        push    bp
+        mov     bp,0Ch
+        jmp     short xt_irq
+xt_i0d:
+        push    bp
+        mov     bp,0Dh
+xt_irq:
+        push    ax
+        mov     al,0Bh                  ; OCW3: the in-service register
+        out     20h,al
+        in      al,20h
+        mov     ah,al
+        mov     al,0Ah                  ; and the request register again,
+        out     20h,al                  ; which is what a BIOS expects
+        mov     al,10h                  ; IRQ 4
+        cmp     bp,0Ch
+        je      xt_irqbit
+        mov     al,20h                  ; IRQ 5
+xt_irqbit:
+        test    ah,al
+        pop     ax
+        jnz     xt_chain
+xt_real:
+        push    ax
+        smsw    ax
+        test    al,1
+        pop     ax
+        jz      xt_fault
+xt_chain:
+        cmp     bp,0Ch
+        je      xt_ch0c
+        cmp     bp,0Dh
+        je      xt_ch0d
+        pop     bp
+        jmp     dword ptr cs:[xt_old06]
+xt_ch0c:
+        pop     bp
+        jmp     dword ptr cs:[xt_old0c]
+xt_ch0d:
+        pop     bp
+        jmp     dword ptr cs:[xt_old0d]
+
+        ; A fault, in real mode.  On the stack: the caller's BP, then the
+        ; fault's IP, CS and FLAGS.  Row 1 gets "F", the vector, CS:IP,
+        ; the four bytes there, AX BX CX DX SI DI BP DS ES SS SP; then the
+        ; machine stops, which is what it was doing anyway.
+xt_fault:
+        cli
+        mov     word ptr cs:[xt_vec],bp
+        mov     word ptr cs:[xt_ax],ax
+        mov     word ptr cs:[xt_bx],bx
+        mov     word ptr cs:[xt_cx],cx
+        mov     word ptr cs:[xt_dx],dx
+        mov     word ptr cs:[xt_si],si
+        mov     word ptr cs:[xt_di],di
+        mov     word ptr cs:[xt_ds],ds
+        mov     word ptr cs:[xt_es],es
+        mov     word ptr cs:[xt_ss],ss
+        pop     ax
+        mov     word ptr cs:[xt_bp],ax
+        pop     ax
+        mov     word ptr cs:[xt_ip],ax
+        pop     ax
+        mov     word ptr cs:[xt_cs],ax
+        mov     ax,sp
+        add     ax,2                    ; as it was before the fault's frame
+        mov     word ptr cs:[xt_sp],ax
+        mov     ax,0B800h
+        mov     es,ax
+        mov     di,160
+        cld
+        mov     ax,4F00h + 'F'          ; and the vector straight after it:
+        stosw                           ; the line is the row's 80 exactly
+        mov     ax,word ptr cs:[xt_vec]
+        call    xt_hexw
+        mov     ax,word ptr cs:[xt_cs]
+        call    xt_hexw
+        mov     ax,word ptr cs:[xt_ip]
+        call    xt_hexw
+        mov     ds,word ptr cs:[xt_cs]
+        mov     si,word ptr cs:[xt_ip]
+        mov     cx,4
+xtf_code:
+        lodsb
+        mov     ah,al
+        shr     al,4
+        call    xt_nib
+        mov     al,ah
+        call    xt_nib
+        loop    xtf_code
+        mov     ax,4F20h
+        stosw
+        mov     si,OFFSET xt_ax
+        mov     cx,(xt_end - xt_ax) / 2
+xtf_regs:
+        mov     ax,word ptr cs:[si]
+        call    xt_hexw
+        add     si,2
+        loop    xtf_regs
+xtf_stop:
+        cli
+        hlt
+        jmp     short xtf_stop
+
+;--- AX in hex at ES:DI, white on red, and a blank after it
+xt_hexw:
+        push    cx
+        mov     cx,4
+xth_one:
+        rol     ax,4
+        push    ax
+        call    xt_nib
+        pop     ax
+        loop    xth_one
+        push    ax
+        mov     ax,4F20h
+        stosw
+        pop     ax
+        pop     cx
+        ret
+
+;--- AL's low nibble in hex at ES:DI
+xt_nib:
+        push    ax
+        and     al,0Fh
+        add     al,'0'
+        cmp     al,'9'
+        jbe     xtn_dig
+        add     al,7
+xtn_dig:
+        mov     ah,4Fh
+        stosw
+        pop     ax
+        ret
+
+xt_old06    dd  0
+xt_old0c    dd  0
+xt_old0d    dd  0
+xt_vec      dw  0
+xt_cs       dw  0
+xt_ip       dw  0
+xt_ax       dw  0                       ; and from here in the order shown
+xt_bx       dw  0
+xt_cx       dw  0
+xt_dx       dw  0
+xt_si       dw  0
+xt_di       dw  0
+xt_bp       dw  0
+xt_ds       dw  0
+xt_es       dw  0
+xt_ss       dw  0
+xt_sp       dw  0
+xt_end:
+ENDIF
+
+;=====================================================================
+; rd_lowsave - adopt the block below 64K that PM-DOS handed over, and
+;              keep the part of it this DOS reads.  CF set if there is
+;              no usable block.
+;
+; The block is the kernel's DOS data segment and everything in it is
+; the kernel's - its list of lists, its SDA, the file table and country
+; tables its boxes read.  RMDOS overwrites the first RL_LEN bytes of it
+; with its own versions of the same things for the length of the
+; excursion (RMINFO.INC, rd_sysinit), and THE KERNEL PUTS THEM BACK:
+; it keeps the RMH_LOWLEN bytes itself, above the megabyte, from the
+; handover to its recovery (PARK.INC, park_lowkeep).  This side used to
+; keep them in its own 64K and restore them on the way home - until the
+; twenty-six letters Windows' network maps to made the copy 4K and the
+; traced build no longer fitted the segment (2026-10-09).
+;
+; What is kept here is only what rd_sysinit and rd_chain read before
+; they write over it: the kernel's current directories for the drives
+; this DOS has volumes for, and NUL's next link - RD_KEEPLEN bytes from
+; the start, at the same offsets.  RMH_LOWLEN is still checked: no less
+; than RMDOS builds in, and no more than the kernel says it keeps.
+;=====================================================================
+rd_lowsave:
+        push    ax
+        push    cx
+        push    si
+        push    di
+        push    ds
+        push    es
+        mov     ax,[h_lowseg]
+        or      ax,ax
+        jz      rls_bad
+        mov     cx,[h_lowlen]
+        cmp     cx,RL_LEN
+        jb      rls_bad
+        cmp     cx,RL_SAVEMAX
+        ja      rls_bad
+        mov     [rd_lowseg],ax
+        mov     [rd_lowlen],cx
+        ; The country block's case-map far call (38h and 6501h hand it
+        ; out) points at the far return in the block, where the kernel
+        ; points its own (GLOL_RETF): a character comes back as it
+        ; went, which is what a codepage with no mapping beyond ASCII
+        ; means.  It was zero until WfW's network called it - a far
+        ; call to 0000:0000 runs the interrupt table as code.
+        mov     word ptr [rd_country+12h],RL_DEVRET
+        mov     word ptr [rd_country+14h],ax
+        mov     di,cs
+        mov     es,di
+        mov     di,OFFSET rd_lowkeep
+        mov     ds,ax
+        xor     si,si
+        mov     cx,RD_KEEPLEN
+        cld
+        rep     movsb
+        clc
+        jmp     short rls_out
+rls_bad:
+        stc
+rls_out:
+        pop     es
+        pop     ds
+        pop     di
+        pop     si
+        pop     cx
+        pop     ax
+        ret
 
 IFDEF RMDOS_MARK
 ;--- AL = a character, onto the screen and nowhere else.  CS overrides
@@ -677,6 +1035,54 @@ rd_vectab:
 i_iret:
         iret
 
+;--- 13h - the disk BIOS, reached through rd_orig13.  IO.SYS keeps a
+;--- hook of its own on INT 13h from the moment it boots, and that hook
+;--- goes on to "Orig13", which INT 2Fh AH=13h hands out and replaces
+;--- (RMINFO.INC, i2F_disk13): the way a driver - Windows' BLOCKDEV.386
+;--- among them - puts itself in front of every disk call DOS makes.
+;--- This is that hook, and this DOS's own INT 13h calls all come
+;--- through it.  rd_hook13 puts it in the table, rd_unhook13 takes it
+;--- out on the way home.
+i13:
+        jmp     dword ptr cs:[rd_orig13]
+
+rd_hook13:
+        push    eax
+        push    es
+        xor     ax,ax
+        mov     es,ax
+        cli
+        mov     eax,dword ptr es:[13h*4]
+        mov     dword ptr [rd_ivt13],eax        ; to put back
+        mov     dword ptr [rd_orig13],eax       ; Orig13 and Old13, the
+        mov     dword ptr [rd_old13],eax        ; BIOS's own both
+        mov     word ptr es:[13h*4],OFFSET i13
+        mov     word ptr es:[13h*4+2],cs
+        sti
+        pop     es
+        pop     eax
+        ret
+
+; Only if the vector is still this one: anything that hooked INT 13h in
+; front of it would have its own way back, and is not this DOS's to
+; undo.  rd_goback runs with interrupts off.
+rd_unhook13:
+        push    eax
+        push    es
+        xor     ax,ax
+        mov     es,ax
+        cmp     word ptr es:[13h*4],OFFSET i13
+        jne     ruh_out
+        mov     ax,cs
+        cmp     word ptr es:[13h*4+2],ax
+        jne     ruh_out
+        mov     eax,dword ptr [rd_ivt13]
+        mov     dword ptr es:[13h*4],eax
+ruh_out:
+        pop     es
+        pop     eax
+        ret
+
 ;--- 20h - terminate, the DOS 1 spelling.  CS is the PSP -------------
 i20:
         mov     ax,4C00h
@@ -767,7 +1173,42 @@ ENDIF
 
         mov     ax,cs
         mov     ds,ax
+
+        ; THE CRITICAL SECTION BEFORE ANYTHING ELSE.  Everything below -
+        ; the process state pulled out of the SDA, InDOS, the depth, the
+        ; stack slots - is one copy for every virtual machine, and it is
+        ; the critical section (crit_in) that makes it one machine's at
+        ; a time.  It used to be taken further down, after all of that,
+        ; so the next machine to call pulled its own state over the
+        ; working copies of one still inside a call and holding the
+        ; section, then waited for the section with the damage done.
+        ; The port E9h trace caught it: a DOS box ending (4Ch, inside
+        ; IFSHLP's 2Fh/1122h) when Windows' System VM called; the box's
+        ; terminate wrote the System VM's state into the box's SDA and
+        ; let go, and the System VM's call went on with the box's
+        ; parent as its process - its handles invalid, InDOS and the
+        ; depth zero inside a call.  That was the DOS-box stall: a box's
+        ; redirected output gone, "EXEC failure", 0-byte copies, and
+        ; Windows unable to read a segment of USER.EXE through a handle
+        ; that was no longer its own ("Segment Load Failure",
+        ; 2026-10-08).
+IFDEF RMDOS_E9
+        call    e9_i21pre               ; arrived - before the section
+ENDIF                                   ; can make it wait (RME9.INC)
+        call    crit_in
+        cli
+
+        ; THE PROCESS STATE IS READ OUT OF THE PUBLISHED SDA FIRST, not
+        ; out of this file's variables, because under Windows the SDA
+        ; is INSTANCED: DOSMGR gives every virtual machine its own copy
+        ; of the bytes 5D06h names and swaps them in and out as it
+        ; switches, so the current PSP, DTA and drive that apply to
+        ; this call are whatever it swapped in last.  sda_pull brings
+        ; them into the variables the rest of this DOS reads, and
+        ; i21_out puts them back with sda_sync.  See RMINFO.INC.
+        call    sda_pull
         inc     byte ptr [rd_indos]
+        call    sda_sync
 
         ; THE CALLER'S STACK, IN THE CALLER'S OWN PSP.  DOS writes
         ; SS:SP into PSP+2Eh on every single call - msdisp.asm does it
@@ -801,12 +1242,20 @@ i21_nopsp:
         pop     bx
         pop     ax
         inc     byte ptr [rd_stkdep]
-        cmp     al,RD_STKLVL
-        jae     i21_stacked             ; no level left: stay where we are,
-                                        ; which is what DOS did too
-        movzx   bx,al
-        shl     bx,1
-        mov     ax,[rd_stktab + bx]
+
+        ; A STACK SLOT, NOT A STACK LEVEL.  This used to take stack
+        ; number [rd_stkdep], which is right as long as calls nest and
+        ; unwind in order - and under Windows they do not.  Two virtual
+        ; machines can each be waiting at a prompt, which is each
+        ; standing inside INT 21h 0Ah on a stack of ours; the one that
+        ; gets a key first finishes first, and the next call in would
+        ; have been given the stack the other is still on.  So stk_take
+        ; hands out the first free of RD_STKSLOTS and stk_free gives it
+        ; back by looking at where SP is; the depth counter stays, for
+        ; rd_stkpsp and nothing else.  No slot free: stay on the
+        ; caller's stack, which is what DOS did too.
+        call    stk_take                ; -> AX = the top of one, CF if none
+        jc      i21_stacked
         mov     bx,cs
         mov     ss,bx
         mov     sp,ax
@@ -829,7 +1278,6 @@ i21_cpy:
         mov     es,ax
         sti
         cld
-
 IFDEF RMDOS_MARK
         call    rd_vbars                ; the last call in, and the count
 ENDIF
@@ -843,6 +1291,8 @@ IFDEF RMDOS_E9
         call    e9_i21in                ; ...and a line on port E9h, RME9.INC
 ENDIF
 
+        mov     ax,[bp+F_AX]
+        call    sda_userax              ; for a redirector - RMNET.INC
         mov     bl,byte ptr [bp+F_AX+1]
         movzx   bx,bl
         cmp     bx,I21_MAX
@@ -851,7 +1301,16 @@ ENDIF
         call    word ptr [i21_tab + bx]
         jmp     short i21_out
 i21_bad:
-        call    i21_unsup
+        ; A FUNCTION NUMBER PAST THE TABLE IS ANSWERED AS MS-DOS ANSWERS
+        ; IT: AL=0 and the carry clear (DOS6SRC dos/msdisp.asm, BadCall,
+        ; which says it cannot set the carry "as this may break some
+        ; programs compatability").  WIN386 asks AH=DCh - NetWare's "get
+        ; connection number" - as it starts, and read the ERR_FUNC this
+        ; used to answer as a connection number (2026-10-06).  The
+        ; functions INSIDE the table that are not served still fail
+        ; with ERR_FUNC and the carry, as DOS's own do.
+        mov     byte ptr [bp+F_AX],0
+        call    i21_ok
 
 i21_out:
         cli
@@ -875,12 +1334,107 @@ ENDIF
         mov     bx,[bp+F_OWNOFF]
         dec     byte ptr [rd_stkdep]
         dec     byte ptr [rd_indos]
+        call    sda_sync                ; the published SDA, for the next
+                                        ; caller and for DOSMGR's swap
+        call    crit_out                ; and another machine may have DOS
+        call    stk_free                ; this stack is nobody's again
         mov     ss,ax
         mov     sp,bx
         pop     es
         pop     ds
         popa
         iret
+
+;=====================================================================
+; crit_in / crit_out - a DOSMGR critical section round every DOS call.
+;
+; Windows in 386 enhanced mode switches between its machines whenever
+; it likes, and what stops it switching away from one that is in the
+; middle of DOS is DOS saying so: INT 2Ah AH=80h begins a critical
+; section and AH=81h ends one, DOSMGR hooks both, and MS-DOS 5 calls
+; them round the parts of itself that cannot be re-entered.  RMDOS
+; told DOSMGR it was a version 5 DOS (RMINFO.INC, the 1607h callouts),
+; so DOSMGR expects those calls and does no patching of its own; and
+; nearly all of RMDOS cannot be re-entered - the directory buffer, the
+; FAT window, the path being resolved are one of each.  So the whole
+; of every call is a critical section, and the one place a call lets
+; go of the machine on purpose - the console wait's INT 28h - lets go
+; of the section first and takes it back after (RMCON.INC).  Outside
+; Windows INT 2Ah is RMDOS's own IRET and these cost two instructions.
+;=====================================================================
+crit_in:
+        push    ax
+        mov     ax,8001h
+        int     2Ah
+        pop     ax
+        ret
+
+crit_out:
+        push    ax
+        mov     ax,8101h
+        int     2Ah
+        pop     ax
+        ret
+
+;=====================================================================
+; stk_take - the first free stack slot: AX = its top, CF if there is
+;            none.  stk_free gives back the slot SS:SP is standing in,
+;            or does nothing if that is not one of ours.
+;
+; Both preserve every register but AX (stk_take) and the flags.
+;=====================================================================
+stk_take:
+        push    bx
+        push    cx
+        mov     bl,[rd_stkmap]
+        xor     cx,cx
+stt_scan:
+        shr     bl,1
+        jnc     stt_got
+        inc     cx
+        cmp     cx,RD_STKSLOTS
+        jb      stt_scan
+        pop     cx
+        pop     bx
+        stc
+        ret
+stt_got:
+        mov     ax,1
+        shl     ax,cl
+        or      [rd_stkmap],al
+        inc     cx
+        mov     ax,cx                   ; the top of slot CX-1 - a SHIFT,
+        shl     ax,10                   ; not a MUL: the caller's frame
+        add     ax,OFFSET rd_stks       ; offset is in DX at this point
+        pop     cx
+        pop     bx
+        clc
+        ret
+
+stk_free:
+        push    ax
+        push    bx
+        push    cx
+        push    dx
+        mov     ax,sp
+        sub     ax,OFFSET rd_stks
+        jb      stf_out                 ; below the slots: not ours
+        cmp     ax,RD_STKSLOTS * RD_STKSIZE
+        jae     stf_out                 ; above them: not ours either
+        xor     dx,dx
+        mov     bx,RD_STKSIZE
+        div     bx                      ; AX = the slot SP is in
+        mov     cx,ax
+        mov     al,1
+        shl     al,cl
+        not     al
+        and     [rd_stkmap],al
+stf_out:
+        pop     dx
+        pop     cx
+        pop     bx
+        pop     ax
+        ret
 
 ;---------------------------------------------------------------------
 ; The answer helpers.  Every handler ends through one of these, and
@@ -913,12 +1467,12 @@ i21_tab:
         dw  i21_unsup, i21_unsup, i21_unsup, i21_unsup   ; 10-13
         dw  i21_unsup, i21_unsup, i21_unsup, i21_unsup   ; 14-17
         dw  i21_unsup, fn19,      fn1A,      fn1B        ; 18-1B
-        dw  fn1C,      i21_unsup, i21_unsup, i21_unsup   ; 1C-1F
+        dw  fn1C,      i21_unsup, i21_unsup, fn1F        ; 1C-1F
         dw  i21_unsup, i21_unsup, i21_unsup, i21_unsup   ; 20-23
         dw  i21_unsup, fn25,      fn26,      i21_unsup   ; 24-27
         dw  i21_unsup, fn29,      fn2A,      fn2B        ; 28-2B
         dw  fn2C,      fn2D,      fn2E,      fn2F        ; 2C-2F
-        dw  fn30,      fn31,      i21_unsup, fn33        ; 30-33
+        dw  fn30,      fn31,      fn32,      fn33        ; 30-33
         dw  fn34,      fn35,      fn36,      fn37        ; 34-37
         dw  fn38,      fn39,      fn3A,      fn3B        ; 38-3B
         dw  fn3C,      fn3D,      fn3E,      fn3F        ; 3C-3F
@@ -929,7 +1483,7 @@ i21_tab:
         dw  fn50,      fn51,      fn52,      i21_unsup   ; 50-53
         dw  fn54,      fn55,      fn56,      fn57        ; 54-57
         dw  fn58,      fn59,      fn5A,      fn5B        ; 58-5B
-        dw  fn5C,      fn5D,      i21_unsup, i21_unsup   ; 5C-5F
+        dw  fn5C,      fn5D,      fn5E,      fn5F        ; 5C-5F
         dw  fn60,      i21_unsup, fn51,      fn63        ; 60-63
         dw  i21_unsup, fn65,      fn66,      fn67        ; 64-67
         dw  fn68,      fn69,      fn68,      i21_unsup   ; 68-6B
@@ -966,11 +1520,20 @@ rs_done:
         INCLUDE RMCON.INC               ; console, and the character calls
         INCLUDE RMDISK.INC              ; sectors, BPBs, INT 25h/26h
         INCLUDE RMFILE.INC              ; FAT, directories, handles
+        INCLUDE RMDEV.INC               ; the drivers CONFIG.SYS loaded -
+                                        ; before RMFILE2, whose handle calls
+                                        ; use its equates, which wasm will
+                                        ; not take before they are defined
         INCLUDE RMFILE2.INC             ; ...and the handles and calls
         INCLUDE RMNAME.INC              ; MD, RD, rename, TRUENAME, 29h
         INCLUDE RMMEM.INC               ; the arena, EXEC and terminate
         INCLUDE RMINFO.INC              ; everything that only answers
+        INCLUDE RMNET.INC               ; a redirector's drives and files -
+                                        ; after RMINFO, whose SDA equates
+                                        ; it uses
         INCLUDE RMXMS.INC               ; extended memory, A20 and INT 15h
+        INCLUDE RMCACHE.INC             ; after it: the sector cache lives in
+                                        ; that memory and moves through it
 IFDEF RMDOS_E9
         INCLUDE RME9.INC                ; the port E9h trace - build "rme9"
 ENDIF
@@ -989,6 +1552,8 @@ rd_errmode  db  0
 rd_stkdep   db  0
 rd_psp      dw  0
 rd_drive    db  0
+rd_ncds     db  LASTDRIVE               ; letters there are, LASTDRIVE= as
+                                        ; MS-DOS counts it (rd_sysinit)
 rd_lasterr  dw  0
 rd_verify   db  0
 rd_brkchk   db  0
@@ -996,10 +1561,21 @@ rd_exitcode dw  0
 rd_exitway  db  0
 rd_dtaseg   dw  0
 rd_dtaoff   dw  80h
+rd_orig13   dd  0                       ; what i13 goes on to: Orig13
+rd_old13    dd  0                       ; ...the vector a reboot would want
+rd_ivt13    dd  0                       ; ...and the table's, when we came
+rd_lowseg   dw  0                       ; the block below 64K - RMH_LOWSEG,
+rd_lowlen   dw  0                       ; once rd_lowsave has accepted it
+rd_lowkeep  db  RD_KEEPLEN dup(0)       ; the kernel's CDS for our volumes,
+                                        ; and NUL's link (rd_lowsave)
+IF RL_NULDEV + 4 GT RD_KEEPLEN
+        .ERR    <RMDOS.ASM: NUL's link is past what rd_lowsave keeps>
+ENDIF
 
 msg_hello   db  13,10,'RMDOS is the DOS in this machine now.',13,10,0
 
-rd_stktab   dw  OFFSET rd_stk1, OFFSET rd_stk2, OFFSET rd_stk3
+rd_stkmap   db  0                       ; a bit per slot, set while a call
+                                        ; is standing on it
 
 ;--- WHO IS WAITING IN WHICH CALL.  One PSP per nesting level, written
 ;--- at i21 entry and read by term_common: a process that ends has to
@@ -1009,14 +1585,8 @@ rd_stktab   dw  OFFSET rd_stk1, OFFSET rd_stk2, OFFSET rd_stk3
 ;--- and there is no other way to tell them apart.  See RMMEM.INC.
 rd_stkpsp   dw  RD_STKLVL dup (0)
 
-            db  RD_STKSIZE dup(0)
-rd_stk1:
-            db  RD_STKSIZE dup(0)
-rd_stk2:
-            db  RD_STKSIZE dup(0)
-rd_stk3:
-            db  RD_STKSIZE dup(0)
-rd_stktop:
+rd_stks     db  RD_STKSLOTS * RD_STKSIZE dup(0)     ; slot 0 ends at
+rd_stktop:                                          ; rd_stks + RD_STKSIZE
 
 _RD     ENDS
         END

@@ -5,12 +5,15 @@ REM MS-DOS statements
 BUFFERS=30,8
 FILES=40
 FCBS=4,0
-LASTDRIVE=E
+LASTDRIVE=Z
 STACKS=9,256
 DOS=HIGH,UMB
 SWITCHES=/K
 NUMLOCK=OFF
 SET TEMP=C:\TEMP
+REM Windows for Workgroups needs its helper driver.  Without one at
+REM C:\WINDOWS the boot shows the line, says so and goes on.
+DEVICE=C:\WINDOWS\IFSHLP.SYS
 
 REM PM-DOS statements
 EMS=AUTO

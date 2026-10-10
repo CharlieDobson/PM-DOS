@@ -1700,7 +1700,7 @@ msg_toomany db  'Too many parameters - ',0
 msg_badsw   db  '/S goes with listing and recovering only.',13,10,0
 msg_driveonly db '/PURGE and /STATUS take a drive letter only.',13,10,0
 
-msg_usage   db  'Recovers files deleted while PM-DOS was keeping them.',13,10,13,10
+msg_usage   db  'Recovers deleted files.',13,10,13,10
             db  'UNDELETE [drive:][path][name] [/LIST | /ALL] [/S]',13,10
             db  'UNDELETE [drive:] /PURGE',13,10
             db  'UNDELETE [drive:] /STATUS',13,10,13,10
@@ -1712,11 +1712,7 @@ msg_usage   db  'Recovers files deleted while PM-DOS was keeping them.',13,10,13
             db  '  /S              Takes in the directories below as well.',13,10
             db  '  /PURGE          Deletes every kept file on the drive for good.',13,10
             db  '  /STATUS         Shows what is being kept.',13,10,13,10
-            db  'Deleted files are kept in a hidden RECYCLED directory on their',13,10
-            db  'drive, in up to 10% of its free space; the oldest go first when',13,10
-            db  'that fills.  *.TMP files are not kept.  A recovered file whose',13,10
-            db  'name has been taken since gets # in place of its first letter.',13,10
-            db  'UNDELETE=OFF in CONFIG.SYS stops files being kept.',13,10,0
+            db  'UNDELETE=OFF in CONFIG.SYS disables delete protection.',13,10,0
 
 img_end:                                ; the BSS begins here
 _UD     ENDS

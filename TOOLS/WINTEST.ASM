@@ -339,54 +339,22 @@ w1680_bad:
         call    bad
 
 ;=====================================================================
-; 1605h - the one with teeth.
+; 1605h - the one with teeth - IS NOT SENT.
 ;
-; This is WIN386.EXE announcing that it is about to take the machine.
-; A resident on the chain may veto the startup by returning CX
-; non-zero, and PM-DOS does, because WIN386 is itself a V86 monitor and
-; this kernel is already the one running the machine.
-;
-; DX BIT 0 SAYS WHICH WINDOWS IS ASKING, and since v0.49 the kernel
-; reads it: clear is 386 enhanced mode, which is vetoed and is what
-; this check is about, and SET is standard mode, which is allowed and
-; makes PM-DOS hand the whole machine over.  Those are very different
-; outcomes to reach by accident, and this test used to reach one of
-; them by accident - it never set DX at all, so the bit came from
-; whatever the last "mov dx,OFFSET" had left there.  Zeroing it is now
-; part of the test rather than housekeeping.  PARKWIN.COM is the one
-; that sets the bit on purpose.
-;
-; THE KERNEL PRINTS ITS REASON WHEN THIS RUNS.  That is the refusal
-; working, not a fault in the test, and it happens once per boot.
-;
-; ES:BX is zeroed on the way in the way WIN386's first broadcast zeroes
-; it, so that anything reading the startup structure reads a null
-; pointer rather than this program's stack.
+; This is WIN386.EXE announcing that it is about to take the machine,
+; and until v0.63 the kernel vetoed it when DX bit 0 was clear (386
+; enhanced mode), which this test checked by sending one.  Now the
+; kernel parks on 1605h in either mode: it leaves protected mode,
+; hands the machine to RMDOS.SYS and resumes the caller there, and a
+; test that does that from the middle of a test run takes the run with
+; it - its output goes to RMDOS's console, and the tests after it find
+; RMDOS's tables in freed memory.  So the line is printed, and the
+; question is left to PARKWIN.COM, which parks on purpose.
 ;=====================================================================
 win_1605:
         mov     dx,OFFSET t_1605
         call    puts
-        push    ds
-        xor     bx,bx
-        mov     es,bx
-        mov     ds,bx
-        xor     si,si
-        xor     di,di
-        xor     cx,cx                   ; WIN386 asks with CX clear and reads
-                                        ; the answer back out of it
-        xor     dx,dx                   ; bit 0 clear: 386 enhanced mode
-        mov     ax,1605h
-        int     2Fh
-        mov     bp,cx
-        pop     ds
-        mov     ax,bp
-        call    put4
-        or      bp,bp                   ; non-zero = do not start
-        jz      w1605_bad
-        call    ok
         jmp     short done
-w1605_bad:
-        call    bad
 
 ;---------------------------------------------------------------------
 done:
@@ -516,7 +484,7 @@ t_1600      db  '  2Fh/1600h enhanced mode running: $'
 t_160A      db  '  2Fh/160Ah version says not running$'
 t_4680      db  '  2Fh/4680h 3.0 standard mode not running$'
 t_1680      db  '  2Fh/1680h release time slice: $'
-t_1605      db  '  2Fh/1605h Windows/386 startup is vetoed: $'
+t_1605      db  '  2Fh/1605h not sent: either mode parks (PARKWIN.COM)',13,10,'$'
 
 fails       db  0
 sda_seg     dw  0

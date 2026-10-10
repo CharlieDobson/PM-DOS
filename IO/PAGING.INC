@@ -85,7 +85,7 @@ pgi_tab:
 ; bits.  A native program runs at ring 3 out of a segment based at its
 ; slot, so ITS address zero is this page and nothing else in the
 ; machine is - unlike the machine's page zero, which holds the IVT, the
-; BIOS data area, InDOS at 4F7h and the real-mode frame at 500h, and
+; BIOS data area, InDOS at 4F7h and the real-mode frame at 600h, and
 ; which NULLTRAP.INC argues at length cannot be taken away.
 ;
 ; The interpreter's slot is the one that is fixed, so its guard is made
@@ -771,6 +771,20 @@ pg_pseinit:
         mov     byte ptr ds:[pg_pse],1
 pgp_out:
         popad
+        ret
+
+;--- pg_cr4back - the 4MB-page bit back into CR4, for the unpark: a
+;--- park hands the machine to something that may load CR4 itself, and
+;--- a kernel mapping device memory with 4MB pages needs the bit on.
+pg_cr4back:
+        cmp     byte ptr ds:[pg_pse],0
+        je      pgc_out
+        push    eax
+        db      0Fh,20h,0E0h                    ; MOV EAX,CR4
+        or      eax,10h
+        db      0Fh,22h,0E0h                    ; MOV CR4,EAX
+        pop     eax
+pgc_out:
         ret
 
 pg_pse          db      0                       ; 4MB pages are there to use

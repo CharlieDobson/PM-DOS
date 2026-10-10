@@ -127,6 +127,7 @@ vpc_boxreset:
         and     dword ptr [vpc_imr],NOT 2
         mov     dword ptr [vpc_isr],0
         call    irq_sync
+        call    pm3_forget              ; and no POPF sites (VM86.INC)
         ret
 
 ;=====================================================================
@@ -412,6 +413,10 @@ vpc_pmchk:
         jnz     vpm_ret
         test    byte ptr [ebp+4],4      ; its selectors are in the LDT
         jz      vpm_ret
+        push    ebx                     ; a flag put back where nobody
+        mov     ebx,ebp                 ; could see it (VM86.INC)
+        call    pm3_ifcheck
+        pop     ebx
         cmp     byte ptr [pm3_vif],0
         jne     vpm_try
 vpm_ret:
@@ -493,7 +498,12 @@ vpm_go:
 vpm_wesp:
         mov     dword ptr [ebp+12],edx
 vpm_taken:
-        mov     byte ptr [pm3_vif],0    ; a handler starts with them off
+        mov     byte ptr [pm3_vif],0    ; a handler starts with them off,
+        mov     dword ptr [pm3_offcnt],0        ; and its IRETD puts them
+        mov     dword ptr [pm3_clia],0          ; back on - which the stack
+        mov     eax,dword ptr [ebp+12]          ; will show (VM86.INC,
+        mov     dx,word ptr [ebp+16]            ; pm3_ifcheck)
+        call    pm3_offat
         mov     ebx,dword ptr [vpc_dline]
         call    vpc_take
 vpm_out:

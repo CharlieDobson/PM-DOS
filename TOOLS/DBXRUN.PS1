@@ -2,6 +2,7 @@ param(
     [string]$Hd = '',                            # hard disk image (C:), and the
                                                  # boot disk unless -Floppy is given
     [string]$Floppy = '',                        # boot from this floppy image instead
+    [string]$Floppy2 = '',                       # ...with this one in B: - the test disk
     [string]$Multi = '',                         # optional second disk (D:...)
     [int]$Seconds = 240,                         # DOSBox-X's -time-limit
     [string]$Cap = '',                           # record the screen here (emptied first)
@@ -22,7 +23,7 @@ param(
 #
 #   powershell -File TOOLS\DBXRUN.PS1 -Hd X.IMG [-Multi M.IMG] [-Seconds n]
 #              [-Cap DIR] [-Lpt FILE] [-E9] [-Log type,type...]
-#   powershell -File TOOLS\DBXRUN.PS1 -Floppy A.IMG [-Hd X.IMG] ...
+#   powershell -File TOOLS\DBXRUN.PS1 -Floppy A.IMG [-Floppy2 B.IMG] [-Hd X.IMG] ...
 #
 # -MemMB and -Cpu set the machine: 32MB and DOSBox-X's own choice of
 # processor unless told otherwise.  The memory ceiling is a different
@@ -47,7 +48,9 @@ param(
 # -Floppy boots from A: with the hard disk, if there is one, as the
 # machine's C: - which is how a real machine meets PM-DOS for the first
 # time and was the one boot nothing here had ever made.  What the guest
-# writes to A: is read back with FLOPGET.PL.
+# writes to A: is read back with FLOPGET.PL.  -Floppy2 puts a second
+# image in B:, which since 2026-10-08 is where the tests are:
+# IMAGES\PMDOS.IMG boots and IMAGES\TESTS.IMG has \TESTS.
 #
 # WHY IT EXISTS.  86Box and DOSBox 0.74 both put a window on the screen
 # of the person at the machine; DOSBox-X with the SDL dummy driver puts
@@ -116,6 +119,7 @@ if ( $Lpt -ne '' ) { $lines += '[parallel]', "parallel1=file append:$Lpt" }
 $lines += '[autoexec]'
 if ( $Cap -ne '' ) { $lines += 'config -avistart' }
 if ( $Floppy -ne '' ) { $lines += "imgmount a: `"$Floppy`" -t floppy" }
+if ( $Floppy2 -ne '' ) { $lines += "imgmount b: `"$Floppy2`" -t floppy" }
 if ( $Hd -ne '' ) { $lines += "imgmount 2 `"$Hd`" -size 512,63,16,$( Get-Cylinders $Hd ) -fs none" }
 if ( $Multi -ne '' ) { $lines += "imgmount 3 `"$Multi`" -size 512,63,16,$( Get-Cylinders $Multi ) -fs none" }
 $lines += if ( $Floppy -ne '' ) { 'boot -l a' } else { 'boot -l c' }

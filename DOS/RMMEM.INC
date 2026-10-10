@@ -218,6 +218,18 @@ f49_ok:
 
 ;=====================================================================
 ; 4Ah - resize the block at ES to BX paragraphs
+;
+; AND THE BLOCK BECOMES THE CURRENT PROCESS'S, as every successful 4Ah
+; makes it in MS-DOS: $SETBLOCK finishes in $ALLOC's alloc_set_owner,
+; which writes CurrentPDB into the owner (DOS6SRC dos/alloc.asm).  A
+; program built to load high counts on that.  WfW's NET.EXE moves its
+; PSP up under its image, makes that one current with 50h, shrinks the
+; block it was loaded in to end there, and copies that block's owner
+; into the block that is left - its own image.  Under MS-DOS the owner
+; it copies is the new PSP, and 4Ch frees the image.  Here it was the
+; old one, so every NET command left 140K behind it, and in a DOS box
+; under Windows the NET USEs of Charlie's logon script soon had no room:
+; "Program too big to fit in memory".
 ;=====================================================================
 fn4A:
         mov     es,[bp+F_ES]
@@ -257,6 +269,8 @@ f4A_hdr:
         mov     es:[RMCB_LEN],ax
         pop     es
 f4A_done:
+        mov     ax,[rd_psp]
+        mov     es:[RMCB_OWN],ax
         jmp     i21_ok
 f4A_toobig:
         mov     [bp+F_BX],ax            ; the most it can be
@@ -425,6 +439,11 @@ f55_ref:
         je      f55_drop                ; not open any more
         test    byte ptr [si+SFT_MODE],80h
         jnz     f55_drop                ; opened no-inherit
+        call    sft_isnet
+        jne     f55_keep                ; ...or a redirector's file opened
+        test    byte ptr [si+SFT_DEVINFO+1],NF_NOINH    ; so, which DOS marks
+        jnz     f55_drop                ; in its flags word (RMNET.INC)
+f55_keep:
         push    bx
         push    es
         call    sft_addref
@@ -525,13 +544,28 @@ f31_cut:
         pop     es
 f31_nocut:
         pop     es
+        mov     ax,1122h                ; a redirector hears of it as well -
+        call    net_call                ; see term_common
         jmp     short term_resident
 
 term_common:
         ; Everything this program had open, closed; everything it
         ; allocated, freed.  A program that leaves a file open and
         ; exits has always had DOS clean up after it.
+        ;
+        ; AND A REDIRECTOR IS TOLD, as MS-DOS tells it (DOS6SRC
+        ; dos/msctrlc.asm, reset_environment, and dos/abort.asm): 1122h
+        ; for every process that ends, resident or not, before anything
+        ; is closed; and for one that is truly going, 111Dh once its
+        ; handles are - each redirector file among them closed through
+        ; 1106h by proc_close - so that whatever the redirector still
+        ; holds for the process goes too.  The SDA names the process
+        ; (net_call), which is still the current one here.
+        mov     ax,1122h
+        call    net_call
         call    proc_close
+        mov     ax,111Dh
+        call    net_call
         call    proc_free
 term_resident:
         call    rd_flush
@@ -628,10 +662,43 @@ ENDIF                                   ; it wants to go
 ; its own registers, its own SP, and the terminate address in place of
 ; the return address.  With that, Escape on the Task List closes the
 ; Task List, and Clipboard Viewer starts and exits.
+;
+;--- AND A PARENT WAITING IN AN EXEC IS SEEN BY ITS FRAME (2026-10-07).
+;
+; The nesting record above never shows one.  fn4B puts the depth back to
+; nought before it jumps to the child - the call is over as far as the
+; stacks are concerned - so a child's 4Ch arrives at depth one, below
+; "this call and one below it", and every EXECed child was given a
+; plain return: the parent resumed on the CHILD's stack, in the
+; child's freed memory.  COMMAND.COM reloads its own stack after an
+; EXEC, as DOS 2 made everyone do, and never showed it; NETTEST's EXEC
+; of a program on a redirector's drive returned through that stack into
+; nothing, and PARKEXEC had only been passing on the child's leftovers.
+;
+; What does show it costs nothing to keep: exec_psp copied this
+; process's terminate address OUT OF the parent's frame, the 4Bh's own
+; return address, and the parent's PSP stamp still names that frame,
+; since the parent has made no call since.  So a parent whose stamped
+; frame returns to exactly this process's terminate address is waiting
+; in the EXEC that started it, and DOS's rule applies.  A Windows task's
+; parent has a stamp from whatever call it last made, which returns
+; somewhere else.  No table, and so nothing for two virtual machines'
+; processes to be confused in: the same segment can be a PSP in both.
         push    ax
         push    bx
         push    si
         mov     [rd_pspfrm],bx          ; the parent, as DOS has it
+        push    ds
+        push    es
+        mov     es,bx
+        lds     si,dword ptr es:[2Eh]   ; the frame the parent stands in...
+        cmp     ax,word ptr [si+F_IP]   ; ...returns where this one ends?
+        jne     tc_notexec
+        cmp     dx,word ptr [si+F_CS]
+tc_notexec:
+        pop     es
+        pop     ds
+        je      tc_frmdone              ; yes: waiting in its EXEC
         movzx   si,byte ptr [rd_stkdep]
         cmp     si,2                    ; this call, and one below it
         jb      tc_ownfrm
@@ -663,6 +730,10 @@ tc_frmdone:
         pop     ds
         mov     byte ptr [rd_indos],0   ; the two counters this call
         mov     byte ptr [rd_stkdep],0  ; raised and will never lower
+        call    sda_sync                ; the parent is the process now,
+                                        ; and the published SDA says so
+        call    crit_out                ; and this call is over, as far as
+        call    stk_free                ; DOSMGR and the stacks are concerned
         mov     ss,si
         mov     sp,cx
         pop     es
@@ -673,6 +744,9 @@ tc_frmdone:
 term_home:
         ; Nothing above this one is RMDOS's to return to.  The
         ; excursion is over; the machine goes back to PM-DOS.
+IFDEF EXIT_TRACE
+        XTMARK16 51,058h                ; 'X'
+ENDIF
         jmp     rd_goback
 
 ;--- proc_close - close every handle the current process holds -------
@@ -1053,6 +1127,7 @@ fn4B:
         jmp     i21_unsup
 f4B_go:
         mov     [rd_execmode],al
+        mov     word ptr [ep_envnew],0          ; none made yet - see below
 IFDEF RMDOS_EDBG
         call    ed_entry
 ENDIF
@@ -1095,6 +1170,22 @@ IFDEF RMDOS_EDBG
         call    ed_kv
         pop     si
 ENDIF
+        ; THE ENVIRONMENT BEFORE THE PROGRAM'S BLOCK, which is the order
+        ; MS-DOS makes them in (msproc.asm: Exec_Check_Environ, then the
+        ; allocation) and the order that matters.  A program whose
+        ; header says MAXALLOC zero - KRNL386.EXE - is given the largest
+        ; block there is, entire, with its image at the top; an
+        ; environment made AFTER that has nowhere to go, and the kernel
+        ; was handed none, found no path after the strings, and said
+        ; "KERNEL: Unable to open KERNEL executable" - under WIN386,
+        ; where the System VM's free memory was one block.  Standard
+        ; mode had the memory in two pieces and never showed it.
+        ; exec_psp gives the block to the child once there is one; the
+        ; failures below give it back.  An overlay has neither.
+        cmp     byte ptr [rd_execmode],3
+        je      f4B_noenv
+        call    ep_envmake
+f4B_noenv:
         cmp     word ptr [rd_exehdr],5A4Dh      ; 'MZ'
         je      f4B_exe
         cmp     word ptr [rd_exehdr],4D5Ah      ; and the other spelling,
@@ -1459,7 +1550,10 @@ ENDIF
         ; borrowed is about to be abandoned along with everything else.
         mov     byte ptr [rd_indos],0
         mov     byte ptr [rd_stkdep],0
-
+        call    sda_sync                ; the child is the process now -
+                                        ; this leaves without i21_out
+        call    crit_out                ; ...so what i21_out would have
+        call    stk_free                ; done is done here
 IFDEF RMDOS_EDBG
         call    ed_target
         push    si
@@ -1540,6 +1634,7 @@ IFDEF RMDOS_EDBG
         mov     si,OFFSET ed_mnomem
         call    ed_say
 ENDIF
+        call    ep_envfree
         mov     bx,[rd_exechnd]
         call    sub_close
         mov     ax,ERR_NOMEM
@@ -1549,6 +1644,7 @@ IFDEF RMDOS_EDBG
         mov     si,OFFSET ed_mbad
         call    ed_say
 ENDIF
+        call    ep_envfree
         mov     bx,[rd_exechnd]
         call    sub_close
         mov     ax,ERR_EXEFMT
@@ -1687,18 +1783,28 @@ ep_nextj:
         ; block the caller passed.
         mov     es,[bp+F_ES]
         mov     bx,[bp+F_BX]
-        mov     ax,es:[bx]                      ; the environment segment
+
+        ; The environment was made before the program's block - see
+        ; ep_envmake, from fn4B - under the parent's name; it is the
+        ; child's from here.
+        mov     ax,[ep_envnew]
         or      ax,ax
-        jnz     ep_haveenv
+        jz      ep_envowned
         push    es
-        mov     es,[rd_psp]                     ; 0 means the CALLER'S OWN,
-        mov     ax,es:[2Ch]                     ; which is what DOS uses
+        push    ax
+        dec     ax
+        mov     es,ax
+        mov     ax,[rd_execpsp]
+        mov     es:[RMCB_OWN],ax
+        pop     ax
         pop     es
-ep_haveenv:
-        call    ep_envcopy                      ; and the child gets a COPY
+ep_envowned:
 IFDEF DBG_LPT
         call    rdbg_env                ; what the child is handed, verbatim
 ENDIF
+IFDEF RMDOS_E9
+        call    e9_env                  ; ...and on port E9h: the block, and
+ENDIF                                   ; the path after its strings
         push    ax
         mov     ax,es:[bx+4]
         mov     dx,es:[bx+2]
@@ -1781,11 +1887,49 @@ ENDIF
 ; a copy even when it was given a block outright, which is why SET in
 ; a child never reaches its parent.
 ;
-; The block is stamped with the CHILD's PSP, not the caller's, for the
-; same reason the image is: mem_alloc stamps whoever is running, and a
-; block owned by the parent is a block the child's termination will
-; not free.
+; The block is stamped with the parent's PSP here - there is no child
+; yet, since v0.63 makes the environment before the program's block -
+; and exec_psp gives it to the child, for the same reason the image is
+; given: a block owned by the parent is a block the child's termination
+; will not free.
+;
+; ep_envmake is fn4B's way in: the segment out of the parameter block,
+; or the caller's own when that is zero.  ep_envfree is for the EXEC
+; that fails after the environment exists.
 ;=====================================================================
+ep_envmake:
+        push    ax
+        push    bx
+        push    es
+        mov     es,[bp+F_ES]
+        mov     bx,[bp+F_BX]
+        mov     ax,es:[bx]                      ; the environment segment
+        or      ax,ax
+        jnz     epm_have
+        mov     es,[rd_psp]                     ; 0 means the CALLER'S OWN,
+        mov     ax,es:[2Ch]                     ; which is what DOS uses
+epm_have:
+        call    ep_envcopy                      ; -> AX and [ep_envnew]
+        pop     es
+        pop     bx
+        pop     ax
+        ret
+
+ep_envfree:
+        push    ax
+        push    es
+        mov     ax,[ep_envnew]
+        or      ax,ax
+        jz      epf_none
+        dec     ax
+        mov     es,ax
+        mov     word ptr es:[RMCB_OWN],0        ; free again
+        mov     word ptr [ep_envnew],0
+epf_none:
+        pop     es
+        pop     ax
+        ret
+
 ep_envcopy:
         or      ax,ax
         jz      ec_out
@@ -1845,10 +1989,10 @@ ec_named:
         jc      ec_fail
         mov     [ep_envnew],ax
 
-        mov     bx,ax                           ; and it is the CHILD's
-        dec     bx
+        mov     bx,ax                           ; the parent's, until
+        dec     bx                              ; exec_psp hands it on
         mov     es,bx
-        mov     bx,[rd_execpsp]
+        mov     bx,[rd_psp]
         mov     es:[RMCB_OWN],bx
 
 ;--- the strings, the count, the path

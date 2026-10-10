@@ -1,6 +1,6 @@
 
 DEVTEST - devices, InDOS, extended error, file stamps
-  34h InDOS flag at 0409:0001, now 00 ok
+  34h InDOS flag at 0400:0321, now 00 ok
   3Dh open NUL ok
   40h write 32 bytes to NUL ok
   3Fh read NUL is end of file ok

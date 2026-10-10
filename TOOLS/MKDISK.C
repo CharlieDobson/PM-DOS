@@ -1,9 +1,26 @@
 /*=====================================================================
  * MKDISK.C - build PM-DOS disk images
  *
- *   mkdisk out.img boot.bin [files...]          1.44M FAT12 boot floppy
+ *   mkdisk out.img boot.bin [opts] [files...]   1.44M FAT12 boot floppy
  *   mkdisk -hd16 <MB> out.img [opts] [files...] MBR + FAT16 hard disk
  *   mkdisk -hd32 <MB> out.img [opts] [files...] MBR + FAT32 hard disk
+ *
+ *   options for either kind:
+ *     -label <name> the volume label - the root directory entry and
+ *                   the BPB's copy of it both - PM-DOS unless given.
+ *                   Eleven characters, upper-cased; quote a space.
+ *                   The test disk is "PM-DOS TEST", so that a VOL
+ *                   tells the two floppies apart
+ *     -dir <name>   anywhere in the file list: everything after it
+ *                   goes into this subdirectory of the root (one
+ *                   level; a second -dir starts another directory
+ *                   in the root, it does not nest)
+ *
+ *   floppy options:
+ *     -nolfn        leave out the long-file-name test set that a
+ *                   floppy otherwise carries in its root.  The boot
+ *                   disk is built with it: those files are test
+ *                   material and the test disk carries them
  *
  *   hard-disk options:
  *     -mbr <file>   install this 512-byte MBR bootstrap (its first
@@ -20,8 +37,10 @@
  *                   FAT rather than reading straight through
  *
  * Floppy images take their boot sector from boot.bin.  On floppies,
- * and on bootable hard disks, the first two files are expected to be
- * PMIO.SYS and PMDOS.SYS and get System+Hidden+ReadOnly.  Disks use
+ * and on bootable hard disks, the first two files IN THE ROOT are
+ * expected to be PMIO.SYS and PMDOS.SYS and get System+Hidden+ReadOnly;
+ * a disk whose every file goes into a -dir has no system files, which
+ * is what the test disk wants.  Disks use
  * 63 sectors/track, 16 heads (the matching DOSBox imgmount line is
  * printed on completion).
  *
@@ -44,14 +63,38 @@
 
 static unsigned char *image;
 static long img_secs;
+static long held_secs;                  /* the front of it, in memory */
 
 /* -spc: sectors per cluster, forced.  Zero means "pick it from the
    volume size", which is what FORMAT does and what every image built
    before v0.32 got by having no choice. */
 static unsigned long opt_spc = 0;
 
+/* -label: the volume label, as the root directory entry and the BPB's
+   copy of it carry it - eleven characters, space-padded, upper case.
+   PM-DOS unless the command line says otherwise; the test floppy says
+   otherwise, so that a VOL tells the two disks apart. */
+static unsigned char vol_label[12] = "PM-DOS     ";
+
+static void set_label(const char *s)
+{
+    int i;
+    memset(vol_label, ' ', 11);
+    for (i = 0; i < 11 && s[i]; i++)
+        vol_label[i] = (unsigned char)toupper(s[i]);
+    if (s[i])
+        fprintf(stderr, "-label: \"%s\" cut to eleven characters\n", s);
+}
+
 /* ------------------------------------------------------------------ */
-static unsigned char *sec(long lba) { return image + lba * SECSIZE; }
+static unsigned char *sec(long lba)
+{
+    if (lba < 0 || lba >= held_secs) {
+        fprintf(stderr, "sector %ld is past the %ld held in memory\n", lba, held_secs);
+        exit(1);
+    }
+    return image + lba * SECSIZE;
+}
 
 /* How many entries a "-dir" subdirectory is built to hold.  Generous
    on purpose: the test set passed 250 files in v0.60 and grows every
@@ -189,10 +232,15 @@ static int build_floppy(int argc, char **argv)
        and the clusters are allocated contiguously - which is what
        lets subent index straight across them. */
     int   subdir = 0, subent = 0, submax = 0;
+    /* the system files are the first two in the ROOT (PMIO.SYS and
+       PMDOS.SYS on a boot disk); -nolfn leaves the long-named test
+       set out */
+    int   rootfiles = 0, nolfn = 0;
     const int ROOTENT = 224;                /* a 1.44M root, exactly */
     const long ROOTLBA = 19, DATALBA = 33, NCLUS = (2880 - 33);
 
     img_secs = 2880;
+    held_secs = img_secs;
     image = (unsigned char *)calloc(img_secs, SECSIZE);
     if (!image) { fprintf(stderr, "out of memory\n"); return 1; }
 
@@ -202,7 +250,7 @@ static int build_floppy(int argc, char **argv)
     /* volume label first */
     {
         unsigned char *de = sec(ROOTLBA);
-        memcpy(de, "PM-DOS     ", 11);
+        memcpy(de, vol_label, 11);
         de[11] = 0x08;
         stamp(de);
     }
@@ -262,6 +310,17 @@ static int build_floppy(int argc, char **argv)
             continue;
         }
 
+        if (!strcmp(argv[arg], "-nolfn")) { nolfn = 1; continue; }
+        if (!strcmp(argv[arg], "-label")) {
+            if (arg + 1 >= argc) { fprintf(stderr, "-label needs a name\n"); return 1; }
+            set_label(argv[arg + 1]);
+            memcpy(sec(ROOTLBA), vol_label, 11);        /* the entry   */
+            if (image[38] == 0x29)                      /* and the BPB */
+                memcpy(image + 43, vol_label, 11);
+            arg++;
+            continue;
+        }
+
         if (subdir) {
             if (subent >= submax) { fprintf(stderr, "subdirectory full\n"); return 1; }
         } else {
@@ -306,7 +365,11 @@ static int build_floppy(int argc, char **argv)
         de = subdir ? sec(DATALBA + (long)(subdir - 2)) + subent * 32
                     : sec(ROOTLBA) + dirent * 32;
         name83(argv[arg], de);
-        de[11] = (unsigned char)(arg - 3 < 2 ? 0x07 : 0x20);
+        /* on a boot disk PMIO.SYS and PMDOS.SYS, the first two files
+           in the root, are system files; a disk whose files all went
+           into a -dir has none */
+        de[11] = (unsigned char)(!subdir && rootfiles < 2 ? 0x07 : 0x20);
+        if (!subdir) rootfiles++;
         stamp(de);
         put16(de + 26, (unsigned)first);
         put32(de + 28, (unsigned long)size);
@@ -322,8 +385,10 @@ static int build_floppy(int argc, char **argv)
        read-only test disk can crosslink without a care; the disk is
        not read-only, CHKDSK reports the cross-links, and deleting one
        of the three would free the other two.  This is what
-       LFNTEST.BAT chews on. */
-    {
+       LFNTEST.BAT chews on.  -nolfn leaves the set out: the boot disk
+       is built that way, since these are test material and the test
+       disk carries them. */
+    if (!nolfn) {
         static const char content[] = "This file wears a long name.\r\n";
         int csize = (int)sizeof content - 1;
         int cclus = clus++;
@@ -435,8 +500,6 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
     psec  = total - plba;
 
     img_secs = (long)total;
-    image = (unsigned char *)calloc(img_secs, SECSIZE);
-    if (!image) { fprintf(stderr, "out of memory\n"); return 1; }
 
     if (fat32) {
         spc = 1; rsvd = 32; rootent = 0; rootsecs = 0;
@@ -484,6 +547,45 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
     }
     rootlba = plba + rsvd + 2 * spf;                /* FAT16 root area  */
     datalba = rootlba + rootsecs;                   /* first data LBA   */
+
+    /*--- HOW MUCH OF IT IS HELD IN MEMORY ----------------------------
+       Only the front: everything up to the data area, and as many
+       clusters as the file list will fill - the files go in one after
+       another from cluster 2, so nothing past that is ever written,
+       and the rest of the image goes to the file as zeros.  The whole
+       image used to be held, which a 32-bit process cannot do at
+       2048MB: the size check allowed a FAT16 disk at FAT16's ceiling
+       and calloc refused it.  Counted the way the loop below uses
+       them: a -dir's clusters, every file's rounded up (doubled under
+       -frag), the long-name copies of the last file, the FAT32 root;
+       held_secs stops on a cluster boundary, so a cluster that starts
+       inside it ends inside it, and sec() refuses anything past it. */
+    {
+        unsigned long cbytes = spc * SECSIZE, used, n, biggest = 0;
+        int a;
+
+        used = fat32 ? rootclus : 0;
+        for (a = firstfile; a < argc; a++) {
+            if (!strcmp(argv[a], "-dir")) {
+                used += (SUBDIR_ENTS * 32 + cbytes - 1) / cbytes;
+                a++;
+                continue;
+            }
+            f = fopen(argv[a], "rb");       /* a missing file is reported */
+            if (!f) continue;               /* when the loop gets to it   */
+            fseek(f, 0, SEEK_END);
+            n = ((unsigned long)ftell(f) + cbytes - 1) / cbytes;
+            fclose(f);
+            if (frag) n *= 2;
+            if (n > biggest) biggest = n;
+            used += n;
+        }
+        used += 2 * biggest + 2;
+        held_secs = (long)(datalba + used * spc);
+        if (held_secs > img_secs) held_secs = img_secs;
+    }
+    image = (unsigned char *)calloc(held_secs, SECSIZE);
+    if (!image) { fprintf(stderr, "out of memory\n"); return 1; }
 
     /*--- MBR ---------------------------------------------------------*/
     {
@@ -537,11 +639,11 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
         put16(vbr + 48, 1);                         /* FSInfo sector   */
         put16(vbr + 50, 6);                         /* backup boot     */
         vbr[64] = 0x80; vbr[66] = 0x29;
-        memcpy(vbr + 71, "PM-DOS     ", 11);
+        memcpy(vbr + 71, vol_label, 11);
         memcpy(vbr + 82, "FAT32   ", 8);
     } else {
         vbr[36] = 0x80; vbr[38] = 0x29;
-        memcpy(vbr + 43, "PM-DOS     ", 11);
+        memcpy(vbr + 43, vol_label, 11);
         memcpy(vbr + 54, "FAT16   ", 8);
     }
     vbr[510] = 0x55; vbr[511] = 0xAA;
@@ -600,7 +702,7 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
     rootmax  = fat32 ? rootclus * spc * 16 : rootent;
     {
         unsigned char *de = rootbase;
-        memcpy(de, "PM-DOS     ", 11);
+        memcpy(de, vol_label, 11);
         de[11] = 0x08;
         stamp(de);
         dirent = 1;
@@ -713,9 +815,10 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
 
         de = subbase ? subbase + subent * 32 : rootbase + dirent * 32;
         name83(argv[arg], de);
-        /* on a bootable image PMIO.SYS and PMDOS.SYS are system files */
-        de[11] = (unsigned char)(vbrfile && sysfiles < 2 ? 0x07 : 0x20);
-        sysfiles++;
+        /* on a bootable image PMIO.SYS and PMDOS.SYS - the first two
+           files in the root - are system files */
+        de[11] = (unsigned char)(vbrfile && !subbase && sysfiles < 2 ? 0x07 : 0x20);
+        if (!subbase) sysfiles++;
         stamp(de);
         put16(de + 26, (unsigned)(first & 0xFFFF));
         put16(de + 20, (unsigned)(first >> 16));
@@ -832,8 +935,9 @@ int main(int argc, char **argv)
            was 500, which is below the 512MB line where FORMAT stops
            being able to use 8K clusters - so the tool could not build
            a disk that reaches the kernel's cluster-size limit even
-           after build_hd learned to scale spc.  The whole image is
-           held in memory, so a big one wants the RAM for it. */
+           after build_hd learned to scale spc.  Only the image's front
+           is held in memory (build_hd says how much), so 2048MB is
+           not a memory question. */
         if (mb < 4 || mb > 2048) { fprintf(stderr, "size out of range\n"); return 1; }
         out = argv[3];
         while (first < argc && argv[first][0] == '-') {
@@ -844,6 +948,7 @@ int main(int argc, char **argv)
             else if (!strcmp(argv[first], "-vbr")) vbrfile = argv[first + 1];
             else if (!strcmp(argv[first], "-s2"))  s2file  = argv[first + 1];
             else if (!strcmp(argv[first], "-spc")) opt_spc = atol(argv[first + 1]);
+            else if (!strcmp(argv[first], "-label")) set_label(argv[first + 1]);
             else break;
             first += 2;
         }
@@ -854,10 +959,15 @@ int main(int argc, char **argv)
         r = build_floppy(argc, argv);
     } else {
         fprintf(stderr,
-            "usage: mkdisk out.img boot.bin [files...]\n"
+            "usage: mkdisk out.img boot.bin [opts] [files...]\n"
             "       mkdisk -hd16 <MB> out.img [opts] [files...]\n"
             "       mkdisk -hd32 <MB> out.img [opts] [files...]\n"
-            "opts:  -mbr <file> -vbr <file> -s2 <file> -frag -spc <n>\n"
+            "opts:  -label <name>  volume label (PM-DOS if not given)\n"
+            "       -dir <name>    in the file list: what follows goes\n"
+            "                      into that subdirectory of the root\n"
+            "       -nolfn         floppy: no long-file-name test set\n"
+            "       -mbr <file> -vbr <file> -s2 <file> -frag -spc <n>\n"
+            "                      (hard disks)\n"
             "\n"
             "-spc forces sectors per cluster instead of letting the size\n"
             "pick it.  It exists so the kernel's cluster-size ceiling can\n"
@@ -869,10 +979,17 @@ int main(int argc, char **argv)
 
     f = fopen(out, "wb");
     if (!f) { perror(out); return 1; }
-    if (fwrite(image, SECSIZE, img_secs, f) != (size_t)img_secs) {
+    if (fwrite(image, SECSIZE, held_secs, f) != (size_t)held_secs) {
         perror(out); fclose(f); return 1;
     }
-    fclose(f);
+    /* the rest is zeros: a byte at the very end, and the file system
+       fills the gap (2048MB is still inside a signed long) */
+    if (held_secs < img_secs) {
+        if (fseek(f, img_secs * SECSIZE - 1, SEEK_SET) || fputc(0, f) == EOF) {
+            perror(out); fclose(f); return 1;
+        }
+    }
+    if (fclose(f)) { perror(out); return 1; }
     printf("%s: %ld sectors\n", out, img_secs);
     return 0;
 }

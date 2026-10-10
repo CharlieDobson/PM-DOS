@@ -37,7 +37,10 @@ FILES=n
 LASTDRIVE=x
     The highest drive letter programs should look for, up to P.
     LASTDRIVE never goes below the drives you actually have, and
-    doesn't add new ones.
+    doesn't add new ones.  Under Windows the letters go up to Z,
+    and network drives Windows for Workgroups connects can only
+    use letters up to LASTDRIVE.  Without the line, that's all of
+    them.
 
 SET name=value
     Sets an environment variable before AUTOEXEC.BAT runs.  Every
@@ -48,6 +51,12 @@ DEVICEHIGH=file [options]
     Loads a 16-bit DOS device driver.  A block driver's drives get the
     letters after your last disk.  DEVICEHIGH loads the driver into
     upper memory if DOS=UMB is set.
+    The CONFIG.SYS shipped loads C:\WINDOWS\IFSHLP.SYS.  Windows for
+    Workgroups' network and its 32-bit file access need that driver
+    loaded underneath them; without it Windows says its network
+    driver was unable to load.  A machine with no Workgroups there
+    shows the line with "Bad or missing device driver" at boot and
+    goes on.
 
 INSTALL=file [options]
 INSTALLHIGH=file [options]
@@ -141,12 +150,16 @@ IDE32=OFF|AUTO|ON
     each drive first.  ON skips the test.  If a disk reads garbage
     here but works fine on MS-DOS, try IDE32=OFF.
 
-    \TESTS\IDETEST.EXE shows what was picked for each drive.
+    IDETEST, in \TESTS, shows what was picked for each drive.
 
 CDROM=x
     Drive letter for the first CD-ROM; any others follow it.  Without
     this line they come after the hard disks.  A letter that already
     belongs to a hard disk is ignored.
+    Under Windows the first CD-ROM on an IDE cable keeps its letter
+    if RMCD.SYS is in the root of the boot disk with RMDOS.SYS.  Its
+    names are 8.3, as MSCDEX shows them.  Other CD-ROM drives aren't
+    there under Windows.
 
 SCSI=ON|OFF
     SCSI CD-ROM drives.  ON by default.  PM-DOS has its own drivers
@@ -177,6 +190,18 @@ CACHE=OFF
     (/C), empties the cache (/R) and sets write-behind per drive
     (CACHE C+ A-).
 
+WINCACHE=size[,LOG]
+WINCACHE=OFF
+    The cache used while Windows runs.  The cache above gives its
+    memory back when Windows starts, so Windows gets a cache of its
+    own, built the way SMARTDRV would have been: Windows programs
+    that look for SMARTDRV find it, and Windows for Workgroups' 32-bit
+    file access turns it off for the drives it takes over.  Size in
+    KB, or K or M, up to 4M.  Without the line it's an eighth of the
+    free extended memory.  Writes always go straight through.  LOG
+    writes RMCACHE.LOG on the boot drive when Windows exits, with the
+    hit counts.
+
 SHARE=locks[,space]|ON|OFF
     File sharing and record locking.  ON with 20 locks by default.
     The number is how many byte ranges can be locked at once, up to
@@ -190,8 +215,8 @@ UNDELETE=ON|OFF
     of free space is used, and the oldest files go first when more
     room is needed.  Files bigger than that, *.TMP and *.$$$ files, and
     anything deleted inside RECYCLED are gone for good.  Protection
-    doesn't work under Windows 3.1 in 386 enhanced mode.  OFF deletes
-    files the normal way.
+    doesn't work while Windows 3.1 is running.  OFF deletes files the
+    normal way.
 
 AUTOCHECK=ON|ASK|OFF
     What happens at startup to a hard disk that wasn't shut down
@@ -202,8 +227,8 @@ AUTOCHECK=ON|ASK|OFF
     everything is written and no file is left open for writing, which
     is done by the time the prompt comes back.  So turning the machine
     off at the prompt is safe.  Turning it off while a program is
-    saving a file, or while Windows 3.1 runs in 386 enhanced mode,
-    leaves the drive marked.
+    saving a file, or while Windows 3.1 is running, leaves the drive
+    marked.
     The mark is the one Windows 95 and 98 use on FAT16 and FAT32
     drives, so each system notices when the other wasn't shut down.
     Floppies don't have it.  A marked drive stays marked until CHKDSK
@@ -223,7 +248,10 @@ when there is one.
 CFGTEST expects FILES=40, LASTDRIVE=E, SET PMDOSTEST and the TSRTEST
 line below, so leave those alone if you plan to run it.
 
-Three test lines are commented out because they print banners at boot:
+Three test lines are commented out because they print banners at
+boot.  They name \TESTS on the disk that booted, which is right for
+a hard disk.  Booted from the PM-DOS floppy, the tests are on the
+second floppy, so write B:\TESTS\ in place of \TESTS\.
 
 REM DEVICEHIGH=\TESTS\TESTDEV.SYS
     A sample character driver.  TYPE TESTDEV to see the driver work,

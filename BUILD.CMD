@@ -1,6 +1,6 @@
 @echo off
 rem ===================================================================
-rem BUILD.CMD - build the PM-DOS kernel and a bootable floppy image
+rem BUILD.CMD - build the PM-DOS kernel, a boot floppy and a test floppy
 rem
 rem Needs Open Watcom 1.9 (wasm + wlink) on the PATH.  MASM 6.1x also
 rem assembles the sources (ml /c), swap the assembler lines if wanted.
@@ -38,7 +38,15 @@ rem     PMDOS.SYS    the 32-bit DOS kernel
 rem     SYS16.COM    16-bit SYS - builds a PM-DOS disk from real DOS
 rem
 rem and, in IMAGES\:
-rem     PMDOS.IMG    bootable 1.44M floppy image
+rem     PMDOS.IMG    the boot disk: a bootable 1.44M floppy with PM-DOS
+rem                  on it and nothing else - the kernel, the shells,
+rem                  the commands, CONFIG.SYS, AUTOEXEC.BAT, the two
+rem                  text files and LRGDISK.386
+rem     TESTS.IMG    the test disk: every test program, batch file and
+rem                  key file, in \TESTS, and the long-named fixtures
+rem                  in its root.  Not a system disk.  The tests left
+rem                  the boot floppy on 2026-10-08, when the two no
+rem                  longer fitted on one
 rem
 rem BIN\ holds what a PM-DOS disk is MADE OF; IMAGES\ holds the finished
 rem media, which is why the disk images are not in it.  MKHD.CMD turns
@@ -68,7 +76,7 @@ if "%TGT%"=="" goto :gottgt
 for %%T in (debug ata ataq nohost iso fdd img move i13 vfy rmbisect rmmark rmexec rmlow rmhigh cap16 ^
   lptcap lpthigh lptpad rmlowm vdm vdmdbg v86 trace watch watchq nomode ^
   tracenm watchnm lpt stamp freeze stampfrz lptfrz lptfz lptq lpt0 lptnm ^
-  lptlow kbionm calls kbio rme9 irqtest fpuirq eager32 trust32 hang scsi6) do echo [%TGT%]| find /i "[%%T]" > nul && set TGT=%%T
+  lptlow kbionm calls kbio rme9 rme9lpt rme9com irqtest fpuirq eager32 trust32 hang scsi6) do echo [%TGT%]| find /i "[%%T]" > nul && set TGT=%%T
 :gottgt
 if "%TGT%"=="debug" set DEFS=-dPMDOS_DEBUG
 if "%TGT%"=="ata"   set DEFS=-dPMDOS_DEBUG -dATA_DEBUG
@@ -153,6 +161,12 @@ rem asked for the handover has left the screen in.  It is the only
 rem instrument that works on the far side of the switch, where nothing
 rem of PM-DOS is running and there is no console to print to.
 if "%TGT%"=="rmmark" set DEFS=-dRMDOS_MARK
+rem "exittrace" marks the way back from Windows: a letter on the top row
+rem for each step from RMDOS's exit through PMIO's unpark to the prompt,
+rem and a CPU fault in real mode written out where it happened.  For a
+rem machine that does not come back and a rig that does; the letters
+rem are listed in INC\XTRACE.INC.
+if "%TGT%"=="exittrace" set DEFS=-dEXIT_TRACE
 rem "rmlow" forces RMDOS out of the HMA and back into the DOS box's
 rem arena, which is where v0.49 put it.  The low path is the fallback
 rem for an image too big for 64K, so nothing exercises it by accident
@@ -172,6 +186,16 @@ rem port e9=true" and a [log] logfile; real hardware ignores the port.
 rem It is the trace that does not stop what it watches - see RME9.INC
 rem for why the disk trace does.
 if "%TGT%"=="rme9" set DEFS=-dRMDOS_E9
+rem "rme9lpt" is the same trace, a copy of every character also put out
+rem of LPT1 - for 86Box, which has no port E9h log but can keep what
+rem reaches a parallel port as a text file (lpt1_device = text_prt).
+rem It is the only trace of RMDOS under 386 enhanced mode, which
+rem DOSBox-X cannot run - see e9_putc in RME9.INC.
+if "%TGT%"=="rme9lpt" set DEFS=-dRMDOS_E9 -dRMDOS_E9LPT
+rem "rme9com" puts the copy out of COM1 instead, 115200 8N1, for an
+rem 86Box whose parallel port garbles it (the p3bf's did): the serial
+rem passthrough device there hands the port to a named pipe.
+if "%TGT%"=="rme9com" set DEFS=-dRMDOS_E9 -dRMDOS_E9COM
 rem From v0.53 the park goes LOW FIRST and the HMA is the fallback:
 rem the Windows kernel finds the SFT by scanning memory for "CON "
 rem and the scan does not reach the megabyte.  "rmlow" now means
@@ -313,8 +337,9 @@ rem BIN\ is what a PM-DOS disk is MADE OF - the boot sectors, the
 rem kernel, the commands - and BIN\TESTS\ is everything written to prove
 rem one thing about it.  The split is by what SHIPS, so a new test
 rem program lands in TESTS by default and a new COMMAND has to be
-rem named; having to name it is the point.  On the disk images they
-rem land the same way, through MKDISK.EXE's -dir switch.
+rem named; having to name it is the point.  On the hard-disk images
+rem they land the same way, through MKDISK.EXE's -dir switch; on
+rem floppies they are a disk each, PMDOS.IMG and TESTS.IMG.
 if not exist BIN\TESTS mkdir BIN\TESTS
 rem IMAGES\ is the third of those: not an ingredient and not a test
 rem program, but the finished disk an emulator mounts.  MKDISK.EXE
@@ -332,7 +357,7 @@ rem each one has to be named here too: a directory missing from this
 rem list is one whose failed assembly links yesterday's object.  (A
 rem failed COMPILE does not need it - wcc386, unlike wasm, returns an
 rem error - but CHKDSK's and LABEL's startup is assembled like the rest.)
-for %%D in (ATTRIB CACHE CDEX CHKDSK CHOICE DISKCOMP DISKCOPY DRIVES EDIT FC FDISK FIND FORMAT ISAPNP LABEL LFNAPI MEM MORE MOUNT MOVE SHUTDOWN SORT SYS UNDELETE XCOPY) do if exist CMD\%%D\*.obj del /q CMD\%%D\*.obj
+for %%D in (ATTRIB CACHE CDEX CHKDSK CHOICE DISKCOMP DISKCOPY DRIVES EDIT FC FDISK FIND FORMAT ISAPNP LABEL LFNAPI LRGDISK MEM MORE MOUNT MOVE SHUTDOWN SORT SYS UNDELETE XCOPY) do if exist CMD\%%D\*.obj del /q CMD\%%D\*.obj
 
 rem FSIZE asserts the sizes the checks below used to test with FOR's
 rem "~z" size modifier.  That modifier is a cmd.exe command EXTENSION:
@@ -518,6 +543,16 @@ rem which writes everything the kernel owes the disks first.
 cd CMD\SHUTDOWN
 wasm -q -i=..\..\INC shutdown.asm               || goto :fail
 wlink form raw bin option offset=0x2000 name ..\..\BIN\SHUTDOWN.EXE file shutdown.obj || goto :fail
+cd ..\..
+rem LRGDISK.386 is a driver for Windows 3.1 and Windows for Workgroups,
+rem not a PM-DOS program: 32-bit disk access for the IDE disks WDCTRL
+rem refuses, the ones a BIOS translates (over 504MB), on both cables and
+rem by bus-master DMA where the BIOS left a mode set.  An LE VxD, which
+rem wlink lays out as the DDK's LINK386 does; the segment lines are
+rem WDCTRL.DEF's.
+cd CMD\LRGDISK
+wasm -q lrgdisk.asm                             || goto :fail
+wlink format windows vxd name ..\..\BIN\LRGDISK.386 file lrgdisk.obj option nodefaultlibs option description 'LRGDISK 1.2 - 32-bit disk access for IDE disks past 504MB' export LRGDISK_DDB.1 segment _LTEXT preload nondiscardable segment _LDATA preload nondiscardable segment _ITEXT discardable segment _IDATA discardable || goto :fail
 cd ..\..
 rem FIND is MS-DOS 6.22's, switch for switch and message for message:
 rem batch files test what it prints and the errorlevel it leaves.
@@ -851,6 +886,19 @@ set INCLUDE=%WATCOM%\H;%WATCOM%\H\WIN
 cd TOOLS
 wcl -zq -bt=windows -l=windows -fe=..\BIN\TESTS\WINDRV.EXE windrv.c || goto :winfail
 if exist windrv.obj del windrv.obj
+rem WINSWEEP runs a LIST of programs the same way, pictures each one
+rem (C:\SHOTS\*.BMP) and logs to C:\SWEEP.TXT; TIMEPROB writes down every
+rem clock a Windows program can see, and the DOS date and time; SPYTICK
+rem hooks INT 8 and writes the interrupted CS:IP to port E9h, for a
+rem program that never comes back.  See NOTES.TXT, the enhanced-mode
+rem sweep of 2026-10-05.
+echo === WINSWEEP.EXE, TIMEPROB.EXE, SPYTICK.EXE (the Windows sweep's tools) ===
+wcl -zq -bt=windows -l=windows -fe=..\BIN\TESTS\WINSWEEP.EXE winsweep.c || goto :winfail
+if exist winsweep.obj del winsweep.obj
+wcl -zq -bt=windows -l=windows -fe=..\BIN\TESTS\TIMEPROB.EXE timeprob.c || goto :winfail
+if exist timeprob.obj del timeprob.obj
+wcl -zq -bt=windows -l=windows -fe=..\BIN\TESTS\SPYTICK.EXE spytick.c || goto :winfail
+if exist spytick.obj del spytick.obj
 cd ..
 set INCLUDE=%PMD_INC%
 set PMD_INC=
@@ -906,6 +954,21 @@ wasm -q -i=..\INC wintest.asm                    || goto :fail
 wlink form raw bin name ..\BIN\TESTS\WINTEST.COM file wintest.obj order clname CODE offset=0x100 || goto :fail
 cd ..
 
+echo === SDSTAT.COM (what the SMARTDRV interface answers) ===
+rem For a DOS box under Windows, where RMDOS's own cache answers INT
+rem 2Fh 4A10h; against a real SMARTDRV 4.x it prints the same lines,
+rem which is the comparison.  See DOS\RMCACHE.INC.
+cd TOOLS
+wasm -q -i=..\INC sdstat.asm                     || goto :fail
+wlink form raw bin name ..\BIN\TESTS\SDSTAT.COM file sdstat.obj order clname CODE offset=0x100 || goto :fail
+wasm -q -i=..\INC ticks.asm                      || goto :fail
+wlink form raw bin name ..\BIN\TESTS\TICKS.COM file ticks.obj order clname CODE offset=0x100 || goto :fail
+rem MOVEPROB times a 2K move to extended memory and back, by INT 15h
+rem 87h and by XMS 0Bh, from a DOS box or a prompt: the number RMCACHE's
+rem choice of mover under WIN386 rests on.  A 16-bit DOS program.
+wcl -zq -bt=dos -ms -fe=..\BIN\TESTS\MOVEPROB.EXE moveprob.c || goto :fail
+cd ..
+
 echo === RMDOS.SYS (the real-mode DOS PM-DOS leaves behind) ===
 rem The one thing in this tree that is not part of PM-DOS and does not
 rem run on it.  A separate 16-bit program, loaded into the DOS box's
@@ -925,6 +988,16 @@ rem it keeps file offset and segment offset the same number, which is
 rem what every dump of this file assumes - and park_loadrm seeks past
 rem them.  It has to: in the HMA those sixteen bytes are the ROM.
 wlink form raw bin option offset=0x0 name ..\BIN\RMDOS.SYS file rmdos.obj || goto :fail
+cd ..
+
+echo === RMCD.SYS (the CD-ROM while Windows has the machine) ===
+rem A redirector, as MSCDEX is, loaded by the park after RMDOS's 64K when
+rem the kernel has a CD-ROM on an IDE channel: the kernel's own reader
+rem is 32-bit and does not run while it is parked.  A raw image from
+rem offset 0, the start of its room.  See DOS\RMCD.ASM.
+cd DOS
+wasm -q -i=..\INC rmcd.asm                         || goto :fail
+wlink form raw bin option offset=0x0 name ..\BIN\RMCD.SYS file rmcd.obj || goto :fail
 cd ..
 
 echo === RMTEST.COM (a DOS program with no PM-DOS underneath it) ===
@@ -1191,6 +1264,90 @@ wasm -q -i=..\INC testdev.asm                    || goto :fail
 wlink form raw bin name ..\BIN\TESTS\TESTDEV.SYS file testdev.obj order clname CODE || goto :fail
 cd ..
 
+echo === IOCDEV.SYS (a driver spoken to as WfW speaks to IFSHLP.SYS) ===
+rem The rest of what DOS sends a character driver - IOCTL read and
+rem write, open and close, the generic IOCTL - and the eight-byte
+rem handshake IFSMGR.386 makes with IFSHLP.SYS.  DRVTEST.COM asks it
+rem all of that.  Linked at offset 0, as TESTDEV.SYS is.
+cd TOOLS
+wasm -q -i=..\INC iocdev.asm                     || goto :fail
+wlink form raw bin name ..\BIN\TESTS\IOCDEV.SYS file iocdev.obj order clname CODE || goto :fail
+cd ..
+
+echo === DRVTEST.COM (IOCDEV.SYS, asked on both sides of the handover) ===
+rem Needs IOCDEV.SYS loaded by CONFIG.SYS.  Asks it everything on the
+rem kernel, then parks the kernel with its own path so that RMDOS runs
+rem it again, and prints what that copy found.
+cd TOOLS
+wasm -q -i=..\INC drvtest.asm                    || goto :fail
+wlink form raw bin name ..\BIN\TESTS\DRVTEST.COM file drvtest.obj order clname CODE offset=0x100 || goto :fail
+cd ..
+
+echo === CDSTEST.COM (the current directory array, on both DOSes) ===
+rem The array 52h names, read as a DOS program reads it - on the
+rem kernel, then on RMDOS through a park, as DRVTEST does.
+cd TOOLS
+wasm -q -i=..\INC cdstest.asm                    || goto :fail
+wlink form raw bin name ..\BIN\TESTS\CDSTEST.COM file cdstest.obj order clname CODE offset=0x100 || goto :fail
+cd ..
+
+echo === NETTEST.COM (a redirector of its own, on the DOS under Windows) ===
+rem Parks the kernel with its own path, as CDSTEST does; on RMDOS it
+rem takes a free letter the way IFSMGR.386 does, hooks INT 2Fh, and
+rem checks every 11xxh call RMDOS makes for it (DOS\RMNET.INC).
+cd TOOLS
+wasm -q -i=..\INC nettest.asm                    || goto :fail
+wlink form raw bin name ..\BIN\TESTS\NETTEST.COM file nettest.obj order clname CODE offset=0x100 || goto :fail
+cd ..
+
+echo === LRGTEST.COM (LRGDISK.386's real-mode checks, under DOS) ===
+rem Runs the real-mode start-up out of BIN\LRGDISK.386 itself with a
+rem stand-in for WIN386's loader: which disks LRGDISK would take, and
+rem how it would address them, without Windows.  Needs a real IDE
+rem controller and a DOS with INT 2Fh AH=13h, so it is not in RUNTESTS.
+cd TOOLS
+wasm -q lrgtest.asm                             || goto :fail
+wlink form raw bin name ..\BIN\TESTS\LRGTEST.COM file lrgtest.obj order clname CODE offset=0x100 || goto :fail
+cd ..
+
+echo === ATAPIRD.COM (a CD-ROM on either cable, through the ports) ===
+rem Reads the disc with ATAPI packet commands, as a DOS CD-ROM driver
+rem does, and checksums it pass by pass: run in a DOS box beside others
+rem that use the hard disk, it tries LRGDISK.386 sharing the cable.
+rem Needs the drive, so it is not in RUNTESTS.
+cd TOOLS
+wasm -q atapird.asm                             || goto :fail
+wlink form raw bin name ..\BIN\TESTS\ATAPIRD.COM file atapird.obj order clname CODE offset=0x100 || goto :fail
+cd ..
+
+echo === SRSTTEST.COM (an IDE cable reset, as a DOS driver does it) ===
+rem SRST to a cable's device control register, held and let go, the
+rem master watched until it is ready again: in a DOS box, what a reset
+rem by a DOS program does to LRGDISK.386's drives on the same cable.
+rem Needs the cable, so it is not in RUNTESTS.
+cd TOOLS
+wasm -q srsttest.asm                            || goto :fail
+wlink form raw bin name ..\BIN\TESTS\SRSTTEST.COM file srsttest.obj order clname CODE offset=0x100 || goto :fail
+cd ..
+
+echo === SEEKWR.COM (a write past the end, and the write of nothing) ===
+rem The file is made as long as the write says, its chain with it, and
+rem the write lands where its position says - on the kernel, and parked
+rem on RMDOS, where Windows' swap file found out it did not.
+cd TOOLS
+wasm -q seekwr.asm                              || goto :fail
+wlink form raw bin name ..\BIN\TESTS\SEEKWR.COM file seekwr.obj order clname CODE offset=0x100 || goto :fail
+cd ..
+
+echo === BLKTEST.COM (TESTBLK.SYS's drive, written on both DOSes) ===
+rem Needs TESTBLK.SYS loaded by CONFIG.SYS.  A file written on the
+rem kernel is read on RMDOS through a park, and one written there is
+rem read back here.
+cd TOOLS
+wasm -q -i=..\INC blktest.asm                    || goto :fail
+wlink form raw bin name ..\BIN\TESTS\BLKTEST.COM file blktest.obj order clname CODE offset=0x100 || goto :fail
+cd ..
+
 echo === CTRYTEST.COM (the block a number is formatted with) ===
 rem MEM asks 21h/38h once per number it prints, and prints only the
 rem first group of digits - so what comes back from that call, read by
@@ -1419,12 +1576,31 @@ rem a picture of another one.
 echo === TESTIMG.IMG (a disk image, to be mounted as a file) ===
 TOOLS\MKDISK.EXE BIN\TESTS\TESTIMG.IMG BIN\BOOT.BIN DISK\IMGFILE.TXT || goto :fail
 
-echo === PMDOS.IMG ===
-TOOLS\MKDISK.EXE IMAGES\PMDOS.IMG BIN\BOOT.BIN BIN\PMIO.SYS BIN\PMDOS.SYS BIN\CMD.EXE BIN\COMMAND.COM ^
+rem === PMDOS.IMG - the boot disk ===
+rem PM-DOS and nothing else: BIN\ and the files that ride with it.
+rem -nolfn keeps MKDISK's long-named fixtures off it - they are test
+rem material, and the test disk has them in its root, where LFNTEST.BAT
+rem looks.  LRGDISK.386 rides along because it ships, though only a
+rem hard disk with Windows on it has a use for it.
+echo === PMDOS.IMG (the boot disk) ===
+TOOLS\MKDISK.EXE IMAGES\PMDOS.IMG BIN\BOOT.BIN -nolfn BIN\PMIO.SYS BIN\PMDOS.SYS BIN\CMD.EXE BIN\COMMAND.COM ^
     BIN\CHOICE.COM BIN\MORE.COM BIN\SORT.COM BIN\SYS.COM BIN\FORMAT.COM BIN\MEM.EXE ^
     BIN\FDISK.EXE BIN\MOUNT.EXE BIN\CACHE.EXE BIN\UNDELETE.EXE BIN\CDEX.EXE BIN\MOVE.EXE BIN\ATTRIB.EXE BIN\CHKDSK.EXE BIN\LABEL.EXE BIN\XCOPY.EXE BIN\EDIT.EXE ^
     BIN\FC.EXE BIN\FIND.EXE BIN\DISKCOPY.COM BIN\DISKCOMP.COM BIN\ISAPNP.EXE BIN\SHUTDOWN.EXE ^
-    BIN\RMDOS.SYS README.TXT DISK\CONFIG.SYS DISK\CONFIG.TXT DISK\AUTOEXEC.BAT -dir ^
+    BIN\RMDOS.SYS BIN\RMCD.SYS BIN\LRGDISK.386 README.TXT DISK\CONFIG.SYS DISK\CONFIG.TXT DISK\AUTOEXEC.BAT DISK\AUTOEXEC.TXT || goto :fail
+
+rem === TESTS.IMG - the test disk ===
+rem Everything written to prove one thing about the kernel: BIN\TESTS\
+rem and DISK\'s batch, key and data files, all in \TESTS so that the
+rem layout is a hard disk's (C:\TESTS) whichever letter the disk is in.
+rem One floppy held both until 2026-10-08, when it was nearly full.
+rem BOOT.BIN is there because MKDISK takes the BPB from it; a machine
+rem started from this disk says "PMIO.SYS not found", which is the
+rem right answer.  The label is what tells the two disks apart at VOL.
+rem Not here: TESTIMG.IMG, which is a whole floppy by itself, and the
+rem big 16-bit guests MKHD seeds, which are not built and are 500K.
+echo === TESTS.IMG (the test disk) ===
+TOOLS\MKDISK.EXE IMAGES\TESTS.IMG BIN\BOOT.BIN -label "PM-DOS TEST" -dir ^
     TESTS BIN\TESTS\DRIVES.EXE BIN\TESTS\LFNAPI.COM BIN\TESTS\HELLO.COM BIN\TESTS\HELLOX.EXE BIN\TESTS\ARGS.COM ^
     BIN\TESTS\XMSTEST.COM BIN\TESTS\A20TEST.COM BIN\TESTS\MEMPROBE.COM BIN\TESTS\EXECTST.COM BIN\TESTS\TSRTEST.COM ^
     BIN\TESTS\I13TEST.COM BIN\TESTS\CURTEST.COM BIN\TESTS\DPMITEST.COM BIN\TESTS\DEVTEST.COM ^
@@ -1436,15 +1612,20 @@ TOOLS\MKDISK.EXE IMAGES\PMDOS.IMG BIN\BOOT.BIN BIN\PMIO.SYS BIN\PMDOS.SYS BIN\CM
     BIN\TESTS\UDTEST.COM BIN\TESTS\ALLOCTST.COM BIN\TESTS\MCBTEST.COM BIN\TESTS\FCBTEST.COM ^
     BIN\TESTS\BUFTEST.COM BIN\TESTS\UMBTEST.COM BIN\TESTS\EMSTEST.COM BIN\TESTS\EMS4TEST.COM BIN\TESTS\DEVCRIT.EXE ^
     BIN\TESTS\I24TEST.COM BIN\TESTS\VFYTEST.EXE BIN\TESTS\IDETEST.EXE BIN\TESTS\HWPROBE.EXE BIN\TESTS\F32TEST.COM BIN\TESTS\FNDTEST.EXE ^
-    BIN\TESTS\CFGTEST.COM BIN\TESTS\CACHETST.COM BIN\TESTS\VFTEST.COM BIN\TESTS\SHARETST.COM BIN\TESTS\TESTDEV.SYS BIN\TESTS\TESTBLK.SYS BIN\TESTS\CTRYDMP.COM ^
-    BIN\TESTS\CTRYTEST.COM BIN\TESTS\CRASH.EXE BIN\TESTS\R3TEST.EXE BIN\TESTS\MS32TEST.EXE BIN\TESTS\VPICTEST.COM BIN\TESTS\TIMERTST.COM BIN\TESTS\RMIVT.COM BIN\TESTS\IRQXTEST.COM BIN\TESTS\IRQXWAIT.EXE BIN\TESTS\DMATEST.COM BIN\TESTS\DPMIIRQ.COM BIN\TESTS\DPMII32.COM BIN\TESTS\DPMIVEC.COM BIN\TESTS\DPMIV32.COM BIN\TESTS\VDSTEST.COM BIN\TESTS\NICIRQ.COM BIN\TESTS\PCITEST.EXE BIN\TESTS\IRQTEST.EXE BIN\TESTS\FPUTEST.COM BIN\TESTS\FPU32.EXE BIN\TESTS\DPMIFPU.COM BIN\TESTS\DPMIFP32.COM DISK\BATTEST.BAT ^
+    BIN\TESTS\CFGTEST.COM BIN\TESTS\CACHETST.COM BIN\TESTS\VFTEST.COM BIN\TESTS\SHARETST.COM BIN\TESTS\TESTDEV.SYS BIN\TESTS\TESTBLK.SYS BIN\TESTS\IOCDEV.SYS BIN\TESTS\DRVTEST.COM BIN\TESTS\CDSTEST.COM BIN\TESTS\NETTEST.COM BIN\TESTS\SEEKWR.COM BIN\TESTS\BLKTEST.COM BIN\TESTS\CTRYDMP.COM ^
+    BIN\TESTS\CTRYTEST.COM BIN\TESTS\CRASH.EXE BIN\TESTS\R3TEST.EXE BIN\TESTS\MS32TEST.EXE BIN\TESTS\VPICTEST.COM BIN\TESTS\TIMERTST.COM BIN\TESTS\RMIVT.COM BIN\TESTS\IRQXTEST.COM BIN\TESTS\IRQXWAIT.EXE BIN\TESTS\DMATEST.COM BIN\TESTS\DPMIIRQ.COM BIN\TESTS\DPMII32.COM BIN\TESTS\DPMIVEC.COM BIN\TESTS\DPMIV32.COM BIN\TESTS\VDSTEST.COM BIN\TESTS\NICIRQ.COM BIN\TESTS\PCITEST.EXE BIN\TESTS\IRQTEST.EXE BIN\TESTS\FPUTEST.COM BIN\TESTS\FPU32.EXE BIN\TESTS\DPMIFPU.COM BIN\TESTS\DPMIFP32.COM ^
+    BIN\TESTS\LPTTEST.COM BIN\TESTS\RMSPEED.COM BIN\TESTS\HNDTEST.COM BIN\TESTS\RMFSTEST.COM BIN\TESTS\WINDRV.EXE BIN\TESTS\VBETEST.EXE ^
+    BIN\TESTS\EXECLEAK.EXE BIN\TESTS\SLOTTEST.EXE BIN\TESTS\BIGMEM.EXE BIN\TESTS\LRGTEST.COM BIN\TESTS\ATAPIRD.COM BIN\TESTS\SRSTTEST.COM ^
+    BIN\TESTS\SDSTAT.COM BIN\TESTS\TICKS.COM BIN\TESTS\MOVEPROB.EXE BIN\TESTS\WINSWEEP.EXE BIN\TESTS\TIMEPROB.EXE BIN\TESTS\SPYTICK.EXE DISK\BATTEST.BAT ^
     DISK\SUB.BAT DISK\CHTEST.BAT DISK\GOTOTEST.BAT DISK\LOOPTEST.BAT DISK\REDTEST.BAT ^
     DISK\LFNTEST.BAT DISK\CMDTEST.CMD DISK\SUBQ.CMD DISK\BATQ.BAT DISK\CTRLC.BAT DISK\CHAIN1.BAT ^
     DISK\CHAIN2.BAT DISK\NOLABEL.BAT DISK\SHIFT12.BAT DISK\VDMTEST.BAT DISK\NESTTEST.BAT ^
     DISK\DISKTEST.BAT DISK\IMGTEST.BAT DISK\DEEPTEST.BAT DISK\FDTEST.BAT DISK\NULTEST.BAT DISK\CRASHTST.BAT DISK\UDTEST.BAT DISK\UNDTEST.BAT DISK\APITEST.BAT ^
     DISK\LOLTEST.BAT DISK\PARK.BAT DISK\PARKXMS.BAT DISK\SWTEST.BAT ^
     DISK\DIRTEST.BAT DISK\GLUETEST.BAT DISK\FMTTEST.BAT DISK\FMT1.KEY DISK\FMT2.KEY DISK\RENTEST.BAT DISK\FORFTEST.BAT DISK\KEYTEST.BAT DISK\KEYTEST.KEY DISK\C16TEST.BAT DISK\C16SUB.BAT DISK\XCTEST.CMD DISK\XCEL.BAT ^
-    DISK\BUSTEST.BAT DISK\FPUTEST.BAT DISK\MSTEST.BAT DISK\EDTEST.BAT DISK\FDM1.KEY DISK\ED1.KEY DISK\ED2.KEY DISK\ED3.KEY DISK\ED4.KEY DISK\ED5.KEY DISK\ED6.KEY DISK\ED7.KEY DISK\ED8.KEY DISK\ED9.KEY DISK\ED10.KEY DISK\ED11.KEY DISK\ED12.KEY DISK\ED13.KEY DISK\ED14.KEY DISK\ED15.KEY DISK\ED16.KEY DISK\ED17.KEY DISK\EDBIN.DAT DISK\EDTABS.DAT DISK\EDLF.DAT || goto :fail
+    DISK\BUSTEST.BAT DISK\FPUTEST.BAT DISK\MSTEST.BAT DISK\EDTEST.BAT DISK\FDM1.KEY DISK\ED1.KEY DISK\ED2.KEY DISK\ED3.KEY DISK\ED4.KEY DISK\ED5.KEY DISK\ED6.KEY DISK\ED7.KEY DISK\ED8.KEY DISK\ED9.KEY DISK\ED10.KEY DISK\ED11.KEY DISK\ED12.KEY DISK\ED13.KEY DISK\ED14.KEY DISK\ED15.KEY DISK\ED16.KEY DISK\ED17.KEY DISK\EDBIN.DAT DISK\EDTABS.DAT DISK\EDLF.DAT ^
+    DISK\ATTRTEST.BAT DISK\MVTEST.BAT DISK\HELPTEST.BAT DISK\R3TEST.BAT DISK\D32TEST.BAT DISK\BOXTEST.BAT DISK\WINDOS.BAT DISK\BIG16.BAT ^
+    DISK\CCALIVE.BAT DISK\CCFOR.BAT DISK\CCONE.BAT DISK\FDLTEST.BAT DISK\FDRTEST.BAT DISK\FD32TEST.BAT DISK\FDMTEST.BAT || goto :fail
 
 echo.
 echo Build OK.

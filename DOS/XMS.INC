@@ -229,7 +229,16 @@ xms_notimpl:
 ;---------------------------------------------------------------------
 xf_00:
         mov     word ptr [vdm_ctx+V86C_EAX],0300h
-        mov     word ptr [vdm_ctx+V86C_EBX],0029h       ; PM-DOS 0.29
+        ; THE REVISION IS HIMEM'S, NOT OURS.  It was PM-DOS's own (0029h)
+        ; until the Windows for Workgroups 3.11 Setup refused to run on
+        ; it: its DOS half asks 00h and wants a revision of 0260h or
+        ; more - HIMEM 2.60 was Windows 3.0's - and anything less is
+        ; "The XMS driver you have on your system is not compatible
+        ; with Windows" (SETUP.EXE at 122AAh: cmp ax,0200h / cmp
+        ; dx,0260h).  The field means nothing else to anybody, so it
+        ; says HIMEM 3.10, which is what DOS 6.0 shipped; RMXMS.INC
+        ; answers the same number for the same reason.
+        mov     word ptr [vdm_ctx+V86C_EBX],030Ah
         mov     word ptr [vdm_ctx+V86C_EDX],0
         ret
 

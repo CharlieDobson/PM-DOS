@@ -2129,11 +2129,7 @@ tde_vol:
         mov     edi,OFFSET vt_buf
         mov     ecx,40
         call    lb_into
-        mov     edx,OFFSET msg_vpart
-        call    lb_puts
-        call    tui_selrow
-        mov     eax,[esi+TR_NUM]
-        call    lb_num
+        call    lb_namec                ; "Partition 5 (E:)"
         mov     edx,OFFSET vt_buf
         call    vw_show
 tde_out:
@@ -3338,7 +3334,6 @@ msg_rfbadclus db 'Clusters marked bad stop FDISK from making the clusters larger
 msg_rfdamaged db 'The volume has errors.  Run CHKDSK on the drive, then try again.$'
 msg_rfnomem db  'There is not enough memory to renumber the clusters.$'
 
-msg_vpart   db  'Partition $'
 msg_vlog    db  'Output Log$'
 msg_vhelp   db  'FDISK Help$'
 msg_about1  db  'FDISK, the PM-DOS partition editor$'

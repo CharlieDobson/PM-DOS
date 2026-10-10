@@ -1348,6 +1348,18 @@ vw_show:
         pushad
         mov     [vw_title],edx
         call    vw_index
+        ; BLANK LINES AT THE END ARE NOT SHOWN: a verb ends its report
+        ; with one, and a page that fits would otherwise scroll by it
+vws_trim:
+        mov     ebx,[vw_n]
+        or      ebx,ebx
+        jz      vws_trimmed
+        dec     ebx
+        call    vw_blank
+        jnc     vws_trimmed
+        mov     [vw_n],ebx
+        jmp     short vws_trim
+vws_trimmed:
         mov     dword ptr [vw_top],0
 vws_loop:
         call    vw_draw

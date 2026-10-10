@@ -151,7 +151,9 @@ ENDIF
 
         cmp     byte ptr [ebp+F_EAX+1],4Ch      ; a client ending IS the DOS
         je      i21_dpmiexit                    ; box ending, and it unwinds
-        call    dpmi_xlat                       ; rather than returns
+        call    dpmi_pre21                      ; rather than returns; 25h and
+        jc      i21_r0                          ; 35h are the host's, answered
+        call    dpmi_xlat
         jc      i21_badsel
         ; A DPMI client is a DOS program in protected mode, and its
         ; handles are its PSP's table's exactly as they were in V86 -
@@ -200,6 +202,7 @@ i21_return:
         je      i21_r3native
         call    jft_post                ; handles back to the client's
         call    dpmi_unxlat             ; the client's own registers back
+        call    dpmi_post21             ; ...and an address it can follow
         jmp     short i21_r0
 
 ;--- back into a native program.  The offsets it passed are put back,
@@ -262,15 +265,15 @@ i21_dpmiexit:
 
 i21_lfn:
         call    fn71
-        jmp     short i21_return
+        jmp     i21_return
 
 i21_fat32:
         call    fn73
-        jmp     short i21_return
+        jmp     i21_return
 
 i21_ext:
         call    fnF0
-        jmp     short i21_return
+        jmp     i21_return
 
 i21_ext1:
         call    fnF1
@@ -998,6 +1001,31 @@ fn54:
         movzx   eax,byte ptr [verify_on]
         mov     [ebp+F_EAX],al
         jmp     i21_ok
+
+;=====================================================================
+; 37h - the switch character.  AL = 0 reads it into DL, AL = 2 reads
+;       "device availability"; anything else is ignored.
+;
+; DOS 5 switched this off (getset.asm, $CHAR_OPER): '/' for 0, FFh for
+; 2, nothing for the rest, and AL and the flags come back as they went
+; in.  It was missing here, and "missing" answered AX = 1 with carry -
+; leaving DL as whatever the caller had in DX.  The C libraries ask
+; this to choose a path separator, so PKZIP 2.04g read the junk as a
+; Xenix switch character and wrote "C:/T1.ZIP", and PKUNZIP stopped
+; recognising its own -v and showed its usage screen instead.
+;=====================================================================
+fn37:
+        mov     al,[ebp+F_EAX]
+        mov     dl,'/'
+        or      al,al
+        jz      f37_dl
+        mov     dl,0FFh
+        cmp     al,2
+        jne     f37_out
+f37_dl:
+        mov     [ebp+F_EDX],dl
+f37_out:
+        ret
 
 ;=====================================================================
 ; 06h - direct console I/O.  DL = FFh reads (ZF set if nothing there),
@@ -1791,8 +1819,17 @@ itp_out:
 PMDOS_OEM       EQU     03h
 
 fn30:
+        mov     al,byte ptr [ebp+F_EAX]
         mov     word ptr [ebp+F_EAX],DOSVER_MINOR * 256 + DOSVER_MAJOR
         mov     dword ptr [ebp+F_EBX],PMDOS_OEM * 256   ; BH = OEM, BL = serial hi
+        cmp     al,1
+        jne     f30_oem
+        ; AL=1 asks for the version FLAG in BH instead of the OEM: 08h
+        ; for a DOS in ROM, 10h for one in the HMA.  Neither is true of
+        ; a kernel in extended memory, and DOSMGR reads the OEM byte
+        ; here as "in ROM" if it is given one.
+        mov     dword ptr [ebp+F_EBX],0
+f30_oem:
         mov     dword ptr [ebp+F_ECX],0                 ; serial lo
         jmp     i21_ok
 
@@ -2827,7 +2864,18 @@ fn3B:
         mov     ecx,[rp_cnt]
         call    walk_to                 ; verifies every step is a dir
         jc      f3B_fail
+        call    cwd_here
+        jc      f3B_fail
+        jmp     i21_ok
 
+;---------------------------------------------------------------------
+; cwd_here - the directory walk_to has just reached becomes the current
+;            volume's current directory.  CF with AX = the error if its
+;            path is too long to be one.  Shared by 3Bh and by the
+;            unpark's remount (PARK.INC), which walks back into the
+;            directory each drive was in.
+;---------------------------------------------------------------------
+cwd_here:
         xor     eax,eax                 ; EAX = the dir's start cluster
         cmp     byte ptr [dc_isroot],0
         jne     f3B_install
@@ -2838,9 +2886,7 @@ fn3B:
         jne     f3B_install
         xor     eax,eax
 f3B_install:
-        call    cwd_install
-        jc      f3B_fail
-        jmp     i21_ok
+        jmp     cwd_install
 
 f3B_nopath:
         mov     ax,ERR_NOPATH
@@ -2901,7 +2947,13 @@ open_core:
         mov     ecx,[open_share]
         mov     [esi+SFT_SHARE],ecx
         mov     [esi+SFT_DEVID],edx
+        call    dl_devopen              ; a loaded driver may want to know,
+        jc      oc_devno                ; and may say no
         clc
+        ret
+oc_devno:
+        mov     dword ptr [esi+SFT_FLAGS],0     ; the slot back, unused
+        stc
         ret
 
 f3D_file:
@@ -3063,6 +3115,13 @@ oc_llen     dd  0                       ; open_core's search found them
 ;             exactly as IOS_CONIN would have returned it.
 ;---------------------------------------------------------------------
 dos_conin:
+IFDEF EXIT_TRACE
+        cmp     byte ptr ds:[GV_PARK + GVP_XT],0
+        je      dci_noxt
+        mov     byte ptr ds:[GV_PARK + GVP_XT],0
+        XTMARK32 69,051h                ; 'Q': back from Windows, and a
+dci_noxt:                               ; key is waited for - the prompt
+ENDIF
         call    dword ptr ds:[IOS_CONSTAT]
         jnz     dci_have
         call    dos_idle
@@ -3369,6 +3428,47 @@ do_aux:                                 ; INT 14h AH=01h - send AL on DX
         ret
 
 ;---------------------------------------------------------------------
+; prn_init - INT 17h AH=01h on every printer port the BIOS listed at
+;            40:08, once, at boot.  All registers preserved.
+;
+; IO.SYS DOES THIS AND IT TURNS OUT TO MATTER.  The BIOS's own POST
+; leaves a parallel port's control register as it pleases - on 86Box's
+; p3bf it reads F0h: interrupt enable on, SELECT and INIT low - and
+; MS-DOS's printer device initialises every port as it loads, which
+; puts the register at 0Ch (SELECT and INIT high, no interrupt), the
+; state everything written since 1981 assumes.  PM-DOS never touched
+; the ports, so a machine booted by it kept the POST state, and
+; Windows for Workgroups 3.11's VPD - its virtual printer device, which
+; is new in 3.11 - never came back from its initialisation on that
+; port: Windows stayed on its logo for good, with no DOS call to
+; trace.  With the port in IO.SYS's state VPD is content (2026-10-06,
+; the WfW runs wfw_a4/a5/x1 in NOTES).  A port with no printer on it
+; answers the init with a status byte and nothing else happens.
+;---------------------------------------------------------------------
+prn_init:
+        push    eax
+        push    ecx
+        push    edx
+        xor     ecx,ecx
+pi_one:
+        movzx   eax,word ptr ds:[BDA_LPT1 + ecx*2]
+        or      eax,eax
+        jz      pi_next
+        call    dev_prep
+        mov     byte ptr ds:[RMR_EAX+1],01h     ; AH=01h: initialise
+        mov     byte ptr ds:[RMR_EDX],cl        ; DX = the port's number
+        mov     al,17h
+        call    dword ptr ds:[IOS_REALINT]
+pi_next:
+        inc     ecx
+        cmp     ecx,3
+        jb      pi_one
+        pop     edx
+        pop     ecx
+        pop     eax
+        ret
+
+;---------------------------------------------------------------------
 ; dev_in - read one byte from the device whose id is in EDX.
 ;          -> AL, AH = 0.  CF set at end of input.
 ;          Every register but EAX preserved.
@@ -3591,6 +3691,7 @@ sc_clear:
         popad
         ret
 sc_free:
+        call    dl_devclose             ; a loaded driver that asked to know
         call    share_release           ; its locks go with it
         mov     dword ptr [esi+SFT_FLAGS],0
         popad
@@ -3696,7 +3797,18 @@ f3Fo_lp:
         jc      f3Fo_done               ; end of input, and NUL is always
         mov     [edi+ebx],al            ; at the end of its input
         inc     ebx
-        jmp     short f3Fo_lp
+        ; A LOADED DRIVER IN COOKED MODE gives a line at a time, as DOS
+        ; reads one (DOS6SRC disk.asm, READDEV): up to a CR or a ^Z, and
+        ; the one that ends it is kept.  RMDOS reads it the same way, so
+        ; a driver answers alike on both sides of the handover.
+        cmp     dl,DEV_LOADED
+        jne     f3Fo_lp
+        test    dword ptr [esi+SFT_FLAGS],SFTF_RAW
+        jnz     f3Fo_lp
+        cmp     al,13
+        je      f3Fo_done
+        cmp     al,1Ah
+        jne     f3Fo_lp
 f3Fo_done:
         mov     [ebp+F_EAX],ebx
         jmp     i21_ok
@@ -3912,19 +4024,35 @@ fn40:
 ; which is the right answer for all four: the screen and the bit
 ; bucket cannot refuse, and a printer or a serial line that is not
 ; listening has no way to say so through this call.
+;
+; EXCEPT THAT A LOADED DRIVER IN COOKED MODE IS NOT GIVEN A ^Z, as DOS
+; gives it none (WRTDEV): the write ends there and says so in AX.
         call    sft_dev
+        xor     ebx,ebx                 ; EBX = 1: stop at a ^Z
+        cmp     dl,DEV_LOADED
+        jne     f40_noz
+        test    dword ptr [esi+SFT_FLAGS],SFTF_RAW
+        jnz     f40_noz
+        inc     ebx
+f40_noz:
         mov     esi,[ebp+F_EDX]
         mov     ecx,[ebp+F_ECX]
         or      ecx,ecx
         jz      f40_devdone
 f40_lp:
         mov     al,[esi]
+        or      ebx,ebx
+        jz      f40_put
+        cmp     al,1Ah
+        je      f40_devdone
+f40_put:
         call    dev_out
         inc     esi
         dec     ecx
         jnz     f40_lp
 f40_devdone:
         mov     eax,[ebp+F_ECX]
+        sub     eax,ecx                 ; what was not reached by a ^Z
         mov     [ebp+F_EAX],eax
         jmp     i21_ok
 
@@ -3998,11 +4126,24 @@ f40_wioerr:
 ; This is 40h's ECX = 0 case, which is how the handle API truncates,
 ; and it is also 28h's CX = 0 case, which is how the FCB API does -
 ; the same operation reached through two APIs a decade apart.
+;
+; FORWARD, THE CHAIN IS MADE TO REACH IT, as MS-DOS's WRTEOF does.
+; This used to set the length alone, and the clusters behind it came
+; only when something was written there - so the free count did not
+; drop when a file was made 3MB long this way, and a disk with less
+; than that free said yes (SEEKWR).  Grown as file_wchunk grows a
+; chain, the new clusters zeroed; if the volume fills first, the
+; length stays as it was.
 ;---------------------------------------------------------------------
 file_trunc:
         mov     eax,[esi+SFT_POS]
         cmp     eax,[esi+SFT_SIZE]
-        jae     f40_setsz               ; truncating forward = just resize
+        je      f40_setsz
+        jb      f40_shorter
+        call    f40_extend
+        jnc     f40_setsz
+        ret
+f40_shorter:
 
         or      eax,eax
         jnz     f40_partial
@@ -4043,6 +4184,58 @@ f40_setsz:
         mov     [esi+SFT_SIZE],eax
         or      dword ptr [esi+SFT_FLAGS],SFTF_DIRTY
         mov     dword ptr [clusbuf_clus],-1
+        ret
+
+;--- f40_extend - the chain of the file at ESI made to reach its byte
+;--- SFT_POS - 1.  CF if the volume filled first.  EAX, EBX, EDX
+;--- changed.
+f40_extend:
+        mov     eax,[esi+SFT_POS]
+        dec     eax
+        xor     edx,edx
+        mov     ebx,[fat_spc]
+        shl     ebx,9
+        div     ebx                     ; EAX = the last index needed
+        push    eax
+        cmp     dword ptr [esi+SFT_CLUSTER],0
+        jne     fe_have
+        call    fat_alloc               ; a file with no clusters yet
+        jc      fe_full
+        call    fat_zeroclus
+        mov     [esi+SFT_CLUSTER],eax
+fe_have:
+        mov     eax,[esi+SFT_CLUSTER]   ; from the front
+        mov     [esi+SFT_CURCLUS],eax
+        mov     dword ptr [esi+SFT_HANDLE],0
+fe_walk:
+        mov     ebx,[esi+SFT_HANDLE]
+        cmp     ebx,[esp]
+        jae     fe_done
+        mov     eax,[esi+SFT_CURCLUS]
+        call    fat_next
+        cmp     eax,[fat_eoc]
+        jb      fe_link
+        call    fat_alloc
+        jc      fe_full
+        push    edx
+        push    eax
+        mov     edx,eax
+        mov     eax,[esi+SFT_CURCLUS]
+        call    fat_setnext             ; old tail -> new cluster
+        pop     eax
+        pop     edx
+        call    fat_zeroclus
+fe_link:
+        mov     [esi+SFT_CURCLUS],eax
+        inc     dword ptr [esi+SFT_HANDLE]
+        jmp     short fe_walk
+fe_done:
+        pop     eax
+        clc
+        ret
+fe_full:
+        pop     eax
+        stc
         ret
 
 f40_ioerr:
@@ -4258,17 +4451,28 @@ f42_bad:
 ; Implemented here:
 ;   00h  get device information             (BX = handle -> DX)
 ;   01h  set it                             (BX = handle, DX)
+;   02h  IOCTL read from a loaded driver    (BX, CX, DS:DX -> AX moved)
+;   03h  IOCTL write to one                 (BX, CX, DS:DX -> AX moved)
 ;   06h  get input status                   (BX -> AL = FFh ready)
 ;   07h  get output status                  (BX -> AL = FFh ready)
 ;   08h  is the drive removable             (BL = drive -> AX)
 ;   09h  is the drive remote                (BL = drive -> DX)
 ;   0Bh  set sharing retry count            (accepted, no-op)
+;   0Ch  generic IOCTL to a loaded driver   (BX, CX, DS:DX, SI, DI)
+;   0Dh  generic IOCTL to a block device:   (BL = drive, CX = 0860h,
+;        get device parameters only          DS:DX -> the block)
 ;   0Eh  get logical drive map              (BL = drive -> AL = 0)
 ;
-; Still refused: 02h-05h and 0Ch/0Dh, the generic IOCTL read and write
-; pairs.  Those pass a driver-defined request packet to a driver, and
-; PM-DOS has no installable drivers to pass one to - "invalid function"
-; is the truthful answer rather than a gap.
+; Still refused: 04h, 05h and the rest of 0Dh, the block-device IOCTLs
+; - a driver drive's requests would have to reach it through the unit
+; it was given, which nothing has asked for yet.  02h, 03h and 0Ch said the
+; same until 2026-10-06, on the grounds that there were no installable
+; drivers to send a packet to; there had been since v0.37, and Windows
+; for Workgroups' IFSHLP.SYS is one that is only ever spoken to this
+; way.  They go to a loaded character driver whose header says it
+; takes them (DEVLOAD.INC, dl_ioctl and dl_genioctl), and to nothing
+; else - "invalid function", as DOS answers for a device without the
+; bit.
 ;=====================================================================
 fn44:
         mov     al,[ebp+F_EAX]
@@ -4276,6 +4480,14 @@ fn44:
         jz      f44_get
         cmp     al,01h
         je      f44_set
+        cmp     al,02h
+        je      f44_ioin
+        cmp     al,03h
+        je      f44_ioout
+        cmp     al,0Ch
+        je      f44_genchar
+        cmp     al,0Dh
+        je      f44_genblk
         cmp     al,06h
         je      f44_instat
         cmp     al,07h
@@ -4310,7 +4522,16 @@ f44_get:
         je      f44_con
         cmp     al,DEV_NUL
         je      f44_nul
-        jmp     short f44_raw           ; PRN and AUX carry neither bit
+        cmp     al,DEV_LOADED
+        jne     f44_raw                 ; PRN and AUX carry neither bit
+        push    edx                     ; a loaded driver: what its header
+        mov     edx,eax                 ; says, as DOS reports it
+        call    dl_devinfo
+        mov     eax,edx
+        pop     edx
+        jc      f44_raw
+        mov     dx,ax
+        jmp     short f44_raw
 f44_con:
         mov     dx,80D3h                ; CON, in and out
         jmp     short f44_raw
@@ -4363,6 +4584,11 @@ f44_instat:
         test    dword ptr [esi+SFT_FLAGS],SFTF_DEVICE
         jz      f44_infile
         call    sft_dev
+        cmp     dl,DEV_LOADED
+        jne     f44_inown
+        mov     ecx,DEVC_INSTAT         ; a loaded driver is asked, and
+        jmp     short f44_drvstat       ; busy means nothing to read
+f44_inown:
         cmp     dl,DEV_CON
         jne     f44_ready               ; NUL is always ready to say "end",
                                         ; and a port is asked when read
@@ -4389,7 +4615,78 @@ f44_outstat:
         movzx   ebx,word ptr [ebp+F_EBX]
         call    sft_get
         jc      f44_bad
-        jmp     short f44_ready
+        test    dword ptr [esi+SFT_FLAGS],SFTF_DEVICE
+        jz      f44_ready
+        call    sft_dev
+        cmp     dl,DEV_LOADED
+        jne     f44_ready
+        mov     ecx,DEVC_OUTSTAT        ; ...and busy here means full
+f44_drvstat:
+        call    dl_short
+        jc      f44_ready               ; a driver that fails the question
+        test    eax,DEVS_BUSY           ; is not busy for the asking
+        jz      f44_ready
+        jmp     f44_notready
+
+;--- 02h and 03h: IOCTL read and write.  DS:DX the buffer, CX the
+;--- count, AX what moved.  See dl_ioctl for which drivers and why a
+;--- native program's buffer goes through a bounce.
+f44_ioin:
+        mov     ecx,DEVC_IOCTLIN
+        jmp     short f44_io
+f44_ioout:
+        mov     ecx,DEVC_IOCTLOUT
+f44_io:
+        push    ecx                     ; the request, for dl_ioctl
+        mov     eax,[ebp+F_EDX]
+        movzx   ecx,word ptr [ebp+F_ECX]
+        call    cbuf_ok
+        jc      f44_iodeny
+        movzx   ebx,word ptr [ebp+F_EBX]
+        call    sft_get
+        jc      f44_iobad
+        test    dword ptr [esi+SFT_FLAGS],SFTF_DEVICE
+        jz      f44_iofunc
+        call    sft_dev
+        cmp     dl,DEV_LOADED
+        jne     f44_iofunc
+        pop     ecx
+        mov     edi,[ebp+F_EDX]
+        movzx   eax,word ptr [ebp+F_ECX]
+        call    dl_ioctl                ; -> EAX moved, or CF and the error
+        jc      f44_drverr
+        mov     [ebp+F_EAX],ax
+        jmp     i21_ok
+f44_drverr:
+        jmp     i21_fail
+f44_iodeny:
+        pop     ecx
+        jmp     buf_deny
+f44_iobad:
+        pop     ecx
+        jmp     f44_bad
+f44_iofunc:
+        pop     ecx
+        jmp     f44_unsup
+
+;--- 0Ch: the generic IOCTL for a character device.  CH the category,
+;--- CL the function, DS:DX its block, SI and DI passed on.
+f44_genchar:
+        movzx   ebx,word ptr [ebp+F_EBX]
+        call    sft_get
+        jc      f44_bad
+        test    dword ptr [esi+SFT_FLAGS],SFTF_DEVICE
+        jz      f44_unsup
+        call    sft_dev
+        cmp     dl,DEV_LOADED
+        jne     f44_unsup
+        mov     eax,[ebp+F_EDX]
+        movzx   ecx,word ptr [ebp+F_ECX]
+        movzx   esi,word ptr [ebp+F_ESI]
+        movzx   edi,word ptr [ebp+F_EDI]
+        call    dl_genioctl
+        jc      f44_drverr
+        jmp     i21_ok
 
 ;--- 08h: can the media be changed? -----------------------------------
 ; AX = 0 removable, 1 fixed.  Decided by the BIOS drive number of the
@@ -4399,9 +4696,18 @@ f44_outstat:
 ;
 ; This is what an installer asks before it says "insert disk 2", and
 ; what a program that caches a directory asks before it decides it may.
+;
+; A CD-ROM's letter is "invalid function" here and REMOTE to 09h, as a
+; letter MSCDEX serves is: MSCDEX is a redirector, and DOS answers 08h
+; for a redirector's drive with error 1 and 09h with bit 12.  MSD tells
+; a CD-ROM drive by exactly that, and with "removable" and "local" it
+; listed D: as a 1.44M diskette drive of 265 cylinders (2026-10-09).
+; RMDOS gives the same two answers under Windows (f44_notnet).
 f44_removbl:
         call    f44_drive
         jc      f44_baddrv
+        test    byte ptr [ebx+DRV_FLAGS],DRVF_CDROM
+        jnz     f44_unsup
         cmp     byte ptr [ebx+DRV_BIOS],80h     ; the table, not the mounted volume
         jae     f44_fixed
         mov     word ptr [ebp+F_EAX],0
@@ -4412,14 +4718,17 @@ f44_fixed:
 
 ;--- 09h: is the drive somebody else's? -------------------------------
 ; DX is the device attribute word, and bit 12 is "remote".  Everything
-; here is local, so it is clear - but the call still has to VALIDATE
-; the drive, because "no" and "there is no such drive" are different
-; answers and a program that gets the first for a drive that does not
-; exist will go on to use it.
+; here is local but a CD-ROM (see 08h), so it is clear - but the call
+; still has to VALIDATE the drive, because "no" and "there is no such
+; drive" are different answers and a program that gets the first for a
+; drive that does not exist will go on to use it.
 f44_remote:
         call    f44_drive
         jc      f44_baddrv
         mov     dword ptr [ebp+F_EDX],0
+        test    byte ptr [ebx+DRV_FLAGS],DRVF_CDROM
+        jz      i21_ok
+        mov     dword ptr [ebp+F_EDX],1000h     ; a CD-ROM: see 08h
         jmp     i21_ok
 
 ;--- 0Bh: how hard to try when a file is locked -----------------------
@@ -4494,6 +4803,239 @@ f44_unsup:
         mov     ax,ERR_FUNC
         jmp     i21_fail
 
+;--- 0Dh: the generic IOCTL for a block device.  BL the drive (0 the
+;--- default, 1 = A:), CH the category, CL the function, DS:DX the
+;--- block.  ONE FUNCTION, CX = 0860h, GET DEVICE PARAMETERS: the
+;--- drive's type and cylinders and a BPB (DVP_ in PMDOS.INC).
+;
+; MSD asks it of every fixed disk for its Disk Drives report, and took
+; "invalid function" for an error worth ending the report over: its
+; int86x maps the error to errno, and at the end of the section MSD
+; prints "Error Writing" and strerror's "Invalid argument" and stops -
+; on the rig as on the 486 (2026-10-09).  MS-DOS has answered this
+; since 3.2 for every block drive.  The rest of 0Dh - setting the
+; parameters, tracks, the media ID - is still refused, and a CD-ROM's
+; letter refuses all of it, as MSCDEX's do.
+;
+; DVP_SPECIAL bit 0 asks for the medium in the drive rather than the
+; drive's own format.  A fixed disk's own format is its volume, read
+; off the disk if nothing has yet.  A diskette drive's is what the BIOS
+; says the drive is, and the disk is read only when bit 0 asks for it,
+; so that the question about an empty drive is not a critical error.
+f44_genblk:
+        call    f44_drive               ; -> EBX = the row, AL = the drive
+        jc      f44_baddrv
+        test    byte ptr [ebx+DRV_FLAGS],DRVF_CDROM
+        jnz     f44_unsup
+        cmp     word ptr [ebp+F_ECX],0860h
+        jne     f44_unsup
+        mov     [f4d_drive],al
+        mov     al,[ebx+DRV_BIOS]
+        mov     [f4d_bios],al
+        mov     eax,[ebp+F_EDX]
+        mov     ecx,DVP_LEN
+        call    cbuf_ok
+        jc      buf_deny
+        mov     edi,[ebp+F_EDX]
+        push    edi                     ; all of it after the byte that
+        inc     edi                     ; asked
+        xor     eax,eax
+        mov     ecx,DVP_LEN - 1
+        rep     stosb
+        pop     edi
+        cmp     byte ptr [f4d_bios],80h
+        jb      f4d_floppy
+
+        ; A fixed disk: the BIOS's view of its geometry, as a DOS
+        ; program's INT 13h has it, and the volume's own BPB
+        mov     byte ptr [edi+DVP_TYPE],DVT_FIXED
+        mov     word ptr [edi+DVP_ATTR],DVA_FIXED
+        mov     al,[f4d_bios]
+        call    dword ptr ds:[IOS_DRVGEO]       ; CX = spt, DX = heads,
+        jc      f4d_nogeo                       ; EBX = C*H*S
+        mov     [edi+DVP_SPT],cx
+        mov     [edi+DVP_HEADS],dx
+        movzx   ecx,cx
+        movzx   edx,dx
+        imul    ecx,edx
+        jecxz   f4d_nogeo
+        mov     eax,ebx
+        xor     edx,edx
+        div     ecx
+        cmp     eax,0FFFFh
+        jbe     f4d_cyls
+        mov     eax,0FFFFh
+f4d_cyls:
+        mov     [edi+DVP_CYLS],ax
+f4d_nogeo:
+        mov     al,[f4d_drive]
+        call    vol_select
+        jc      f4d_fail
+        cmp     byte ptr [vol_fs],FS_FAT
+        jne     f4d_fail
+        call    f4d_bpb
+        jmp     i21_ok
+
+        ; A diskette drive: its type from the BIOS, and the BPB of the
+        ; format it was made for unless the disk in it was asked about
+f4d_floppy:
+        mov     byte ptr [f4d_fdt],FDT_1440     ; until the drive says
+        mov     al,[f4d_bios]
+        mov     ah,FDF_TYPE
+        call    dword ptr ds:[IOS_FLOPPY]       ; BL = FDT_*, CH = cylinders
+        jc      f4d_fdtype
+        movzx   eax,ch
+        mov     [edi+DVP_CYLS],ax
+        cmp     bl,FDT_2880
+        ja      f4d_fdtype
+        cmp     bl,FDT_NONE
+        je      f4d_fdtype
+        mov     [f4d_fdt],bl
+f4d_fdtype:
+        movzx   ebx,byte ptr [f4d_fdt]
+        mov     al,[f4d_dvt + ebx]
+        mov     [edi+DVP_TYPE],al
+        cmp     word ptr [edi+DVP_CYLS],0
+        jne     f4d_fdcyl
+        mov     word ptr [edi+DVP_CYLS],80
+        cmp     bl,FDT_360
+        jne     f4d_fdcyl
+        mov     word ptr [edi+DVP_CYLS],40
+f4d_fdcyl:
+        test    byte ptr [edi+DVP_SPECIAL],1
+        jnz     f4d_medium
+        imul    esi,ebx,DVP_BPBLEN              ; the drive's own format
+        add     esi,OFFSET f4d_fdbpb - DVP_BPBLEN
+        push    edi
+        add     edi,DVP_BPS
+        mov     ecx,DVP_BPBLEN
+        rep     movsb
+        pop     edi
+        jmp     i21_ok
+f4d_medium:
+        mov     al,[f4d_drive]                  ; the disk in it, read now
+        call    vol_select
+        jc      f4d_fail
+        cmp     byte ptr [vol_fs],FS_FAT
+        jne     f4d_fail
+        call    f4d_bpb
+        ; a diskette's BPB carries its tracks and sides and the volume
+        ; layer does not keep them: two sides, forty or eighty tracks,
+        ; and what that leaves is the sectors a track - 9, 15, 18, 21
+        ; for DMF, 36
+        movzx   eax,word ptr [edi+DVP_TOTSEC16]
+        mov     ecx,40 * 2
+        cmp     eax,720
+        jbe     f4d_tracks
+        mov     ecx,80 * 2
+f4d_tracks:
+        xor     edx,edx
+        div     ecx
+        mov     [edi+DVP_SPT],ax
+        mov     word ptr [edi+DVP_HEADS],2
+        jmp     i21_ok
+f4d_fail:
+        mov     ax,ERR_GENERAL
+        jmp     i21_fail
+
+;--- f4d_bpb - EDI = the block: its BPB from the volume in vol_state,
+;--- in the volume's LOGICAL sectors as 7302h's numbers are.  The
+;--- hidden sectors are where the volume starts on the disk.  SPT and
+;--- HEADS are the caller's.
+f4d_bpb:
+        push    ecx
+        movzx   ecx,byte ptr [fat_lshift]
+        mov     eax,512
+        shl     eax,cl
+        mov     [edi+DVP_BPS],ax
+        mov     eax,[fat_spc]
+        shr     eax,cl
+        mov     [edi+DVP_SPC],al
+        mov     eax,[fat_rsvd]
+        shr     eax,cl
+        mov     [edi+DVP_RSVD],ax
+        mov     eax,[fat_nfats]
+        mov     [edi+DVP_NFATS],al
+        mov     eax,[fat_rootent]
+        mov     [edi+DVP_ROOT],ax
+        mov     eax,[fat_totsec]
+        shr     eax,cl
+        cmp     byte ptr [fat_type],32
+        je      f4b_big
+        cmp     eax,0FFFFh
+        ja      f4b_big
+        mov     [edi+DVP_TOTSEC16],ax
+        jmp     short f4b_media
+f4b_big:
+        mov     [edi+DVP_TOTSEC32],eax
+f4b_media:
+        mov     al,[fat_media]
+        mov     [edi+DVP_MEDIA],al
+        cmp     byte ptr [fat_type],32          ; FAT32's is in the 32-bit
+        je      f4b_hidden                      ; BPB, which this is not
+        mov     eax,[fat_spf]
+        shr     eax,cl
+        mov     [edi+DVP_SPF],ax
+f4b_hidden:
+        mov     eax,[fat_partlba]
+        shr     eax,cl
+        mov     [edi+DVP_HIDDEN],eax
+        pop     ecx
+        ret
+
+f4d_drive       db      0
+f4d_bios        db      0
+f4d_fdt         db      0
+f4d_dvt         db      DVT_OTHER, DVT_360, DVT_1200, DVT_720, DVT_OTHER, DVT_2880
+                                        ; by FDT_*, none counted as 1.44M
+; Each drive's own format, by FDT_* from FDT_360: bytes a sector,
+; sectors a cluster, reserved, FATs, root entries, sectors, media,
+; sectors a FAT, sectors a track, heads, hidden, sectors (32-bit).
+f4d_fdbpb       dw      512
+                db      2
+                dw      1
+                db      2
+                dw      112, 720
+                db      0FDh
+                dw      2, 9, 2
+                dd      0, 0                    ; 360K
+                dw      512
+                db      1
+                dw      1
+                db      2
+                dw      224, 2400
+                db      0F9h
+                dw      7, 15, 2
+                dd      0, 0                    ; 1.2M
+                dw      512
+                db      2
+                dw      1
+                db      2
+                dw      112, 1440
+                db      0F9h
+                dw      3, 9, 2
+                dd      0, 0                    ; 720K
+                dw      512
+                db      1
+                dw      1
+                db      2
+                dw      224, 2880
+                db      0F0h
+                dw      9, 18, 2
+                dd      0, 0                    ; 1.44M
+                dw      512
+                db      2
+                dw      1
+                db      2
+                dw      240, 5760
+                db      0F0h
+                dw      9, 36, 2
+                dd      0, 0                    ; 2.88M
+f4d_fdend:
+IF (f4d_fdend - f4d_fdbpb) NE 5 * DVP_BPBLEN
+        .ERR    <f4d_fdbpb: a row is not DVP_BPBLEN bytes>
+ENDIF
+
 ;=====================================================================
 ; 45h - DUP.  BX = handle -> AX = a second handle to the same open
 ;       file.
@@ -4519,6 +5061,8 @@ fn45:
         mov     esi,edx
         mov     ecx,SFT_LEN / 4
         rep     movsd
+        lea     esi,[edi-SFT_LEN]       ; the copy: a second slot, so a
+        call    dl_devopen              ; second open for its own close
         mov     [ebp+F_EAX],ax
         jmp     i21_ok
 f45_bad:
@@ -4556,6 +5100,8 @@ f46_copy:
         mov     esi,edx
         mov     ecx,SFT_LEN / 4
         rep     movsd
+        lea     esi,[edi-SFT_LEN]       ; as 45h: a slot, an open
+        call    dl_devopen
 f46_same:
         jmp     i21_ok
 f46_bad:
@@ -9710,6 +10256,62 @@ f1B_bad:
         jmp     i21_ok
 
 ;=====================================================================
+; 1Fh - the default drive's drive parameter block
+; 32h - the same for the drive in DL, 0 = the default and 1 = A:
+;
+;   AL = 0, DS:BX -> the block
+;   AL = FFh: no such drive, or a CD-ROM, which has no block under
+;   MSCDEX either
+;
+; THE BLOCK IS THE DRIVE'S SLOT IN THE CHAIN the list of lists points
+; at (GDPB_ in PMDOS.INC, VDM.INC's vdm_dpbfresh), written afresh here
+; from the volume just selected - which MOUNTS it, as DOS's 32h reads
+; the disk to build its block - so a program that asks this and a
+; program that walks the chain find the same block at the same
+; address.  The flat address goes back in EBX and vdm_dsptr turns it
+; into DS:BX, as 1Bh's media byte goes back.
+;
+; Both were refused until 2026-10-09, with the carry and error 1, which
+; no DOS answers here: a caller that tests AL for FFh, as these two have
+; always been tested, took AL = 1 for success and its own DS:BX for a
+; drive parameter block.
+;=====================================================================
+fn1F:
+        mov     al,[cur_drive]
+        jmp     short f32_sel
+fn32:
+        mov     al,[ebp+F_EDX]
+        or      al,al
+        jnz     f32_expl
+        mov     al,[cur_drive]
+        jmp     short f32_sel
+f32_expl:
+        dec     al                      ; 1-based -> logical
+        cmp     al,MAX_DRIVES
+        jae     f32_bad
+f32_sel:
+        call    vol_select
+        jc      f32_bad
+        cmp     byte ptr [vol_fs],FS_FAT
+        jne     f32_bad
+        cmp     word ptr ds:[vdm_lolseg],0
+        je      f32_bad                 ; nowhere a 16-bit caller can reach
+        movzx   ebx,al
+        push    esi
+        call    vdm_dpbstate            ; it gets one?
+        pop     esi
+        jc      f32_bad
+        call    vdm_dpbfresh            ; the chain, this one included
+        imul    ebx,GDPB_LEN
+        add     ebx,GDPB_BASE
+        mov     [ebp+F_EBX],ebx
+        mov     byte ptr [ebp+F_EAX],0
+        jmp     i21_ok
+f32_bad:
+        mov     byte ptr [ebp+F_EAX],0FFh
+        jmp     i21_ok
+
+;=====================================================================
 ; 38h - country information.  DS:DX -> a 34-byte buffer, BX = country.
 ;
 ; ONE COUNTRY, ANSWERED HONESTLY.  PM-DOS has no COUNTRY.SYS and no
@@ -10086,13 +10688,13 @@ i21_table:
         dd      fn10,      fn11,      fn12,      fn13       ; 10-13
         dd      fn14,      fn15,      fn16,      fn17       ; 14-17
         dd      i21_unsup, fn19,      fn1A,      fn1B       ; 18-1B
-        dd      fn1C,      i21_unsup, i21_unsup, i21_unsup  ; 1C-1F
+        dd      fn1C,      i21_unsup, i21_unsup, fn1F       ; 1C-1F
         dd      i21_unsup, fn21,      fn22,      fn23       ; 20-23
         dd      fn24,      fn25,      i21_unsup, fn27       ; 24-27
         dd      fn28,      fn29,      fn2A,      fn2B       ; 28-2B
         dd      fn2C,      fn2D,      fn2E,      fn2F       ; 2C-2F
-        dd      fn30,      i21_unsup, i21_unsup, fn33       ; 30-33
-        dd      fn34,      fn35,      fn36,      i21_unsup  ; 34-37
+        dd      fn30,      i21_unsup, fn32,      fn33       ; 30-33
+        dd      fn34,      fn35,      fn36,      fn37       ; 34-37
         dd      fn38,      fn39,      fn3A,      fn3B       ; 38-3B
         dd      fn3C,      fn3D,      fn3E,      fn3F       ; 3C-3F
         dd      fn40,      fn41,      fn42,      fn43       ; 40-43
@@ -10256,3 +10858,8 @@ f8_rec      db  F8_LEN dup(0)           ; and F1h/08's, likewise
 sft_tbl     db  MAX_HANDLES * SFT_LEN dup(0)
 files_max   dd  MAX_HANDLES             ; how many of it FILES= hands out
 lastdrive_n dd  MAX_DRIVES              ; and how far LASTDRIVE= says to look
+lastdrive_cfg db 0                      ; ...and what it said, uncapped: 26
+                                        ; for Z:, 0 for no line.  RMDOS's
+                                        ; count (PARK.INC, RMH_LASTDRV),
+                                        ; which goes past this kernel's
+                                        ; sixteen for Windows' network

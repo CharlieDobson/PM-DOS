@@ -34,10 +34,18 @@
 ; documented and hoped for.
 ;=====================================================================
 
-PARK_SLACK      EQU     256             ; paragraphs of working room past
+PARK_SLACK      EQU     16              ; paragraphs of working room past
                                         ; the image - RMDOS's buffers and
                                         ; stacks are inside the image, so
-                                        ; this is only a margin
+                                        ; this is only a margin.  256 BYTES,
+                                        ; as plr_hma has always allowed: it
+                                        ; was 256 paragraphs, from when the
+                                        ; block was the image plus this, and
+                                        ; since the block became a fixed 64K
+                                        ; it only refused an image 4K short
+                                        ; of filling it - which the COM1
+                                        ; trace build reached with the
+                                        ; redirector interface (2026-10-07)
 
 ;=====================================================================
 ; park_run - ESI -> a flat ASCIIZ path of a 16-bit program to run
@@ -103,6 +111,7 @@ pk_keeppsp:
 
         call    park_loadrm             ; -> [park_seg]
         jc      pk_noimage
+        call    park_loadcd             ; -> [park_cdseg], 0 for no CD
 
         cmp     dword ptr [park_prog],0
         je      pk_nofill
@@ -144,6 +153,9 @@ pk_nomem:
 pk_out:
         pushfd
         call    park_release
+IFDEF EXIT_TRACE
+        XTMARK32 64,045h                ; 'E'
+ENDIF
         ; ...and the cache buys its floor back, AFTER park_release has
         ; handed the XMS pool to the arena and not before: inside
         ; park_recover the pool is still allocated, so the arena would
@@ -152,6 +164,9 @@ pk_out:
         ; back too.  Inside the pushfd because cache_tomin has flags of
         ; its own and CF here is the answer this call is about.
         call    cache_unpark
+IFDEF EXIT_TRACE
+        XTMARK32 65,055h                ; 'U'
+ENDIF
         popfd
         pop     ebp
         pop     edi
@@ -287,14 +302,36 @@ park_loadrm:
 
         mov     word ptr [park_seg],0
         mov     word ptr [park_pspseg],0
+        mov     byte ptr [park_cdroom],0
 
         ; Open it.  It lives in the root of the boot volume, next to
-        ; PMIO.SYS and PMDOS.SYS, and is found the same way they are.
+        ; PMIO.SYS and PMDOS.SYS - and that is not the current drive:
+        ; Windows is started from wherever it is installed, and the
+        ; machine may have been booted from a floppy with Windows on
+        ; the hard disk.  A name with no drive letter went to the
+        ; current drive, and a floppy boot could not start Windows at
+        ; all (the real-hardware test, 2026-10-08).  So the boot
+        ; drive's letter goes in the name; and if the file is not
+        ; there, the current drive's root is tried as well, for a set
+        ; of files copied there.
         mov     dword ptr [park_lderr],ERR_NOFILE
+        mov     al,[shell_dflt]                 ; the boot letter
+        mov     [park_name],al
+        mov     edx,OFFSET park_name
+        mov     eax,3D00h
+        call    k21
+        jnc     plr_opened
+        mov     eax,1900h                       ; the current drive
+        call    k21
+        add     al,'A'
+        cmp     al,[park_name]
+        je      plr_nofile
+        mov     [park_name],al
         mov     edx,OFFSET park_name
         mov     eax,3D00h
         call    k21
         jc      plr_nofile
+plr_opened:
         mov     word ptr [park_hnd],ax
         mov     dword ptr [park_lderr],ERR_BADDATA
 
@@ -401,16 +438,50 @@ plr_low:
         add     eax,15
         shr     eax,4
         add     eax,PARK_SLACK
-        cmp     eax,1000h
+        cmp     eax,PARK_RMPARAS
         ja      plr_bad                 ; too big to sit in one segment,
                                         ; which everything here assumes
-        mov     eax,1000h
+        mov     eax,PARK_RMPARAS
         mov     ebx,eax
         mov     dword ptr [park_lderr],ERR_NOMEM
         mov     word ptr [park_paras],ax        ; BEFORE the call: lm_alloc
                                         ; does not preserve EBX, and on
                                         ; failure it deliberately puts
                                         ; the largest free run there
+
+        ; A SEGMENT RESERVED WHEN WIN386.EXE WAS LOADED - vl_winres in
+        ; VDM.INC - is taken if it is still the block that was reserved:
+        ; the right size, wearing RMDOS's name, and still allocated.  A
+        ; reservation is made once and forgotten here whatever becomes
+        ; of it, so a Windows that never parked cannot leave a stale
+        ; segment for the next park to load into.
+        movzx   eax,word ptr [park_resseg]
+        mov     word ptr [park_resseg],0
+        or      eax,eax
+        jz      plr_fresh
+        lea     esi,[eax-1]
+        shl     esi,4
+        cmp     word ptr [esi+RMCB_LEN],PARK_RMPARAS
+        je      plr_ressize
+        cmp     word ptr [esi+RMCB_LEN],PARK_RMPARAS + PARK_CDPARAS
+        jne     plr_fresh
+        mov     byte ptr [park_cdroom],1        ; reserved with RMCD's room
+plr_ressize:
+        cmp     word ptr [esi+RMCB_OWN],0
+        je      plr_fresh
+        cmp     byte ptr [esi+RMCB_NAME],'R'
+        jne     plr_fresh
+        cmp     byte ptr [esi+RMCB_NAME+1],'M'
+        jne     plr_fresh
+        cmp     byte ptr [esi+RMCB_NAME+2],'D'
+        jne     plr_fresh
+        cmp     byte ptr [esi+RMCB_NAME+3],'O'
+        jne     plr_fresh
+        cmp     byte ptr [esi+RMCB_NAME+4],'S'
+        jne     plr_fresh
+        mov     word ptr [park_seg],ax
+        jmp     plr_placed
+plr_fresh:
         ; FIRST FIT, and deliberately.  Parking at the TOP of conventional
         ; memory was tried and is wrong: the Windows kernel scans for the
         ; SFT only as far as 80000h, and RMDOS at 96C2 - 626K - is past
@@ -418,6 +489,19 @@ plr_low:
         ; And the reason it was tried does not hold either.  The kernel is
         ; not short of memory: KRNL386.EXE asks for MAXALLOC 0000, so 73K
         ; is image-plus-nothing and is the RIGHT answer.  Low it stays.
+        ;
+        ; With RMCD.SYS's room after it when there is a CD-ROM for it -
+        ; the same block vl_winres reserves, the same size.
+        mov     byte ptr [park_cdroom],0
+        call    park_cdfind
+        jc      plr_nocdroom
+        add     ebx,PARK_CDPARAS
+        mov     byte ptr [park_cdroom],1
+        call    lm_alloc                ; -> AX = segment
+        jnc     plr_got
+        mov     byte ptr [park_cdroom],0        ; no room for both: RMDOS,
+        mov     ebx,PARK_RMPARAS                ; and no CD this time
+plr_nocdroom:
         call    lm_alloc                ; -> AX = segment
 IFDEF RMDOS_LOW
         jc      plr_bad                 ; BUILD rmlow - low or nothing, so
@@ -425,10 +509,12 @@ IFDEF RMDOS_LOW
 ELSE
         jc      plr_hma
 ENDIF
+plr_got:
         mov     word ptr [park_seg],ax
         jmp     short plr_placed
 
 plr_hma:
+        mov     byte ptr [park_cdroom],0        ; nowhere for RMCD up there
         mov     eax,dword ptr [park_size]
         add     eax,256                 ; and a little room to grow into
         cmp     eax,10000h
@@ -492,6 +578,131 @@ plr_nofile:
         pop     ecx
         pop     ebx
         stc
+        ret
+
+;---------------------------------------------------------------------
+; park_cdfind - the CD-ROM letter Windows gets, if any: the first one
+;               whose unit is ATAPI.  -> park_cdlet, park_cdbase,
+;               park_cdctrl, park_cdsel.  CF if there is none.  All
+;               registers kept.
+;
+; A CD-ROM UNDER WINDOWS IS RMCD.SYS (DOS\RMCD.ASM), a real-mode
+; redirector loaded after RMDOS's 64K: the kernel's own reader is
+; 32-bit and does not run while it is parked.  RMCD talks to the drive
+; on its IDE channel, so this finds an ATAPI unit and the ports it is
+; on.  A SCSI CD-ROM would need an ASPI manager under Windows and is
+; not given one; only the first letter is served, as one is what this
+; machine's users have.
+;---------------------------------------------------------------------
+park_cdfind:
+        pushad
+        mov     esi,OFFSET drv_tbl
+        xor     ecx,ecx
+pcf_row:
+        cmp     cl,[drv_count]
+        jae     pcf_none
+        test    byte ptr [esi+DRV_FLAGS],DRVF_CDROM
+        jz      pcf_next
+        mov     al,[esi+DRV_BIOS]               ; the unit
+        push    ecx
+        call    dword ptr ds:[IOS_CDUNIT]       ; EDX index, EBX ctrl:base
+        pop     ecx
+        jc      pcf_next
+        cmp     edx,-1
+        je      pcf_next                        ; SCSI
+        mov     [park_cdlet],cl
+        mov     [park_cdbase],bx
+        shr     ebx,16
+        mov     [park_cdctrl],bx
+        mov     byte ptr [park_cdsel],0
+        test    dl,1                            ; channel * 2 + 1: the slave
+        jz      pcf_master
+        mov     byte ptr [park_cdsel],10h
+pcf_master:
+        cmp     word ptr [park_cdctrl],0
+        je      pcf_next                        ; no control port: not usable
+        popad
+        clc
+        ret
+pcf_next:
+        add     esi,DRV_LEN
+        inc     ecx
+        jmp     short pcf_row
+pcf_none:
+        popad
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; park_loadcd - RMCD.SYS into the room after RMDOS's 64K, when the block
+;               has that room (park_cdroom) and there is a CD-ROM letter
+;               for it.  -> park_cdseg, or 0 if there is no CD under
+;               Windows this time, which is not an error: the letter is
+;               then simply not there, as it would not be on a DOS with
+;               no CD-ROM driver loaded.  All registers kept.
+;---------------------------------------------------------------------
+park_loadcd:
+        pushad
+        mov     word ptr [park_cdseg],0
+        cmp     byte ptr [park_cdroom],0
+        je      plc_out
+        call    park_cdfind
+        jc      plc_out
+        mov     al,[shell_dflt]                 ; the boot letter, as for
+        mov     [park_cdname],al                ; RMDOS.SYS
+        mov     edx,OFFSET park_cdname
+        mov     eax,3D00h
+        call    k21
+        jc      plc_out
+        mov     word ptr [park_hnd],ax
+        movzx   ebx,ax
+        mov     eax,4202h
+        xor     ecx,ecx
+        xor     edx,edx
+        call    k21
+        jc      plc_close
+        cmp     eax,PARK_CDPARAS * 16
+        ja      plc_close                       ; it would not fit its room
+        cmp     eax,RCH_CTRL + 2
+        jb      plc_close
+        mov     dword ptr [park_cdsize],eax
+        movzx   ebx,word ptr [park_hnd]
+        mov     eax,4200h
+        xor     ecx,ecx
+        xor     edx,edx
+        call    k21
+        jc      plc_close
+        movzx   edx,word ptr [park_seg]
+        add     edx,PARK_RMPARAS
+        mov     word ptr [park_cdseg],dx        ; tentatively
+        shl     edx,4                           ; flat
+        movzx   ebx,word ptr [park_hnd]
+        mov     ecx,dword ptr [park_cdsize]
+        mov     eax,3F00h
+        call    k21
+        jc      plc_bad
+        cmp     eax,dword ptr [park_cdsize]
+        jne     plc_bad
+        cmp     dword ptr [edx+RCH_SIG],RC_SIG
+        jne     plc_bad
+        mov     al,[park_cdlet]
+        mov     [edx+RCH_LETTER],al
+        mov     al,[park_cdsel]
+        mov     [edx+RCH_SEL],al
+        mov     ax,[park_cdbase]
+        mov     [edx+RCH_BASE],ax
+        mov     ax,[park_cdctrl]
+        mov     [edx+RCH_CTRL],ax
+        jmp     short plc_close
+plc_bad:
+        mov     word ptr [park_cdseg],0
+plc_close:
+        movzx   ebx,word ptr [park_hnd]
+        mov     eax,3E00h
+        call    k21
+        mov     word ptr [park_hnd],0
+plc_out:
+        popad
         ret
 
 ;---------------------------------------------------------------------
@@ -823,6 +1034,18 @@ pfh_fd:
         mov     al,LASTDRIVE
 pfh_ndrv:
         mov     byte ptr [edi + RMH_NDRV],al
+IF LASTDRIVE GT RMH_DRVROWS
+        .ERR    <PARK.INC: more drive rows than RMDOS's header has room for>
+ENDIF
+        ; LASTDRIVE= AS IT WAS WRITTEN, past this kernel's sixteen if it
+        ; said so: RMDOS keeps current directory structures to Z: for
+        ; the letters Windows for Workgroups maps network drives to.
+        mov     al,[lastdrive_cfg]
+        mov     byte ptr [edi + RMH_LASTDRV],al
+        ; ...and the CD-ROM's redirector, if park_loadcd put one after
+        ; RMDOS's 64K: RMDOS marks the letter and calls it to start.
+        mov     ax,[park_cdseg]
+        mov     word ptr [edi + RMH_CDSEG],ax
 
         ; VERBOSE ONLY WHEN PM-DOS STARTED THE PROGRAM.  Announcing
         ; itself is what makes RMDOS testable - PARKWIN.COM's screen is
@@ -899,18 +1122,69 @@ pfh_drives:
         movzx   eax,word ptr ds:[dvs_seg]
         shl     eax,16                  ; offset 0
         mov     dword ptr [edi + RMH_STUBS],eax
+
+        ; The cache RMDOS keeps under Windows: WINCACHE= in CONFIG.SYS,
+        ; or an eighth of the pool when the line is absent, and never
+        ; more than RMCACHE.INC's directory can name.  Sized from the
+        ; pool AFTER park_xmsgrab, which is why it is here and not in
+        ; the config pass.  See RMDOS.INC, RMH_WINCACHE.
+        mov     eax,dword ptr [cfgc_winkb]
+        cmp     eax,-1
+        jne     pfh_wcgiven
+        mov     eax,dword ptr [park_xmslen]
+        shr     eax,13                  ; bytes -> an eighth, in KB
+pfh_wcgiven:
+        cmp     eax,4096
+        jbe     pfh_wcfits
+        mov     eax,4096
+pfh_wcfits:
+        mov     word ptr [edi + RMH_WINCACHE],ax
+        mov     ax,word ptr [cfgc_winflg]
+        mov     word ptr [edi + RMH_WCFLAGS],ax
+
+        ; The block below 64K that RMDOS builds its published DOS data
+        ; in - the kernel's own DOS data segment, which RMDOS saves and
+        ; restores around the excursion.  See RMDOS.INC, RMH_LOWSEG.
+        ; The length is the part RMDOS builds in, not the whole segment:
+        ; the two lay it out alike now, and the second half of the file
+        ; table is the kernel's on both sides of the handover.
+        mov     word ptr [edi + RMH_LOWSEG],DOSDATA_SEG
+        mov     word ptr [edi + RMH_LOWLEN],RL_SAVEMAX
+        ; ...with the current directories in it as they are NOW, which
+        ; is where RMDOS starts each drive (rd_sysinit).  The array is
+        ; otherwise rewritten only when a program asks 52h.
+        call    vdm_cdsfresh
+
+        ; AND THE KERNEL KEEPS ITS OWN BYTES (2026-10-09).  RMDOS builds
+        ; its DOS data over the first RL_SAVEMAX of this segment and
+        ; used to keep a copy of what was there to put back, in its own
+        ; 64K - where the copy grew with the twenty-six letters Windows'
+        ; network needs, and pushed the traced build past the segment.
+        ; Up here it costs nothing: park_recover puts it back before
+        ; anything of the kernel's reads the segment again.
+        push    esi
+        push    edi
+        push    ecx
+        mov     esi,DOSDATA
+        mov     edi,OFFSET park_lowkeep
+        mov     ecx,RL_SAVEMAX / 4
+        cld
+        rep     movsd
+        mov     byte ptr [park_lowsaved],1
+        pop     ecx
+        pop     edi
+        pop     esi
 IFDEF DBG_LPT
-        ; The two spare header dwords, carrying the ownership probe.
-        ; Largest and total are both known to be 512 bytes in the case
-        ; being chased, so the space is better spent on WHOSE.
-        mov     eax,dword ptr [park_xmsbigown]
-        mov     dword ptr [edi + RMH_RSVD],eax
+        ; The spare header dword, carrying the ownership probe: the
+        ; largest allocated block's size in KB, and who the park ran
+        ; as.  (Its owner went when RMH_LOWSEG took the dword before
+        ; this one.)
         mov     eax,dword ptr [park_xmsbig]
         shr     eax,10                          ; KB - it fits in sixteen bits
         mov     edx,dword ptr [park_xmscur]
         shl     edx,16
         or      eax,edx
-        mov     dword ptr [edi + RMH_RSVD + 4],eax
+        mov     dword ptr [edi + RMH_RSVD],eax
 ENDIF
 
         ; The drive table.  PM-DOS scanned the partitions; this is the
@@ -951,13 +1225,38 @@ pfh_flags:
         ; CHANGES WHAT DRV_BIOS MEANS HAS TO BE NAMED EVERYWHERE THAT
         ; READS DRV_BIOS.  There are four of them now, and three of
         ; them are exceptions.
-        test    byte ptr [esi+DRV_FLAGS],DRVF_DRIVER OR DRVF_CDROM OR DRVF_IMAGE
+        ;
+        ; A DRIVER'S UNIT GOES OVER NOW (2026-10-06), whole: its pseudo
+        ; number, which names no real disk, its driver's header in
+        ; RMD_START and the driver's number for it in the flags, and
+        ; RMDOS sends the driver the packets this kernel sends it
+        ; (RMDEV.INC, rd_drvraw).  A CD-ROM and a mounted image are
+        ; still the kernel's own and still are not there.
+        test    byte ptr [esi+DRV_FLAGS],DRVF_CDROM OR DRVF_IMAGE
+        jnz     pfh_absent
+        test    byte ptr [esi+DRV_FLAGS],DRVF_DRIVER
         jz      pfh_notdrv
+        push    ecx                     ; the loop's count
+        mov     dl,al
+        mov     al,[esi+DRV_BIOS]
+        call    dl_unitfar              ; -> EAX, CL
+        jc      pfh_drvgone
+        mov     dword ptr [ebx+RMD_START],eax
+        shl     cl,RMDF_UNITSHIFT
+        or      dl,cl
+        or      dl,RMDF_DRIVER
+        mov     [ebx+RMD_FLAGS],dl
+        pop     ecx
+        jmp     short pfh_nextrow
+pfh_drvgone:
+        pop     ecx
+pfh_absent:
         xor     al,al
 pfh_notdrv:
         mov     [ebx+RMD_FLAGS],al
         mov     eax,dword ptr [esi+DRV_START]
         mov     dword ptr [ebx+RMD_START],eax
+pfh_nextrow:
         add     esi,DRV_LEN
         add     ebx,RMD_LEN
         loop    pfh_one
@@ -1034,6 +1333,9 @@ ENDIF
         call    dword ptr ds:[IOS_PARK]
 IFDEF RMDOS_BISECT
         mov     word ptr ds:[0B8000h + 150],1F35h       ; '5' - and back
+ENDIF
+IFDEF EXIT_TRACE
+        XTMARK32 57,04Bh                ; 'K'
 ENDIF
 
         ; ...and we are back in protected mode, with paging on, at the
@@ -1179,16 +1481,39 @@ pcj_done:
 ;---------------------------------------------------------------------
 park_recover:
         pushad
+        ; THE DOS DATA SEGMENT FIRST, as it was when park_fillhdr kept
+        ; it: RMDOS has been building its own list of lists, SDA and
+        ; current directories over it, and every box's view of DOS is
+        ; read out of it.
+        cmp     byte ptr [park_lowsaved],0
+        je      prc_nolow
+        mov     esi,OFFSET park_lowkeep
+        mov     edi,DOSDATA
+        mov     ecx,RL_SAVEMAX / 4
+        cld
+        rep     movsd
+        mov     byte ptr [park_lowsaved],0
+prc_nolow:
+IFDEF EXIT_TRACE
+        XTMARK32 58,04Ch                ; 'L'
+ENDIF
         call    park_chainjoin          ; upper memory exists again
+IFDEF EXIT_TRACE
+        XTMARK32 59,04Dh                ; 'M'
+ENDIF
 
-        ; The DOS vectors, AS THEY WERE: RMDOS took the ones still
-        ; pointing at PM-DOS's stubs and wrote a jump into the stub of
-        ; every one a program had hooked (rd_vecs).  Both halves go
-        ; back - the table from the copy taken before the park, and the
-        ; stubs by planting them again - and a TSR loaded in a box
-        ; before Windows is still hooked after it.  This used to plant
-        ; fresh stubs in the table, which unhooked it.
+        ; The DOS vectors: RMDOS took the ones still pointing at
+        ; PM-DOS's stubs and wrote a jump into the stub of every one a
+        ; program had hooked (rd_vecs).  The ones it took go back from
+        ; the copy taken before the park, the stubs are planted again,
+        ; and a TSR loaded in a box before Windows is still hooked after
+        ; it.  This used to plant fresh stubs in the table, which
+        ; unhooked it - and then to put the whole copy back, which
+        ; re-hooked it; see park_restvecs.
         call    park_restvecs
+IFDEF EXIT_TRACE
+        XTMARK32 60,056h                ; 'V'
+ENDIF
 
         ; Every volume, again.  RMDOS has been writing to these disks
         ; and every FAT window and cluster cached up here describes the
@@ -1205,7 +1530,13 @@ park_recover:
         ; Nothing is written back either way: what RMDOS put on those
         ; sectors is the truth now.
         call    cache_dropall
+IFDEF EXIT_TRACE
+        XTMARK32 61,043h                ; 'C'
+ENDIF
         call    park_remount
+IFDEF EXIT_TRACE
+        XTMARK32 63,052h                ; 'R'
+ENDIF
         mov     byte ptr [vfl_parked],0         ; the next commit may mark
                                                 ; them clean again
         popad
@@ -1215,9 +1546,96 @@ park_recover:
 ; park_savevecs / park_restvecs - the sixteen DOS vectors, 20h-2Fh,
 ; copied aside before the park and put back after it, with the stubs
 ; they may point at planted again.
+;
+; ONLY THE ONES RMDOS TOOK GO BACK FROM THE COPY.  The copy is the
+; table as it stood at 1605h, and at 1605h the program that is parking
+; may itself have vectors hooked - WIN386.EXE's real-mode half does -
+; which it unhooks on its way out, before RMDOS hands back.  Putting
+; the whole copy back re-hooked them, into a block park_release was
+; about to free, and the first DOS box after an enhanced-mode session
+; sent its INT 21h into whatever was there by then: HELLO ran, printed
+; nothing and came back with errorlevel 0.  Standard mode never showed
+; it because DOSX hooks nothing in this range before it asks.
+;
+; So each vector is looked at as RMDOS left it.  Pointing into RMDOS's
+; image, it is one RMDOS took (rd_vecs takes only a vector that was
+; pointing at its stub), and the copy - the stub - goes back.  Pointing
+; anywhere else, it is a TSR's hook that chains to the stub, or the
+; address the parking program restored, and it stays.  park_release
+; has not run yet, so [park_seg] and [park_paras] still say where RMDOS
+; was.
 ;---------------------------------------------------------------------
 IF RMS_STUBLEN NE DVS_LEN
         .ERR    <RMDOS.INC's RMS_STUBLEN and PMDOS.INC's DVS_LEN disagree>
+ENDIF
+IF RL_SAVEMAX GT DOSDATA_SIZE
+        .ERR    <RMDOS would save and restore more than the DOS data segment>
+ENDIF
+IF RL_LEN GT DOSDATA_SIZE
+        .ERR    <RMDOS's published DOS data does not fit in the DOS data segment>
+ENDIF
+
+; ONE LAYOUT ON BOTH SIDES OF THE HANDOVER (RMDOS.INC, and DOSDATA in
+; PMDOS.INC).  A driver CONFIG.SYS loaded asked the kernel where InDOS,
+; the SDA and the list of lists are, and asks nobody again; a loaded
+; driver's header links to the kernel's CON.  Every one of those
+; addresses has to mean the same thing to RMDOS.
+IF GLOL_DOSVER NE RL_DATAVER
+        .ERR    <the kernel and RMDOS keep DataVersion in different places>
+ENDIF
+IF GLOL_MCBSEG NE RL_LOL
+        .ERR    <the kernel and RMDOS start the list of lists in different places>
+ENDIF
+IF GLOL_HNUL NE RL_NULDEV
+        .ERR    <the kernel and RMDOS keep NUL in different places>
+ENDIF
+IF GLOL_TAIL NE RL_LOLEND
+        .ERR    <the list of lists ends in different places on the two sides>
+ENDIF
+IF GLOL_UMBHEAD NE RL_UMBWORD
+        .ERR    <the kernel and RMDOS keep UMB_HEAD in different places>
+ENDIF
+IF GLOL_JSHARE NE RL_JSHARE
+        .ERR    <the kernel and RMDOS keep SHARE's jump table in different places>
+ENDIF
+IF GLOL_RETF NE RL_DEVRET
+        .ERR    <the kernel and RMDOS keep the device RETF in different places>
+ENDIF
+IF GLOL_HCON NE RL_DEVS
+        .ERR    <the kernel's CON is not where RMDOS's is>
+ENDIF
+IF GLOL_HPRN NE RL_DEVS + 2 * RL_DEVLEN
+        .ERR    <the kernel's PRN is not where RMDOS's is>
+ENDIF
+IF GNLS_OFF NE RL_NLS
+        .ERR    <the country tables are not where RMDOS leaves them alone>
+ENDIF
+IF GNLS_END GT RL_NLSEND
+        .ERR    <the country tables run past what RMDOS leaves alone>
+ENDIF
+IF GNLS_UPCASE NE RL_NLSUP
+        .ERR    <RMDOS's 6502h would not find the kernel's upper-case table>
+ENDIF
+IF GNLS_TERM NE RL_NLSTERM
+        .ERR    <RMDOS's 6505h would not find the kernel's terminator table>
+ENDIF
+IF GNLS_COLLATE NE RL_NLSCOLL
+        .ERR    <RMDOS's 6506h would not find the kernel's collating table>
+ENDIF
+IF GNLS_DBCS NE RL_NLSDBCS
+        .ERR    <RMDOS's 6507h would not find the kernel's DBCS table>
+ENDIF
+IF GLOL_FSHARE NE RL_FSHARE
+        .ERR    <the kernel and RMDOS keep SHARE's flag in different places>
+ENDIF
+IF SDA_OFF NE RL_SDA
+        .ERR    <the kernel and RMDOS keep the SDA in different places>
+ENDIF
+IF GCDS_OFF NE RL_CDS
+        .ERR    <the kernel and RMDOS keep the current directories in different places>
+ENDIF
+IF GCDS_LEN NE RL_CDSLEN
+        .ERR    <the kernel's and RMDOS's current directory entries differ in size>
 ENDIF
 
 park_savevecs:
@@ -1228,6 +1646,27 @@ park_savevecs:
         mov     edi,OFFSET park_ivt
         mov     ecx,DVS_COUNT
         rep     movsd
+
+        ; THE EXPANDED-MEMORY HEADER GOES NAMELESS FOR THE TRIP.  With
+        ; EMS on, INT 67h points at an IRET in a paragraph that carries
+        ; EMMXXXX0 at offset 0Ah - the detection the LIM specification
+        ; recommends - and the calls themselves are answered by the
+        ; monitor, which traps INT 67h before the IRET is ever reached.
+        ; Parked there is no monitor: WIN386's loader reads the vector,
+        ; finds the name, calls a manager that is nothing but an IRET,
+        ; and stops with "Unsupported expanded-memory driver already
+        ; installed" (the real-hardware test of 2026-10-08, booted with
+        ; EMS=AUTO; every rig had run Windows with no EMS line).  So the
+        ; eight bytes are blanked while RMDOS has the machine and put
+        ; back by park_restvecs.  A program under Windows then finds no
+        ; manager of ours, which is right: Windows brings its own.
+        mov     edi,[ems_hdrseg]
+        or      edi,edi
+        jz      psv_out
+        shl     edi,4
+        mov     dword ptr [edi+DEVH_NAME],'    '
+        mov     dword ptr [edi+DEVH_NAME+4],'    '
+psv_out:
         popad
         ret
 
@@ -1235,11 +1674,41 @@ park_restvecs:
         pushad
         mov     al,1                    ; the mouse started again
         call    dword ptr ds:[IOS_MSPARK]
+        movzx   edx,word ptr [park_seg]
+        shl     edx,4                   ; EDX = RMDOS's image, first byte
+        movzx   ebx,word ptr [park_paras]
+        cmp     word ptr [park_cdseg],0 ; RMCD.SYS after it took INT 2Fh,
+        je      prv_rmonly              ; and its room goes when the block
+        add     ebx,PARK_CDPARAS        ; does: a vector into it is one to
+prv_rmonly:                             ; put back as well
+        shl     ebx,4
+        add     ebx,edx                 ; EBX = the byte after it
         mov     esi,OFFSET park_ivt
         mov     edi,20h * 4
         mov     ecx,DVS_COUNT
-        rep     movsd
+prv_one:
+        movzx   eax,word ptr [edi+2]    ; the vector as RMDOS left it,
+        shl     eax,4                   ; as a linear address
+        movzx   ebp,word ptr [edi]
+        add     eax,ebp
+        cmp     eax,edx
+        jb      prv_keep
+        cmp     eax,ebx
+        jae     prv_keep
+        mov     eax,dword ptr [esi]     ; into RMDOS: it took this one, and
+        mov     dword ptr [edi],eax     ; the stub goes back
+prv_keep:
+        add     esi,4
+        add     edi,4
+        loop    prv_one
         call    dvs_plant
+        mov     edi,[ems_hdrseg]        ; the manager's name back (see
+        or      edi,edi                 ; park_savevecs)
+        jz      prv_out
+        shl     edi,4
+        mov     dword ptr [edi+DEVH_NAME],'XMME'        ; 'EMMX'
+        mov     dword ptr [edi+DEVH_NAME+4],'0XXX'      ; 'XXX0'
+prv_out:
         popad
         ret
 
@@ -1273,6 +1742,16 @@ park_restvecs:
 ; reaches the letter without mounting it.  A volume that was not
 ; mounted has nothing cached to be wrong about, and vol_select mounts
 ; it the first time anything asks, off whatever disk is there then.
+;
+; AND EACH DRIVE GOES BACK TO ITS OWN CURRENT DIRECTORY (2026-10-06).
+; A mount starts a volume at its root (FAT.INC, fat_mount), so every
+; excursion used to bring the machine home at the root of every drive:
+; leave Windows from C:\WINDOWS and the prompt said C:\.  The directory
+; each drive was in is kept across the mount and walked into again,
+; the way CHDIR walks into one; if Windows took it away meanwhile, the
+; root is where the drive stays.  RUNTESTS found it: a test that parks
+; sent every test after it to run in C:\ instead of C:\WORK, and
+; FCBTEST's wildcard delete there took its own output file.
 park_remount:
         push    eax
         push    ecx
@@ -1293,19 +1772,71 @@ pr_loop:
         mov     dword ptr [dc_curord],-1
         cmp     byte ptr [fat_ok],0
         je      pr_next                 ; never mounted: nothing to redo
+        push    ecx
+        push    esi
+        push    edi
+        mov     eax,[cwd_cnt]           ; where it was, before the mount
+        mov     [pr_cnt],eax            ; puts it at the root
+        mov     esi,OFFSET cwd_names
+        mov     edi,OFFSET pr_names
+        mov     ecx,MAX_DEPTH * 11 / 4
+        cld
+        rep     movsd
+        pop     edi
+        pop     esi
+        pop     ecx
         mov     byte ptr [fat_ok],0
         mov     al,cl
+IFDEF EXIT_TRACE
+        push    eax                     ; which drive is being mounted
+        add     al,'A'
+        mov     ah,4Fh
+        mov     word ptr ds:[0B8000h + XT_COLDRV * 2],ax
+        pop     eax
+ENDIF
         call    vol_select              ; and mount it afresh
+        jc      pr_next
+        mov     eax,[pr_cnt]
+        or      eax,eax
+        jz      pr_next                 ; it was at the root anyway
+        cmp     eax,MAX_DEPTH
+        ja      pr_next
+        push    ecx
+        push    esi
+        push    edi
+        mov     [rp_cnt],eax            ; the names as a resolved path -
+        mov     esi,OFFSET pr_names     ; 8.3 and canonical, as cwd_install
+        mov     edi,OFFSET rp_names     ; kept them - and no long halves
+        mov     ecx,MAX_DEPTH * 11 / 4
+        rep     movsd
+        mov     edi,OFFSET rp_lflag
+        mov     ecx,MAX_DEPTH
+        xor     al,al
+        rep     stosb
+        mov     ecx,[rp_cnt]
+        call    walk_to
+        jc      pr_gone                 ; not there now: the root it is
+        call    cwd_here
+pr_gone:
+        pop     edi
+        pop     esi
+        pop     ecx
 pr_next:
         inc     cl
-        jmp     short pr_loop
+        jmp     pr_loop                 ; near: MASM will not stretch a short one
 pr_done:
+IFDEF EXIT_TRACE
+        XTMARK32 XT_COLDRV,02Dh         ; '-'
+ENDIF
         pop     eax
         mov     byte ptr [crit_busy],al ; back to whatever it was, which is
                                         ; zero unless a handler is running
         pop     ecx
         pop     eax
         ret
+
+pr_cnt      dd  0                       ; park_remount: one drive's current
+pr_names    db  MAX_DEPTH * 11 dup (0)  ; directory, across its mount
 
 ;---------------------------------------------------------------------
 ; park_release - give the low memory back
@@ -1346,6 +1877,8 @@ prl_nop:
 prl_wasHMA:
         mov     byte ptr [park_high],0
         mov     word ptr [park_seg],0
+        mov     word ptr [park_cdseg],0         ; RMCD went with the block
+        mov     byte ptr [park_cdroom],0
 prl_none:
         popad
         ret
@@ -1353,7 +1886,25 @@ prl_none:
 ;=====================================================================
 ; Data
 ;=====================================================================
-park_name   db  '\RMDOS.SYS',0
+park_name   db  'A:\RMDOS.SYS',0      ; the letter put in by park_loadrm
+park_cdname db  'A:\RMCD.SYS',0       ; ...and by park_loadcd
+park_cdroom db  0                       ; the block has RMCD's room after
+                                        ; RMDOS's 64K
+park_cdseg  dw  0                       ; RMCD.SYS is loaded there, or 0
+park_cdsize dd  0
+park_cdlet  db  0                       ; park_cdfind's answer: the letter,
+park_cdsel  db  0                       ; master or slave, the command
+park_cdbase dw  0                       ; block, and the control port
+park_cdctrl dw  0
+park_lowsaved db 0                      ; park_lowkeep holds the DOS data
+        ALIGN   4                       ; segment, until park_recover
+park_lowkeep db RL_SAVEMAX dup(0)       ; puts it back
+IF RL_SAVEMAX MOD 4
+        .ERR    <PARK.INC: RL_SAVEMAX is copied a dword at a time>
+ENDIF
+IF RL_SAVEMAX GT DOSDATA_SIZE
+        .ERR    <PARK.INC: RMDOS builds past the DOS data segment>
+ENDIF
 park_prog   dd  0
 park_seg    dw  0
 park_pspseg dw  0
@@ -1380,6 +1931,9 @@ park_lderr   dd  ERR_NOFILE             ; WHERE in park_loadrm it went
 park_high    db  0                      ; the image went in the HMA, so it
                                         ; is not the arena's to give back
 park_cutseg  dw  0                     ; the block whose 'M' became a 'Z'
+park_resseg  dw  0                     ; the segment vl_winres reserved
+                                        ; under WIN386.EXE, until the park
+                                        ; takes it
 park_a20     db  0                      ; the guest's emulated gate, which
                                         ; the excursion has to force open
                                         ; and then hand back

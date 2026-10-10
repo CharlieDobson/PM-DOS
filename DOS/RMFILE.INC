@@ -16,28 +16,63 @@
 ;=====================================================================
 
 ;--- the system file table -------------------------------------------
+; MS-DOS 4'S ENTRY, 3Bh BYTES, WITH DOS'S FIELDS WHERE DOS KEEPS THEM.
+; Until v0.63 an entry was 30h bytes in an order of its own, which
+; nothing minded until Windows in 386 enhanced mode: DOSMGR opens CON
+; five times and then walks this table, taking an entry to be 3Bh
+; bytes because the DOS says it is version 6, to find the five it
+; planted - and closed handle FFFFh five times when it could not.  The
+; fields a reader knows are DOS's now; RMDOS's own go in the bytes DOS
+; gives to SHARE, which has nothing here to keep in them.
 SFT_REF         EQU 00h                 ; dw  handles pointing here, 0 = free
 SFT_MODE        EQU 02h                 ; dw  as 3Dh was given it
 SFT_ATTR        EQU 04h                 ; db
-SFT_FLAGS       EQU 05h                 ; db  SFF_*
-SFT_DRIVE       EQU 06h                 ; db  0 = A, or a device index
-SFT_NAME        EQU 07h                 ; 11 bytes, the 8.3 form
-SFT_START       EQU 12h                 ; dd  first cluster
-SFT_SIZE        EQU 16h                 ; dd
-SFT_POS         EQU 1Ah                 ; dd
-SFT_CURCLUS     EQU 1Eh                 ; dd  the cluster POS is in
-SFT_CURIDX      EQU 22h                 ; dd  and which index that is
-SFT_DIRLBA      EQU 26h                 ; dd  where its directory entry is
-SFT_DIROFF      EQU 2Ah                 ; dw  and where in that sector
-SFT_TIME        EQU 2Ch                 ; dw
-SFT_DATE        EQU 2Eh                 ; dw
-SFT_LEN         EQU 30h
+SFT_DEVINFO     EQU 05h                 ; dw  DOS's device information word -
+                                        ;     bit 7 a character device, and
+                                        ;     a file's drive in bits 0-5;
+                                        ;     what 4400h answers
+SFT_DEVPTR      EQU 07h                 ; dd  the device header, far, or
+                                        ;     FFFF:FFFF for a file (DOS puts
+                                        ;     the DPB there; there is none)
+SFT_CLUSLO      EQU 0Bh                 ; dw  the first cluster, low word, as
+                                        ;     DOS has it - SFT_START is ours
+SFT_TIME        EQU 0Dh                 ; dw
+SFT_DATE        EQU 0Fh                 ; dw
+SFT_SIZE        EQU 11h                 ; dd
+SFT_POS         EQU 15h                 ; dd
+SFT_DIROFF      EQU 19h                 ; dw  where in its sector the entry is
+                                        ;     (DOS: the relative cluster)
+SFT_DIRLBA      EQU 1Bh                 ; dd  the sector the entry is in, as
+                                        ;     DOS keeps it
+SFT_NAME        EQU 20h                 ; 11 bytes, the 8.3 form
+SFT_FLAGS       EQU 2Bh                 ; db  SFF_* - SHARE's bytes from here
+SFT_DRIVE       EQU 2Ch                 ; db  0 = A, or a device index
+SFT_START       EQU 2Dh                 ; dd  first cluster
+SFT_CURCLUS     EQU 31h                 ; dd  the cluster POS is in
+SFT_CURIDX      EQU 35h                 ; dd  and which index that is
+SFT_LEN         EQU 3Bh
 
 SFF_DEVICE      EQU 01h                 ; a character device, not a file
 SFF_WRITTEN     EQU 02h                 ; the directory entry needs updating
 SFF_EOF         EQU 04h
 SFF_STAMPED     EQU 08h                 ; 5701h set the time and date: a
                                         ; write after it does not re-stamp
+
+;--- A REDIRECTOR'S FILE IS DOS'S SHAPE THROUGHOUT.  The redirector fills
+;--- the entry in (RMNET.INC) and keeps what it likes in the bytes this
+;--- DOS keeps SFF_* and the rest in, so for one of its files only DOS's
+;--- own fields mean anything here - and the first thing every handle
+;--- call asks is whether the entry is one, which is sft_isnet's
+;--- question (RMFILE2.INC) and not NF_ISNET's alone: this DOS's own
+;--- devices have the same bit set.  Bits of the HIGH byte of DOS's
+;--- flags word (SFT_DEVINFO) unless they say otherwise; the names are
+;--- not NET_*, which wasm would fold onto RMNET's labels.
+NF_ISNET        EQU 80h                 ; sf_isnet: the redirector's file
+NF_NODATE       EQU 40h                 ; sf_close_nodate: 5701h dated it
+NF_NOINH        EQU 10h                 ; sf_no_inherit
+NF_CLEAN        EQU 40h                 ; devid_file_clean, the LOW byte
+NC_ISNET        EQU 80h                 ; curdir_isnet, the high byte of
+                                        ; CDS_FLAGS: the redirector's drive
 
 SFT_COUNT       EQU 80                  ; Windows keeps seventeen files open
                                         ; at once before the shell has even
@@ -56,6 +91,8 @@ DEV_CON         EQU 0
 DEV_AUX         EQU 1
 DEV_PRN         EQU 2
 DEV_NUL         EQU 3
+DEV_DRV         EQU 4                   ; a driver CONFIG.SYS loaded, whose
+                                        ; header SFT_DEVPTR names - RMDEV.INC
 
 ;--- a directory entry, which has not moved since 1983 ---------------
 DE_NAME         EQU 00h
@@ -68,10 +105,32 @@ DE_SIZE         EQU 1Ch
 DE_LEN          EQU 32
 
 ;--- the current directory of each drive -----------------------------
-CDS_CLUS        EQU 00h                 ; dd  0 = the root
-CDS_PATH        EQU 04h                 ; 64 bytes, ASCIZ, no drive, no
-                                        ; leading backslash - what 47h wants
-CDS_LEN         EQU 44h
+; In the block below 64K (RMDOS.INC, RL_CDS), LASTDRIVE of them, and
+; each the size and shape of MS-DOS 4's, because DOSMGR instances them
+; per virtual machine and asks the size through the 1607h callout.
+; The fields RMDOS reads sit where DOS keeps the same things; the rest
+; of each entry is zero and nothing reads it.
+;
+; THE PATH IS DOS'S OWN, "C:\DIR\SUB", drive and root and all, since
+; 2026-10-06.  It was the part after "C:\" alone, which is what 47h
+; answers and so what this DOS mostly wants - but Windows for
+; Workgroups' IFSMGR.386 reads and writes these entries as DOS keeps
+; them: claiming a drive, it writes the zero at +3 that cuts the path
+; back to "C:\", which here was the fourth character of a directory.
+; So the text starts at 0 and CDS_PATH names the part after the root,
+; at 3, and every read and write of the path in this DOS goes on being
+; one of that part, unchanged.
+CDS_TEXT        EQU 00h                 ; 67 bytes, ASCIIZ: "C:\DIR\SUB"
+CDS_PATH        EQU 03h                 ; ...and from the first directory on:
+                                        ; 64 bytes, what 47h wants
+CDS_FLAGS       EQU 43h                 ; dw  4000h = a drive that exists
+CDS_DPB         EQU 45h                 ; dd  the drive's parameter block, at
+                                        ; RL_DPB; FFFF:FFFF with no drive
+CDS_CLUS        EQU 49h                 ; dd  0 = the root (DOS's own word is
+                                        ; here; the dword after it is one
+                                        ; nothing reads)
+CDS_BACK        EQU 4Fh                 ; dw  2: the root backslash's place
+CDS_LEN         EQU RL_CDSLEN           ; 58h
 
 ;=====================================================================
 ; THE FAT WINDOW
@@ -609,7 +668,16 @@ uc_done:
 ;            ".." above the root, or a result too long to be a path.
 ;            DS must be ours.  Everything but AX is preserved.
 ;=====================================================================
-RC_MAX          EQU     80              ; "D:\" + 64 + "\NAME.EXT" + NUL, and some
+RC_MAX          EQU     128             ; MS-DOS's OPENBUF: a redirector's root
+                                        ; can be long, and "D:\" + 64 +
+                                        ; "\NAME.EXT" fits with room over
+RC_ROOTMAX      EQU     66              ; the longest root a structure's text
+                                        ; holds before its NUL
+RC_LOCAL        EQU     80              ; ...and the most a name on a drive
+                                        ; of this DOS's own may be, which
+                                        ; was RC_MAX until a redirector's
+                                        ; roots needed more: a deeper local
+                                        ; path is one MS-DOS refuses too
 rd_canon:
         push    bx
         push    cx
@@ -650,17 +718,56 @@ rc_copied:
         sub     al,'A'
         add     si,2
 rc_nodrive:
-        cmp     al,LASTDRIVE
+        cmp     al,[rd_ncds]
         jae     rc_baddrive
         mov     [rc_drv],al
 
+        ; THE ROOT IS THE DRIVE'S OWN, as TransPath takes it: the text of
+        ; its current directory structure up to curdir_end.  For every
+        ; drive of this DOS's that is "D:"; a redirector's can be longer
+        ; - "\\SERVER\SHARE" - and the name it is handed starts with it,
+        ; as MS-DOS hands it one.  Only a redirector's structure is
+        ; believed past two, and only up to what the text can hold.
+        push    si
+        push    fs
+        mov     fs,word ptr cs:[rd_lowseg]
+        movzx   si,al
+        imul    si,si,CDS_LEN
+        add     si,RL_CDS               ; FS:SI = the structure
         mov     di,OFFSET rd_canbuf
+        mov     cx,2
+        test    byte ptr fs:[si+CDS_FLAGS+1],NC_ISNET
+        jz      rc_letter
+        mov     cx,word ptr fs:[si+CDS_BACK]
+        cmp     cx,2
+        jbe     rc_letter2
+        cmp     cx,RC_ROOTMAX
+        ja      rc_letter2
+        mov     [rc_back],cx
+        mov     word ptr [rc_lim],RC_MAX - 14
+rc_rootcpy:
+        mov     al,fs:[si]
+        inc     si
+        stosb
+        loop    rc_rootcpy
+        jmp     short rc_rooted
+rc_letter2:
+        mov     cx,2
+rc_letter:
+        mov     [rc_back],cx
+        mov     word ptr [rc_lim],RC_LOCAL - 14 ; a drive of ours: as long
+                                        ; as MS-DOS lets a local name be
+        mov     al,[rc_drv]
         add     al,'A'
         stosb
         mov     al,':'
         stosb
+rc_rooted:
         mov     al,'\'
         stosb
+        mov     [rc_root],di            ; just past the root's backslash:
+        pop     fs                      ; ".." goes no further up than this
+        pop     si
 
         mov     al,[si]
         cmp     al,'\'
@@ -668,17 +775,26 @@ rc_nodrive:
         cmp     al,'/'
         je      rc_abs
 
-        ; Relative: the drive's current directory goes first
+        ; Relative: the drive's current directory goes first - out of
+        ; the block below 64K, through FS, from the end of the root on
         push    si
+        push    fs
+        mov     fs,word ptr cs:[rd_lowseg]
         movzx   ax,byte ptr [rc_drv]
         mov     cx,CDS_LEN
         mul     cx
         mov     si,ax
-        add     si,OFFSET rd_cds + CDS_PATH
-        cmp     byte ptr [si],0
+        add     si,RL_CDS
+        add     si,[rc_back]
+        cmp     byte ptr fs:[si],'\'
+        jne     rc_cdsfrom
+        inc     si
+rc_cdsfrom:
+        cmp     byte ptr fs:[si],0
         je      rc_cdsdone
 rc_cdscopy:
-        lodsb
+        mov     al,fs:[si]
+        inc     si
         or      al,al
         jz      rc_cdsend
         stosb
@@ -687,6 +803,7 @@ rc_cdsend:
         mov     al,'\'
         stosb
 rc_cdsdone:
+        pop     fs
         pop     si
         jmp     short rc_comp
 rc_abs:
@@ -715,7 +832,7 @@ rc_notdot:
         call    rc_issep
         jne     rc_name
         add     si,2                    ; ".." - up one
-        cmp     di,OFFSET rd_canbuf + 3
+        cmp     di,[rc_root]
         je      rc_nopath               ; there is nothing above the root
         dec     di                      ; onto the '\' that ends the last one
 rc_up:
@@ -731,7 +848,7 @@ rc_skip:
 rc_name:
         mov     ax,di
         sub     ax,OFFSET rd_canbuf
-        cmp     ax,RC_MAX - 14          ; room for one more 8.3 name and a '\'
+        cmp     ax,[rc_lim]             ; room for one more 8.3 name and a '\'
         ja      rc_nopath
         push    di
         mov     di,OFFSET rc_n83
@@ -767,7 +884,7 @@ rc_noext:
 
 rc_end:
         ; The '\' after the last component goes, unless it is the root's
-        cmp     di,OFFSET rd_canbuf + 3
+        cmp     di,[rc_root]
         je      rc_term
         dec     di
 rc_term:
@@ -904,12 +1021,15 @@ rd_declus:
 rd_cdsclus:
         push    ax
         push    si
+        push    fs
+        mov     fs,word ptr cs:[rd_lowseg]
         movzx   si,al
         mov     ax,CDS_LEN
         mul     si
         mov     si,ax
-        add     si,OFFSET rd_cds
-        mov     ebx,dword ptr cs:[si+CDS_CLUS]
+        add     si,RL_CDS
+        mov     ebx,dword ptr fs:[si+CDS_CLUS]
+        pop     fs
         pop     si
         pop     ax
         ret
@@ -1221,6 +1341,9 @@ rd_pathbuf  db  RD_PATHMAX dup(0)
 rd_canbuf   db  RC_MAX dup(0)           ; rd_canon's answer
 rc_n83      db  11 dup(0)               ; one component, 8.3, on its way there
 rc_drv      db  0
+rc_back     dw  2                       ; the drive's curdir_end
+rc_root     dw  0                       ; in rd_canbuf, just past the root
+rc_lim      dw  RC_LOCAL - 14           ; how long the name may grow
 rd_fcb      db  11 dup(0)               ; the component being looked for
 rd_deoff    dw  0                       ; where the found entry is, in buf
 rd_delba    dd  0                       ; and which sector that was
@@ -1236,7 +1359,6 @@ rp_drv      db  0
 rp_vol      dw  0
 rp_indir    db  0
 
-rd_cds      db  (LASTDRIVE * CDS_LEN) dup(0)
 ; BUILD lptpad - pushes rd_sfts 1000h bytes up the image.  It was
 ; built to ask whether the DI in the Windows fault dump follows the
 ; SFT, and the answer was NO: DI stayed 9030 with the table moved
@@ -1256,9 +1378,62 @@ ENDIF
 ; FFFF:FFFF it walked whatever the machine had left at 10FFEFh: on
 ; 86Box that happened to end the walk, and under DOSBox-X Windows sat
 ; on its splash screen for good, 52h the last DOS call it ever made.
-; One block, terminated the way DOS terminates one, and the entries
-; follow it with nothing in between - a walker takes them to start six
-; bytes in.
-rd_sfthdr   dd  0FFFFFFFFh              ; no next block
+; The entries follow it with nothing in between - a walker takes them
+; to start six bytes in.
+;
+; AND IT IS NOT THE LAST BLOCK: AN EMPTY ONE COMES AFTER IT (2026-10-06).
+; MS-DOS always has two - the one in its data segment and the one
+; SYSINIT builds for FILES= - and Windows for Workgroups 3.11's
+; VSHARE.386 counts a file table in a way that only works if there are:
+; it adds up a block, follows its next pointer, and stops when the
+; first word of the block it arrived at is FFFFh.  From a DOS's last
+; block that word is the next block's own link; from ours, alone, it
+; was whatever FFFF:FFFF named.  With A20 off in the virtual machine
+; that is 0FFEFh, and the 64K this DOS parks in is across it - so
+; VSHARE read the end of its loop out of the middle of this image, the
+; sector cache's directory, and stopped only if the cache had not yet
+; used the entry it landed on: an unused one is all FFh.  Otherwise it
+; walked memory for ever before WfW had put up its logo.  Which entry
+; depended on where the park landed, to the paragraph: with IFSHLP.SYS
+; in CONFIG.SYS (3.8K, and WfW's own Setup puts it there) Windows hung;
+; a do-nothing driver of 2,784 bytes let it start and one of 2,816 did
+; not; and with WINCACHE=OFF the directory is zeros and it never would.
+;
+; rd_sysinit links the two (RMINFO.INC) - only it knows the segment.
+; DOSMGR takes the second block as the last one, as it takes SYSINIT's
+; on a real DOS, and hangs its PerVMFiles= block off its link.
+;
+; AND THE SECOND BLOCK HAS AN ENTRY IN IT (2026-10-07).  It had none,
+; and MS-DOS never builds a block with none - FILES=5 or fewer makes
+; no second block at all (DOS6SRC bios/sysinit1.asm).  WfW's IFSMGR.386
+; maps every entry in the chain into a table of its own at Device_Init,
+; a block at a time, with the block's count in ECX and a LOOP: a count
+; of 0 is four thousand million entries, and it wrote over ring-0
+; memory until it faulted - Windows' silent halt with IFSHLP.SYS in
+; CONFIG.SYS.  One entry is enough.  RMDOS never hands it out (sft_alloc
+; looks in rd_sfts only), and its zero reference count says free to
+; anything else that looks.
+rd_sfthdr   dd  0FFFFFFFFh              ; next: rd_sftend, from rd_sysinit
             dw  SFT_COUNT               ; the entries in this one
 rd_sfts     db  (SFT_COUNT * SFT_LEN) dup(0)
+rd_sftend   dd  0FFFFFFFFh              ; the last block: no next
+            dw  1                       ; and one entry, unused
+            db  SFT_LEN dup(0)
+
+; THE FCB TABLE THE LIST OF LISTS NAMES (LL_FCB): MS-DOS 5's default,
+; FCBS=4,0, as SYSINIT builds it - each entry 'A' throughout but for
+; a zero reference count and position.  RMDOS's own FCB calls never use
+; it.  It is here because the same IFSMGR loop walks this chain after
+; the file table's, and it was a header with a count of 0 in the block
+; below 64K, where six bytes were all there was room for.  The default
+; is what VSHARE.386 looks for: a table of four with none protected it
+; swaps for one of sixteen of its own, as it does on DOS.
+FCB_COUNT   EQU 4
+rd_fcbtab   dd  0FFFFFFFFh              ; no next
+            dw  FCB_COUNT
+REPT FCB_COUNT
+            dw  0                       ; SFT_REF: free
+            db  (SFT_POS - 2) dup('A')
+            dd  0                       ; SFT_POS
+            db  (SFT_LEN - SFT_POS - 4) dup('A')
+ENDM

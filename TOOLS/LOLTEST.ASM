@@ -306,7 +306,21 @@ d_end:
         call    put4
         mov     dx,OFFSET msg_devs
         call    puts
-        cmp     cx,4                    ; NUL, CON, AUX, PRN
+        ; NUL, CON, AUX, PRN - and anything CONFIG.SYS loaded, which goes
+        ; in behind NUL, so the chain is at least four long and still
+        ; ends in the kernel's own PRN.  It was exactly four until the
+        ; regression's CONFIG.SYS loaded drivers of its own (2026-10-06).
+        cmp     cx,4
+        jb      d_bad
+        mov     es,[d_seg]
+        mov     di,[d_off]
+        add     di,0Ah
+        mov     si,OFFSET n_prn
+        push    cx
+        mov     cx,8
+        cld
+        repe    cmpsb
+        pop     cx
         jne     d_bad
         call    good
         jmp     short d_done
@@ -886,6 +900,7 @@ msg_devs    db  ' headers, terminated$'
 msg_broken  db  ' chain broken$'
 msg_runaway db  ' NEVER TERMINATED$'
 msg_nodev   db  'no device chain$'
+n_prn       db  'PRN     '
 msg_8086    db  ' = 8086$'
 msg_286     db  ' = 286$'
 msg_386     db  ' = 386 or better$'

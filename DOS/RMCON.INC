@@ -58,6 +58,10 @@ co_done:
         ret
 
 co_raw:
+        ; A LOADED CON - ANSI.SYS - takes it instead, when there is one
+        ; (drv_coninit, RMDEV.INC).
+        cmp     word ptr cs:[rd_condrv+2],0
+        jne     co_drv
         push    ax
         push    bx
         mov     al,dl
@@ -67,6 +71,8 @@ co_raw:
         pop     bx
         pop     ax
         ret
+co_drv:
+        jmp     drv_putc
 
 ;---------------------------------------------------------------------
 ; con_in - a character from the keyboard into AL, waiting for one.
@@ -85,6 +91,25 @@ con_in:
         pop     bx
         ret
 ci_fresh:
+        ; WAIT BY SAYING SO.  A DOS with nothing to do calls INT 28h,
+        ; which is where a TSR gets its turn and, under Windows, where
+        ; DOSMGR lets another virtual machine run while this one waits
+        ; for a key.  That other machine may call this DOS, so the
+        ; process state is published before the call and read back
+        ; after it - see sda_sync in RMINFO.INC.  Without the INT 28h
+        ; a DOS box waiting at a prompt holds InDOS at one and Windows
+        ; waits with it.
+ci_wait:
+        mov     ah,01h
+        int     16h
+        jnz     ci_take
+        call    sda_sync
+        call    crit_out                ; another machine may have DOS
+        int     28h                     ; while this one waits
+        call    crit_in
+        call    sda_pull
+        jmp     short ci_wait
+ci_take:
         xor     ah,ah
         int     16h
         or      al,al
@@ -165,11 +190,79 @@ f01_noecho:
         jmp     i21_ok
 
 ;=====================================================================
+; con_write - ES:DI = bytes, ECX = how many, out through HANDLE 1 of
+;             the running program, which is where DOS sends 02h, 06h
+;             and 09h.  Redirected, they go to the file; otherwise to
+;             the console, through dev_write and so through con_out
+;             and its tab expansion.  A program with no handle 1 at
+;             all gets the console.
+;
+; Until v0.63 the three calls went straight to con_out, and a program
+; in a Windows DOS box whose output was sent to a file - SDSTAT >>
+; CACHEBOX.TXT, the first one to try - printed on the screen instead
+; and left the file empty.  COMMAND.COM's own ECHO and COPY went
+; through 40h and were fine, which is why nothing had noticed.
+;=====================================================================
+con_write:
+        pushad
+        push    ds
+        push    es
+        or      ecx,ecx
+        jz      cw_out
+        mov     bx,1
+        call    sft_get                 ; -> SI, the handle's file
+        jc      cw_console
+        call    sft_isnet               ; a redirector's file (RMNET.INC)?
+        je      cw_net
+        test    byte ptr [si+2Bh],01h    ; SFT_FLAGS and SFF_DEVICE, which
+        jnz     cw_dev                  ; RMFILE.INC defines after this file
+                                        ; and wasm will not take early
+        call    sft_touch
+        mov     byte ptr [rd_iowr],1
+        call    file_io
+        jmp     short cw_out
+cw_dev:
+        call    dev_write
+        jmp     short cw_out
+cw_net:
+        mov     ax,1109h
+        call    net_xfer                ; ES:DI and CX are the bytes already
+        jmp     short cw_out
+cw_console:
+        push    es
+        pop     ds
+        mov     si,di
+cw_loop:
+        lodsb
+        mov     dl,al
+        push    ecx
+        push    si
+        push    ds
+        mov     ax,cs
+        mov     ds,ax
+        call    con_out
+        pop     ds
+        pop     si
+        pop     ecx
+        dec     ecx
+        jnz     cw_loop
+cw_out:
+        pop     es
+        pop     ds
+        popad
+        ret
+
+;=====================================================================
 ; 02h - write the character in DL
 ;=====================================================================
 fn02:
         mov     dl,byte ptr [bp+F_DX]
-        call    con_out
+        mov     [rd_conch],dl
+        push    cs
+        pop     es
+        mov     di,OFFSET rd_conch
+        mov     ecx,1
+        call    con_write
         mov     byte ptr [bp+F_AX],dl
         jmp     i21_ok
 
@@ -183,7 +276,12 @@ fn06:
         mov     dl,byte ptr [bp+F_DX]
         cmp     dl,0FFh
         je      f06_in
-        call    con_out
+        mov     [rd_conch],dl
+        push    cs
+        pop     es
+        mov     di,OFFSET rd_conch
+        mov     ecx,1
+        call    con_write
         mov     byte ptr [bp+F_AX],dl
         jmp     i21_ok
 f06_in:
@@ -217,24 +315,18 @@ fn08:
 ; 09h - write the $-terminated string at DS:DX
 ;=====================================================================
 fn09:
-        push    ds
-        mov     ds,[bp+F_DS]
-        mov     si,[bp+F_DX]
-f09_loop:
-        lodsb
-        cmp     al,'$'
-        je      f09_done
-        mov     dl,al
-        push    ds
-        push    si
-        mov     ax,cs
-        mov     ds,ax
-        call    con_out
-        pop     si
-        pop     ds
-        jmp     short f09_loop
-f09_done:
-        pop     ds
+        mov     es,[bp+F_DS]
+        mov     di,[bp+F_DX]
+        xor     ecx,ecx                 ; up to the dollar, and all of it
+f09_len:                                ; in one write
+        cmp     byte ptr es:[di],'$'
+        je      f09_have
+        inc     di
+        inc     cx
+        jnz     f09_len                 ; 64K without one: enough
+f09_have:
+        mov     di,[bp+F_DX]
+        call    con_write
         mov     byte ptr [bp+F_AX],'$'
         jmp     i21_ok
 
@@ -402,3 +494,4 @@ f0C_go:
 ; Data
 ;=====================================================================
 con_pend    db  0                       ; the second byte of an extended key
+rd_conch    db  0                       ; the one byte 02h and 06h write

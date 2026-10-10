@@ -1,0 +1,475 @@
+AUTOEXEC.TXT - what the boot disk holds and how it is used
+
+This is the text that used to sit in AUTOEXEC.BAT as REM lines: the
+same words, kept here so that the batch file is only its commands.
+CONFIG.TXT does the same for CONFIG.SYS.
+
+
+WHERE EVERYTHING IS.  The root of this disk holds PM-DOS and
+nothing else: the kernel, CMD.EXE and COMMAND.COM, the commands
+that are part of the system - CHOICE, MORE, SORT, SYS, FORMAT, MEM,
+FDISK, MOUNT, MOVE, ATTRIB, CHKDSK, LABEL, CACHE, UNDELETE, CDEX,
+FC, FIND, DISKCOPY, DISKCOMP, ISAPNP and SHUTDOWN - and LRGDISK.386,
+which is for a Windows on a hard disk.
+Everything else is a TEST, written to prove one thing about the
+kernel, and it is on a SECOND DISK, TESTS.IMG, since 2026-10-08:
+the two had outgrown one floppy.  That disk has every test program,
+batch file and key file in \TESTS, and the long-named files that
+LFNTEST.BAT works on in its root.
+
+TWO SHELLS, since v0.60.  CMD.EXE is PM-DOS's own - 32-bit, long
+names, DOSKEY built in - and it is the one running this file.
+COMMAND.COM is 16-bit and is what COMSPEC names, so it is the shell
+a DOS program gets when it shells out: a 32-bit program cannot run
+in a DOS box, and under Windows 3.1 nothing 32-bit runs at all.  It
+has DOS 6.22's commands and behaves as 6.22's COMMAND.COM does, and
+C16TEST.BAT is what checks that:
+  COMMAND /C C16TEST.BAT
+
+THE PATH IS THE ROOT OF THIS DISK AND NOTHING ELSE, so the commands
+run from anywhere and a test is run from where it lives.  With the
+test disk in B:
+  B:
+  CD \TESTS
+  HWPROBE
+or by its whole name, \TESTS\HWPROBE, from anywhere on B:.  On a
+machine with one floppy drive it is a swap of diskettes and A: in
+place of B:.  The batch files in \TESTS call their programs by bare
+name and want to be started from there.  \TESTS is the same
+directory on every disk - B:\TESTS, A:\TESTS after a swap, C:\TESTS
+on a hard disk built by MKHD.CMD, whose copy of this file has its
+own PATH line at the end naming C: and C:\TESTS.
+
+FMTTEST.BAT FORMATS THE DISKETTE IN B:.  Take the test disk out
+and put a scratch one in before running it.
+
+On the host it is the same split: BIN\ is what the boot disk is
+made of and BIN\TESTS\ is the rest, and BUILD.CMD makes a disk of
+each - PMDOS.IMG from BIN\, TESTS.IMG from BIN\TESTS\ and DISK\.
+MKDISK.EXE grew a "-dir NAME" switch to put the tests in \TESTS,
+and BUILD.CMD names what SHIPS rather than what moves - so a new
+test program lands in TESTS by default, and adding a new COMMAND
+means saying so.
+
+CACHETST is the newest of them and is about the DISK CACHE that
+arrived in v0.59.  It is sixteen-bit for CDXTEST's reason - the
+interface it asks, INT 2Fh AX=4A10h, is SMARTDRV's, it is
+answered out of the V86 monitor's own 2Fh chain, and a 32-bit
+program cannot reach it.  Ten checks: that a cache is there and
+says it is version 4.00, what its elements are, that reading
+the same file twice really moves the hit and miss counters,
+that AH=0Dh leaves nothing owed, that a file written and closed
+DOES leave something owed until the next commit, and that C: is
+read AND write cached while A: is read cached only - which is
+the rule for every removable thing on the machine and has no
+switch.  It puts C: back the way it found it before it exits.
+CACHETST
+
+SHARETST is the same shape for SHARE, which is in the kernel since
+v0.60 (SHARE= in CONFIG.SYS): sixteen checks with SHARE.EXE's own
+answers - compat opens beside each other, deny modes refused with
+INT 24h asked first, a create refused before it truncates, locks
+that overlap, a read through the other handle into a locked
+range, the lock count SHARE= set, and a close letting them all
+go.  Sixteen-bit because the first question is INT 2Fh AX=1000h.
+SHARETST
+
+CACHE is the same cache from the command line, and it is SMARTDRV
+/S with the name changed: the element count, the hits and the
+misses, the three sizes CACHE= sets, and a row for every letter
+saying whether its reads and its writes are cached.  The switches
+are SMARTDRV's that still mean something for a cache that cannot
+be loaded or unloaded - /C writes what is owed, /R empties it and
+starts the count again, /X and C+ A- D set write-behind per letter,
+/Q says nothing.  A native program asks the same things over
+21h/F1h AL=16h, which is how CACHE does it.
+  CACHE /S
+  CACHE C+ /C
+
+UNDELETE gets back what was deleted: with UNDELETE=ON (the default)
+the kernel keeps a deleted file in a hidden RECYCLED directory on
+its drive instead of freeing it.  UNDELETE on its own offers each
+file deleted from the current directory in turn; /LIST lists, /ALL
+recovers without asking, /S takes in the directories below, and
+/PURGE empties RECYCLED for good.  UNDTEST.BAT in \TESTS checks it.
+  UNDELETE /LIST
+  UNDELETE /STATUS
+
+CDXTEST needs a disc in the drive: it
+asks the MSCDEX API (INT 2Fh AH=15h) the nine questions a CD-ROM
+installer asks, from inside a DOS box - which is the only place it
+can be asked from, because that API is answered out of the V86
+monitor's own 2Fh chain and a 32-bit program cannot reach it.
+There is no MSCDEX.EXE on this disk and there should not be; see
+DOS\MSCDEX.INC for why.
+CDXTEST
+
+CDEX is the line MSCDEX printed when it loaded - which letter is
+which drive - as a command: one row per CD-ROM drive with its
+letter, the unit number MSCD001 counts it by, where it is on the
+IDE bus, the label of the disc in it (or "no disc") and the name
+the drive gave IDENTIFY.  It is a report and takes no switches.
+  CDEX
+
+ISAPNP is for a Plug and Play sound card on a machine whose BIOS
+is not Plug and Play, which leaves everything on the card off.  It
+lists the cards; /A switches every device on with resources nothing
+else is using; 1.0 IO=220,330,388 IRQ=5 DMA=1,5 sets one by hand.
+It does what CTCM did, and belongs in this file if it is wanted:
+  ISAPNP /A
+
+FC and FIND are MS-DOS 6.22's, output and errorlevels alike.  FC
+compares two files or two sets of them, as text or (/B, or a .EXE
+or .COM) byte by byte; FIND prints the lines of its files or its
+input that hold a string, or (/V) do not.
+  FC /N README.TXT CONFIG.SYS
+  FIND /I "device" CONFIG.SYS
+
+DISKCOPY and DISKCOMP are 6.22's too, but each does a diskette in
+ONE PASS: the whole disk is read into extended memory first, so a
+machine with one floppy drive needs one swap, not four.  DISKCOPY
+formats the target if it has to, and once the source is in memory
+writes it to as many targets as it is asked for.
+  DISKCOPY A: A:
+  DISKCOMP A: A:
+
+SHUTDOWN writes everything still owed to the disks and switches
+the power off through ACPI.  On a machine without ACPI it says so
+and leaves everything as it was.
+  SHUTDOWN
+
+PARKTEST runs RMTEST.COM on the real-mode DOS the kernel leaves
+behind - nine checks now, the ninth being CON opened BY NAME,
+which RMDOS could not do until v0.52.  PARKEXEC parks and then
+EXECs, which is what Windows does next.  HNDTEST asks 67h for
+sixty handles and then opens fifty files, which is the unit test
+for the handle table v0.55 rewrote.
+
+PROBE13 is v0.52's: it writes into the gap between the master
+boot record and the first partition either side of the park and
+reads it back, on both drives.  It is the positive control for
+the disk trace channel and it is what found that the FIRST BIOS
+disk call after any park used to fail.
+
+LPTTEST is v0.55's, and asks whether the PRINTER is a trace
+channel: the port is there and the strobe is seen, but 86Box's
+Generic Text Printer turns every printable character into a form
+feed.  Run it with lpt1_enabled = 1 in 86box.cfg - 86Box drops
+that line every time it rewrites the file on exit.
+
+WIN /S NOW STARTS COMPLETELY, AND THINGS IN IT RUN, AND THEY CAN
+STOP AGAIN.  Windows 3.1 standard mode takes the handover, runs on
+RMDOS, loads KRNL286 through its EXEC, enters protected mode, and
+reaches a Program Manager with its groups in it - with a stock
+DOSX.EXE and nothing in Windows patched.  Ctrl-Esc opens the Task
+List and Escape closes it; Clipboard Viewer starts from Main and
+exits on Alt-F4 and Program Manager comes back.  That is v0.57 -
+see NOTES.TXT for the two bytes it turned on.
+
+AND AS OF v0.58 FILE MANAGER LISTS THE DISK: the drive bar, the
+tree with C:\ and WINDOWS under it, and 98 files in the root.
+
+WHAT IS STILL WRONG: EXITING Windows resets the machine instead of
+unparking.
+
+It is left commented out because it costs two and a half minutes
+of emulated boot to watch, which is a long time to wait for a
+test that is not about Windows.
+WIN /S
+
+RMFIND asks RMDOS the same questions File Manager asks - 4Eh and
+4Fh, including TWO SEARCHES OPEN AT ONCE, which is what a
+directory tree is read with and what v0.58 fixed.  It is the
+cheap way to test that: forty seconds of boot instead of three
+minutes of Windows.
+PARKTEST \TESTS\RMFIND.COM
+
+THE CD-ROM.  With a disc in the drive the letter after the hard
+disks is an ISO9660 volume, or whatever CDROM= in CONFIG.SYS says.
+On this machine that is H: - \TESTS\DRIVES prints the row, and
+it now knows what a CD-ROM is instead of showing one as a hard
+disk with no partition table.  DRIVES is a diagnostic and lives
+in \TESTS with the rest of them; the shipping view of the same
+disk is FDISK /L.  The transfers go by bus-master DMA; IDETEST
+says which mode, and BUILD ata says whether a read really used it.
+
+Joliet long names come through the LFN layer, so DIR shows both the
+8.3 alias and the real name, and either spelling can be typed.
+TOOLS\MKISO.PS1 builds S:\Software\lfntest.iso, which is the disc
+with the awkward names on it; TOOLS\SWAPTEST.PS1 changes the disc
+underneath the running machine, which is what proved that a swap is
+noticed.  All of these are commented out because they need a disc
+in the emulated drive to say anything.
+DIR H:\
+TYPE H:\README.TXT
+
+THE DISC IS A DISC NOW AND NOT ONLY A FILESYSTEM.  A CD-R appended
+to twice mounts its NEWEST session rather than the first one; a CD
+Extra, whose first session is music and whose block 16 is therefore
+not a volume descriptor at all, mounts its data session instead of
+refusing to mount; and a disc authored on Unix shows its real names
+through Rock Ridge, including the ones too long to fit in a single
+directory record.  Typing H: works now as well, which it did not
+before: the shell had four letters written into it as a number,
+so the CD was reachable as DIR H: and not by its own name.
+
+CD AUDIO goes through MSCD001, which is a real character device in
+the chain behind NUL rather than a shim - the audio API IS the
+device interface, so there was no way to have one without the
+other.  \TESTS\CDATEST asks it what is on the disc, plays a track
+and watches the Q channel move, which is the one check a driver
+cannot pass by merely answering politely.  It wants a disc with
+music on it: TOOLS\MKCD.PL builds four different discs, because
+nothing on the host could make any of them.
+CDATEST
+
+AND THE LAST OF THE CD-ROM LIST, El Torito excepted.  A file
+written in several extents lists ONCE and reads all of it; a
+name with an accent in it is spelled rather than turned into
+underscores, because there is a real codepage 437 table now and
+not a range check; a program can ask for the RAW 2352-byte frame
+and for the disc's catalogue number; and 150Fh answers out of
+the same reader the drive letter uses, in the shape a real
+MSCDEX.EXE was disassembled to establish.
+
+A DISC WITH NO ISO9660 ON IT AT ALL now mounts too: UDF, which
+is what a DVD authored without a bridge carries.  It is tried
+only when there is no CD001 on the disc, so nothing that read
+before is read any differently.  TOOLS\MKUDF.PS1 builds that
+disc with Windows' own image writer, and Windows will mount it
+back to say what the listing ought to look like.
+
+Two CD-ROM drives at once work as well, which is how the one bug
+in all of this was found: the reader is one set of globals, so
+coming back to the other letter has to mount it again.
+
+
+MOUNT gives a FILE a drive letter of its own, which is new in
+v0.60 and is how this machine tests disk layouts without a host
+tool writing images.
+
+  MOUNT                   what is mounted now
+  MOUNT E: C:\TESTS\TESTIMG.IMG    give that file the letter E:
+  MOUNT C:\CD.ISO         ...or the next free letter
+  MOUNT E: C:\CD.ISO /R   read-only, which an .ISO is anyway
+  MOUNT /U E:             and give the letter back
+
+WHAT IS IN THE FILE DECIDES HOW IT IS READ, not what it is
+called: an .ISO is ISO9660 or UDF because block 16 says so, an
+.IMG is FAT because sector zero does, and a file holding a whole
+disk becomes its first FAT partition.  While a file is mounted it
+cannot be deleted, truncated, opened for writing or mounted a
+second time - the volume is standing on it.  Reading it as a file
+IS allowed: the image's sectors and the file's bytes are the same
+blocks in the same cache, so the two views cannot disagree.
+
+  IMGTEST.BAT   proves all of that, against C:\TESTS\TESTIMG.IMG
+  DEEPTEST.BAT  the path depth, which is 32 now and was 8
+  FDTEST.BAT    FDISK's create, delete and set-active, on the
+                second disk - it needs MULTI.IMG attached
+  MVTEST.BAT    MOVE, on MULTI.IMG's volumes and never on C:
+  ATTRTEST.BAT  ATTRIB, on the same volumes and for the same
+                reason: it makes files that cannot be deleted
+  HELPTEST.BAT  /? on every command there is
+
+EVERY COMMAND ANSWERS /?, internal and external, and that is the
+quickest way to find out what this shell can actually do:
+
+  DIR /?        ...and TYPE, COPY, DEL, REN, CLS, VER, VOL, DATE,
+                TIME, PAUSE, REM, EXIT, ECHO, BREAK, VERIFY, SET,
+                PATH, PROMPT, MD, CD, RD, GOTO, IF, FOR, SHIFT,
+                CALL, CTTY, DOSKEY and LOADHIGH
+  MEM /?        ...and MORE, SORT, CHOICE, FORMAT, SYS, FDISK,
+                MOUNT, MOVE, ATTRIB, CHKDSK, LABEL, CACHE, CDEX,
+                ISAPNP, CMD, COMMAND and \TESTS\DRIVES
+
+WHAT THOSE SCREENS SAY IS THIS SHELL AND NOT MS-DOS.  A switch that
+is not on the help screen is a switch this CMD.EXE does not have -
+and since v0.60 DIR has all of DOS 6's (/P /W /A /O /S /B /L /C and
+DOS 7's /4), COPY asks before overwriting at the prompt and takes
+/Y and /-Y and COPYCMD, REN takes wildcards, FOR has NT's /F, and
+CMD /C runs one command line and exits.
+
+DOSKEY IS PART OF THE SHELL AND ALWAYS ON.  Up and Down bring back
+earlier lines, F7 lists them, F8 finds one by its beginning, F9 by
+its number; Left, Right, Home, End, Ins, Del and the Ctrl arrows
+edit; F1-F6 work on the last line as they always did.  The DOSKEY
+command defines macros and sets the rest up:
+
+  DOSKEY LS=DIR $1 /B /ON     LS C:\TESTS  is then that listing
+  DOSKEY /M                   the macros
+  DOSKEY /H                   the history
+  DOSKEY /INSERT              typing inserts rather than overtypes
+
+  DIRTEST.BAT   DIR's switches     RENTEST.BAT   REN, and COPY /Y
+  FORFTEST.BAT  FOR /F, CMD /C     KEYTEST.BAT   DOSKEY: the command,
+                                   and the editor typed from a file
+  GLUETEST.BAT  DIR/W, CD.., CD\DOS and MEM/F: a command run straight
+                into its argument, and a switch in front of a name
+
+WHAT THE MACHINE HAS.  A boot says a line for a mouse and a line for
+each CD-ROM drive, and says nothing for one it did not find.  When
+that is the wrong answer,
+  \TESTS\HWPROBE
+prints what the probes read while they were looking: the bytes
+the keyboard controller and the mouse answered with, and what each
+of the eight IDE positions said for itself.
+
+A CD-ROM DRIVE ON A SOUND CARD needs no driver and no CTCM.  The
+IDE port of an ISA Plug and Play card is switched on while PM-DOS
+starts, at 1E8h, or 168h if that is taken, and the drive on it
+gets a letter like any other.  Nothing else on the card is
+touched.  HWPROBE says which card it was and where the port went.
+
+FORMAT MAKES A DISKETTE, since this release: every track is laid
+down, so a disk that has never been formatted can be, and /F:720
+makes a 720K disk in a 1.44M drive.  FORMAT /? has the switches.
+
+ECHO, REM, SET, PROMPT, IF, FOR, GOTO, PAUSE, CALL and LOADHIGH
+answer /? only when it is the WHOLE argument, because their
+argument is text or another command line - so
+
+  ECHO Run SETUP /? for help
+
+prints its sentence rather than a help screen, which is what DOS
+has always done and is why the rule exists.
+
+A FAT VOLUME WITH 1024-, 2048- OR 4096-BYTE SECTORS MOUNTS TOO,
+since v0.60 - TOOLS\MKLSEC.PL makes one to try MOUNT on.
+
+MOVE moves files, and WITHIN ONE VOLUME IT MOVES THE DIRECTORY
+ENTRY and not the bytes - the kernel's 56h is a rename that can
+change the parent - so a huge file moves in the time it takes to
+write two sectors.  Between volumes it copies and then deletes,
+and the delete happens only once the copy is written, stamped and
+closed; anything that goes wrong first takes the half-written
+destination away and leaves the source alone.
+
+  MOVE A.TXT B.TXT        rename it
+  MOVE *.TXT \DOCS        move them into a directory
+  MOVE A.TXT B.TXT \DOCS  two sources, one destination
+  MOVE OLDDIR NEWDIR      rename a directory
+  MOVE /Y NEW.TXT OLD.TXT replace without being asked
+
+A DIRECTORY CAN BE RENAMED BUT NOT MOVED into another directory or
+onto another drive: its ".." would be left pointing at the old
+parent, and copying a tree is XCOPY's job.  An explicit name means
+what it says, so a named directory or hidden file is moved; a
+wildcard means the ordinary files.
+
+ATTRIB shows the four attribute bits a file wears, and changes
+them.  Read-only, archive, system and hidden are all of them: the
+directory bit and the volume bit belong to the filesystem and the
+kernel puts them back, so there is no +D and no -V.
+
+  ATTRIB                  every file here, and what it is
+  ATTRIB \DOS\*.*         ...somewhere else
+  ATTRIB +R READ.ME       make it read-only
+  ATTRIB -H -S IO.SYS     take those two bits off
+  ATTRIB +A *.TXT /S      and every directory below this one
+
+A CHANGE THAT DOES NOT NAME THE HIDDEN OR SYSTEM BIT WILL NOT TOUCH
+A FILE THAT HAS ONE.  "ATTRIB -R *.*" in a root would otherwise
+strip the read-only bit off the system files on its way past, so it
+leaves them alone and says which ones it left; name the bit - "-R
+-H" - and it is taken as meaning it.  Same rule as MOVE for the
+rest: an explicit name means what it says, so a named directory is
+changed, and a wildcard means the ordinary files.  /S counts as a
+wildcard, or "ATTRIB +R SUB /S" would set the bit on every
+directory called SUB on the disk.
+
+  ATTRTEST.BAT  proves all of that, on MULTI.IMG's volumes
+
+CHKDSK checks a FAT12, FAT16 or FAT32 volume and LABEL names one.
+They are the first commands here written in C, and they read the
+disk itself rather than asking the kernel about files - which is
+why a CD-ROM, or an .ISO given a letter by MOUNT, is refused the
+way DOS refused one, as a drive they cannot check.
+
+  CHKDSK                  the current drive: a report, no changes
+  CHKDSK D: /F            ...and fix it: lost chains become
+                          FILEnnnn.CHK in the root
+  CHKDSK /V               every file, as it is checked
+  CHKDSK \TESTS\*.COM     and whether those files are contiguous
+  LABEL C:WORK            name C:
+  LABEL                   show the label, and ask for a new one
+
+NOTHING IS WRITTEN WITHOUT /F, and CHKDSK says so when it finds
+something.  CROSS-LINKED FILES ARE REPORTED AND NOT UNTANGLED, as
+in DOS.  (The long-named test files used to share a cluster on
+purpose and were the first thing CHKDSK found; they have had a
+cluster each since 2026-09-26, and they are on the test disk now.)
+
+FDISK, and it is the one program on this disk that can destroy the
+machine it is running on, so read this before running it.
+
+  FDISK           the screen: the disk as a bar, a partition dragged
+                  along it with the mouse to move it, sizes typed
+                  in MB, F to format - and nothing written until W
+  FDISK /STATUS   what every disk's partition table says
+  FDISK /L        ...and the logical drives in the extended chain
+  FDISK /P d:p    one partition: its BPB, what is stored in it, and
+                  how far it can be shrunk, grown or moved
+  FDISK /M d:p n  move it so that it starts at sector n
+  FDISK /S d:p n  resize it to n sectors, or to n MB written 40M
+  FDISK /C d:p    create a partition in the largest free gap
+  FDISK /C d:p n tt  ...n sectors of it, and tt as the type byte
+  FDISK /D d:p    delete one
+  FDISK /A d:p    make one the active, bootable partition
+  FDISK /MBR d    put the standard boot code back in disk d's
+                  master boot record, leaving the table alone
+
+THE COMMAND LINE WRITES AT ONCE - there is no /W and no dry run
+any more, so look with /P first.  THE SCREEN WAITS: each change is
+staged and drawn on the bar, U takes back the last one, and W lists
+them and writes them in order.  Quitting after a change restarts
+the machine, because the drive letters were dealt out at the start
+and no longer describe the disk.
+
+d:p NAMES A DISK AND A PARTITION - 1 to 4 are the primary slots
+of that disk, and 5 AND UP ARE THE LOGICAL DRIVES in its extended
+container, in the order FDISK /L lists them.  Every verb but /A
+takes either kind: a logical drive can be created, deleted, moved
+and resized like anything else, and a logical drive cannot be the
+active one because booting looks in the master boot record and
+there is no chain in it.
+
+CREATING OR DELETING A LOGICAL DRIVE EDITS THE CHAIN, which is
+the one operation here that changes a structure rather than an
+entry: a logical drive is a boot record of its own, a volume one
+track behind it, and a pointer to it in the record before.  A
+delete writes one sector and a create writes two, the new record
+first so that losing power between them leaves the chain exactly
+as it was.
+
+A RESIZE CAN CHANGE THE CLUSTER SIZE when the new size needs it:
+FAT12 and FAT16 trade places, and clusters split or merge, with the
+files renumbered or packed to fit.  FAT32 volumes resize and move
+too, but never become FAT16 or the other way round - that moves the
+root directory, which is a conversion and not a resize.  A FAT32
+volume's backup boot sector and the free-space hint in its FSInfo
+sector are put right afterwards.
+
+MULTI.IMG is the disk to practise on and the second disk in this
+machine: two primaries, a Linux partition, and an extended chain
+with two logical drives and a hidden one.  MKHD.CMD builds it
+afresh every time, so anything done to it is undone by a rebuild.
+
+  FDISK /P 1:1              what D: is, and how far it can go
+  FDISK /S 1:1 40000        shrinking it
+  FDISK /P 1:5              the first LOGICAL drive on that disk
+  FDISK /D 1:7              and deleting the last one in the chain
+
+What it refuses is the point: a resize between FAT16 and FAT32, or
+one that would leave data above the new end or run into the next
+partition, or one on a damaged volume (run CHKDSK first) - or, for
+a logical drive, a move over its own boot record or outside its
+container - is refused with the reason and not attempted.  See the
+release notes.
+
+  FDTEST.BAT    create, delete and set-active on the four slots
+  FDLTEST.BAT   creating and deleting LOGICAL drives
+  FDRTEST.BAT   moving and resizing one
+  FD32TEST.BAT  the same on FAT32 - it wants HD32.IMG as the
+                second disk, not MULTI.IMG, so it is its own boot
+  FDMTEST.BAT   the screen, typed at by a key file

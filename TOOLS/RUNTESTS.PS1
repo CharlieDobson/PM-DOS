@@ -3,7 +3,11 @@ param(
     [int]$MemMB = 32,                            # the machine's RAM
     [string]$Cpu = '486',                        # DOSBox-X cputype: 386, 486, pentium...
     [string]$Name = '',                          # the baseline's name; <cpu>-<MB> if not given
-    [string[]]$Cfg = @( 'DOS=HIGH,UMB' ),        # CONFIG.SYS
+    [string[]]$Cfg = @( 'DOS=HIGH,UMB', 'DEVICE=C:\TESTS\IOCDEV.SYS', 'DEVICE=C:\TESTS\TESTBLK.SYS' ),
+                                                 # CONFIG.SYS - IOCDEV.SYS is
+                                                 # what DRVTEST talks to, and
+                                                 # TESTBLK.SYS's RAM disk (D:)
+                                                 # is what BLKTEST writes on
     [int]$Seconds = 240,                         # DOSBox-X's -time-limit
     [string]$Exe = '',                           # DOSBox-X, if DBXRUN.PS1 would pick wrong
     [switch]$Update,                             # keep what this run said as the baseline
@@ -105,6 +109,9 @@ if ( $All ) {
 #   PARKTEST, PARKWIN, PARKEXEC, WINDRV
 #                        the handover, which wants its own batch files
 #   TESTDEV, TESTBLK     drivers, loaded by a CONFIG.SYS that names them
+# IOCDEV.SYS and TESTBLK.SYS ARE loaded by this one's CONFIG.SYS, for
+# DRVTEST and BLKTEST, which park the kernel themselves and so ask both
+# DOSes about them.  The RAM disk is D: on every row.
 $default = @(
     'MEM', 'A20TEST', 'ALLOCTST', 'APITEST', 'ARGS', 'BIGMEM', 'BUFTEST', 'CACHETST', 'CDATEST', 'CDXTEST',
     'CFGTEST', 'CTRYDMP', 'CTRYTEST', 'CURTEST', 'DEVCRIT', 'DEVTEST', 'DMATEST', 'DPMIFP32', 'DPMIFPU',
@@ -112,7 +119,12 @@ $default = @(
     'F32TEST', 'FCBTEST', 'FNDTEST', 'FPU32', 'FPUTEST', 'HELLO', 'HELLOX', 'HNDTEST', 'HOOKTEST',
     'HWPROBE', 'I13TEST', 'I24TEST', 'IDLETEST /T', 'IRQTEST', 'ISAPNP', 'LFNAPI', 'LOLTEST', 'LPTTEST',
     'MCBTEST', 'MEMPROBE', 'MS32TEST', 'MSTEST', 'NICIRQ', 'PCITEST', 'PEKID', 'PROBE13', 'R3TEST',
-    'RMFIND', 'RMFSTEST', 'RMIVT', 'RMSPEED', 'RMTEST', 'SFTSCAN', 'SHARETST', 'SLOTTEST', 'TIMERTST', 'TSRTEST', 'UDTEST',
+    'RMFIND', 'RMFSTEST', 'RMIVT', 'RMSPEED', 'RMTEST', 'SFTSCAN',
+    # these four park the kernel too, as SFTSCAN does, so they follow it:
+    # every test before them still runs on a machine that has never
+    # been parked
+    'BLKTEST', 'CDSTEST', 'DRVTEST', 'NETTEST', 'SEEKWR',
+    'SHARETST', 'SLOTTEST', 'TIMERTST', 'TSRTEST', 'UDTEST',
     'UMBTEST', 'VBETEST', 'VDSTEST', 'VFTEST', 'VFYTEST', 'VPICTEST', 'WINTEST', 'XMSREPT', 'XMSTEST',
     # last, because it leaves a program resident: a handler on the timer
     # and the clock that IRQXWAIT, a native program, waits on

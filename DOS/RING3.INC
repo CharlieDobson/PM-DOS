@@ -29,7 +29,7 @@
 ;   ITS ADDRESS ZERO IS A PAGE THAT IS NOT THERE.  That is the real
 ;   null-pointer guard, and it is the one v0.31 wanted and could not
 ;   build.  Page zero of the MACHINE is load-bearing - the IVT, the
-;   BIOS data area, InDOS at 4F7h, the real-mode frame at 500h - so it
+;   BIOS data area, InDOS at 4F7h, the real-mode frame at 600h - so it
 ;   could not be unmapped, and four debug registers watching sixteen
 ;   bytes were what was left.  Page zero of a PROGRAM is nothing at
 ;   all.  A store through a null pointer is now an ordinary page fault

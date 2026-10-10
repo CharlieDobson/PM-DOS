@@ -95,8 +95,6 @@ ca_done:
         mov     ah,1Ah
         int     21h
 
-        call    banner
-
 ;--- how many units are there at all? --------------------------------
         xor     edx,edx
         mov     edi,OFFSET cdu
@@ -402,33 +400,6 @@ lo_none:
         call    print
         ret
 
-;---------------------------------------------------------------------
-; banner - whose extensions, and the kernel's version
-;---------------------------------------------------------------------
-banner:
-        mov     edx,OFFSET msg_banner
-        call    print
-        mov     ax,0F100h
-        int     21h
-        movzx   eax,bh
-        push    ebx
-        call    pdec
-        mov     al,'.'
-        call    putc
-        pop     ebx
-        movzx   eax,bl
-        cmp     eax,10
-        jae     bn_minor
-        push    eax
-        mov     al,'0'
-        call    putc
-        pop     eax
-bn_minor:
-        call    pdec
-        call    crlf
-        call    crlf
-        ret
-
 ;=====================================================================
 ; The critical-error handler: fail everything, silently.
 ;=====================================================================
@@ -600,7 +571,6 @@ dta         db  64 dup(0)
 numbuf      db  12 dup(0)
 lbl_path    db  'D:\*.*',0
 
-msg_banner  db  'PM-DOS CD-ROM Extensions version ','$'
 msg_none    db  'No CD-ROM drive was found.',13,10,'$'
 msg_head    db  'Drive  Unit  Location',(LOC_W - 8) dup(' '),'  Disc',(DISC_W - 4) dup(' ')
             db  '  Model',13,10

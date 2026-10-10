@@ -26,6 +26,14 @@
 
 static HINSTANCE childInst;
 static int       seconds;
+static int       cbTimers;      /* calls of TickProc, a callback timer */
+
+/* a timer with a callback: counted at the call, not through the queue */
+VOID CALLBACK __export TickProc( HWND hwnd, UINT message, UINT id, DWORD when )
+{
+    (void)hwnd; (void)message; (void)id; (void)when;
+    cbTimers++;
+}
 
 /* one line onto the end of the log, and the file closed again */
 static void note( const char *text )
@@ -59,7 +67,13 @@ int PASCAL WinMain( HINSTANCE inst, HINSTANCE prev, LPSTR cmdLine, int show )
     MSG      msg;
     OFSTRUCT of;
     UINT     timer;
+    UINT     timer2;
+    FARPROC  tick;
+    DWORD    qs;
     int      usage;
+    long     turns;
+    int      timers;
+    int      sample;
 
     (void)inst;
     (void)prev;
@@ -78,20 +92,55 @@ int PASCAL WinMain( HINSTANCE inst, HINSTANCE prev, LPSTR cmdLine, int show )
     wsprintf( line, "WINDRV: WinExec(\"%s\") = %u", (LPSTR)prog, (UINT)childInst );
     note( line );
 
+    /* THE WAIT CANNOT RELY ON THE TIMER IT IS MEASURING.  This used
+     * to be a GetMessage loop counting WM_TIMER, and on a Windows whose
+     * timer never ticks it waited for ever and wrote nothing.  Now it
+     * polls, yields, and every so many turns writes down the three
+     * clocks it can see - Windows' GetTickCount, the BIOS count at
+     * 40:6C, and the WM_TIMERs received - so that "time does not move"
+     * is a line in the log rather than an empty file.  The turn count
+     * is the clock of last resort. */
     timer = SetTimer( NULL, 1, 1000, NULL );
-    while ( GetMessage( &msg, NULL, 0, 0 ) ) {
-        if ( msg.message == WM_TIMER ) {
-            seconds++;
+    tick = MakeProcInstance( (FARPROC)TickProc, inst );
+    timer2 = SetTimer( NULL, 0, 1000, (TIMERPROC)tick );
+    wsprintf( line, "WINDRV: SetTimer gave %u (queue) and %u (callback)", timer, timer2 );
+    note( line );
+    turns = 0;
+    timers = 0;
+    sample = 0;
+    for ( ;; ) {
+        if ( PeekMessage( &msg, NULL, 0, 0, PM_REMOVE ) ) {
+            if ( msg.message == WM_QUIT ) break;
+            if ( msg.message == WM_TIMER && msg.lParam == 0L ) {
+                timers++;               /* the queue timer: no proc */
+                seconds++;
+            } else {
+                TranslateMessage( &msg );
+                DispatchMessage( &msg );    /* a WM_TIMER with a proc in
+                                             * lParam calls the proc here */
+            }
+        }
+        turns++;
+        if ( ( turns % 500000L ) == 0 ) {
             usage = (UINT)childInst > 32 ? GetModuleUsage( childInst ) : 0;
-            if ( usage == 0 || exists( ENDMARK ) || seconds >= MAXSECONDS ) {
+            qs = GetQueueStatus( QS_TIMER );
+            if ( sample < 12 || ( sample % 10 ) == 0 ) {
+                wsprintf( line, "WINDRV: sample %d: ticks %lu, BIOS 40:6C %lu, timers %d, callbacks %d, qs %04X, usage %d",
+                          sample, GetTickCount(), *(DWORD FAR *)MAKELP( 0x0040, 0x006C ),
+                          timers, cbTimers, (UINT)qs, usage );
+                note( line );
+            }
+            sample++;
+            /* ten samples at least, however quickly the child is done */
+            if ( ( sample >= 10 && ( usage == 0 || exists( ENDMARK ) ) ) ||
+                 seconds >= MAXSECONDS || sample >= 120 ) {
                 break;
             }
-            continue;
         }
-        TranslateMessage( &msg );
-        DispatchMessage( &msg );
     }
     KillTimer( NULL, timer );
+    KillTimer( NULL, timer2 );
+    FreeProcInstance( tick );
     wsprintf( line, "WINDRV: the program is gone after %d s (end mark %s)",
               seconds, exists( ENDMARK ) ? (LPSTR)"there" : (LPSTR)"missing" );
     note( line );

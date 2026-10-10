@@ -47,18 +47,24 @@
 ; them.
 ;
 ; WHAT IT DELIBERATELY DOES NOT SUPPORT: long filenames (Windows 3.x
-; has none), a network redirector, SHARE, code pages beyond the one,
-; and anything PM-DOS has that DOS 5 did not.  Every one of those is
-; surface that Windows will not call and that would have to be kept in
-; step with the kernel's own copy for nothing.
+; has none), SHARE, code pages beyond the one, and anything PM-DOS has
+; that DOS 5 did not.  Every one of those is surface that Windows will
+; not call and that would have to be kept in step with the kernel's own
+; copy for nothing.  A NETWORK REDIRECTOR IS NOT ON THAT LIST ANY MORE
+; (2026-10-07): Windows for Workgroups' 32-bit file access takes its
+; drives away from DOS through the redirector interface, INT 2Fh 11xxh,
+; and RMDOS hands a redirector's drives and files to it as MS-DOS does
+; (DOS\RMNET.INC).
 ;=====================================================================
 
 RMDOS_SIG       EQU     00444D52h               ; 'RMD' as the dword reads in memory
-RMDOS_VER       EQU     0102h                   ; 1.02 - this contract.  1.00 had no
-                                        ; extended memory in it, and 1.01 no
-                                        ; RMH_STUBS.  RMDOS checks it: an image
-                                        ; built for another layout would read
-                                        ; the header wrong, and says so instead
+RMDOS_VER       EQU     0104h                   ; 1.04 - this contract.  1.00 had no
+                                        ; extended memory in it, 1.01 no
+                                        ; RMH_STUBS, 1.02 no RMH_LOWSEG, 1.03
+                                        ; no RMH_WINCACHE.  RMDOS
+                                        ; checks it: an image built for another
+                                        ; layout would read the header wrong,
+                                        ; and says so instead
 
 ;---------------------------------------------------------------------
 ; WHERE IT LIVES, AND WHY THAT IS THE HARD PART.
@@ -156,23 +162,56 @@ RMH_WHY         EQU     RMH_BASE + 1Eh  ; dw  RMW_* - what ended the excursion
 ;---------------------------------------------------------------------
 RMH_XMSBASE     EQU     RMH_BASE + 20h  ; dd  flat = physical, page-aligned
 RMH_XMSLEN      EQU     RMH_BASE + 24h  ; dd  bytes, a multiple of 1024
-RMH_RSVD        EQU     RMH_BASE + 28h  ; dd  two spare dwords, so the next
-                                        ; dd  field to be wanted does not move
-                                        ;     the frame below it again
+;---------------------------------------------------------------------
+; THE DOS DATA RMDOS PUBLISHES, AND WHERE WINDOWS INSISTS IT BE.
+;
+; A DOS has a data segment at the bottom of memory, and Windows in 386
+; enhanced mode KNOWS that.  DOSMGR's real-mode initialisation asks
+; INT 21h 52h for the list of lists, turns ES:BX into a linear address
+; and refuses to load - "Cannot use a device specified in the
+; SYSTEM.INI file" - if that address has a bit set above 64K, because
+; it is about to pack it into sixteen bits.  RMDOS's list of lists was
+; inside its own image, which first-fit puts wherever the parking
+; program left room, 124K up on the day this was found.
+;
+; So PM-DOS hands over a block BELOW 64K - its own DOS data segment at
+; DOSDATA_SEG, which is where the boxes already read the kernel's list
+; of lists and SDA - and RMDOS builds everything it publishes in there:
+; the list of lists, the swappable data area, the current directory
+; structures, and the table DOSMGR's callouts are answered with.  The
+; block's contents are PM-DOS's and are wanted back: RMDOS copies the
+; whole of it into its image on the way in and puts it back on the way
+; home, so the kernel finds its data exactly as it left it.
+;---------------------------------------------------------------------
+RMH_LOWSEG      EQU     RMH_BASE + 28h  ; dw  a block below 64K, as a segment
+RMH_LOWLEN      EQU     RMH_BASE + 2Ah  ; dw  its length in bytes: at least
+                                        ;     RL_LEN, at most RL_SAVEMAX
+RMH_RSVD        EQU     RMH_BASE + 2Ch  ; dd  one spare dword - the DBG_LPT
+                                        ;     build's ownership probe
 RMH_STUBS       EQU     RMH_BASE + 30h  ; dd  PM-DOS's DOS vector stubs, far.
-                                        ;     That was the field wanted - and
-                                        ;     the DBG_LPT build had both spares,
-                                        ;     so the frame moved after all
 RMS_STUBLEN     EQU     5               ; bytes a vector, v at (v - 20h) * 5.
                                         ; PMDOS.INC's DVS_LEN, which RMDOS.ASM
                                         ; cannot see - PARK.INC checks they agree
+
+;---------------------------------------------------------------------
+; The sector cache RMDOS keeps for as long as it is the DOS - which is
+; for as long as Windows runs, so this is the SMARTDRV of this kernel.
+; PM-DOS's own cache gave its memory back before the park (cache_park)
+; and is not there to be asked; RMDOS builds one of its own out of the
+; XMS pool above, and answers SMARTDRV's INT 2Fh 4A10h for it.  See
+; DOS\RMCACHE.INC.  WINCACHE= in CONFIG.SYS sets the size; absent, the
+; kernel derives one from the pool, and 0 means none.
+;---------------------------------------------------------------------
+RMH_WINCACHE    EQU     RMH_BASE + 34h  ; dw  kilobytes of cache, 0 for none
+RMH_WCFLAGS     EQU     RMH_BASE + 36h  ; dw  RMWC_*
+RMWC_LOG        EQU     0001h           ; write RMCACHE.LOG when Windows exits
 
 ; The register frame RMDOS IRETs to when RMH_RUNSEG is zero.  This is
 ; how Windows is resumed: WIN386 is already loaded and already running
 ; when it broadcasts 1605h, so there is nothing to start - the handover
 ; is a return from an interrupt that happens to land in a different
 ; processor mode from the one it was taken in.
-RMH_IRET        EQU     RMH_BASE + 34h
+RMH_IRET        EQU     RMH_BASE + 38h
 RMI_EAX         EQU     RMH_IRET + 00h  ; dd
 RMI_EBX         EQU     RMH_IRET + 04h
 RMI_ECX         EQU     RMH_IRET + 08h
@@ -192,6 +231,11 @@ RMI_FLAGS       EQU     RMH_IRET + 2Eh
 RMI_LEN         EQU     30h
 
 RMH_DRIVES      EQU     RMH_IRET + RMI_LEN      ; RMD_LEN each, RMH_NDRV of them
+RMH_DRVROWS     EQU     16                      ; ...and room for this many, the
+                                                ; kernel's LASTDRIVE: PARK.INC
+                                                ; writes up to that, whatever
+                                                ; RMDOS reads.  RMH_LASTDRV is
+                                                ; after them, below RMD_LEN
 
 ;--- one drive letter, as RMDOS needs it -----------------------------
 ; PM-DOS scanned the partition tables; RMDOS inherits the answer rather
@@ -203,8 +247,38 @@ RMD_FLAGS       EQU     01h             ; db  RMDF_*
 RMD_START       EQU     02h             ; dd  absolute LBA of the boot sector
 RMD_LEN         EQU     06h
 
+RMH_LASTDRV     EQU     RMH_DRIVES + RMH_DRVROWS * RMD_LEN
+                                        ; db  LASTDRIVE= from CONFIG.SYS as a
+                                        ; count of letters (Z: is 26), or 0
+                                        ; for no line.  The kernel stops at
+                                        ; its own sixteen; RMDOS goes to Z:
+RMH_CDSEG       EQU     RMH_LASTDRV + 1 ; dw  RMCD.SYS's segment, or 0: the
+                                        ; CD-ROM under Windows, loaded by the
+                                        ; park after RMDOS's 64K (RMCD.ASM)
+IF RMH_CDSEG + 2 GT RM_ORG + 100h
+        .ERR    <RMDOS.INC: the handoff block runs into RMDOS's code>
+ENDIF
+
+;--- RMCD.SYS's own header: the park fills it in, RMDOS reads it -------
+RC_SIG          EQU     'DCMR'          ; "RMCD", as a dword reads it
+RCH_SIG         EQU     00h             ; dd  RC_SIG
+RCH_VER         EQU     04h             ; dw
+RCH_INIT        EQU     06h             ; dw  cd_init's offset: FAR called
+                                        ; with ES = the block below 64K
+RCH_LETTER      EQU     08h             ; db  the CD's letter, 0 = A
+RCH_SEL         EQU     09h             ; db  00h the master, 10h the slave
+RCH_BASE        EQU     0Ah             ; dw  the command block's ports
+RCH_CTRL        EQU     0Ch             ; dw  the control port
+
 RMDF_PRESENT    EQU     01h
 RMDF_FLOPPY     EQU     02h             ; re-read the BPB on every access
+RMDF_DRIVER     EQU     04h             ; a unit of a block driver CONFIG.SYS
+                                        ; loaded: RMD_START is its header,
+                                        ; far, and the unit is in the top
+RMDF_UNITSHIFT  EQU     4               ; four bits of the flags.  RMD_BIOS
+                                        ; is the kernel's pseudo number for
+                                        ; it (DL_UNIT_BASE and up), which no
+                                        ; disk has.  Since 2026-10-06
 
 ;--- RMH_FLAGS -------------------------------------------------------
 RMHF_A20        EQU     01h             ; the gate was open when we parked, and
@@ -237,6 +311,17 @@ RMDOS_CODE      EQU     0A000h          ; 40K reserved for code + image data
 RMDOS_WORK      EQU     04000h          ; 16K of working storage after it
 RMDOS_TOTAL     EQU     RMDOS_CODE + RMDOS_WORK
 RMDOS_PARAS     EQU     RMDOS_TOTAL / 16
+PARK_RMPARAS    EQU     1000h           ; what park_loadrm actually takes: one
+                                        ; whole segment, so that park_seg does
+                                        ; not move with the size of the image
+                                        ; (PARK.INC says why) - and what
+                                        ; vl_winroom keeps free for it
+PARK_CDPARAS    EQU     200h            ; ...and 8K more after it when the
+                                        ; kernel has a CD-ROM on an IDE
+                                        ; channel: RMCD.SYS's room, in the
+                                        ; same block, below WIN386 with RMDOS
+                                        ; and global to every machine as
+                                        ; MSCDEX was (PARK.INC, park_loadcd)
 
 
 ;=====================================================================
@@ -257,6 +342,150 @@ RMDOS_PARAS     EQU     RMDOS_TOTAL / 16
 ;=====================================================================
 IFNDEF LASTDRIVE
 LASTDRIVE       EQU     8               ; A: to H:, as the kernel has it
+ENDIF
+
+;---------------------------------------------------------------------
+; The layout of the block RMH_LOWSEG names, offsets from its start.
+;
+; IT IS MS-DOS 5'S OWN LAYOUT WHEREVER ANYBODY LOOKS (2026-10-06).  The
+; segment INT 21h 52h answers with is the DOS data segment, and some of
+; Windows reads that segment at fixed offsets rather than through the
+; pointers: Windows for Workgroups 3.11's VSHARE.386 reads the byte at
+; offset 4 - DataVersion, 1 in DOS 5 and 6 - and will not load unless it
+; is 0 or 1, and then patches SHARE's jump table at 90h, sets the SHARE
+; flag at 303h and reads the list of lists at 26h and the FCB table it
+; names (DOS6SRC dos/msconst.asm and inc/const2.asm lay all of them out;
+; MS-DOS 5's MSDOS.SYS agrees).  Until then the list of lists was at 0
+; and the CDS array covered 90h and 303h, so VSHARE read FFh at offset 4
+; and refused to load.  RMDOS calls none of the jump table and reads
+; neither flag; they are here to be found where they are looked for.
+;
+; The list of lists starts at 24h so that 52h's ES:BX-2 is the MCB head
+; word, as in DOS.  RL_DEVRET is a RETF: the NUL device header's
+; strategy and interrupt entries have to be in the header's own
+; segment.  The SDA at 320h puts InDOS at 321h, where DOS 5 has it.
+;
+; AND IT IS THE KERNEL'S LAYOUT TOO (2026-10-06) - PMDOS.INC's DOSDATA
+; has the same offsets under its own names, and PARK.INC checks every
+; one of them against these.  The reason is the drivers CONFIG.SYS
+; loads.  One asks 34h and 52h once, at its INIT, on the kernel, and
+; keeps what it was told; it is still resident when this DOS takes
+; over the segment, and it still reads InDOS, the SDA and the device
+; chain at the addresses the kernel gave it.  So those have to mean
+; the same thing on both sides of the handover, and so do the three
+; device headers, which a loaded driver's own header links to: RMDOS's
+; CON, AUX and PRN are at the kernel's addresses, and the kernel's
+; chain - NUL, the drivers, CON - becomes this DOS's chain unchanged
+; (rd_sysinit).
+;
+; What the kernel keeps in the segment and RMDOS leaves alone: the
+; tail of the list of lists (5Ah-6Ch, the boot drive and the rest),
+; UMB_HEAD at 8Ch, and the country tables at RL_NLS.  The kernel's file
+; table's first block is where DOS 5's SDA goes on, and RMDOS clears
+; it; the kernel's current directories are where RMDOS builds its own.
+; Both are put back with the rest on the way home.
+;---------------------------------------------------------------------
+RL_DATAVER      EQU     0004h           ; dw  1 - DOS 5's DataVersion
+RL_LOL          EQU     0024h           ; the MCB head word, then LL_PTR at +2
+RL_LOLTAIL      EQU     005Ah           ; the list's tail, the kernel's -
+RL_LOLEND       EQU     006Dh           ; up to here
+RL_UMBWORD      EQU     008Ch           ; dw  DOS 5's UMB_HEAD, the kernel's
+RL_JSHARE       EQU     0090h           ; SHARE's jump table, 15 far pointers,
+RL_JSHARECNT    EQU     15              ; each at RL_DEVRET until VSHARE puts
+                                        ; its own there (and back at exit)
+RL_DEVRET       EQU     00D0h           ; db  0CBh
+                                        ; D4h-D9h: unused.  The FCB table was
+                                        ; here, a header with no room for an
+                                        ; entry; it is rd_fcbtab (RMFILE.INC)
+RL_DEVS         EQU     00DAh           ; CON, AUX and PRN device headers,
+RL_DEVLEN       EQU     12h             ; chained behind NUL, 18 bytes each
+RL_DEVEND       EQU     RL_DEVS + 3 * RL_DEVLEN
+RL_DOSVARS      EQU     0110h           ; version, then six offsets - DOS 5's
+                                        ; Win386_DOSVars (DOS6SRC dostab.asm)
+RL_SAVEDS       EQU     0120h           ; dw
+RL_SAVEBX       EQU     0122h           ; dw
+RL_USERID       EQU     0124h           ; dw - the one DOSMGR really uses
+RL_CRITPATCH    EQU     0126h           ; dw
+RL_UMBHEAD      EQU     0128h           ; dw
+RL_NLS          EQU     0130h           ; the kernel's country tables, left
+RL_NLSEND       EQU     02D0h           ; alone; 65h's tables point into them
+RL_NLSUP        EQU     RL_NLS          ; 6502h and 6504h: the upper case
+RL_NLSTERM      EQU     RL_NLS + 82h    ; 6505h: what ends a file name
+RL_NLSCOLL      EQU     RL_NLS + 9Ah    ; 6506h: the collating sequence
+RL_NLSDBCS      EQU     RL_NLS + 19Ch   ; 6507h: double-byte ranges (none)
+RL_FSHARE       EQU     0303h           ; db  SHARE's "installed" flag
+RL_SDA          EQU     0320h           ; the swappable data area: DOS 5's,
+RL_SDALEN       EQU     02E0h           ; to the CDS array.  The first SD_LEN
+                                        ; bytes are what 5D06h says to swap;
+                                        ; the rest is what MS-DOS fills in for
+                                        ; a network redirector - the name, the
+                                        ; file table entry, the CDS - and what
+                                        ; IFSHLP.SYS reads at DOS 5's offsets
+                                        ; (RMINFO.INC, SD_*; RMNET.INC)
+RL_CDS          EQU     0600h           ; LASTDRIVE current directory
+RL_CDSLEN       EQU     58h             ; structures, each MS-DOS 4+'s size -
+                                        ; DOSMGR instances this many a drive.
+                                        ; Past 5F8h, the last SDA offset
+                                        ; VSHARE's SHARE entries would read
+RL_NULDEV       EQU     RL_LOL + 24h    ; the NUL device header inside the
+                                        ; list of lists (RMINFO's LL_NUL)
+RL_NDRV         EQU     8               ; the letters RMDOS has VOLUMES for,
+                                        ; whoever is reading this: the kernel
+                                        ; has more (PMDOS.INC), and RMDOS's
+                                        ; parameter blocks are laid out by its
+                                        ; own count (RMDOS.ASM checks the two
+                                        ; agree)
+RL_NCDS         EQU     26              ; ...and the most CURRENT DIRECTORY
+                                        ; STRUCTURES, A: to Z:.  How many are in
+                                        ; use is LASTDRIVE= (rd_ncds), and a
+                                        ; letter past the volumes is there for
+                                        ; a redirector to take: Windows for
+                                        ; Workgroups maps a network drive by
+                                        ; writing a free structure, and with
+                                        ; eight of them there was nowhere for
+                                        ; I: to Z: to go (2026-10-09)
+RL_DPB          EQU     RL_CDS + RL_NCDS * RL_CDSLEN
+RL_DPBLEN       EQU     21h             ; RL_NDRV drive parameter blocks,
+                                        ; MS-DOS 4's shape, chained from the
+                                        ; list of lists (RMDISK.INC, dpb_fill)
+                                        ; - where the kernel keeps the rest of
+                                        ; its current directories, which come
+                                        ; back with everything else
+RL_LEN          EQU     RL_DPB + RL_NDRV * RL_DPBLEN
+RD_KEEPLEN      EQU     RL_CDS + RL_NDRV * RL_CDSLEN
+                                        ; what RMDOS copies out of the block
+                                        ; before it builds there (rd_lowsave):
+                                        ; the kernel's CDS for the volumes
+                                        ; RMDOS has, and NUL's link.  The
+                                        ; kernel keeps all of it (park_lowkeep)
+                                        ; the end of what RMDOS builds in
+RL_SAVEMAX      EQU     1000h           ; the most RMDOS keeps and puts back:
+                                        ; past its own twenty-six structures
+                                        ; and the blocks after them, and so
+                                        ; past the kernel's sixteen and the
+                                        ; first of its file table blocks,
+                                        ; which RMDOS writes over and owes
+
+IF RL_NULDEV + RL_DEVLEN GT RL_LOLTAIL
+        .ERR    <RMDOS.INC: the NUL header runs into the list's tail>
+ENDIF
+IF RL_JSHARE + RL_JSHARECNT * 4 GT RL_DEVRET
+        .ERR    <RMDOS.INC: SHARE's jump table runs into the RETF>
+ENDIF
+IF RL_DEVEND GT RL_DOSVARS
+        .ERR    <RMDOS.INC: the device headers run into the DOSMGR table>
+ENDIF
+IF RL_UMBHEAD + 2 GT RL_NLS
+        .ERR    <RMDOS.INC: the DOSMGR table runs into the country tables>
+ENDIF
+IF RL_NLSEND GT RL_FSHARE
+        .ERR    <RMDOS.INC: the country tables run into SHARE's flag>
+ENDIF
+IF RL_SDA + RL_SDALEN GT RL_CDS
+        .ERR    <RMDOS.INC: the SDA runs into the CDS array>
+ENDIF
+IF RL_LEN GT RL_SAVEMAX
+        .ERR    <RMDOS.INC: RMDOS builds past what it keeps>
 ENDIF
 
 IFNDEF DOSVER_MAJOR

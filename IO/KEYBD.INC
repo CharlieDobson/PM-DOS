@@ -166,8 +166,22 @@ kbk_done:
 ; The interrupt itself is not delivered from here.  irq_common does it
 ; on the way out, where the frame the CPU pushed says whether the code
 ; we interrupted was the guest - see v86_irqexit.
+;
+; AN IRQ 1 WITH NOTHING IN THE OUTPUT BUFFER IS NOT A KEY.  The mouse
+; probe (ms_kbcaux) asks the controller for its command byte with
+; interrupts off and reads the answer itself, but the controller raises
+; IRQ 1 for that answer as for a key, and the PIC holds the request
+; until interrupts come back on.  Port 60h still holds the last answer:
+; 47h on Charlie's 486, which is keypad 7, so every boot ended "A:\>7"
+; (QEMU's is 41h, F7, which a prompt ignores).  Linux's i8042 driver
+; makes the same test.
 ;=====================================================================
 irq_keyboard:
+        in      al,KB_CMD               ; the status register
+        test    al,KBS_OBF
+        jnz     kb_have
+        ret
+kb_have:
         in      al,KB_DATA
 
         mov     byte ptr [kb_forbox],0
