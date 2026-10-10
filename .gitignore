@@ -9,3 +9,4 @@ IMAGES/**
 *.img
 *.png
 *.err
+BASELINE/**
