@@ -197,7 +197,11 @@ while (@ARGV) {
     }
     my ($t, $dt) = dostime((stat $arg)[9]);
     my $attr = defined($hit) ? ord(substr($d, $hit + 11, 1)) : 0x20;   # a system
-    # file stays one: MKDISK marks PMIO.SYS and PMDOS.SYS as it installs them
+    # file stays one: MKDISK marks PMIO.SYS and PMDOS.SYS as it installs them.
+    # RMDOS.SYS and RMCD.SYS in the root are made system files here as MKDISK
+    # makes them, new or replaced: an image built before they were marked has
+    # them as ordinary files, and this is the tool that refreshes such an image
+    $attr = 0x07 if !$dirclus && ($n83 eq 'RMDOS   SYS' || $n83 eq 'RMCD    SYS');
     my $e = $n83 . pack('C', $attr) . ("\0" x 10) . pack('vvvV', $t, $dt, $ch[0] // 0, length $data);
     substr($d, $o, 32) = $e;
     printf "  %-12s %8d bytes  %s  %s\n", $n83, length $data,

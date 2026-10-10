@@ -537,24 +537,51 @@ PROG_PSP        EQU     PROG_SLOT + SLOT_PSP
 PROG_TOP        EQU     PROG_SLOT + PROG_SIZE   ; initial ESP for programs
 
 ;---------------------------------------------------------------------
-; D32 executable header - 32 bytes at the front of the file.  The file
-; is the memory image: it is loaded whole at D32H_BASE (header
+; D32 executable header - 32 bytes at the front of the IMAGE.  The
+; image is the memory image: it is loaded whole at D32H_BASE (header
 ; included), so a program's code starts at its base + 32.
 ;
-; THE FIRST FIELD IS A 16-BIT JUMP, and it is there for a machine that
-; is not this one.  A D32 file carries no MZ signature, and real
-; MS-DOS decides what a program is by the first two bytes and not by
-; the extension - so it loads one as a .COM at 100h and executes it
-; from byte zero, whether it is called .COM or .EXE.  Byte zero is
-; therefore a JMP SHORT over the header, to the stub D32_HEAD plants
-; behind it: it says what the file needs and exits with errorlevel 1.
-; Under PM-DOS that jump is never executed; the kernel reads the
-; header and enters at D32H_ENTRY.
+; THE SIGNATURE IS 'CD', and it is to a D32 image what 'MZ' is to a
+; DOS .EXE and 'NE' to a Windows one.  It is found in one of two
+; places:
 ;
-; The magic moved to +4 to make room for it, which means a D32 binary
-; from before 0.29 is not one now.  That is the intended answer: the
-; kernel and its executables are one build, and a stale COMMAND.COM
-; that would have been loaded and run is better refused.
+;   AT BYTE ZERO OF THE FILE - the file is the image and nothing else,
+;   which is what the linker writes and what every test program is.
+;
+;   WHERE AN MZ HEADER'S 3Ch POINTS - the file is an MS-DOS program
+;   with the image behind it, which is what TOOLS\D32BIND makes of
+;   every command that ships.  Real MS-DOS decides what a program is
+;   by its first two bytes and not by its extension, so there it runs
+;   the program in front: TOOLS\D32STUB.ASM, which says what the file
+;   needs and ends with errorlevel 1 - or a whole 16-bit program, for
+;   an application that is to run on both systems.  PM-DOS looks
+;   behind it (d32_find, exec_load) and never runs it.
+;
+; An MZ header only has a 3Ch when its fixup table starts at 40h or
+; later (EXE_LFARLC), which is the test NE and PE files are found by
+; too.  The image starts on a paragraph, and its header never crosses
+; a 512-byte boundary - so it is whole in one cluster, whatever size
+; the disk's clusters are.  D32BIND pads the stub to make both true
+; and exec_load refuses a file where they are not.
+;
+; AN IMAGE WITH NOTHING IN FRONT OF IT is loaded by real MS-DOS as a
+; .COM, at 100h, and executed from byte zero.  'C' and 'D' are INC BX
+; and INC SP there, and the two bytes after them are INT 20h: such a
+; file ends at once and quietly, which is the most a header can do.
+; Until this layout the first field was a JMP SHORT to a stub D32_HEAD
+; planted behind the header, and that stopped working at 65,280 bytes
+; - real DOS will not load a .COM that large at all, and MS-DOS 5
+; said "Cannot execute" of every D32 program that was.
+;
+; D32H_TYPE says what kind of image it is.  Programs are the only kind
+; there is; the field is there so that the next kind (a driver) can
+; say so in a header 4Bh will then refuse to run.
+;
+; The signature has changed twice (0.29 moved it; this layout replaced
+; it), and both times a binary from before stopped being one.  That
+; is the intended answer: the kernel and its executables are one
+; build, and a stale program that would have been loaded and run is
+; better refused.
 ;---------------------------------------------------------------------
 ; THE BASE AND THE ENTRY POINT ARE SLOT OFFSETS as of the ring-3
 ; release, not absolute addresses: a program is linked for offset
@@ -562,9 +589,14 @@ PROG_TOP        EQU     PROG_SLOT + PROG_SIZE   ; initial ESP for programs
 ; be, so the same image runs as the shell or as a transient program.
 ; The base field is kept, and checked, because a file whose idea of the
 ; layout differs from the kernel's is not one of ours.
-D32_MAGIC       EQU     1A323344h               ; 'D','3','2',1Ah
-D32H_JMP        EQU     0                       ; db 0EBh,1Eh + 2 pad - the stub
-D32H_MAGIC      EQU     4                       ; dd - must be D32_MAGIC
+D32_SIG         EQU     4443h                   ; 'C','D' as a little-endian word
+D32_VER         EQU     1                       ; this layout of the header
+D32T_PROG       EQU     0                       ; D32H_TYPE: a program
+D32_STUBMIN     EQU     40h                     ; an MZ header that has a 3Ch
+D32H_SIG        EQU     0                       ; dw - must be D32_SIG
+D32H_EXIT       EQU     2                       ; db 0CDh,20h - real DOS ends here
+D32H_VER        EQU     4                       ; db - must be D32_VER
+D32H_TYPE       EQU     5                       ; db - D32T_*; then a spare word
 D32H_BASE       EQU     8                       ; dd - load offset: SLOT_IMAGE
 D32H_ENTRY      EQU     12                      ; dd - entry point (absolute)
 D32H_BSS        EQU     16                      ; dd - bytes to zero after image
@@ -572,43 +604,25 @@ D32H_STACK      EQU     20                      ; dd - stack wanted (information
 D32H_SIZE       EQU     32
 
 ;---------------------------------------------------------------------
-; D32_HEAD - the header and its 16-bit stub, in one place, so that
-; every D32 executable gets both and none of them gets a different one.
+; D32_HEAD - the header, in one place, so that every D32 image gets
+; the same one.  It is the first thing in the image and so the first
+; thing in the first module on the link line.
 ;
-; THE STUB IS HAND-ENCODED, AND IT HAS TO BE.  It sits inside a USE32
-; segment, so any 16-bit form the assembler emitted here would carry a
-; 66h operand-size prefix - and in real mode that prefix means the
-; other thing.  "mov dx,imm16" would assemble as 66 BA and execute as
-; MOV EDX,imm32, swallowing the two bytes after it and running off
-; into the message.  So the bytes are written out with what they are
-; beside them.
-;
-; Nothing in the stub depends on the program: the header is a fixed 32
-; bytes, so the stub always starts at file offset 20h, which under DOS
-; is 120h.  These bytes are identical in every D32 file.
+; The 16-bit code that used to follow it here - hand-encoded, because
+; an assembler in a USE32 segment puts a 66h prefix on every 16-bit
+; form - is a program of its own now, TOOLS\D32STUB.ASM, and is put in
+; front of the image after the link.  Code still starts at base + 32.
 ;---------------------------------------------------------------------
 D32_HEAD MACRO   d32base, d32entry, d32bss, d32stack
-LOCAL   s16, s16msg
-        db      0EBh, D32H_SIZE - 2     ; JMP SHORT s16 - where real DOS lands
-        db      0, 0                    ; pad, so the magic is aligned
-        dd      D32_MAGIC
+        db      'C', 'D'                ; D32_SIG - INC BX, INC SP to real DOS
+        db      0CDh, 20h               ; INT 20h - and there it ends
+        db      D32_VER, D32T_PROG
+        dw      0                       ; spare
         dd      d32base
         dd      d32entry
         dd      d32bss
         dd      d32stack
         dd      0, 0                    ; pad the header to D32H_SIZE
-s16:
-        db      0Eh                     ; push cs
-        db      1Fh                     ; pop  ds       - a .COM starts CS = PSP
-        db      0BAh                    ; mov  dx,imm16 - the message
-        dw      100h + D32H_SIZE + (s16msg - s16)
-        db      0B4h, 09h               ; mov  ah,9     - print it
-        db      0CDh, 21h               ; int  21h
-        db      0B8h                    ; mov  ax,imm16
-        dw      4C01h                   ; 4C01h: terminate, errorlevel 1
-        db      0CDh, 21h               ; int  21h
-s16msg:
-        db      13,10,'This program requires 32-bit DOS mode.',13,10,'$'
 ENDM
 
 ;---------------------------------------------------------------------
@@ -1617,6 +1631,10 @@ EXE_CS          EQU     16h                     ; code segment, to be relocated
 EXE_LFARLC      EQU     18h                     ; file offset of the fixup table
 EXE_OVNO        EQU     1Ah                     ; overlay number, 0 = the program
 EXE_HDRLEN      EQU     1Ch                     ; what we read to decide
+EXE_LFANEW      EQU     3Ch                     ; dd - where the newer header is,
+                                                ; in a file whose EXE_LFARLC is
+                                                ; 40h or more: 'NE', 'PE' - or
+                                                ; a D32 image's 'CD'
 
 EXE_MZ          EQU     5A4Dh                   ; 'M','Z' as a little-endian word
 EXE_ZM          EQU     4D5Ah
@@ -3990,6 +4008,66 @@ VMI_LEN         EQU     100h
 VMA_HW          EQU     0001h                   ; the hardware can show it
 VMA_GRAPHICS    EQU     0010h
 VMA_LFB         EQU     0080h                   ; ...through a linear buffer
+
+;---------------------------------------------------------------------
+; THE FIRST MEGABYTE FOR A NATIVE PROGRAM - 21h/F1h AL=20h, the
+; function in bits 16-23 of EAX.  A native program's segment is its
+; slot: the interrupt vectors, the BIOS data area, the memory a DOS
+; box's drivers and resident programs sit in and the ROMs are all
+; outside it.  A program that reports on the machine (PMD.EXE) has to
+; read them, and this is how.  Nothing here writes for the program.
+;
+;   LMF_READ   EBX = an address, ECX = bytes (LMF_MAXREAD at most),
+;              EDI -> where to put them.  All of it below 1MB
+;   LMF_RAM    EBX = an address from A0000h to FFFFFh -> EAX = 1 if a
+;              byte stored there is read back, 0 if not.  What was
+;              there is put back, with interrupts off round the three
+;              of them - the test MSD makes of the adapter area, which
+;              reading alone cannot make
+;
+; CF and AX = ERR_BADDATA (an address or a length outside those),
+; ERR_ACCESS (a buffer outside the slot) or ERR_FUNC.  Native programs
+; only: a DOS box has the first megabyte itself.
+;---------------------------------------------------------------------
+LMF_READ        EQU     0
+LMF_RAM         EQU     1
+LMF_MAXREAD     EQU     00010000h
+LMF_TOP         EQU     00100000h
+LMF_RAMLO       EQU     000A0000h
+
+;---------------------------------------------------------------------
+; A BIOS CALL THAT ONLY ASKS - 21h/F1h AL=21h.  DL = the interrupt,
+; ESI -> a BQ_LEN record: the registers the BIOS is given, and, when
+; the call comes back, the ones it left.  A native program has no
+; BIOS; the kernel calls it through the real-mode thunk, as it does
+; for itself.
+;
+; ONLY WHAT IS IN bq_table (INT21.INC) IS CALLED: the functions that
+; report - the video mode and adapter, the equipment and memory words,
+; the configuration table, the game port, a printer's and a serial
+; port's status.  Anything else is ERR_ACCESS, because INT 15h is
+; also where a BIOS switches to protected mode and moves extended
+; memory, and a program must not be able to ask for those from here.
+;
+; A pointer the BIOS answers with (ES:BX from 15h/C0h) is followed
+; with LMF_READ.  No function that needs a buffer below 1MB is on the
+; list; VBE's has its own call, AL=1Fh.
+;---------------------------------------------------------------------
+BQ_EAX          EQU     00h
+BQ_EBX          EQU     04h
+BQ_ECX          EQU     08h
+BQ_EDX          EQU     0Ch
+BQ_ESI          EQU     10h
+BQ_EDI          EQU     14h
+BQ_ES           EQU     18h                     ; dw - out only
+BQ_DS           EQU     1Ah                     ; dw - out only
+BQ_FLAGS        EQU     1Ch                     ; dd - out only: bit 0 is CF
+BQ_LEN          EQU     20h
+
+BQK_ANY         EQU     0                       ; a bq_table row: this AH
+BQK_AL          EQU     1                       ; ...with this AL only
+BQK_BL          EQU     2                       ; ...with this BL only
+BQK_ANYAH       EQU     3                       ; the interrupt has no functions
 
 ;---------------------------------------------------------------------
 ; How many drive letters exist.  SHARED, and it has to be: COMMAND.COM

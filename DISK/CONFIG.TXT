@@ -157,9 +157,10 @@ CDROM=x
     this line they come after the hard disks.  A letter that already
     belongs to a hard disk is ignored.
     Under Windows the first CD-ROM on an IDE cable keeps its letter
-    if RMCD.SYS is in the root of the boot disk with RMDOS.SYS.  Its
-    names are 8.3, as MSCDEX shows them.  Other CD-ROM drives aren't
-    there under Windows.
+    if RMCD.SYS is in the root of the boot disk with RMDOS.SYS.  Both
+    are hidden system files, and SYS copies them.  The CD-ROM's names
+    are 8.3, as MSCDEX shows them.  Other CD-ROM drives aren't there
+    under Windows.
 
 SCSI=ON|OFF
     SCSI CD-ROM drives.  ON by default.  PM-DOS has its own drivers

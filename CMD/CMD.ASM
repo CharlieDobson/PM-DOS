@@ -244,7 +244,7 @@ ie_out:
 ; whole reason it no longer names this interpreter.  A DOS program
 ; shelling out - system(), an editor's DOS shell, an installer's
 ; COMMAND /C SETUP.BAT - runs what COMSPEC says, in its DOS box, and a
-; D32 program there prints "This program requires 32-bit DOS mode"
+; D32 program there prints "This application requires 32-bit DOS mode"
 ; and stops.  What it needs is a real-mode interpreter, and PM-DOS has
 ; one: CMD\COMMAND\COMMAND.ASM, installed as COMMAND.COM in the same
 ; directory as this program.  That is the name OS/2 and NT settled on

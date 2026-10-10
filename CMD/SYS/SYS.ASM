@@ -14,11 +14,14 @@
 ;   2. Stage 2, on hard disks: the FAT-walking loader lives in the
 ;      partition's reserved sectors (1..8 on FAT16, 9..16 on FAT32
 ;      - the S2_* constants).  Copied sector for sector.
-;   3. PMIO.SYS, PMDOS.SYS, CMD.EXE and COMMAND.COM, copied as
-;      ordinary files, the first two re-marked read-only+hidden+system.
-;      COMMAND.COM - the 16-bit interpreter DOS programs get - is only
-;      copied if the source has one: a disk without it boots and runs
-;      everything except a DOS program that shells out.
+;   3. PMIO.SYS, PMDOS.SYS, RMDOS.SYS, RMCD.SYS, CMD.EXE and
+;      COMMAND.COM, copied as ordinary files, the four .SYS files
+;      re-marked read-only+hidden+system.  RMDOS.SYS, RMCD.SYS and
+;      COMMAND.COM are only copied if the source has them: a disk
+;      without RMDOS.SYS boots and runs everything except Windows,
+;      without RMCD.SYS Windows has no CD-ROM letter, and without
+;      COMMAND.COM - the 16-bit interpreter DOS programs get - a DOS
+;      program cannot shell out.
 ;
 ; Because the boot code is filesystem-specific, source and target
 ; must carry the SAME FAT type - 21h/F1h AL=1 asks the kernel, which
@@ -209,12 +212,25 @@ sy_files:
         mov     esi,OFFSET name_dos
         call    sy_copy
         jc      sy_nofile
+        ; RMDOS.SYS and RMCD.SYS are the kernel's as well - the DOS it
+        ; leaves in charge under Windows, and the CD-ROM's letter there
+        ; - and the kernel opens them in the root of the boot drive, so
+        ; they go across with it and wear the same attributes.  Hidden
+        ; files are also the ones a COPY *.* leaves behind, which makes
+        ; this the only thing that carries them.
+        mov     esi,OFFSET name_rm      ; optional - see the header
+        call    sy_copyopt
+        jc      sy_nofile
+        mov     esi,OFFSET name_cd      ; optional
+        call    sy_copyopt
+        jc      sy_nofile
         mov     esi,OFFSET name_cmd
         mov     byte ptr [sys_attr],ATTR_ARCHIVE
         call    sy_copy
         jc      sy_nofile
-        mov     esi,OFFSET name_c16     ; optional - see the header
-        call    sy_copy
+        mov     esi,OFFSET name_c16     ; optional
+        call    sy_copyopt
+        jc      sy_nofile
 
         mov     edx,OFFSET msg_done
         mov     ah,09h
@@ -261,8 +277,31 @@ sy_die:
         int     21h
 
 ;---------------------------------------------------------------------
+; sy_copyopt - sy_copy for a file the source disk may not have.  A file
+;              that is not there is not a failure, and the target's own
+;              copy, if it has one, is left alone; a file that is there
+;              and will not copy is a failure like any other.  It used
+;              to be sy_copy with the carry ignored, and SYS then said
+;              "System transferred" over a COMMAND.COM cut short by a
+;              full disk.
+;---------------------------------------------------------------------
+sy_copyopt:
+        call    sy_copy
+        jnc     so_out
+        cmp     byte ptr [src_absent],0
+        je      so_bad                  ; it was there: CF stays set
+        clc
+        ret
+so_bad:
+        stc
+so_out:
+        ret
+
+;---------------------------------------------------------------------
 ; sy_copy - ESI -> the bare 8.3 name; copy X:\name to Y:\name and
-;           set [sys_attr] on the result.  CF on any failure.
+;           set [sys_attr] on the result.  CF on any failure, with
+;           [src_absent] saying whether the failure was only that the
+;           source has no such file.
 ;---------------------------------------------------------------------
 sy_copy:
         push    esi                     ; the name into both templates
@@ -272,10 +311,12 @@ sy_copy:
         mov     edi,OFFSET tgt_path + 3
         call    sy_strcpy
 
+        mov     byte ptr [src_absent],1
         mov     edx,OFFSET src_path
         mov     ax,3D00h
         int     21h
         jc      sc_fail
+        mov     byte ptr [src_absent],0
         movzx   eax,ax
         mov     [src_hdl],eax
 
@@ -366,9 +407,12 @@ tgt_log     db  0
 tgt_letter  db  0
 src_type    db  0
 sys_attr    db  0
+src_absent  db  0                       ; sy_copy: the source had no such file
 
 name_io     db  'PMIO.SYS',0
 name_dos    db  'PMDOS.SYS',0
+name_rm     db  'RMDOS.SYS',0
+name_cd     db  'RMCD.SYS',0
 name_cmd    db  'CMD.EXE',0
 name_c16    db  'COMMAND.COM',0
 src_path    db  'A:\'

@@ -161,6 +161,14 @@ ECHO --- SHUTDOWN (must NOT write anything or switch the computer off) ---
 SHUTDOWN /?
 ECHO --- SHUTDOWN with something else AND /?: still help, still running ---
 SHUTDOWN NOW /?
+ECHO --- PMD (must NOT take the screen over) ---
+PMD /?
+ECHO --- PMD with a report to write AND /?: still help, no file written ---
+PMD /P C:\NOFILE.TXT /?
+ECHO --- DOSSHELL (must NOT take the screen over) ---
+DOSSHELL /?
+ECHO --- DOSSHELL with a screen to start in AND /?: still help, still text ---
+DOSSHELL /G:M1 /?
 ECHO --- FC (must NOT compare anything) ---
 FC /?
 ECHO --- FC with two names AND /?: still help, no comparison ---

@@ -9,8 +9,8 @@ WHERE EVERYTHING IS.  The root of this disk holds PM-DOS and
 nothing else: the kernel, CMD.EXE and COMMAND.COM, the commands
 that are part of the system - CHOICE, MORE, SORT, SYS, FORMAT, MEM,
 FDISK, MOUNT, MOVE, ATTRIB, CHKDSK, LABEL, CACHE, UNDELETE, CDEX,
-FC, FIND, DISKCOPY, DISKCOMP, ISAPNP and SHUTDOWN - and LRGDISK.386,
-which is for a Windows on a hard disk.
+FC, FIND, DISKCOPY, DISKCOMP, ISAPNP, SHUTDOWN, PMD, DOSSHELL and
+ACROREAD - and LRGDISK.386, which is for a Windows on a hard disk.
 Everything else is a TEST, written to prove one thing about the
 kernel, and it is on a SECOND DISK, TESTS.IMG, since 2026-10-08:
 the two had outgrown one floppy.  That disk has every test program,
@@ -117,6 +117,39 @@ lists the cards; /A switches every device on with resources nothing
 else is using; 1.0 IO=220,330,388 IRQ=5 DMA=1,5 sets one by hand.
 It does what CTCM did, and belongs in this file if it is wanted:
   ISAPNP /A
+
+PMD is the diagnostics: what MSD is to MS-DOS.  A button for each
+page - Computer, Memory, Video, Network, OS Version, Mouse, Other
+Adapters, Disk Drives, LPT Ports, COM Ports, IRQ Status, TSR
+Programs, Device Drivers - and the File and Utilities menus for a
+report, a file search, the memory block display and the rest.  /P
+writes the whole report to a file and /S the summary:
+  PMD
+  PMD /P C:\REPORT.TXT
+
+DOSSHELL is the shell with lists and menus: what the MS-DOS Shell is
+to MS-DOS.  A tree of the drive's directories beside the files of the
+selected one, a list of programs in groups, and the File, Options,
+View, Tree and Help menus.  It runs as text or in graphics - EGA or
+VGA in 16 colors, and 640x480 in 256 colors where the video BIOS has
+VBE 2.0 - and Options, Display chooses.  It starts the way it was
+last left; /T and /G start it in text or in graphics whatever was
+saved.  What it has no use for is the Task Swapper: PM-DOS runs one
+program at a time.  Its settings and its program list are kept in
+DOSSHELL.INI, beside DOSSHELL.EXE:
+  DOSSHELL
+  DOSSHELL /G:M1 /256
+
+ACROREAD shows a PDF document, of any version of the format and
+encrypted or not.  A page is drawn at 640x480 - in color where the
+video BIOS has VBE 2.0, in 16 grays on a plain VGA - and Tab changes
+to the page's text on the text screen, and back.  PgUp and PgDn go
+through the document, + and - make the page larger and smaller, G
+goes to a page by number, and F1 lists the rest.  /T starts with the
+text, /G with the grays whatever the BIOS has, /P:n at page n, and
+/X writes the document's text out instead of showing it:
+  ACROREAD MANUAL.PDF
+  ACROREAD MANUAL /X > PRN
 
 FC and FIND are MS-DOS 6.22's, output and errorlevels alike.  FC
 compares two files or two sets of them, as text or (/B, or a .EXE
@@ -281,7 +314,8 @@ quickest way to find out what this shell can actually do:
                 CALL, CTTY, DOSKEY and LOADHIGH
   MEM /?        ...and MORE, SORT, CHOICE, FORMAT, SYS, FDISK,
                 MOUNT, MOVE, ATTRIB, CHKDSK, LABEL, CACHE, CDEX,
-                ISAPNP, CMD, COMMAND and \TESTS\DRIVES
+                ISAPNP, PMD, DOSSHELL, ACROREAD, CMD, COMMAND and
+                \TESTS\DRIVES
 
 WHAT THOSE SCREENS SAY IS THIS SHELL AND NOT MS-DOS.  A switch that
 is not on the help screen is a switch this CMD.EXE does not have -

@@ -10945,6 +10945,1041 @@ Quarterdeck's Manifest for Windows crashes the machine; Turbo Pascal
 7's TPX and anything else on Borland's RTM.
 
 
+RMDOS.SYS AND RMCD.SYS ARE SYSTEM FILES (2026-10-09)
+----------------------------------------------------
+
+Charlie: "if RMDOS.SYS and RMCD.SYS are required OS components that
+need to be in the root, shouldn't they have the System, Hidden, and
+Read-Only attributes along with PMDOS.SYS and PMIO.SYS?"
+
+They should, and for PMIO.SYS's reasons.  The kernel opens both by name
+in the root of the boot drive (park_loadrm, park_loadcd), RMDOS.SYS is
+the DOS for as long as Windows runs, and a DEL *.* in the root took
+Windows with it.  Their names also read as drivers somebody might put on
+a DEVICE= line.  MS-DOS 6 has the same case and answers it the same way:
+DBLSPACE.BIN is not needed to boot, IO.SYS loads it from the root if it
+is there (DOS6SRC bios\syspre.asm), Setup marks it system, hidden and
+read-only (install\oem\addfiles.c) and SYS carries it (cmd\sys\sys1.asm).
+
+NOTHING HAD TO CHANGE TO FIND THEM.  A lookup by name sees every entry -
+only a directory search leaves hidden and system files out (FAT.INC) -
+and 3D00h asks for nothing a read-only file refuses.  RUNTESTS says so
+on every run now: its disk's RMDOS.SYS is hidden, and DRVTEST, BLKTEST,
+NETTEST and SEEKWR park on it.
+
+WHAT MARKS THEM.  MKDISK gives the three attributes to the first two
+files in the root, by position.  RMDOS.SYS and RMCD.SYS come late in
+every list, so they are known by name (rm_sysfile), on a floppy and on a
+bootable hard disk; the first-two rule is as it was.  FATREPL.PL, which
+refreshes an image MKHD cannot rebuild, kept whatever attribute an entry
+had and gave a new file the archive bit; the two names in the root now
+get 07h there too, new or replaced, and that is what brought HD16.IMG's
+copies into line.
+
+SYS DID NOT COPY THEM AT ALL, which was the real hole, and the reason
+the attributes could not be changed on their own: a hidden file is what
+a wildcard leaves behind, so once the two are hidden SYS is the only
+thing that takes them to another disk.  Until now SYS C: after a floppy
+boot made a disk that started everything but Windows - "RMDOS.SYS is not
+in the root of the boot drive or of the current one" - unless somebody
+copied the two files afterwards.  SYS.COM and SYS16.COM now copy
+PMIO.SYS, PMDOS.SYS, RMDOS.SYS and RMCD.SYS with the three attributes,
+then CMD.EXE and COMMAND.COM; FORMAT /S runs SYS.COM and gets it for
+nothing.  The two are optional, as COMMAND.COM is: a source without them
+still transfers, and the target keeps whatever it had.
+
+AN OPTIONAL FILE THAT WILL NOT COPY IS AN ERROR NOW.  SYS.COM made
+COMMAND.COM optional by ignoring sy_copy's carry, so a COMMAND.COM cut
+short by a full disk would have been followed by "System transferred".
+sy_copyopt forgives only a source that is not there (src_absent).
+SYS16 already told the two apart.
+
+AN OLD DISK is brought up to date by SYS from the new floppy, which
+takes the attributes off a file before it replaces it, or by ATTRIB +R
++S +H on the two files.  And a new RMDOS.SYS no longer goes onto a disk
+with COPY: SYS, or ATTRIB -R -S -H first.
+
+SYS.COM is 1,633 bytes (1,541) and SYS16.COM 8,553 (8,490); the other
+136 files the build makes, and TESTS.IMG, are byte for byte what they
+were.  RUNTESTS is 83 x 7 with no baseline changed.  With no window:
+
+  * SYS D: on DOSBox-X, from a hard disk with both files onto one whose
+    root had a stale RMDOS.SYS as an ordinary file.  Both arrive
+    hidden, system and read-only, and the six files are the build's
+    byte for byte.  SYS D: a second time, over its own copies, works.
+    The target, booted, says 0.63 to VER, and PARKTEST runs HELLO on
+    its RMDOS and comes back.
+  * A source with neither file: "System transferred", and the target
+    has neither.
+  * A target with room for PMIO.SYS, PMDOS.SYS and 27K more: "Cannot
+    copy the system files", exit code 1.
+  * SYS16 A: on real MS-DOS 5 (the C:\DOSBoxRoot\RIG disk, with a
+    diskette in A:): the same six files, a stale RMDOS.SYS that was
+    itself read-only, hidden and system replaced, and the diskette
+    boots and parks.
+  * QEMU, booted from a floppy with the two files hidden and no
+    RMDOS.SYS on the hard disk, Windows for Workgroups started from C:
+    in enhanced mode with the network, LRGDISK and the Office CD:
+    WINSWEEP has "DRIVE D: type 4, 4409 1000, 4408 e1, 150B ax=FFFF
+    bx=ADAD", File Manager runs, and Windows exits to the end of
+    AUTOEXEC.
+
+SYS16 ONTO A HARD DISK WAS TRIED FIRST AND DID NOT GET AS FAR AS A
+FILE, which is not this change's doing and is left as found.  With a
+MKDISK hard disk as D: under MS-DOS 5, SYS16 stopped after "System
+files taken from" (the rest went to the screen, which nobody saw), and
+DIR D:\ showed an unlabelled, empty root.  The likely reason is in
+DOS6SRC bios\msinit.asm: for a hard disk MS-DOS reads bytes 8 to 10 of
+the boot sector as the version in the OEM name and does not trust a BPB
+older than "3.1" (no_os2).  Ours are "S  ", the end of 'PM-DOS  ', so
+DOS works out a BPB of its own and looks for the root where that one
+puts it - the case sy_agree is there to refuse.  A disk MS-DOS formatted
+itself has one reserved sector and no room for stage 2.  If that is
+right, SYS16 makes diskettes and nothing else, and MS-DOS cannot read a
+hard disk that carries our boot sector; an OEM name ending in a version
+would be the cure.  Not chased.
+
+Files: TOOLS\MKDISK.C, TOOLS\FATREPL.PL, CMD\SYS\SYS.ASM,
+TOOLS\SYS16.ASM, DISK\CONFIG.TXT (CDROM=: the two are hidden system
+files and SYS copies them).  S:\BIN (SYS.COM, SYS16.COM),
+TOOLS\MKDISK.EXE, IMAGES\PMDOS.IMG, IMAGES\EXITTRC.IMG, IMAGES\HD16.IMG
+(FATREPL: SYS.COM, CONFIG.TXT, and RMDOS.SYS and RMCD.SYS for their
+attributes) and the 86Box VM's two copies carry it; copies of the
+delivered floppy and HD16 boot, and on HD16 ATTRIB shows SHR on all
+four and PARKTEST comes back.  NOT RUN: FORMAT /S, which EXECs SYS.COM,
+and the 486.  HD32, HDBIG, PMDOSATA and PMDOSFDD were not rebuilt.
+Still v0.63.
+
+IMAGES\EXITTRC.IMG WAS DELETED the same evening, at Charlie's word: it
+has done what it was for.  BUILD exittrace still makes that floppy, as
+the IMAGES\PMDOS.IMG of the tree it is run in.
+
+
+PMD.EXE: MSD FOR PM-DOS, AND A PROCESSOR ASKED WHAT IT IS (2026-10-09)
+----------------------------------------------------------------------
+
+Charlie: "Let's port the Microsoft Diagnostics (MSD) to PM-DOS as PMD
+(PM Diagnostics), and update the CPU detection piece to using CPUID
+instruction if supported."
+
+MSD itself runs in a DOS box - the entry before last was about getting
+it there - and says what a box can see: "Processor: Unknown" on anything
+later than a 486, and nothing of the kernel underneath.  PMD is the same
+program for the system itself: native, 32-bit, CMD\PMD, built by
+BUILD.CMD like EDIT and on every disk.  The thirteen pages are MSD's
+and so are the main screen, the menus, the report and the switches;
+MSD 2.00a's source (DOS6SRC c6ers\msd200a) and 6.22's MSD.EXE were what
+it was checked against, page by page.  None of that source is in it: a
+real-mode program that reads the machine through far pointers and COW's
+windows has nothing a ring-3 program here can use, and the words on the
+help screen are ours.
+
+  PMD [/I]               the screen; nothing looked at until a page
+                         is opened
+  PMD /F file            asks who the report is from, then all of it
+  PMD /P file            all of it
+  PMD /S [file]          the summary, to the screen with no file
+
+WHERE THE FACTS COME FROM.  A native program's segment is its slot, so
+it can read no vector, no byte of the BIOS data area, no ROM and no
+memory block of the conventional arena.  Every fact is one of four
+things, and two of them are new:
+
+  21h/F1h as it was     the kernel's own accounts: memory (4, 8, 9,
+                        1Ah), drives and disks (1, 6, 0Ch, 14h, 17h),
+                        the buses (12h), the coprocessor (13h), VBE
+                        (1Fh)
+  21h/F1h AL=20h, NEW   the first megabyte.  LMF_READ copies bytes from
+                        below 1MB into the program's buffer; LMF_RAM
+                        says whether an address from A0000h up keeps a
+                        byte written to it - the byte's complement
+                        stored, read back and put right, interrupts off
+                        for the three.  That is the test MSD makes of
+                        the adapter area, and reading cannot make it:
+                        shadowed ROM reads as ROM does
+  21h/F1h AL=21h, NEW   a BIOS call that only asks.  DL = the interrupt,
+                        ESI -> a BQ_LEN record of registers in and out.
+                        It goes through the real-mode thunk IF the
+                        interrupt and AH (and for two rows AL or BL) are
+                        in bq_table: 10h/0Fh, 12h BL=10h and 1A00h; 11h;
+                        12h; 14h/03h; 15h/84h, 88h, C0h, C1h and D800h;
+                        17h/02h.  Anything else is ERR_ACCESS - INT 15h
+                        is also where a BIOS moves extended memory and
+                        leaves real mode, and neither may be asked for
+                        from ring 3
+  IN and OUT            which fault at ring 3 and are carried out by the
+                        kernel (pm3_fault), a byte at a time
+
+Both new calls are for native programs only (a box has the first
+megabyte and the BIOS itself) and neither changes anything.  Everything
+below 1MB is what a DOS box can already read.  r3_pflags answers AL=20h
+by hand - EBX is an address in the machine for both functions and must
+not have the slot's base added - and AL=21h has a row in vdm_subptr.
+
+THE PROCESSOR (CPU.C).  MSD's test is what the flags register will
+hold: an 8088, a 286, a 386, and by the AC flag a 486, where it stops.
+PMD asks the processor.  If the ID flag holds there is a CPUID: leaf 0
+is the maker, leaf 1 the family, model and stepping and what it can do,
+and leaves 80000002h-4h, where they exist, the processor's own name for
+itself, which is believed over any table.  The tables behind it know
+Intel from the 486DX to the Pentium 4, AMD from the Am486 to the Athlon,
+Cyrix, IDT and VIA, UMC, NexGen, Rise, Transmeta, SiS and National.
+With only the AC flag it is a 486 from before CPUID - "486DX" or
+"486SX" by the coprocessor, as MSD says it - unless a divide leaves the
+flags alone, which is a Cyrix, and then DIR0 behind ports 22h and 23h
+says which.  With neither it is an 80386; PM-DOS runs on nothing older,
+so MSD's tests for the 8088, the V20 and the 286 are gone.  The Computer
+page has two lines MSD has not: the CPUID identity, and the features.
+The coprocessor is the kernel's to say (F1h AL=13h) - an x87 instruction
+on a machine without one would be a fault - and only on a 386 is it then
+asked whether it is an 80287 (infinity compared with minus infinity).
+
+WHAT IS DIFFERENT FROM MSD, page by page, because the machine is:
+
+  Memory          "PM-DOS Program Memory" - the kernel's arena, which is
+                  what native programs and XMS are given out of - beside
+                  conventional, upper, EMS and DPMI.  The map is MSD's:
+                  option ROMs by their 55 AA, length and checksum, RAM
+                  by LMF_RAM, FFh throughout as nothing, the rest
+                  "possibly available", and the EMS frame and the upper
+                  memory blocks drawn over it
+  IRQ Status      "Handled By" is PM-DOS Kernel for the lines the kernel
+                  keeps (BUS_IRQSTAT) and otherwise whoever owns the
+                  address a DOS box's vector has; "PCI Device" for a
+                  line a card was routed to
+  Other Adapters  the game port (INT 15h/84h), and then what MSD never
+                  had: every function on the PCI bus with what it is
+                  and its line, and how many Plug and Play cards
+  Disk Drives     from the volume table.  A drive whose disk comes out
+                  is described and not read; B: is left out when the
+                  equipment word says one diskette drive, as MSD leaves
+                  it out.  SHARE is found by trying it: the program's
+                  own file opened deny-all will not open again
+  Network         PM-DOS has none of its own: a packet driver on 60h to
+                  80h, PROTMAN$, IFSHLP, and the PCI network cards
+  OS Version      PM-DOS's version beside the DOS version it reports,
+                  and "DOS Located in: Extended Memory", which is true
+                  and which 3306h has no flag for
+  Mouse           the kernel's INT 33h, version 8.20
+  COM Ports       a port the mouse is on is read and not touched: its
+                  speed is behind the divisor latch, and a byte the
+                  mouse sent while that was switched in would be lost
+  TSR Programs, Device Drivers
+                  the conventional arena and the driver chain a DOS box
+                  is given, read through AL=20h.  Run PMD from
+                  COMMAND.COM and the shell is in the list
+
+THE SCREEN is EDIT's - SCR.C and the dialog half of UI.C, copied, with
+MSD's colours - so it has EDIT's mouse and EDIT's test mode: PMDTEST
+names a log, the keys come from a redirected file, and FFh FFh writes
+the screen into the log.  TOOLS\MKPMDKEYS.PL writes DISK\PMD1.KEY to
+PMD5.KEY and DISK\PMDTEST.BAT runs them: every page, the menus, the
+mouse on a button, Memory Block Display, Memory Browser, Find File,
+Print Report to a file, and Insert Command replacing one line of a
+file and adding another.  RUNTESTS has PMD /S on every row, so a
+kernel that stops answering AL=20h or AL=21h changes a baseline.
+
+Insert Command's list is PM-DOS's CONFIG.SYS, not Windows 3.1's
+SYSTEM.INI.  A line that sets the same thing is replaced if that is
+wanted and the rest of the file is written back byte for byte.
+
+A THING FOUND ON THE WAY.  7303h's record here begins with a word and
+then the sectors per cluster (F73_SPC = 02h).  DOS 7's begins with two
+words - the size and the level - so its sectors per cluster are at 04h,
+and a program written for DOS 7 reads this one two bytes out.  PMD and
+CMD's DIR use the F73_ offsets and are right for this kernel; a DOS 7
+program in a box is not.  Not changed here.
+
+VERIFIED, with no window anywhere.  DOSBox-X: /?, /S, /S and /P to a
+file and the two refusals; PMDTEST.BAT's five key files and the /B /I
+run, 56 screens read back out of the logs - every page, every menu and
+every dialog - and four of them looked at as pictures.  The processor
+on six of its machines: 80386 with an 80387, 486DX with no CPUID
+(486old), 486DX with one, Pentium, Pentium MMX and Pentium Pro.  QEMU
+(pentium2, a PCI NE2000, a CD-ROM): Intel Pentium II where MSD 2.11
+says Unknown, A: C: D: as MSD lists them, the CD-ROM and MSCDEX, the
+card and its line; run from COMMAND.COM the shell is in the TSR list.
+RUNTESTS 84 x 7, recorded and run again: PMD /S is new on every row,
+and RMTEST was re-recorded on every row - its count of free clusters
+fell by the ninety PMD.EXE takes on the test disk.  MASM 6.13
+assembles DOSMAIN and PMD's DOSINT.ASM.  PMDOS.SYS 159,249 (493 more),
+PMD.EXE 90,688.
+
+NOT RUN: real hardware.  A serial mouse, a machine with no mouse, a
+stick on the game port, a printer (Test Printer, a report to LPT1), a
+Cyrix or a 486SX, an 80287, and an EGA, MDA or Hercules display - each
+of those is a branch nothing here could reach.
+
+Files: CMD\PMD\ (new: MAIN, SCR, UI, TEXT, CPU, PGSYS, PGMEM, PGPORT,
+REPORT, TOOLS, RT and SYS_D32 .C, PMD.H, RT.H, SYS.H, TYPES.H and
+DOSINT.ASM), INC\PMDOS.INC, DOS\INT21.INC, DOS\RING3.INC, DOS\VDM.INC,
+BUILD.CMD, MKHD.CMD, TOOLS\MKPMDKEYS.PL (new), TOOLS\RUNTESTS.PS1,
+DISK\PMDTEST.BAT and PMD1.KEY to PMD5.KEY (new), DISK\HELPTEST.BAT,
+DISK\AUTOEXEC.TXT, and BASELINE (PMD.OUT new, RMTEST.OUT, seven rows).
+S:\BIN (PMDOS.SYS, PMD.EXE), IMAGES\PMDOS.IMG, IMAGES\TESTS.IMG,
+IMAGES\HD16.IMG (FATREPL: PMDOS.SYS, PMD.EXE, AUTOEXEC.TXT, and the
+test files in \TESTS) and the 86Box VM's three copies carry it; a copy
+of the delivered HD16 boots and runs PMD /S and PMD /P.  HD32, HDBIG,
+MULTI, PMDOSATA and PMDOSFDD were not rebuilt.  Still v0.63.
+
+BLACK AND WHITE TAKEN OUT, the same evening.  Charlie: "Let's remove
+the Black & White option since most 80386 and later systems will be
+using EGA or VGA or better."  /B, F5, the last item of the Utilities
+menu and the second set of colours behind them are gone - MAIN.C,
+SCR.C, UI.C, PMD.H, and from PGSYS.C pages_forget, which only F5
+called, so nothing looks at the machine a second time now.  PMD /B is
+"Invalid switch", and the usage above is as it stands.  The switch
+lines of the help text are Charlie's own wording.  PMD2.KEY lost its
+two F5s and PMDTEST.BAT's last run is PMD /I.  Run again: /?, /B
+refused, /S, PMDTEST.BAT (55 screens, the Utilities menu four items
+long) and RUNTESTS 84 x 7 with no baseline moved.  PMD.EXE 90,340.
+Carried as before: S:\BIN, PMDOS.IMG and TESTS.IMG whole, HD16 by
+FATREPL (PMD.EXE, and PMDTEST.BAT and PMD2.KEY in \TESTS) and the VM's
+three copies.  EDIT keeps its /B.
+
+
+DOSSHELL.EXE: THE MS-DOS SHELL FOR PM-DOS, TEXT AND GRAPHICS (2026-10-10)
+-------------------------------------------------------------------------
+
+Charlie: "Let's port DOSSHELL to PM-DOS as a native 32bit application.
+It should keep the text mode and graphics mode capabilities for both
+EGA and VGA, but also include a check for VBE 2.0+ and offer a 256
+color VGA 640x480 graphics mode too."
+
+NONE OF THE ORIGINAL IS IN IT, and none could have been.  The MS-DOS
+Shell (DOS6SRC dosshell) is C on top of COW, of which that tree has
+only 16-bit libraries; its graphics are loadable .VID and .GRB drivers
+and its swapper is real-mode assembler.  Nothing of that links into a
+flat ring-3 program, and the real DOSSHELL.EXE already runs in a DOS
+box.  So this is the same program made again for the system itself, as
+EDIT and PMD were: native, CMD\DOSSHELL, built by BUILD.CMD and on
+every disk.  The screen, the menus, the keys, the views and the shape
+of DOSSHELL.INI are the MS-DOS Shell's; the code is new and the words
+on the screen are ours.
+
+  DOSSHELL                     as it was last left (DOSSHELL.INI)
+  DOSSHELL /T[:L|H]            text: 25 lines, or 50 (43 on an EGA)
+  DOSSHELL /G[:L|M1|M2|H1|H2]  graphics: 25, 30, 34, 43 or 60 lines
+  DOSSHELL /G:M1 /256          ...640x480 in 256 colours
+
+WHAT IS THERE.  A title, the menu bar, and under them a file window -
+the path, the drives, the directory tree and the files of the selected
+directory - and the program list, with a status bar at the foot.  View
+has the five arrangements: one file window, two, All Files with the
+file, selection, directory and disk summed up beside the list, files
+with programs, and programs alone.  File among files: Open, Run,
+Print, Associate, Search, View File Contents (text and hexadecimal),
+Move, Copy, Delete, Rename, Change Attributes, Create Directory, Select
+All, Deselect All.  File among programs: New, Open, Copy, Delete,
+Properties, Reorder, Run.  Options: Confirmation, File Display Options,
+Select Across Directories, Show Information, Display, Colors.  Tree:
+expand a level, a branch, everything; collapse.  Help: eleven subjects
+in EDIT's viewer.  The mouse does what it did: a click selects, Shift
+and Ctrl extend, a double click opens, the scroll bars scroll, and
+files dragged onto a directory or a drive are moved or copied there.
+Names are long ones where the volume has them, and sizes and dates are
+the country's (21h/38h).
+
+ONE SCREEN OF CELLS, SHOWN TWO WAYS.  Everything is drawn into memory
+first and only what changed is sent, as in EDIT - but a cell here is
+32 bits: the character and its colours, and for a graphics screen a
+slice of an icon in place of the character and lines along the cell's
+edges (CF_*).  On a text screen a run of changed cells goes to 21h/F0h.
+On a graphics screen GFX.C paints each changed cell into a picture, 640
+pixels across and a byte a pixel whatever the hardware, and copies the
+scan lines that changed to the screen in the form the mode wants:
+
+  EGA 640x350 and VGA 640x480, 16 colours (BIOS modes 10h and 12h).
+  Four bit planes behind one window.  The changed lines are made into
+  planes in memory and then written a plane at a time, so a whole
+  screen is four writes to the sequencer's map mask and not one for
+  every byte.  That matters here: a port write at ring 3 is a fault
+  the kernel answers.
+
+  640x480 in 256 colours (VBE mode 101h, or whichever mode the BIOS
+  lists for that).  A linear frame buffer, copied a line at a time.
+  The first sixteen colours are the VGA's and the rest are shades that
+  the title bars fade through.  It is offered when 4F00h says VBE 2.0
+  or later AND 4F01h says the mode is there, is a byte a pixel and has
+  a linear frame buffer - the kernel sets no banked mode.
+
+The pointer and the cursor are not in the picture: they are laid over
+each scan line as it is copied out, so moving the pointer is two small
+rectangles copied again.  The kernel's mouse driver could draw a
+pointer in modes 10h and 12h but not in a VBE mode, so the shell draws
+its own in all three, leaves the driver's hidden, and tells the driver
+how big the screen is (33h/07h and 08h) since it cannot know.
+
+NOTHING IN THE KERNEL CHANGED.  VBF_SET (21h/F1h AL=1Fh) already took a
+BIOS mode and answered with the selector for the window at A0000h; that
+was written for mode 13h and serves 10h and 12h as well.  What was
+missing was a font, and no call hands one over: INT 10h/1130h answers
+in ES:BP, and the list of BIOS calls a native program may make (AL=21h)
+carries no pointers back.  But a mode set leaves the font of that mode
+in vector 43h and the height of its characters at 0040:0085, because
+the BIOS's own text in a graphics mode needs them there - and AL=20h,
+which PMD brought, reads the first megabyte.  So mode 12h is how the
+8x16 font is found and mode 10h the 8x14; the 8x8 font's first half is
+at F000:FA6E in every BIOS since the PC's and vector 1Fh has its second
+half.  A font is read once.  A mode that uses another mode's font - 34
+lines on a VGA is the 8x14 font in mode 12h, and every 256-colour
+screen borrows - costs one extra mode set, the first time.  On a kernel
+without AL=20h the shell offers text and nothing else.
+
+PROGRAMS ARE RUN BY THE INTERPRETER, "/C" and the command (the one
+F1h/03h names), because PATH, batch files and redirection are its.
+The screen goes back to text and is cleared first and is taken again
+afterwards, and the drives that are showing are read again.  The
+program gets a slot of its own from the kernel, so the shell stays in
+memory and nothing is swapped to disk - which is all the MS-DOS Shell's
+loader and swapper were for.  A program in the list is a title, its
+commands with semicolons between, a directory to start in, a password,
+help text (F1 on the entry), whether to wait for a key afterwards, and
+for each of %1 to %3 the box it is asked with.
+
+DOSSHELL.INI is beside DOSSHELL.EXE and is written when the shell is
+left: [savestate], [associations] and [programstarter], the last one
+"key = value" lines with braces round a group or a program, laid out
+as the MS-DOS Shell laid its own.  With no file the list is Main -
+Command Prompt, Editor - and a Disk Utilities group of DISKCOPY, FORMAT
+(and /Q), CHKDSK, UNDELETE and FDISK.
+
+WHAT IS NOT THERE, AND WHY.
+  - The Task Swapper, the Active Task List, and with them a program's
+    shortcut key and its Advanced properties.  The swapper was one DOS
+    program frozen so that another could run; PM-DOS runs one program
+    at a time.
+  - /B.  PMD lost its black and white yesterday for a reason that holds
+    here.  Monochrome is still one of the eight colour schemes.
+  - Copying or moving a directory.  Delete (when empty), Rename and
+    Create Directory are what the tree has.
+  - A clock that ticks.  The time in the status bar is the time of the
+    last key or mouse movement: the kernel's wait for a key (F0h/08h)
+    has no time limit, and waiting by asking again and again would keep
+    the processor busy for the sake of a minute hand.
+
+TEST MODE is EDIT's: DSTEST names a log, the keys come from a
+redirected file (TOOLS\MKDSKEYS.PL), {DUMP} writes the cells to the log
+as text whatever kind of screen they are on, and {SHOT} writes the
+picture as a .BMP file beside it.  A test run reads and writes no
+DOSSHELL.INI unless DSINI names one, so the tests start from the same
+screen every time and leave the settings of whoever runs them alone.
+DISK\DSTEST.BAT is nine sessions, DS1.KEY to DS9.KEY.
+
+VERIFIED.  DOSBox-X (an S3 with VBE 2.0): text at 25 and 50 lines, and
+six graphics screens - EGA at 25 and 43 lines, VGA at 30 and 60, 256
+colours at 30 and 34 - in which the picture the shell wrote of itself
+and the emulator's recorded frame of the same screen, held still, are
+the same in every pixel but the clock.  That is the planar path and the
+frame buffer both, all three fonts, and a font borrowed from another
+mode.  VGA at 34 lines and 256 colours at 60 were looked at as
+pictures.  Eight key scripts and DSTEST.BAT's 62 screens: every menu
+and dialog, copy, move over a file, rename, attributes, delete, a new
+directory, Search, selection kept across directories, Print (to the
+captured printer), the viewer, a program run and the shell back in its
+mode afterwards, the program list's New, Copy, Reorder, Delete, a
+question for %1, a password; settings written and read back; and the
+mouse, drag and drop included.  QEMU, whose ROM is a different one
+(SeaBIOS, SeaVGABIOS): the fonts found where its BIOS keeps them
+(C000:7260 and C000:8260), modes 10h and 12h and the 256-colour mode
+at 30 and 60 lines, the PS/2 mouse moving the pointer, the keyboard in
+the menus, Shift+F9 to the prompt, VER, EXIT and back.  RUNTESTS
+84 x 7 after two answers were re-recorded for where files now lie on
+the test disk: RMTEST's free clusters (126 fewer, which is
+DOSSHELL.EXE) on every row, and CACHETST's count of owed writes (0005
+for 0004) on the six that cache.  MASM 6.13 assembles DOSINT.ASM.
+DOSSHELL.EXE is 128,980 bytes.
+
+A RECORDED FRAME TAKEN AS THE MODE CHANGES IS NOT A PICTURE OF
+ANYTHING.  The last frame of a recording that ends when the shell does
+showed a box of red and cyan stripes over the lists, and 28,000 pixels
+"wrong".  It is the decoder's residue (ZMBVSHOT.PL says as much), not
+the screen: the same screen held still for a minute is the one that
+matched.
+
+THE FIRST SCREEN CHARLIE SAW OF IT WAS UNREADABLE (the same day):
+DOSSHELL /G on the 86Box machine - VS440FX, Cirrus Logic GD5436 - with
+every icon, bar and line where it belonged and every character a
+fragment.  THE CIRRUS BIOS HAS NO 8x14 FONT.  Its ROM holds the 8x8
+table and the 8x16 one and nothing between; in mode 10h it says 14
+lines at 0040:0085 and leaves vector 43h pointing at the 8x16 table
+(C000:6E91).  Read 14 bytes to a character, that table gives '*' for
+'0' and character 1Ch for a space, whose foot is the dashes that ran
+across the whole screen.  The check that was there asked only that the
+capital A not be empty.  Now a table is believed when its space is
+empty and its A and its block (DBh) are not (FONT_SANE in GFX.C), which
+a table read at the wrong height does not pass; and a VGA whose BIOS
+has no 8x14 font gets one made from the 8x16 by dropping the top and
+the bottom line of every character - the 8x16 taken from that same
+vector while mode 10h is set, so here the made font costs no mode set
+at all.  The BIOS is asked for each font once (ROM14, ROM16), and
+FONT_LOAD can no longer call itself in a circle when neither is there.
+
+It is not only Cirrus.  A scan of the 151 video ROMs that 86Box ships
+for a table with an empty space and a full block finds the 8x16 one
+and no 8x14 one in 19: eleven of Cirrus Logic's (the GD5434, GD5436,
+GD5440, GD5446 and GD5480 among them), three of Matrox's, the ViRGE/DX
+and /GX, a Trio64V2/DX, a Trio3D/2X and a Mach64 VT2.  The S3 ROM in
+DOSBox-X and SeaVGABIOS in QEMU have all three fonts, which is why
+nothing here had shown it.
+
+REPRODUCED, THEN VERIFIED.  QEMU with no window will run a real card's
+ROM as its video BIOS: a folder holding the ROM under the name
+vgabios-cirrus.bin, given with -L ahead of QEMU's own, and -vga cirrus
+(the GD5446's ROM, whose PCI ID is the card's) or -device
+isa-cirrus-vga (the GD5436's - the VM's own).  Both drew Charlie's
+screen exactly, and both draw /G, /G:M1, /G:M2, /G:H1 and /G:H2
+readable now.  86Box itself, the VM's machine and card on a scratch
+disk, started minimized and closed by a message: the shell's own
+pictures of those five screens came off the disk readable.  The same
+machine with the two cards whose BIOSes have VBE 2.0 and no 8x14 font
+either, the S3 Trio64V2/DX and the Cirrus GD5480: /G, and 256 colours
+at 30, 34 and 60 lines, the title bars shaded - the first time the
+256-colour mode has been set by a card's own ROM in 86Box.  (A scratch
+boot with either of those cards was not done in 110 seconds, where the
+GD5436 takes under a minute; 150 were enough.  Cut off early it looks
+like a hang: nothing on the disk.)  DOSBox-X:
+the pictures of six screens are the same in every pixel as the ones the
+build before drew, so a BIOS that has an 8x14 font still has its own
+used; DSTEST's 62 screens differ in nothing but the size of
+DOSSHELL.EXE, now 129,184 bytes.  RUNTESTS 84 x 7 with three answers
+re-recorded - ACROREAD.EXE (the next entry) arrived in BIN the same
+hour and moves two of them by itself: RMFIND's third root entry is
+ACROREAD.EXE where it was ATTRIB.EXE (seven rows), RMTEST's free
+clusters are 73EB for 748A (seven) and CACHETST's owed writes 0004 for
+0005 (six).
+
+NOT RUN: real hardware, a real EGA, a printer that is not ready, a
+diskette changed under the tree.  A BIOS with VBE 1.2 only: the probe
+finds no 256-colour mode on the GD5436 and GD5446 ROMs (the trace under
+QEMU says so), and what /256 then does was not looked at.  On 86Box
+the pictures are the shell's own, read back from the disk - they show
+the mode was set and the fonts are right, not what the frame buffer
+put on the glass: nobody has looked at that screen since the change.
+
+Files: CMD\DOSSHELL\ (new: MAIN, SCR, GFX, ICONS, UI, TREE, FILES, OPS,
+VIEW, PROGS, DLGS, HELP, RT and SYS_D32 .C, SHELL.H, RT.H, SYS.H,
+TYPES.H and DOSINT.ASM), BUILD.CMD, MKHD.CMD, TOOLS\MKDSKEYS.PL (new),
+DISK\DSTEST.BAT and DS1.KEY to DS9.KEY (new), DISK\HELPTEST.BAT,
+DISK\AUTOEXEC.TXT, and BASELINE (RMTEST.OUT on seven rows, CACHETST.OUT
+on six).  S:\BIN (DOSSHELL.EXE), IMAGES\PMDOS.IMG, IMAGES\TESTS.IMG,
+IMAGES\HD16.IMG (FATREPL: DOSSHELL.EXE and AUTOEXEC.TXT, and the test
+files in \TESTS) and the 86Box VM's three copies carry it; a copy of
+the delivered HD16 boots and runs DOSSHELL from DS1.KEY in text and
+DS7.KEY in 640x480.  HD32, HDBIG, MULTI, PMDOSATA and PMDOSFDD were
+not rebuilt.  Still v0.63.
+
+The font fix: CMD\DOSSHELL\GFX.C and nothing else.  BIN\DOSSHELL.EXE,
+IMAGES\PMDOS.IMG (whole, ACROREAD.EXE on it as BUILD.CMD now makes it),
+DOSSHELL.EXE by FATREPL into IMAGES\HD16.IMG and into the VM's own
+HD16.IMG as it stood (the VM had been used since, so its disk is no
+longer a copy of S:'s), the VM's PMDOS.IMG, and BASELINE (RMTEST.OUT
+and RMFIND.OUT on seven rows, CACHETST.OUT on six).  Every file on the
+VM's floppy read back the same as S:\BIN's, nine files out of each
+HD16 likewise, and a copy of the VM's HD16 boots and runs DOSSHELL from
+DS1.KEY and DS7.KEY.
+
+
+ACROREAD.EXE: A PDF READER FOR PM-DOS (2026-10-10)
+--------------------------------------------------
+
+Charlie: "let's write a PDF reader for PM-DOS that supports all
+versions of PDF document formats.  The executable should be named
+ACROREAD.EXE to match the Acrobat PDF reader name.  It should support
+text mode viewing, graphics mode, and a VBE 2.0+ check to support up
+to full color VGA at 640x480."  And, while it was being written:
+"Let's write the application in C or C++."
+
+IT IS C, native, CMD\ACROREAD, built by BUILD.CMD and on every disk,
+as EDIT, PMD and DOSSHELL are: no C library, DOSINT.ASM for a start,
+SYS_D32.C the only file that knows it is on PM-DOS.  161,572 bytes.
+Nothing of anybody else's is in it - every decoder, every font reader
+and the rasteriser were written here - and there is no floating point
+in it anywhere, so it runs on a 386 with no coprocessor.
+
+  ACROREAD file            the first page, as a picture
+  ACROREAD file /T         ...as its text, on the text screen
+  ACROREAD file /G         a picture in 16 grays in the VGA's own mode,
+                           whatever the video BIOS has
+  ACROREAD file /P:n       starting at page n
+  ACROREAD file /X         the document's text to standard output, a
+                           form feed between pages (... /X > PRN)
+
+THREE SCREENS, which is what was asked for.  (1) VBE 2.0 or later:
+the 640x480 mode with a linear frame buffer and the most colours - 32
+or 24 bits, else 16 or 15, else 256 with a palette of its own and a
+dither - through 21h/F1h AL=1Fh and SEL_VBE.  (2) No VBE 2.0, or /G:
+mode 12h with the palette set to sixteen GREYS.  Sixteen colours
+cannot show a page in colour; sixteen greys and a dither show one in
+grey very well, and text drawn with coverage needs the greys.  (3) The
+text screen: the page's characters put back into lines (TEXT.C), with
+Find.  Tab goes between picture and text on the same page.  F1 lists
+the keys; PgUp/PgDn run on from page to page; + - W F zoom; R L turn;
+G goes to a page.
+
+WHAT "ALL VERSIONS" CAME TO (XREF.C, CRYPT.C, FILTER.C say more):
+  1.0  a cross-reference table            1.1  ...and /Prev tables
+  1.2  Flate                              1.4  RC4 to 128 bits
+  1.5  cross-reference STREAMS, object streams, hybrid files
+  1.5  crypt filters, AES-128             1.7+ AES-256 (R5)
+  2.0  AES-256 with the SHA-256/384/512 hash (R6)
+and a file whose table is wrong or gone is read end to end for its
+objects.  Filters: Flate, LZW, ASCII85, ASCIIHex, RunLength, the PNG
+and TIFF predictors, DCT (sequential JPEG), CCITT Group 3 and 4.
+Fonts: TrueType, Type 1, CFF, Type 3, simple and composite, with
+ToUnicode for the text; a font the file does not carry is drawn by a
+face built into the program (SFONT.C: a pen's path for each
+character, drawn to the widths the file gives).  GFX.H lists what is
+drawn and - in a table - what is not: tiling patterns, mesh shadings,
+soft masks, JBIG2, JPEG 2000 and progressive JPEG are the ones that
+will be met.
+
+HOW A PAGE GETS TO THE SCREEN.  It is drawn into a canvas in memory -
+three bytes a pixel for VBE, one for the greys - by a rasteriser that
+samples four times a pixel down and exactly across, and the canvas is
+then put on the screen a line at a time (through SEL_VBE; mode 12h a
+band of 48 lines and four plane writes at a time, because a port is a
+trap at ring 3).  The canvas is the whole page if 48h will grow the
+slot that far, else a piece the width of the screen; 700K is left for
+the drawing itself, and where a colour screenful would not leave that
+(a 4MB machine) the canvas is grey and the bar says so once.  A page
+that cannot be finished - damaged, or out of memory - is left by
+JMP.ASM's longjmp; everything it had is in pools and goes with them.
+Numbers from the file are a 30-bit mantissa and an exponent (FX.C)
+where matrices are multiplied, 16.16 where points are transformed.
+
+PROVEN, all headless.  On Windows, as ACROHOST.EXE (the same sources;
+CMD\ACROREAD\MKHOST.CMD): every page of eight Open Watcom manuals,
+3,885 pages, drawn with no failure and no growth of the heap; a page
+printed by Edge (TrueType, composite fonts, gradients, alpha) drawn
+and read; and TOOLS\MKPDF.PL's nineteen documents, one for each way a
+file can be put together - 1.0, saved twice, bad table, streams plain
+and deflated, bad stream table, a hybrid, R2 R3 R4 R5 R6, a user
+password, LZW, RunLength, ASCII85, a JPEG, a Group 4 fax, an inline
+image, a Type 3 font, and a Type 1 font program written by the script
+itself (a subroutine, a division, the enciphering) - all opened, read
+and drawn.  On PM-DOS in DOSBox-X: the same nineteen through /X on a
+386 with 4MB; the picture at 32, 16, 15 and 8 bits (SET ACROBITS=n
+picks a depth, for trying a card) and in mode 12h; the text screen
+and Find; zoom and scroll; the grey canvas on 4MB.
+NOT RUN: any real machine, 86Box, a VBE 1.2 card (which should get
+mode 12h), a mouse (it has none); and no Type 1 font out of a real
+document - the test's is the format as TYPE1.C understands it, made
+by the same understanding.  NOT DONE: RUNTESTS and HELPTEST do not
+know it - a test for it wants documents on TESTS.IMG, which is nearly
+full.  One more file in BIN does move three baselines (RMFIND's third
+root entry, RMTEST's free clusters, CACHETST): the DOSSHELL session
+re-recorded those with its own delivery of the same night.
+
+Files: CMD\ACROREAD\ (new: 29 .C, PDF.H, GFX.H, VIEW.H, RT.H, SYS.H,
+TYPES.H, DOSINT.ASM, JMP.ASM; and for Windows only HOST.C, SYS_NT.C,
+MKHOST.CMD), BUILD.CMD (its section, the object list, the boot disk),
+MKHD.CMD, DISK\AUTOEXEC.TXT, TOOLS\MKPDF.PL (new).  BIN\ACROREAD.EXE,
+IMAGES\PMDOS.IMG (made again by BUILD.CMD's own line), IMAGES\HD16.IMG
+and the 86Box VM's HD16.IMG (FATREPL, each in place: ACROREAD.EXE,
+AUTOEXEC.TXT, and ACROTEST.PDF - a page to try it on) and the VM's
+PMDOS.IMG carry it; a copy of each hard disk boots and runs it.
+TESTS.IMG, HD32, HDBIG, MULTI, PMDOSATA and PMDOSFDD were not
+rebuilt.  The whole BUILD.CMD was not run: ACROREAD's section was,
+word for word, in a mirror.  Still v0.63.
+
+
+LRGDISK 1.3: PIO BY THE BLOCK, A LOOK BEFORE THE INTERRUPT (2026-10-10)
+---------------------------------------------------------------------
+
+Charlie asked what else would make the disk faster, was given a list,
+and asked for its first three in order - block mode, staying in the
+interrupt handler while the drive keeps up, and 32-bit PIO - tested
+on the emulators first; the real hardware is his.  All three are
+about PIO, which was still WDCTRL's: one sector an interrupt, a word
+at a time.  Under Windows the interrupt costs more than the sector
+does - VPICD, BlockDev and back for every 512 bytes.
+
+AND PIO IS NOT ONLY FOR MACHINES WITHOUT AN ENGINE.  The trace build
+counts now, and on QEMU's sweep with the drive at Ultra DMA mode 5,
+5,410 of 25,829 commands went by PIO all the same - the ones whose
+buffers the engine cannot be pointed at - and all but two of them
+were more than one sector long: 23,408 sectors, which were 23,408
+interrupts and are 5,408.  So this is for a DMA drive too.
+
+BLOCK MODE (LRGDiskBlockMode=off to be without it).  READ and WRITE
+MULTIPLE (C4h, C5h; 29h and 39h past 28 bits) move a block of sectors
+for one interrupt.  WHOSE SIZE: the one the drive is set to, IDENTIFY
+word 59.  A BIOS with block mode on set it and reads with it at the
+DOS prompt, so it is never changed (and one set to blocks of one
+sector is left at that).  A drive set to none is set to the highest
+power of two it takes (word 47), 16 at most - a BIOS that reads a
+sector at a time never notices, READ SECTORS being what it always
+was.  The real-mode start-up works the size out and gives the drive
+the command, for the report; the protected-mode side works it out
+again and gives the command again (ld_setmult), whichever size it
+is.  THE DRIVE'S TAKING THE COMMAND IS WHAT COUNTS, not what IDENTIFY
+says afterwards: nothing changes in a drive told the size it had, and
+QEMU's drive goes on saying what it said the first time it was asked,
+whatever SET MULTIPLE MODE has done since (a scratch SETMULT.COM
+showed it; the first cut asked the drive again, was told "none" by a
+QEMU CompactFlash card that had just taken 16, and went without).  A
+command of one sector is still READ or WRITE SECTORS.  A DOS
+program's reset of the cable loses the size, and ld_reinit gives it
+back with the geometry and the transfer mode.  A block-mode command
+that ends in an error is tried again a sector at a time, and that
+drive stays so until Windows is started again.
+
+THE SIZE IS NOT TAKEN ON TRUST WHILE THE DATA MOVES EITHER.  Inside a
+block each sector after the first is moved only if the drive still
+has DRQ up for it, looked at 400ns after the one before (ld_xfer).  A
+drive whose blocks were shorter than the size it gave would otherwise
+be read past what it had, and what a data port gives then is not on
+the disk.  The block ends where the drive ends it and the rest comes
+as the drive offers it.  It costs five reads of a port a sector.
+
+STAYING IN THE HANDLER (LRGDiskPoll=off).  A drive with the next
+block in its buffer has it ready microseconds after the last one was
+taken, and so has one just given a block to write.  After a block
+the handler waits the 400ns a drive may take to raise BSY, then looks
+at the alternate status LD_POLLN (128) times - about what one
+interrupt costs, which is the point past which waiting for the
+interrupt is cheaper - and if BSY has gone it reads the status, with
+interrupts off, and moves the next block there and then.  The read of
+the status drops the drive's request before the processor has seen
+it.  LD_BURST (32) sectors at most for one interrupt; a write's last
+block is looked for the same way, so a short write may end without
+its interrupt.  The kernel's own driver polls like this, with the
+same four reads for the 400ns (IO\ATA.INC).
+
+THE HANDLER HAD TO BE WRITTEN AGAIN FOR IT, because it believed its
+interrupts.  1.2 took any interrupt with a command in hand and the
+drive not busy to be the next sector, and read 256 words.  A block
+taken by looking leaves its request behind in an interrupt controller
+that latches the edge - QEMU's does; an 8259A forgets a request that
+is withdrawn before it is acknowledged, and 86Box's does the same -
+and that interrupt arrives later with nothing behind it.  Now the
+handler goes by the drive's status and by nothing else: busy is not
+this interrupt's; DRQ is a block wanted, if one is owed; neither is
+the end of a write whose blocks have all gone, or else nothing.
+CBL_GO says a controller command is out and, for a write, its first
+block sent: until then the status is not the command's and the
+handler leaves the drive alone.  1.2 had the hole without any of
+this, by reading and not by a run: an interrupt from before, arriving
+while ld_start waited for BSY with a DMA command made ready but not
+yet written, would have been taken for that command's end, and the
+command reported done.  The engine's own interrupt bit is asked for
+now before a DMA command is ended.
+
+NOTHING WAITS LONGER FOR THE DISK THAN IT DID.  Sixteen sectors with
+interrupts off would be sixteen times what a serial port had to put
+up with.  Between the sectors of a block, and after one, the handler
+lets other interrupts in (ld_window: a moment with interrupts on).
+One of the cable's own that comes in then is ended and no more
+(CBL_INXFER; ldh_within) - the code that let it in goes by the status
+next.  The look for the next block is made with interrupts off after
+such a moment, so a request raised during the look is still there
+when the handler returns, and one that came during the moment finds
+the drive ready at the first look: no block is left waiting for an
+interrupt that has been and gone.
+
+AND IF ONE EVER IS: ld_tick runs every two seconds now (LD_LOSTMS),
+from the start, and a command the controller has had that long is
+looked at as the handler would look (ld_kick).  The drive busy:
+nothing, the command is slow.  Not busy: the interrupt was lost, and
+the command goes on from there.  The 20-second message is as it was.
+On a loaded host the emulators' commands do take two seconds now and
+then, and the trace shows the look finding the drive busy and leaving
+it.
+
+32-BIT DATA (LRGDisk32BitIO=off).  REP INSD and REP OUTSD: half the
+bus cycles.  It is the kernel's IDE32=AUTO over again (IO\ATA.INC,
+ata_pick32 and ata_prove32): offered where the drive says so
+(IDENTIFY word 48, of ATA-1 and ATA-2) or the controller is a PCI
+one, and then proved - the IDENTIFY block read a word at a time and
+a doubleword at a time must be the same 512 bytes, with nothing left
+in the drive.  An ISA card reads a doubleword of 1F0h as a word from
+1F0h and a word from 1F2h and reports nothing; the proof finds half
+the block still in the drive, takes it and says no.  A write cannot
+be proved without writing one and goes on the read's word, as in the
+kernel.  Never on a CMD640: its 32-bit path is the read-ahead LRGDISK
+switches off (Linux says the same of it).
+
+WHAT THE START-UP HANDS OVER.  The reference data had two bits left,
+bit 7 of the second cable's two bytes: "the controller is a PCI one"
+and "a CMD640" took them.  The three switches the protected-mode side
+reads for itself (Get_Profile_Boolean, VMM service B1h, which WDCTRL's
+own Sys_Critical_Init shows is there to be called).  The 32-bit proof
+is made twice, once in real mode for the report and once in protected
+mode for use.
+
+THE REPORT says how PIO will go, for every drive, DMA or not:
+
+  BIOS disk 80h: 1023/16/63, the table says 1024
+    the drive, unit 0 of the first cable: 1032192 sectors, LBA
+    read by LBA, as the BIOS reads it; the last sector too, ...
+    PIO: LRGDiskDMA=off
+    PIO in blocks of 16 sectors, as the drive was set
+    PIO data 32 bits at a time
+
+"set by LRGDISK" when the start-up set the size; "a sector at a time"
+and "16 bits at a time" with the reason after a colon.
+
+A RESET THAT WAS SWALLOWED, found on the way.  A DOS program's write
+to a shared cable's control port, made when LRGDISK had used the cable
+since the program last did, went through ld_restore - which puts the
+program's registers back and never gives a reset - and no further.
+So SRST from a DOS box did nothing on a cable in use: SRSTTEST on the
+first cable said "status 41, reset, after it 41", in 1.2 as well.  The
+control port's byte goes out itself now, and the reset is marked: the
+same test says "after it 00", and the trace shows the drives given
+their parameters again each time, the block's size with them.
+
+THE TRACE BUILD COUNTS (ld_st; a line starting '#' when a count has
+moved): interrupts taken, with nothing to do, and let in by a window;
+sectors and blocks moved by PIO; blocks found by looking and not;
+sectors moved 32 bits at a time; block-mode commands; looks from the
+time-out; blocks the drive ended early.  Three more things wasm -d
+sets, for a rig: LD_POLLN, the number of looks - QEMU's drive answers
+through the host's own disk and 86Box's by a timer, and 128 looks
+find the next block about half the time on QEMU and never on 86Box;
+LD_TESTLONG and LD_TESTSHORT, which make LRGDISK take the block for
+twice and for half what the drive has, to see the nets hold; and
+LD_LOSTMS.
+
+RESULTS.  The final build, LRGDISK.386 25,795 bytes (1.2: 23,798).
+Every run below is the lrg3 sweep unless it says otherwise - a DOS
+box with I13X's 24 checks of a disk's last sectors through INT 13h
+and its extensions and WIN386.EXE copied and compared, CACHEBOX,
+DOSBOX1 and nine programs - and every one ended with every I13X line
+"0 errors, 0 sectors wrong", the copies the same, the host finding
+I13X's pattern in the image where I13X put it, and Windows out.
+
+QEMU 11.1 (PIIX3, SeaBIOS; its drive comes set to 16), on PM-DOS:
+  - PIO (LRGDiskDMA=off), the release build and both trace builds:
+    86,718 sectors for 26,132 interrupts.  With all three switches
+    off, which is 1.2's way: 86,285 for 86,285.  Block mode alone
+    (LRGDiskPoll=off): 25,730.  Block mode off and the look on:
+    50,810 at 128 looks, 26,211 with the look made long.
+    LRGDisk32BitIO=off: the same counts, 16 bits.
+  - DMA (Ultra DMA mode 5): the PIO share said at the top.
+  - a 200GB slave past 28 bits, by PIO and by DMA: READ and WRITE
+    MULTIPLE EXT, and the host finds the pattern at sectors
+    419,429,888 to 419,430,399.
+  - a disk on the second cable as 81h, by PIO and by DMA; with a
+    slave on the first as well, as 82h (LRGDISK's own INT 13h); and
+    the two cables one at a time (LRGDiskSerial=on).
+  - a CD-ROM as the first cable's slave and as the second's, read
+    twelve times through the ports by ATAPIRD in a box (every pass
+    BADF658F) between two SRSTTEST resets, beside the disk work: the
+    resets happen, the drives are given their parameters again, and
+    the block-mode commands after them are right.
+  - the boot disk as a CompactFlash card (QEMU's ide-cf: no size
+    set, multiword DMA): "PIO in blocks of 16 sectors, set by
+    LRGDISK", by DMA and by PIO, and with block mode off.
+  - LD_TESTLONG: 391 blocks ended by the drive at half what LRGDISK
+    took them for, and every byte right.  LD_TESTSHORT with
+    LRGDiskPoll=off and LD_LOSTMS=20: 2,515 commands taken up by the
+    time-out, and every byte right.
+QEMU, real MS-DOS 5.00 (HIMEM and IFSHLP, the WfW tree as C:\WFW): a
+DOS box with I13X and the compared copies, and three programs, by PIO
+and by DMA.  LRGDISK had not run a sweep on MS-DOS before.
+86Box 4.x:
+  - VL/I-486SV2G (ISA, no engine; its BIOS sets the drive to 16): the
+    sweep in blocks of 16, 16 bits at a time ("no PCI controller, no
+    32-bit I/O in the drive").  With the look made long, on a build
+    of earlier in the night: 256 blocks found by looking and not one
+    interrupt left over.
+  - P3B-F (PIIX4; the Award BIOS sets 16 too): by DMA (Ultra DMA mode
+    2) and by PIO, 32 bits at a time.
+  - LRGTEST under real MS-DOS 5: a drive set to 8 beforehand, "blocks
+    of 8 sectors, as the drive was set"; and with LD_TESTSET and
+    LD_BLOCKMAX=8, the BIOS's 16 taken for none, "blocks of 8
+    sectors, set by LRGDISK".  (86Box's drive refuses a size of 0 or
+    of 1, so "none" cannot be had from it any other way.)
+
+ONE RUN IN NINETY-SIX FELL OVER, AND NOT AGAIN.  It was the CD-ROM
+run on the first cable, the long-look build.  Ten seconds after the
+second reset, as the box that had read the disc was ending, Windows
+was in real mode and the processor was going round an invalid opcode
+in RMDOS's memory at 07BC:DA43 with AX 4310h - WIN386 on its way out,
+asking for the XMS driver.  The sweep's log stops in CACHEBOX with no
+word of why.  LRGDISK's own trace is clean to the end: both resets
+marked and answered, no error, no time-out, no interrupt lost, 611
+commands done after the last reset.  The scenario was then run 84
+more times with this driver - 68 with the resets, 48 of those with
+QEMU logging every exception, and 16 without them - and 16 times with
+LRGDISK 1.2, and every one ended.  Not explained, and not laid at
+anything; what is known is where it stopped, and that the driver was
+saying nothing odd.
+
+WHAT THE EMULATORS CANNOT SAY is how much faster any of it is: their
+drives take no time and their interrupts cost nothing.  They say the
+bytes are right and the interrupts fewer.  The speed is the 486's to
+show.
+
+NOT RUN: real hardware.  The CMD640 and the RZ1000, which no emulator
+has.  A VLB controller, and a 32-bit proof that says no (no emulated
+controller halves a doubleword read; the kernel's proof, which this
+one copies, was written because a real machine did).  A drive that
+ends a command in an error.
+OPEN: the look is a count of port reads, not a time, so it is shorter
+on a fast bus; a drive that loses its block size by itself, with no
+reset, costs one failed command and then goes a sector at a time.
+
+To use it: nothing new - the three are on unless SYSTEM.INI says off.
+On the 486, LRGDiskReport=on and C:\LRGDISK.TXT say what was chosen.
+If a disk misbehaves, the switches come off one at a time, in the
+order LRGDisk32BitIO, LRGDiskPoll, LRGDiskBlockMode; with all three
+off the data moves as 1.2 moved it.
+
+Files: CMD\LRGDISK\LRGDISK.ASM, BUILD.CMD (the description says 1.3).
+BIN\LRGDISK.386; IMAGES\PMDOS.IMG (made again by BUILD.CMD's own
+line), IMAGES\HD16.IMG and the 86Box VM's HD16.IMG (FATREPL, in
+place) and the VM's PMDOS.IMG carry it.  MASM 6.13 assembles it plain
+and with LRG_TRACE.  RUNTESTS was not run: nothing it boots has
+LRGDISK.386 on it, and no other file changed.  Still v0.63.
+
+
+'CD', AND AN MS-DOS PROGRAM IN FRONT OF EVERY COMMAND (2026-10-10)
+---------------------------------------------------------------------
+
+Charlie asked whether the D32 format could carry his initials the way
+the DOS .EXE carries Mark Zbikowski's, and then for the rest of what
+'MZ' has: a standard MS-DOS program in front of every D32 command that
+says "This application requires 32-bit DOS mode", an image with
+nothing in front of it still loading, and room for a program that is
+BOTH - the SETUP yet to be written, which is to upgrade a disk when it
+is started from MS-DOS and lay one out from nothing when the machine
+is booted from the install diskette.
+
+WHAT A D32 FILE IS NOW.  The image begins 'CD' where it began with a
+jump and, at +4, 'D32',1Ah.  A file is the image and nothing else,
+which is what wlink writes; or it is an MS-DOS .EXE with the image
+behind it and the image's offset in the dword at 3Ch of the MZ header
+- the place 'NE' and 'PE' are found from.  Real MS-DOS runs what is in
+front.  PM-DOS looks behind it and never does.
+
+    +0   'C','D'    the signature (D32_SIG, 4443h as a word)
+    +2   CDh,20h    INT 20h
+    +4   version    D32_VER, 1
+    +5   type       D32T_PROG, 0; then a spare word
+    +8   base, entry, bss, stack - what they were, where they were
+
+The header is still 32 bytes and code still starts at base + 32, so no
+program's source changed: D32_HEAD in PMDOS.INC is the one place the
+layout is written down.
+
+THE TWO BYTES AFTER THE SIGNATURE are for an image with nothing in
+front of it, on real MS-DOS.  It is loaded as a .COM; 'C' and 'D' are
+INC BX and INC SP there, and INT 20h ends it.  Without a word, but it
+ends.
+
+THE OLD STUB DID NOT WORK FOR A LARGE PROGRAM, which nobody had seen
+because nobody had run one on MS-DOS.  It was reached the .COM way,
+and DOS reads at most FF00h bytes of a .COM and refuses a file that
+has more (DOS6SRC, dos\msproc.asm, at OkRead).  MS-DOS 5 says "Cannot
+execute" of 0.63's PMD.EXE (90,340 bytes) and ACROREAD.EXE (161,572),
+and DOSSHELL.EXE is between them.  An MZ header says how much of the
+file is the program, so the stub is loaded and run whatever is behind
+it.
+
+THE STUB IS TOOLS\D32STUB.ASM, 128 bytes: an MZ header written out as
+data, fourteen bytes of code, the sentence, errorlevel 1.  It is
+linked as a flat binary so that the header is the one PMDOS.INC
+describes - no fixups, the fixup table's offset at 40h, the image's
+offset at 3Ch - and not what a linker's "system dos" emits, which has
+the table at 20h.
+
+TOOLS\D32BIND.C PUTS A STUB IN FRONT OF AN IMAGE, in place.  It is
+given the program and the stub: TOOLS\D32STUB.EXE, or any 16-bit .EXE.
+Two things are made true there because the kernel counts on them.
+The stub's fixup table starts at 40h or later, which is what says an
+MZ header has a 3Ch at all; a table that is lower is moved, inside the
+header when there is room and into a longer header when there is not
+(HELLOX.EXE's seven fixups at 20h: its header goes from 40h to 60h,
+and it runs).  And the image starts on a paragraph with its header
+inside one 512-byte sector, so the header is whole in one cluster on
+any disk.  It refuses a program that is not an image, a stub that is
+not an .EXE, and a stub whose 3Ch is already somebody's - a Windows
+program, or a command that has been bound.  Binding twice gives the
+same file.
+
+THE KERNEL.  d32_find (INT21.INC) is given an open handle and says
+where the image is: 0, what 3Ch says, or nowhere.  exec_kind is that
+between an open and a close, where it was a read of eight bytes; it
+costs an MZ program a seek and a two-byte read.  4Bh AL=3 asks it too,
+so that an image behind a stub is refused as an overlay as a bare one
+always was.  exec_load reads the file its own way - it is how the
+interpreter is loaded, with nobody's handle table to open a file in -
+and now starts where the image does: the clusters in front of it are
+stepped over by following the chain, not read, and the part of a
+cluster by exec_skip, which the first pass of the copy uses up.  It
+refuses a header of another version, a type that is not a program, an
+offset that is not on a paragraph and one that would put the header
+across a sector.  CMD says "Bad command or file name" of all four, as
+of any file 4Bh will not have.
+
+BUILD.CMD BINDS THE 27 THAT SHIP, by name, in one FOR line after the
+last of them is linked: CMD.EXE and every 32-bit command on the boot
+disk, the seven called .COM among them.  The name decides nothing, on
+either system.  COMMAND.COM and SYS16.COM are 16-bit programs and not
+images.  THE 32-BIT PROGRAMS IN BIN\TESTS ARE LEFT BARE, on purpose:
+twenty of them, seventeen in RUNTESTS, and they are the proof that an
+image with nothing in front of it still loads.
+
+A PROGRAM FOR BOTH SYSTEMS is one D32BIND line: the image, and the
+program's own 16-bit .EXE where the stub would go.  Tried with
+HELLOX.EXE in front of DRIVES.EXE: DRIVES at the prompt, from a DOS
+box and from a diskette; HELLOX on real MS-DOS 5 and on RMDOS with the
+kernel parked.  And with a 32K program in front, which puts the image
+63 clusters into the file on a diskette.
+
+WHAT A MIXED DISK DOES.  A program built before today is not an image
+to this kernel, so it goes to a DOS box as the .COM its first bytes
+say it is - and its own old stub prints "This program requires 32-bit
+DOS mode", on PM-DOS, which is how to know one.  An older kernel takes
+a bound command for a DOS program and prints the new sentence, and
+ends a bare image without a word.  Neither runs the wrong thing; both
+mean that a disk is brought up to date whole, the commands with the
+system.  (The interpreter is the exception to the first: exec_load
+takes nothing to a box, so this kernel with an older CMD.EXE has no
+shell.  Read, not run.)
+
+FOR A DRIVER, LATER.  Nothing loads a native driver and nothing here
+decides how one would be loaded.  The type byte is so that the same
+header can say "driver" when that is settled, and 4Bh already refuses
+every type but a program.
+
+RUN, headless.  RUNTESTS 84 x 7, with one baseline moved: RMTEST on
+every row, 73EBh free clusters to 73E8h - PMDOS.SYS is 424 bytes
+longer and each command about 71, and between them they take three
+more clusters of the test disk.  On PM-DOS in DOSBox-X, from a hard
+disk and from a diskette: the bound interpreter and commands, bare
+images, the two-program files above, the four refusals, D32TEST.BAT
+(SORT and CMD.EXE started by COMMAND.COM, three shells deep), and five
+16-bit programs whose headers are of every kind - fixups at 1Eh, 20h
+and 40h, 3Ch pointing at 'NE', at 'PE' and at nothing - whose output
+is byte for byte what 0.63's kernel gave.  On RMDOS, by PARKTEST: the
+sentence from MEM.EXE, HELLOX from the two-program file, and a bare
+image ending with nothing said.  On real MS-DOS 5 (a copy of the 86Box
+machine's disk, in DOSBox-X): the sentence and errorlevel 1 from
+CMD.EXE, from ACROREAD.EXE at 161,640 bytes and from SYS.COM, and a
+bare image under either extension ending with errorlevel 0.  MASM 6.13
+assembles DOSMAIN, D32STUB, CMD and two programs that use D32_HEAD.
+
+NOT RUN: real hardware; 86Box; a DOS box under Windows itself (RMDOS
+was reached by PARKTEST); FORMAT /S, which starts SYS.COM; a program
+started from a CD-ROM.
+
+Files: INC\PMDOS.INC (D32_HEAD, D32_*, EXE_LFANEW), DOS\INT21.INC
+(d32_find, exec_kind, exec_load), DOS\VDM.INC (vc_overlay),
+CMD\CMD.ASM (a comment), TOOLS\D32STUB.ASM and TOOLS\D32BIND.C (new),
+BUILD.CMD, BASELINE\*\RMTEST.OUT.  PMDOS.SYS is 159,673 bytes.  BIN
+has the 48 files that changed - the kernel, the 27 and the twenty
+tests - and IMAGES\PMDOS.IMG and TESTS.IMG are BUILD.CMD's own;
+IMAGES\HD16.IMG and the 86Box VM's HD16.IMG had the 48 put in by
+FATREPL, in place, and no program in the old format is left on
+either; the VM's PMDOS.IMG and TESTS.IMG are copies.  HD32, HDBIG,
+MULTI, PMDOSATA and PMDOSFDD were not rebuilt, and what is on them is
+from before.  Still v0.63.
+
+
 v0.61 - THE NUMBER CAUGHT UP (2026-09-30)
 ---------------------------------------------------------------------
 
@@ -20025,13 +21060,17 @@ MD/CD/RD print an honest "not supported yet" (no subdirectories).
 
 Programs (the D32 format)
 -------------------------
-A D32 file IS its memory image: 32-byte header (a 16-bit JMP SHORT,
-then the magic 'D32',1Ah, load base, entry, bss size, stack hint)
-followed by the code; the loader streams the whole file to the base
-and zeroes BSS after it.  The jump at byte zero is for real MS-DOS,
-which loads a file with no MZ signature as a .COM whatever it is
-called and executes it from the front: it goes to a stub at 20h that
-says the program needs 32-bit DOS mode and exits.  See v0.29.
+A D32 IMAGE is a memory image: a 32-byte header ('CD', INT 20h, a
+version and a type byte, load base, entry, bss size, stack) followed
+by the code; the loader streams the whole image to the base and
+zeroes BSS after it.  A FILE is either that image and nothing else -
+what the linker writes - or an MS-DOS .EXE with the image behind it
+and the image's offset in the dword at 3Ch of its MZ header, which is
+what TOOLS\D32BIND makes of every command that ships.  Real MS-DOS
+runs the program in front: TOOLS\D32STUB.ASM, which says the file
+needs 32-bit DOS mode and exits, or a 16-bit version of the program
+itself.  See "'CD', AND AN MS-DOS PROGRAM IN FRONT OF EVERY COMMAND"
+(2026-10-10) and, for what it replaced, v0.29.
 WHERE A PROGRAM RUNS, as of 2026-10-01 (the paragraph that was here
 described v0.2's two fixed slots and one level of EXEC).  At ring 3,
 in a segment based at its SLOT: a guard page at 0, the PSP at 1000h,

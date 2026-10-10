@@ -118,7 +118,7 @@ $default = @(
     'DPMII32', 'DPMIIRQ', 'DPMITEST', 'DPMIV32', 'DPMIVEC', 'DRIVES', 'EMSTEST', 'EXECLEAK', 'EXECTST',
     'F32TEST', 'FCBTEST', 'FNDTEST', 'FPU32', 'FPUTEST', 'HELLO', 'HELLOX', 'HNDTEST', 'HOOKTEST',
     'HWPROBE', 'I13TEST', 'I24TEST', 'IDLETEST /T', 'IRQTEST', 'ISAPNP', 'LFNAPI', 'LOLTEST', 'LPTTEST',
-    'MCBTEST', 'MEMPROBE', 'MS32TEST', 'MSTEST', 'NICIRQ', 'PCITEST', 'PEKID', 'PROBE13', 'R3TEST',
+    'MCBTEST', 'MEMPROBE', 'MS32TEST', 'MSTEST', 'NICIRQ', 'PCITEST', 'PEKID', 'PMD /S', 'PROBE13', 'R3TEST',
     'RMFIND', 'RMFSTEST', 'RMIVT', 'RMSPEED', 'RMTEST', 'SFTSCAN',
     # these four park the kernel too, as SFTSCAN does, so they follow it:
     # every test before them still runs on a machine that has never

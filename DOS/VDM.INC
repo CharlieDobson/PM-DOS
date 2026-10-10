@@ -3759,8 +3759,9 @@ vdm_child:
 
         ; A 32-BIT PROGRAM, asked for by a 16-bit one - see vdm_d32.
         ; Asked of the file, as 4Bh always asks it: the extension says
-        ; nothing, and every D32 image carries an MZ stub that would
-        ; otherwise load here and print that it needs 32-bit DOS.
+        ; nothing, and a D32 command has an MS-DOS program in front of
+        ; its image that would otherwise load here and print that it
+        ; needs 32-bit DOS.
         mov     edx,OFFSET vdm_cpath
         call    exec_kind
         cmp     eax,EK_D32
@@ -4236,13 +4237,13 @@ vc_overlay:
         jc      vov_ioerr
         cmp     eax,EXE_HDRLEN
         jb      vov_flat                        ; too short to be an .EXE
+        call    d32_find                        ; an image, bare or behind an
+        jnc     vov_badfmt                      ; MS-DOS program: not an overlay
         mov     ax,word ptr ds:[vdm_hdrbuf+EXE_SIG]
         cmp     ax,EXE_MZ
         je      vov_exe
         cmp     ax,EXE_ZM
         je      vov_exe
-        cmp     dword ptr ds:[vdm_hdrbuf+D32H_MAGIC],D32_MAGIC
-        je      vov_badfmt
 
 ;--- a flat overlay: the whole file, where it was asked for ----------
 vov_flat:
@@ -5685,6 +5686,10 @@ vdm_subptr:
         db  0F1h, 19h,  P_DX            ; a file to delete and not keep
                                         ; (18h carries nothing)
         db  0F1h, 1Ch,  P_DI            ; a SCSI adapter's, or a device's
+        db  0F1h, 21h,  P_SI            ; the registers a BIOS call is given
+                                        ; and gives back.  20h's pointer
+                                        ; depends on its function, so
+                                        ; r3_pflags answers that one by hand
         db  0F0h, 04h,  P_SI           ; cells onto the screen - EBX is a
                                         ; CELL NUMBER, not a pointer
         db  0F0h, 05h,  P_DI            ; and back off it

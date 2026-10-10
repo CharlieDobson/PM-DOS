@@ -810,7 +810,7 @@ bo_clear:
 ; one - while a manufactured frame has none and k21 pushes zero.  That
 ; identifies the kernel's own INT 21h correctly; it says nothing about
 ; the k21 frames, because THE KERNEL USES k21 TOO.  exec_kind reads
-; eight bytes of a program's header into a buffer in PMDOS.SYS through
+; the front of a program's file into a buffer in PMDOS.SYS through
 ; exactly that door, which is why every EXEC in the machine started
 ; failing the first time this was got wrong.
 ;
@@ -6158,7 +6158,9 @@ f4B_vfail:
 ; program whose first four bytes happen to sort low.
 ;
 ; It costs one open per EXEC, and it is worth it: trusting the
-; extension is how a loader ends up executing an .EXE header.
+; extension is how a loader ends up executing an .EXE header.  An MZ
+; file costs a seek and a second read on top, to look behind the DOS
+; program for an image - see d32_find.
 ;---------------------------------------------------------------------
 ; The labels below are ek_none/ek_out, NOT ek_nofile: wasm symbols are
 ; case-insensitive, so a label spelled like one of these equates is the
@@ -6166,6 +6168,7 @@ f4B_vfail:
 EK_NOFILE       EQU     0
 EK_D32          EQU     1
 EK_16BIT        EQU     2
+EXEC_SIGLEN     EQU     40h                     ; an MZ header as far as its 3Ch
 
 exec_kind:
         push    ebx
@@ -6175,22 +6178,93 @@ exec_kind:
         call    k21
         jc      ek_none
         mov     ebx,eax
-        mov     dword ptr [exec_sig],0
-        mov     dword ptr [exec_sig+4],0
-        mov     edx,OFFSET exec_sig
-        mov     ecx,8                           ; the jump AND the magic behind
-        mov     eax,3F00h                       ; it - see D32H_JMP in PMDOS.INC
-        call    k21
+        call    d32_find
+        sbb     edx,edx                         ; -1: no image in this file
         mov     eax,3E00h                       ; EBX is still the handle
         call    k21
         mov     eax,EK_16BIT
-        cmp     dword ptr [exec_sig+D32H_MAGIC],D32_MAGIC
-        jne     ek_out
+        or      edx,edx
+        jnz     ek_out
         mov     eax,EK_D32
         jmp     short ek_out
 ek_none:
         mov     eax,EK_NOFILE
 ek_out:
+        pop     edx
+        pop     ecx
+        pop     ebx
+        ret
+
+;---------------------------------------------------------------------
+; d32_find - EBX = an open handle.  Is there a D32 image in the file?
+;
+;   CF clear: EAX = where it starts - 0 when the file IS the image, or
+;             the offset the MS-DOS program in front of it keeps at 3Ch.
+;   CF set:   there is none, or the file would not read.
+;
+; Every register but EAX is kept, and the file is left positioned
+; wherever the last read ended: a caller that goes on reading seeks
+; first.
+;
+; AN MZ HEADER IS BELIEVED ABOUT 3Ch ONLY WHEN ITS FIXUP TABLE STARTS AT
+; 40h OR LATER, which is the rule NE and PE files are found by.  A DOS
+; program linked before anything was put behind one keeps its fixups,
+; or its code, where that dword would be.  D32BIND moves the table of a
+; stub that has it lower.
+;
+; This says where the signature is and nothing about what follows it.
+; exec_load reads the header, and is the one that refuses a bad one.
+;---------------------------------------------------------------------
+d32_find:
+        push    ebx
+        push    ecx
+        push    edx
+        push    edi
+        mov     edi,OFFSET exec_sig             ; a short file reads short,
+        mov     ecx,EXEC_SIGLEN / 4             ; and what was not read must
+        xor     eax,eax                         ; not be the last file's
+        rep     stosd
+        xor     ecx,ecx
+        mov     eax,4200h
+        call    k21
+        jc      d32f_none
+        mov     edx,OFFSET exec_sig
+        mov     ecx,EXEC_SIGLEN
+        mov     eax,3F00h
+        call    k21
+        jc      d32f_none
+        xor     eax,eax
+        cmp     word ptr [exec_sig+D32H_SIG],D32_SIG
+        je      d32f_out                        ; CF clear: the file is the image
+        cmp     word ptr [exec_sig+EXE_SIG],EXE_MZ
+        je      d32f_stub
+        cmp     word ptr [exec_sig+EXE_SIG],EXE_ZM
+        jne     d32f_none
+d32f_stub:
+        cmp     word ptr [exec_sig+EXE_LFARLC],D32_STUBMIN
+        jb      d32f_none
+        mov     ecx,dword ptr [exec_sig+EXE_LFANEW]
+        cmp     ecx,D32_STUBMIN
+        jb      d32f_none
+        mov     edi,ecx                         ; 42h refuses a negative one
+        mov     eax,4200h
+        call    k21
+        jc      d32f_none
+        mov     word ptr [exec_sig],0
+        mov     edx,OFFSET exec_sig
+        mov     ecx,2
+        mov     eax,3F00h
+        call    k21
+        jc      d32f_none
+        cmp     word ptr [exec_sig],D32_SIG
+        jne     d32f_none
+        mov     eax,edi
+        clc
+        jmp     short d32f_out
+d32f_none:
+        stc
+d32f_out:
+        pop     edi
         pop     edx
         pop     ecx
         pop     ebx
@@ -6310,6 +6384,15 @@ ecz_end:
 ;   On failure: CF set, AX = ERR_NOFILE / ERR_EXEFMT / ERR_NOMEM.
 ;
 ; Also used directly by DOSMAIN to start the shell.
+;
+; THE IMAGE IS THE FILE, OR THE FILE FROM SOMEWHERE IN IT ON.  A file
+; that begins 'CD' is the image.  One that begins with an MS-DOS
+; program says at 3Ch where the image is, and everything in front of
+; that is stepped over: whole clusters by following the chain without
+; reading them, and the part of a cluster through exec_skip, which
+; the first pass of xl_blit uses up.  This reads the file its own way
+; and not through d32_find because it is how the shell is loaded,
+; with nobody's handle table to open a file in.
 ;---------------------------------------------------------------------
 exec_load:
         mov     esi,edx
@@ -6344,6 +6427,62 @@ exec_load:
         jc      xl_nofile
         mov     dword ptr [clusbuf_clus],-1     ; buffer no longer file cache
 
+        ; where the image starts.  The first cluster is 512 bytes at
+        ; the least, so an MZ header's 3Ch is in the buffer; whether
+        ; it is in the FILE is the first test.
+        xor     edx,edx
+        cmp     word ptr [clus_buf+D32H_SIG],D32_SIG
+        je      xl_image
+        cmp     word ptr [clus_buf+EXE_SIG],EXE_MZ
+        je      xl_stub
+        cmp     word ptr [clus_buf+EXE_SIG],EXE_ZM
+        jne     xl_badfmt
+xl_stub:
+        cmp     dword ptr [exec_left],D32_STUBMIN + D32H_SIZE
+        jb      xl_badfmt
+        cmp     word ptr [clus_buf+EXE_LFARLC],D32_STUBMIN
+        jb      xl_badfmt
+        mov     edx,dword ptr [clus_buf+EXE_LFANEW]
+        cmp     edx,D32_STUBMIN
+        jb      xl_badfmt
+        mov     eax,[exec_left]
+        sub     eax,D32H_SIZE
+        cmp     edx,eax
+        ja      xl_badfmt               ; no room for a header there
+        test    dl,0Fh
+        jnz     xl_badfmt               ; an image starts on a paragraph,
+        mov     eax,edx                 ; and its header is whole in one
+        and     eax,511                 ; sector - so in one cluster, on
+        cmp     eax,512 - D32H_SIZE     ; any disk.  D32BIND writes no
+        ja      xl_badfmt               ; other kind
+        sub     [exec_left],edx         ; from here on, the image's length
+
+        mov     ebx,[fat_spc]
+        shl     ebx,9                   ; EBX = cluster size
+        cmp     edx,ebx
+        jb      xl_image                ; it starts in the cluster we have
+xl_step:
+        sub     edx,ebx
+        mov     eax,[exec_clus]
+        call    fat_next
+        cmp     eax,[fat_eoc]
+        jae     xl_badfmt               ; chain shorter than the size field
+        mov     [exec_clus],eax
+        cmp     edx,ebx
+        jae     xl_step
+        mov     edi,OFFSET clus_buf
+        call    fat_readclus
+        jc      xl_nofile
+xl_image:
+        mov     [exec_skip],edx
+        lea     esi,[clus_buf+edx]      ; ESI -> the header
+        cmp     word ptr [esi+D32H_SIG],D32_SIG
+        jne     xl_badfmt
+        cmp     byte ptr [esi+D32H_VER],D32_VER
+        jne     xl_badfmt
+        cmp     byte ptr [esi+D32H_TYPE],D32T_PROG
+        jne     xl_badfmt               ; an image, but not a program
+
         ; EVERY FIELD IN THE HEADER IS A SLOT OFFSET NOW, and the base
         ; is checked against the one offset every D32 program is linked
         ; for rather than against "the slot this is going into".  It is
@@ -6352,15 +6491,13 @@ exec_load:
         ; layout or it is not one of this kernel's programs.  Which
         ; slot it lands in stopped being the file's business when the
         ; segment base became the thing that decides.
-        cmp     dword ptr [clus_buf+D32H_MAGIC],D32_MAGIC
-        jne     xl_badfmt
-        cmp     dword ptr [clus_buf+D32H_BASE],SLOT_IMAGE
+        cmp     dword ptr [esi+D32H_BASE],SLOT_IMAGE
         jne     xl_badfmt
         mov     eax,[r3_base]
         add     eax,SLOT_IMAGE
         mov     [exec_cursor],eax       ; flat: the kernel does the blit
 
-        mov     ebx,dword ptr [clus_buf+D32H_ENTRY]
+        mov     ebx,dword ptr [esi+D32H_ENTRY]
         cmp     ebx,SLOT_IMAGE
         jb      xl_badfmt
         mov     ecx,SLOT_IMAGE
@@ -6374,9 +6511,9 @@ exec_load:
         ; load-bearing now: it is what divides the space above the BSS
         ; between the heap 48h allocates from and the stack.
         mov     ebx,ecx
-        add     ebx,dword ptr [clus_buf+D32H_BSS]
+        add     ebx,dword ptr [esi+D32H_BSS]
         mov     [exec_bssend],ebx
-        mov     eax,dword ptr [clus_buf+D32H_STACK]
+        mov     eax,dword ptr [esi+D32H_STACK]
         cmp     eax,1000h               ; never less than 4K, whatever it says
         jae     xl_stkok
         mov     eax,1000h
@@ -6391,12 +6528,15 @@ xl_stkok:
 xl_blit:
         mov     eax,[fat_spc]
         shl     eax,9                   ; EAX = cluster size
-        cmp     eax,[exec_left]
+        sub     eax,[exec_skip]         ; less what is in front of the image,
+        cmp     eax,[exec_left]         ; in the cluster it starts in
         jbe     xl_n_ok
         mov     eax,[exec_left]
 xl_n_ok:
         push    eax
         mov     esi,OFFSET clus_buf
+        add     esi,[exec_skip]
+        mov     dword ptr [exec_skip],0
         mov     edi,[exec_cursor]
         mov     ecx,eax
         rep     movsb
@@ -9201,6 +9341,13 @@ fF0_mouse:
 ;                 modes there are, a graphics mode set, and SEL_VBE
 ;                 over its linear frame buffer.  Native programs only
 ;                 (VBE.INC)
+;       AL = 20h: bits 16-23 of EAX = LMF_READ or LMF_RAM - the first
+;                 megabyte read into a buffer at EDI, and whether an
+;                 address above 640K holds what is written to it.
+;                 Native programs only (fF1_lowmem)
+;       AL = 21h: DL = an interrupt, ESI -> a BQ_LEN record of
+;                 registers - a BIOS call that only asks, out of the
+;                 list in bq_table.  Native programs only (fF1_biosq)
 ;
 ; 30h has to keep lying about being DOS 5 so that ordinary programs
 ; recognise us, which leaves nothing there to report what the kernel
@@ -9277,7 +9424,197 @@ fnF1:
         je      fF1_power
         cmp     al,1Fh
         je      fF1_vbe
+        cmp     al,20h
+        je      fF1_lowmem
+        cmp     al,21h
+        je      fF1_biosq
         jmp     i21_unsup
+
+;--- AL=20h: THE FIRST MEGABYTE, FOR A PROGRAM THAT CANNOT REACH IT.
+;--- The function is in bits 16-23 of EAX; PMDOS.INC has the registers.
+;---
+;--- A native program's segment ends where its slot does, so the
+;--- interrupt vectors, the BIOS data area, the memory control blocks
+;--- and driver headers of the conventional arena and every ROM are
+;--- somewhere it cannot point.  That is the design, and nothing a
+;--- program does for a living needs them - but PMD.EXE's whole job is
+;--- to report what is there, exactly as MSD's is under DOS, and each
+;--- of its pages would otherwise have needed a kernel call of its own
+;--- that handed over one more table.  One call that copies bytes out
+;--- is smaller than thirteen that describe them.
+;---
+;--- IT READS, AND NOTHING ELSE.  Every byte below 1MB is one a DOS box
+;--- can already read, so this shows a native program nothing a 16-bit
+;--- one could not see; what a box can also do is WRITE there, and that
+;--- is what a slot is for keeping a native program from.
+;---
+;--- LMF_RAM is the one store, and it is the kernel's own: a byte's
+;--- complement written and read back, the byte put back, interrupts
+;--- off for the three instructions.  It is how "RAM" is told from
+;--- "ROM" and from "nothing at all" in the adapter area - none of
+;--- which reading can decide, because shadowed ROM reads the same as
+;--- ROM and unused RAM can read as anything.  Kept to A0000h and up:
+;--- below that everything is RAM and some of it is this kernel's.
+fF1_lowmem:
+        cmp     word ptr [ebp+F_CS],SEL_PROG_CS
+        jne     i21_unsup
+        movzx   eax,byte ptr [ebp+F_EAX+2]
+        cmp     eax,LMF_READ
+        je      flm_read
+        cmp     eax,LMF_RAM
+        je      flm_ram
+        jmp     i21_unsup
+
+flm_read:
+        mov     esi,[ebp+F_EBX]
+        mov     ecx,[ebp+F_ECX]
+        cmp     ecx,LMF_MAXREAD
+        ja      flm_bad
+        cmp     esi,LMF_TOP
+        jae     flm_bad
+        mov     eax,esi
+        add     eax,ecx
+        cmp     eax,LMF_TOP
+        ja      flm_bad
+        mov     eax,[ebp+F_EDI]
+        call    cbuf_ok
+        jc      buf_deny
+        mov     edi,[ebp+F_EDI]
+        cld
+        rep     movsb
+        jmp     i21_ok
+
+flm_ram:
+        mov     esi,[ebp+F_EBX]
+        cmp     esi,LMF_RAMLO
+        jb      flm_bad
+        cmp     esi,LMF_TOP
+        jae     flm_bad
+        xor     edx,edx
+        pushfd
+        cli
+        mov     ah,[esi]                ; what is there now
+        mov     al,ah
+        not     al
+        mov     [esi],al
+        jmp     short flm_settle        ; a bus with nothing on it can
+flm_settle:                             ; hold a value for an instruction
+        cmp     [esi],al
+        jne     flm_notram
+        inc     edx
+flm_notram:
+        mov     [esi],ah
+        popfd
+        mov     [ebp+F_EAX],edx
+        jmp     i21_ok
+
+flm_bad:
+        mov     ax,ERR_BADDATA
+        jmp     i21_fail
+
+;--- AL=21h: A BIOS CALL THAT ONLY ASKS.  DL = the interrupt, ESI -> a
+;--- BQ_LEN record (PMDOS.INC): the registers in, and the registers,
+;--- ES, DS and the flags out.
+;---
+;--- THE LIST IS THE POINT.  The thunk underneath will run any
+;--- interrupt with any registers, and INT 15h alone has a function
+;--- that moves extended memory and one that leaves real mode by
+;--- itself - neither of which may be reached from ring 3 by a program
+;--- that only wanted to know what model of machine it is on.  So a
+;--- call goes through if its interrupt and AH (and for two of them
+;--- its AL or BL) are in bq_table, and is refused if they are not.
+;--- Every row is a question: none of them changes anything.
+fF1_biosq:
+        cmp     word ptr [ebp+F_CS],SEL_PROG_CS
+        jne     i21_unsup
+        mov     eax,[ebp+F_ESI]
+        mov     ecx,BQ_LEN
+        call    cbuf_ok
+        jc      buf_deny
+        mov     esi,[ebp+F_ESI]
+        mov     dl,[ebp+F_EDX]          ; the interrupt
+        mov     dh,[esi+BQ_EAX+1]       ; and the AH it is to be given
+        mov     ebx,OFFSET bq_table
+fbq_scan:
+        mov     al,[ebx]
+        or      al,al
+        jz      fbq_deny
+        cmp     al,dl
+        jne     fbq_next
+        mov     al,[ebx+2]              ; BQK_*
+        cmp     al,BQK_ANYAH
+        je      fbq_go
+        cmp     dh,[ebx+1]
+        jne     fbq_next
+        cmp     al,BQK_ANY
+        je      fbq_go
+        mov     ah,[esi+BQ_EAX]
+        cmp     al,BQK_AL
+        je      fbq_which
+        mov     ah,[esi+BQ_EBX]
+fbq_which:
+        cmp     ah,[ebx+3]
+        je      fbq_go
+fbq_next:
+        add     ebx,4
+        jmp     short fbq_scan
+fbq_deny:
+        mov     ax,ERR_ACCESS
+        jmp     i21_fail
+
+fbq_go:
+        xor     ah,ah
+        call    rtc_prep                ; the frame, zeroed
+        mov     eax,[esi+BQ_EAX]
+        mov     dword ptr ds:[RMR_EAX],eax
+        mov     eax,[esi+BQ_EBX]
+        mov     dword ptr ds:[RMR_EBX],eax
+        mov     eax,[esi+BQ_ECX]
+        mov     dword ptr ds:[RMR_ECX],eax
+        mov     eax,[esi+BQ_EDX]
+        mov     dword ptr ds:[RMR_EDX],eax
+        mov     eax,[esi+BQ_ESI]
+        mov     dword ptr ds:[RMR_ESI],eax
+        mov     eax,[esi+BQ_EDI]
+        mov     dword ptr ds:[RMR_EDI],eax
+        mov     al,dl
+        call    dword ptr ds:[IOS_REALINT]
+        mov     edi,[ebp+F_ESI]
+        mov     eax,dword ptr ds:[RMR_EAX]
+        mov     [edi+BQ_EAX],eax
+        mov     eax,dword ptr ds:[RMR_EBX]
+        mov     [edi+BQ_EBX],eax
+        mov     eax,dword ptr ds:[RMR_ECX]
+        mov     [edi+BQ_ECX],eax
+        mov     eax,dword ptr ds:[RMR_EDX]
+        mov     [edi+BQ_EDX],eax
+        mov     eax,dword ptr ds:[RMR_ESI]
+        mov     [edi+BQ_ESI],eax
+        mov     eax,dword ptr ds:[RMR_EDI]
+        mov     [edi+BQ_EDI],eax
+        mov     ax,word ptr ds:[RMR_ES]
+        mov     [edi+BQ_ES],ax
+        mov     ax,word ptr ds:[RMR_DS]
+        mov     [edi+BQ_DS],ax
+        mov     eax,dword ptr ds:[RMR_FLAGS]
+        mov     [edi+BQ_FLAGS],eax
+        jmp     i21_ok
+
+;--- the interrupt, its AH, BQK_*, and the AL or BL that goes with it
+bq_table:
+        db      10h, 0Fh, BQK_ANY,   0  ; the video mode, columns and page
+        db      10h, 12h, BQK_BL,  10h  ; EGA: memory, colour or mono, switches
+        db      10h, 1Ah, BQK_AL,  00h  ; VGA: the display combination
+        db      11h, 00h, BQK_ANYAH, 0  ; the equipment word
+        db      12h, 00h, BQK_ANYAH, 0  ; conventional memory, in K
+        db      14h, 03h, BQK_ANY,   0  ; a serial port's line and modem status
+        db      15h, 84h, BQK_ANY,   0  ; the game port: switches and sticks
+        db      15h, 88h, BQK_ANY,   0  ; extended memory, in K
+        db      15h, 0C0h, BQK_ANY,  0  ; ES:BX -> the configuration table
+        db      15h, 0C1h, BQK_ANY,  0  ; ES = the extended BIOS data area
+        db      15h, 0D8h, BQK_AL, 00h  ; EISA: what is in a slot
+        db      17h, 02h, BQK_ANY,   0  ; a printer's status
+        db      0
 
 ;--- AL=18h: DELETE PROTECTION'S STATE.  EAX = UNDF_* bits, ECX = the
 ;--- share of the free space kept files may hold.  UNDELETE.EXE asks,
@@ -10833,9 +11170,11 @@ exec_tail   db  132 dup(0)
 exec_envlen dd  0                       ; and the environment, which has the
 exec_env    db  SLOT_ENVMAX dup(0)      ; same problem twice over - see
                                         ; exec_cpenv
-exec_sig    dd  0,0                     ; the eight bytes that say whose
-                                        ; kind of executable this is: the
-                                        ; 16-bit jump, and the magic behind it
+exec_sig    db  EXEC_SIGLEN dup(0)      ; the front of a file, where it says
+                                        ; whose kind of executable it is -
+                                        ; see d32_find
+exec_skip   dd  0                       ; exec_load: how far into the cluster
+                                        ; in clus_buf the image starts
 
 ; One record per nesting level, describing the program that is WAITING
 ; - not the one running.
