@@ -9,6 +9,12 @@
 ;   LRGDiskDMA=off              optional: PIO only, no bus-master DMA
 ;   LRGDiskSerial=on            optional: the two cables one at a time
 ;                               (done on a CMD640 without asking)
+;   LRGDiskBlockMode=off        optional: PIO a sector a command block,
+;                               no READ or WRITE MULTIPLE
+;   LRGDiskPoll=off             optional: an interrupt for every block
+;                               of a PIO transfer
+;   LRGDisk32BitIO=off          optional: the data port 16 bits at a
+;                               time
 ;   LRGDiskReport=on            optional: what LRGDISK found, written
 ;                               to LRGDISK.TXT in the boot drive's
 ;                               root every time Windows starts
@@ -77,6 +83,64 @@
 ; a drive whose engine gets a transfer wrong once is PIO from then on.
 ; LRGDiskDMA=off keeps the engine out of it.
 ;
+; PIO, WITH FEWER INTERRUPTS.  Without the engine WDCTRL's way is one
+; sector an interrupt, a word at a time, and under Windows the
+; interrupt costs more than the sector does: VPICD, BlockDev and back
+; for every 512 bytes.  Three things, each with a switch.
+;
+; Block mode (LRGDiskBlockMode).  READ and WRITE MULTIPLE move a block
+; of sectors for one interrupt.  The block is the size the drive is
+; set to (IDENTIFY word 59): the BIOS set it and reads with it, so it
+; is never changed.  A drive set to none is set to the most it takes
+; (word 47), LD_BLOCKMAX at most - which a BIOS that reads a sector at
+; a time never notices, READ SECTORS being what it always was.  A DOS
+; program's reset of the cable loses the size, and ld_reinit gives it
+; back.  A block-mode command that ends in an error is tried again a
+; sector at a time, and that drive stays so.  And the size is not
+; taken on trust: whichever it is, the drive is given it as a command
+; before any block is asked for (ld_setmult) - the drive's taking the
+; command is what counts, not what IDENTIFY says afterwards - and
+; inside a block each sector after the first is moved only while the
+; drive holds DRQ up for it (ld_xfer): a block shorter than the size
+; says ends where the drive ends it, not in data that was never there.
+;
+; Staying in the handler (LRGDiskPoll).  A drive with the next block
+; in its buffer has it ready microseconds after the last was taken,
+; and so has one just given a block to write.  After a block the
+; handler looks at the alternate status LD_POLLN times - about what
+; one interrupt costs - and if the drive is ready, moves the next
+; block there and then: LD_BURST sectors at most for one interrupt.
+; The request such a block raises is dropped by the read of the
+; status, made with interrupts off, and never reaches the processor.
+;
+; 32-bit data (LRGDisk32BitIO).  REP INSD and REP OUTSD in place of
+; REP INSW and REP OUTSW: half the bus cycles.  The data register is
+; 16 bits wide at the drive; it is the host adapter that latches two
+; words, a VLB and PCI thing - on an ISA card a doubleword read of
+; 1F0h is a word from 1F0h and a word from 1F2h, and no error says so.
+; So it is tried only where the drive says it can (IDENTIFY word 48)
+; or the controller is a PCI one, and then PROVED: the IDENTIFY block,
+; read a word at a time and a doubleword at a time, must be the same
+; 512 bytes with nothing left in the drive (ld_prove32, which is the
+; kernel's ata_prove32).  A write cannot be proved without writing
+; one: it goes on the read's word, as it does in the kernel.  Never on
+; a CMD640, whose 32-bit path is the read-ahead that is switched off.
+;
+; THE HANDLER GOES BY THE DRIVE'S STATUS, not by the fact of an
+; interrupt.  A block taken by looking leaves its request behind in an
+; interrupt controller that latches the edge (QEMU's does; an 8259A
+; forgets a request withdrawn before it is acknowledged), and that
+; interrupt comes later with nothing to do.  So: busy, or no data
+; wanted and none owed, is not this interrupt's, and whatever the
+; drive does want is done whichever interrupt it was.  CBL_GO says a
+; controller command is out - and, for a write, its first block sent
+; - and nothing is touched without it.  Between the sectors of a
+; block the handler lets other interrupts in (CBL_INXFER keeps its own
+; out), so nothing waits longer for the disk than it did at one sector
+; an interrupt.  And a command the controller has had for LD_LOSTMS,
+; with the drive no longer busy, is taken up from the time-out as if
+; its interrupt had come.
+;
 ; THE CABLE, SHARED.  LRGDISK takes a cable's ports from the VMs as
 ; WDCTRL does.  WDCTRL keeps them: a CD-ROM on the same cable is out of
 ; its DOS driver's reach.  LRGDISK lends them (ld_vmio): with something
@@ -92,8 +156,8 @@
 ; the cable (SRST) resets LRGDISK's drives too: before its next command
 ; on that cable LRGDISK gives each of them its parameters again - the
 ; BIOS's geometry to a drive used by CHS, the transfer mode to one
-; used by DMA.  LRGDISK's own drives stay out of the VMs' reach, as
-; before.
+; used by DMA, the block's size to one used in blocks.  LRGDISK's own
+; drives stay out of the VMs' reach, as before.
 ;
 ; TWO CHIPS WITH BUGS.  The PC-Tech RZ1000 corrupts a PIO read when its
 ; read-ahead is on and the processor is interrupted between sectors -
@@ -171,6 +235,7 @@ S_END_NEST_EXEC         EQU     00010086h
 S_HOOK_DEVICE_SERVICE   EQU     00010090h
 S_SIMULATE_IO           EQU     00010094h
 S_INSTALL_IO_HANDLER    EQU     00010096h
+S_GET_PROFILE_BOOLEAN   EQU     000100B1h       ; start-up only
 S_FATAL_ERROR_HANDLER   EQU     000100BEh
 S_GET_TIME              EQU     000100CFh       ; Get_Last_Updated_System_Time
 S_VPICD_VIRTUALIZE_IRQ  EQU     00030001h
@@ -258,6 +323,10 @@ BP_IHEADS       EQU     6Bh             ; INITIALIZE DEVICE PARAMETERS:
 BP_ISPT         EQU     6Ch             ; the BIOS's heads less 1, and
                                         ; sectors (a drive used by CHS)
 BP_CONTROL      EQU     6Dh             ; the device control register's
+BP_MULT         EQU     6Eh             ; sectors a block by PIO (READ and
+                                        ; WRITE MULTIPLE); 0: one
+BP_IO32         EQU     6Fh             ; the data port is read a
+                                        ; doubleword at a time
 BP_SIZE         EQU     70h
 
 BDF_INT13       EQU     01h             ; BDD_Flags: an INT 13h drive,
@@ -361,7 +430,19 @@ CBL_BMST        EQU     70h             ; db the engine's status at the
                                         ; interrupt
 CBL_XHELD       EQU     71h             ; db LRGDISK's command waits for
                                         ; the other cable to be idle
-CBL_SIZE        EQU     74h
+CBL_GO          EQU     72h             ; db a controller command is out,
+                                        ; and a write's first block sent:
+                                        ; the drive's status is the
+                                        ; command's
+CBL_INXFER      EQU     73h             ; db a block is being moved, or
+                                        ; interrupts are being let in
+                                        ; after one
+CBL_MULT        EQU     74h             ; db sectors a block in this
+                                        ; controller command; 1 without
+                                        ; block mode
+CBL_BURST       EQU     75h             ; db sectors moved for this
+                                        ; interrupt
+CBL_SIZE        EQU     78h
 
 CF_PRESENT      EQU     01h             ; LRGDISK has a drive on it
 CF_OTHER        EQU     02h             ; ...and something it does not
@@ -402,6 +483,10 @@ RF_SERIAL       EQU     80h             ; (unit 0's byte) one cable at a
                                         ; LRGDiskSerial=on
 RF_DMAON        EQU     80h             ; (unit 1's byte) LRGDiskDMA is
                                         ; not off
+RF_PCIIDE       EQU     80h             ; (unit 2's byte) the controller
+                                        ; is a PCI one
+RF_NO32         EQU     80h             ; (unit 3's byte) a CMD640: never
+                                        ; a doubleword at a time
 
 ; What a BIOS read's registers are consistent with (rm_classify)
 HOW_LBA         EQU     1               ; an LBA that is the sector number
@@ -452,6 +537,11 @@ ATA_READ_DMA    EQU     0C8h
 ATA_READ_DMAX   EQU     25h
 ATA_WRITE_DMA   EQU     0CAh
 ATA_WRITE_DMAX  EQU     35h
+ATA_READ_MULT   EQU     0C4h            ; READ and WRITE MULTIPLE: a block
+ATA_WRITE_MULT  EQU     0C5h            ; of sectors an interrupt
+ATA_READ_MULTX  EQU     29h             ; ...and 48-bit
+ATA_WRITE_MULTX EQU     39h
+ATA_SETMULT     EQU     0C6h            ; SET MULTIPLE MODE: the block's size
 ATA_INITPARM    EQU     91h             ; INITIALIZE DEVICE PARAMETERS
 ATA_IDENTIFY    EQU     0ECh
 ATA_SETFEAT     EQU     0EFh
@@ -486,9 +576,25 @@ LD_MAXTRIES     EQU     3               ; retries before a command fails
 LD_BUSYMS       EQU     500             ; ms for BSY to go before a command
 LD_DRQMS        EQU     500             ; ms for a write's first DRQ
 LD_STUCKMS      EQU     20000           ; ms before a command is reported
+IFNDEF LD_LOSTMS                        ; (wasm -dLD_LOSTMS=n: a rig that
+LD_LOSTMS       EQU     2000            ; loses them on purpose)
+ENDIF                                   ; ms before a command's interrupt is
+                                        ; taken for lost, and how often the
+                                        ; commands are looked at
 LD_RESETMS      EQU     10000           ; ms for BSY to go after a reset
 LD_WATCHMS      EQU     50              ; how often a lent cable is looked at
 LD_LENDMS       EQU     30000           ; ms before it is taken back anyway
+IFNDEF LD_POLLN                         ; (wasm -dLD_POLLN=n: a rig whose
+LD_POLLN        EQU     128             ; drives answer late)
+ENDIF                                   ; looks at the alternate status for
+                                        ; the next block: an interrupt's
+                                        ; worth of time
+LD_BURST        EQU     32              ; sectors for one interrupt, while
+                                        ; the drive keeps up
+IFNDEF LD_BLOCKMAX                      ; (wasm -dLD_BLOCKMAX=n, with
+LD_BLOCKMAX     EQU     16              ; -dLD_TESTSET: a rig)
+ENDIF                                   ; the block size LRGDISK sets a
+                                        ; drive to, at most
 
 IODELAY MACRO
         jmp     short $+2
@@ -521,6 +627,27 @@ IFDEF LRG_TRACE
 ENDIF
         ENDM
 
+; ...and a count of something (ld_st*), which ld_tick writes out as a
+; line when any of them has moved
+STAT    MACRO   which
+IFDEF LRG_TRACE
+        inc     dword ptr [ld_st+which*4]
+ENDIF
+        ENDM
+
+SC_INT          EQU     0               ; interrupts taken for a command
+SC_STALE        EQU     1               ; ...with nothing to do
+SC_WITHIN       EQU     2               ; ...let in while a block moved
+SC_SECTOR       EQU     3               ; sectors moved by PIO
+SC_BLOCK        EQU     4               ; blocks they moved in
+SC_POLLED       EQU     5               ; blocks found ready by looking
+SC_WAITED       EQU     6               ; ...and not: left to an interrupt
+SC_IO32         EQU     7               ; sectors moved 32 bits at a time
+SC_MULTCMD      EQU     8               ; block-mode controller commands
+SC_KICK         EQU     9               ; commands taken up by the time-out
+SC_SHORT        EQU     10              ; blocks the drive ended early
+SC_COUNT        EQU     11
+
 ;=====================================================================
 ; LOCKED DATA
 ;=====================================================================
@@ -533,7 +660,7 @@ _LDATA  SEGMENT
 LRGDISK_DDB     dd      0
                 dw      030Ah                   ; the DDK's version
                 dw      0                       ; Undefined_Device_ID
-                db      1, 2                    ; LRGDISK 1.2
+                db      1, 3                    ; LRGDISK 1.3
                 dw      0
                 db      'LRGDISK '
                 dd      00D000000h              ; after VPICD (0C000000h);
@@ -564,6 +691,8 @@ ld_dmaon        db      0               ; the engine may be used
 ld_serial       db      0               ; one cable at a time: a command
                                         ; waits while the other cable has
                                         ; one, LRGDISK's or a DOS program's
+ld_pollon       db      0               ; after a block, a look for the
+                                        ; next before its interrupt
 ld_warned       db      0               ; the port message has been shown
 ld_tell         db      0               ; ld_vmio refused a command: say so
 ld_prev13       dd      0               ; Int13_Translate_VM_Int, hooked
@@ -572,6 +701,10 @@ ld_rawbios      db      0               ; ld_xlate: an INT 13h of LRGDISK's
 ld_ptes         dd      20 dup (0)      ; a region's page table entries
 ld_bounce       db      512 dup (0)     ; a sector for a buffer that will
                                         ; not lock
+IFDEF LRG_TRACE
+ld_st           dd      SC_COUNT dup (0) ; the counts (SC_*)
+ld_stsaid       dd      0               ; their sum when last written out
+ENDIF
 
 ; VPICD's descriptor for IRQ 15 (VPICD_IRQ_Descriptor)
 ld_vid15        dw      15
@@ -746,12 +879,16 @@ lbg_nothing:
 ; ld_start - give the controller the next piece of the command in
 ; hand: up to LD_MAXXFER sectors from CBL_NEXT.  EDI -> descriptor,
 ; ESI -> command, EBP -> the cable, interrupts off.  By PIO a read's
-; sectors then arrive one an interrupt, and a write's first sector
-; goes out here and the rest one an interrupt; by DMA the engine
-; moves them all and the drive interrupts once at the end.  EAX, ECX,
-; EDX changed.
+; sectors then arrive a block an interrupt, and a write's first block
+; goes out here and the rest a block an interrupt - a block being one
+; sector, or with block mode on the drive (BP_MULT) and more than one
+; sector to move, that many; by DMA the engine moves them all and the
+; drive interrupts once at the end.  CBL_GO is set last of all: until
+; then the drive's status is not something the handler may act on.
+; EAX, ECX, EDX changed.
 ;---------------------------------------------------------------------
 ld_start:
+        mov     byte ptr [ebp+CBL_GO],0
         cmp     byte ptr [ebp+CBL_HWVM],0 ; the controller holds what DOS
         je      lst_ours                ; programs left in it: kept first
         call    ld_snapshot
@@ -785,6 +922,23 @@ lst_addr:
         jc      lst_pio
         mov     byte ptr [ebp+CBL_DMA],1
 lst_pio:
+        mov     al,1                    ; by PIO, in blocks: the drive's
+        cmp     byte ptr [ebp+CBL_DMA],0 ; size, for more than one sector
+        jne     lst_mult
+        cmp     byte ptr [ebp+CBL_BLOCK],2
+        jb      lst_mult
+        cmp     byte ptr [edi+BP_MULT],2
+        jb      lst_mult
+        mov     al,[edi+BP_MULT]
+IFDEF LD_TESTLONG                       ; A rig's two lies about the size,
+        add     al,al                   ; to see the nets hold: twice the
+ENDIF                                   ; drive's, and ld_xfer must end each
+IFDEF LD_TESTSHORT                      ; block where the drive does; half,
+        shr     al,1                    ; and the half the drive still holds
+ENDIF                                   ; out is found by ld_poll, or with
+        STAT    SC_MULTCMD              ; LRGDiskPoll=off by ld_kick
+lst_mult:
+        mov     [ebp+CBL_MULT],al
 
         mov     al,[edi+BP_CONTROL]     ; interrupts on
         movzx   edx,word ptr [ebp+CBL_CTRL]
@@ -868,11 +1022,12 @@ lst_low:
         out     dx,al
         cmp     byte ptr [ebp+CBL_DMA],0
         je      lst_piogo
+        mov     byte ptr [ebp+CBL_GO],1
         jmp     ld_bmstart              ; the engine moves everything
 lst_piogo:
         cmp     word ptr [esi+CB_COMMAND],BDC_READ
         je      lst_out
-        IODELAY                         ; a write: the first sector, once
+        IODELAY                         ; a write: the first block, once
         IODELAY                         ; the drive asks for it
         in      al,dx
         test    al,ST_DRQ
@@ -893,8 +1048,9 @@ lst_drq:
         jb      lst_drq
         jmp     lst_timeout
 lst_first:
-        jmp     ld_wrsec
+        call    ld_xfer
 lst_out:
+        mov     byte ptr [ebp+CBL_GO],1
         ret
 
 lst_timeout:
@@ -912,12 +1068,14 @@ lst_timeout:
 
 ;---------------------------------------------------------------------
 ; ld_cmdbyte - AL = the command byte for the command in hand (ESI),
-; by CBL_EXT and CBL_DMA: READ or WRITE SECTORS, or DMA, or their EXT
-; forms.  Nothing else changed.
+; by CBL_EXT, CBL_DMA and CBL_MULT: READ or WRITE SECTORS, or MULTIPLE,
+; or DMA, or their EXT forms.  Nothing else changed.
 ;---------------------------------------------------------------------
 ld_cmdbyte:
         cmp     byte ptr [ebp+CBL_DMA],0
         jne     lcb_dma
+        cmp     byte ptr [ebp+CBL_MULT],1
+        ja      lcb_mult
         mov     al,ATA_READ             ; 20h, 24h, 30h, 34h
         cmp     word ptr [esi+CB_COMMAND],BDC_READ
         je      lcb_ext
@@ -927,6 +1085,19 @@ lcb_ext:
         je      lcb_out
         add     al,4
 lcb_out:
+        ret
+lcb_mult:
+        mov     al,ATA_READ_MULT        ; C4h, 29h, C5h, 39h
+        cmp     byte ptr [ebp+CBL_EXT],0
+        je      lcb_multw
+        mov     al,ATA_READ_MULTX
+lcb_multw:
+        cmp     word ptr [esi+CB_COMMAND],BDC_READ
+        je      lcb_out
+        mov     al,ATA_WRITE_MULT
+        cmp     byte ptr [ebp+CBL_EXT],0
+        je      lcb_out
+        mov     al,ATA_WRITE_MULTX
         ret
 lcb_dma:
         mov     al,ATA_READ_DMA         ; C8h, 25h, CAh, 35h
@@ -1035,7 +1206,8 @@ lnb_out:
 ; LRGDISK's drives on it is given its parameters again, the way the
 ; BIOS and the kernel gave them at boot - a drive used by CHS its
 ; geometry (INITIALIZE DEVICE PARAMETERS), a drive used by DMA its
-; transfer mode (SET FEATURES) - polled, with its interrupt off.
+; transfer mode (SET FEATURES), a drive used in blocks the block's
+; size (SET MULTIPLE MODE) - polled, with its interrupt off.
 ; EBP -> the cable, interrupts off.  EAX, ECX, EDX changed.
 ;---------------------------------------------------------------------
 ld_reinit:
@@ -1081,10 +1253,11 @@ lri_unit:
         inc     edx
         mov     al,ATA_INITPARM
         out     dx,al
+        call    ld_delay
         call    ld_notbusy
 lri_xfer:
         cmp     byte ptr [edi+BP_XFER],0
-        je      lri_done
+        je      lri_mult
         movzx   edx,word ptr [ebp+CBL_DATA]
         inc     edx                     ; features: the transfer mode
         mov     al,SF_XFERMODE
@@ -1099,7 +1272,27 @@ lri_xfer:
         add     edx,R_CMD-R_COUNT
         mov     al,ATA_SETFEAT
         out     dx,al
+        call    ld_delay
         call    ld_notbusy
+lri_mult:
+        cmp     byte ptr [edi+BP_MULT],2 ; and the block's size; a drive
+        jb      lri_done                ; that will not have it back is one
+        movzx   edx,word ptr [ebp+CBL_DATA] ; sector a block from now on
+        add     edx,R_COUNT
+        mov     al,[edi+BP_MULT]
+        out     dx,al
+        IODELAY
+        IODELAY
+        add     edx,R_CMD-R_COUNT
+        mov     al,ATA_SETMULT
+        out     dx,al
+        call    ld_delay
+        call    ld_notbusy
+        jc      lri_nomult
+        test    al,ST_ERR
+        jz      lri_done
+lri_nomult:
+        mov     byte ptr [edi+BP_MULT],0
 lri_done:
         movzx   edx,word ptr [ebp+CBL_DATA] ; nothing left pending, and
         add     edx,R_STATUS            ; the interrupt back on
@@ -1116,16 +1309,28 @@ lri_next:
         ret
 
 ;---------------------------------------------------------------------
-; ld_wrsec - one sector out of the buffer to the controller, and the
-; counts and the pointer moved on.  ECX, EDX changed.
+; ld_wrsec - one sector out of the buffer to the controller, a
+; doubleword at a time if the drive's data port has been proved that
+; way (BP_IO32), and the counts and the pointer moved on.  ECX, EDX
+; changed.
 ;---------------------------------------------------------------------
 ld_wrsec:
         push    esi
+        mov     edx,[ebp+CBL_CURBDD]
+        mov     cl,[edx+BP_IO32]
         mov     esi,[ebp+CBL_PTR]
-        mov     ecx,256
         movzx   edx,word ptr [ebp+CBL_DATA]
         cld
+        or      cl,cl
+        jz      lws_words
+        mov     ecx,128
+        rep     outsd
+        STAT    SC_IO32
+        jmp     lws_written
+lws_words:
+        mov     ecx,256
         rep     outsw
+lws_written:
         dec     dword ptr [ebp+CBL_REGLEFT]
         jnz     lws_same
         mov     esi,[ebp+CBL_REGION]    ; the end of a region: the next
@@ -1140,6 +1345,206 @@ lws_same:
         dec     dword ptr [ebp+CBL_LEFT]
         dec     byte ptr [ebp+CBL_BLOCK]
         pop     esi
+        ret
+
+;---------------------------------------------------------------------
+; ld_rdsec - one sector from the controller into the buffer, a
+; doubleword at a time if the drive's data port has been proved that
+; way (BP_IO32), and the counts and the pointer moved on.  ECX, EDX
+; changed.
+;---------------------------------------------------------------------
+ld_rdsec:
+        push    edi
+        mov     edx,[ebp+CBL_CURBDD]
+        mov     cl,[edx+BP_IO32]
+        mov     edi,[ebp+CBL_PTR]
+        movzx   edx,word ptr [ebp+CBL_DATA]
+        cld
+        or      cl,cl
+        jz      lrd_words
+        mov     ecx,128
+        rep     insd
+        STAT    SC_IO32
+        jmp     lrd_read
+lrd_words:
+        mov     ecx,256
+        rep     insw
+lrd_read:
+        dec     dword ptr [ebp+CBL_REGLEFT]
+        jnz     lrd_same
+        mov     edi,[ebp+CBL_REGION]    ; the end of a region: the next
+        add     edi,8
+        mov     ecx,[edi]
+        jecxz   lrd_same                ; (none: the command is ending)
+        mov     [ebp+CBL_REGLEFT],ecx
+        mov     [ebp+CBL_REGION],edi
+        mov     edi,[edi+4]
+lrd_same:
+        mov     [ebp+CBL_PTR],edi
+        dec     dword ptr [ebp+CBL_LEFT]
+        dec     byte ptr [ebp+CBL_BLOCK]
+        pop     edi
+        ret
+
+;---------------------------------------------------------------------
+; ld_xfer - one block moved, the way the command in hand goes: the
+; drive has DRQ up for CBL_MULT sectors, or for what is left of the
+; controller command if that is fewer.  Between its sectors other
+; interrupts are let in for a moment - the drive raises none of its
+; own with a block half moved, and CBL_INXFER turns away one left over
+; from before - so that a block keeps nothing waiting longer than a
+; sector does.
+;
+; THE BLOCK'S SIZE IS NOT TAKEN ON TRUST.  After the first, a sector
+; is moved only if the drive still has DRQ up for it, with no error:
+; a drive whose blocks turned out shorter than the size it was set to
+; would otherwise be read past what it had, and what comes then is
+; not on the disk.  The block ends where the drive ends it, and the
+; rest of the controller command comes as the drive offers it.
+;
+; ESI -> the command, EBP -> the cable; interrupts off, and off again
+; on return.  ECX, EDX changed.
+;---------------------------------------------------------------------
+ld_xfer:
+        push    eax
+        mov     ah,[ebp+CBL_MULT]
+        cmp     ah,[ebp+CBL_BLOCK]
+        jbe     lxf_sized
+        mov     ah,[ebp+CBL_BLOCK]
+lxf_sized:
+        mov     byte ptr [ebp+CBL_INXFER],1
+        STAT    SC_BLOCK
+lxf_sector:
+        cmp     word ptr [esi+CB_COMMAND],BDC_READ
+        jne     lxf_write
+        call    ld_rdsec
+        jmp     lxf_moved
+lxf_write:
+        call    ld_wrsec
+lxf_moved:
+        STAT    SC_SECTOR
+        inc     byte ptr [ebp+CBL_BURST]
+        dec     ah
+        jz      lxf_done
+        sti
+        nop
+        cli
+        call    ld_delay                ; (400ns: the status is the
+        movzx   edx,word ptr [ebp+CBL_CTRL] ; drive's answer by now)
+        in      al,dx
+        and     al,ST_BSY OR ST_DRQ OR ST_ERR
+        cmp     al,ST_DRQ
+        je      lxf_sector
+        STAT    SC_SHORT
+lxf_done:
+        mov     byte ptr [ebp+CBL_INXFER],0
+        pop     eax
+        ret
+
+;---------------------------------------------------------------------
+; ld_poll - a block has just been moved and the drive owes another
+; interrupt, for the next block or for the end of a write: is it ready
+; already?  LD_POLLN looks at the alternate status, which leaves the
+; request alone; if BSY goes, the status itself is read - that drops
+; the request, with interrupts off, before the processor has seen it -
+; and comes back in CL.  CF if the drive is still busy, or if no look
+; is to be taken (LRGDiskPoll=off, or LD_BURST sectors moved for this
+; interrupt already): the interrupt will say.
+;
+; Other interrupts are let in for a moment first.  The drive's own may
+; be among them, if the block is ready that soon - turned away by
+; CBL_INXFER, and then the look that follows finds the drive ready, so
+; nothing is left waiting for an interrupt that has been and gone.
+; From there to the return interrupts stay off: a request raised in
+; that time is still there when they come back on.
+;
+; EBP -> the cable; interrupts off, and off again on return.  EAX,
+; ECX, EDX changed.
+;---------------------------------------------------------------------
+ld_poll:
+        cmp     byte ptr [ld_pollon],0
+        je      lpo_no
+        cmp     byte ptr [ebp+CBL_BURST],LD_BURST
+        jae     lpo_no
+        call    ld_window
+        call    ld_delay                ; (the status is not the drive's
+        movzx   edx,word ptr [ebp+CBL_CTRL] ; answer for 400ns)
+        mov     ecx,LD_POLLN
+lpo_look:
+        in      al,dx
+        test    al,ST_BSY
+        jz      lpo_ready
+        dec     ecx
+        jnz     lpo_look
+        STAT    SC_WAITED
+lpo_no:
+        stc
+        ret
+lpo_ready:
+        STAT    SC_POLLED
+        movzx   edx,word ptr [ebp+CBL_DATA]
+        add     edx,R_STATUS
+        in      al,dx
+        mov     cl,al
+        clc
+        ret
+
+;---------------------------------------------------------------------
+; ld_window - other interrupts let in for a moment, CBL_INXFER saying
+; so: one of the cable's own that arrives is ended and nothing else
+; (ldh_within).  EBP -> the cable; interrupts off, and off again on
+; return.  Nothing changed.
+;---------------------------------------------------------------------
+ld_window:
+        mov     byte ptr [ebp+CBL_INXFER],1
+        sti
+        nop
+        cli
+        mov     byte ptr [ebp+CBL_INXFER],0
+        ret
+
+;---------------------------------------------------------------------
+; ld_drain - a read has ended in an error with the drive still holding
+; data out: taken and dropped, so that the controller is not left in
+; the middle of a block.  EBP -> the cable.  Nothing changed.
+;---------------------------------------------------------------------
+ld_drain:
+        push    eax
+        push    ecx
+        push    edx
+        mov     ecx,256*256             ; no command has more words left
+ldr_look:
+        movzx   edx,word ptr [ebp+CBL_CTRL]
+        in      al,dx
+        test    al,ST_BSY
+        jnz     ldr_out
+        test    al,ST_DRQ
+        jz      ldr_out
+        movzx   edx,word ptr [ebp+CBL_DATA]
+        in      ax,dx
+        dec     ecx
+        jnz     ldr_look
+ldr_out:
+        pop     edx
+        pop     ecx
+        pop     eax
+        ret
+
+;---------------------------------------------------------------------
+; ld_delay - 400ns and more: four reads of the alternate status.  A
+; drive may take that long to raise BSY after a command or a block.
+; EBP -> the cable.  Nothing changed.
+;---------------------------------------------------------------------
+ld_delay:
+        push    eax
+        push    edx
+        movzx   edx,word ptr [ebp+CBL_CTRL]
+        in      al,dx
+        in      al,dx
+        in      al,dx
+        in      al,dx
+        pop     edx
+        pop     eax
         ret
 
 ;---------------------------------------------------------------------
@@ -1362,6 +1767,15 @@ ld_bmstart:
 ; cable (BlockDev's own EOI procedure gives the controller its EOI
 ; when the VM has had the interrupt).  CF set leaves it to BlockDev.
 ; Also the second cable's, through ld_hwint15.  EBP kept.
+;
+; ld_cblint is the work, for either cable (EBP -> it) and for ld_kick,
+; which has no interrupt to end (EAX = 0).  What it does it reads off
+; the drive, not off the interrupt - see the top of the file: an
+; interrupt may be one a block taken by ld_poll left behind.  The
+; request is dropped (the status read) and the interrupt ended before
+; any data moves, as WDCTRL does it; from there a block at a time
+; (ld_xfer) while the drive keeps up (ld_poll), and the controller
+; command's end.
 ;---------------------------------------------------------------------
 ld_hwint:
         push    ebp
@@ -1373,8 +1787,6 @@ ld_hwint:
 ld_cblint:
         cmp     dword ptr [ebp+CBL_VMBUSY],0 ; a DOS program's command is
         jne     ldh_theirs              ; on the cable: theirs
-        cmp     byte ptr [ebp+CBL_HELD],0
-        jne     ldh_no
         cmp     edi,[ebp+CBL_CURBDD]
         jne     ldh_no
         mov     ecx,[ebp+CBL_CUR]
@@ -1382,20 +1794,30 @@ ld_cblint:
         jz      ldh_no
         inc     ecx                     ; -1: between commands
         jz      ldh_no
+        cmp     byte ptr [ebp+CBL_INXFER],0
+        jne     ldh_within
+        cmp     byte ptr [ebp+CBL_GO],0 ; nothing with the controller that
+        je      ldh_no                  ; the drive's status would be about
         mov     ecx,eax
         movzx   edx,word ptr [ebp+CBL_CTRL]
         in      al,dx
         test    al,ST_BSY
         jz      ldh_mine
         TRC     62h             ; b
-        jmp     ldh_no
+        mov     eax,ecx
+        jmp     ldh_stale
 ldh_mine:
         cmp     byte ptr [ebp+CBL_DMA],0
         je      ldh_status
-        movzx   edx,word ptr [ebp+CBL_BM] ; the engine's account of it,
-        add     edx,BM_STATUS           ; then stopped and cleared
-        in      al,dx
-        mov     ah,al
+        movzx   edx,word ptr [ebp+CBL_BM] ; the engine's account of it:
+        add     edx,BM_STATUS           ; has the drive interrupted at all
+        in      al,dx                   ; since the command went?  Not the
+        test    al,BM_ST_IRQ            ; command's end if not
+        jnz     ldh_engine
+        mov     eax,ecx
+        jmp     ldh_stale
+ldh_engine:
+        mov     ah,al                   ; ...then stopped and cleared
         sub     edx,BM_STATUS
         xor     al,al
         out     dx,al
@@ -1411,9 +1833,14 @@ ldh_status:
         add     edx,R_STATUS            ; and now the request is gone
         in      al,dx
         xchg    ecx,eax                 ; CL = status, EAX = the IRQ
-        VXDCALL S_VPICD_PHYS_EOI
-
+        call    ld_eoi
+        STAT    SC_INT
+        mov     byte ptr [ebp+CBL_BURST],0
         mov     esi,[ebp+CBL_CUR]
+
+        ; CL = the status, read from the status register: what the
+        ; drive wants now, whichever interrupt this was
+ldh_have:
         test    cl,ST_ERR
         jnz     ldh_error
         or      [ebp+CBL_ACCUM],cl
@@ -1440,52 +1867,55 @@ ldh_status:
         jmp     ldh_retry
 ldh_moved:
         mov     byte ptr [ebp+CBL_BLOCK],0
-        mov     ecx,[ebp+CBL_LEFT]
-        mov     edi,[ebp+CBL_CURBDD]
-        jecxz   ldh_complete
-        jmp     ldh_nextblock
+        jmp     ldh_ended
 
+        ; by PIO: a block wanted, if DRQ is up
 ldh_pio:
-        cmp     word ptr [esi+CB_COMMAND],BDC_READ
-        jne     ldh_write
+        test    cl,ST_DRQ
+        jz      ldh_nodrq
+        cmp     byte ptr [ebp+CBL_BLOCK],0 ; (wanted with none left to
+        je      ldh_retry               ; move: not the command that went)
+        call    ld_xfer
+        cmp     byte ptr [ebp+CBL_BLOCK],0
+        je      ldh_last
+        call    ld_poll                 ; the next block: ready already,
+        jc      ldh_eat                 ; or its interrupt will say
+        jmp     ldh_have
 
-        mov     edi,[ebp+CBL_PTR]       ; a read: a sector is waiting
-        mov     ecx,256
-        movzx   edx,word ptr [ebp+CBL_DATA]
-        cld
-        rep     insw
-        dec     dword ptr [ebp+CBL_REGLEFT]
-        jnz     ldh_rsame
-        mov     edi,[ebp+CBL_REGION]
-        add     edi,8
-        mov     ecx,[edi]
-        jecxz   ldh_rsame
-        mov     [ebp+CBL_REGLEFT],ecx
-        mov     [ebp+CBL_REGION],edi
-        mov     edi,[edi+4]
-ldh_rsame:
-        mov     [ebp+CBL_PTR],edi
-        mov     ecx,[ebp+CBL_LEFT]
-        dec     ecx
-        mov     [ebp+CBL_LEFT],ecx
+        ; the controller command's last block is moved.  A read is
+        ; over with that; a write is over when the drive says the
+        ; block is written, which is one more interrupt - or one more
+        ; look.
+ldh_last:
+        cmp     word ptr [esi+CB_COMMAND],BDC_READ
+        je      ldh_ended
+        call    ld_poll
+        jc      ldh_eat
+        jmp     ldh_have
+
+        ; neither busy nor wanting data: the end of a write whose
+        ; blocks have all gone; anything else is an interrupt from
+        ; before, with nothing to do
+ldh_nodrq:
+        cmp     word ptr [esi+CB_COMMAND],BDC_READ
+        je      ldh_eat
+        cmp     byte ptr [ebp+CBL_BLOCK],0
+        jne     ldh_eat
+
+        ; The controller command is over: the next piece of the
+        ; command in hand, or its end.  Other interrupts are let in
+        ; first, and with them what a block taken by looking may have
+        ; left in the interrupt controller - turned away here, where
+        ; nothing is on the cable, and not in the middle of the next
+        ; command.
+ldh_ended:
+        call    ld_window
+        mov     byte ptr [ebp+CBL_GO],0
         mov     edi,[ebp+CBL_CURBDD]
-        dec     byte ptr [ebp+CBL_BLOCK]
-        jnz     ldh_eat
-        jecxz   ldh_complete
-ldh_nextblock:
+        cmp     dword ptr [ebp+CBL_LEFT],0
+        je      ldh_complete
         call    ld_start
         jmp     ldh_eat
-
-ldh_write:
-        xor     ecx,ecx                 ; a write: the drive has the last
-        cmp     [ebp+CBL_BLOCK],cl      ; sector sent; another to send?
-        je      ldh_wblock
-        call    ld_wrsec
-        jmp     ldh_eat
-ldh_wblock:
-        mov     edi,[ebp+CBL_CURBDD]
-        cmp     [ebp+CBL_LEFT],ecx
-        jne     ldh_nextblock
 
 ldh_complete:
         mov     esi,[ebp+CBL_CUR]
@@ -1515,6 +1945,30 @@ ldh_no:
         stc
         ret
 
+        ; An interrupt let in by LRGDISK itself (ld_window), while a
+        ; block was being moved or just after one: the code that let
+        ; it in goes by the drive's status next, whatever this was.
+        ; The request is dropped and the interrupt ended, no more.
+ldh_within:
+        STAT    SC_WITHIN
+        push    eax
+        movzx   edx,word ptr [ebp+CBL_DATA]
+        add     edx,R_STATUS
+        in      al,dx
+        pop     eax
+        call    ld_eoi
+        clc
+        ret
+
+        ; An interrupt with a command on the cable and nothing for it
+        ; to do - the drive still busy, or the engine saying the drive
+        ; has not interrupted: one from before.  Ended, and no more.
+ldh_stale:
+        STAT    SC_STALE
+        call    ld_eoi
+        clc
+        ret
+
         ; a DOS program's device interrupted: on to its VM, whose
         ; handler - the BIOS's, or a driver's that hooked the IRQ -
         ; reads the status and ends it, as it would with no 32-bit disk
@@ -1528,9 +1982,10 @@ ldh_theirs:
         clc
         ret
 
-; An error: status in CL.  A read with data waiting has it taken (into
-; the buffer, which the retry will fill again) so the controller is not
-; left mid-sector; then the whole command again, LD_MAXTRIES times.
+; An error: status in CL.  A read with data waiting has it taken and
+; dropped, so the controller is not left in the middle of a block;
+; then the whole command again, LD_MAXTRIES times - a sector a block,
+; from now on, if it was a block-mode command that went wrong.
 ldh_error:
 IFDEF LRG_TRACE
         TRC     13
@@ -1554,21 +2009,18 @@ ENDIF
         jne     ldh_retry
         cmp     word ptr [esi+CB_COMMAND],BDC_READ
         jne     ldh_retry
-        test    cl,ST_DRQ
-        jz      ldh_retry
-        pushad
-        mov     edi,[ebp+CBL_PTR]
-        mov     ecx,256
-        movzx   edx,word ptr [ebp+CBL_DATA]
-        cld
-        rep     insw
-        popad
+        call    ld_drain
 ldh_retry:
+        mov     byte ptr [ebp+CBL_GO],0
+        mov     edi,[ebp+CBL_CURBDD]
+        cmp     byte ptr [ebp+CBL_MULT],1
+        jbe     ldh_tries
+        mov     byte ptr [edi+BP_MULT],0
+ldh_tries:
         inc     byte ptr [ebp+CBL_RETRIES]
         cmp     byte ptr [ebp+CBL_RETRIES],LD_MAXTRIES
         ja      ldh_fail
         mov     esi,[ebp+CBL_CUR]
-        mov     edi,[ebp+CBL_CURBDD]
         mov     dword ptr [ebp+CBL_CUR],0
         call    ld_command
         jmp     ldh_eat
@@ -1578,6 +2030,38 @@ ldh_fail:
         mov     word ptr [esi+CB_STATUS],BDS_MEDIA_ERR
         call    ld_done
         jmp     ldh_eat
+
+; ld_eoi - the interrupt whose handle is in EAX ended at the interrupt
+; controller; none if EAX is 0 (ld_kick: there was no interrupt).
+; Nothing changed.
+ld_eoi:
+        or      eax,eax
+        jz      leo_out
+        VXDCALL S_VPICD_PHYS_EOI
+leo_out:
+        ret
+
+;---------------------------------------------------------------------
+; ld_kick - a command the controller has had for LD_LOSTMS (ld_tick):
+; what the handler would do is done now, as if the interrupt had come.
+; It does nothing while the drive is busy, so a command that is merely
+; slow is left alone; one whose interrupt was lost goes on from here.
+; EBP -> the cable; interrupts off.  Nothing changed.
+;---------------------------------------------------------------------
+ld_kick:
+        pushad
+        cmp     dword ptr [ebp+CBL_VMBUSY],0
+        jne     lkk_out
+        cmp     byte ptr [ebp+CBL_GO],0
+        je      lkk_out
+        TRC     4Bh             ; K
+        STAT    SC_KICK
+        mov     edi,[ebp+CBL_CURBDD]
+        xor     eax,eax
+        call    ld_cblint
+lkk_out:
+        popad
+        ret
 
 ;---------------------------------------------------------------------
 ; ld_hwint15 - VID_Hw_Int_Proc for IRQ 15, the second cable's, which
@@ -1613,6 +2097,7 @@ ld_eoi15:
 ld_done:
         xor     esi,esi
         mov     [ebp+CBL_CMDTIME],esi
+        mov     byte ptr [ebp+CBL_GO],0
         cmp     [ebp+CBL_PEND],esi
         je      ldd_finish
         or      esi,-1
@@ -2078,8 +2563,11 @@ ld_bdcplt:                              ; BD_CB_Cmd_Cplt_Proc: ESI -> it
         ret
 
 ;---------------------------------------------------------------------
-; ld_tick - a global time-out every LD_STUCKMS: if a controller has
-; had a command that long, say so.  EBX = the current VM.
+; ld_tick - a global time-out every LD_LOSTMS.  A controller that has
+; had a command that long is looked at (ld_kick): if the drive is no
+; longer busy the command's interrupt was lost, and the command goes
+; on from here.  One it has had for LD_STUCKMS is said so, and again
+; that long after.  EBX = the current VM.
 ;---------------------------------------------------------------------
 ld_tick:
         push    ebp
@@ -2088,7 +2576,10 @@ ld_tick:
         mov     ebp,OFFSET FLAT:ld_cbl1
         call    ltk_cable
         pop     ebp
-        mov     eax,LD_STUCKMS
+IFDEF LRG_TRACE
+        call    ld_tstats
+ENDIF
+        mov     eax,LD_LOSTMS
         mov     esi,OFFSET FLAT:ld_tick
         VXDCALL S_SET_GLOBAL_TIME_OUT
         ret
@@ -2099,9 +2590,19 @@ ltk_cable:
         VXDCALL S_GET_TIME
         sub     eax,ecx
         jb      ltk_out
+        cmp     eax,LD_LOSTMS
+        jbe     ltk_out
+        pushfd
+        cli
+        call    ld_kick
+        popfd
+        cmp     [ebp+CBL_CMDTIME],ecx   ; (that ended it, or moved it on)
+        jne     ltk_out
         cmp     eax,LD_STUCKMS
         jbe     ltk_out
         TRC     58h             ; X
+        VXDCALL S_GET_TIME              ; (counted from now, for the next
+        mov     [ebp+CBL_CMDTIME],eax   ; time it is said)
         push    ebp
         mov     ebp,[esp+8]             ; the VM's registers, for the
         mov     edi,OFFSET FLAT:ld_title ; shell
@@ -2277,9 +2778,11 @@ lvi_write:
         jc      lvi_wours
         cmp     byte ptr [ebp+CBL_HWVM],0
         jne     lvi_wsend
-        call    ld_restore              ; (what was just written included)
-        cmp     esi,R_CMD
-        je      lvi_wsend
+        call    ld_restore              ; (what was just written included -
+        cmp     esi,R_CMD               ; but not a reset, which ld_restore
+        je      lvi_wsend               ; never gives: the control port's
+        cmp     esi,R_CTRL              ; byte goes out itself, and a reset
+        je      lvi_wsend               ; in it is marked)
         or      esi,esi
         jz      lvi_wsend
         ret
@@ -2796,6 +3299,41 @@ lth_put:
         pop     ecx
         pop     eax
         ret
+
+; ld_tstats - the counts (ld_st, in SC_* order) as a line that starts
+; with '#', if any of them has moved since the last one.  Nothing
+; changed.
+ld_tstats:
+        push    eax
+        push    ecx
+        push    esi
+        xor     eax,eax
+        xor     ecx,ecx
+lts_sum:
+        add     eax,[ld_st+ecx*4]
+        inc     ecx
+        cmp     ecx,SC_COUNT
+        jb      lts_sum
+        cmp     eax,[ld_stsaid]
+        je      lts_out
+        mov     [ld_stsaid],eax
+        TRC     13
+        TRC     10
+        TRC     23h             ; #
+        xor     esi,esi
+lts_one:
+        TRC     20h
+        TRCHEX  [ld_st+esi*4], 8
+        inc     esi
+        cmp     esi,SC_COUNT
+        jb      lts_one
+        TRC     13
+        TRC     10
+lts_out:
+        pop     esi
+        pop     ecx
+        pop     eax
+        ret
 ENDIF
 _LTEXT  ENDS
 
@@ -2822,6 +3360,14 @@ ld_geo          dw      0               ; AH=08h: heads, sectors, the
                 db      0               ; highest cylinder
                 dw      0
 ld_ident        dw      256 dup (0)     ; IDENTIFY DEVICE's answer
+ld_id32         dd      128 dup (0)     ; ...taken a doubleword at a time
+ld_blockon      db      0               ; LRGDiskBlockMode is not off
+ld_io32on       db      0               ; LRGDisk32BitIO is not off, and
+                                        ; the controller is no CMD640
+ld_pciide       db      0               ; the controller is a PCI one
+ld_kblock       db      'LRGDISKBLOCKMODE', 0
+ld_kpoll        db      'LRGDISKPOLL', 0
+ld_kio32        db      'LRGDISK32BITIO', 0
 ld_initerr      db      'LRGDISK could not register a hard disk with '
                 db      'Windows.', 0
 _IDATA  ENDS
@@ -2874,6 +3420,36 @@ ldi_serial:
         inc     al
 ldi_dma:
         mov     [ld_dmaon],al
+
+        ; How PIO goes: SYSTEM.INI's three switches, on unless they
+        ; say off, and what the real-mode start-up found of the
+        ; controller - a PCI one, where a doubleword read of the data
+        ; port is worth trying, and a CMD640, where it never is
+        mov     eax,1
+        xor     esi,esi                 ; [386Enh]
+        mov     edi,OFFSET FLAT:ld_kblock
+        VXDCALL S_GET_PROFILE_BOOLEAN
+        mov     [ld_blockon],al
+        mov     eax,1
+        xor     esi,esi
+        mov     edi,OFFSET FLAT:ld_kpoll
+        VXDCALL S_GET_PROFILE_BOOLEAN
+        mov     [ld_pollon],al
+        mov     eax,1
+        xor     esi,esi
+        mov     edi,OFFSET FLAT:ld_kio32
+        VXDCALL S_GET_PROFILE_BOOLEAN
+        test    dword ptr [ld_ref],RF_NO32 SHL 24
+        jz      ldi_io32
+        xor     al,al
+ldi_io32:
+        mov     [ld_io32on],al
+        xor     al,al
+        test    dword ptr [ld_ref],RF_PCIIDE SHL 16
+        jz      ldi_pci
+        inc     al
+ldi_pci:
+        mov     [ld_pciide],al
 
         ; the cables' fixed parts
         mov     ebp,OFFSET FLAT:ld_cbl0
@@ -2956,7 +3532,7 @@ lsi_bmport:
         loop    lsi_bmport
 lsi_nobmtrap:
 
-        mov     eax,LD_STUCKMS
+        mov     eax,LD_LOSTMS
         mov     esi,OFFSET FLAT:ld_tick
         VXDCALL S_SET_GLOBAL_TIME_OUT
 
@@ -3160,6 +3736,68 @@ lib_mw:
         or      al,20h
         mov     [edi+BP_XFER],al
 lib_reg:
+        ; By PIO, in blocks.  The size is the one the drive is set to
+        ; (word 59, bit 8 saying it is set to one), which is the
+        ; BIOS's and is kept; for a drive set to none, the highest
+        ; power of two it takes (word 47), LD_BLOCKMAX at most - as
+        ; the real-mode start-up worked it out, and said.  Either way
+        ; the drive is then TOLD the size, and it is the drive's
+        ; taking the command that counts: nothing changes in a drive
+        ; that reported right, and one that did not (QEMU's goes on
+        ; saying what it said the first time it was asked) is as
+        ; LRGDISK takes it to be.  A drive set to blocks of one sector
+        ; is left so.
+        mov     byte ptr [edi+BP_MULT],0
+        cmp     byte ptr [ld_blockon],0
+        je      lib_noblock
+        xor     al,al
+        test    byte ptr [ld_ident+59*2+1],1
+        jz      lib_sized
+        mov     al,byte ptr [ld_ident+59*2]
+lib_sized:
+        cmp     al,1
+        je      lib_noblock
+        ja      lib_tell
+        mov     al,byte ptr [ld_ident+47*2]
+        cmp     al,2
+        jb      lib_noblock
+        mov     ah,LD_BLOCKMAX
+lib_fit:
+        cmp     ah,al
+        jbe     lib_fits
+        shr     ah,1
+        jmp     lib_fit
+lib_fits:
+        mov     al,ah
+lib_tell:
+        mov     cl,[edi+BP_UNIT]
+        call    ld_setmult
+        jc      lib_noblock
+        mov     [edi+BP_MULT],al
+lib_noblock:
+        ; and its data a doubleword at a time, where the drive says
+        ; it can (word 48, of ATA-1 and ATA-2) or the controller is a
+        ; PCI one - if the IDENTIFY block comes the same that way
+        mov     byte ptr [edi+BP_IO32],0
+        cmp     byte ptr [ld_io32on],0
+        je      lib_no32
+        test    byte ptr [ld_ident+48*2],1
+        jnz     lib_try32
+        cmp     byte ptr [ld_pciide],0
+        je      lib_no32
+lib_try32:
+        mov     cl,[edi+BP_UNIT]
+        call    ld_prove32
+        jc      lib_no32
+        mov     byte ptr [edi+BP_IO32],1
+lib_no32:
+IFDEF LRG_TRACE
+        TRC     42h             ; B: 32-bit data, and the block's size
+        movzx   eax,word ptr [edi+BP_MULT]
+        TRCHEX  eax, 4
+        TRC     13
+        TRC     10
+ENDIF
         VXDCALL S_BD_REGISTER_DEVICE
 lib_out:
         pop     edx
@@ -3302,6 +3940,7 @@ ld_identify:
         add     edx,R_CMD
         mov     al,ATA_IDENTIFY
         out     dx,al
+        call    ld_delay
         call    ld_pollbsy
         jc      lid_none
         test    al,ST_ERR
@@ -3327,6 +3966,139 @@ lid_out:
         out     dx,al
         popfd
         pop     edi
+        pop     ecx
+        ret
+
+;---------------------------------------------------------------------
+; ld_setmult - CL = a unit of cable EBP, AL = sectors a block: SET
+; MULTIPLE MODE, with the drive's interrupt off (nIEN) and polled.
+; CF if the drive refuses.  EDX changed.
+;---------------------------------------------------------------------
+ld_setmult:
+        push    eax
+        movzx   edx,word ptr [ebp+CBL_CTRL]
+        mov     al,0Ah
+        out     dx,al
+        mov     al,cl
+        shl     al,4
+        or      al,0A0h
+        movzx   edx,word ptr [ebp+CBL_DATA]
+        add     edx,R_DRVHD
+        out     dx,al
+        call    ld_pollbsy
+        jc      lsm_no
+        mov     al,byte ptr [esp]
+        movzx   edx,word ptr [ebp+CBL_DATA]
+        add     edx,R_COUNT
+        out     dx,al
+        add     edx,R_CMD-R_COUNT
+        mov     al,ATA_SETMULT
+        out     dx,al
+        call    ld_delay
+        call    ld_pollbsy
+        jc      lsm_no
+        test    al,ST_ERR
+        jnz     lsm_no
+        clc
+        jmp     lsm_out
+lsm_no:
+        stc
+lsm_out:
+        pushfd
+        movzx   edx,word ptr [ebp+CBL_DATA] ; nothing left pending, and
+        add     edx,R_STATUS            ; the interrupt back on
+        in      al,dx
+        movzx   edx,word ptr [ebp+CBL_CTRL]
+        mov     al,08h
+        out     dx,al
+        popfd
+        pop     eax
+        ret
+
+;---------------------------------------------------------------------
+; ld_prove32 - CL = a unit of cable EBP, ld_ident = its IDENTIFY block
+; as it came a word at a time: the block asked for again and taken a
+; doubleword at a time, into ld_id32.  CF unless the two are the same
+; 512 bytes and the drive had nothing more to give.
+;
+; A host that cannot latch two words reports no error.  It reads half
+; the block - each doubleword a word of the data and a word of
+; whatever is at the next port - and leaves the drive holding the
+; other half out; that is taken and dropped, or the next command
+; would be written to a drive still waiting to be read.  The kernel's
+; ata_prove32 (IO\ATA.INC) is the same measurement and says more.
+; EAX, EDX changed.
+;---------------------------------------------------------------------
+ld_prove32:
+        push    ecx
+        push    esi
+        push    edi
+        movzx   edx,word ptr [ebp+CBL_CTRL]
+        mov     al,0Ah
+        out     dx,al
+        mov     al,cl
+        shl     al,4
+        or      al,0A0h
+        movzx   edx,word ptr [ebp+CBL_DATA]
+        add     edx,R_DRVHD
+        out     dx,al
+        call    ld_pollbsy
+        jc      l32_no
+        movzx   edx,word ptr [ebp+CBL_DATA]
+        add     edx,R_CMD
+        mov     al,ATA_IDENTIFY
+        out     dx,al
+        call    ld_delay
+        call    ld_pollbsy
+        jc      l32_no
+        test    al,ST_ERR
+        jnz     l32_no
+        test    al,ST_DRQ
+        jz      l32_no
+        mov     edi,OFFSET FLAT:ld_id32
+        mov     ecx,128
+        movzx   edx,word ptr [ebp+CBL_DATA]
+        cld
+        rep     insd
+        call    ld_delay
+        xor     esi,esi                 ; ESI = words it still had
+        mov     ecx,256                 ; (no block has more)
+l32_drain:
+        movzx   edx,word ptr [ebp+CBL_CTRL]
+        in      al,dx
+        test    al,ST_BSY
+        jnz     l32_next
+        test    al,ST_DRQ
+        jz      l32_same
+        movzx   edx,word ptr [ebp+CBL_DATA]
+        in      ax,dx
+        inc     esi
+l32_next:
+        dec     ecx
+        jnz     l32_drain
+l32_same:
+        or      esi,esi
+        jnz     l32_no
+        mov     esi,OFFSET FLAT:ld_ident
+        mov     edi,OFFSET FLAT:ld_id32
+        mov     ecx,128
+        repe    cmpsd
+        jne     l32_no
+        clc
+        jmp     l32_out
+l32_no:
+        stc
+l32_out:
+        pushfd
+        movzx   edx,word ptr [ebp+CBL_DATA] ; nothing left pending, and
+        add     edx,R_STATUS            ; the interrupt back on
+        in      al,dx
+        movzx   edx,word ptr [ebp+CBL_CTRL]
+        mov     al,08h
+        out     dx,al
+        popfd
+        pop     edi
+        pop     esi
         pop     ecx
         ret
 
@@ -3464,7 +4236,7 @@ _RCODE  SEGMENT
         ASSUME  cs:_RCODE, ds:_RCODE, es:_RCODE, ss:NOTHING
 rbase   LABEL   BYTE
 
-RV_TEXTMAX      EQU     2600            ; the report's buffer
+RV_TEXTMAX      EQU     3200            ; the report's buffer
 
 rm_entry:
         push    ds
@@ -3509,6 +4281,21 @@ rmi_ver:
         call    rm_profile
         mov     byte ptr ds:[rv_serial-rbase],cl
         or      byte ptr ds:[rv_serial-rbase],ch
+        mov     di,k_block-rbase        ; and the three that say how PIO
+        mov     ecx,1                   ; goes, which the protected-mode
+        call    rm_profile              ; side reads for itself
+        mov     byte ptr ds:[rv_block-rbase],cl
+        or      byte ptr ds:[rv_block-rbase],ch
+        mov     di,k_poll-rbase
+        mov     ecx,1
+        call    rm_profile
+        mov     byte ptr ds:[rv_poll-rbase],cl
+        or      byte ptr ds:[rv_poll-rbase],ch
+        mov     di,k_io32-rbase
+        mov     ecx,1
+        call    rm_profile
+        mov     byte ptr ds:[rv_io32-rbase],cl
+        or      byte ptr ds:[rv_io32-rbase],ch
 
         ; how many hard disks, through DOS's INT 13h as anyone asks
         mov     ah,08h
@@ -3595,6 +4382,11 @@ rmi_chain:
         ; with bugs
         call    rm_findbm
         call    rm_chipbugs
+        cmp     byte ptr ds:[rv_poll-rbase],0
+        jne     rmi_polls
+        mov     si,m_poll_off-rbase
+        call    rm_puts
+rmi_polls:
 
         ; Each BIOS disk: which cable and unit it is, if it is on one
         ; at all, and whether LRGDISK takes it
@@ -3679,6 +4471,14 @@ rmi_noserial:
         je      rmi_nodma
         or      ah,RF_DMAON
 rmi_nodma:
+        cmp     byte ptr ds:[rv_pciide-rbase],0
+        je      rmi_nopci
+        or      eax,RF_PCIIDE SHL 16
+rmi_nopci:
+        cmp     byte ptr ds:[rv_no32-rbase],0
+        je      rmi_can32
+        or      eax,RF_NO32 SHL 24
+rmi_can32:
         mov     dword ptr ds:[rv_answer-rbase],eax
         mov     si,m_on-rbase
         call    rm_puts
@@ -3853,6 +4653,22 @@ rc_unitread:
         mov     al,byte ptr ds:[rc_unit-rbase]
         call    rm_identify
         jc      rc_fail
+
+        ; For PIO: the most sectors it moves as a block (word 47), the
+        ; block's size it is set to now (word 59, if bit 8), and
+        ; whether it says its data may be taken a doubleword at a
+        ; time (word 48, which ATA-3 dropped)
+        mov     al,byte ptr ds:[rv_buf2+47*2-rbase]
+        mov     byte ptr ds:[rc_mmax-rbase],al
+        xor     al,al
+        test    byte ptr ds:[rv_buf2+59*2+1-rbase],1
+        jz      rc_nomult
+        mov     al,byte ptr ds:[rv_buf2+59*2-rbase]
+rc_nomult:
+        mov     byte ptr ds:[rc_mcur-rbase],al
+        mov     al,byte ptr ds:[rv_buf2+48*2-rbase]
+        and     al,1
+        mov     byte ptr ds:[rc_w48-rbase],al
 
         ; What the drive says of itself: LBA (word 49 bit 9), its LBA
         ; sector count (60-61, 28 bits; with LBA48 supported and on,
@@ -4072,6 +4888,25 @@ rc_dmadone:
         mov     si,m_crlf-rbase
         call    rm_puts
 
+        ; and how PIO will go: the block's size, and the data's width
+        call    rm_blockmode
+        mov     si,word ptr ds:[rc_blkmsg-rbase]
+        call    rm_puts
+        cmp     byte ptr ds:[rc_mult-rbase],0
+        je      rc_blksaid
+        movzx   ax,byte ptr ds:[rc_mult-rbase]
+        call    rm_dec
+        mov     si,word ptr ds:[rc_blkmsg2-rbase]
+        call    rm_puts
+rc_blksaid:
+        mov     si,m_crlf-rbase
+        call    rm_puts
+        call    rm_try32
+        mov     si,word ptr ds:[rc_32msg-rbase]
+        call    rm_puts
+        mov     si,m_crlf-rbase
+        call    rm_puts
+
         call    rm_unitrec              ; DI -> its record
         mov     al,RF_OURS
         cmp     byte ptr ds:[rc_mode-rbase],0
@@ -4211,22 +5046,20 @@ rtb_done:
 ; ports) and its programming interface (bits 0 and 2: a cable in native
 ; mode is not at 1F0h or 170h, so its eight are not for that cable).
 ; The controller is told it may master the bus.  rv_bm has each
-; cable's engine port, or 0.
+; cable's engine port, or 0.  rv_pciide says there is a PCI controller
+; at all, engine or no engine and LRGDiskDMA or not: a host that may
+; be tried a doubleword at a time (rm_try32).
 ;---------------------------------------------------------------------
 rm_findbm:
         mov     dword ptr ds:[rv_bm-rbase],0
-        cmp     byte ptr ds:[rv_dma-rbase],0
-        jne     rfb_look
-        mov     si,m_bm_off-rbase
-        jmp     rm_puts
-rfb_look:
+        mov     byte ptr ds:[rv_pciide-rbase],0
         mov     ax,0B101h               ; PCI BIOS present?
         int     1Ah
-        jc      rfb_none
+        jc      rfb_nopci
         or      ah,ah
-        jnz     rfb_none
+        jnz     rfb_nopci
         cmp     edx,20494350h           ; 'PCI '
-        jne     rfb_none
+        jne     rfb_nopci
         mov     byte ptr ds:[rv_lastbus-rbase],cl
         xor     bh,bh                   ; the bus
 rfb_bus:
@@ -4245,11 +5078,20 @@ rfb_next:
         inc     bh
         cmp     bh,byte ptr ds:[rv_lastbus-rbase]
         jbe     rfb_bus
+rfb_nopci:
+        cmp     byte ptr ds:[rv_dma-rbase],0
+        jne     rfb_none
+rfb_off:
+        mov     si,m_bm_off-rbase
+        jmp     rm_puts
 rfb_none:
         mov     si,m_bm_none-rbase
         jmp     rm_puts
 
 rfb_found:
+        mov     byte ptr ds:[rv_pciide-rbase],1
+        cmp     byte ptr ds:[rv_dma-rbase],0
+        je      rfb_off
         mov     ax,0B10Ah               ; BAR4: an I/O range
         mov     di,20h
         int     1Ah
@@ -4322,7 +5164,9 @@ rfb_said:
 ; corrupts data when both its cables transfer at once, and with
 ; read-ahead on - read-ahead off for all four drives (CNTRL 51h bits 6
 ; and 7, ARTTIM23 57h bits 2 and 3) and the cables used one at a time
-; (rv_serial).  Nothing is written to a controller that is neither.
+; (rv_serial), and its data port never read a doubleword at a time
+; (rv_no32: Linux, the same).  Nothing is written to a controller that
+; is neither.
 ;---------------------------------------------------------------------
 rm_chipbugs:
         mov     dx,1042h                ; the RZ1000, or the RZ1001
@@ -4365,7 +5209,8 @@ rcb_cmd:
         mov     di,57h
         int     1Ah
         mov     byte ptr ds:[rv_serial-rbase],1
-        mov     si,m_cmd640-rbase
+        mov     byte ptr ds:[rv_no32-rbase],1 ; (its 32-bit path IS the
+        mov     si,m_cmd640-rbase       ; read-ahead)
         call    rm_puts
 rcb_out:
         cmp     byte ptr ds:[rv_serial-rbase],0
@@ -5007,6 +5852,185 @@ ri_fail:
         ret
 
 ;---------------------------------------------------------------------
+; rm_blockmode - the drive is LRGDISK's: how many sectors a block it
+; will move by PIO (READ and WRITE MULTIPLE).  The size the drive is
+; set to is kept - the BIOS set it, and reads with it - and a drive
+; set to blocks of one sector is left so.  A drive set to none is set
+; here: the highest power of two it takes, LD_BLOCKMAX at most; the
+; drive's taking the command is what says it is set (QEMU's IDENTIFY
+; goes on saying what it said the first time it was asked).  rc_mult =
+; the size, 0 for a sector at a time; rc_blkmsg and rc_blkmsg2 say
+; which, around the number.  The protected-mode side works the size
+; out the same way and gives the drive the command again (ld_initbdd).
+;---------------------------------------------------------------------
+rm_blockmode:
+        mov     byte ptr ds:[rc_mult-rbase],0
+        mov     word ptr ds:[rc_blkmsg-rbase],m_blk_off-rbase
+        cmp     byte ptr ds:[rv_block-rbase],0
+        je      rbm_out
+        mov     word ptr ds:[rc_blkmsg2-rbase],m_blk_was-rbase
+        mov     al,byte ptr ds:[rc_mcur-rbase]
+IFDEF LD_TESTSET                        ; (a rig whose BIOS always sets a
+        xor     al,al                   ; size: taken to have set none, so
+ENDIF                                   ; that the setting below is run)
+        mov     word ptr ds:[rc_blkmsg-rbase],m_blk_one-rbase
+        cmp     al,1
+        je      rbm_out
+        ja      rbm_have
+        mov     word ptr ds:[rc_blkmsg-rbase],m_blk_none-rbase
+        mov     al,byte ptr ds:[rc_mmax-rbase]
+        cmp     al,2
+        jb      rbm_out
+        mov     ah,LD_BLOCKMAX
+rbm_fit:
+        cmp     ah,al
+        jbe     rbm_set
+        shr     ah,1
+        jmp     rbm_fit
+rbm_set:
+        mov     word ptr ds:[rc_blkmsg-rbase],m_blk_refused-rbase
+        mov     al,ah
+        push    ax
+        call    rm_setmult
+        pop     ax                      ; (AL = the size again)
+        jc      rbm_out
+        mov     word ptr ds:[rc_blkmsg2-rbase],m_blk_set-rbase
+rbm_have:
+        mov     byte ptr ds:[rc_mult-rbase],al
+        mov     word ptr ds:[rc_blkmsg-rbase],m_blk_in-rbase
+rbm_out:
+        ret
+
+;---------------------------------------------------------------------
+; rm_setmult - SET MULTIPLE MODE to rc_unit: AL sectors a block.  CF
+; if the drive refuses.
+;---------------------------------------------------------------------
+rm_setmult:
+        push    ax
+        call    rm_quiet
+        mov     al,byte ptr ds:[rc_unit-rbase]
+        shl     al,4
+        or      al,0A0h
+        mov     dx,word ptr ds:[rc_base-rbase]
+        add     dx,R_DRVHD
+        out     dx,al
+        call    rm_delay
+        call    rm_bsy
+        pop     ax
+        jc      rsm_fail
+        mov     dx,word ptr ds:[rc_base-rbase]
+        add     dx,R_COUNT
+        out     dx,al
+        add     dx,R_CMD-R_COUNT
+        mov     al,ATA_SETMULT
+        out     dx,al
+        call    rm_delay
+        call    rm_bsy
+        jc      rsm_fail
+        test    al,ST_ERR
+        jnz     rsm_fail
+        call    rm_loud
+        clc
+        ret
+rsm_fail:
+        call    rm_loud
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; rm_try32 - the drive is LRGDISK's: will its data go a doubleword
+; at a time?  Only where that is offered - by the drive (rc_w48) or by
+; a PCI controller - and never on a CMD640; and then only if the
+; IDENTIFY block comes the same both ways (rm_ident32).  rc_32msg
+; says, and why not.  This is the report's account: the
+; protected-mode side makes the measurement again for itself
+; (ld_prove32), having no way to be told.
+;---------------------------------------------------------------------
+rm_try32:
+        mov     word ptr ds:[rc_32msg-rbase],m_32_off-rbase
+        cmp     byte ptr ds:[rv_io32-rbase],0
+        je      r32_out
+        mov     word ptr ds:[rc_32msg-rbase],m_32_cmd-rbase
+        cmp     byte ptr ds:[rv_no32-rbase],0
+        jne     r32_out
+        mov     word ptr ds:[rc_32msg-rbase],m_32_none-rbase
+        cmp     byte ptr ds:[rc_w48-rbase],0
+        jne     r32_try
+        cmp     byte ptr ds:[rv_pciide-rbase],0
+        je      r32_out
+r32_try:
+        mov     word ptr ds:[rc_32msg-rbase],m_32_bad-rbase
+        mov     al,byte ptr ds:[rc_unit-rbase]
+        call    rm_identify             ; rv_buf2: a word at a time
+        jc      r32_out
+        call    rm_ident32              ; rv_buf1: a doubleword at a time
+        jc      r32_out
+        call    rm_same
+        jne     r32_out
+        mov     word ptr ds:[rc_32msg-rbase],m_32_on-rbase
+r32_out:
+        ret
+
+;---------------------------------------------------------------------
+; rm_ident32 - IDENTIFY DEVICE to rc_unit, into rv_buf1, taken a
+; doubleword at a time.  CF if the drive does not answer, or has data
+; left when 128 of them have been read - a host that cannot latch two
+; words took half - which is read and dropped.
+;---------------------------------------------------------------------
+rm_ident32:
+        call    rm_quiet
+        mov     al,byte ptr ds:[rc_unit-rbase]
+        shl     al,4
+        or      al,0A0h
+        mov     dx,word ptr ds:[rc_base-rbase]
+        add     dx,R_DRVHD
+        out     dx,al
+        call    rm_delay
+        call    rm_bsy
+        jc      r3i_fail
+        mov     dx,word ptr ds:[rc_base-rbase]
+        add     dx,R_CMD
+        mov     al,ATA_IDENTIFY
+        out     dx,al
+        call    rm_delay
+        call    rm_bsy
+        jc      r3i_fail
+        test    al,ST_ERR
+        jnz     r3i_fail
+        test    al,ST_DRQ
+        jz      r3i_fail
+        mov     di,rv_buf1-rbase
+        mov     cx,128
+        mov     dx,word ptr ds:[rc_base-rbase]
+        rep     insd
+        call    rm_delay
+        xor     bx,bx                   ; BX = words it still had
+        mov     cx,256                  ; (no block has more)
+r3i_drain:
+        mov     dx,word ptr ds:[rc_ctl-rbase]
+        in      al,dx
+        test    al,ST_BSY
+        jnz     r3i_next
+        test    al,ST_DRQ
+        jz      r3i_done
+        mov     dx,word ptr ds:[rc_base-rbase]
+        in      ax,dx
+        inc     bx
+r3i_next:
+        loop    r3i_drain
+r3i_done:
+        call    rm_loud
+        or      bx,bx
+        jnz     r3i_no
+        clc
+        ret
+r3i_fail:
+        call    rm_loud
+r3i_no:
+        stc
+        ret
+
+;---------------------------------------------------------------------
 ; rm_present - is there anything at unit AL of the cable?  CF clear
 ; if so.  A status of FFh or 7Fh is nothing there.  Anything else is
 ; given IDENTIFY DEVICE, which an ATA drive answers and an ATAPI drive
@@ -5481,6 +6505,11 @@ rv_detect       db      0               ; InDOS raised, detection said
 rv_report       db      0
 rv_dma          db      0               ; LRGDiskDMA
 rv_serial       db      0               ; one cable at a time
+rv_block        db      0               ; LRGDiskBlockMode
+rv_poll         db      0               ; LRGDiskPoll
+rv_io32         db      0               ; LRGDisk32BitIO
+rv_pciide       db      0               ; the controller is a PCI one
+rv_no32         db      0               ; ...and a CMD640
 rv_pic          db      0
 rv_irqhit       db      0               ; rm_irqtest: it came
 rv_oldvec       dd      0               ; ...and the vector it replaced
@@ -5512,6 +6541,10 @@ rc_lbaok        db      0               ; IDENTIFY says it has LBA
 rc_step         db      0
 rc_how          db      0               ; HOW_*: what the BIOS's reads fit
 rc_xfer         db      0               ; the DMA mode selected, as BP_XFER
+rc_mmax         db      0               ; IDENTIFY: the most sectors a block
+rc_mcur         db      0               ; ...and the size set now, 0 none
+rc_mult         db      0               ; the size PIO will use, 0 none
+rc_w48          db      0               ; IDENTIFY: doubleword I/O offered
 rc_cap          dd      0               ; IDENTIFY: LBA sectors
 rc_dheads       dw      0               ; IDENTIFY: the drive's geometry
 rc_dspt         dw      0
@@ -5521,15 +6554,21 @@ rc_list         dd      4 dup (0)       ; the four test sectors
 rc_howmsg       dw      0               ; the report's lines for the way
 rc_endmsg       dw      0               ; chosen, the end check, and
 rc_dmamsg       dw      0               ; the engine
+rc_blkmsg       dw      0               ; ...and for PIO's blocks, before
+rc_blkmsg2      dw      0               ; and after the size, and the
+rc_32msg        dw      0               ; data's width
 rv_dap          db      16 dup (0)      ; an INT 13h extensions packet
 
 k_32bit         db      '32BITDISKACCESS', 0
 k_report        db      'LRGDISKREPORT', 0
 k_dma           db      'LRGDISKDMA', 0
 k_serial        db      'LRGDISKSERIAL', 0
+k_block         db      'LRGDISKBLOCKMODE', 0
+k_poll          db      'LRGDISKPOLL', 0
+k_io32          db      'LRGDISK32BITIO', 0
 rv_fname        db      'C:\LRGDISK.TXT', 0
 
-m_hello         db      'LRGDISK 1.2', 13, 10, 0
+m_hello         db      'LRGDISK 1.3', 13, 10, 0
 m_oldwin        db      'Windows 3.1 or later is needed.', 13, 10, 0
 m_nodisk        db      'The BIOS reports no hard disk.', 13, 10, 0
 m_no2f          db      'DOS does not answer INT 2Fh AH=13h.', 13, 10, 0
@@ -5586,6 +6625,25 @@ m_dma_none      db      '  PIO: no DMA mode is selected on the drive', 0
 m_dma_noeng     db      '  PIO: no bus-master engine for this cable', 0
 m_dma_udma      db      '  bus-master DMA, Ultra DMA mode ', 0
 m_dma_mw        db      '  bus-master DMA, multiword DMA mode ', 0
+m_poll_off      db      'LRGDiskPoll=off: an interrupt for every PIO block.'
+                db      13, 10, 0
+m_blk_in        db      '  PIO in blocks of ', 0
+m_blk_was       db      ' sectors, as the drive was set', 0
+m_blk_set       db      ' sectors, set by LRGDISK', 0
+m_blk_off       db      '  PIO a sector at a time: LRGDiskBlockMode=off', 0
+m_blk_none      db      '  PIO a sector at a time: the drive has no block '
+                db      'mode', 0
+m_blk_one       db      '  PIO a sector at a time: the drive is set to '
+                db      'blocks of one sector', 0
+m_blk_refused   db      '  PIO a sector at a time: the drive refused a '
+                db      'block size', 0
+m_32_on         db      '  PIO data 32 bits at a time', 0
+m_32_off        db      '  PIO data 16 bits at a time: LRGDisk32BitIO=off', 0
+m_32_cmd        db      '  PIO data 16 bits at a time: a CMD640 controller', 0
+m_32_none       db      '  PIO data 16 bits at a time: no PCI controller, '
+                db      'no 32-bit I/O in the drive', 0
+m_32_bad        db      '  PIO data 16 bits at a time: a 32-bit read came '
+                db      'back different', 0
 m_check         db      '  check ', 0
 m_value         db      ' failed (', 0
 m_close         db      '): ', 0
