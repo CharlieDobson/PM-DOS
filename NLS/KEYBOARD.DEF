@@ -1,0 +1,565 @@
+; KEYBOARD.DEF - the layouts in KEYBOARD.SYS.  UTF-8.
+;
+; TOOLS\MKNLS.PS1 turns this into NLS\KEYBOARD.ASM, which BUILD.CMD
+; assembles into KEYBOARD.SYS.  Run the script after changing a line.
+;
+; A section is one layout: [code id] and a name.  The code is what
+; KEYB takes; the id tells two layouts of one country apart
+; (KEYB IT,,/ID:142), and the first section with a code is the one
+; KEYB loads when no id is given.
+;
+;   cp     the code pages the layout is made for.  A character a page
+;          does not have is a key that types nothing in that page
+;   E D C B    the four rows of typing keys as they are on the board,
+;          left to right, one character a key:
+;            E  the key left of 1, the digits, and the two after 0
+;            D  Q to P, and the two after P
+;            C  A to L, the two after L, and the key beside Enter
+;            B  the key between the left Shift and Z (the 102nd key),
+;               Z to M, and the three after M
+;          with no mark the keys alone, + with Shift, @ with AltGr
+;          (the right Alt, or Ctrl and Alt), @+ with AltGr and Shift.
+;          The sign for "nothing here" is the empty set, U+2205.
+;   dead   the positions that are dead keys: the row, the key counted
+;          as the standards count it (E00 is the key left of 1, D01 is
+;          Q, C01 is A, B00 is the 102nd key, B01 is Z) and the level.
+;          The accent is the character at that position
+;   caps   the keys Caps Lock shifts
+;   dec    what the keypad's decimal key types
+;
+; The sections were drafted with TOOLS\KBDDUMP.PS1 from the layouts
+; Windows has for the same national keyboards.  What Windows added
+; later - the euro sign - is in none of these code pages and so types
+; nothing.
+
+[UK 166] United Kingdom
+cp   437 850
+E   `1234567890-=
+E+  ¬!"£$%^&*()_+
+E@  ¦∅∅∅€∅∅∅∅∅∅∅∅
+D   qwertyuiop[]
+D+  QWERTYUIOP{}
+D@  ∅∅é∅∅∅úíó∅∅∅
+D@+ ∅∅É∅∅∅ÚÍÓ∅∅∅
+C   asdfghjkl;'#
+C+  ASDFGHJKL:@~
+C@  á∅∅∅∅∅∅∅∅∅∅\
+C@+ Á∅∅∅∅∅∅∅∅∅∅|
+B   \zxcvbnm,./
+B+  |ZXCVBNM<>?
+caps D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 C01 C02 C03 C04 C05 C06 C07 C08 C09 B01 B02 B03 B04 B05 B06 B07
+dec  .
+
+[GR 129] Germany
+cp   437 850
+E   ^1234567890ß´
+E+  °!"§$%&/()=?`
+E@  ∅∅²³∅∅∅{[]}\∅
+E@+ ∅∅∅∅∅∅∅∅∅∅∅ẞ∅
+D   qwertzuiopü+
+D+  QWERTZUIOPÜ*
+D@  @∅€∅∅∅∅∅∅∅∅~
+C   asdfghjklöä#
+C+  ASDFGHJKLÖÄ'
+B   <yxcvbnm,.-
+B+  >YXCVBNM;:_
+B@  |∅∅∅∅∅∅µ∅∅∅
+dead E00 E12 E12+
+caps E01 E02 E03 E04 E05 E06 E07 E08 E09 E10 E11 D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 D11 D12 C01 C02 C03 C04 C05 C06 C07 C08 C09 C10 C11 C12 B01 B02 B03 B04 B05 B06 B07 B08 B09
+dec  ,
+
+[FR 189] France
+cp   437 850
+E   ²&é"'(-è_çà)=
+E+  ∅1234567890°+
+E@  ∅∅~#{[|`\^@]}
+D   azertyuiop^$
+D+  AZERTYUIOP¨£
+D@  ∅∅€∅∅∅∅∅∅∅∅¤
+C   qsdfghjklmù*
+C+  QSDFGHJKLM%µ
+B   <wxcvbn,;:!
+B+  >WXCVBN?./§
+dead E02@ E07@ D11 D11+
+caps E01 E02 E03 E04 E05 E06 E07 E08 E09 E10 E11 E12 D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 D11 D12 C01 C02 C03 C04 C05 C06 C07 C08 C09 C10 C11 C12 B01 B02 B03 B04 B05 B06 B07 B08 B09 B10
+dec  .
+
+[IT 141] Italy
+cp   437 850
+E   \1234567890'ì
+E+  |!"£$%&/()=?^
+E@  ∅∅∅∅∅€∅∅∅∅∅∅∅
+D   qwertyuiopè+
+D+  QWERTYUIOPé*
+D@  ∅∅€∅∅∅∅∅∅∅[]
+D@+ ∅∅∅∅∅∅∅∅∅∅{}
+C   asdfghjklòàù
+C+  ASDFGHJKLç°§
+C@  ∅∅∅∅∅∅∅∅∅@#∅
+B   <zxcvbnm,.-
+B+  >ZXCVBNM;:_
+caps D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 C01 C02 C03 C04 C05 C06 C07 C08 C09 B01 B02 B03 B04 B05 B06 B07
+dec  .
+
+[IT 142] Italy, the second layout
+cp   437 850
+E   \1234567890'ì
+E+  |!"£$%&/()=?^
+E@  ∅∅∅#∅€∅{[]}∅∅
+D   qwertyuiopè+
+D+  QWERTYUIOPé*
+D@  @∅€∅∅∅∅∅∅∅∅~
+C   asdfghjklòàù
+C+  ASDFGHJKLç°§
+C@  ∅∅∅∅∅∅∅∅∅∅∅`
+B   <zxcvbnm,.-
+B+  >ZXCVBNM;:_
+caps D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 C01 C02 C03 C04 C05 C06 C07 C08 C09 B01 B02 B03 B04 B05 B06 B07
+dec  ,
+
+[SP 172] Spain
+cp   437 850
+E   º1234567890'¡
+E+  ª!"·$%&/()=?¿
+E@  \|@#~€¬∅∅∅∅∅∅
+D   qwertyuiop`+
+D+  QWERTYUIOP^*
+D@  ∅∅€∅∅∅∅∅∅∅[]
+C   asdfghjklñ´ç
+C+  ASDFGHJKLÑ¨Ç
+C@  ∅∅∅∅∅∅∅∅∅∅{}
+B   <zxcvbnm,.-
+B+  >ZXCVBNM;:_
+dead E04@ D11 D11+ C11 C11+
+caps D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 C01 C02 C03 C04 C05 C06 C07 C08 C09 C10 C12 B01 B02 B03 B04 B05 B06 B07
+dec  .
+
+[PO 163] Portugal
+cp   860 850 437
+E   \1234567890'«
+E+  |!"#$%&/()=?»
+E@  ∅∅@£§€∅{[]}∅∅
+D   qwertyuiop+´
+D+  QWERTYUIOP*`
+D@  ∅∅€∅∅∅∅∅∅∅¨]
+C   asdfghjklçº~
+C+  ASDFGHJKLÇª^
+B   <zxcvbnm,.-
+B+  >ZXCVBNM;:_
+dead D12 D12+ D11@ C12 C12+
+caps D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 C01 C02 C03 C04 C05 C06 C07 C08 C09 C10 B01 B02 B03 B04 B05 B06 B07
+dec  .
+
+[DK 159] Denmark
+cp   865 850 437
+E   ½1234567890+´
+E+  §!"#¤%&/()=?`
+E@  ∅∅@£$€∅{[]}∅|
+D   qwertyuiopå¨
+D+  QWERTYUIOPÅ^
+D@  ∅∅€∅∅∅∅∅∅∅∅~
+C   asdfghjklæø'
+C+  ASDFGHJKLÆØ*
+B   <zxcvbnm,.-
+B+  >ZXCVBNM;:_
+B@  \∅∅∅∅∅∅µ∅∅∅
+dead E12 E12+ D12 D12+ D12@
+caps D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 D11 C01 C02 C03 C04 C05 C06 C07 C08 C09 C10 C11 B01 B02 B03 B04 B05 B06 B07
+dec  ,
+
+[NO 155] Norway
+cp   865 850 437
+E   |1234567890+\
+E+  §!"#¤%&/()=?`
+E@  ∅∅@£$€∅{[]}∅´
+D   qwertyuiopå¨
+D+  QWERTYUIOPÅ^
+D@  ∅∅€∅∅∅∅∅∅∅∅~
+C   asdfghjkløæ'
+C+  ASDFGHJKLØÆ*
+B   <zxcvbnm,.-
+B+  >ZXCVBNM;:_
+B@  ∅∅∅∅∅∅∅µ∅∅∅
+dead E12+ E12@ D12 D12+ D12@
+caps D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 D11 C01 C02 C03 C04 C05 C06 C07 C08 C09 C10 C11 B01 B02 B03 B04 B05 B06 B07
+dec  ,
+
+[SV 153] Sweden
+cp   437 850
+E   §1234567890+´
+E+  ½!"#¤%&/()=?`
+E@  ∅∅@£$€∅{[]}\∅
+D   qwertyuiopå¨
+D+  QWERTYUIOPÅ^
+D@  ∅∅€∅∅∅∅∅∅∅∅~
+C   asdfghjklöä'
+C+  ASDFGHJKLÖÄ*
+B   <zxcvbnm,.-
+B+  >ZXCVBNM;:_
+B@  |∅∅∅∅∅∅µ∅∅∅
+dead E12 E12+ D12 D12+ D12@
+caps D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 D11 C01 C02 C03 C04 C05 C06 C07 C08 C09 C10 C11 B01 B02 B03 B04 B05 B06 B07
+dec  ,
+
+[SU 153] Finland
+cp   437 850
+E   §1234567890+´
+E+  ½!"#¤%&/()=?`
+E@  ∅∅@£$€∅{[]}\∅
+D   qwertyuiopå¨
+D+  QWERTYUIOPÅ^
+D@  ∅∅€∅∅∅∅∅∅∅∅~
+C   asdfghjklöä'
+C+  ASDFGHJKLÖÄ*
+B   <zxcvbnm,.-
+B+  >ZXCVBNM;:_
+B@  |∅∅∅∅∅∅µ∅∅∅
+dead E12 E12+ D12 D12+ D12@
+caps D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 D11 C01 C02 C03 C04 C05 C06 C07 C08 C09 C10 C11 B01 B02 B03 B04 B05 B06 B07
+dec  ,
+
+[NL 143] Netherlands
+cp   437 850
+E   @1234567890/°
+E+  §!"#$%&_()'?~
+E@  ¬¹²³¼½¾£{}∅\¸
+D   qwertyuiop¨*
+D+  QWERTYUIOP^|
+D@  ∅∅€¶∅∅∅∅∅∅∅∅
+C   asdfghjkl+´<
+C+  ASDFGHJKL±`>
+C@  ∅ß∅∅∅∅∅∅∅∅∅∅
+B   ]zxcvbnm,.-
+B+  [ZXCVBNM;:=
+B@  ¦«»¢∅∅∅µ∅·∅
+dead E12+ E12@ D11 D11+ C11 C11+
+caps D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 C01 C02 C03 C04 C05 C06 C07 C08 C09 B01 B02 B03 B04 B05 B06 B07
+dec  ,
+
+[BE 120] Belgium
+cp   437 850
+E   ²&é"'(§è!çà)-
+E+  ³1234567890°_
+E@  ∅|@#{[^∅∅{}∅∅
+D   azertyuiop^$
+D+  AZERTYUIOP¨*
+D@  ∅∅€∅∅∅∅∅∅∅[]
+C   qsdfghjklmùµ
+C+  QSDFGHJKLM%£
+C@  ∅∅∅∅∅∅∅∅∅∅´`
+C@+ ∅∅∅∅∅∅∅∅∅∅´`
+B   <wxcvbn,;:=
+B+  >WXCVBN?./+
+B@  \∅∅∅∅∅∅∅∅∅~
+B@+ ∅∅∅∅∅∅∅∅∅∅~
+dead D11 D11+ C11@ C12@ C11@+ C12@+ B10@ B10@+
+caps E01 E02 E03 E04 E05 E06 E07 E08 E09 E10 E11 E12 D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 D11 D12 C01 C02 C03 C04 C05 C06 C07 C08 C09 C10 C11 C12 B01 B02 B03 B04 B05 B06 B07 B08 B09 B10
+dec  .
+
+[SF 150] Switzerland, French
+cp   437 850
+E   §1234567890'^
+E+  °+"*ç%&/()=?`
+E@  ∅¦@#°§¬|¢∅∅´~
+D   qwertzuiopè¨
+D+  QWERTZUIOPü!
+D@  ∅∅€∅∅∅∅∅∅∅[]
+C   asdfghjkléà$
+C+  ASDFGHJKLöä£
+C@  ∅∅∅∅∅∅∅∅∅∅{}
+B   <yxcvbnm,.-
+B+  >YXCVBNM;:_
+B@  \∅∅∅∅∅∅∅∅∅∅
+dead E12 E12+ E11@ E12@ D12
+caps D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 C01 C02 C03 C04 C05 C06 C07 C08 C09 B01 B02 B03 B04 B05 B06 B07
+dec  .
+
+[SG 0] Switzerland, German
+cp   437 850
+E   §1234567890'^
+E+  °+"*ç%&/()=?`
+E@  ∅¦@#°§¬|¢∅∅´~
+D   qwertzuiopü¨
+D+  QWERTZUIOPè!
+D@  ∅∅€∅∅∅∅∅∅∅[]
+C   asdfghjklöä$
+C+  ASDFGHJKLéà£
+C@  ∅∅∅∅∅∅∅∅∅∅{}
+B   <yxcvbnm,.-
+B+  >YXCVBNM;:_
+B@  \∅∅∅∅∅∅∅∅∅∅
+dead E12 E12+ E11@ E12@ D12
+caps D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 C01 C02 C03 C04 C05 C06 C07 C08 C09 B01 B02 B03 B04 B05 B06 B07
+dec  .
+
+[LA 171] Latin America
+cp   437 850
+E   |1234567890'¿
+E+  °!"#$%&/()=?¡
+E@  ¬∅∅∅∅∅∅∅∅∅∅\∅
+D   qwertyuiop´+
+D+  QWERTYUIOP¨*
+D@  @∅∅∅∅∅∅∅∅∅∅~
+C   asdfghjklñ{}
+C+  ASDFGHJKLÑ[]
+C@  ∅∅∅∅∅∅∅∅∅∅^`
+B   <zxcvbnm,.-
+B+  >ZXCVBNM;:_
+dead D11 D11+ C11@ C12@
+caps D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 C01 C02 C03 C04 C05 C06 C07 C08 C09 C10 B01 B02 B03 B04 B05 B06 B07
+dec  .
+
+[BR 275] Brazil
+cp   850 437
+E   '1234567890-=
+E+  "!@#$%¨&*()_+
+E@  ∅¹²³£¢¬∅∅∅∅∅§
+D   qwertyuiop´[
+D+  QWERTYUIOP`{
+D@  /?°∅∅∅∅∅∅∅∅ª
+C   asdfghjklç~]
+C+  ASDFGHJKLÇ^}
+C@  ∅∅∅∅∅∅∅∅∅∅∅º
+B   \zxcvbnm,.;
+B+  |ZXCVBNM<>:
+B@  ∅∅∅₢∅∅∅∅∅∅∅
+dead E06+ D11 D11+ C11 C11+
+caps D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 C01 C02 C03 C04 C05 C06 C07 C08 C09 C10 B01 B02 B03 B04 B05 B06 B07
+dec  ,
+
+[CF 58] Canada, French
+cp   863 850 437
+E   °1234567890-=
+E+  °!"#$%?&*()_+
+E@  ¬¹@³¼½¾{[]}|¸
+E@+ ∅¡²£¤∅∅∅∅±∅¿∅
+D   qwertyuiop^ç
+D+  QWERTYUIOP^Ç
+D@  ∅∅€¶∅¥∅∅øþ°~
+D@+ ∅∅∅®∅∅∅∅ØÞ∅¨
+C   asdfghjkl;èà
+C+  ASDFGHJKL:ÈÀ
+C@  æßðª∅∅∅∅∅´∅`
+C@+ Æ§Ð∅∅∅∅∅∅´∅`
+B   ùzxcvbnm,.é
+B+  ÙZXCVBNM'.É
+B@  \«»¢∅∅∅µ<>/
+B@+ |∅∅©∅∅∅º∅∅∅
+dead E12@ D11 D11+ D12@ D12@+ C10@ C12@ C10@+ C12@+
+caps D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 D12 C01 C02 C03 C04 C05 C06 C07 C08 C09 C11 C12 B00 B01 B02 B03 B04 B05 B06 B07 B10
+dec  .
+
+[IS 161] Iceland
+cp   861 850 437
+E   °1234567890ö-
+E+  ¨!"#$%&/()=Ö_
+E@  °∅∅∅∅€∅{[]}\∅
+D   qwertyuiopð'
+D+  QWERTYUIOPÐ?
+D@  @∅€∅∅∅∅∅∅∅∅~
+C   asdfghjklæ´+
+C+  ASDFGHJKLÆ'*
+C@  ∅∅∅∅∅∅∅∅∅∅^`
+B   <zxcvbnm,.þ
+B+  >ZXCVBNM;:Þ
+B@  |∅∅∅∅∅∅µ∅∅∅
+dead E00 E00+ C11 C11@ C12@
+caps E11 D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 D11 C01 C02 C03 C04 C05 C06 C07 C08 C09 C10 B01 B02 B03 B04 B05 B06 B07 B10
+dec  ,
+
+[PL 214] Poland
+cp   852 850
+E   ˛1234567890+'
+E+  ·!"#¤%&/()=?*
+E@  ∅~ˇ^˘°˛`·´˝¨¸
+D   qwertzuiopżś
+D+  QWERTZUIOPńć
+D@  \¦∅∅∅∅€∅∅∅÷×
+C   asdfghjklłąó
+C+  ASDFGHJKLŁęź
+C@  ∅đĐ∅∅∅∅∅∅$ß∅
+B   <yxcvbnm,.-
+B+  >YXCVBNM;:_
+B@  ∅∅∅∅@{}§<>∅
+dead E00 E00+ E02@ E03@ E04@ E05@ E06@ E08@ E09@ E10@ E11@ E12@
+caps D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 C01 C02 C03 C04 C05 C06 C07 C08 C09 C10 B01 B02 B03 B04 B05 B06 B07
+dec  ,
+
+[PL 457] Poland, the programmer's layout
+cp   852 850
+E   `1234567890-=
+E+  ~!@#$%^&*()_+
+D   qwertyuiop[]
+D+  QWERTYUIOP{}
+D@  ∅∅ę∅∅∅€∅ó∅∅∅
+D@+ ∅∅Ę∅∅∅∅∅Ó∅∅∅
+C   asdfghjkl;'\
+C+  ASDFGHJKL:"|
+C@  ąś∅∅∅∅∅∅ł∅∅∅
+C@+ ĄŚ∅∅∅∅∅∅Ł∅∅∅
+B   \zxcvbnm,./
+B+  |ZXCVBNM<>?
+B@  ∅żźć∅∅ń∅∅∅∅
+B@+ ∅ŻŹĆ∅∅Ń∅∅∅∅
+dead E00+
+caps D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 C01 C02 C03 C04 C05 C06 C07 C08 C09 B01 B02 B03 B04 B05 B06 B07
+dec  ,
+
+[CZ 243] Czech Republic
+cp   852 850
+E   ;+ěščřžýáíé=´
+E+  °1234567890%ˇ
+E@  ∅~ˇ^˘°˛`˙´˝¨¸
+D   qwertzuiopú)
+D+  QWERTZUIOP/(
+D@  \|€∅∅∅∅∅∅∅÷×
+C   asdfghjklů§¨
+C+  ASDFGHJKL"!'
+C@  ∅đĐ[]∅∅łŁ$ß¤
+B   \yxcvbnm,.-
+B+  |YXCVBNM?:_
+B@  ∅∅#&@{}∅<>*
+dead E12 E00+ E12+ E02@ E03@ E04@ E05@ E06@ E07@ E08@ E09@ E10@ E11@ E12@ C12
+caps D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 C01 C02 C03 C04 C05 C06 C07 C08 C09 B01 B02 B03 B04 B05 B06 B07
+dec  ,
+
+[SL 245] Slovakia
+cp   852 850
+E   ;+ľščťžýáíé=´
+E+  °1234567890%ˇ
+E@  ∅~ˇ^˘°˛`˙´˝¨¸
+D   qwertzuiopúä
+D+  QWERTZUIOP/(
+D@  \|€∅∅∅∅∅∅'÷×
+C   asdfghjklô§ň
+C+  ASDFGHJKL"!)
+C@  ∅đĐ[]∅∅łŁ$ß¤
+B   &yxcvbnm,.-
+B+  *YXCVBNM?:_
+B@  <>#&@{}∅<>*
+dead E12 E00+ E12+ E02@ E03@ E04@ E05@ E06@ E08@ E09@ E10@ E11@ E12@
+caps D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 C01 C02 C03 C04 C05 C06 C07 C08 C09 B01 B02 B03 B04 B05 B06 B07
+dec  ,
+
+[HU 208] Hungary
+cp   852 850
+E   0123456789öüó
+E+  §'"+!%/=()ÖÜÓ
+E@  ∅~ˇ^˘°˛`˙´˝¨¸
+D   qwertzuiopőú
+D+  QWERTZUIOPŐÚ
+D@  \|Ä∅∅∅€Í∅∅÷×
+C   asdfghjkléáű
+C+  ASDFGHJKLÉÁŰ
+C@  äđĐ[]∅íłŁ$ß¤
+B   íyxcvbnm,.-
+B+  ÍYXCVBNM?:_
+B@  <>#&@{}<;>*
+dead E02@ E03@ E04@ E05@ E06@ E08@ E09@ E10@ E11@ E12@
+caps E10 E11 E12 D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 D11 D12 C01 C02 C03 C04 C05 C06 C07 C08 C09 C10 C11 C12 B00 B01 B02 B03 B04 B05 B06 B07
+dec  ,
+
+[YU 234] Yugoslavia
+cp   852 850
+E   ‚1234567890'+
+E+  ~!"#$%&/()=?*
+E@  ∅~ˇ^˘°˛`˙´˝¨¸
+D   qwertzuiopšđ
+D+  QWERTZUIOPŠĐ
+D@  \|€∅∅∅∅∅∅∅÷×
+C   asdfghjklčćž
+C+  ASDFGHJKLČĆŽ
+C@  ∅∅∅[]∅∅łŁ∅ß¤
+B   <yxcvbnm,.-
+B+  >YXCVBNM;:_
+B@  ∅∅∅∅@{}§<>∅
+dead E00 E02@ E03@ E04@ E05@ E06@ E08@ E09@ E10@ E11@ E12@
+caps D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 D11 D12 C01 C02 C03 C04 C05 C06 C07 C08 C09 C10 C11 C12 B01 B02 B03 B04 B05 B06 B07
+dec  ,
+
+[TR 179] Turkey
+cp   857 850
+E   "1234567890*-
+E+  é!'^+%&/()=?_
+E@  <>£#$½∅{[]}\|
+D   qwertyuıopğü
+D+  QWERTYUIOPĞÜ
+D@  @∅€∅₺∅∅i∅∅¨~
+D@+ ∅∅∅∅∅∅∅İ∅∅∅∅
+C   asdfghjklşi,
+C+  ASDFGHJKLŞİ;
+C@  æß∅∅∅∅∅∅∅´∅`
+C@+ Æ∅∅∅∅∅∅∅∅∅∅∅
+B   <zxcvbnmöç.
+B+  >ZXCVBNMÖÇ:
+B@  |∅∅∅∅∅∅∅∅∅∅
+dead E03+ D11@ D12@ C10@ C12@
+caps D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 D11 D12 C01 C02 C03 C04 C05 C06 C07 C08 C09 C10 C11 B01 B02 B03 B04 B05 B06 B07 B08 B09
+dec  ,
+
+[TR 440] Turkey, the F layout
+cp   857 850
+E   +1234567890/-
+E+  *!"^$%&'()=?_
+E@  ¬¹²#¼½¾{[]}\|
+E@+ ∅¡∅³¤∅∅∅∅∅∅¿∅
+D   fgğıodrnhpqw
+D+  FGĞIODRNHPQW
+D@  @∅∅¶∅¥∅∅ø£¨~
+D@+ ∅∅∅®∅∅∅∅Ø∅∅∅
+C   uieaütkmlyşx
+C+  UİEAÜTKMLYŞX
+C@  æß€∅∅₺∅∅∅´∅`
+C@+ Æ§∅ª∅∅∅∅∅∅∅∅
+B   <jövcçzsb.,
+B+  >JÖVCÇZSB:;
+B@  |«»¢∅∅∅µ×÷­
+B@+ ¦<>©∅∅∅º∅∅∅
+dead E03+ D11@ D12@ C10@ C12@
+caps D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 D11 D12 C01 C02 C03 C04 C05 C06 C07 C08 C09 C10 C11 C12 B01 B02 B03 B04 B05 B06 B07 B08
+dec  ,
+
+[RU 441] Russia
+cp   866 855
+E   ё1234567890-=
+E+  Ё!"№;%:?*()_+
+E@  ∅∅∅∅∅∅∅∅₽∅∅∅∅
+D   йцукенгшщзхъ
+D+  ЙЦУКЕНГШЩЗХЪ
+C   фывапролджэ\
+C+  ФЫВАПРОЛДЖЭ/
+B   \ячсмитьбю.
+B+  /ЯЧСМИТЬБЮ,
+caps E00 D01 D02 D03 D04 D05 D06 D07 D08 D09 D10 D11 D12 C01 C02 C03 C04 C05 C06 C07 C08 C09 C10 C11 B01 B02 B03 B04 B05 B06 B07 B08 B09
+dec  ,
+
+[GK 319] Greece
+cp   737 869
+E   `1234567890-=
+E+  ~!@#$%^&*()_+
+E@  ∅∅²³£§¶∅¤¦°±½
+D   ;ςερτυθιοπ[]
+D+  :΅ΕΡΤΥΘΙΟΠ{}
+D@  ∅∅€®∅¥∅∅∅∅«»
+C   ασδφγηξκλ΄'\
+C+  ΑΣΔΦΓΗΞΚΛ¨"|
+C@  ∅∅∅∅∅∅∅∅∅΅∅¬
+B   <ζχψωβνμ,./
+B+  >ΖΧΨΩΒΝΜ<>?
+B@  ∅∅∅©∅∅∅∅∅∅∅
+dead D02+ C10 C10+ C10@
+caps D03 D04 D05 D06 D07 D08 D09 D10 C01 C02 C03 C04 C05 C06 C07 C08 C09 B01 B02 B03 B04 B05 B06 B07
+dec  ,
+
+[DV 0] United States, Dvorak
+cp   437 850
+E   `1234567890[]
+E+  ~!@#$%^&*(){}
+D   ',.pyfgcrl/=
+D+  "<>PYFGCRL?+
+C   aoeuidhtns-\
+C+  AOEUIDHTNS_|
+B   \;qjkxbmwvz
+B+  |:QJKXBMWVZ
+caps D04 D05 D06 D07 D08 D09 D10 C01 C02 C03 C04 C05 C06 C07 C08 C09 C10 B02 B03 B04 B05 B06 B07 B08 B09 B10
+dec  .

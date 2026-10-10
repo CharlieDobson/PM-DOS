@@ -71,10 +71,69 @@ INSTALLHIGH=file [options]
 SHELL=file [options]
     Picks the command interpreter.  The default is CMD.EXE /P.  Leave
     off /P and AUTOEXEC.BAT is skipped.
+    The directory CMD.EXE is in is also where PM-DOS looks for its
+    other files: COMMAND.COM, COUNTRY.SYS, KEYBOARD.SYS, RMCD.SYS and
+    CHKDSK.EXE.  So a system kept in C:\DOS needs one line:
+
+        SHELL=C:\DOS\CMD.EXE /P
+
+    A file that isn't there is looked for in the root of the boot
+    drive.  PMIO.SYS and PMDOS.SYS have to be in that root, and SYS
+    puts RMDOS.SYS there with them.  CONFIG.SYS and AUTOEXEC.BAT are
+    read from the root too.
 
 BREAK=ON|OFF
     Sets the Ctrl+Break flag that programs read with INT 21h AX=3300h.
     PM-DOS doesn't check the flag itself yet.
+
+COUNTRY=code[,[page][,file]]
+    Sets the country: how dates, times, numbers and money are written,
+    which letters are capitals of which, and how SORT orders them.
+    The code is the country's international dialling code: 044 is the
+    United Kingdom, 049 Germany, 033 France.  Without this line the
+    country is the United States (001).
+    The tables come from COUNTRY.SYS, looked for where CMD.EXE is and
+    then in the root of the boot drive, or from the file you name.
+    The page is a code page.  Leave the page out and you get the
+    first one the file lists for that country, which is 437 wherever
+    437 has the country's letters.
+
+        COUNTRY=049
+        COUNTRY=049,850
+        COUNTRY=049,,C:\DOS\COUNTRY.SYS
+
+    DIR, DATE, TIME and the prompt follow the country's date order and
+    separators.  PM-DOS reads MS-DOS's COUNTRY.SYS too.  There is no
+    NLSFUNC to load: the kernel goes back to the file by itself when
+    a program asks about another country, or CHCP changes the page.
+
+    COUNTRY= doesn't change the keyboard.  That's KEYB, in
+    AUTOEXEC.BAT (see AUTOEXEC.TXT).  And neither changes the screen:
+    the characters shown are the ones in your video card, which is
+    code page 437 on most.
+
+    Countries in the COUNTRY.SYS shipped, with their code pages:
+
+        001 United States   437 850    045 Denmark         865 850
+        002 Canada, French  863 850    046 Sweden          437 850
+        003 Latin America   437 850    047 Norway          865 850
+        007 Russia      866 437 850    048 Poland          852 850
+        027 South Africa    437 850    049 Germany         437 850
+        030 Greece      737 869 850    052 Mexico          437 850
+        031 Netherlands     437 850    054 Argentina       437 850
+        032 Belgium         437 850    055 Brazil          437 850
+        033 France          437 850    056 Chile           437 850
+        034 Spain           437 850    057 Colombia        437 850
+        036 Hungary         852 850    058 Venezuela       437 850
+        038 Yugoslavia      852 850    061 Australia       437 850
+        039 Italy           437 850    064 New Zealand     437 850
+        040 Romania         852 850    090 Turkey          857 850
+        041 Switzerland     437 850    351 Portugal        860 850
+        042 Czech Republic  852 850    353 Ireland         437 850
+        043 Austria         437 850    354 Iceland         861 850
+        044 United Kingdom  437 850    358 Finland         437 850
+        359 Bulgaria        855 850    385 Croatia         852 850
+        386 Slovenia        852 850    421 Slovakia        852 850
 
 SWITCHES=/F /N
     /F skips the two-second wait for Shift or F5 at startup.  A key
@@ -84,7 +143,7 @@ SWITCHES=/F /N
     /K, /W and /E are accepted but do nothing.
 
 Accepted and ignored:
-    BUFFERS  FCBS  STACKS  COUNTRY  DRIVPARM  NUMLOCK  MULTITRACK
+    BUFFERS  FCBS  STACKS  DRIVPARM  NUMLOCK  MULTITRACK
 
 Boot menus ([menu], MENUITEM, MENUDEFAULT, MENUCOLOR, SUBMENU, INCLUDE,
 COMMENT) are accepted, but there is no menu.  Every line in every
@@ -157,10 +216,11 @@ CDROM=x
     this line they come after the hard disks.  A letter that already
     belongs to a hard disk is ignored.
     Under Windows the first CD-ROM on an IDE cable keeps its letter
-    if RMCD.SYS is in the root of the boot disk with RMDOS.SYS.  Both
-    are hidden system files, and SYS copies them.  The CD-ROM's names
-    are 8.3, as MSCDEX shows them.  Other CD-ROM drives aren't there
-    under Windows.
+    if RMCD.SYS is where CMD.EXE is, or in the root of the boot
+    drive.  RMCD.SYS is an ordinary file: SYS doesn't copy it, COPY
+    does, and without it only the CD-ROM under Windows is missing.
+    The CD-ROM's names are 8.3, as MSCDEX shows them.  Other CD-ROM
+    drives aren't there under Windows.
 
 SCSI=ON|OFF
     SCSI CD-ROM drives.  ON by default.  PM-DOS has its own drivers

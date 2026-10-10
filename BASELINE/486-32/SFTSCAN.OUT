@@ -15,7 +15,7 @@ names found: 000D
   at 00024A9D  gap 00001588
   at 00024DEC  gap 0000034F
   at 000276E5  gap 000028F9
-  at 0002D84E  gap 00006169
+  at 0002D886  gap 000061A1
 
 a scanner would call an entry 0000003B bytes, table at 00000802
 BUT SFT_LEN IS 30h - it would measure the wrong thing.

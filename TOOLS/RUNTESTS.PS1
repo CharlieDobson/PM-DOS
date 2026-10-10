@@ -12,6 +12,10 @@ param(
     [string]$Exe = '',                           # DOSBox-X, if DBXRUN.PS1 would pick wrong
     [switch]$Update,                             # keep what this run said as the baseline
     [switch]$All,                                # every row in $rows, one after another
+    [switch]$Nls,                                # -Run is split on '|', not ',': NLSTESTS.PS1's
+                                                 # rows, where KEYB GR,850 has a comma of its own
+    [string]$SysDir = '',                        # the system's files in C:\<this> and not in the
+                                                 # root, as an installed system has them
     [switch]$Sound,                              # a Sound Blaster in the machine (DMATEST);
                                                  # the baselines are without one
     [string]$SbType = 'sb16'                     # ...and which: sb16vibra for ISAPNP
@@ -68,6 +72,14 @@ param(
 # a Plug and Play one, which ISAPNP lists.  The baselines are recorded
 # without one, so give such a run a -Name of its own.
 #
+# -SysDir DOS builds the disk an installed system has: PMIO.SYS,
+# PMDOS.SYS and RMDOS.SYS in the root with CONFIG.SYS and AUTOEXEC.BAT,
+# and everything else - both interpreters, every program, COUNTRY.SYS,
+# KEYBOARD.SYS, RMCD.SYS - in C:\DOS, with SHELL=C:\DOS\CMD.EXE /P as
+# the LAST line of CONFIG.SYS, below any COUNTRY= line that has to find
+# its file by it.  Tests that list the root answer differently there,
+# so give such a run a -Name of its own.
+#
 # -Update writes what this run said as the new baseline, after masking.
 # Run it twice on an unchanged build before trusting a row: anything
 # that differs between two runs of the same kernel belongs in $masks.
@@ -117,8 +129,8 @@ $default = @(
     'CFGTEST', 'CTRYDMP', 'CTRYTEST', 'CURTEST', 'DEVCRIT', 'DEVTEST', 'DMATEST', 'DPMIFP32', 'DPMIFPU',
     'DPMII32', 'DPMIIRQ', 'DPMITEST', 'DPMIV32', 'DPMIVEC', 'DRIVES', 'EMSTEST', 'EXECLEAK', 'EXECTST',
     'F32TEST', 'FCBTEST', 'FNDTEST', 'FPU32', 'FPUTEST', 'HELLO', 'HELLOX', 'HNDTEST', 'HOOKTEST',
-    'HWPROBE', 'I13TEST', 'I24TEST', 'IDLETEST /T', 'IRQTEST', 'ISAPNP', 'LFNAPI', 'LOLTEST', 'LPTTEST',
-    'MCBTEST', 'MEMPROBE', 'MS32TEST', 'MSTEST', 'NICIRQ', 'PCITEST', 'PEKID', 'PMD /S', 'PROBE13', 'R3TEST',
+    'HWPROBE', 'I13TEST', 'I24TEST', 'IDLETEST /T', 'IRQTEST', 'ISAPNP', 'KBLTEST', 'LFNAPI', 'LOLTEST', 'LPTTEST',
+    'MCBTEST', 'MEMPROBE', 'MS32TEST', 'MSTEST', 'NICIRQ', 'NLSTEST', 'PCITEST', 'PEKID', 'PMD /S', 'PROBE13', 'R3TEST',
     'RMFIND', 'RMFSTEST', 'RMIVT', 'RMSPEED', 'RMTEST', 'SFTSCAN',
     # these four park the kernel too, as SFTSCAN does, so they follow it:
     # every test before them still runs on a machine that has never
@@ -170,7 +182,8 @@ $masks = @(
 # "powershell -File" hands a list over as ONE string, so -Run is split
 # on commas here; -Cfg on semicolons, as IDE86.PS1 does, because a
 # CONFIG.SYS line can have a comma in it (DOS=HIGH,UMB).
-$Run = @( $Run | ForEach-Object { $_ -split ',' } | Where-Object { $_ -ne '' } )
+$runsep = if ( $Nls ) { '\|' } else { ',' }
+$Run = @( $Run | ForEach-Object { $_ -split $runsep } | Where-Object { $_ -ne '' } )
 $Cfg = @( $Cfg | ForEach-Object { $_ -split ';' } | Where-Object { $_ -ne '' } )
 if ( $Run.Count -eq 0 ) { $Run = $default }
 # A test named twice answers into a second file: MEM.OUT, then MEM2.OUT.
@@ -207,8 +220,14 @@ function Get-Masked( [string]$text ) {
 
 function New-Disk {
     $crlf = "`r`n"
-    [IO.File]::WriteAllText( "$stage\CONFIG.SYS", ( ( $Cfg -join $crlf ) + $crlf ), [Text.Encoding]::ASCII )
-    $auto = @( '@ECHO OFF', 'PATH C:\TESTS;C:\', 'MD C:\WORK', 'CD \WORK' )
+    $config = $Cfg
+    $path = 'C:\'
+    if ( $SysDir -ne '' ) {
+        $config = @( $Cfg ) + "SHELL=C:\$SysDir\CMD.EXE /P"
+        $path = "C:\$SysDir"
+    }
+    [IO.File]::WriteAllText( "$stage\CONFIG.SYS", ( ( $config -join $crlf ) + $crlf ), [Text.Encoding]::ASCII )
+    $auto = @( '@ECHO OFF', "PATH C:\TESTS;$path", 'MD C:\WORK', 'CD \WORK' )
     for ( $i = 0; $i -lt $Run.Count; $i++ ) {
         $auto += "ECHO START $( $tests[ $i ] ) > PRN", "$( $Run[ $i ].Trim() ) > C:\$( $tests[ $i ] ).OUT"
     }
@@ -218,11 +237,22 @@ function New-Disk {
     # The system files first and in MKHD.CMD's order; then every other
     # program, which is what a test that runs one expects to find.
     $first = @( 'PMIO.SYS', 'PMDOS.SYS', 'CMD.EXE', 'COMMAND.COM' )
-    $files = @( $first | ForEach-Object { "BIN\$_" } )
-    $files += Get-ChildItem "$root\BIN" -File |
+    $programs = @( Get-ChildItem "$root\BIN" -File |
         Where-Object { $_.Extension -match '^\.(EXE|COM)$' -and $first -notcontains $_.Name -and $_.Name -ne 'SYS16.COM' } |
-        Sort-Object Name | ForEach-Object { "BIN\$( $_.Name )" }
-    $files += 'BIN\RMDOS.SYS', "$stage\CONFIG.SYS", "$stage\AUTOEXEC.BAT", '-dir', 'TESTS'
+        Sort-Object Name | ForEach-Object { "BIN\$( $_.Name )" } )
+    if ( $SysDir -eq '' ) {
+        $files = @( $first | ForEach-Object { "BIN\$_" } ) + $programs
+        # ...and the two files of tables, which COUNTRY= and KEYB look
+        # for beside the interpreter.
+        $files += 'BIN\RMDOS.SYS', 'BIN\COUNTRY.SYS', 'BIN\KEYBOARD.SYS', "$stage\CONFIG.SYS", "$stage\AUTOEXEC.BAT"
+    } else {
+        # The root has what the boot code reads, the half of the kernel
+        # SYS puts beside it, and the two files DOS looks for there.
+        $files = @( 'BIN\PMIO.SYS', 'BIN\PMDOS.SYS', 'BIN\RMDOS.SYS', "$stage\CONFIG.SYS", "$stage\AUTOEXEC.BAT", '-dir', $SysDir,
+                    'BIN\CMD.EXE', 'BIN\COMMAND.COM' ) + $programs
+        $files += 'BIN\COUNTRY.SYS', 'BIN\KEYBOARD.SYS', 'BIN\RMCD.SYS'
+    }
+    $files += '-dir', 'TESTS'
     $files += Get-ChildItem "$root\BIN\TESTS" -File | Sort-Object Name | ForEach-Object { "BIN\TESTS\$( $_.Name )" }
 
     Push-Location $root

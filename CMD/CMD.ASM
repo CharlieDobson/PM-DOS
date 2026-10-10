@@ -16,7 +16,7 @@
 ; cannot be written against the DOS API, the API is what gets fixed.
 ;
 ; Internal commands:
-;   BREAK CALL CD CHDIR CLS COPY CTTY DATE DEL DIR DOSKEY ECHO ERASE
+;   BREAK CALL CD CHCP CHDIR CLS COPY CTTY DATE DEL DIR DOSKEY ECHO ERASE
 ;   EXIT FOR GOTO IF LH LOADHIGH MD MKDIR PATH PAUSE PROMPT RD REM REN
 ;   RENAME RMDIR SET SHIFT TIME TYPE VER VERIFY VOL  plus  A: / B:  drive
 ;   changes.  DOSKEY is internal here and its editor always on - see
@@ -120,17 +120,37 @@ cmd_entry:
         mov     ah,1Ah                  ; our DTA
         int     21h
 
-        ; The country's thousands separator, for DIR's numbers: from
-        ; 38h, which answers for the one country the kernel knows;
-        ; the comma if it will not say.
+        ; THE COUNTRY'S WAY OF WRITING A NUMBER, A DATE AND A TIME, from
+        ; 38h: the thousands separator for DIR's numbers, the order a
+        ; date's three numbers come in and what goes between them, and
+        ; what goes between hours and minutes.  COUNTRY= in CONFIG.SYS
+        ; decides; without one the kernel answers for the United
+        ; States, and what is here already is that.  Asked on every
+        ; reload of the interpreter, so CHCP and a program that sets
+        ; the country are seen at the next prompt.
         mov     edx,OFFSET ctry_buf
         mov     ax,3800h
         int     21h
         jc      ce_nosep
         mov     al,[ctry_buf+7]
         or      al,al
-        jz      ce_nosep
+        jz      ce_nodec
         mov     [dec_sep],al
+ce_nodec:
+        mov     al,[ctry_buf+0Bh]
+        or      al,al
+        jz      ce_nodate
+        mov     [date_sep],al
+ce_nodate:
+        mov     al,[ctry_buf+0Dh]
+        or      al,al
+        jz      ce_notime
+        mov     [time_sep],al
+ce_notime:
+        mov     al,[ctry_buf]           ; 0 month first, 1 day first, 2
+        cmp     al,2                    ; year first
+        ja      ce_nosep
+        mov     [date_ord],al
 ce_nosep:
 
         ; ^C is OURS: hook INT 23h so a break lands back at the
@@ -1911,24 +1931,12 @@ dir_stamp:
         movzx   eax,word ptr [find_data+16h]    ; date
         mov     ebx,eax
         shr     ebx,5
-        and     ebx,0Fh
-        push    eax
-        mov     eax,ebx
-        call    pdec2
-        mov     dl,'-'
-        mov     ah,02h
-        int     21h
-        pop     eax
-        push    eax
-        and     eax,1Fh
-        call    pdec2
-        mov     dl,'-'
-        mov     ah,02h
-        int     21h
-        pop     eax
+        and     ebx,0Fh                 ; EBX = the month
+        mov     ecx,eax
+        and     ecx,1Fh                 ; ECX = the day
         shr     eax,9
-        add     eax,1980
-        call    pdec4
+        add     eax,1980                ; EAX = the year
+        call    pdate
         mov     edx,OFFSET msg_2sp
         call    print
 
@@ -1938,7 +1946,7 @@ dir_stamp:
         push    eax
         mov     eax,ebx
         call    pdec2
-        mov     dl,':'
+        mov     dl,[time_sep]
         mov     ah,02h
         int     21h
         pop     eax
@@ -5065,7 +5073,8 @@ vl_none:
         ret
 
 ;=====================================================================
-; DATE [mm-dd-yyyy]
+; DATE [date] - in the country's order: mm-dd-yyyy, dd-mm-yyyy or
+;               yyyy-mm-dd (date_ord, from 38h at start-up)
 ;=====================================================================
 cmd_date:
         mov     esi,[arg_ptr]
@@ -5074,31 +5083,12 @@ cmd_date:
 
         mov     edx,OFFSET msg_curdate
         call    print
-        mov     ah,2Ah
-        int     21h
-        push    ecx
-        push    edx
-        movzx   eax,dh
-        call    pdec2
-        mov     dl,'-'
-        mov     ah,02h
-        int     21h
-        pop     eax                     ; saved EDX
-        push    eax
-        movzx   eax,al                  ; day
-        call    pdec2
-        mov     dl,'-'
-        mov     ah,02h
-        int     21h
-        pop     edx
-        pop     ecx
-        movzx   eax,cx
-        call    pdec4
+        call    pdate_now
         call    put_crlf
         ret
 
 date_set:
-        ; parse mm-dd-yyyy (also accepts / as the separator)
+        ; three numbers, with -, /, . or : between them
         call    parse_num               ; -> EAX, ESI past digits
         jc      date_bad
         mov     [tmp_a],eax
@@ -5109,6 +5099,24 @@ date_set:
         call    skip_sep
         call    parse_num
         jc      date_bad
+
+        ; which of them is which: EAX = the year, EBX = the month,
+        ; EDX = the day
+        mov     ebx,[tmp_b]             ; the month is in the middle, but
+        cmp     byte ptr [date_ord],0   ; for a month-first country
+        jne     date_notus
+        mov     edx,ebx                 ; mm-dd-yyyy
+        mov     ebx,[tmp_a]
+        jmp     short date_have
+date_notus:
+        cmp     byte ptr [date_ord],1
+        jne     date_ymd
+        mov     edx,[tmp_a]             ; dd-mm-yyyy
+        jmp     short date_have
+date_ymd:
+        mov     edx,eax                 ; yyyy-mm-dd
+        mov     eax,[tmp_a]
+date_have:
         cmp     eax,100                 ; two-digit years live in 19xx/20xx
         jae     date_year
         cmp     eax,80
@@ -5118,11 +5126,13 @@ date_set:
 date_20xx:
         add     eax,2000
 date_year:
+        cmp     ebx,255                 ; a number that does not fit its
+        ja      date_bad                ; byte is not a month or a day
+        cmp     edx,255
+        ja      date_bad
         mov     ecx,eax                 ; CX = year
-        mov     eax,[tmp_a]
-        mov     dh,al                   ; month
-        mov     eax,[tmp_b]
-        mov     dl,al                   ; day
+        mov     dh,bl                   ; month
+                                        ; DL = day already
         mov     ah,2Bh
         int     21h
         or      al,al
@@ -5130,6 +5140,44 @@ date_year:
         ret
 date_bad:
         mov     edx,OFFSET msg_baddate
+        call    print
+        ret
+
+;=====================================================================
+; CHCP [nnn] - the active code page: 6601h says which, 6602h changes
+;              it to another the country has tables for in COUNTRY.SYS.
+;              The 16-bit COMMAND.COM has had the command since 0.60;
+;              there was one code page then and nothing to change to.
+;=====================================================================
+cmd_chcp:
+        mov     esi,[arg_ptr]
+        cmp     byte ptr [esi],0
+        jne     chcp_set
+        mov     ax,6601h
+        int     21h
+        jc      chcp_bad
+        push    ebx
+        mov     edx,OFFSET msg_codepage
+        call    print
+        pop     ebx
+        movzx   eax,bx
+        call    pdec1
+        call    put_crlf
+        ret
+chcp_set:
+        call    parse_num
+        jc      chcp_bad
+        cmp     byte ptr [esi],0        ; a number and nothing after it
+        jne     chcp_bad
+        cmp     eax,0FFFFh
+        ja      chcp_bad
+        mov     ebx,eax
+        mov     ax,6602h
+        int     21h
+        jc      chcp_bad
+        ret
+chcp_bad:
+        mov     edx,OFFSET msg_badcp
         call    print
         ret
 
@@ -5149,7 +5197,7 @@ cmd_time:
         push    edx
         movzx   eax,ch
         call    pdec2
-        mov     dl,':'
+        mov     dl,[time_sep]
         mov     ah,02h
         int     21h
         pop     edx
@@ -5157,7 +5205,7 @@ cmd_time:
         push    edx
         movzx   eax,cl
         call    pdec2
-        mov     dl,':'
+        mov     dl,[time_sep]
         mov     ah,02h
         int     21h
         pop     edx
@@ -5841,26 +5889,7 @@ pp_nl:
         jmp     pp_lp
 pp_date:
         push    esi
-        mov     ah,2Ah
-        int     21h
-        push    ecx
-        push    edx
-        movzx   eax,dh
-        call    pdec2
-        mov     dl,'-'
-        mov     ah,02h
-        int     21h
-        pop     eax
-        push    eax
-        movzx   eax,al
-        call    pdec2
-        mov     dl,'-'
-        mov     ah,02h
-        int     21h
-        pop     edx
-        pop     ecx
-        movzx   eax,cx
-        call    pdec4
+        call    pdate_now
         pop     esi
         jmp     pp_lp
 pp_time:
@@ -5869,7 +5898,7 @@ pp_time:
         int     21h
         movzx   eax,ch
         call    pdec2
-        mov     dl,':'
+        mov     dl,[time_sep]
         mov     ah,02h
         int     21h
         movzx   eax,cl
@@ -6350,6 +6379,77 @@ ss_eat:
         ret
 
 ;---------------------------------------------------------------------
+; pdate - EAX = a year, EBX = a month, ECX = a day: the date as the
+;         country writes one - its order, its separator - and with all
+;         four digits of the year in any of them.  mm-dd-yyyy where
+;         CONFIG.SYS names no country.  Everything preserved.
+; pdate_now - today's.
+;---------------------------------------------------------------------
+pdate_now:
+        push    eax
+        push    ebx
+        push    ecx
+        push    edx
+        mov     ah,2Ah
+        int     21h                     ; CX = year, DH = month, DL = day
+        movzx   eax,cx
+        movzx   ebx,dh
+        movzx   ecx,dl
+        call    pdate
+        pop     edx
+        pop     ecx
+        pop     ebx
+        pop     eax
+        ret
+
+pdate:
+        pushad
+        mov     esi,eax                 ; ESI = the year
+        cmp     byte ptr [date_ord],1
+        je      pdt_dmy
+        ja      pdt_ymd
+        mov     eax,ebx                 ; month, day, year
+        call    pdec2
+        call    pdt_sep
+        mov     eax,ecx
+        call    pdec2
+        call    pdt_sep
+        mov     eax,esi
+        call    pdec4
+        jmp     short pdt_out
+pdt_dmy:
+        mov     eax,ecx                 ; day, month, year
+        call    pdec2
+        call    pdt_sep
+        mov     eax,ebx
+        call    pdec2
+        call    pdt_sep
+        mov     eax,esi
+        call    pdec4
+        jmp     short pdt_out
+pdt_ymd:
+        mov     eax,esi                 ; year, month, day
+        call    pdec4
+        call    pdt_sep
+        mov     eax,ebx
+        call    pdec2
+        call    pdt_sep
+        mov     eax,ecx
+        call    pdec2
+pdt_out:
+        popad
+        ret
+pdt_sep:
+        push    eax
+        push    edx
+        mov     dl,[date_sep]
+        mov     ah,02h
+        int     21h
+        pop     edx
+        pop     eax
+        ret
+
+;---------------------------------------------------------------------
 ; pdec10 / pdec4 / pdec2 - decimal output of EAX
 ;---------------------------------------------------------------------
 pdec1:
@@ -6543,6 +6643,7 @@ cmd_table:
         dd      OFFSET cn_ren,    OFFSET cmd_ren,      OFFSET hlp_ren,    0
         dd      OFFSET cn_rename, OFFSET cmd_ren,      OFFSET hlp_ren,    0
         dd      OFFSET cn_cls,    OFFSET cmd_cls,      OFFSET hlp_cls,    0
+        dd      OFFSET cn_chcp,   OFFSET cmd_chcp,     OFFSET hlp_chcp,   0
         dd      OFFSET cn_ver,    OFFSET cmd_ver,      OFFSET hlp_ver,    0
         dd      OFFSET cn_vol,    OFFSET cmd_vol,      OFFSET hlp_vol,    0
         dd      OFFSET cn_date,   OFFSET cmd_date,     OFFSET hlp_date,   0
@@ -6581,6 +6682,7 @@ cn_erase    db  'ERASE',0
 cn_ren      db  'REN',0
 cn_rename   db  'RENAME',0
 cn_cls      db  'CLS',0
+cn_chcp     db  'CHCP',0
 cn_ver      db  'VER',0
 cn_vol      db  'VOL',0
 cn_date     db  'DATE',0
@@ -6699,6 +6801,13 @@ hlp_ren     db  'Renames a file or a directory.',13,10,13,10
 hlp_cls     db  'Clears the screen.',13,10,13,10
             db  'CLS',13,10,0
 
+hlp_chcp    db  'Displays or sets the active code page number.',13,10,13,10
+            db  'CHCP [nnn]',13,10,13,10
+            db  '  nnn   A code page the country has in COUNTRY.SYS.',13,10,13,10
+            db  'Type CHCP without a parameter to display the active code page number.',13,10
+            db  'Run KEYB again after changing the code page, if a keyboard layout',13,10
+            db  'is loaded.',13,10,0
+
 hlp_ver     db  'Displays the PM-DOS version.',13,10,13,10
             db  'VER',13,10,13,10,0
 
@@ -6707,7 +6816,9 @@ hlp_vol     db  'Displays the disk volume label and serial number, if they exist
 
 hlp_date    db  'Displays or sets the date.',13,10,13,10
             db  'DATE [mm-dd-yyyy]',13,10,13,10
-            db  '  mm-dd-yyyy    Sets the date you specify.',13,10,13,10
+            db  '  mm-dd-yyyy    Sets the date you specify.  With COUNTRY= in CONFIG.SYS,',13,10
+            db  '                the numbers are in that country''s order: dd-mm-yyyy',13,10
+            db  '                or yyyy-mm-dd.',13,10,13,10
             db  'Type DATE without parameters to display the current date setting and',13,10
             db  'a prompt for a new one.  Press ENTER to keep the same date.',13,10,13,10,0
 
@@ -6912,6 +7023,8 @@ msg_rwmem   db  'Insufficient memory',13,10,'$'
 msg_sure    db  'All files in the directory will be deleted!',13,10
             db  'Are you sure (Y/N)? ','$'
 msg_curdate db  'Current date is ','$'
+msg_codepage db 'Active code page: ','$'
+msg_badcp   db  'Invalid code page',13,10,'$'
 msg_baddate db  'Invalid date',13,10,'$'
 msg_curtime db  'Current time is ','$'
 msg_badtime db  'Invalid time',13,10,'$'
@@ -7085,6 +7198,10 @@ ext_lit     db  0                       ; 1: the verb has its own extension
 path_buf    db  PATHDIR_MAX + QVERB_MAX + 8 dup(0)      ; dir + verb + ext
 tail_buf    db  130 dup(0)
 dec_buf     db  20 dup(0)               ; 13 characters, padding, '$'
+date_sep    db  '-'                     ; what goes between a date's numbers,
+time_sep    db  ':'                     ; and between hours and minutes
+date_ord    db  0                       ; 0 mm-dd-yyyy, 1 dd-mm-yyyy, 2
+                                        ; yyyy-mm-dd
 dec_sep     db  ','                     ; the thousands separator
 ctry_buf    db  34 dup(0)               ; 38h's answer
 dta         db  43 dup(0)

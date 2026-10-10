@@ -36,6 +36,8 @@ rem     BOOT2.BIN    hard-disk stage 2 - the FAT-walking loader
 rem     PMIO.SYS     real-mode stub (4K) + protected-mode body
 rem     PMDOS.SYS    the 32-bit DOS kernel
 rem     SYS16.COM    16-bit SYS - builds a PM-DOS disk from real DOS
+rem     COUNTRY.SYS  the countries COUNTRY= in CONFIG.SYS can name
+rem     KEYBOARD.SYS the keyboard layouts KEYB loads
 rem
 rem and, in IMAGES\:
 rem     PMDOS.IMG    the boot disk: a bootable 1.44M floppy with PM-DOS
@@ -357,7 +359,8 @@ rem each one has to be named here too: a directory missing from this
 rem list is one whose failed assembly links yesterday's object.  (A
 rem failed COMPILE does not need it - wcc386, unlike wasm, returns an
 rem error - but CHKDSK's and LABEL's startup is assembled like the rest.)
-for %%D in (ACROREAD ATTRIB CACHE CDEX CHKDSK CHOICE DISKCOMP DISKCOPY DRIVES EDIT FC FDISK FIND FORMAT ISAPNP LABEL LFNAPI LRGDISK MEM MORE MOUNT MOVE PMD SHUTDOWN SORT SYS UNDELETE XCOPY) do if exist CMD\%%D\*.obj del /q CMD\%%D\*.obj
+for %%D in (ACROREAD ATTRIB CACHE CDEX CHKDSK CHOICE DISKCOMP DISKCOPY DRIVES EDIT FC FDISK FIND FORMAT ISAPNP KEYB LABEL LFNAPI LRGDISK MEM MORE MOUNT MOVE PMD SHUTDOWN SORT SYS UNDELETE XCOPY) do if exist CMD\%%D\*.obj del /q CMD\%%D\*.obj
+if exist NLS\*.obj del /q NLS\*.obj
 
 rem FSIZE asserts the sizes the checks below used to test with FOR's
 rem "~z" size modifier.  That modifier is a cmd.exe command EXTENSION:
@@ -558,6 +561,25 @@ cd CMD\SHUTDOWN
 wasm -q -i=..\..\INC shutdown.asm               || goto :fail
 wlink form raw bin option offset=0x2000 name ..\..\BIN\SHUTDOWN.EXE file shutdown.obj || goto :fail
 cd ..\..
+rem KEYB hands the kernel a keyboard layout out of KEYBOARD.SYS, over
+rem 21h/F1h AL=22h, and ends: the keyboard is the kernel's, so there is
+rem nothing to stay resident.
+cd CMD\KEYB
+wasm -q -i=..\..\INC keyb.asm                   || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\BIN\KEYB.COM file keyb.obj || goto :fail
+cd ..\..
+rem COUNTRY.SYS and KEYBOARD.SYS are data and nothing else.  The two
+rem .ASM files are written by TOOLS\MKNLS.PS1 from NLS\COUNTRY.DEF and
+rem NLS\KEYBOARD.DEF, which is where a country or a layout is changed;
+rem the script needs a Windows with PowerShell, so what it wrote is kept
+rem in the tree and this needs the assembler only.  COUNTRY.SYS is in
+rem MS-DOS's format; KEYBOARD.SYS is PM-DOS's own.
+cd NLS
+wasm -q country.asm                             || goto :fail
+wlink form raw bin option offset=0x0 name ..\BIN\COUNTRY.SYS file country.obj || goto :fail
+wasm -q keyboard.asm                            || goto :fail
+wlink form raw bin option offset=0x0 name ..\BIN\KEYBOARD.SYS file keyboard.obj || goto :fail
+cd ..
 rem LRGDISK.386 is a driver for Windows 3.1 and Windows for Workgroups,
 rem not a PM-DOS program: 32-bit disk access for the IDE disks WDCTRL
 rem refuses, the ones a BIOS translates (over 504MB), on both cables: by
@@ -818,7 +840,7 @@ rem version of its own names that .EXE to D32BIND in place of the stub.
 for %%F in (CMD.EXE CHOICE.COM MORE.COM SORT.COM SYS.COM FORMAT.COM MEM.EXE FDISK.EXE MOUNT.EXE ^
   CACHE.EXE UNDELETE.EXE CDEX.EXE SHUTDOWN.EXE FIND.EXE DISKCOPY.COM DISKCOMP.COM MOVE.EXE ^
   ATTRIB.EXE CHKDSK.EXE LABEL.EXE XCOPY.EXE EDIT.EXE FC.EXE ISAPNP.EXE PMD.EXE DOSSHELL.EXE ^
-  ACROREAD.EXE) do TOOLS\D32BIND.EXE BIN\%%F TOOLS\D32STUB.EXE || goto :fail
+  ACROREAD.EXE KEYB.COM) do TOOLS\D32BIND.EXE BIN\%%F TOOLS\D32STUB.EXE || goto :fail
 
 echo === HELLO.COM (a real 16-bit .COM, for the VDM) ===
 rem An ordinary real-mode DOS program.  It is not part of the kernel;
@@ -1188,6 +1210,24 @@ rem freeing, and measures again.
 cd TOOLS
 wasm -q -i=..\INC alloctst.asm                   || goto :fail
 wlink form raw bin name ..\BIN\TESTS\ALLOCTST.COM file alloctst.obj order clname CODE offset=0x100 || goto :fail
+cd ..
+
+echo === NLSTEST.COM (the country, as 38h, 65h and 66h tell it) ===
+rem What COUNTRY= changes, printed and not judged: RUNTESTS keeps an
+rem answer for the United States, and TOOLS\NLSTESTS.PS1 one for each
+rem COUNTRY= line it boots with.
+cd TOOLS
+wasm -q nlstest.asm                             || goto :fail
+wlink form raw bin name ..\BIN\TESTS\NLSTEST.COM file nlstest.obj order clname CODE offset=0x100 || goto :fail
+cd ..
+
+echo === KBLTEST.COM (keys pressed by scan code, through every layout) ===
+rem Presses keys with 21h/F1h AL=23h and prints what INT 16h reads,
+rem with INT 09h alone and with a handler of its own passing each key
+rem on.  The answers are the US keyboard's until KEYB has run.
+cd TOOLS
+wasm -q kbltest.asm                             || goto :fail
+wlink form raw bin name ..\BIN\TESTS\KBLTEST.COM file kbltest.obj order clname CODE offset=0x100 || goto :fail
 cd ..
 
 echo === CTRYDMP.COM (the country block as bytes, for diffing) ===
@@ -1720,6 +1760,7 @@ TOOLS\MKDISK.EXE IMAGES\PMDOS.IMG BIN\BOOT.BIN -nolfn BIN\PMIO.SYS BIN\PMDOS.SYS
     BIN\CHOICE.COM BIN\MORE.COM BIN\SORT.COM BIN\SYS.COM BIN\FORMAT.COM BIN\MEM.EXE ^
     BIN\FDISK.EXE BIN\MOUNT.EXE BIN\CACHE.EXE BIN\UNDELETE.EXE BIN\CDEX.EXE BIN\MOVE.EXE BIN\ATTRIB.EXE BIN\CHKDSK.EXE BIN\LABEL.EXE BIN\XCOPY.EXE BIN\EDIT.EXE ^
     BIN\FC.EXE BIN\FIND.EXE BIN\DISKCOPY.COM BIN\DISKCOMP.COM BIN\ISAPNP.EXE BIN\SHUTDOWN.EXE BIN\PMD.EXE BIN\DOSSHELL.EXE BIN\ACROREAD.EXE ^
+    BIN\KEYB.COM BIN\COUNTRY.SYS BIN\KEYBOARD.SYS ^
     BIN\RMDOS.SYS BIN\RMCD.SYS BIN\LRGDISK.386 README.TXT DISK\CONFIG.SYS DISK\CONFIG.TXT DISK\AUTOEXEC.BAT DISK\AUTOEXEC.TXT || goto :fail
 
 rem === TESTS.IMG - the test disk ===
@@ -1745,7 +1786,7 @@ TOOLS\MKDISK.EXE IMAGES\TESTS.IMG BIN\BOOT.BIN -label "PM-DOS TEST" -dir ^
     BIN\TESTS\UDTEST.COM BIN\TESTS\ALLOCTST.COM BIN\TESTS\MCBTEST.COM BIN\TESTS\FCBTEST.COM ^
     BIN\TESTS\BUFTEST.COM BIN\TESTS\UMBTEST.COM BIN\TESTS\EMSTEST.COM BIN\TESTS\EMS4TEST.COM BIN\TESTS\DEVCRIT.EXE ^
     BIN\TESTS\I24TEST.COM BIN\TESTS\VFYTEST.EXE BIN\TESTS\IDETEST.EXE BIN\TESTS\HWPROBE.EXE BIN\TESTS\F32TEST.COM BIN\TESTS\FNDTEST.EXE ^
-    BIN\TESTS\CFGTEST.COM BIN\TESTS\CACHETST.COM BIN\TESTS\VFTEST.COM BIN\TESTS\SHARETST.COM BIN\TESTS\TESTDEV.SYS BIN\TESTS\TESTBLK.SYS BIN\TESTS\IOCDEV.SYS BIN\TESTS\DRVTEST.COM BIN\TESTS\CDSTEST.COM BIN\TESTS\NETTEST.COM BIN\TESTS\SEEKWR.COM BIN\TESTS\BLKTEST.COM BIN\TESTS\CTRYDMP.COM ^
+    BIN\TESTS\CFGTEST.COM BIN\TESTS\CACHETST.COM BIN\TESTS\VFTEST.COM BIN\TESTS\SHARETST.COM BIN\TESTS\TESTDEV.SYS BIN\TESTS\TESTBLK.SYS BIN\TESTS\IOCDEV.SYS BIN\TESTS\DRVTEST.COM BIN\TESTS\CDSTEST.COM BIN\TESTS\NETTEST.COM BIN\TESTS\SEEKWR.COM BIN\TESTS\BLKTEST.COM BIN\TESTS\CTRYDMP.COM BIN\TESTS\NLSTEST.COM BIN\TESTS\KBLTEST.COM ^
     BIN\TESTS\CTRYTEST.COM BIN\TESTS\CRASH.EXE BIN\TESTS\R3TEST.EXE BIN\TESTS\MS32TEST.EXE BIN\TESTS\VPICTEST.COM BIN\TESTS\TIMERTST.COM BIN\TESTS\RMIVT.COM BIN\TESTS\IRQXTEST.COM BIN\TESTS\IRQXWAIT.EXE BIN\TESTS\DMATEST.COM BIN\TESTS\DPMIIRQ.COM BIN\TESTS\DPMII32.COM BIN\TESTS\DPMIVEC.COM BIN\TESTS\DPMIV32.COM BIN\TESTS\VDSTEST.COM BIN\TESTS\NICIRQ.COM BIN\TESTS\PCITEST.EXE BIN\TESTS\IRQTEST.EXE BIN\TESTS\FPUTEST.COM BIN\TESTS\FPU32.EXE BIN\TESTS\DPMIFPU.COM BIN\TESTS\DPMIFP32.COM ^
     BIN\TESTS\LPTTEST.COM BIN\TESTS\RMSPEED.COM BIN\TESTS\HNDTEST.COM BIN\TESTS\RMFSTEST.COM BIN\TESTS\WINDRV.EXE BIN\TESTS\VBETEST.EXE ^
     BIN\TESTS\EXECLEAK.EXE BIN\TESTS\SLOTTEST.EXE BIN\TESTS\BIGMEM.EXE BIN\TESTS\LRGTEST.COM BIN\TESTS\ATAPIRD.COM BIN\TESTS\SRSTTEST.COM ^

@@ -96,6 +96,7 @@ svc_table:
         dd      vpc_boxirq      ; IOS_BOXIRQ
         dd      rm_freeze       ; IOS_RMFREEZE
         dd      acpi_svc        ; IOS_ACPI
+        dd      kb_laysvc       ; IOS_KBLAYOUT
 
 ;=====================================================================
 ; pm_entry - first instruction executed in 32-bit protected mode.

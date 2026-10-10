@@ -39,8 +39,8 @@
  * Floppy images take their boot sector from boot.bin.  On floppies,
  * and on bootable hard disks, the first two files IN THE ROOT are
  * expected to be PMIO.SYS and PMDOS.SYS and get System+Hidden+ReadOnly;
- * RMDOS.SYS and RMCD.SYS get the same wherever in the root's list they
- * come, by name.  A disk whose every file goes into a -dir has no
+ * RMDOS.SYS gets the same wherever in the root's list it comes, by
+ * name.  A disk whose every file goes into a -dir has no
  * system files, which is what the test disk wants.  Disks use
  * 63 sectors/track, 16 heads (the matching DOSBox imgmount line is
  * printed on completion).
@@ -138,14 +138,15 @@ static void name83(const char *path, unsigned char *out)
     }
 }
 
-/* RMDOS.SYS and RMCD.SYS are the kernel's as much as the first two
-   are - the DOS it leaves in charge under Windows, and the CD-ROM's
-   letter there - and the kernel opens them by name in the root of the
-   boot drive.  They are not the first two on any list, so they are
-   known by name: de is a directory entry name83 has filled in. */
+/* RMDOS.SYS is the kernel's as much as the first two are - the DOS it
+   leaves in charge under Windows - and the kernel opens it by name in
+   the root of the boot drive.  It is not one of the first two on any
+   list, so it is known by name: de is a directory entry name83 has
+   filled in.  RMCD.SYS was marked here too until it became an ordinary
+   file, which SYS no longer carries. */
 static int rm_sysfile( const unsigned char *de )
 {
-    return memcmp( de, "RMDOS   SYS", 11 ) == 0 || memcmp( de, "RMCD    SYS", 11 ) == 0;
+    return memcmp( de, "RMDOS   SYS", 11 ) == 0;
 }
 
 static void stamp(unsigned char *de)
@@ -377,8 +378,8 @@ static int build_floppy(int argc, char **argv)
                     : sec(ROOTLBA) + dirent * 32;
         name83(argv[arg], de);
         /* on a boot disk PMIO.SYS and PMDOS.SYS, the first two files
-           in the root, are system files, and so are RMDOS.SYS and
-           RMCD.SYS; a disk whose files all went into a -dir has none */
+           in the root, are system files, and so is RMDOS.SYS; a disk
+           whose files all went into a -dir has none */
         de[11] = (unsigned char)( !subdir && ( rootfiles < 2 || rm_sysfile( de ) ) ? 0x07 : 0x20 );
         if (!subdir) rootfiles++;
         stamp(de);
@@ -827,8 +828,7 @@ static int build_hd(int fat32, long mb, int argc, char **argv, int firstfile,
         de = subbase ? subbase + subent * 32 : rootbase + dirent * 32;
         name83(argv[arg], de);
         /* on a bootable image PMIO.SYS and PMDOS.SYS - the first two
-           files in the root - are system files, and so are RMDOS.SYS
-           and RMCD.SYS */
+           files in the root - are system files, and so is RMDOS.SYS */
         de[11] = (unsigned char)( vbrfile && !subbase && ( sysfiles < 2 || rm_sysfile( de ) ) ? 0x07 : 0x20 );
         if (!subbase) sysfiles++;
         stamp(de);

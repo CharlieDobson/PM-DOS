@@ -305,27 +305,31 @@ park_loadrm:
         mov     byte ptr [park_cdroom],0
 
         ; Open it.  It lives in the root of the boot volume, next to
-        ; PMIO.SYS and PMDOS.SYS - and that is not the current drive:
-        ; Windows is started from wherever it is installed, and the
-        ; machine may have been booted from a floppy with Windows on
-        ; the hard disk.  A name with no drive letter went to the
-        ; current drive, and a floppy boot could not start Windows at
-        ; all (the real-hardware test, 2026-10-08).  So the boot
-        ; drive's letter goes in the name; and if the file is not
-        ; there, the current drive's root is tried as well, for a set
-        ; of files copied there.
+        ; PMIO.SYS and PMDOS.SYS, where SYS puts it - and that is not
+        ; the current drive: Windows is started from wherever it is
+        ; installed, and the machine may have been booted from a floppy
+        ; with Windows on the hard disk.  A name with no drive letter
+        ; went to the current drive, and a floppy boot could not start
+        ; Windows at all (the real-hardware test, 2026-10-08).  So the
+        ; boot drive's root is where it is looked for first, by name
+        ; and letter; then beside the interpreter, where an installed
+        ; system keeps its files (sys_open, DOSMAIN.ASM); and then in
+        ; the current drive's root, for a set of files copied there.
+        ;
+        ; THE ROOT FIRST, though the interpreter's directory comes first
+        ; for everything else, because this file is the kernel's other
+        ; half and has to be the one that came with it: SYS replaces the
+        ; copy in the root and no other.
         mov     dword ptr [park_lderr],ERR_NOFILE
-        mov     al,[shell_dflt]                 ; the boot letter
-        mov     [park_name],al
-        mov     edx,OFFSET park_name
-        mov     eax,3D00h
-        call    k21
+        mov     esi,OFFSET park_name + 3
+        mov     al,1
+        call    sys_open
         jnc     plr_opened
         mov     eax,1900h                       ; the current drive
         call    k21
         add     al,'A'
-        cmp     al,[park_name]
-        je      plr_nofile
+        cmp     al,[shell_dflt]
+        je      plr_nofile                      ; that was the boot drive
         mov     [park_name],al
         mov     edx,OFFSET park_name
         mov     eax,3D00h
@@ -648,11 +652,14 @@ park_loadcd:
         je      plc_out
         call    park_cdfind
         jc      plc_out
-        mov     al,[shell_dflt]                 ; the boot letter, as for
-        mov     [park_cdname],al                ; RMDOS.SYS
-        mov     edx,OFFSET park_cdname
-        mov     eax,3D00h
-        call    k21
+        ; An ordinary file, with the system's others: beside the
+        ; interpreter, or in the boot drive's root.  SYS does not carry
+        ; it and nothing has to have it - so the copy found is whichever
+        ; one was put there, and its version word is what says whether
+        ; it is this RMDOS's (below).
+        mov     esi,OFFSET park_cdname
+        xor     al,al
+        call    sys_open
         jc      plc_out
         mov     word ptr [park_hnd],ax
         movzx   ebx,ax
@@ -685,6 +692,8 @@ park_loadcd:
         jne     plc_bad
         cmp     dword ptr [edx+RCH_SIG],RC_SIG
         jne     plc_bad
+        cmp     word ptr [edx+RCH_VER],RC_VER   ; one from another release:
+        jne     plc_bad                         ; no CD-ROM, and not a crash
         mov     al,[park_cdlet]
         mov     [edx+RCH_LETTER],al
         mov     al,[park_cdsel]
@@ -1046,6 +1055,35 @@ ENDIF
         ; RMDOS's 64K: RMDOS marks the letter and calls it to start.
         mov     ax,[park_cdseg]
         mov     word ptr [edi + RMH_CDSEG],ax
+        ; THE COUNTRY GOES ACROSS TOO.  RMDOS answers 38h, 65h and 66h
+        ; under Windows, and it answers for the country this kernel was
+        ; given by COUNTRY=: the block, its code and code page, and yes
+        ; and no.  The tables are in the DOS data segment, which RMDOS
+        ; leaves as it finds (RL_NLS).
+        mov     ax,word ptr [ctry_code]
+        mov     word ptr [edi + RMH_CTRYCODE],ax
+        mov     ax,word ptr [ctry_page]
+        mov     word ptr [edi + RMH_CTRYPAGE],ax
+        mov     ax,word ptr [ctry_syspage]
+        mov     word ptr [edi + RMH_CTRYSYS],ax
+        mov     al,[ctry_yes]
+        mov     byte ptr [edi + RMH_CTRYYES],al
+        mov     al,[ctry_no]
+        mov     byte ptr [edi + RMH_CTRYNO],al
+        push    esi
+        push    edi
+        push    ecx
+        mov     esi,OFFSET ctry_block
+        lea     edi,[edi + RMH_CTRY]
+        mov     ecx,RMH_CTRYLEN
+        cld
+        rep     movsb
+        pop     ecx
+        pop     edi
+        pop     esi
+IF RMH_CTRYLEN NE CTRY_SIZE
+        .ERR    <PARK.INC: RMDOS's country block is not 38h's 34 bytes>
+ENDIF
 
         ; VERBOSE ONLY WHEN PM-DOS STARTED THE PROGRAM.  Announcing
         ; itself is what makes RMDOS testable - PARKWIN.COM's screen is
@@ -1625,6 +1663,9 @@ ENDIF
 IF GNLS_DBCS NE RL_NLSDBCS
         .ERR    <RMDOS's 6507h would not find the kernel's DBCS table>
 ENDIF
+IF GNLS_CASEMAP NE RL_NLSMAP
+        .ERR    <RMDOS's case-map call would not find the kernel's code>
+ENDIF
 IF GLOL_FSHARE NE RL_FSHARE
         .ERR    <the kernel and RMDOS keep SHARE's flag in different places>
 ENDIF
@@ -1886,8 +1927,10 @@ prl_none:
 ;=====================================================================
 ; Data
 ;=====================================================================
-park_name   db  'A:\RMDOS.SYS',0      ; the letter put in by park_loadrm
-park_cdname db  'A:\RMCD.SYS',0       ; ...and by park_loadcd
+park_name   db  'A:\RMDOS.SYS',0      ; park_loadrm: the name from +3, and
+                                        ; the whole of it with the current
+                                        ; drive's letter
+park_cdname db  'RMCD.SYS',0
 park_cdroom db  0                       ; the block has RMCD's room after
                                         ; RMDOS's 64K
 park_cdseg  dw  0                       ; RMCD.SYS is loaded there, or 0

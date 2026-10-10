@@ -138,6 +138,31 @@ h_drives    db  (LASTDRIVE * RMD_LEN) dup(0)
 h_lastdrv   db  0                       ; LASTDRIVE=, 0 for no line
 h_cdseg     dw  0                       ; RMCD.SYS, or 0 (RMINFO.INC)
 
+        ORG     RMH_CTRYCODE            ; the country, as the kernel parked
+h_ctrycode  dw  1                       ; with it: 38h, 65h and 66h answer
+h_ctrypage  dw  437                     ; from here.  The United States until
+h_ctrysys   dw  437                     ; the kernel says otherwise
+h_ctryyes   db  'Y'
+h_ctryno    db  'N'
+rd_country:
+        dw  0                           ; date format, month first
+        db  '$',0,0,0,0                 ; currency
+        db  ',',0                       ; thousands
+        db  '.',0                       ; decimal
+        db  '-',0                       ; date separator
+        db  ':',0                       ; time separator
+        db  0                           ; currency format
+        db  2                           ; digits after the point
+        db  0                           ; twelve-hour clock
+        dd  0                           ; the case-map far call: rd_lowsave
+                                        ; points it at the code the kernel
+                                        ; left in the low block (RL_NLSMAP).
+                                        ; Zero here was a call into the
+                                        ; interrupt table, which WfW 3.11's
+                                        ; network made
+        db  ',',0                       ; list separator
+        db  10 dup(0)
+
 ;=====================================================================
 ; Code proper.  Everything above is a header PM-DOS writes into.
 ;=====================================================================
@@ -717,12 +742,13 @@ rd_lowsave:
         mov     [rd_lowseg],ax
         mov     [rd_lowlen],cx
         ; The country block's case-map far call (38h and 6501h hand it
-        ; out) points at the far return in the block, where the kernel
-        ; points its own (GLOL_RETF): a character comes back as it
-        ; went, which is what a codepage with no mapping beyond ASCII
-        ; means.  It was zero until WfW's network called it - a far
-        ; call to 0000:0000 runs the interrupt table as code.
-        mov     word ptr [rd_country+12h],RL_DEVRET
+        ; out) points at the twelve bytes the kernel left in the block
+        ; for it, where the kernel points its own (GNLS_CASEMAP): a
+        ; character from 80h up comes back as the country's table has
+        ; it.  It was zero until WfW's network called it - a far call
+        ; to 0000:0000 runs the interrupt table as code - and a bare
+        ; far return while the table was the identity.
+        mov     word ptr [rd_country+12h],RL_NLSMAP
         mov     word ptr [rd_country+14h],ax
         mov     di,cs
         mov     es,di

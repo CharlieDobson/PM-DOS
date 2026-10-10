@@ -7,7 +7,7 @@ CACHETST - the disk cache through INT 2Fh AX=4A10h
 OK
 does it really cache?   OK
 21h/0Dh commits         OK
-a write is owed         0004
+a write is owed         0005
 OK
 4A10/0001 commits       OK
 C: read+write cached    r+w+ OK

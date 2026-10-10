@@ -1,0 +1,68 @@
+; COUNTRY.DEF - the countries in COUNTRY.SYS.  UTF-8.
+;
+; TOOLS\MKNLS.PS1 turns this into NLS\COUNTRY.ASM, which BUILD.CMD
+; assembles into COUNTRY.SYS.  Run the script after changing a line.
+;
+; One line a country, sixteen fields:
+;
+;   code     what COUNTRY= takes: the international dialling code
+;   name     for the reader only; no blanks in it
+;   pages    the code pages the country has tables for.  THE FIRST IS
+;            THE ONE "COUNTRY=code" WITH NO CODE PAGE GETS, so it is
+;            the page of the video card's own font where that is sold:
+;            437, or the national page where 437 lacks the alphabet
+;   date     mdy, dmy or ymd, and what goes between the numbers
+;   clock    12 or 24, and what goes between hours and minutes
+;   number   the thousands separator and the decimal point
+;            (sp = a blank)
+;   list     what separates the items of a list
+;   money    the currency symbol, four characters at most.  A second
+;            spelling after a | is for a code page that lacks a
+;            character of the first.  Then where it goes -
+;              0  $1.00    1  1.00$    2  $ 1.00    3  1.00 $
+;            - and how many digits follow the decimal point
+;   yes no   the letters 21h/6523h takes for yes and for no
+;   sort     which letters come after Z: - none, dk the Danish and
+;            Norwegian three, sv the Swedish and Finnish three
+;
+;code name          pages        date  clock number list money   yes no sort
+001 United-States   437,850      mdy - 12 :  ,  .  ,  $        0 2  Y N  -
+002 Canada-French   863,850      ymd - 24 :  sp ,  ;  $        3 2  O N  -
+003 Latin-America   437,850      dmy / 12 :  ,  .  ,  $        0 2  S N  -
+007 Russia          866,437,850  dmy . 24 :  sp ,  ;  р.|r.    3 2  Д Н  -
+027 South-Africa    437,850      ymd - 24 :  sp ,  ,  R        0 2  Y N  -
+030 Greece          737,869,850  dmy / 12 :  .  ,  ,  Δρχ|Drs  1 2  Ν Ο  -
+031 Netherlands     437,850      dmy - 24 :  .  ,  ;  ƒ|fl     2 2  J N  -
+032 Belgium         437,850      dmy / 24 :  .  ,  ;  BF       3 2  J N  -
+033 France          437,850      dmy / 24 :  sp ,  ;  F        3 2  O N  -
+034 Spain           437,850      dmy / 24 :  .  ,  ;  ₧|Pts    3 0  S N  -
+036 Hungary         852,850      ymd . 24 :  sp ,  ;  Ft       3 2  I N  -
+038 Yugoslavia      852,850      ymd - 24 :  .  ,  ,  Din      2 2  D N  -
+039 Italy           437,850      dmy / 24 .  .  ,  ;  L.       2 0  S N  -
+040 Romania         852,850      ymd - 24 :  .  ,  ,  Lei      2 2  D N  -
+041 Switzerland     437,850      dmy . 24 :  '  .  ;  SFr.     2 2  J N  -
+042 Czech-Republic  852,850      dmy . 24 :  sp ,  ;  Kč|Kc    3 2  A N  -
+043 Austria         437,850      dmy . 24 :  .  ,  ;  S        2 2  J N  -
+044 United-Kingdom  437,850      dmy / 24 :  ,  .  ,  £        0 2  Y N  -
+045 Denmark         865,850      dmy - 24 .  .  ,  ;  kr       2 2  J N  dk
+046 Sweden          437,850      ymd - 24 .  sp ,  ;  kr       3 2  J N  sv
+047 Norway          865,850      dmy . 24 :  sp ,  ;  kr       2 2  J N  dk
+048 Poland          852,850      ymd - 24 :  sp ,  ;  zł|Zl    3 2  T N  -
+049 Germany         437,850      dmy . 24 :  .  ,  ;  DM       3 2  J N  -
+052 Mexico          437,850      dmy / 12 :  ,  .  ,  N$       0 2  S N  -
+054 Argentina       437,850      dmy / 24 .  .  ,  ,  $        0 2  S N  -
+055 Brazil          437,850      dmy / 24 :  .  ,  ;  Cr$      2 2  S N  -
+056 Chile           437,850      dmy / 24 :  .  ,  ,  $        0 2  S N  -
+057 Colombia        437,850      dmy / 12 :  .  ,  ,  $        0 2  S N  -
+058 Venezuela       437,850      dmy / 12 :  .  ,  ,  Bs.      0 2  S N  -
+061 Australia       437,850      dmy / 24 :  ,  .  ,  $        0 2  Y N  -
+064 New-Zealand     437,850      dmy / 24 :  ,  .  ,  $        0 2  Y N  -
+090 Turkey          857,850      dmy / 24 :  .  ,  ;  TL       3 2  E H  -
+351 Portugal        860,850      dmy - 24 :  .  ,  ;  Esc.     3 2  S N  -
+353 Ireland         437,850      dmy / 24 :  ,  .  ,  IR£      0 2  Y N  -
+354 Iceland         861,850      ymd - 24 :  .  ,  ;  kr       3 2  J N  -
+358 Finland         437,850      dmy . 24 .  sp ,  ;  mk       3 2  K E  sv
+359 Bulgaria        855,850      dmy . 24 :  sp ,  ;  лв|Lv    3 2  Д Н  -
+385 Croatia         852,850      ymd - 24 :  .  ,  ,  Din      2 2  D N  -
+386 Slovenia        852,850      ymd - 24 :  .  ,  ,  SIT      2 2  D N  -
+421 Slovakia        852,850      dmy . 24 :  sp ,  ;  Sk       3 2  A N  -

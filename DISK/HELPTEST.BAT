@@ -48,6 +48,8 @@ ECHO --- DATE ---
 DATE /?
 ECHO --- TIME ---
 TIME /?
+ECHO --- CHCP ---
+CHCP /?
 ECHO --- PAUSE ---
 PAUSE /?
 ECHO --- REM ---
@@ -161,6 +163,11 @@ ECHO --- SHUTDOWN (must NOT write anything or switch the computer off) ---
 SHUTDOWN /?
 ECHO --- SHUTDOWN with something else AND /?: still help, still running ---
 SHUTDOWN NOW /?
+ECHO --- KEYB ---
+KEYB /?
+ECHO --- KEYB with a layout to load AND /?: still help, no layout loaded ---
+KEYB GR /?
+KEYB
 ECHO --- PMD (must NOT take the screen over) ---
 PMD /?
 ECHO --- PMD with a report to write AND /?: still help, no file written ---

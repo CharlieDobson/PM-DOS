@@ -11980,6 +11980,312 @@ MULTI, PMDOSATA and PMDOSFDD were not rebuilt, and what is on them is
 from before.  Still v0.63.
 
 
+A COUNTRY AND A KEYBOARD: COUNTRY=, COUNTRY.SYS, KEYB AND KEYBOARD.SYS (2026-10-10)
+---------------------------------------------------------------------
+Asked for as "country and keyboard support in the same fashion MS-DOS
+did", with a COUNTRY.SYS if that keeps the kernel smaller and a
+KEYB.COM if one is needed.  Both are.
+
+THE COUNTRY IS A FILE.  The kernel still has one country built in, the
+United States in code page 437, and that is what a machine with no
+COUNTRY= line has - every answer it gave before, byte for byte, but
+for one pointer (below).  Every other country is a row of
+COUNTRY.SYS: 38h's 34 bytes, the capitals of 80h-FFh, the collating
+weights, and the letters for yes and no.  COUNTRY=code[,[page][,file]]
+in CONFIG.SYS reads it as MS-DOS's sysinit did (DOS\NLS.INC,
+cfg_country and nls_load): \COUNTRY.SYS on the boot drive unless a
+file is named, and with no page the FIRST entry the file has for the
+country.  It left the list of statements that do nothing, where it had
+waited with a note saying a second country was a data problem.
+
+THE FILE IS IN MS-DOS'S FORMAT - FFh,'COUNTRY', a list of country and
+code page pairs, and for each a list of tables by number - so either
+DOS's file loads on the other.  PM-DOS's own is written by
+TOOLS\MKNLS.PS1 from NLS\COUNTRY.DEF, one line a country, into
+NLS\COUNTRY.ASM, which BUILD.CMD assembles.  The script is not part of
+the build - BUILD.CMD needs Open Watcom and nothing else - so the .ASM
+it wrote is kept in the tree.  Forty countries, 82 pairs, 17,407 bytes.
+A country's first pair is 437 wherever 437 has its letters and the
+national page where it has not (865 for Denmark and Norway, 860, 863,
+852, 866, 857, 861, 737), because the screen is the video card's font
+and nothing here changes it.
+
+THE TABLES ARE MADE BY RULE AND ARE NOT MICROSOFT'S BYTE FOR BYTE.  A
+small letter's capital is its capital where the code page has one and
+the unaccented capital where it has not; a letter weighs what its
+unaccented capital does, a currency sign what '$' does, and Denmark,
+Norway, Sweden and Finland have their three letters after Z.  Checked
+against MS-DOS 6.22's COUNTRY.SYS with a dumper that reads both: the
+rule gives 6.22's collating table for 437 and for 850 exactly, and its
+852 capitals; 6.22's capitals for US/437 differ in one byte (e-acute
+to E, where the rule says E-acute, as 6.22's own table for Belgium
+does), and its 850 tables fold every accented letter to ASCII.
+
+NO NLSFUNC.  MS-DOS needed it resident to answer 38h for a country
+that is not the current one, 6501h for another pair, and CHCP,
+because DOS could not open a file from inside a DOS call.  This kernel
+can: fn38, fn65 and fn66 call nls_load, which reads the file COUNTRY=
+named into a staging area and commits it only if it was asked to and
+the pair was whole.
+
+WHAT THE THREE CALLS ANSWER NOW (DOS\INT21.INC).  38h: the country in
+use, another one out of the file (AL or BX names it), or error 2; with
+DX = FFFFh it sets one.  6501h follows dos\getset.asm: BX and DX name
+the pair, FFFFh each for the one in use; five bytes is the least it
+writes into; the length word is cut to the room; CX comes back as what
+was written and AX as the code page the system started in.  The table
+calls refuse a pair that is not the one in use, as MS-DOS does with no
+NLSFUNC.  6520h-6522h go through the table 6502h hands out, and so do
+A0h-A2h, DOS 7's names for the same three.  6523h takes the country's
+two letters.  6601h is the page in use and the page at startup; 6602h
+loads the same country's tables for another page.
+
+THE CASE-MAP CALL IS CODE NOW.  The far pointer in the country block
+pointed at a RETF, which was right while the table was the identity.
+It points at twelve bytes in the DOS data segment (GNLS_CASEMAP) that
+look AL up in the table - so CTRYDMP's and CTRYTEST's answers moved
+from 0400:00D0 to 0400:02D0 on every row, and nothing else of theirs.
+
+THE DOS BOX'S BRIDGE PASSED 65h WITHOUT BX (vdm_ctryext): it was
+scratch for ES times sixteen, and came back to the guest that way.
+Nothing read it while there was one pair.  And LOLTEST called 6501h
+with DX never set; MS-DOS refuses that too, so the test sets it.
+
+RMDOS answers for the country the kernel parked with: the handoff
+header carries the block, the code, both pages and yes and no
+(RMH_CTRY, contract 1.05), and the tables are in the low block, which
+RMDOS leaves as it finds (RL_NLS, sixteen bytes longer for the case
+map and the stub below).  RMDOS reads no file: another country asked
+of 38h is refused, and 6501h answers for the pair in use whichever
+pair is named, as it always did.
+
+CMD.EXE writes a date in the country's order and with its separators
+- DIR, DATE, TIME and the prompt - and DATE takes one in that order.
+The clock stays 24-hour whatever the country says, as it was.  CHCP is
+in CMD.EXE as well as COMMAND.COM.
+
+THE KEYBOARD IS THE KERNEL'S, SO KEYB DOES NOT STAY.  MS-DOS's KEYB
+was a resident program on INT 09h.  IRQ 1 here never reaches an INT
+09h unless a DOS box has hooked it, so the layout is a table the
+kernel's decoder is handed: KEYB.COM, a native program, finds the
+record for the layout and the code page in KEYBOARD.SYS and passes it
+down (21h/F1h AL=22h, IOS_KBLAYOUT), the kernel checks every count in
+it once and keeps the one copy, and KEYB ends.  The record (KBL_ in
+PMDOS.INC) is six bytes a key - scan code, flags, and the character
+alone, with Shift, with AltGr and with both - and the dead keys, each
+its own character and a list of letter and result.
+
+WHAT THE DECODER DOES WITH IT (IO\KEYBD.INC, kb_nat).  The right-hand
+Alt is AltGr, and so is Ctrl with Alt, as it was for KEYB; a key with
+nothing at that level is Alt and the key.  A dead key waits for the
+next character; with a letter it has no result for, the accent goes in
+first and the letter after it; the space bar gives the accent alone.
+Caps Lock shifts the keys the layout says it shifts - the letters, and
+on the French and German boards the digit row too.  Ctrl and a letter
+is by the letter on the key.  Alt and a letter is reported as the US
+key with that letter, so Alt+Z is the key marked Z.  The keypad's
+decimal key types the layout's.  Ctrl+Alt+F1 is the US keyboard and
+Ctrl+Alt+F2 the layout again, and neither reaches a program.
+
+A DOS BOX THAT HOOKS INT 09h AND PASSES THE KEY ON reached the ROM's
+handler, which types US keys.  Once KEYB has loaded a layout, INT 09h
+in the vector table is a HLT in the DOS data segment (GNLS_KBSTUB) and
+kb_hlt answers it: the latched code through the same decoder, the
+shift state to 40:17, the EOI, the IRET.  The box's codes are decoded
+with a shift state of their own (kb_boxfl) - the same codes as the
+wire's, later - which kbq_put makes agree with the wire's whenever the
+box has caught up.  Only if nothing had hooked INT 09h before KEYB
+ran: a resident program in front keeps the ROM's address.  For a park
+the stub becomes a far jump to the ROM's handler and comes back a HLT
+(kb_park).
+
+KEYBOARD.SYS IS PM-DOS'S OWN FORMAT, not MS-DOS's: a list of layout,
+keyboard ID and code page, and the records.  MKNLS.PS1 writes it from
+NLS\KEYBOARD.DEF - the four rows of keys as they are on the board, a
+line a level - into NLS\KEYBOARD.ASM.  Thirty layouts, 65 records,
+25,174 bytes.  A layout is written once, in characters; the script
+makes a record for each code page it is given, and a character the
+page has not got is a key that types nothing there.  The sections were
+drafted by TOOLS\KBDDUMP.PS1 from the layout files Windows has for the
+same national keyboards (read as bytes; nothing is loaded).
+
+WHAT IS NOT DONE.
+  - The screen.  MS-DOS changed the font with DISPLAY.SYS, EGA.CPI and
+    MODE CON CP; none of that is here, so a code page is tables and a
+    layout, and the characters shown are the video card's.
+  - File names.  A name is upper-cased in ASCII and a byte from 80h up
+    is stored as typed, as before; table 4 and table 5 of the file are
+    read past.
+  - Windows.  Its own programs have its own layout; a DOS box inside
+    Windows has the US keyboard, since the layout is the kernel's and
+    Windows runs on RMDOS.
+  - A key pressed while the BIOS has the machine for a call of the
+    kernel's is the ROM's to decode, and is a US key.
+  - Num Lock and Scroll Lock are still not tracked, and Ctrl+Break is
+    still not a key.  KEYB's INT 2Fh calls (AD80h) are not answered.
+  - Double-byte pages, and the pages 6.22 has for Hebrew and Arabic.
+
+THE TESTS.  21h/F1h AL=23h is a key as if the keyboard had sent it,
+for a test with nobody typing, as F0h AL=0Bh is for the mouse.
+KBLTEST.COM presses keys with it, thirty-nine rows of them, and prints
+what INT 16h reads, once with INT 09h alone and once with its own
+handler passing each key on; NLSTEST.COM prints what 38h, 65h and 66h
+say.  Neither judges: the answers are baselines, the US ones in
+RUNTESTS's rows and one row for each country in TOOLS\NLSTESTS.PS1,
+which boots a CONFIG.SYS with a COUNTRY= line and runs KEYB first.
+RUNTESTS.PS1's disk has the two .SYS files now.
+
+RUN, headless, on DOSBox-X.  RUNTESTS 86 x 7 - the 84 and the two new
+ones - against a build of the sources as they were: 79 answers the
+same, CTRYDMP and CTRYTEST moved by the case-map pointer, SFTSCAN by
+RMDOS.SYS being 56 bytes longer, and RMFIND and RMTEST by the files
+added to the test disk (those two differed from the baselines in the
+tree before this work as well; all are re-recorded).  NLSTESTS, eight
+rows: the United States (every way KEYB is refused, the second Italian
+keyboard by ID, CHCP), Germany (also a park and back with the layout
+loaded, and CHCP 850), France in 850, the United Kingdom, Denmark in
+865, Spain, Poland in 852 and Russia in 866 - each layout's keys
+the same through a hooked INT 09h as without one.  A CONFIG.SYS of bad
+COUNTRY= lines boots and says which was wrong with each.  DIR, DATE
+and TIME under Germany and Sweden.  On RMDOS, by PARKTEST under
+COUNTRY=049 with KEYB GR loaded: NLSTEST's answers are Germany's, the
+case-map call in real mode among them, and the layout is the
+keyboard's again after the park.  MASM 6.13 assembles DOSMAIN, RMDOS,
+IOPM, CMD, KEYB, the two tests and the two data files.
+
+NOT RUN: real hardware; 86Box; Windows; a real keyboard - every key
+here was pressed by the test call.
+
+Files: DOS\NLS.INC, CMD\KEYB\KEYB.ASM, NLS\*, TOOLS\MKNLS.PS1,
+KBDDUMP.PS1, NLSTESTS.PS1, NLSTEST.ASM and KBLTEST.ASM (new);
+INC\PMDOS.INC, INC\RMDOS.INC, DOS\INT21.INC, CONFIG.INC, VDM.INC,
+RING3.INC, PARK.INC, RMDOS.ASM, RMINFO.INC, DOSMAIN.ASM, IO\KEYBD.INC,
+BUS.INC, IOPM.ASM, CMD\CMD.ASM, TOOLS\LOLTEST.ASM, RUNTESTS.PS1,
+BUILD.CMD, MKHD.CMD, DISK\CONFIG.TXT, AUTOEXEC.TXT, HELPTEST.BAT.
+PMDOS.SYS is 162,122 bytes (+2,449), PMIO.SYS 58,447 (+1,084),
+CMD.EXE 60,207 (+703), RMDOS.SYS 61,219 (+56), KEYB.COM 3,681.
+Still v0.63.
+
+
+NOT EVERYTHING IN THE ROOT: THE INTERPRETER'S DIRECTORY, AND RMCD.SYS
+AN ORDINARY FILE (2026-10-10)
+---------------------------------------------------------------------
+Asked for after the entry above: "let's not require everything to be
+in the root.  Eventually the SETUP program is going to place
+everything in a folder with the default being DOS", and RMCD.SYS as "a
+non-required non-system file".
+
+ONE RULE, AND THE KERNEL HAD IT ALREADY.  The system's files are where
+the interpreter was loaded from: shell_name up to its last '\'.  With
+no SHELL= line that is the root of the boot drive, and a diskette with
+everything in its root works as it did; SHELL=C:\DOS\CMD.EXE /P makes
+it C:\DOS, and that one line is all an installed system has to write.
+The check at startup has found CHKDSK that way since VOLFLAG.INC was
+written, CMD.EXE makes COMSPEC out of it, and FORMAT /S and KEYB find
+SYS and KEYBOARD.SYS through COMSPEC.  What still named the boot
+drive's root outright was COUNTRY.SYS, RMDOS.SYS and RMCD.SYS.  Those
+go through sys_open now (DOS\DOSMAIN.ASM, with sys_beside and
+sys_inroot): the name beside the interpreter, then in the root of the
+boot drive, so a file is missing only when it is in neither.
+
+WHAT STILL HAS TO BE IN THE ROOT: PMIO.SYS and PMDOS.SYS, because the
+boot code reads nothing else, and CONFIG.SYS and AUTOEXEC.BAT, which
+are read from there as MS-DOS read them.
+
+SHELL= IS READ ON THE FIRST WALK OVER CONFIG.SYS, with DOS= and EMS=
+(cfg_phaseof).  COUNTRY= is on the main walk and may stand above the
+SHELL= line, and it has to find COUNTRY.SYS in the directory that line
+names.  SHELL= only stores a name and a tail, so nothing else changes
+by moving it.
+
+COUNTRY.SYS WITH NO FILE NAMED IS LOOKED FOR EACH TIME (nls_load) and
+the place is not remembered: ctry_path keeps its '?' until a COUNTRY=
+line names a file, and 38h, 6501h and CHCP look where the interpreter
+is at that moment.  The messages name what was tried: "COUNTRY=: cannot
+open COUNTRY.SYS" when it is in neither place, and the whole path of
+the file sys_open found when that file is not one or has not got the
+country.
+
+RMDOS.SYS IS LOOKED FOR IN THE ROOT FIRST, the other way round from
+everything else (park_loadrm): it is the kernel's other half, SYS puts
+it in the root beside the kernel and replaces no other copy, and an
+older one in the system's directory must not be the one that loads.
+Then beside the interpreter, then in the current drive's root as
+before.  It stays read-only, hidden and system.
+
+RMCD.SYS IS AN ORDINARY FILE.  Nothing needs it but the CD-ROM's letter
+under Windows, so it is no more a system file than MSCDEX was: it is
+kept with the system's other files, looked for beside the interpreter
+and then in the root (park_loadcd), and COPY carries it.  SYS.COM and
+SYS16.COM do not copy it, MKDISK does not mark it, and FATREPL.PL
+writes one as an ordinary file wherever it replaces one.  A copy an
+earlier SYS left on a disk - read-only, hidden, system - is found as
+before; SYS makes such a copy on its target ordinary and leaves what
+is in it alone, so that COPY can replace it afterwards.
+
+BECAUSE SYS NO LONGER KEEPS IT IN STEP WITH RMDOS, the park reads its
+version word: RC_VER in INC\RMDOS.INC, which is the header and what
+RMCD takes from RMDOS's data (RMSDA.INC).  An RMCD.SYS with another
+number is not loaded, and Windows starts without the CD-ROM's letter.
+RC_VER IS TO BE RAISED WHENEVER THAT HEADER OR RMSDA.INC CHANGES: the
+check is only as good as that.
+
+SYS FINDS ITS SOURCE THE SAME WAY (CMD\SYS\SYS.ASM, sy_beside).
+PMIO.SYS and PMDOS.SYS come from the source drive's root.  RMDOS.SYS,
+CMD.EXE and COMMAND.COM are looked for there and then beside the
+interpreter (21h/F1h AL=3), when the interpreter is on the source
+drive - an interpreter loaded from another disk says nothing about
+this one, and the rule also keeps the file found from being the file
+about to be written.  Everything lands in the target's root, where a
+disk with no CONFIG.SYS boots.  Before, SYS from a system kept in a
+directory stopped at "Cannot copy the system files".
+
+THE IMAGES ARE AS THEY WERE: everything in the root, RMCD.SYS among
+it, now without the three attributes.  The directory is SETUP's to
+make.
+
+TESTED on DOSBox-X.  RUNTESTS.PS1 has -SysDir: the disk an installed
+system has - PMIO.SYS, PMDOS.SYS and RMDOS.SYS in the root, the rest
+in C:\DOS, SHELL= as the last line of CONFIG.SYS.  The whole list of
+86 runs to the end there; 77 answer as they do from the root, and the
+nine that differ print the layout: COMSPEC and PATH (ARGS, DPMITEST,
+EXECTST), a PSP one paragraph up for the longer environment (HELLO,
+HELLOX, SFTSCAN), and what is on the disk (RMFIND, RMTEST).  CACHETST
+counts one write owed fewer, which is put down to the disk and was
+not looked into.
+NLSTESTS.PS1 has a row for it, nls-dir: COUNTRY=049 with no file
+named and above the SHELL= line, KEYB GR, CHCP 850, and two parks -
+NLSTEST's and KBLTEST's answers are nls-gr's, byte for byte.
+RUNTESTS is 86 x 7 with no answer changed; the eight NLSTESTS rows
+from before match.  DBXRUN.PS1 has -Cd, an .iso in an ATAPI drive,
+and with one the park was run on seven disks: RMCD.SYS beside the
+interpreter, RMDOS.SYS there too and not in the root, RMCD.SYS in the
+root with the interpreter in C:\DOS, everything in the root, no
+RMCD.SYS, one with version 2, and no RMDOS.SYS.  On the first four the
+DOS under Windows gives the CD-ROM's label, lists its root and reads a
+file; on the next two it has no CD-ROM and is otherwise whole; on the
+last the park is refused with "file not found" and the kernel carries
+on.  SYS from a diskette with its system in A:\DOS, with RMDOS.SYS in
+either place, and from one with everything in the root: the five
+files on the target are the build's, byte for byte, an old RMCD.SYS
+there comes out ordinary with its contents untouched, and the disk
+boots.  COUNTRY= with the file in neither place, in the root only,
+not a country file, without the country, and named but missing: the
+right message or the right country each time.  MASM 6.13 assembles
+DOSMAIN, RMCD, SYS and SYS16.
+
+NOT RUN: real hardware; 86Box; Windows itself - the CD-ROM was read
+through the DOS Windows runs on, by a test program, not by File
+Manager.
+
+Files: DOS\DOSMAIN.ASM, NLS.INC, CONFIG.INC, PARK.INC, WINDOWS.INC,
+RMCD.ASM, INC\RMDOS.INC, CMD\SYS\SYS.ASM, TOOLS\SYS16.ASM, MKDISK.C,
+FATREPL.PL, RUNTESTS.PS1, NLSTESTS.PS1, DBXRUN.PS1, DISK\CONFIG.TXT,
+AUTOEXEC.TXT.  PMDOS.SYS is 162,318 bytes (+196), SYS.COM 1,983
+(+279), SYS16.COM 8,574 (+21); RMDOS.SYS, RMCD.SYS, PMIO.SYS and
+CMD.EXE are the same bytes as before.  Still v0.63.
+
+
 v0.61 - THE NUMBER CAUGHT UP (2026-09-30)
 ---------------------------------------------------------------------
 

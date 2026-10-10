@@ -14,14 +14,27 @@
 ;   2. Stage 2, on hard disks: the FAT-walking loader lives in the
 ;      partition's reserved sectors (1..8 on FAT16, 9..16 on FAT32
 ;      - the S2_* constants).  Copied sector for sector.
-;   3. PMIO.SYS, PMDOS.SYS, RMDOS.SYS, RMCD.SYS, CMD.EXE and
-;      COMMAND.COM, copied as ordinary files, the four .SYS files
-;      re-marked read-only+hidden+system.  RMDOS.SYS, RMCD.SYS and
+;   3. PMIO.SYS, PMDOS.SYS, RMDOS.SYS, CMD.EXE and COMMAND.COM,
+;      copied as ordinary files into the target's root, the three
+;      .SYS files re-marked read-only+hidden+system.  RMDOS.SYS and
 ;      COMMAND.COM are only copied if the source has them: a disk
 ;      without RMDOS.SYS boots and runs everything except Windows,
-;      without RMCD.SYS Windows has no CD-ROM letter, and without
-;      COMMAND.COM - the 16-bit interpreter DOS programs get - a DOS
-;      program cannot shell out.
+;      and without COMMAND.COM - the 16-bit interpreter DOS programs
+;      get - a DOS program cannot shell out.
+;
+; WHERE THE SOURCE HAS THEM.  PMIO.SYS and PMDOS.SYS are in its root,
+; because the boot code reads nothing else.  The other three are
+; looked for there first, and then in the directory the interpreter
+; was loaded from when that is on the source drive: an installed
+; system keeps its files in a directory of their own, with
+; SHELL=C:\DOS\CMD.EXE /P to say which, and the kernel looks for its
+; files by the same rule (sys_open in DOS\DOSMAIN.ASM).  On the target
+; everything goes in the root, where a disk with no CONFIG.SYS boots.
+;
+; RMCD.SYS, the CD-ROM's letter under Windows, went across with these
+; until it stopped being a system file.  It is an ordinary one now and
+; COPY carries it.  A copy an earlier SYS left on the target, read-only
+; hidden and system, is made ordinary here so that COPY can replace it.
 ;
 ; Because the boot code is filesystem-specific, source and target
 ; must carry the SAME FAT type - 21h/F1h AL=1 asks the kernel, which
@@ -207,21 +220,20 @@ sy_s2have:
 sy_files:
         mov     esi,OFFSET name_io
         mov     byte ptr [sys_attr],ATTR_READONLY OR ATTR_HIDDEN OR ATTR_SYSTEM
+        mov     byte ptr [src_beside],0 ; the root, and nowhere else
         call    sy_copy
         jc      sy_nofile
         mov     esi,OFFSET name_dos
         call    sy_copy
         jc      sy_nofile
-        ; RMDOS.SYS and RMCD.SYS are the kernel's as well - the DOS it
-        ; leaves in charge under Windows, and the CD-ROM's letter there
-        ; - and the kernel opens them in the root of the boot drive, so
-        ; they go across with it and wear the same attributes.  Hidden
+        ; RMDOS.SYS is the kernel's as well - the DOS it leaves in
+        ; charge under Windows - and the kernel looks for it in the
+        ; root of the boot drive before anywhere else, so it goes
+        ; across with the kernel and wears the same attributes.  Hidden
         ; files are also the ones a COPY *.* leaves behind, which makes
-        ; this the only thing that carries them.
+        ; this the only thing that carries it.
+        mov     byte ptr [src_beside],1 ; from here on: see the header
         mov     esi,OFFSET name_rm      ; optional - see the header
-        call    sy_copyopt
-        jc      sy_nofile
-        mov     esi,OFFSET name_cd      ; optional
         call    sy_copyopt
         jc      sy_nofile
         mov     esi,OFFSET name_cmd
@@ -231,6 +243,22 @@ sy_files:
         mov     esi,OFFSET name_c16     ; optional
         call    sy_copyopt
         jc      sy_nofile
+
+        ; an RMCD.SYS from when SYS carried it: ordinary again
+        mov     esi,OFFSET name_cd
+        mov     edi,OFFSET tgt_path + 3
+        call    sy_strcpy
+        mov     edx,OFFSET tgt_path
+        mov     ax,4300h
+        int     21h
+        jc      sy_cddone               ; the target has none
+        test    cl,ATTR_SYSTEM
+        jz      sy_cddone
+        mov     edx,OFFSET tgt_path
+        mov     ecx,ATTR_ARCHIVE
+        mov     ax,4301h
+        int     21h
+sy_cddone:
 
         mov     edx,OFFSET msg_done
         mov     ah,09h
@@ -299,23 +327,36 @@ so_out:
 
 ;---------------------------------------------------------------------
 ; sy_copy - ESI -> the bare 8.3 name; copy X:\name to Y:\name and
-;           set [sys_attr] on the result.  CF on any failure, with
-;           [src_absent] saying whether the failure was only that the
-;           source has no such file.
+;           set [sys_attr] on the result.  With [src_beside] set, a
+;           name the source's root has not got is looked for beside
+;           the interpreter as well (sy_beside).  CF on any failure,
+;           with [src_absent] saying whether the failure was only that
+;           the source has no such file.
 ;---------------------------------------------------------------------
 sy_copy:
         push    esi                     ; the name into both templates
         mov     edi,OFFSET src_path + 3
         call    sy_strcpy
         pop     esi
+        push    esi
         mov     edi,OFFSET tgt_path + 3
         call    sy_strcpy
+        pop     esi
 
         mov     byte ptr [src_absent],1
         mov     edx,OFFSET src_path
         mov     ax,3D00h
         int     21h
+        jnc     sc_opened
+        cmp     byte ptr [src_beside],0
+        je      sc_fail
+        call    sy_beside
         jc      sc_fail
+        mov     edx,OFFSET alt_path
+        mov     ax,3D00h
+        int     21h
+        jc      sc_fail
+sc_opened:
         mov     byte ptr [src_absent],0
         movzx   eax,ax
         mov     [src_hdl],eax
@@ -379,6 +420,58 @@ sc_fail:
         stc
         ret
 
+;---------------------------------------------------------------------
+; sy_beside - ESI -> a name: alt_path = that name in the directory the
+;             interpreter was loaded from.  CF if the kernel will not
+;             say where that is, or it is not on the source drive.
+;
+; ONLY ON THE SOURCE DRIVE.  The source is the disk whose system is
+; being copied, and an interpreter loaded from another disk says
+; nothing about where this one keeps its files.  It also means the
+; file found can never be the one about to be written: the target is
+; a different drive, which sy_entry has checked.
+;---------------------------------------------------------------------
+sy_beside:
+        push    esi
+        mov     edx,OFFSET alt_path
+        mov     ax,0F103h               ; the interpreter's own path
+        int     21h
+        pop     esi
+        jc      sb_no
+        cmp     byte ptr [alt_path+1],':'
+        jne     sb_no
+        mov     al,[alt_path]
+        cmp     al,'a'
+        jb      sb_up
+        cmp     al,'z'
+        ja      sb_up
+        sub     al,20h
+sb_up:
+        cmp     al,[src_path]
+        jne     sb_no
+        mov     edi,OFFSET alt_path     ; the name goes after the last '\'
+        mov     edx,edi                 ; or ':'
+sb_dir:
+        mov     al,[edi]
+        or      al,al
+        jz      sb_name
+        inc     edi
+        cmp     al,'\'
+        je      sb_mark
+        cmp     al,':'
+        jne     sb_dir
+sb_mark:
+        mov     edx,edi
+        jmp     short sb_dir
+sb_name:
+        mov     edi,edx
+        call    sy_strcpy
+        clc
+        ret
+sb_no:
+        stc
+        ret
+
 ; sy_strcpy - ASCIIZ at ESI to EDI
 sy_strcpy:
         push    eax
@@ -408,6 +501,8 @@ tgt_letter  db  0
 src_type    db  0
 sys_attr    db  0
 src_absent  db  0                       ; sy_copy: the source had no such file
+src_beside  db  0                       ; sy_copy: look beside the interpreter
+                                        ; too
 
 name_io     db  'PMIO.SYS',0
 name_dos    db  'PMDOS.SYS',0
@@ -419,6 +514,7 @@ src_path    db  'A:\'
             db  16 dup(0)
 tgt_path    db  'A:\'
             db  16 dup(0)
+alt_path    db  SHELLNAME_MAX + 16 dup(0)       ; sy_beside's answer
 
 ; ONE ARGUMENT, and it is the target: the source is the current drive,
 ; which has to be a system disk itself.  A help screen that showed

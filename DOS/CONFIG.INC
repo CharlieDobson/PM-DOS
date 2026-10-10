@@ -56,7 +56,9 @@ CFG_KEY_MAX     EQU     16
 ; The walks over the file, in order.  See cfg_phaseof for which
 ; statement belongs to which, and why any of them has to.
 CFG_PASS_KEYS   EQU     0               ; SWITCHES=, before the startup keys
-CFG_PASS_DOS    EQU     1               ; DOS=, so upper memory exists
+CFG_PASS_DOS    EQU     1               ; DOS=, so upper memory exists, and
+                                        ; SHELL=, which says where the
+                                        ; system's files are
 CFG_PASS_MAIN   EQU     2               ; everything else, in file order
 CFG_PASS_INST   EQU     3               ; INSTALL=, after every driver
 
@@ -482,6 +484,11 @@ cfg_phaseof:
                                         ; memory before the chain is laid
                                         ; over what is left, and both of
                                         ; those happen between the walks
+        cmp     eax,OFFSET cfg_shell    ; where the interpreter is, is where
+        je      cph_first               ; the system's other files are looked
+                                        ; for (sys_open, DOSMAIN.ASM), and a
+                                        ; COUNTRY= line above the SHELL= one
+                                        ; has to find COUNTRY.SYS there too
         cmp     eax,OFFSET cfg_install
         je      cph_last
         cmp     eax,OFFSET cfg_insthigh
@@ -614,8 +621,9 @@ csw_out:
 ; than in BUFFERS and has no FCB table to size.  They are advisory in
 ; a real CONFIG.SYS too.
 ;
-; SEVEN STATEMENTS HAVE LEFT THIS LIST and the way they left it is
-; worth keeping in view.  DEVICE= and DEVICEHIGH= sat here "for now"
+; EIGHT STATEMENTS HAVE LEFT THIS LIST and the way they left it is
+; worth keeping in view.  COUNTRY= is the eighth: it waited here for
+; country tables, and they are a file now (cfg_country in NLS.INC).  DEVICE= and DEVICEHIGH= sat here "for now"
 ; with a note saying they would not stay; they went in v0.37 and
 ; v0.38.  DOS= sat here with a note saying that HIGH,UMB described a
 ; memory model that did not exist - which was true of a flat unpaged
@@ -625,7 +633,7 @@ csw_out:
 ; and the note beside it is what says which.
 ;
 ; WHAT IS LEFT, AND WHY EACH ONE STAYS - because "inert" without a
-; reason is indistinguishable from "not done yet", and five of these
+; reason is indistinguishable from "not done yet", and four of these
 ; will never be done:
 ;
 ;   BUFFERS=    PM-DOS caches per volume, not in a global pool.  There
@@ -638,9 +646,6 @@ csw_out:
 ;   DRIVPARM=   overrides a block driver's BPB.  There is something
 ;               to override as of v0.40, so this is now real work
 ;               rather than a statement with no subject.
-;   COUNTRY=    would need country tables PM-DOS does not carry.  38h
-;               and 65h answer for codepage 437 and say so; a second
-;               country is a data problem, not a parsing one.
 ;   NUMLOCK=    needs the lock keys tracked and their lights driven,
 ;               and KEYBD.INC deliberately tracks neither - see the
 ;               note on BDAK_CAPS.  It is a keyboard feature wearing a
@@ -2343,7 +2348,7 @@ cfg_table:
         dd      OFFSET cfgn_lastdrv, OFFSET cfg_lastdrv
         dd      OFFSET cfgn_fcbs,    OFFSET cfg_ignore
         dd      OFFSET cfgn_stacks,  OFFSET cfg_ignore
-        dd      OFFSET cfgn_country, OFFSET cfg_ignore
+        dd      OFFSET cfgn_country, OFFSET cfg_country
         dd      OFFSET cfgn_numlock, OFFSET cfg_ignore
         dd      OFFSET cfgn_dos,     OFFSET cfg_dos
         dd      OFFSET cfgn_drivparm,OFFSET cfg_ignore

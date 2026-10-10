@@ -9,8 +9,14 @@ WHERE EVERYTHING IS.  The root of this disk holds PM-DOS and
 nothing else: the kernel, CMD.EXE and COMMAND.COM, the commands
 that are part of the system - CHOICE, MORE, SORT, SYS, FORMAT, MEM,
 FDISK, MOUNT, MOVE, ATTRIB, CHKDSK, LABEL, CACHE, UNDELETE, CDEX,
-FC, FIND, DISKCOPY, DISKCOMP, ISAPNP, SHUTDOWN, PMD, DOSSHELL and
-ACROREAD - and LRGDISK.386, which is for a Windows on a hard disk.
+FC, FIND, DISKCOPY, DISKCOMP, ISAPNP, SHUTDOWN, PMD, DOSSHELL,
+ACROREAD and KEYB - the two files of tables KEYB and COUNTRY= read,
+KEYBOARD.SYS and COUNTRY.SYS - and LRGDISK.386, which is for a
+Windows on a hard disk.
+ONLY PMIO.SYS AND PMDOS.SYS HAVE TO BE IN A ROOT.  On a hard disk
+the rest can go in a directory of its own, with one line in
+CONFIG.SYS to say which - SHELL=C:\DOS\CMD.EXE /P - and that
+directory in the PATH.  CONFIG.TXT has the details under SHELL=.
 Everything else is a TEST, written to prove one thing about the
 kernel, and it is on a SECOND DISK, TESTS.IMG, since 2026-10-08:
 the two had outgrown one floppy.  That disk has every test program,
@@ -171,6 +177,53 @@ the power off through ACPI.  On a machine without ACPI it says so
 and leaves everything as it was.
   SHUTDOWN
 
+KEYB loads a keyboard layout out of KEYBOARD.SYS, as MS-DOS's did,
+and that is where the likeness ends: MS-DOS's stayed in memory on
+the keyboard interrupt, and this one hands the layout to the kernel
+and is gone.  So it goes in AUTOEXEC.BAT and never in an INSTALL=
+line, and there is nothing of it to load high.  The layout is for
+the prompt, for 32-bit programs and for DOS programs alike - one
+that puts its own handler on the keyboard interrupt and passes the
+keys on gets the layout's characters too.
+  KEYB GR             the German keyboard
+  KEYB FR,850         the French one, for code page 850
+  KEYB IT,,/ID:142    the second Italian keyboard
+  KEYB US             the built-in keyboard again
+  KEYB                which one is loaded
+KEYBOARD.SYS is looked for where COMMAND.COM is, which is where
+CMD.EXE is, and then in the root of the boot drive.  A file kept
+somewhere else is named:  KEYB GR,,D:\TABLES\KEYBOARD.SYS
+CTRL+ALT+F1 IS THE US KEYBOARD AND CTRL+ALT+F2 THE LAYOUT AGAIN, at
+any time and in any program.  The right-hand Alt is AltGr on a
+layout that has a third character on its keys, and Ctrl+Alt
+together is the same thing; an accent key waits for its letter, and
+the space bar after one gives the accent alone.  The layouts:
+  BE Belgium       FR France         PL Poland (214, 457)
+  BR Brazil        GK Greece         PO Portugal
+  CF Canada        GR Germany        RU Russia
+  CZ Czech Rep.    HU Hungary        SF, SG Switzerland
+  DK Denmark       IS Iceland        SL Slovakia
+  DV Dvorak        IT Italy (141,    SP Spain
+  LA Latin            142)           SU Finland
+     America       NL Netherlands    SV Sweden
+  NO Norway        TR Turkey (179,   UK United Kingdom
+  YU Yugoslavia       440)
+A LAYOUT TYPES WHAT THE CODE PAGE HAS.  KEYB takes the code page in
+use - 437, or what COUNTRY= in CONFIG.SYS said - and a letter that
+page has no place for is a key that types nothing: the Danish o with
+a stroke is in 865 and 850 and not in 437.  And the screen shows the
+video card's own characters whatever the code page is called, so a
+card with a 437 font shows a 437 character for every byte.
+UNDER WINDOWS THE LAYOUT IS WINDOWS'S OWN, picked in its Setup, and
+a DOS box inside Windows has the US keyboard: KEYB's layout is the
+kernel's, and Windows runs on the real-mode DOS, not on the kernel.
+
+CHCP shows the code page in use, and CHCP with a number changes it
+to another one the country has in COUNTRY.SYS - the capitals and
+the sorting order, not the screen.  Run KEYB again after it.
+  CHCP
+  CHCP 850
+
 PARKTEST runs RMTEST.COM on the real-mode DOS the kernel leaves
 behind - nine checks now, the ninth being CON opened BY NAME,
 which RMDOS could not do until v0.52.  PARKEXEC parks and then
@@ -311,11 +364,11 @@ quickest way to find out what this shell can actually do:
   DIR /?        ...and TYPE, COPY, DEL, REN, CLS, VER, VOL, DATE,
                 TIME, PAUSE, REM, EXIT, ECHO, BREAK, VERIFY, SET,
                 PATH, PROMPT, MD, CD, RD, GOTO, IF, FOR, SHIFT,
-                CALL, CTTY, DOSKEY and LOADHIGH
+                CALL, CTTY, CHCP, DOSKEY and LOADHIGH
   MEM /?        ...and MORE, SORT, CHOICE, FORMAT, SYS, FDISK,
                 MOUNT, MOVE, ATTRIB, CHKDSK, LABEL, CACHE, CDEX,
-                ISAPNP, PMD, DOSSHELL, ACROREAD, CMD, COMMAND and
-                \TESTS\DRIVES
+                ISAPNP, PMD, DOSSHELL, ACROREAD, KEYB, CMD, COMMAND
+                and \TESTS\DRIVES
 
 WHAT THOSE SCREENS SAY IS THIS SHELL AND NOT MS-DOS.  A switch that
 is not on the help screen is a switch this CMD.EXE does not have -

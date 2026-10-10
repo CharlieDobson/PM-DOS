@@ -392,6 +392,119 @@ st_out:
         ret
 
 ;=====================================================================
+; WHERE THE SYSTEM'S OWN FILES ARE.  Two of them have to be in the root
+; of the drive the system starts from, because the boot code reads
+; nothing else: PMIO.SYS and PMDOS.SYS.  Everything after those is
+; opened by name through the file system, and the directory it is
+; looked for in is the one the interpreter was loaded from - shell_name
+; up to its last '\' or ':'.  With no SHELL= line that is the root as
+; well, and a diskette with everything in the root works as it always
+; did; SHELL=C:\DOS\CMD.EXE /P makes it C:\DOS, which is how an
+; installed system says where it was put.  The same rule finds CHKDSK
+; for the check at startup (VOLFLAG.INC), and CMD.EXE and FORMAT find
+; COMMAND.COM and SYS by it from outside.
+;
+; The root of the boot drive is tried as well, so a file that is in
+; neither place is the only one that is missing.
+;=====================================================================
+
+;---------------------------------------------------------------------
+; sys_beside - ESI -> a file's name, EDI -> SYSPATH_MAX bytes: the name
+;              in the interpreter's directory.  Everything preserved.
+;---------------------------------------------------------------------
+sys_beside:
+        push    eax
+        push    edx
+        push    esi
+        push    edi
+        push    esi
+        mov     esi,OFFSET shell_name
+        mov     edx,edi
+syb_cp:
+        lodsb
+        or      al,al
+        jz      syb_name
+        stosb
+        cmp     al,'\'
+        je      syb_sep
+        cmp     al,':'
+        jne     syb_cp
+syb_sep:
+        mov     edx,edi                 ; just past it
+        jmp     syb_cp
+syb_name:
+        mov     edi,edx
+        pop     esi
+        jmp     syn_cp
+
+;---------------------------------------------------------------------
+; sys_inroot - the same, in the root of the drive the system started
+;              from.
+;---------------------------------------------------------------------
+sys_inroot:
+        push    eax
+        push    edx
+        push    esi
+        push    edi
+        mov     al,[shell_dflt]         ; the boot letter
+        stosb
+        mov     ax,'\:'
+        stosw
+syn_cp:
+        lodsb
+        stosb
+        or      al,al
+        jnz     syn_cp
+        pop     edi
+        pop     esi
+        pop     edx
+        pop     eax
+        ret
+
+;---------------------------------------------------------------------
+; sys_open - open one of the system's files for reading.  ESI -> its
+;            name, with no drive and no directory.  AL = 0: beside the
+;            interpreter, then the boot drive's root.  AL = 1: the root
+;            first, for a file SYS puts there with the kernel.
+;
+; -> CF clear, EAX = the handle, and sys_path is the name that opened.
+;    CF set: it is in neither.  Nothing else is changed.
+;---------------------------------------------------------------------
+sys_open:
+        push    ebx
+        push    ecx
+        push    edx
+        push    edi
+        movzx   ebx,al
+        mov     ecx,2
+        mov     edi,OFFSET sys_path
+syo_try:
+        test    bl,1
+        jnz     syo_root
+        call    sys_beside
+        jmp     syo_open
+syo_root:
+        call    sys_inroot
+syo_open:
+        mov     edx,edi
+        mov     eax,3D00h
+        call    k21
+        jnc     syo_have
+        xor     bl,1
+        dec     ecx
+        jnz     syo_try
+        stc
+        jmp     syo_out
+syo_have:
+        movzx   eax,ax
+syo_out:
+        pop     edi
+        pop     edx
+        pop     ecx
+        pop     ebx
+        ret
+
+;=====================================================================
 ; dos_fault - IOS_EXCHOOK.  A ring-0 fault has happened and PMIO has
 ;             already said what it was.  Get back to a prompt.
 ;
@@ -563,6 +676,9 @@ kbss_stop:
                                         ; filesystem and is reached from
                                         ; above
         INCLUDE CONFIG.INC
+        INCLUDE NLS.INC                 ; and after it: COUNTRY=, which is a
+                                        ; CONFIG.SYS statement with a file
+                                        ; of tables behind it
         INCLUDE LOWMEM.INC
         INCLUDE UMB.INC                 ; and immediately after it: upper
                                         ; memory is the same chain, so the
@@ -648,6 +764,8 @@ shell_dflt  db  'A:\CMD.EXE',0
 shell_old   db  'A:\COMMAND.COM',0
 shell_tail  db  3,' /P',0Dh             ; DOS tail: length, text, CR
             db  SHELLTAIL_MAX - 5 dup(0)
+SYSPATH_MAX     EQU     SHELLNAME_MAX + 16      ; sys_path, at the end of
+                                                ; this file
 
 IFDEF PMDOS_DEBUG
 msgBanner   db  13,10
@@ -667,6 +785,13 @@ msgKbss     db  'PMDOS.SYS: linked for the wrong KBSS address',13,10,0
 _DOS    ENDS
 
 _KBSS   SEGMENT
+IF ($ - kbss_start) AND 3
+        .ERR    sys_path in _KBSS is not on a dword
+ENDIF
+sys_path    db  SYSPATH_MAX dup(?)      ; sys_open: the name that opened
+IF SYSPATH_MAX AND 3
+        .ERR    what follows sys_path in _KBSS is not on a dword
+ENDIF
 kbss_mid    LABEL BYTE
 _KBSS   ENDS
 

@@ -1168,7 +1168,13 @@ GNLS_TERM       EQU     GNLS_OFF + 82h  ; dw 22, then the terminator table
 GNLS_TERMLEN    EQU     24
 GNLS_COLLATE    EQU     GNLS_OFF + 9Ah  ; dw 256, then a weight per character
 GNLS_DBCS       EQU     GNLS_OFF + 19Ch ; dw 0, dw 0: no ranges, and the end
-GNLS_END        EQU     GNLS_OFF + 1A0h
+GNLS_CASEMAP    EQU     GNLS_OFF + 1A0h ; twelve bytes of real-mode code: the
+GNLS_MAPLEN     EQU     12              ; FAR CALL in the country block, which
+                                        ; upper-cases AL out of GNLS_UPCASE
+GNLS_KBSTUB     EQU     GNLS_OFF + 1ACh ; five bytes: where INT 09h ends in a
+GNLS_STUBLEN    EQU     5               ; DOS box once KEYB has loaded a layout
+                                        ; (IO\KEYBD.INC, kb_hlt)
+GNLS_END        EQU     GNLS_OFF + 1B1h
 GNLS_ACCENTS    EQU     26h             ; 80h-A5h, which vdm_nlsacc weighs
 
 V86_TPA         EQU     000059D0h
@@ -1583,7 +1589,87 @@ CTRY_LISTSEP    EQU     16h             ; 2 bytes ASCIZ
 CTRY_RESERVED   EQU     18h             ; 10 bytes
 CTRY_SIZE       EQU     22h
 
-CTRY_USA        EQU     1               ; the one country code answered
+CTRY_USA        EQU     1               ; the country the kernel has built in
+CTRY_CP437      EQU     437             ; ...and its code page
+
+;---------------------------------------------------------------------
+; COUNTRY.SYS, as MS-DOS lays it out and COUNTRY= reads it (DOS\NLS.INC;
+; TOOLS\MKNLS.PS1 writes PM-DOS's own).  A header, a list of country
+; and code page pairs, and for each pair a list of tables by number.
+;---------------------------------------------------------------------
+CSYS_TYPE       EQU     12h             ; db - 1, the only kind there is
+CSYS_LIST       EQU     13h             ; dd - where the list of pairs is
+CSYS_HDRLEN     EQU     17h
+CSE_LEN         EQU     00h             ; dw - bytes in the entry after this
+CSE_COUNTRY     EQU     02h             ; dw
+CSE_PAGE        EQU     04h             ; dw
+CSE_TABLES      EQU     0Ah             ; dd - where its list of tables is
+CSE_SIZE        EQU     0Eh
+CSB_LEN         EQU     00h             ; dw - bytes in the entry after this
+CSB_ID          EQU     02h             ; dw - CSI_*
+CSB_DATA        EQU     04h             ; dd - where the table is
+CSB_SIZE        EQU     08h
+CSD_LEN         EQU     08h             ; dw - after FFh and a seven-letter name
+CSD_DATA        EQU     0Ah             ; and the bytes
+CSI_INFO        EQU     1               ; country, code page, 38h's 34 bytes
+CSI_UCASE       EQU     2               ; 128 bytes: 80h-FFh in upper case
+CSI_COLLATE     EQU     6               ; 256 bytes: a weight a character
+CSI_YESNO       EQU     35              ; the letter for yes, 0, for no, 0
+CSYS_MAXLIST    EQU     512             ; pairs in a file, at most
+CSYS_MAXTAB     EQU     16              ; tables a pair, at most
+
+;---------------------------------------------------------------------
+; A KEYBOARD LAYOUT, as KEYB hands it to the kernel (21h/F1h AL=22h) and
+; as it lies in KEYBOARD.SYS (TOOLS\MKNLS.PS1): a header, six bytes for
+; each key the layout names, and the dead keys.
+;
+; A KEY is its scan code, a flag byte and four characters: alone, with
+; Shift, with AltGr, with AltGr and Shift.  Zero is no character.  A
+; flag from KBLK_DEAD up says that level's byte is not a character but
+; the number of a dead key.  KBLK_CAPS says Caps Lock shifts the key.
+;
+; A DEAD KEY is the character it types by itself, a count, and that
+; many pairs: a letter, and what the accent makes of the letter.
+;
+; The kernel keeps the record as it was handed over and reads it at
+; every key press, so everything in it is checked once, on the way in
+; (kl_check in INT21.INC).
+;---------------------------------------------------------------------
+KBL_SIG         EQU     00h             ; dw - KBL_MAGIC
+KBL_CODE        EQU     02h             ; two letters: 'GR'
+KBL_ID          EQU     04h             ; dw - the keyboard ID, KEYB's /ID
+KBL_PAGE        EQU     06h             ; dw - the code page its bytes are in
+KBL_NKEYS       EQU     08h             ; db
+KBL_NDEAD       EQU     09h             ; db
+KBL_DECIMAL     EQU     0Ah             ; db - what the keypad's '.' key types
+KBL_FLAGS       EQU     0Bh             ; db - KBLF_*
+KBL_KEYS        EQU     0Ch             ; and the keys start here
+KBL_MAGIC       EQU     4C4Bh           ; 'K','L'
+KBLF_ALTGR      EQU     01h             ; the right Alt key is AltGr
+KBLK_SCAN       EQU     0               ; a key: its scan code,
+KBLK_FLAGS      EQU     1               ; KBLK_CAPS and the four KBLK_DEAD bits,
+KBLK_CHARS      EQU     2               ; and four bytes
+KBLK_LEN        EQU     6
+KBLK_CAPS       EQU     01h
+KBLK_DEAD       EQU     10h             ; ...shifted left by the level
+KBL_MAXKEYS     EQU     64
+KBL_MAXDEAD     EQU     16
+KBL_MAX         EQU     768             ; the longest record taken
+
+; 21h/F1h AL=22h, the function in bits 16-23 of EAX.  Native programs
+; only - KEYB.COM is one.
+;   KYF_SET    EDX -> a record, ECX = its length: make it the layout,
+;              and the keyboard national
+;   KYF_GET    EDI -> KBL_KEYS bytes for the header of the layout in
+;              use -> EAX = 0 none loaded, 1 loaded and the keyboard
+;              is the US one for now (Ctrl+Alt+F1), 2 loaded and in use
+;   KYF_MODE   DL = 0 the US keyboard, 1 the layout: what Ctrl+Alt+F1
+;              and Ctrl+Alt+F2 do
+;   KYF_OFF    forget the layout
+KYF_SET         EQU     0
+KYF_GET         EQU     1
+KYF_MODE        EQU     2
+KYF_OFF         EQU     3
 
 ;---------------------------------------------------------------------
 ; The real-mode PSP a DOS program is entitled to.  Same 100h bytes
@@ -2613,6 +2699,20 @@ IOS_RMFREEZE    EQU     IOSVC + 0FCh            ; CONFIG.SYS is finished: from
 IOS_ACPI        EQU     IOSVC + 100h            ; AL = an ACPF_* function:
                                                 ; switching the machine off
                                                 ; (IO\ACPI.INC)
+IOS_KBLAYOUT    EQU     IOSVC + 104h            ; AL = a KLS_* function: the
+                                                ; layout the keyboard driver
+                                                ; decodes with (IO\KEYBD.INC)
+
+KLS_SET         EQU     0       ; ESI -> a KBL_ record that stays where it is
+                                ;    and has been checked, or 0 for none; DL =
+                                ;    1 if the DOS data segment has the INT 09h
+                                ;    stub (GNLS_KBSTUB)
+KLS_GET         EQU     1       ; -> ESI = the record or 0, AL = 1 if the
+                                ;    keyboard is using it
+KLS_MODE        EQU     2       ; DL = 0 the US keyboard, 1 the layout
+KLS_INJECT      EQU     3       ; DL = a scan code, as if the keyboard had
+                                ;    sent it: what 21h/F1h AL=23h is, for the
+                                ;    tests (TOOLS\KBLTEST.ASM)
 
 ACPF_FIND       EQU     0       ; -> CF clear if ACPI can switch this machine
                                 ;    off.  CF and AL = ACPE_NONE if there are

@@ -305,8 +305,10 @@ win_parkreq db  0                   ; set here, acted on and cleared in
 msgWinPark  db  13,10
             db  'PM-DOS: cannot hand the machine over - Windows will not '
             db  'start.',13,10,0
-msgWinPNoRM db  'RMDOS.SYS is not in the root of the boot drive or of the '
-            db  'current one.',13,10,0
+msgWinPNoRM db  'RMDOS.SYS was not found in the root of the boot drive, '
+            db  'in the',13,10
+            db  'directory CMD.EXE is in, or in the root of the current '
+            db  'drive.',13,10,0
 msgWinPMem  db  'There is not enough conventional memory left for RMDOS.SYS.'
             db  13,10,0
 msgWinPBad  db  'RMDOS.SYS is there and could not be read: it is empty, or '

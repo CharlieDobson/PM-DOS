@@ -74,6 +74,8 @@ KBF_CTRL        EQU     02h
 KBF_ALT         EQU     04h
 KBF_E0          EQU     08h
 KBF_CAPS        EQU     10h
+KBF_ALTGR       EQU     20h             ; the right-hand Alt is down, on a
+                                        ; layout where that key is AltGr
 
 KBQ_SIZE        EQU     32              ; scan codes held for a DOS box.  A
                                         ; key is at most three of them, and
@@ -184,6 +186,9 @@ irq_keyboard:
 kb_have:
         in      al,KB_DATA
 
+kb_byte:                                ; AL = a byte from the keyboard - or
+                                        ; from KLS_INJECT, which is a test's
+                                        ; way of pressing a key
         mov     byte ptr [kb_forbox],0
         cmp     byte ptr ds:[v86_active],0
         je      kb_decode               ; no box: the keyboard is all ours
@@ -247,6 +252,27 @@ kb_realmod:
 
 ;--- ordinary key -----------------------------------------------------
 kb_normal:
+        ; CTRL+ALT+F1 IS THE US KEYBOARD AND CTRL+ALT+F2 THE LAYOUT
+        ; AGAIN, once KEYB has loaded one - the two keys MS-DOS's KEYB
+        ; takes for it.  Neither reaches a program.
+        cmp     dword ptr [kb_layout],0
+        je      kb_nohot
+        mov     ah,byte ptr [kb_flags]
+        and     ah,KBF_CTRL OR KBF_ALT
+        cmp     ah,KBF_CTRL OR KBF_ALT
+        jne     kb_nohot
+        cmp     al,3Bh
+        je      kb_hotus
+        cmp     al,3Ch
+        je      kb_hotnat
+kb_nohot:
+        ; A KEY THAT IS THE BOX'S IS NOT TRANSLATED HERE AT ALL.  Its
+        ; character used to be made and thrown away at kb_store; now a
+        ; translation has a state - the accent waiting for its letter -
+        ; and only the pass that puts the key in the ring may move it.
+        cmp     byte ptr [kb_forbox],0
+        jne     kb_clr_e0
+
         test    byte ptr [kb_flags],KBF_E0
         jnz     kb_grey                 ; the cursor pad and its neighbours
 
@@ -261,7 +287,9 @@ kb_normal:
 kb_plain:
         cmp     al,59h                  ; beyond our translation tables?
         jae     kb_clr_e0
-
+        cmp     byte ptr [kb_layon],0
+        jne     kb_nat                  ; KEYB's layout first
+kb_us:
         movzx   ebx,al
         mov     ah,al                   ; keep the scan code in AH
         test    byte ptr [kb_flags],KBF_SHIFT
@@ -457,28 +485,48 @@ kb_shift:
         test    ah,ah
         jnz     kb_shift_up
         or      byte ptr [kb_flags],KBF_SHIFT
-        jmp     short kb_mod
+        jmp     kb_mod
 kb_shift_up:
         and     byte ptr [kb_flags],NOT KBF_SHIFT
-        jmp     short kb_mod
+        jmp     kb_mod
 
 kb_ctrl:
         test    ah,ah
         jnz     kb_ctrl_up
         or      byte ptr [kb_flags],KBF_CTRL
-        jmp     short kb_mod
+        jmp     kb_mod
 kb_ctrl_up:
         and     byte ptr [kb_flags],NOT KBF_CTRL
-        jmp     short kb_mod
+        jmp     kb_mod
 
 kb_alt:
+        ; THE RIGHT-HAND ALT IS ALTGR on a layout that has a third
+        ; level.  It stays an Alt as well: a key with nothing at that
+        ; level, or one the layout does not name, is Alt and the key.
+        test    byte ptr [kb_flags],KBF_E0
+        jz      kb_alt_l
+        cmp     byte ptr [kb_layon],0
+        je      kb_alt_l
+        push    esi
+        mov     esi,dword ptr [kb_layout]
+        test    byte ptr [esi+KBL_FLAGS],KBLF_ALTGR
+        pop     esi
+        jz      kb_alt_l
+        test    ah,ah
+        jnz     kb_altgr_up
+        or      byte ptr [kb_flags],KBF_ALT OR KBF_ALTGR
+        jmp     kb_mod
+kb_altgr_up:
+        and     byte ptr [kb_flags],NOT (KBF_ALT OR KBF_ALTGR)
+        jmp     kb_mod
+kb_alt_l:
         test    ah,ah
         jnz     kb_alt_up
         or      byte ptr [kb_flags],KBF_ALT
-        jmp     short kb_mod
+        jmp     kb_mod
 kb_alt_up:
         and     byte ptr [kb_flags],NOT KBF_ALT
-        jmp     short kb_mod
+        jmp     kb_mod
 
 kb_caps:
         test    ah,ah
@@ -592,6 +640,17 @@ kbq_put:
         push    eax
         push    ebx
         push    ecx
+        ; THE BOX'S STREAM HAS A DECODER STATE OF ITS OWN (kb_boxkey),
+        ; and this is where the two are made to agree: with nothing
+        ; waiting, the box has been given every code before this one,
+        ; and the shift state before this code is the wire's as it
+        ; stands - this runs before the code is decoded.
+        mov     bl,byte ptr [kbq_head]
+        cmp     bl,byte ptr [kbq_tail]
+        jne     kqp_seeded
+        mov     bl,byte ptr [kb_flags]
+        mov     byte ptr [kb_boxfl],bl
+kqp_seeded:
         movzx   ebx,byte ptr [kbq_tail]
         lea     ecx,[ebx+1]
         and     cl,KBQ_SIZE - 1
@@ -849,6 +908,464 @@ kbf_nocaps:
         ret
 
 ;=====================================================================
+; A NATIONAL LAYOUT.
+;
+; MS-DOS's KEYB was a resident program on INT 09h with its tables read
+; from KEYBOARD.SYS.  The keyboard here is the kernel's - IRQ 1 never
+; reaches an INT 09h unless a DOS box has hooked it - so the layout is
+; a table this decoder is handed and consults: KEYB.COM reads it out of
+; KEYBOARD.SYS and passes it down (21h/F1h AL=22h, IOS_KBLAYOUT), and
+; the decoder that typed US keys types that country's.  What the table
+; is, is KBL_ in PMDOS.INC.
+;
+; A key the layout names is translated from it; any other key - the
+; function keys, the cursor pad, Enter, the space bar - goes on through
+; the code above as it always did.
+;
+; AH is the key's own scan code going in and coming out, whatever is
+; printed on the key.  The one exception is Alt and a letter, which
+; has no character to be told by: that is reported as the US key with
+; that letter on it, so that Alt+Z is the key marked Z.
+;=====================================================================
+kb_nat:
+        mov     ah,al
+        push    esi
+        push    edi
+        push    ecx
+        push    edx
+        mov     esi,dword ptr [kb_layout]
+
+        cmp     ah,39h                  ; the space bar, after a dead key:
+        jne     kn_notspace             ; the accent by itself
+        cmp     byte ptr [kb_dead],0
+        je      kn_us
+        test    byte ptr [kb_flags],KBF_CTRL OR KBF_ALT
+        jnz     kn_us
+        mov     al,' '
+        jmp     kn_char
+kn_notspace:
+        cmp     ah,53h                  ; the keypad's decimal key
+        jne     kn_find
+        test    byte ptr [kb_flags],KBF_CTRL OR KBF_ALT
+        jnz     kn_us
+        mov     al,byte ptr [esi+KBL_DECIMAL]
+        or      al,al
+        jz      kn_us
+        jmp     kn_char
+
+kn_find:
+        movzx   ecx,byte ptr [esi+KBL_NKEYS]
+        lea     edi,[esi+KBL_KEYS]
+kn_scan:
+        or      ecx,ecx
+        jz      kn_us                   ; not a key the layout names
+        cmp     byte ptr [edi+KBLK_SCAN],ah
+        je      kn_hit
+        add     edi,KBLK_LEN
+        dec     ecx
+        jmp     kn_scan
+
+;--- EDI -> the key.  Which of its four characters? -------------------
+; AltGr is the right-hand Alt, or Ctrl and Alt together, as it was for
+; KEYB: an 84-key board has no right-hand Alt.
+kn_hit:
+        mov     bl,byte ptr [kb_flags]
+        test    bl,KBF_ALTGR
+        jnz     kn_third
+        mov     bh,bl
+        and     bh,KBF_CTRL OR KBF_ALT
+        cmp     bh,KBF_CTRL OR KBF_ALT
+        jne     kn_first
+kn_third:
+        mov     edx,2
+        test    bl,KBF_SHIFT
+        jz      kn_thirdlv
+        inc     edx
+kn_thirdlv:
+        call    kn_level
+        jc      kn_isdead
+        or      al,al
+        jnz     kn_char
+        jmp     kn_asalt                ; nothing there: Alt and the key
+
+kn_first:
+        test    bl,KBF_ALT
+        jnz     kn_asalt
+        test    bl,KBF_CTRL
+        jnz     kn_asctrl
+        xor     edx,edx
+        test    bl,KBF_SHIFT
+        jz      kn_nosh
+        inc     edx
+kn_nosh:
+        test    bl,KBF_CAPS             ; Caps Lock shifts the keys the
+        jz      kn_nocaps               ; layout says it shifts, and Shift
+        test    byte ptr [edi+KBLK_FLAGS],KBLK_CAPS     ; undoes it
+        jz      kn_nocaps
+        xor     edx,1
+kn_nocaps:
+        call    kn_level
+        jc      kn_isdead
+        or      al,al
+        jz      kn_none                 ; the key types nothing here
+        jmp     kn_char
+
+;--- Ctrl and a key: by the letter the layout has on it ---------------
+kn_asctrl:
+        xor     edx,edx
+        call    kn_level
+        jc      kn_us
+        mov     bl,al
+        or      bl,20h
+        cmp     bl,'a'
+        jb      kn_us
+        cmp     bl,'z'
+        ja      kn_us
+        and     al,1Fh
+        jmp     kn_store
+
+;--- Alt and a key: the US key that letter is on ----------------------
+kn_asalt:
+        xor     edx,edx
+        call    kn_level
+        jc      kn_us
+        mov     bl,al
+        or      bl,20h
+        cmp     bl,'a'
+        jb      kn_us
+        cmp     bl,'z'
+        ja      kn_us
+        movzx   ebx,bl
+        mov     ah,byte ptr [kb_letscan + ebx - 'a']
+        xor     al,al
+        jmp     kn_store
+
+;--- a dead key: AL = which.  It waits for the next character ---------
+kn_isdead:
+        cmp     byte ptr [kb_dead],0
+        je      kn_wait
+        push    eax                     ; two in a row: the first one's
+        mov     al,0FFh                 ; accent by itself, and the second
+        call    kb_compose              ; waits.  FFh is in no dead key's
+        pop     eax                     ; list, so only the accent is put
+kn_wait:
+        inc     al
+        mov     byte ptr [kb_dead],al
+        mov     byte ptr [kb_deadscan],ah
+kn_none:
+        pop     edx
+        pop     ecx
+        pop     edi
+        pop     esi
+        jmp     kb_clr_e0
+
+kn_char:
+        call    kb_compose
+kn_store:
+        pop     edx
+        pop     ecx
+        pop     edi
+        pop     esi
+        jmp     kb_store
+
+kn_us:                                  ; the US tables after all
+        mov     al,ah
+        pop     edx
+        pop     ecx
+        pop     edi
+        pop     esi
+        jmp     kb_us
+
+;---------------------------------------------------------------------
+; kn_level - EDI -> a key, EDX = the level, 0 to 3 -> AL = its byte.
+;            CF set if that byte is a dead key's number.
+;---------------------------------------------------------------------
+kn_level:
+        push    ecx
+        mov     al,byte ptr [edi+KBLK_CHARS+edx]
+        mov     cl,dl
+        mov     ch,KBLK_DEAD
+        shl     ch,cl
+        test    byte ptr [edi+KBLK_FLAGS],ch
+        pop     ecx
+        jz      knl_char
+        stc
+        ret
+knl_char:
+        clc
+        ret
+
+;---------------------------------------------------------------------
+; kb_compose - AL = a character, AH = its key.  With a dead key waiting,
+;              AL becomes what the accent makes of the character; and
+;              if it makes nothing of it, the accent goes into the ring
+;              by itself first and AL follows it, which is what KEYB
+;              did.  A space is the accent by itself.
+;---------------------------------------------------------------------
+kb_compose:
+        cmp     byte ptr [kb_dead],0
+        jne     kc_have
+        ret
+kc_have:
+        push    ebx
+        push    ecx
+        push    esi
+        movzx   ebx,byte ptr [kb_dead]
+        dec     ebx
+        mov     byte ptr [kb_dead],0
+        mov     esi,dword ptr [kb_layout]
+        or      esi,esi
+        jz      kc_out                  ; the layout went while it waited
+        movzx   ecx,byte ptr [esi+KBL_NKEYS]
+        imul    ecx,KBLK_LEN
+        lea     esi,[esi+KBL_KEYS+ecx]  ; the first dead key
+kc_skip:
+        or      ebx,ebx
+        jz      kc_this
+        movzx   ecx,byte ptr [esi+1]
+        lea     esi,[esi+2+ecx*2]
+        dec     ebx
+        jmp     kc_skip
+kc_this:
+        cmp     al,' '
+        je      kc_alone
+        movzx   ecx,byte ptr [esi+1]
+        lea     ebx,[esi+2]
+kc_pair:
+        or      ecx,ecx
+        jz      kc_both
+        cmp     byte ptr [ebx],al
+        je      kc_made
+        add     ebx,2
+        dec     ecx
+        jmp     kc_pair
+kc_made:
+        mov     al,byte ptr [ebx+1]
+        jmp     kc_out
+kc_alone:
+        cmp     byte ptr [esi],0        ; a page with no such character
+        je      kc_out                  ; types the space
+        mov     al,byte ptr [esi]
+        jmp     kc_out
+kc_both:
+        cmp     byte ptr [esi],0
+        je      kc_out
+        push    eax
+        mov     al,byte ptr [esi]
+        mov     ah,byte ptr [kb_deadscan]
+        call    kb_put
+        pop     eax
+kc_out:
+        pop     esi
+        pop     ecx
+        pop     ebx
+        ret
+
+;--- Ctrl+Alt+F1, Ctrl+Alt+F2 -----------------------------------------
+kb_hotus:
+        xor     dl,dl
+        jmp     kb_hot
+kb_hotnat:
+        mov     dl,1
+kb_hot:
+        call    kb_setmode
+        jmp     kb_clr_e0
+
+;---------------------------------------------------------------------
+; kb_setmode - DL = 0 the US keyboard, 1 the layout, if there is one.
+;---------------------------------------------------------------------
+kb_setmode:
+        cmp     dword ptr [kb_layout],0
+        jne     ksm_have
+        xor     dl,dl
+ksm_have:
+        mov     byte ptr [kb_layon],dl
+        mov     byte ptr [kb_dead],0
+        and     byte ptr [kb_flags],NOT KBF_ALTGR
+        and     byte ptr [kb_boxfl],NOT KBF_ALTGR
+        ret
+
+;=====================================================================
+; kb_laysvc - IOS_KBLAYOUT.  AL = a KLS_* function (PMDOS.INC).
+;
+; KLS_SET ALSO PUTS THE DOS BOX'S INT 09h ON THE STUB, the first time
+; there is a layout to need it.  A box that hooks INT 09h is given the
+; scan codes and decodes them itself, or chains to the handler it
+; found - which was the ROM's, and the ROM types US keys.  MS-DOS's
+; KEYB was the handler such a program found; so from here on what it
+; finds is a HLT in the DOS data segment (GNLS_KBSTUB), and kb_hlt
+; answers it with this decoder.  Only if nothing has hooked INT 09h
+; already: a resident program in front keeps the ROM's address and
+; goes on reaching the ROM, which no table can change.
+;=====================================================================
+kb_laysvc:
+        cmp     al,KLS_GET
+        je      kly_get
+        cmp     al,KLS_MODE
+        je      kly_mode
+        cmp     al,KLS_INJECT
+        je      kly_inject
+        cmp     al,KLS_SET
+        jne     kly_out
+        pushfd
+        cli
+        push    eax
+        mov     dword ptr [kb_layout],esi
+        push    edx
+        mov     dl,1
+        call    kb_setmode
+        pop     edx
+        or      esi,esi
+        jz      kly_done
+        or      dl,dl
+        jz      kly_done
+        cmp     byte ptr [kb_stubon],0
+        jne     kly_done
+        mov     eax,dword ptr ds:[IVT_INT09]
+        cmp     eax,dword ptr [kb_romint9]
+        jne     kly_done
+        mov     dword ptr [kb_bios9],eax
+        mov     eax,(DOSDATA_SEG SHL 16) + GNLS_KBSTUB
+        mov     dword ptr ds:[IVT_INT09],eax
+        mov     dword ptr [kb_romint9],eax
+        mov     byte ptr [kb_stubon],1
+kly_done:
+        pop     eax
+        popfd
+kly_out:
+        ret
+kly_get:
+        mov     esi,dword ptr [kb_layout]
+        mov     al,byte ptr [kb_layon]
+        ret
+kly_mode:
+        pushfd
+        cli
+        call    kb_setmode
+        popfd
+        ret
+
+;--- KLS_INJECT: DL = a scan code, taken exactly as IRQ 1 takes one off
+;--- the port - decoded into the ring, or queued for a box that has
+;--- hooked INT 09h and delivered to it when it next runs.  It is how a
+;--- test presses a key with nobody at the keyboard, as IOS_MSINJECT is
+;--- for the mouse.
+;---
+;--- DH = 1 when the caller is a DOS box.  A box that asks is inside a
+;--- DOS call, and a key that arrives then is the kernel's to decode
+;--- (v86_active); the key a test means is the one that arrives while
+;--- its own code is running, so for a box the code is taken as that.
+kly_inject:
+        pushfd
+        cli
+        pushad
+        mov     al,dl
+        mov     bl,byte ptr ds:[v86_active]
+        push    ebx
+        or      dh,dh
+        jz      kli_go
+        mov     byte ptr ds:[v86_active],1
+kli_go:
+        call    kb_byte
+        pop     ebx
+        mov     byte ptr ds:[v86_active],bl
+        popad
+        popfd
+        ret
+
+;=====================================================================
+; kb_hlt - ESI -> a box's context, stopped at a HLT.  CF clear if the
+;          HLT was the INT 09h stub's: the box's keyboard handler has
+;          passed the key on, and this is what it was passed to.
+;
+; What the ROM's handler did there, this does: read the code the
+; controller is holding, put the key in the ring, publish the shift
+; state, end the interrupt, and return.
+;=====================================================================
+kb_hlt:
+        cmp     byte ptr [kb_stubon],0
+        je      kbh_no
+        cmp     dword ptr [esi+V86C_CS],DOSDATA_SEG
+        jne     kbh_no
+        cmp     word ptr [esi+V86C_EIP],GNLS_KBSTUB
+        jne     kbh_no
+        pushad
+        pushfd
+        cli
+        cmp     byte ptr [kb_lvalid],0  ; nothing was ever latched: a call
+        je      kbh_eoi                 ; from nowhere, and no key in it
+        mov     byte ptr [kb_obf],0     ; the read of port 60h
+        mov     al,byte ptr [kb_latch]
+        call    kb_boxkey
+kbh_eoi:
+        popfd
+        mov     edx,20h                 ; the end of the interrupt, to the
+        mov     al,20h                  ; box's own controller
+        call    vpc_out
+        call    vd_frame                ; and the IRET
+        popad
+        clc
+        ret
+kbh_no:
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; kb_boxkey - AL = a scan code as the box was given it.  Decoded by
+;             the code above, with the BOX'S shift state and not the
+;             wire's: the two streams are the same codes at different
+;             times, and a Shift released on the wire is still down for
+;             a key the box has not been given yet.  kbq_put makes the
+;             two agree whenever the box has caught up.  Interrupts off.
+;---------------------------------------------------------------------
+kb_boxkey:
+        mov     bl,byte ptr [kb_flags]
+        xchg    bl,byte ptr [kb_boxfl]
+        mov     byte ptr [kb_flags],bl
+        mov     bl,byte ptr [kb_forbox]
+        push    ebx
+        mov     byte ptr [kb_forbox],0
+        call    kb_decode               ; the key into the ring, and the
+        pop     ebx                     ; box's shift state into 40:17
+        mov     byte ptr [kb_forbox],bl
+        mov     bl,byte ptr [kb_flags]
+        xchg    bl,byte ptr [kb_boxfl]
+        mov     byte ptr [kb_flags],bl
+        ret
+
+;=====================================================================
+; kb_park - AL = 0: the machine is about to be handed to real mode,
+;           where a HLT is a HLT, so the stub becomes a jump to the
+;           handler the ROM left - a resident program that chained to
+;           the stub goes on to the ROM, and Windows and its DOS boxes
+;           have the US keyboard under their own drivers.  AL = 1: it
+;           has come back.
+;=====================================================================
+kb_park:
+        cmp     byte ptr [kb_stubon],0
+        je      kbp_out
+        push    eax
+        or      al,al
+        jnz     kbp_back
+        mov     byte ptr ds:[DOSDATA + GNLS_KBSTUB],0EAh        ; JMP FAR
+        mov     eax,dword ptr [kb_bios9]
+        mov     dword ptr ds:[DOSDATA + GNLS_KBSTUB + 1],eax
+        pop     eax
+        ret
+kbp_back:
+        mov     dword ptr ds:[DOSDATA + GNLS_KBSTUB],9090CFF4h  ; HLT, IRET
+        mov     byte ptr ds:[DOSDATA + GNLS_KBSTUB + 4],90h
+        pop     eax
+kbp_out:
+        ret
+
+; Where the US keyboard has each letter, a to z: what Alt and a letter
+; is reported as.
+kb_letscan:
+        db      1Eh,30h,2Eh,20h,12h,21h,22h,23h,17h,24h,25h,26h,32h
+        db      31h,18h,19h,10h,13h,1Fh,14h,16h,2Fh,11h,2Dh,15h,2Ch
+
+;=====================================================================
 ; Scan code translation, indexed by make code 00h..58h.
 ; Zero means "no ASCII equivalent" - the caller still gets the scan
 ; code in AH, which is how function and cursor keys are reported.
@@ -895,6 +1412,20 @@ kb_upper:
 kb_flags    db  0                       ; the decoder's state.  The buffer
                                         ; it fills is the machine's, at
                                         ; 40:1E - see the head comment
+kb_boxfl    db  0                       ; ...and the box's own copy of it,
+                                        ; for the codes it has been given
+                                        ; (kb_boxkey)
+kb_layon    db  0                       ; 1 while keys are translated by
+                                        ; KEYB's layout
+kb_stubon   db  0                       ; 1 once INT 09h ends at GNLS_KBSTUB
+kb_dead     db  0                       ; a dead key is waiting: its number
+                                        ; and one
+kb_deadscan db  0                       ; ...and the key it was
+            db  0,0
+kb_layout   dd  0                       ; -> the KBL_ record, in PMDOS's
+                                        ; memory, or 0 for the US keyboard
+kb_bios9    dd  0                       ; INT 09h as the ROM left it, once
+                                        ; kb_romint9 is the stub instead
 kb_forbox   db  0                       ; this scan code belongs to the DOS
                                         ; box, so decode it for Ctrl-Alt-Del
                                         ; and the modifier state and stop

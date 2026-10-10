@@ -2385,10 +2385,17 @@ f60_nopath:
         jmp     i21_fail
 
 ;=====================================================================
-; 66h - the global code page.  There is one, 437 - 65h says the same
-;       and CHCP asks this - so 6601h answers it for both the active
-;       and the system page, and 6602h takes 437 and refuses any other
-;       with 2, which is what DOS says when it has no tables for one.
+; 66h - the global code page, which CHCP asks and sets.  6601h answers
+;       the page in use in BX and the one the system started in in DX:
+;       437, or what COUNTRY= said.  6602h changes the page in use to
+;       another the country has tables for in COUNTRY.SYS - its
+;       capitals and its collating weights - and refuses one it has
+;       none for with 2, which is what DOS says then.
+;
+; ONLY THE TABLES CHANGE.  MS-DOS went on from here to tell every
+; device that had a font prepared for the page to switch to it; there
+; are no such devices here, and the screen goes on showing the video
+; card's own characters.
 ;=====================================================================
 fn66:
         mov     al,[ebp+F_EAX]
@@ -2396,12 +2403,20 @@ fn66:
         je      f66_get
         cmp     al,2
         jne     f66_fn
-        cmp     word ptr [ebp+F_EBX],437
-        jne     f66_bad
+        movzx   edx,word ptr [ebp+F_EBX]
+        cmp     dx,word ptr [ctry_page]
+        je      f66_same
+        movzx   eax,word ptr [ctry_code]
+        mov     cl,1
+        call    nls_load
+        jc      f66_bad
+f66_same:
         jmp     i21_ok
 f66_get:
-        mov     word ptr [ebp+F_EBX],437
-        mov     word ptr [ebp+F_EDX],437
+        mov     ax,word ptr [ctry_page]
+        mov     word ptr [ebp+F_EBX],ax
+        mov     ax,word ptr [ctry_syspage]
+        mov     word ptr [ebp+F_EDX],ax
         jmp     i21_ok
 f66_bad:
         mov     ax,ERR_NOFILE
@@ -9348,6 +9363,11 @@ fF0_mouse:
 ;       AL = 21h: DL = an interrupt, ESI -> a BQ_LEN record of
 ;                 registers - a BIOS call that only asks, out of the
 ;                 list in bq_table.  Native programs only (fF1_biosq)
+;       AL = 22h: bits 16-23 of EAX = a KYF_* function - the keyboard
+;                 layout: set one, ask which, switch between it and
+;                 the US keyboard.  Native programs only (fF1_keyb)
+;       AL = 23h: DL = a scan code - a key press, for the tests
+;                 (fF1_kbinj)
 ;
 ; 30h has to keep lying about being DOS 5 so that ordinary programs
 ; recognise us, which leaves nothing there to report what the kernel
@@ -9428,7 +9448,122 @@ fnF1:
         je      fF1_lowmem
         cmp     al,21h
         je      fF1_biosq
+        cmp     al,22h
+        je      fF1_keyb
+        cmp     al,23h
+        je      fF1_kbinj
         jmp     i21_unsup
+
+;--- AL=23h: A KEY, AS IF THE KEYBOARD HAD SENT IT.  DL = a scan code.
+;--- For the tests, which have nobody to press one: KBLTEST types a
+;--- line through every layout with it, and through a DOS box's own
+;--- INT 09h handler.  From any kind of program - it does nothing a
+;--- hand on the keyboard cannot.
+fF1_kbinj:
+        mov     dl,[ebp+F_EDX]
+        xor     dh,dh
+        cmp     word ptr [ebp+F_CS],SEL_CODE32  ; a DOS box's call, as
+        jne     fki_go                          ; cbuf_ok tells one: the
+        cmp     word ptr [ebp+F_DS],SEL_DATA32  ; key is for its program,
+        je      fki_go                          ; not for this call
+        cmp     dword ptr [ebp+F_EIP],1
+        jne     fki_go
+        inc     dh
+fki_go:
+        mov     al,KLS_INJECT
+        call    dword ptr ds:[IOS_KBLAYOUT]
+        jmp     i21_ok
+
+;--- AL=22h: THE KEYBOARD'S LAYOUT, which is KEYB.COM's to set.  The
+;--- function is in bits 16-23 of EAX; PMDOS.INC has the registers and
+;--- what a layout record is (KBL_).
+;---
+;--- MS-DOS's KEYB stayed resident on INT 09h with its tables.  The
+;--- keyboard here is the kernel's, so KEYB is a program that runs and
+;--- ends: it finds the layout in KEYBOARD.SYS and leaves it with the
+;--- kernel, which keeps the one copy (kl_buf) for the keyboard driver
+;--- to decode from.  The record is checked on the way in and never
+;--- again - the driver follows it from an interrupt.
+;---
+;--- THE OLD LAYOUT IS TAKEN OUT BEFORE THE NEW ONE IS COPIED IN, so
+;--- that a key pressed in between is a US key and not half of each.
+fF1_keyb:
+        cmp     word ptr [ebp+F_CS],SEL_PROG_CS
+        jne     i21_unsup
+        movzx   eax,byte ptr [ebp+F_EAX+2]
+        cmp     eax,KYF_SET
+        je      fkb_set
+        cmp     eax,KYF_GET
+        je      fkb_get
+        cmp     eax,KYF_MODE
+        je      fkb_mode
+        cmp     eax,KYF_OFF
+        je      fkb_off
+        jmp     i21_unsup
+
+fkb_set:
+        mov     ecx,[ebp+F_ECX]
+        cmp     ecx,KBL_KEYS
+        jb      fkb_bad
+        cmp     ecx,KBL_MAX
+        ja      fkb_bad
+        mov     eax,[ebp+F_EDX]
+        call    cbuf_ok
+        jc      buf_deny
+        xor     esi,esi
+        xor     edx,edx
+        mov     al,KLS_SET
+        call    dword ptr ds:[IOS_KBLAYOUT]
+        mov     esi,[ebp+F_EDX]
+        mov     edi,OFFSET kl_buf
+        mov     ecx,[ebp+F_ECX]
+        cld
+        rep     movsb
+        mov     ecx,[ebp+F_ECX]
+        call    kl_check
+        jc      fkb_bad
+        mov     esi,OFFSET kl_buf
+        mov     dl,1                    ; INT 09h's stub is in the DOS
+        mov     al,KLS_SET              ; data segment (vdm_lolinit)
+        call    dword ptr ds:[IOS_KBLAYOUT]
+        jmp     i21_ok
+fkb_bad:
+        mov     ax,ERR_BADDATA
+        jmp     i21_fail
+
+fkb_get:
+        mov     eax,[ebp+F_EDI]
+        mov     ecx,KBL_KEYS
+        call    cbuf_ok
+        jc      buf_deny
+        mov     al,KLS_GET
+        call    dword ptr ds:[IOS_KBLAYOUT]
+        xor     edx,edx
+        or      esi,esi
+        jz      fkb_state
+        movzx   edx,al
+        inc     edx                     ; 1 loaded, 2 loaded and in use
+        mov     edi,[ebp+F_EDI]
+        mov     ecx,KBL_KEYS
+        cld
+        rep     movsb
+fkb_state:
+        mov     [ebp+F_EAX],edx
+        jmp     i21_ok
+
+fkb_mode:
+        mov     dl,[ebp+F_EDX]
+        and     dl,1
+        mov     al,KLS_MODE
+        call    dword ptr ds:[IOS_KBLAYOUT]
+        jmp     i21_ok
+
+fkb_off:
+        xor     esi,esi
+        xor     edx,edx
+        mov     al,KLS_SET
+        call    dword ptr ds:[IOS_KBLAYOUT]
+        jmp     i21_ok
 
 ;--- AL=20h: THE FIRST MEGABYTE, FOR A PROGRAM THAT CANNOT REACH IT.
 ;--- The function is in bits 16-23 of EAX; PMDOS.INC has the registers.
@@ -10651,50 +10786,57 @@ f32_bad:
 ;=====================================================================
 ; 38h - country information.  DS:DX -> a 34-byte buffer, BX = country.
 ;
-; ONE COUNTRY, ANSWERED HONESTLY.  PM-DOS has no COUNTRY.SYS and no
-; codepage machinery, so it knows the United States and says so: any
-; other country asked for is refused rather than answered with US
-; punctuation under a foreign code, because a program that formats a
-; date from a wrong answer produces a wrong date and never finds out.
+; THE COUNTRY IN USE IS THE ONE COUNTRY= NAMED, and the United States
+; where CONFIG.SYS named none.  Another country asked for is read out
+; of COUNTRY.SYS there and then (NLS.INC, nls_load) - MS-DOS needed
+; NLSFUNC resident for that - and one the file does not have is
+; refused rather than answered with somebody else's punctuation,
+; because a program that formats a date from a wrong answer produces a
+; wrong date and never finds out.
 ;
 ; The case-map field is a FAR CALL a program may make to uppercase a
-; character.  It points at the RETF in the guest block, so the call
-; returns having done nothing - which is right for a codepage with no
-; case mapping beyond ASCII, and is in any event what a caller can
-; survive.  Zero there would be a call into the interrupt table.
+; character.  It points at twelve bytes in the DOS data segment that
+; look AL up in the table 6502h hands out (GNLS_CASEMAP).  It was a
+; bare RETF while the only table was the identity.
 ;=====================================================================
 fn38:
-        ; AL = 0 asks about the current country; AL = FFh means the
-        ; code is in BX.  Setting a country is the same call with
-        ; DX = FFFFh, and there is only one to set.
-        mov     al,[ebp+F_EAX]
-        or      al,al
-        jz      f38_get
-        cmp     al,0FFh
-        jne     f38_wrong               ; a specific country, and not ours
-        mov     ax,word ptr [ebp+F_EBX]
-        cmp     ax,CTRY_USA
-        jne     f38_wrong
-f38_get:
-        mov     ax,word ptr [ebp+F_EDX]
-        cmp     ax,0FFFFh
+        ; AL = 0 asks about the country in use, AL = 1 to FEh names
+        ; one, and AL = FFh means the code is in BX.  Setting a country
+        ; is the same call with DX = FFFFh.
+        movzx   ebx,byte ptr [ebp+F_EAX]
+        cmp     bl,0FFh
+        jne     f38_which
+        movzx   ebx,word ptr [ebp+F_EBX]
+f38_which:
+        cmp     bx,word ptr [ctry_code]
+        jne     f38_named
+        xor     ebx,ebx                 ; EBX = 0: the one in use
+f38_named:
+        cmp     word ptr [ebp+F_EDX],0FFFFh
         je      f38_set
 
         mov     eax,[ebp+F_EDX]
         mov     ecx,CTRY_SIZE
         call    cbuf_ok
         jc      buf_deny
-        mov     edi,[ebp+F_EDX]
         mov     esi,OFFSET ctry_block
+        or      ebx,ebx
+        jz      f38_copy
+        mov     eax,ebx                 ; another country's, in the code
+        movzx   edx,word ptr [ctry_page]        ; page in use
+        xor     ecx,ecx
+        call    nls_load
+        jc      f38_wrong
+        mov     esi,OFFSET nls_sinfo
+f38_copy:
+        mov     edi,[ebp+F_EDX]
         mov     ecx,CTRY_SIZE
         rep     movsb
 
         ; The case-map far call, patched in rather than stored: the
         ; segment is not known until vdm_lolinit has run.
         mov     edi,[ebp+F_EDX]
-        movzx   eax,word ptr ds:[vdm_lolseg]
-        shl     eax,16
-        mov     ax,GLOL_RETF
+        call    nls_mapptr
         mov     [edi+CTRY_CASEMAP],eax
 
         ; BX is where the country code is documented to come back, and
@@ -10702,13 +10844,23 @@ f38_get:
         ; say "AX destroyed", and what real DOS actually destroys it
         ; with is the answer.  Checked against 6.22 by dumping every
         ; register after the call on both; see TOOLS\CTRYDMP.ASM.
-        mov     word ptr [ebp+F_EAX],CTRY_USA
-        mov     word ptr [ebp+F_EBX],CTRY_USA
+        or      ebx,ebx
+        jnz     f38_code
+f38_inuse:
+        movzx   ebx,word ptr [ctry_code]
+f38_code:
+        mov     word ptr [ebp+F_EAX],bx
+        mov     word ptr [ebp+F_EBX],bx
         jmp     i21_ok
 f38_set:
-        mov     word ptr [ebp+F_EAX],CTRY_USA
-        mov     word ptr [ebp+F_EBX],CTRY_USA
-        jmp     i21_ok
+        or      ebx,ebx                 ; the one in use already
+        jz      f38_inuse
+        mov     eax,ebx
+        movzx   edx,word ptr [ctry_page]
+        mov     cl,1
+        call    nls_load
+        jc      f38_wrong
+        jmp     short f38_inuse
 f38_wrong:
         mov     ax,ERR_NOFILE           ; what DOS says for a country it
         jmp     i21_fail                ; has no table for
@@ -10879,61 +11031,107 @@ fn65:
         je      f65_capasciz
         cmp     al,23h
         je      f65_yesno
-        mov     ax,ERR_FUNC             ; the table subfunctions, and
-        jmp     i21_fail                ; anything not invented yet
+        cmp     al,0A0h                 ; DOS 7's three for file names: the
+        je      f65_capchar             ; same table, so the same answers
+        cmp     al,0A1h
+        je      f65_capstr
+        cmp     al,0A2h
+        je      f65_capasciz
+        mov     ax,ERR_FUNC             ; anything not invented yet
+        jmp     i21_fail
 
 ;--- 01h: the country block, with the extended header on the front ---
-; ES:DI -> buffer, CX = how big it is.  DOS truncates to the buffer
+; ES:DI -> buffer, CX = how big it is, BX = a code page and DX = a
+; country, each FFFFh for the one in use.  DOS truncates to the buffer
 ; rather than failing, which is what lets a DOS 4 program call a DOS 6
-; kernel and get the part it understands.
+; kernel and get the part it understands - and says in CX how much it
+; wrote.
+;
+; A pair that is not the one in use is read out of COUNTRY.SYS, as 38h
+; reads another country.  The answer is built whole and then cut to
+; the buffer as MS-DOS cuts it (DOS6SRC dos/getset.asm): the length
+; word is what follows it - country, code page and the block, 38 - or
+; as much of that as CX left room for; CX comes back as what was
+; written, and AX as the code page the system started in.  Five bytes
+; is the least it will write into.
 f65_info:
         movzx   ecx,word ptr [ebp+F_ECX]
-        cmp     ecx,7                   ; the header is written whole, so a
-        jb      f65_small               ; buffer shorter than it is refused
-                                        ; rather than half filled
-        cmp     ecx,CTRY_SIZE + 7
+        cmp     ecx,5
+        jb      f65_small
+        movzx   eax,word ptr [ebp+F_EDX]
+        cmp     eax,0FFFFh
+        jne     f65_ctry
+        movzx   eax,word ptr [ctry_code]
+f65_ctry:
+        movzx   edx,word ptr [ebp+F_EBX]
+        cmp     edx,0FFFFh
+        jne     f65_page
+        movzx   edx,word ptr [ctry_page]
+f65_page:
+        mov     esi,OFFSET ctry_block
+        cmp     ax,word ptr [ctry_code]
+        jne     f65_other
+        cmp     dx,word ptr [ctry_page]
+        je      f65_build
+f65_other:
+        xor     ecx,ecx
+        call    nls_load
+        jc      f38_wrong
+        mov     esi,OFFSET nls_sinfo
+f65_build:
+        mov     edi,OFFSET f65_ans
+        mov     byte ptr [edi],1        ; info id
+        mov     word ptr [edi+1],CTRY_SIZE + 4
+        mov     word ptr [edi+3],ax
+        mov     word ptr [edi+5],dx
+        add     edi,7
+        mov     ecx,CTRY_SIZE
+        rep     movsb
+        call    nls_mapptr              ; the case-map call - same patch as
+        mov     dword ptr [f65_ans+7+CTRY_CASEMAP],eax  ; fn38, same reason
+
+        movzx   ecx,word ptr [ebp+F_ECX]
+        sub     ecx,3                   ; the room after the length word
+        cmp     ecx,CTRY_SIZE + 4
         jbe     f65_fit
-        mov     ecx,CTRY_SIZE + 7
+        mov     ecx,CTRY_SIZE + 4
 f65_fit:
+        mov     word ptr [f65_ans+1],cx
+        add     ecx,3
         mov     eax,[ebp+F_EDI]         ; ECX is exactly what is written
         call    cbuf_ok
         jc      buf_deny
+        mov     word ptr [ebp+F_ECX],cx
+        mov     ax,word ptr [ctry_syspage]
+        mov     word ptr [ebp+F_EAX],ax
         mov     edi,[ebp+F_EDI]
-        push    ecx
-
-        mov     byte ptr [edi],1        ; info id
-        mov     word ptr [edi+1],CTRY_SIZE + 7
-        mov     word ptr [edi+3],CTRY_USA
-        mov     word ptr [edi+5],437    ; the only codepage here
-
-        ; The country block itself, and then the case-map pointer over
-        ; the top of it - same patch as fn38, same reason.
-        pop     ecx
-        push    edi
-        sub     ecx,7
-        jbe     f65_hdronly
-        add     edi,7
-        mov     esi,OFFSET ctry_block
+        mov     esi,OFFSET f65_ans
         rep     movsb
-f65_hdronly:
-        pop     edi
-        movzx   ecx,word ptr [ebp+F_ECX]
-        cmp     ecx,7 + CTRY_CASEMAP + 4
-        jb      f65_done                ; the buffer stopped short of it
-        movzx   eax,word ptr ds:[vdm_lolseg]
-        shl     eax,16
-        mov     ax,GLOL_RETF
-        mov     [edi+7+CTRY_CASEMAP],eax
-f65_done:
         jmp     i21_ok
 f65_small:
         mov     ax,ERR_FUNC
         jmp     i21_fail
 
 ;--- 02h/04h/05h/06h/07h: a table - EDX is its offset in the segment --
+; The tables are the country's in use and there is one set of them, so
+; a call that names another country or code page in DX and BX is
+; refused, as MS-DOS refuses it with no NLSFUNC loaded.  FFFFh in
+; either is "the one in use", and is what a program passes.
 f65_table:
         cmp     word ptr [ebp+F_ECX],5
         jb      f65_small
+        movzx   eax,word ptr [ebp+F_EDX]
+        cmp     eax,0FFFFh
+        je      f65_tctry
+        cmp     ax,word ptr [ctry_code]
+        jne     f65_small
+f65_tctry:
+        movzx   eax,word ptr [ebp+F_EBX]
+        cmp     eax,0FFFFh
+        je      f65_tpage
+        cmp     ax,word ptr [ctry_page]
+        jne     f65_small
+f65_tpage:
         mov     eax,[ebp+F_EDI]
         mov     ecx,5
         call    cbuf_ok
@@ -10946,17 +11144,17 @@ f65_table:
         mov     ax,dx
         mov     [edi+1],eax             ; and where
         mov     word ptr [ebp+F_ECX],5
+        mov     ax,word ptr [ctry_syspage]
+        mov     word ptr [ebp+F_EAX],ax
         jmp     i21_ok
 
 ;--- 20h: capitalise the character in DL ------------------------------
-; ASCII only, and that is the whole of codepage 437's case mapping
-; that DOS itself performed for the United States.  cfg_upcase is
-; CONFIG.SYS's own, borrowed rather than written twice: a second
-; upcase that drifted from the first would show up as a file the
-; parser can open and this call cannot.
+; ASCII's letters, and for 80h and up the table 6502h hands out - one
+; table and one answer, whichever way a program asks.  With no
+; COUNTRY= line that table is the identity, as it always was.
 f65_capchar:
         mov     al,[ebp+F_EDX]
-        call    cfg_upcase
+        call    nls_upchar
         mov     byte ptr [ebp+F_EDX],al
         jmp     i21_ok
 
@@ -10970,7 +11168,7 @@ f65_capstr:
         mov     esi,[ebp+F_EDX]
 f65_strloop:
         mov     al,[esi]
-        call    cfg_upcase
+        call    nls_upchar
         mov     [esi],al
         inc     esi
         dec     ecx
@@ -10985,7 +11183,7 @@ f65_azloop:
         mov     al,[esi]
         or      al,al
         jz      f65_azdone
-        call    cfg_upcase
+        call    nls_upchar
         mov     [esi],al
         inc     esi
         jmp     short f65_azloop
@@ -10996,14 +11194,19 @@ f65_azdone:
 ; -> AX = 0 no, 1 yes, 2 neither.  The one place a country's answer
 ; really does change the behaviour of ordinary software, which is why
 ; DOS gave it a call of its own instead of leaving programs to compare
-; against 'Y'.  Here the country is the United States and the letters
-; are the English ones.
+; against 'Y'.  The letters are the country's - J and N in Germany, O
+; and N in France - and Y and N where COUNTRY.SYS gives none.
 f65_yesno:
         mov     al,[ebp+F_EDX]
-        call    cfg_upcase
-        cmp     al,'Y'
+        call    nls_upchar
+        mov     ah,al
+        mov     al,[ctry_yes]
+        call    nls_upchar
+        cmp     al,ah
         je      f65_yes
-        cmp     al,'N'
+        mov     al,[ctry_no]
+        call    nls_upchar
+        cmp     al,ah
         je      f65_no
         mov     word ptr [ebp+F_EAX],2
         jmp     i21_ok
@@ -11127,6 +11330,10 @@ f5a_try     dd  0
 ; The 38h answer, copied out whole.  The case-map far call is patched
 ; over on the way out - see fn38 - because the segment it points into
 ; is not known until the guest block has been allocated.
+;
+; THE UNITED STATES, UNTIL COUNTRY= SAYS OTHERWISE: nls_use (NLS.INC)
+; writes another country's block over this one, and the code, the code
+; page and the rest of what goes with it are beside nls_load there.
 ctry_block:
             dw  0                       ; mm/dd/yy
             db  '$',0,0,0,0             ; currency symbol
@@ -11140,6 +11347,9 @@ ctry_block:
             dd  0                       ; case map - patched per call
             db  ',',0                   ; data list separator
             db  10 dup(0)               ; reserved
+            db  0,0                     ; and 6501h's answer, built whole
+f65_ans     db  CTRY_SIZE + 7 dup(0)    ; before it is cut to the buffer
+            db  0,0,0
 
 ; The register structure INT 28h is issued through.  Padded to a
 ; multiple of four because it is zeroed with STOSD and RMCS_LEN is 32h,

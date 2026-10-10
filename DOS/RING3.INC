@@ -666,7 +666,22 @@ r3_pflags:
         je      rpf_vbe
         cmp     ax,20h * 256 + 0F1h
         je      rpf_lowmem
+        cmp     ax,22h * 256 + 0F1h
+        je      rpf_keyb
         call    vdm_flags
+        ret
+
+; F1h/22h, the keyboard's layout: KYF_SET hands a record over through
+; EDX and KYF_GET is answered into EDI.  The other two carry a number
+; in DL or nothing at all.
+rpf_keyb:
+        mov     bl,P_DX
+        cmp     byte ptr [ebp+F_EAX+2],KYF_SET
+        je      rpf_out
+        mov     bl,P_DI
+        cmp     byte ptr [ebp+F_EAX+2],KYF_GET
+        je      rpf_out
+        xor     bl,bl
         ret
 
 ; F1h/20h, the first megabyte: LMF_READ answers into EDI.  Its EBX is
