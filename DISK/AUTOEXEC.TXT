@@ -10,7 +10,8 @@ nothing else: the kernel, CMD.EXE and COMMAND.COM, the commands
 that are part of the system - CHOICE, MORE, SORT, SYS, FORMAT, MEM,
 FDISK, MOUNT, MOVE, ATTRIB, CHKDSK, LABEL, CACHE, UNDELETE, CDEX,
 FC, FIND, DISKCOPY, DISKCOMP, ISAPNP, SHUTDOWN, PMD, DOSSHELL,
-ACROREAD and KEYB - the two files of tables KEYB and COUNTRY= read,
+ACROREAD, SCANDISK and KEYB - the two files of tables KEYB and
+COUNTRY= read,
 KEYBOARD.SYS and COUNTRY.SYS - and LRGDISK.386, which is for a
 Windows on a hard disk.
 ONLY PMIO.SYS AND PMDOS.SYS HAVE TO BE IN A ROOT.  On a hard disk
@@ -151,9 +152,13 @@ encrypted or not.  A page is drawn at 640x480 - in color where the
 video BIOS has VBE 2.0, in 16 grays on a plain VGA - and Tab changes
 to the page's text on the text screen, and back.  PgUp and PgDn go
 through the document, + and - make the page larger and smaller, G
-goes to a page by number, and F1 lists the rest.  /T starts with the
-text, /G with the grays whatever the BIOS has, /P:n at page n, and
-/X writes the document's text out instead of showing it:
+goes to a page by number, and F1 lists the rest.  The top line has
+menus - File, View, Page and Help - opened by F10 or a click.  A
+mouse also works the scroll bars and the buttons on the bottom line,
+and drags the page.
+/T starts with the text, /G with the grays whatever the BIOS has,
+/P:n at page n, and /X writes the document's text out instead of
+showing it:
   ACROREAD MANUAL.PDF
   ACROREAD MANUAL /X > PRN
 
@@ -367,8 +372,8 @@ quickest way to find out what this shell can actually do:
                 CALL, CTTY, CHCP, DOSKEY and LOADHIGH
   MEM /?        ...and MORE, SORT, CHOICE, FORMAT, SYS, FDISK,
                 MOUNT, MOVE, ATTRIB, CHKDSK, LABEL, CACHE, CDEX,
-                ISAPNP, PMD, DOSSHELL, ACROREAD, KEYB, CMD, COMMAND
-                and \TESTS\DRIVES
+                ISAPNP, PMD, DOSSHELL, ACROREAD, SCANDISK, KEYB, CMD,
+                COMMAND and \TESTS\DRIVES
 
 WHAT THOSE SCREENS SAY IS THIS SHELL AND NOT MS-DOS.  A switch that
 is not on the help screen is a switch this CMD.EXE does not have -
@@ -486,6 +491,46 @@ something.  CROSS-LINKED FILES ARE REPORTED AND NOT UNTANGLED, as
 in DOS.  (The long-named test files used to share a cluster on
 purpose and were the first thing CHKDSK found; they have had a
 cluster each since 2026-09-26, and they are on the test disk now.)
+
+SCANDISK is ScanDisk as MS-DOS 6.2 had it, for FAT12, FAT16 and
+FAT32 and for long file names.  It checks the media descriptor,
+the two copies of the FAT, every directory and file, and what the
+file system has left over - lost clusters and cross-linked files -
+and asks before each repair.  Then it offers a surface scan, which
+reads every cluster and moves a file out of one that cannot be
+read.
+
+  SCANDISK                the current drive, asking as it goes
+  SCANDISK C: D:          those drives;  /ALL  every hard disk
+  SCANDISK /CHECKONLY     look, and repair nothing
+  SCANDISK /AUTOFIX       repair without asking; lost clusters
+                          become FILEnnnn.CHK, or with /NOSAVE
+                          are freed
+  SCANDISK /SURFACE       scan the surface without asking first
+  SCANDISK /CUSTOM        do as SCANDISK.INI's [CUSTOM] section says
+  SCANDISK /FRAGMENT *.*  which of those files are in pieces
+  SCANDISK /UNDO A:       put back what the last repairs changed
+
+/G is a graphics screen (EGA or VGA: the same screens, and twice as
+much of the surface map) and /NOSUMMARY leaves out the summary after
+each drive.  There is no black and white screen; /MONO is taken and
+does nothing.  The exit codes are MS-DOS's: 0 nothing found, 254 all
+repaired, 255 not all repaired, 3 and 4 left early.
+
+AN UNDO DISK.  Before the first repair ScanDisk offers to keep what
+it is about to change in SCANDISK.UND on a diskette.  SCANDISK /UNDO
+puts those sectors back - but only while the drive is exactly as
+ScanDisk left it, and it says so if not.
+
+SCANDISK IS ITS SCREENS, as it is in MS-DOS: redirecting its output
+changes nothing.  A batch file learns what happened from the exit
+code, or from SCANDISK.LOG, which /CUSTOM writes in the root of the
+boot drive when SCANDISK.INI says SaveLog.  Only /FRAGMENT and /?
+answer in lines.
+
+CROSS-LINKED FILES ARE UNTANGLED HERE, which CHKDSK does not do: the
+second file gets clusters of its own.  DoubleSpace and DriveSpace
+volumes are not checked; PM-DOS has none.
 
 FDISK, and it is the one program on this disk that can destroy the
 machine it is running on, so read this before running it.
