@@ -142,8 +142,12 @@ SWITCHES=/F /N
     run.
     /K, /W and /E are accepted but do nothing.
 
+NUMLOCK=ON|OFF
+    Turns Num Lock on or off at startup.  Without this line Num Lock
+    is left as the BIOS set it.
+
 Accepted and ignored:
-    BUFFERS  FCBS  STACKS  DRIVPARM  NUMLOCK  MULTITRACK
+    BUFFERS  FCBS  STACKS  DRIVPARM  MULTITRACK
 
 Boot menus ([menu], MENUITEM, MENUDEFAULT, MENUCOLOR, SUBMENU, INCLUDE,
 COMMENT) are accepted, but there is no menu.  Every line in every
