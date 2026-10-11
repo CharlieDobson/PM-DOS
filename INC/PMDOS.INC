@@ -3264,14 +3264,27 @@ KB_RINGHI       EQU     3Eh
 ; it, the monitor to find the handler to deliver into.
 IVT_INT09       EQU     9 * 4
 
-; The bits of BDA_KBFLAG a program reads.  Only the four this driver
-; actually tracks are written; the lock lights are not simulated, so
-; claiming their bits would be worse than leaving them alone.
+; The bits of BDA_KBFLAG a program reads.  The low four are keys held
+; down, and the driver writes them from its own state.  The three locks
+; are different: the byte is where they are KEPT - the driver reads
+; them from it like anybody else, a program may write them, and the
+; keyboard's lights are made to say what they say (kb_tick in
+; IO\KEYBD.INC).  Insert, bit 7, is nobody's.
 BDAK_RSHIFT     EQU     01h
 BDAK_LSHIFT     EQU     02h
 BDAK_CTRL       EQU     04h
 BDAK_ALT        EQU     08h
+BDAK_SCROLL     EQU     10h
+BDAK_NUM        EQU     20h
 BDAK_CAPS       EQU     40h
+BDAK_LOCKS      EQU     BDAK_SCROLL OR BDAK_NUM OR BDAK_CAPS
+
+; ...and the BIOS's note of what the lights are showing: Scroll, Num
+; and Caps in bits 0 to 2, the order the keyboard takes them in.  A
+; ROM's INT 16h compares it with the locks above and sends the keyboard
+; a command of its own when they differ, so it is kept true.
+BDA_KBLED       EQU     BDA_BASE + 97h          ; db
+BDAL_LEDS       EQU     07h
 
 ;---------------------------------------------------------------------
 ; INT 13h.  Status codes are the BIOS's own, in AH, and the ones below
