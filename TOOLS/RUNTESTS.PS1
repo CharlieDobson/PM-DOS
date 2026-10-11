@@ -238,7 +238,7 @@ function New-Disk {
     # program, which is what a test that runs one expects to find.
     $first = @( 'PMIO.SYS', 'PMDOS.SYS', 'CMD.EXE', 'COMMAND.COM' )
     $programs = @( Get-ChildItem "$root\BIN" -File |
-        Where-Object { $_.Extension -match '^\.(EXE|COM)$' -and $first -notcontains $_.Name -and $_.Name -ne 'SYS16.COM' } |
+        Where-Object { $_.Extension -match '^\.(EXE|COM)$' -and $first -notcontains $_.Name -and $_.Name -ne 'SYS16.COM' -and $_.Name -ne 'LRGSTAT.EXE' } |
         Sort-Object Name | ForEach-Object { "BIN\$( $_.Name )" } )
     if ( $SysDir -eq '' ) {
         $files = @( $first | ForEach-Object { "BIN\$_" } ) + $programs
