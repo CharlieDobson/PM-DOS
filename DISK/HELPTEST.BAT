@@ -198,6 +198,10 @@ ECHO --- CHKDSK (must NOT check a disk) ---
 CHKDSK /?
 ECHO --- CHKDSK with a drive AND /F AND /?: still help, still no fix ---
 CHKDSK C: /F /?
+ECHO --- SCANDISK (must NOT take the screen over, or check a disk) ---
+SCANDISK /?
+ECHO --- SCANDISK with a drive AND /AUTOFIX AND /?: still help, still no repair ---
+SCANDISK C: /AUTOFIX /?
 ECHO --- LABEL (must NOT show a label or ask for one) ---
 LABEL /?
 ECHO --- LABEL with a drive AND a label AND /?: still help, no label ---

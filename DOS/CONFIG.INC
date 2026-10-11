@@ -582,6 +582,27 @@ cbk_on:
         ret
 
 ;---------------------------------------------------------------------
+; NUMLOCK=ON|OFF - which way the numeric keypad starts.  Saying nothing
+;                  leaves it as the BIOS did.
+;
+; The lock is a bit at 40:17 and the keyboard driver lights the light
+; from it on the next tick of the clock (kb_tick in IO\KEYBD.INC), so
+; the bit is the whole of it.
+;---------------------------------------------------------------------
+cfg_numlock:
+        mov     edi,OFFSET cfgw_on
+        call    cfg_iskw
+        jnc     cnl_on
+        mov     edi,OFFSET cfgw_off
+        call    cfg_iskw
+        jc      cfg_badparm
+        and     byte ptr ds:[BDA_KBFLAG],NOT BDAK_NUM
+        ret
+cnl_on:
+        or      byte ptr ds:[BDA_KBFLAG],BDAK_NUM
+        ret
+
+;---------------------------------------------------------------------
 ; SWITCHES=/F /N /K /W /E - read in a walk of its own, ahead of the
 ;               rest of the file, for the startup keys (cfg_keys):
 ;
@@ -621,8 +642,10 @@ csw_out:
 ; than in BUFFERS and has no FCB table to size.  They are advisory in
 ; a real CONFIG.SYS too.
 ;
-; EIGHT STATEMENTS HAVE LEFT THIS LIST and the way they left it is
-; worth keeping in view.  COUNTRY= is the eighth: it waited here for
+; NINE STATEMENTS HAVE LEFT THIS LIST and the way they left it is
+; worth keeping in view.  NUMLOCK= is the ninth: it waited for the lock
+; keys to be tracked and their lights driven, and went the day they
+; were (cfg_numlock).  COUNTRY= was the eighth: it waited here for
 ; country tables, and they are a file now (cfg_country in NLS.INC).  DEVICE= and DEVICEHIGH= sat here "for now"
 ; with a note saying they would not stay; they went in v0.37 and
 ; v0.38.  DOS= sat here with a note saying that HIGH,UMB described a
@@ -646,10 +669,6 @@ csw_out:
 ;   DRIVPARM=   overrides a block driver's BPB.  There is something
 ;               to override as of v0.40, so this is now real work
 ;               rather than a statement with no subject.
-;   NUMLOCK=    needs the lock keys tracked and their lights driven,
-;               and KEYBD.INC deliberately tracks neither - see the
-;               note on BDAK_CAPS.  It is a keyboard feature wearing a
-;               CONFIG.SYS statement's clothes.
 ;   SWITCHES=   HALF OF IT HAS LEFT: /F and /N are real since the
 ;               startup keys arrived (cfg_switches, which keeps this
 ;               list's other half accepted and inert).  /K HAS
@@ -2349,7 +2368,7 @@ cfg_table:
         dd      OFFSET cfgn_fcbs,    OFFSET cfg_ignore
         dd      OFFSET cfgn_stacks,  OFFSET cfg_ignore
         dd      OFFSET cfgn_country, OFFSET cfg_country
-        dd      OFFSET cfgn_numlock, OFFSET cfg_ignore
+        dd      OFFSET cfgn_numlock, OFFSET cfg_numlock
         dd      OFFSET cfgn_dos,     OFFSET cfg_dos
         dd      OFFSET cfgn_drivparm,OFFSET cfg_ignore
         dd      OFFSET cfgn_install, OFFSET cfg_install

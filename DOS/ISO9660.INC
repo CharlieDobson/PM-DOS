@@ -183,6 +183,27 @@ iso_dext     dd 0                       ; the walk: block being read
 iso_dleft    dd 0                       ; bytes of directory still to go
 iso_doff     dd 0                       ; offset inside the block
 
+; WHERE THE WALK OF A DIRECTORY GOT TO, for the last few directories
+; walked - see iso_curget.  One row a directory: its first block, the
+; record the walk stood in front of, and the three numbers above as
+; they were there.
+ISO_NCUR        EQU     4               ; directories remembered at once
+ICU_EXT         EQU     0               ; dd - the directory's first block,
+                                        ; FFFFFFFFh in a row not in use
+ICU_ORD         EQU     4               ; dd - the record it is in front of
+ICU_DEXT        EQU     8               ; dd - iso_dext,
+ICU_DLEFT       EQU     12              ; dd - iso_dleft
+ICU_DOFF        EQU     16              ; dd - and iso_doff
+ICU_LEN         EQU     20
+IF ISO_NCUR - 4
+.ERR    ; iso_curs is written out for ISO_NCUR = 4
+ENDIF
+iso_curs     dd 0FFFFFFFFh, 0, 0, 0, 0
+             dd 0FFFFFFFFh, 0, 0, 0, 0
+             dd 0FFFFFFFFh, 0, 0, 0, 0
+             dd 0FFFFFFFFh, 0, 0, 0, 0
+iso_curnext  dd 0                       ; the row given up next
+
 i83_len      dd 0                       ; iso_mk83 while it works: the name
 i83_dot      dd 0                       ; length, the offset just past its
 i83_num      dd 0                       ; last dot, and the number iso_alias
@@ -287,6 +308,7 @@ irb_changed:
         mov     byte ptr [fat_ok],0     ; ...and vol_select will re-mount
         mov     byte ptr [iso_bufok],0
         mov     dword ptr [iso_bufblk],0FFFFFFFFh
+        call    iso_curreset            ; ...and where the walks had got to
         mov     al,byte ptr [iso_unit]  ; and the block cache goes with it,
         call    cache_cddrop            ; for the same reason iso_buf does
 irb_bad:
@@ -599,6 +621,8 @@ iso_mount:
                                         ; otherwise be read by the wrong
                                         ; half of the reader
         call    iso_forget
+        call    iso_curreset            ; where the walks of the last disc
+        call    udf_curreset            ; got to says nothing about this one
 
         ; A MOUNTED IMAGE FILE SKIPS THE WHOLE DRIVE HANDSHAKE.  There
         ; is no tray to be open, nothing to become ready and no unit
@@ -759,6 +783,132 @@ iso_diropen:
         mov     dword ptr [iso_dleft],edx
         mov     dword ptr [iso_doff],0
         mov     byte ptr [iso_dloaded],0
+        ret
+
+;=====================================================================
+; THE WALK, TAKEN UP WHERE IT WAS LEFT
+;
+; iso_curget   EBP = the record wanted in the directory dc_isoext
+;              names.  Leaves the walk in front of that record or of
+;              one before it, -> ECX = how many records to step over
+;              to reach it.
+; iso_curput   the walk stands in front of record EBP: remember that.
+; iso_curreset forget all of them.  Whatever mounts a volume calls it.
+;
+; A DIRECTORY CAN ONLY BE COUNTED THROUGH FROM THE FRONT, and iso_entry
+; is asked for one record at a time: 0, then 1, then 2, by a search
+; that is itself one DOS call a name.  Starting the count again for
+; each of them made listing a directory cost the SQUARE of what is in
+; it - record 7,000 was reached by walking 6,999 others and fetching
+; every block they are in - and looking one name up cost the same
+; again.  A directory of a few hundred names hid that.  One of eight
+; thousand with five directories inside it held the shell for two
+; minutes on 86Box's Pentium Pro, the count of directories on its
+; screen standing still; on a 486 that is a machine that has stopped.
+; (TOOLS\MKBIGCD.PS1 makes the disc.)
+;
+; So the place each walk reached is kept, and the next request for the
+; same directory starts from there when the record it wants is not
+; behind it.  A request for an earlier record starts from the front as
+; before: a search by name begins at record zero and that is what it
+; costs.
+;
+; A FEW DIRECTORIES AND NOT ONE, because a path is walked through its
+; parents and a listing of a directory is commonly interleaved with
+; listings of what is inside it.  The rows are given up in turn.
+;
+; THE PLACE IS GOOD FOR AS LONG AS THE DISC IS THE SAME DISC - nothing
+; on it can change - and no longer.  iso_mount forgets them all, and a
+; read that fails forgets them too.
+;=====================================================================
+iso_curreset:
+        push    eax
+        push    ecx
+        push    esi
+        mov     esi,OFFSET iso_curs
+        mov     ecx,ISO_NCUR
+icx_lp:
+        mov     dword ptr [esi+ICU_EXT],0FFFFFFFFh
+        add     esi,ICU_LEN
+        dec     ecx
+        jnz     icx_lp
+        mov     dword ptr [iso_curnext],0
+        pop     esi
+        pop     ecx
+        pop     eax
+        ret
+
+iso_curget:
+        push    eax
+        push    edx
+        push    esi
+        mov     eax,dword ptr [dc_isoext]
+        mov     esi,OFFSET iso_curs
+        mov     ecx,ISO_NCUR
+icg_look:
+        cmp     dword ptr [esi+ICU_EXT],eax
+        je      icg_this
+        add     esi,ICU_LEN
+        dec     ecx
+        jnz     icg_look
+        jmp     short icg_front
+icg_this:
+        cmp     dword ptr [esi+ICU_ORD],ebp
+        ja      icg_front               ; it is past the record wanted
+        mov     eax,dword ptr [esi+ICU_DEXT]
+        mov     dword ptr [iso_dext],eax
+        mov     eax,dword ptr [esi+ICU_DLEFT]
+        mov     dword ptr [iso_dleft],eax
+        mov     eax,dword ptr [esi+ICU_DOFF]
+        mov     dword ptr [iso_doff],eax
+        mov     byte ptr [iso_dloaded],0        ; iso_buf may hold another
+                                                ; directory's block by now
+        mov     ecx,ebp
+        sub     ecx,dword ptr [esi+ICU_ORD]
+        pop     esi
+        pop     edx
+        pop     eax
+        ret
+icg_front:
+        mov     eax,dword ptr [dc_isoext]
+        mov     edx,dword ptr [dc_isolen]
+        call    iso_diropen
+        mov     ecx,ebp
+        pop     esi
+        pop     edx
+        pop     eax
+        ret
+
+iso_curput:
+        push    eax
+        push    ecx
+        push    esi
+        mov     eax,dword ptr [dc_isoext]
+        mov     esi,OFFSET iso_curs
+        mov     ecx,ISO_NCUR
+icw_look:
+        cmp     dword ptr [esi+ICU_EXT],eax
+        je      icw_have                ; a directory has one row
+        add     esi,ICU_LEN
+        dec     ecx
+        jnz     icw_look
+        mov     esi,dword ptr [iso_curnext]
+        inc     dword ptr [iso_curnext]
+        and     dword ptr [iso_curnext],ISO_NCUR - 1
+        imul    esi,esi,ICU_LEN
+        add     esi,OFFSET iso_curs
+        mov     dword ptr [esi+ICU_EXT],eax
+icw_have:
+        mov     dword ptr [esi+ICU_ORD],ebp
+        mov     eax,dword ptr [iso_dext]
+        mov     dword ptr [esi+ICU_DEXT],eax
+        mov     eax,dword ptr [iso_dleft]
+        mov     dword ptr [esi+ICU_DLEFT],eax
+        mov     eax,dword ptr [iso_doff]
+        mov     dword ptr [esi+ICU_DOFF],eax
+        pop     esi
+        pop     ecx
+        pop     eax
         ret
 
 ;=====================================================================
@@ -2011,19 +2161,23 @@ iso_entry:
 ien_walk:
         ; walk to the EBPth record.  A directory is a flat run of
         ; variable-length records, so there is no way to index one
-        ; except by counting from the front; the block cache underneath
-        ; makes that cheap enough within a block.
-        mov     eax,dword ptr [dc_isoext]
-        mov     edx,dword ptr [dc_isolen]
-        call    iso_diropen
-        mov     ecx,ebp
+        ; except by counting - but the count need not start at the
+        ; front every time: iso_curget takes it up where the last walk
+        ; of this directory stood, if that is not past the record.
+        call    iso_curget              ; -> ECX = records to step over
 ien_skip:
+        or      ecx,ecx
+        jz      ien_here
         call    iso_dirnext
         jc      ien_none
-        or      ecx,ecx
-        jz      ien_got
         dec     ecx
         jmp     short ien_skip
+ien_here:
+        call    iso_curput              ; in front of record EBP, which is
+                                        ; where the next request for this
+                                        ; directory most likely starts
+        call    iso_dirnext
+        jc      ien_none
 
 ien_got:
         ; THE RECORD ITSELF IS KEPT, and not only what FAT's shape can

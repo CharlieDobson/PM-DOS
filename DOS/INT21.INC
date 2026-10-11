@@ -1499,28 +1499,192 @@ f2A_dflt:
         jmp     i21_ok
 
 ;=====================================================================
-; 2Ch - get time -> CH = hour, CL = min, DH = sec, DL = 0
+; 2Ch - get time -> CH = hour, CL = min, DH = sec, DL = hundredths
+;
+; THE CLOCK CHIP SAYS WHAT TIME IT IS, AND THE TIMER TICK COUNTS ON
+; FROM THERE.  This used to ask the BIOS for the chip's time on every
+; call.  The chip has no hundredths, so DL was always 0, and every call
+; was a trip to real mode.  A program that asks in a loop - EDIT's held
+; scroll arrow, DOSSHELL's, a DOS program waiting for the hundredths to
+; change - kept the machine in the BIOS: the arrow moved a line a
+; second, a double click counted only when both presses fell in one
+; second of the clock, and with a PS/2 mouse the button was not seen
+; let go.
+;
+; So the chip is read once and the tick count at that moment kept
+; beside its answer.  The time after that is the answer plus what the
+; ticks have counted since: 1,573,040 of them to a day's 8,640,000
+; hundredths, which is 108000/19663 hundredths a tick.
+;
+; THE CHIP IS ASKED AGAIN ONCE A MINUTE, and the count starts over from
+; its answer only when the two are more than two seconds apart.  The
+; chip's second has no fraction, so the two differ by up to a second at
+; the best of times, and a clock put back that much every minute would
+; be worse than one left half a second out.  The tick count is the
+; BDA's: a program in a box may write anything there, the BIOS's SET
+; TIME is one way to, and midnight takes the count back to nothing.
+; All of them are a count that stopped making sense, and each is met by
+; asking the chip.
+;
+; A machine whose chip does not answer gets the time the ticks alone
+; give, which is the time MS-DOS gives on any machine.
+;
+; The date (2Ah) and the stamp a file is given (get_dostime) are still
+; the chip's own.
 ;=====================================================================
+CLK_AGAIN       EQU     1092            ; ticks between questions: a minute
+CLK_SLACK       EQU     200             ; hundredths the two may be apart
+CLK_DAY         EQU     8640000         ; hundredths in a day
+CLKS_NEW        EQU     0               ; the chip has not been asked yet
+CLKS_CHIP       EQU     1               ; counting on from its answer
+CLKS_BARE       EQU     2               ; it had none: the ticks alone
+
 fn2C:
+        call    clk_now                 ; EAX = hundredths since midnight
+        xor     edx,edx
+        mov     ecx,100
+        div     ecx
+        mov     [ebp+F_EDX],dl          ; hundredths
+        xor     edx,edx
+        mov     ecx,60
+        div     ecx
+        mov     [ebp+F_EDX+1],dl        ; second
+        xor     edx,edx
+        div     ecx
+        mov     [ebp+F_ECX],dl          ; minute
+        mov     [ebp+F_ECX+1],al        ; hour
+        jmp     i21_ok
+
+;---------------------------------------------------------------------
+; clk_now - EAX = hundredths of a second since midnight.
+;           EBX, ECX and EDX are destroyed.
+;---------------------------------------------------------------------
+clk_now:
+        call    dword ptr ds:[IOS_TICKS]
+        mov     ebx,eax                 ; EBX = the tick count now
+        cmp     byte ptr [clk_state],CLKS_NEW
+        je      cn_ask
+        sub     eax,[clk_asked]         ; ticks since the chip was asked
+        jae     cn_since
+        add     eax,TICKS_PER_DAY       ; midnight came in between
+cn_since:
+        cmp     eax,CLK_AGAIN
+        jae     cn_ask
+        cmp     byte ptr [clk_state],CLKS_BARE
+        je      cn_bare
+        call    clk_count
+        jc      cn_ask
+        ret
+
+cn_ask:
+        mov     [clk_asked],ebx
+        call    clk_chip
+        jc      cn_nochip
+        add     eax,50                  ; the middle of the chip's second:
+        mov     ecx,eax                 ; out by half of one at the most
+        cmp     byte ptr [clk_state],CLKS_CHIP
+        jne     cn_start
+        call    clk_count               ; ECX is kept
+        jc      cn_start
+        mov     edx,eax                 ; how far apart, either way round
+        sub     edx,ecx                 ; and either side of midnight
+        jns     cn_apart
+        neg     edx
+cn_apart:
+        cmp     edx,CLK_DAY / 2
+        jbe     cn_near
+        neg     edx
+        add     edx,CLK_DAY
+cn_near:
+        cmp     edx,CLK_SLACK
+        ja      cn_start
+        ret                             ; the count stands
+cn_start:
+        mov     [clk_ticks],ebx
+        mov     [clk_hunds],ecx
+        mov     byte ptr [clk_state],CLKS_CHIP
+        mov     eax,ecx
+        ret
+
+cn_nochip:
+        mov     byte ptr [clk_state],CLKS_BARE
+cn_bare:
+        mov     eax,ebx
+        cmp     eax,TICKS_PER_DAY
+        jb      cn_scale
+        xor     eax,eax
+cn_scale:
+        mov     edx,108000
+        mul     edx
+        mov     ecx,19663
+        div     ecx
+        ret
+
+;---------------------------------------------------------------------
+; clk_count - EAX = hundredths since midnight, counted on from the
+;             chip's last answer.  EBX = the tick count now.
+;             CF set if the tick count is not one that follows from the
+;             count the answer was taken at: more than a day on, or
+;             nowhere.  ECX and EBX are kept, EDX is destroyed.
+;---------------------------------------------------------------------
+clk_count:
+        mov     eax,ebx
+        sub     eax,[clk_ticks]
+        jae     cc_on
+        add     eax,TICKS_PER_DAY       ; midnight came in between
+cc_on:
+        cmp     eax,TICKS_PER_DAY       ; and the quotient below fits
+        jae     cc_lost
+        push    ecx
+        mov     edx,108000
+        mul     edx
+        mov     ecx,19663
+        div     ecx
+        pop     ecx
+        add     eax,[clk_hunds]
+        cmp     eax,CLK_DAY
+        jb      cc_out
+        sub     eax,CLK_DAY
+cc_out:
+        clc
+        ret
+cc_lost:
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; clk_chip - EAX = the clock chip's time in hundredths since midnight,
+;            a whole second.  CF set if the BIOS has no answer, or one
+;            that is not a time of day.  EBX is kept.
+;---------------------------------------------------------------------
+clk_chip:
         mov     ah,02h                  ; RTC read time, BCD answers
         call    rtc_call
-        jc      f2C_dflt
+        jc      cch_out
+        movzx   eax,byte ptr ds:[RMR_ECX+1]     ; hour
+        call    bcd2bin
+        imul    ecx,eax,60
+        movzx   eax,byte ptr ds:[RMR_ECX]       ; minute
+        call    bcd2bin
+        add     ecx,eax
+        imul    ecx,ecx,60
+        movzx   eax,byte ptr ds:[RMR_EDX+1]     ; second
+        call    bcd2bin
+        add     eax,ecx
+        imul    eax,eax,100
+        cmp     eax,CLK_DAY - 100
+        ja      cch_none
+        clc
+cch_out:
+        ret
+cch_none:
+        stc
+        ret
 
-        movzx   eax,byte ptr ds:[RMR_ECX+1]
-        call    bcd2bin
-        mov     [ebp+F_ECX+1],al        ; hour
-        movzx   eax,byte ptr ds:[RMR_ECX]
-        call    bcd2bin
-        mov     [ebp+F_ECX],al          ; minute
-        movzx   eax,byte ptr ds:[RMR_EDX+1]
-        call    bcd2bin
-        mov     [ebp+F_EDX+1],al        ; second
-        mov     byte ptr [ebp+F_EDX],0
-        jmp     i21_ok
-f2C_dflt:
-        mov     word ptr [ebp+F_ECX],0
-        mov     word ptr [ebp+F_EDX],0
-        jmp     i21_ok
+clk_state   db  CLKS_NEW
+clk_asked   dd  0                       ; the tick count when it was asked
+clk_ticks   dd  0                       ; ...and when the count started
+clk_hunds   dd  0                       ; the hundredths the count started at
 
 ;=====================================================================
 ; 2Bh - set date.  CX = year, DH = month, DL = day.
@@ -1613,6 +1777,7 @@ fn2D:
         mov     byte ptr ds:[RMR_EDX],0 ; no DST
         mov     al,1Ah
         call    dword ptr ds:[IOS_REALINT]
+        mov     byte ptr [clk_state],CLKS_NEW   ; 2Ch starts from the chip again
         mov     byte ptr [ebp+F_EAX],0
         jmp     i21_ok
 f2D_bad:
