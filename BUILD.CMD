@@ -43,7 +43,7 @@ rem and, in IMAGES\:
 rem     PMDOS.IMG    the boot disk: a bootable 1.44M floppy with PM-DOS
 rem                  on it and nothing else - the kernel, the shells,
 rem                  the commands, CONFIG.SYS, AUTOEXEC.BAT, the two
-rem                  text files and LRGDISK.386
+rem                  text files, LRGDISK.386 and LRGSTAT.EXE
 rem     TESTS.IMG    the test disk: every test program, batch file and
 rem                  key file, in \TESTS, and the long-named fixtures
 rem                  in its root.  Not a system disk.  The tests left
@@ -589,7 +589,18 @@ rem wlink lays out as the DDK's LINK386 does; the segment lines are
 rem WDCTRL.DEF's.
 cd CMD\LRGDISK
 wasm -q lrgdisk.asm                             || goto :fail
-wlink format windows vxd name ..\..\BIN\LRGDISK.386 file lrgdisk.obj option nodefaultlibs option description 'LRGDISK 1.3 - 32-bit disk access for IDE disks past 504MB' export LRGDISK_DDB.1 segment _LTEXT preload nondiscardable segment _LDATA preload nondiscardable segment _ITEXT discardable segment _IDATA discardable || goto :fail
+wlink format windows vxd name ..\..\BIN\LRGDISK.386 file lrgdisk.obj option nodefaultlibs option description 'LRGDISK 1.4 - 32-bit disk access for IDE disks past 504MB' export LRGDISK_DDB.1 segment _LTEXT preload nondiscardable segment _LDATA preload nondiscardable segment _ITEXT discardable segment _IDATA discardable || goto :fail
+rem LRGSTAT.EXE is a Windows program as well: a window that shows what
+rem LRGDISK has in use, asked of the driver through its API (ld_api).
+rem Small model, with Open Watcom's Windows headers and libraries, which
+rem nothing else here uses.  LRGSTAT.RES goes first, so that a wrc that
+rem failed cannot leave yesterday's to be bound in.
+if exist lrgstat.res del lrgstat.res
+wasm -q lrgapi.asm                              || goto :fail
+wcc -q -bt=windows -ms -zW -ox -w4 -we -i=%WATCOM%\h -i=%WATCOM%\h\win lrgstat.c || goto :fail
+wrc -q -r -bt=windows -i=%WATCOM%\h\win lrgstat.rc -fo=lrgstat.res || goto :fail
+wlink system windows name ..\..\BIN\LRGSTAT.EXE file lrgstat.obj, lrgapi.obj option quiet option stack=12k option heapsize=4k option description 'LRGSTAT - what LRGDISK.386 has in use' option resource=lrgstat.res || goto :fail
+del lrgstat.res
 cd ..\..
 rem FIND is MS-DOS 6.22's, switch for switch and message for message:
 rem batch files test what it prints and the errorlevel it leaves.
@@ -1799,15 +1810,15 @@ rem === PMDOS.IMG - the boot disk ===
 rem PM-DOS and nothing else: BIN\ and the files that ride with it.
 rem -nolfn keeps MKDISK's long-named fixtures off it - they are test
 rem material, and the test disk has them in its root, where LFNTEST.BAT
-rem looks.  LRGDISK.386 rides along because it ships, though only a
-rem hard disk with Windows on it has a use for it.
+rem looks.  LRGDISK.386 and LRGSTAT.EXE ride along because they ship,
+rem though only a hard disk with Windows on it has a use for them.
 echo === PMDOS.IMG (the boot disk) ===
 TOOLS\MKDISK.EXE IMAGES\PMDOS.IMG BIN\BOOT.BIN -nolfn BIN\PMIO.SYS BIN\PMDOS.SYS BIN\CMD.EXE BIN\COMMAND.COM ^
     BIN\CHOICE.COM BIN\MORE.COM BIN\SORT.COM BIN\SYS.COM BIN\FORMAT.COM BIN\MEM.EXE ^
     BIN\FDISK.EXE BIN\MOUNT.EXE BIN\CACHE.EXE BIN\UNDELETE.EXE BIN\CDEX.EXE BIN\MOVE.EXE BIN\ATTRIB.EXE BIN\CHKDSK.EXE BIN\LABEL.EXE BIN\XCOPY.EXE BIN\EDIT.EXE ^
     BIN\FC.EXE BIN\FIND.EXE BIN\DISKCOPY.COM BIN\DISKCOMP.COM BIN\ISAPNP.EXE BIN\SHUTDOWN.EXE BIN\PMD.EXE BIN\DOSSHELL.EXE BIN\ACROREAD.EXE BIN\SCANDISK.EXE ^
     BIN\KEYB.COM BIN\COUNTRY.SYS BIN\KEYBOARD.SYS ^
-    BIN\RMDOS.SYS BIN\RMCD.SYS BIN\LRGDISK.386 README.TXT DISK\CONFIG.SYS DISK\CONFIG.TXT DISK\SCANDISK.INI DISK\AUTOEXEC.BAT DISK\AUTOEXEC.TXT || goto :fail
+    BIN\RMDOS.SYS BIN\RMCD.SYS BIN\LRGDISK.386 BIN\LRGSTAT.EXE README.TXT DISK\CONFIG.SYS DISK\CONFIG.TXT DISK\SCANDISK.INI DISK\AUTOEXEC.BAT DISK\AUTOEXEC.TXT || goto :fail
 
 rem === TESTS.IMG - the test disk ===
 rem Everything written to prove one thing about the kernel: BIN\TESTS\
