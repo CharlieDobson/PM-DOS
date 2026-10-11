@@ -4,9 +4,9 @@
 *.com
 *.obj
 *.bin
-BIN/**
-IMAGES/**
+BIN
+IMAGES
 *.img
 *.png
 *.err
-BASELINE/**
+BASELINE
