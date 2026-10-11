@@ -13281,6 +13281,113 @@ BUILD.CMD's own line), IMAGES\HD16.IMG and the 86Box VM's HD16.IMG
 HDBIG and MULTI do not.  Still v0.63.
 
 
+CTRL-ALT-DEL GOES BACK TO THE ROM, AND NOT THROUGH A RESET (2026-10-11)
+-----------------------------------------------------------------------
+
+Charlie: "When pressing CTRL+ALT+DEL to reboot the system, the system
+starts doing BIOS beep codes and fails to restart.  Manually hitting
+the reset button, the BIOS then shows that the previous boot attempt
+failed and requires the user to enter the BIOS and verify & save any
+changes.  This leads me to believe when CTRL+ALT+DEL is pressed,
+something within the CMOS / BIOS data area is getting corrupted."
+
+WHAT THE KERNEL DID.  kb_reboot wrote FEh to the 8042 - pulse the reset
+line - and in its next two instructions loaded an empty IDT and
+executed INT 3: a triple fault, written as what to do if the
+controller would not pulse.  It did not wait to find out.  So the
+processor was reset by the fault at once, the BIOS began, and the
+8042's pulse reset it again whenever the controller got round to the
+command.  QEMU's log (-d cpu_reset) has both: four resets for a
+power-on and one Ctrl-Alt-Del, where a power-on alone is two.
+  THE BIOS WAS TOLD NOTHING, EITHER.  The keys' path did not write
+40:72 - only FDISK's did (sys_reboot) - so after a power-on the BIOS
+found a cold start asked for.  And a reset of the processor puts back
+nothing outside the processor: the 8259s were at 20h and 28h, the
+drives had been told to keep their interrupts to themselves (nIEN),
+and A20 was held open through port 92h wherever the stub had opened it
+that way, which a BIOS that works the gate through the 8042 cannot
+shut.
+  NOTHING WRITES THE CMOS.  The only writes to port 71h in the kernel
+are in BUILD irqtest (iqx_init, IRQ.INC), and the keys' path wrote
+nothing in the BIOS data area at all.  What a BIOS says after the
+reset button about the start before is its own note: a BIOS that marks
+its CMOS when a start begins, and clears the mark when the start is
+over, finds the mark still there after one that was begun twice or
+that ended in beeps - and falls back on its defaults, which is why it
+wants its setup looked at and saved.  (Phoenix's BIOS words it
+"Previous boot incomplete - Default configuration used".  Whether his
+is one is a guess from his words.)
+  WHICH OF THESE HIS BIOS MINDED IS NOT KNOWN.  The old kernel
+restarts every machine here: QEMU, DOSBox-X, and 86Box's P3B-F,
+VS440FX, VL/I-486SV2G and ISA-386C.  So this is not the repair of a
+fault that was seen.  It is the restart done the way the machine's own
+BIOS does it, with none of the above left for a BIOS to mind.
+
+WHAT IT DOES NOW.  What the ROM's own Ctrl-Alt-Del does, from where
+the ROM would have been doing it.  The ROM's keyboard handler puts
+1234h at 40:72 and jumps to F000:FFF0, in real mode, and every BIOS
+has to take that, because it is how the keys restart MS-DOS.  (MS-DOS
+6's EMM386 gets there the same way from its own protected mode: it
+goes back to real mode, puts the vectors back and lets the ROM's
+handler carry on - dev\emm386\int15.asm and pagetrap.asm.)
+  kb_reboot and sys_reboot are one routine (KEYBD.INC).  It takes the
+null guard off and far-jumps to a third fixed entry in the real-mode
+stub, RMT_REBOOT (0B40h; rm_reboot, IORM.ASM), which goes down as a
+park goes down and then, with interrupts off all the way:
+  - leaves CR0 with its cache bits, the coprocessor bits the BIOS had
+    set (fpu_cr0boot) and nothing else; CR4 as the BIOS had it, where
+    the kernel changed it; the flags clear;
+  - the table at 0:0 as the vector table;
+  - the 8259s at 08h and 70h (pic_to_rm), which also lets go of the
+    keyboard's line - still in service when the keys brought us here;
+  - the drives allowed their interrupts again (ata_toRM);
+  - A20 shut again if enable_a20 opened it through port 92h, which it
+    notes now (a20_fast).  Opened through the 8042, or found open, it
+    is left;
+  - 1234h at 40:72, and JMP FFFF:0000.
+No reset is asked for, of the 8042 or of anything.  How the board is
+restarted is the BIOS's business once it has been entered there.
+FDISK's restart (21h/F1h AL=1Bh) goes the same way after its commit.
+
+NOT DONE.  Ctrl-Alt-Del while a BIOS call is running.  The kernel is
+in real mode then and the keys go to the ROM's own handler, which
+restarts from a machine with the 8259s at 20h and 28h and a copy of
+the vector table loaded (rm_freeze).  That is during a call for the
+date, or to a disk only the BIOS can reach; at a prompt it is not.
+Read, not run.
+
+RUN.  The real keys, in QEMU (the monitor's sendkey at a prompt): pc
+with a Pentium II, pc with a 486 and isapc with a 486 from a hard
+disk, and pc with a 486 from the boot floppy, where the monitor typed
+VER at both prompts.  The keys as scan codes (21h/F1h AL=23h) and
+FDISK's call, from a rig's program in an AUTOEXEC.BAT whose second
+start says so: QEMU, DOSBox-X and the four 86Box boards whose saved
+CMOS knows a hard disk - P3B-F (Award), VS440FX (AMI), VL/I-486SV2G
+(Award) and ISA-386C (AMI).  Every one started again and ran the
+second half of the batch file.  On the P3B-F and the VS440FX the stub
+had opened A20 through port 92h, and shut it, at both starts; on the
+two older boards it had not.  QEMU logs one reset for a restart now,
+which is SeaBIOS's own.
+  RUNTESTS, all seven machines: 87 of 87, nothing to record.  The stub
+is 4,096 bytes with each define that changes its size (EXIT_TRACE,
+PMDOS_DEBUG, HANG_E9, RMDOS_MARK, IRQ_SELFTEST), and MASM 6.13 takes
+IORM.ASM and IOPM.ASM.
+  NOT RUN: Charlie's machine, which is the only one it failed on.  What
+BIOS it has, and what the beeps were, would say which of the three it
+minded - and they are the first thing to ask if it still does not
+come back.
+
+Files: IO\KEYBD.INC, IO\IORM.ASM, INC\PMDOS.INC.  BIN\PMIO.SYS is
+59,099 bytes (it was 59,107), built by BUILD.CMD in a mirror of the
+tree.  IMAGES\PMDOS.IMG (made again by BUILD.CMD's own line, so it has
+DISK\CONFIG.SYS and AUTOEXEC.BAT as they were committed at 04:36 - the
+floppy of 04:31 had the ones before), IMAGES\HD16.IMG and the 86Box
+VM's HD16.IMG (FATREPL, each in place) and the VM's PMDOS.IMG carry
+it; a copy of each was started in QEMU, restarted with the keys and
+reached its prompt again.  HD32, HDBIG and MULTI do not.  The rig's
+two programs (CADTEST, A20Q) are not in the tree.  Still v0.63.
+
+
 v0.61 - THE NUMBER CAUGHT UP (2026-09-30)
 ---------------------------------------------------------------------
 

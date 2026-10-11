@@ -2064,6 +2064,16 @@ RMT_PARK        EQU     0940h                   ; PM -> real, for good
 RMT_UNPARK      EQU     0A80h                   ; real -> PM, from RMDOS
 
 ;---------------------------------------------------------------------
+; RESTARTING - the third entry, and the one nothing comes back from.
+; RMT_REBOOT goes to real mode the way RMT_PARK does and hands the
+; machine to the ROM at F000:FFF0, which is where the ROM's own
+; Ctrl-Alt-Del goes (rm_reboot, IORM.ASM).  It sits between the unpark
+; code and the GDT, and the same assembler checks keep it there.  The
+; unpark code ends at 0A9Eh, and at 0AF8h in BUILD exittrace.
+;---------------------------------------------------------------------
+RMT_REBOOT      EQU     0B40h                   ; PM -> real -> the ROM
+
+;---------------------------------------------------------------------
 ; THE SIXTEEN INTERRUPT LINES DURING A BIOS CALL.  Once CONFIG.SYS is
 ; finished a BIOS call runs with a vector table of the kernel's own
 ; (BIOS_IVT, and rm_freeze in RMCALL.INC says why), in which every line
@@ -2669,8 +2679,9 @@ IOS_USRWOK      EQU     IOSVC + 0ECh            ; EAX = linear, ECX = bytes:
                                                 ; Ask before writing for a
                                                 ; program (PAGING.INC)
 IOS_REBOOT      EQU     IOSVC + 0F0h            ; never returns: a warm start
-                                                ; through the 8042's reset
-                                                ; line, or a triple fault.
+                                                ; through the ROM's own entry,
+                                                ; from real mode, as
+                                                ; Ctrl-Alt-Del takes it.
                                                 ; The caches are the caller's
                                                 ; to write first - 21h/F1h
                                                 ; AL=1Bh does (KEYBD.INC)

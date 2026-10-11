@@ -534,8 +534,11 @@ enable_a20:
         and     al,0FEh                 ; never touch the reset bit
         out     92h,al
         call    test_a20
-        jnc     a20_done
+        jc      a20_kbc
+        mov     byte ptr cs:[a20_fast],1 ; ours to shut again: rm_reboot
+        ret                             ; (MOV leaves CF clear)
 
+a20_kbc:
         call    kbc_wait                ; 8042 route
         mov     al,0D1h
         out     64h,al
@@ -1105,8 +1108,109 @@ ENDIF
         cli
         jmp     rm_toprot
 
+;=====================================================================
+; RESTARTING.  The third entry at a fixed offset, for the same reason
+; as the other two, and the one nothing comes back from.
+;
+; THIS IS WHAT THE ROM'S OWN CTRL-ALT-DEL DOES, done from where the
+; ROM would have been doing it.  Its keyboard handler puts 1234h at
+; 40:72 and jumps to F000:FFF0, in real mode, in a machine the BIOS
+; set up; and every BIOS has to take that, because it is how the keys
+; restart MS-DOS.  So the machine is taken back to real mode as a park
+; takes it, what protected mode moved is put back where the BIOS left
+; it, and the jump is the ROM's own.
+;
+; NOTHING HERE RESETS THE PROCESSOR, which is what this used to do and
+; what a real machine did not come back from (kb_reboot, KEYBD.INC).
+; A reset by the 8042 or by a triple fault reaches the processor and
+; nothing else, and how the board is to be restarted is the BIOS's own
+; business: it knows what it is running on, and it does whatever that
+; takes when it is entered here.
+;
+;   the processor   paging off, then protected mode, and with it every
+;                   bit of CR0 a BIOS does not expect - the coprocessor
+;                   bits go back to what it left (EDX).  CR4 too (EBX,
+;                   if CL says the processor has one), and the flags.
+;   the IVT         the table at 0:0, as for a park.
+;   the 8259s       08h and 70h.  Programming them is also what lets go
+;                   of the keyboard's line, which is still in service
+;                   when the keys brought us here.
+;   the drives      allowed their interrupts again (ata_toRM).
+;   A20             shut again if it was opened through port 92h
+;                   (enable_a20).  A BIOS that works the gate through
+;                   the 8042 tests it there, and cannot shut it while
+;                   that port holds it open.  Opened through the 8042
+;                   it is left: a BIOS finds it there, as it does
+;                   after HIMEM.  Nothing below needs it - the stub,
+;                   its stack and the ROM are all under the megabyte.
+;
+; Interrupts stay off from the keys to the ROM.  The table at 0:0 is
+; every program's, and nothing a program hooked is to run in a machine
+; whose DOS has just gone.
+;
+; Entered by a far JMP SEL_CODE16:RMT_REBOOT with interrupts off:
+;   EDX = CR0 as the BIOS left it
+;   EBX = CR4 as the BIOS left it, if CL is not 0
+;=====================================================================
+reboot_mark:
+.ERRE   (reboot_mark - rm_base) LE RMT_REBOOT, <the unpark code has grown into the restart entry at RMT_REBOOT>
+        ORG     RMT_REBOOT
+rm_reboot:
+        mov     ax,SEL_DATA16
+        mov     ds,ax
+        mov     es,ax
+        mov     fs,ax
+        mov     gs,ax
+        mov     ss,ax
+        mov     sp,RM_STACK_TOP
+
+        mov     eax,cr0                 ; paging first, on its own
+        and     eax,7FFFFFFFh
+        mov     cr0,eax
+
+        and     eax,60000010h           ; then protected mode: the cache
+        and     edx,0000002Eh           ; bits stay, MP, EM, TS and NE are
+        or      eax,edx                 ; the BIOS's, and the rest are clear
+        mov     cr0,eax
+
+        db      0EAh                    ; JMP FAR IO_SEG:rb_land
+        dw      OFFSET rb_land
+        dw      IO_SEG
+
+rb_land:
+        xor     ax,ax
+        mov     ds,ax
+        mov     es,ax
+        mov     fs,ax
+        mov     gs,ax
+        mov     ss,ax
+        mov     sp,RM_STACK_TOP
+        lidt    fword ptr cs:[rm_idtr]
+        or      cl,cl
+        jz      rb_flags
+        db      0Fh,22h,0E3h            ; MOV CR4,EBX
+rb_flags:
+        xor     eax,eax
+        push    eax
+        popfd
+        call    pic_to_rm
+        call    ata_toRM
+        cmp     byte ptr cs:[a20_fast],0
+        je      rb_gate
+        in      al,92h
+        and     al,0FCh                 ; the gate, and never the reset bit
+        out     92h,al
+rb_gate:
+        mov     word ptr ds:[BDA_WARMBOOT],1234h
+        db      0EAh                    ; JMP FAR 0FFFFh:0000h
+        dw      0000h
+        dw      0FFFFh
+
+a20_fast    db  0                       ; 1: enable_a20 opened the gate
+                                        ; through port 92h
+
 gdt_mark:
-.ERRE   (gdt_mark - rm_base) LE GDT_OFF, <the unpark code has grown into the GDT>
+.ERRE   (gdt_mark - rm_base) LE GDT_OFF, <the restart code has grown into the GDT>
         ORG     GDT_OFF
 gdt_start:
         ; 0000 - null

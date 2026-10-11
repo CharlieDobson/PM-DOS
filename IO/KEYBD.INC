@@ -698,44 +698,54 @@ kb_mod:
         jmp     kb_clr_e0
 
 ;=====================================================================
-; kb_reboot - Ctrl-Alt-Del.  Ask the 8042 to pulse the reset line, and
-;             if it will not, force a triple fault.
-;=====================================================================
-kb_reboot:
-        cli
-        mov     al,0FEh
-        out     KB_CMD,al
-        lidt    fword ptr [null_idtr]   ; no valid gates anywhere
-        int     3                       ; -> triple fault -> reset
-kbr_hang:
-        hlt
-        jmp     kbr_hang
-
-;=====================================================================
+; kb_reboot  - Ctrl-Alt-Del.
 ; sys_reboot - IOS_REBOOT.  Ctrl-Alt-Del without the keys, for a
 ;              program that has changed something only a fresh start
 ;              will see - FDISK, through 21h/F1h AL=1Bh, which has
 ;              written the caches before it gets here.
 ;
-; Two things the keys' path does not do.  The BIOS is told this is a
-; WARM start, so it skips the memory test as it would for the keys at
-; a DOS prompt.  And the 8042 is given the command only once it is
-; listening: from the keyboard's own interrupt it has just handed over
-; a byte and is idle, but from here it can be in the middle of
-; anything, and a command written while its input is full is ignored.
-; The wait is bounded, and kb_reboot's triple fault is behind it.
+; THE MACHINE GOES BACK TO THE ROM THE WAY THE ROM'S OWN CTRL-ALT-DEL
+; SENDS IT: in real mode, with 1234h at 40:72, by a jump to F000:FFF0.
+; All of that is rm_reboot's, in the stub (IORM.ASM), which first puts
+; back what protected mode moved - the vector table, the 8259s, the
+; drives' interrupts, the A20 gate.
+;
+; IT WAS A RESET, AND A REAL MACHINE DID NOT COME BACK FROM IT: beep
+; codes from the BIOS, and after the reset button the BIOS's complaint
+; that the last start had failed.  This wrote FEh to the 8042 and
+; raised a triple fault in the next instruction, so the processor was
+; reset twice (QEMU's log has both) - at once by the fault, and again
+; when the 8042 got round to its pulse, which on a real one is after
+; the BIOS has begun.  A BIOS that notes in its CMOS that a start is
+; under way, and is started again before it has finished, says what
+; that one said.  The keys' path left 40:72 as it was as well, which
+; after a power-on says COLD.
+; And a reset of the processor puts back nothing outside it: the BIOS
+; found the 8259s at 20h and 28h, the drives told to keep their
+; interrupts to themselves, and A20 held open through port 92h.
+; WHICH OF THOSE THAT BIOS MINDED IS NOT KNOWN - no emulator minds
+; any of them - so none of them is left for it to mind.
+;
+; What the stub cannot ask for itself comes down in registers: the
+; coprocessor's bits of CR0 and the whole of CR4 as the BIOS left
+; them (FPU.INC).  The debug registers outlive protected mode, so the
+; null guard comes off here, as it does for a park.
 ;=====================================================================
+kb_reboot:
 sys_reboot:
         cli
-        mov     word ptr ds:[BDA_WARMBOOT],1234h
-        mov     ecx,100000h
-srb_wait:
-        in      al,KB_CMD               ; the status port: bit 1 set while
-        test    al,2                    ; the controller's input is full
-        jz      kb_reboot
-        dec     ecx
-        jnz     srb_wait
-        jmp     kb_reboot
+        xor     al,al
+        call    nt_arm
+        mov     edx,dword ptr [fpu_cr0boot]
+        xor     ecx,ecx                 ; CL = there is a CR4
+        test    byte ptr [fpu_cpu],FPC_CR4
+        jz      kbr_go
+        mov     ebx,dword ptr [fpu_cr4boot]
+        inc     ecx
+kbr_go:
+        db      0EAh                    ; JMP FAR SEL_CODE16:RMT_REBOOT
+        dd      RMT_REBOOT
+        dw      SEL_CODE16
 
 ;=====================================================================
 ; kb_put - append AX (AL = ASCII, AH = scan code) to the BIOS ring at
@@ -1784,6 +1794,3 @@ kb_obf      db  0                       ; ...and its "there is a byte" bit
 kbq_head    db  0
 kbq_tail    db  0
 kbq         db  KBQ_SIZE dup (0)
-
-null_idtr   dw  0
-            dd  0

@@ -6982,10 +6982,10 @@ m_bm_nat1       db      '; the first cable is in native mode, not at '
                 db      '1F0h', 0
 m_bm_nat2       db      '; the second cable is in native mode, not at '
                 db      '170h', 0
-m_rz1000        db      'PC-Tech RZ1000: its read-ahead is switched off (it '
-                db      'corrupts reads).', 13, 10, 0
-m_cmd640        db      'CMD640: its read-ahead is switched off (it corrupts '
-                db      'reads).', 13, 10, 0
+m_rz1000        db      'PC-Tech RZ1000: read-ahead is switched off to '
+                db      'avoid corrupted reads.', 13, 10, 0
+m_cmd640        db      'CMD640: read-ahead is switched off to avoid '
+                db      'corrupted reads.', 13, 10, 0
 m_serial        db      'The two cables are used one at a time.', 13, 10, 0
 m_other         db      'Unit ', 0
 m_cable1        db      ' of the first cable', 0
@@ -7028,12 +7028,12 @@ m_poll_off      db      'LRGDiskPoll=off: an interrupt for every PIO block.'
 m_blk_in        db      '  PIO in blocks of ', 0
 m_blk_was       db      ' sectors, as the drive was set', 0
 m_blk_set       db      ' sectors, set by LRGDISK', 0
-m_blk_off       db      '  PIO a sector at a time: LRGDiskBlockMode=off', 0
-m_blk_none      db      '  PIO a sector at a time: the drive has no block '
+m_blk_off       db      '  PIO per sector at a time: LRGDiskBlockMode=off', 0
+m_blk_none      db      '  PIO per sector at a time: the drive has no block '
                 db      'mode', 0
-m_blk_one       db      '  PIO a sector at a time: the drive is set to '
+m_blk_one       db      '  PIO per sector at a time: the drive is set to '
                 db      'blocks of one sector', 0
-m_blk_refused   db      '  PIO a sector at a time: the drive refused a '
+m_blk_refused   db      '  PIO per sector at a time: the drive refused a '
                 db      'block size', 0
 m_32_on         db      '  PIO data 32 bits at a time', 0
 m_32_off        db      '  PIO data 16 bits at a time: LRGDisk32BitIO=off', 0
