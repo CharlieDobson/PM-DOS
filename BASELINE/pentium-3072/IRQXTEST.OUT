@@ -1,1 +1,0 @@
-IRQXTEST: resident; INT 1Ch, IRQ 8 and INT 2Fh hooked.
