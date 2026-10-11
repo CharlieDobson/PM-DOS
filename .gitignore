@@ -1,4 +1,3 @@
-*.bat
 !DISK/*.BAT
 *.exe
 *.com
