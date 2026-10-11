@@ -664,7 +664,34 @@ r3_pflags:
         je      rpf_bus
         cmp     ax,1Fh * 256 + 0F1h
         je      rpf_vbe
+        cmp     ax,20h * 256 + 0F1h
+        je      rpf_lowmem
+        cmp     ax,22h * 256 + 0F1h
+        je      rpf_keyb
         call    vdm_flags
+        ret
+
+; F1h/22h, the keyboard's layout: KYF_SET hands a record over through
+; EDX and KYF_GET is answered into EDI.  The other two carry a number
+; in DL or nothing at all.
+rpf_keyb:
+        mov     bl,P_DX
+        cmp     byte ptr [ebp+F_EAX+2],KYF_SET
+        je      rpf_out
+        mov     bl,P_DI
+        cmp     byte ptr [ebp+F_EAX+2],KYF_GET
+        je      rpf_out
+        xor     bl,bl
+        ret
+
+; F1h/20h, the first megabyte: LMF_READ answers into EDI.  Its EBX is
+; an address in the MACHINE and LMF_RAM's is too - numbers both, which
+; a blanket flag would add the slot's base to.
+rpf_lowmem:
+        mov     bl,P_DI
+        cmp     byte ptr [ebp+F_EAX+2],LMF_READ
+        je      rpf_out
+        xor     bl,bl
         ret
 
 ; F1h/1Fh, VBE: the two blocks the BIOS answers into and the palette

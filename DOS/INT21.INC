@@ -810,7 +810,7 @@ bo_clear:
 ; one - while a manufactured frame has none and k21 pushes zero.  That
 ; identifies the kernel's own INT 21h correctly; it says nothing about
 ; the k21 frames, because THE KERNEL USES k21 TOO.  exec_kind reads
-; eight bytes of a program's header into a buffer in PMDOS.SYS through
+; the front of a program's file into a buffer in PMDOS.SYS through
 ; exactly that door, which is why every EXEC in the machine started
 ; failing the first time this was got wrong.
 ;
@@ -1499,28 +1499,192 @@ f2A_dflt:
         jmp     i21_ok
 
 ;=====================================================================
-; 2Ch - get time -> CH = hour, CL = min, DH = sec, DL = 0
+; 2Ch - get time -> CH = hour, CL = min, DH = sec, DL = hundredths
+;
+; THE CLOCK CHIP SAYS WHAT TIME IT IS, AND THE TIMER TICK COUNTS ON
+; FROM THERE.  This used to ask the BIOS for the chip's time on every
+; call.  The chip has no hundredths, so DL was always 0, and every call
+; was a trip to real mode.  A program that asks in a loop - EDIT's held
+; scroll arrow, DOSSHELL's, a DOS program waiting for the hundredths to
+; change - kept the machine in the BIOS: the arrow moved a line a
+; second, a double click counted only when both presses fell in one
+; second of the clock, and with a PS/2 mouse the button was not seen
+; let go.
+;
+; So the chip is read once and the tick count at that moment kept
+; beside its answer.  The time after that is the answer plus what the
+; ticks have counted since: 1,573,040 of them to a day's 8,640,000
+; hundredths, which is 108000/19663 hundredths a tick.
+;
+; THE CHIP IS ASKED AGAIN ONCE A MINUTE, and the count starts over from
+; its answer only when the two are more than two seconds apart.  The
+; chip's second has no fraction, so the two differ by up to a second at
+; the best of times, and a clock put back that much every minute would
+; be worse than one left half a second out.  The tick count is the
+; BDA's: a program in a box may write anything there, the BIOS's SET
+; TIME is one way to, and midnight takes the count back to nothing.
+; All of them are a count that stopped making sense, and each is met by
+; asking the chip.
+;
+; A machine whose chip does not answer gets the time the ticks alone
+; give, which is the time MS-DOS gives on any machine.
+;
+; The date (2Ah) and the stamp a file is given (get_dostime) are still
+; the chip's own.
 ;=====================================================================
+CLK_AGAIN       EQU     1092            ; ticks between questions: a minute
+CLK_SLACK       EQU     200             ; hundredths the two may be apart
+CLK_DAY         EQU     8640000         ; hundredths in a day
+CLKS_NEW        EQU     0               ; the chip has not been asked yet
+CLKS_CHIP       EQU     1               ; counting on from its answer
+CLKS_BARE       EQU     2               ; it had none: the ticks alone
+
 fn2C:
+        call    clk_now                 ; EAX = hundredths since midnight
+        xor     edx,edx
+        mov     ecx,100
+        div     ecx
+        mov     [ebp+F_EDX],dl          ; hundredths
+        xor     edx,edx
+        mov     ecx,60
+        div     ecx
+        mov     [ebp+F_EDX+1],dl        ; second
+        xor     edx,edx
+        div     ecx
+        mov     [ebp+F_ECX],dl          ; minute
+        mov     [ebp+F_ECX+1],al        ; hour
+        jmp     i21_ok
+
+;---------------------------------------------------------------------
+; clk_now - EAX = hundredths of a second since midnight.
+;           EBX, ECX and EDX are destroyed.
+;---------------------------------------------------------------------
+clk_now:
+        call    dword ptr ds:[IOS_TICKS]
+        mov     ebx,eax                 ; EBX = the tick count now
+        cmp     byte ptr [clk_state],CLKS_NEW
+        je      cn_ask
+        sub     eax,[clk_asked]         ; ticks since the chip was asked
+        jae     cn_since
+        add     eax,TICKS_PER_DAY       ; midnight came in between
+cn_since:
+        cmp     eax,CLK_AGAIN
+        jae     cn_ask
+        cmp     byte ptr [clk_state],CLKS_BARE
+        je      cn_bare
+        call    clk_count
+        jc      cn_ask
+        ret
+
+cn_ask:
+        mov     [clk_asked],ebx
+        call    clk_chip
+        jc      cn_nochip
+        add     eax,50                  ; the middle of the chip's second:
+        mov     ecx,eax                 ; out by half of one at the most
+        cmp     byte ptr [clk_state],CLKS_CHIP
+        jne     cn_start
+        call    clk_count               ; ECX is kept
+        jc      cn_start
+        mov     edx,eax                 ; how far apart, either way round
+        sub     edx,ecx                 ; and either side of midnight
+        jns     cn_apart
+        neg     edx
+cn_apart:
+        cmp     edx,CLK_DAY / 2
+        jbe     cn_near
+        neg     edx
+        add     edx,CLK_DAY
+cn_near:
+        cmp     edx,CLK_SLACK
+        ja      cn_start
+        ret                             ; the count stands
+cn_start:
+        mov     [clk_ticks],ebx
+        mov     [clk_hunds],ecx
+        mov     byte ptr [clk_state],CLKS_CHIP
+        mov     eax,ecx
+        ret
+
+cn_nochip:
+        mov     byte ptr [clk_state],CLKS_BARE
+cn_bare:
+        mov     eax,ebx
+        cmp     eax,TICKS_PER_DAY
+        jb      cn_scale
+        xor     eax,eax
+cn_scale:
+        mov     edx,108000
+        mul     edx
+        mov     ecx,19663
+        div     ecx
+        ret
+
+;---------------------------------------------------------------------
+; clk_count - EAX = hundredths since midnight, counted on from the
+;             chip's last answer.  EBX = the tick count now.
+;             CF set if the tick count is not one that follows from the
+;             count the answer was taken at: more than a day on, or
+;             nowhere.  ECX and EBX are kept, EDX is destroyed.
+;---------------------------------------------------------------------
+clk_count:
+        mov     eax,ebx
+        sub     eax,[clk_ticks]
+        jae     cc_on
+        add     eax,TICKS_PER_DAY       ; midnight came in between
+cc_on:
+        cmp     eax,TICKS_PER_DAY       ; and the quotient below fits
+        jae     cc_lost
+        push    ecx
+        mov     edx,108000
+        mul     edx
+        mov     ecx,19663
+        div     ecx
+        pop     ecx
+        add     eax,[clk_hunds]
+        cmp     eax,CLK_DAY
+        jb      cc_out
+        sub     eax,CLK_DAY
+cc_out:
+        clc
+        ret
+cc_lost:
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; clk_chip - EAX = the clock chip's time in hundredths since midnight,
+;            a whole second.  CF set if the BIOS has no answer, or one
+;            that is not a time of day.  EBX is kept.
+;---------------------------------------------------------------------
+clk_chip:
         mov     ah,02h                  ; RTC read time, BCD answers
         call    rtc_call
-        jc      f2C_dflt
+        jc      cch_out
+        movzx   eax,byte ptr ds:[RMR_ECX+1]     ; hour
+        call    bcd2bin
+        imul    ecx,eax,60
+        movzx   eax,byte ptr ds:[RMR_ECX]       ; minute
+        call    bcd2bin
+        add     ecx,eax
+        imul    ecx,ecx,60
+        movzx   eax,byte ptr ds:[RMR_EDX+1]     ; second
+        call    bcd2bin
+        add     eax,ecx
+        imul    eax,eax,100
+        cmp     eax,CLK_DAY - 100
+        ja      cch_none
+        clc
+cch_out:
+        ret
+cch_none:
+        stc
+        ret
 
-        movzx   eax,byte ptr ds:[RMR_ECX+1]
-        call    bcd2bin
-        mov     [ebp+F_ECX+1],al        ; hour
-        movzx   eax,byte ptr ds:[RMR_ECX]
-        call    bcd2bin
-        mov     [ebp+F_ECX],al          ; minute
-        movzx   eax,byte ptr ds:[RMR_EDX+1]
-        call    bcd2bin
-        mov     [ebp+F_EDX+1],al        ; second
-        mov     byte ptr [ebp+F_EDX],0
-        jmp     i21_ok
-f2C_dflt:
-        mov     word ptr [ebp+F_ECX],0
-        mov     word ptr [ebp+F_EDX],0
-        jmp     i21_ok
+clk_state   db  CLKS_NEW
+clk_asked   dd  0                       ; the tick count when it was asked
+clk_ticks   dd  0                       ; ...and when the count started
+clk_hunds   dd  0                       ; the hundredths the count started at
 
 ;=====================================================================
 ; 2Bh - set date.  CX = year, DH = month, DL = day.
@@ -1613,6 +1777,7 @@ fn2D:
         mov     byte ptr ds:[RMR_EDX],0 ; no DST
         mov     al,1Ah
         call    dword ptr ds:[IOS_REALINT]
+        mov     byte ptr [clk_state],CLKS_NEW   ; 2Ch starts from the chip again
         mov     byte ptr [ebp+F_EAX],0
         jmp     i21_ok
 f2D_bad:
@@ -2385,10 +2550,17 @@ f60_nopath:
         jmp     i21_fail
 
 ;=====================================================================
-; 66h - the global code page.  There is one, 437 - 65h says the same
-;       and CHCP asks this - so 6601h answers it for both the active
-;       and the system page, and 6602h takes 437 and refuses any other
-;       with 2, which is what DOS says when it has no tables for one.
+; 66h - the global code page, which CHCP asks and sets.  6601h answers
+;       the page in use in BX and the one the system started in in DX:
+;       437, or what COUNTRY= said.  6602h changes the page in use to
+;       another the country has tables for in COUNTRY.SYS - its
+;       capitals and its collating weights - and refuses one it has
+;       none for with 2, which is what DOS says then.
+;
+; ONLY THE TABLES CHANGE.  MS-DOS went on from here to tell every
+; device that had a font prepared for the page to switch to it; there
+; are no such devices here, and the screen goes on showing the video
+; card's own characters.
 ;=====================================================================
 fn66:
         mov     al,[ebp+F_EAX]
@@ -2396,12 +2568,20 @@ fn66:
         je      f66_get
         cmp     al,2
         jne     f66_fn
-        cmp     word ptr [ebp+F_EBX],437
-        jne     f66_bad
+        movzx   edx,word ptr [ebp+F_EBX]
+        cmp     dx,word ptr [ctry_page]
+        je      f66_same
+        movzx   eax,word ptr [ctry_code]
+        mov     cl,1
+        call    nls_load
+        jc      f66_bad
+f66_same:
         jmp     i21_ok
 f66_get:
-        mov     word ptr [ebp+F_EBX],437
-        mov     word ptr [ebp+F_EDX],437
+        mov     ax,word ptr [ctry_page]
+        mov     word ptr [ebp+F_EBX],ax
+        mov     ax,word ptr [ctry_syspage]
+        mov     word ptr [ebp+F_EDX],ax
         jmp     i21_ok
 f66_bad:
         mov     ax,ERR_NOFILE
@@ -6158,7 +6338,9 @@ f4B_vfail:
 ; program whose first four bytes happen to sort low.
 ;
 ; It costs one open per EXEC, and it is worth it: trusting the
-; extension is how a loader ends up executing an .EXE header.
+; extension is how a loader ends up executing an .EXE header.  An MZ
+; file costs a seek and a second read on top, to look behind the DOS
+; program for an image - see d32_find.
 ;---------------------------------------------------------------------
 ; The labels below are ek_none/ek_out, NOT ek_nofile: wasm symbols are
 ; case-insensitive, so a label spelled like one of these equates is the
@@ -6166,6 +6348,7 @@ f4B_vfail:
 EK_NOFILE       EQU     0
 EK_D32          EQU     1
 EK_16BIT        EQU     2
+EXEC_SIGLEN     EQU     40h                     ; an MZ header as far as its 3Ch
 
 exec_kind:
         push    ebx
@@ -6175,22 +6358,93 @@ exec_kind:
         call    k21
         jc      ek_none
         mov     ebx,eax
-        mov     dword ptr [exec_sig],0
-        mov     dword ptr [exec_sig+4],0
-        mov     edx,OFFSET exec_sig
-        mov     ecx,8                           ; the jump AND the magic behind
-        mov     eax,3F00h                       ; it - see D32H_JMP in PMDOS.INC
-        call    k21
+        call    d32_find
+        sbb     edx,edx                         ; -1: no image in this file
         mov     eax,3E00h                       ; EBX is still the handle
         call    k21
         mov     eax,EK_16BIT
-        cmp     dword ptr [exec_sig+D32H_MAGIC],D32_MAGIC
-        jne     ek_out
+        or      edx,edx
+        jnz     ek_out
         mov     eax,EK_D32
         jmp     short ek_out
 ek_none:
         mov     eax,EK_NOFILE
 ek_out:
+        pop     edx
+        pop     ecx
+        pop     ebx
+        ret
+
+;---------------------------------------------------------------------
+; d32_find - EBX = an open handle.  Is there a D32 image in the file?
+;
+;   CF clear: EAX = where it starts - 0 when the file IS the image, or
+;             the offset the MS-DOS program in front of it keeps at 3Ch.
+;   CF set:   there is none, or the file would not read.
+;
+; Every register but EAX is kept, and the file is left positioned
+; wherever the last read ended: a caller that goes on reading seeks
+; first.
+;
+; AN MZ HEADER IS BELIEVED ABOUT 3Ch ONLY WHEN ITS FIXUP TABLE STARTS AT
+; 40h OR LATER, which is the rule NE and PE files are found by.  A DOS
+; program linked before anything was put behind one keeps its fixups,
+; or its code, where that dword would be.  D32BIND moves the table of a
+; stub that has it lower.
+;
+; This says where the signature is and nothing about what follows it.
+; exec_load reads the header, and is the one that refuses a bad one.
+;---------------------------------------------------------------------
+d32_find:
+        push    ebx
+        push    ecx
+        push    edx
+        push    edi
+        mov     edi,OFFSET exec_sig             ; a short file reads short,
+        mov     ecx,EXEC_SIGLEN / 4             ; and what was not read must
+        xor     eax,eax                         ; not be the last file's
+        rep     stosd
+        xor     ecx,ecx
+        mov     eax,4200h
+        call    k21
+        jc      d32f_none
+        mov     edx,OFFSET exec_sig
+        mov     ecx,EXEC_SIGLEN
+        mov     eax,3F00h
+        call    k21
+        jc      d32f_none
+        xor     eax,eax
+        cmp     word ptr [exec_sig+D32H_SIG],D32_SIG
+        je      d32f_out                        ; CF clear: the file is the image
+        cmp     word ptr [exec_sig+EXE_SIG],EXE_MZ
+        je      d32f_stub
+        cmp     word ptr [exec_sig+EXE_SIG],EXE_ZM
+        jne     d32f_none
+d32f_stub:
+        cmp     word ptr [exec_sig+EXE_LFARLC],D32_STUBMIN
+        jb      d32f_none
+        mov     ecx,dword ptr [exec_sig+EXE_LFANEW]
+        cmp     ecx,D32_STUBMIN
+        jb      d32f_none
+        mov     edi,ecx                         ; 42h refuses a negative one
+        mov     eax,4200h
+        call    k21
+        jc      d32f_none
+        mov     word ptr [exec_sig],0
+        mov     edx,OFFSET exec_sig
+        mov     ecx,2
+        mov     eax,3F00h
+        call    k21
+        jc      d32f_none
+        cmp     word ptr [exec_sig],D32_SIG
+        jne     d32f_none
+        mov     eax,edi
+        clc
+        jmp     short d32f_out
+d32f_none:
+        stc
+d32f_out:
+        pop     edi
         pop     edx
         pop     ecx
         pop     ebx
@@ -6310,6 +6564,15 @@ ecz_end:
 ;   On failure: CF set, AX = ERR_NOFILE / ERR_EXEFMT / ERR_NOMEM.
 ;
 ; Also used directly by DOSMAIN to start the shell.
+;
+; THE IMAGE IS THE FILE, OR THE FILE FROM SOMEWHERE IN IT ON.  A file
+; that begins 'CD' is the image.  One that begins with an MS-DOS
+; program says at 3Ch where the image is, and everything in front of
+; that is stepped over: whole clusters by following the chain without
+; reading them, and the part of a cluster through exec_skip, which
+; the first pass of xl_blit uses up.  This reads the file its own way
+; and not through d32_find because it is how the shell is loaded,
+; with nobody's handle table to open a file in.
 ;---------------------------------------------------------------------
 exec_load:
         mov     esi,edx
@@ -6344,6 +6607,62 @@ exec_load:
         jc      xl_nofile
         mov     dword ptr [clusbuf_clus],-1     ; buffer no longer file cache
 
+        ; where the image starts.  The first cluster is 512 bytes at
+        ; the least, so an MZ header's 3Ch is in the buffer; whether
+        ; it is in the FILE is the first test.
+        xor     edx,edx
+        cmp     word ptr [clus_buf+D32H_SIG],D32_SIG
+        je      xl_image
+        cmp     word ptr [clus_buf+EXE_SIG],EXE_MZ
+        je      xl_stub
+        cmp     word ptr [clus_buf+EXE_SIG],EXE_ZM
+        jne     xl_badfmt
+xl_stub:
+        cmp     dword ptr [exec_left],D32_STUBMIN + D32H_SIZE
+        jb      xl_badfmt
+        cmp     word ptr [clus_buf+EXE_LFARLC],D32_STUBMIN
+        jb      xl_badfmt
+        mov     edx,dword ptr [clus_buf+EXE_LFANEW]
+        cmp     edx,D32_STUBMIN
+        jb      xl_badfmt
+        mov     eax,[exec_left]
+        sub     eax,D32H_SIZE
+        cmp     edx,eax
+        ja      xl_badfmt               ; no room for a header there
+        test    dl,0Fh
+        jnz     xl_badfmt               ; an image starts on a paragraph,
+        mov     eax,edx                 ; and its header is whole in one
+        and     eax,511                 ; sector - so in one cluster, on
+        cmp     eax,512 - D32H_SIZE     ; any disk.  D32BIND writes no
+        ja      xl_badfmt               ; other kind
+        sub     [exec_left],edx         ; from here on, the image's length
+
+        mov     ebx,[fat_spc]
+        shl     ebx,9                   ; EBX = cluster size
+        cmp     edx,ebx
+        jb      xl_image                ; it starts in the cluster we have
+xl_step:
+        sub     edx,ebx
+        mov     eax,[exec_clus]
+        call    fat_next
+        cmp     eax,[fat_eoc]
+        jae     xl_badfmt               ; chain shorter than the size field
+        mov     [exec_clus],eax
+        cmp     edx,ebx
+        jae     xl_step
+        mov     edi,OFFSET clus_buf
+        call    fat_readclus
+        jc      xl_nofile
+xl_image:
+        mov     [exec_skip],edx
+        lea     esi,[clus_buf+edx]      ; ESI -> the header
+        cmp     word ptr [esi+D32H_SIG],D32_SIG
+        jne     xl_badfmt
+        cmp     byte ptr [esi+D32H_VER],D32_VER
+        jne     xl_badfmt
+        cmp     byte ptr [esi+D32H_TYPE],D32T_PROG
+        jne     xl_badfmt               ; an image, but not a program
+
         ; EVERY FIELD IN THE HEADER IS A SLOT OFFSET NOW, and the base
         ; is checked against the one offset every D32 program is linked
         ; for rather than against "the slot this is going into".  It is
@@ -6352,15 +6671,13 @@ exec_load:
         ; layout or it is not one of this kernel's programs.  Which
         ; slot it lands in stopped being the file's business when the
         ; segment base became the thing that decides.
-        cmp     dword ptr [clus_buf+D32H_MAGIC],D32_MAGIC
-        jne     xl_badfmt
-        cmp     dword ptr [clus_buf+D32H_BASE],SLOT_IMAGE
+        cmp     dword ptr [esi+D32H_BASE],SLOT_IMAGE
         jne     xl_badfmt
         mov     eax,[r3_base]
         add     eax,SLOT_IMAGE
         mov     [exec_cursor],eax       ; flat: the kernel does the blit
 
-        mov     ebx,dword ptr [clus_buf+D32H_ENTRY]
+        mov     ebx,dword ptr [esi+D32H_ENTRY]
         cmp     ebx,SLOT_IMAGE
         jb      xl_badfmt
         mov     ecx,SLOT_IMAGE
@@ -6374,9 +6691,9 @@ exec_load:
         ; load-bearing now: it is what divides the space above the BSS
         ; between the heap 48h allocates from and the stack.
         mov     ebx,ecx
-        add     ebx,dword ptr [clus_buf+D32H_BSS]
+        add     ebx,dword ptr [esi+D32H_BSS]
         mov     [exec_bssend],ebx
-        mov     eax,dword ptr [clus_buf+D32H_STACK]
+        mov     eax,dword ptr [esi+D32H_STACK]
         cmp     eax,1000h               ; never less than 4K, whatever it says
         jae     xl_stkok
         mov     eax,1000h
@@ -6391,12 +6708,15 @@ xl_stkok:
 xl_blit:
         mov     eax,[fat_spc]
         shl     eax,9                   ; EAX = cluster size
-        cmp     eax,[exec_left]
+        sub     eax,[exec_skip]         ; less what is in front of the image,
+        cmp     eax,[exec_left]         ; in the cluster it starts in
         jbe     xl_n_ok
         mov     eax,[exec_left]
 xl_n_ok:
         push    eax
         mov     esi,OFFSET clus_buf
+        add     esi,[exec_skip]
+        mov     dword ptr [exec_skip],0
         mov     edi,[exec_cursor]
         mov     ecx,eax
         rep     movsb
@@ -9201,6 +9521,18 @@ fF0_mouse:
 ;                 modes there are, a graphics mode set, and SEL_VBE
 ;                 over its linear frame buffer.  Native programs only
 ;                 (VBE.INC)
+;       AL = 20h: bits 16-23 of EAX = LMF_READ or LMF_RAM - the first
+;                 megabyte read into a buffer at EDI, and whether an
+;                 address above 640K holds what is written to it.
+;                 Native programs only (fF1_lowmem)
+;       AL = 21h: DL = an interrupt, ESI -> a BQ_LEN record of
+;                 registers - a BIOS call that only asks, out of the
+;                 list in bq_table.  Native programs only (fF1_biosq)
+;       AL = 22h: bits 16-23 of EAX = a KYF_* function - the keyboard
+;                 layout: set one, ask which, switch between it and
+;                 the US keyboard.  Native programs only (fF1_keyb)
+;       AL = 23h: DL = a scan code - a key press, for the tests
+;                 (fF1_kbinj)
 ;
 ; 30h has to keep lying about being DOS 5 so that ordinary programs
 ; recognise us, which leaves nothing there to report what the kernel
@@ -9277,7 +9609,312 @@ fnF1:
         je      fF1_power
         cmp     al,1Fh
         je      fF1_vbe
+        cmp     al,20h
+        je      fF1_lowmem
+        cmp     al,21h
+        je      fF1_biosq
+        cmp     al,22h
+        je      fF1_keyb
+        cmp     al,23h
+        je      fF1_kbinj
         jmp     i21_unsup
+
+;--- AL=23h: A KEY, AS IF THE KEYBOARD HAD SENT IT.  DL = a scan code.
+;--- For the tests, which have nobody to press one: KBLTEST types a
+;--- line through every layout with it, and through a DOS box's own
+;--- INT 09h handler.  From any kind of program - it does nothing a
+;--- hand on the keyboard cannot.
+fF1_kbinj:
+        mov     dl,[ebp+F_EDX]
+        xor     dh,dh
+        cmp     word ptr [ebp+F_CS],SEL_CODE32  ; a DOS box's call, as
+        jne     fki_go                          ; cbuf_ok tells one: the
+        cmp     word ptr [ebp+F_DS],SEL_DATA32  ; key is for its program,
+        je      fki_go                          ; not for this call
+        cmp     dword ptr [ebp+F_EIP],1
+        jne     fki_go
+        inc     dh
+fki_go:
+        mov     al,KLS_INJECT
+        call    dword ptr ds:[IOS_KBLAYOUT]
+        jmp     i21_ok
+
+;--- AL=22h: THE KEYBOARD'S LAYOUT, which is KEYB.COM's to set.  The
+;--- function is in bits 16-23 of EAX; PMDOS.INC has the registers and
+;--- what a layout record is (KBL_).
+;---
+;--- MS-DOS's KEYB stayed resident on INT 09h with its tables.  The
+;--- keyboard here is the kernel's, so KEYB is a program that runs and
+;--- ends: it finds the layout in KEYBOARD.SYS and leaves it with the
+;--- kernel, which keeps the one copy (kl_buf) for the keyboard driver
+;--- to decode from.  The record is checked on the way in and never
+;--- again - the driver follows it from an interrupt.
+;---
+;--- THE OLD LAYOUT IS TAKEN OUT BEFORE THE NEW ONE IS COPIED IN, so
+;--- that a key pressed in between is a US key and not half of each.
+fF1_keyb:
+        cmp     word ptr [ebp+F_CS],SEL_PROG_CS
+        jne     i21_unsup
+        movzx   eax,byte ptr [ebp+F_EAX+2]
+        cmp     eax,KYF_SET
+        je      fkb_set
+        cmp     eax,KYF_GET
+        je      fkb_get
+        cmp     eax,KYF_MODE
+        je      fkb_mode
+        cmp     eax,KYF_OFF
+        je      fkb_off
+        jmp     i21_unsup
+
+fkb_set:
+        mov     ecx,[ebp+F_ECX]
+        cmp     ecx,KBL_KEYS
+        jb      fkb_bad
+        cmp     ecx,KBL_MAX
+        ja      fkb_bad
+        mov     eax,[ebp+F_EDX]
+        call    cbuf_ok
+        jc      buf_deny
+        xor     esi,esi
+        xor     edx,edx
+        mov     al,KLS_SET
+        call    dword ptr ds:[IOS_KBLAYOUT]
+        mov     esi,[ebp+F_EDX]
+        mov     edi,OFFSET kl_buf
+        mov     ecx,[ebp+F_ECX]
+        cld
+        rep     movsb
+        mov     ecx,[ebp+F_ECX]
+        call    kl_check
+        jc      fkb_bad
+        mov     esi,OFFSET kl_buf
+        mov     dl,1                    ; INT 09h's stub is in the DOS
+        mov     al,KLS_SET              ; data segment (vdm_lolinit)
+        call    dword ptr ds:[IOS_KBLAYOUT]
+        jmp     i21_ok
+fkb_bad:
+        mov     ax,ERR_BADDATA
+        jmp     i21_fail
+
+fkb_get:
+        mov     eax,[ebp+F_EDI]
+        mov     ecx,KBL_KEYS
+        call    cbuf_ok
+        jc      buf_deny
+        mov     al,KLS_GET
+        call    dword ptr ds:[IOS_KBLAYOUT]
+        xor     edx,edx
+        or      esi,esi
+        jz      fkb_state
+        movzx   edx,al
+        inc     edx                     ; 1 loaded, 2 loaded and in use
+        mov     edi,[ebp+F_EDI]
+        mov     ecx,KBL_KEYS
+        cld
+        rep     movsb
+fkb_state:
+        mov     [ebp+F_EAX],edx
+        jmp     i21_ok
+
+fkb_mode:
+        mov     dl,[ebp+F_EDX]
+        and     dl,1
+        mov     al,KLS_MODE
+        call    dword ptr ds:[IOS_KBLAYOUT]
+        jmp     i21_ok
+
+fkb_off:
+        xor     esi,esi
+        xor     edx,edx
+        mov     al,KLS_SET
+        call    dword ptr ds:[IOS_KBLAYOUT]
+        jmp     i21_ok
+
+;--- AL=20h: THE FIRST MEGABYTE, FOR A PROGRAM THAT CANNOT REACH IT.
+;--- The function is in bits 16-23 of EAX; PMDOS.INC has the registers.
+;---
+;--- A native program's segment ends where its slot does, so the
+;--- interrupt vectors, the BIOS data area, the memory control blocks
+;--- and driver headers of the conventional arena and every ROM are
+;--- somewhere it cannot point.  That is the design, and nothing a
+;--- program does for a living needs them - but PMD.EXE's whole job is
+;--- to report what is there, exactly as MSD's is under DOS, and each
+;--- of its pages would otherwise have needed a kernel call of its own
+;--- that handed over one more table.  One call that copies bytes out
+;--- is smaller than thirteen that describe them.
+;---
+;--- IT READS, AND NOTHING ELSE.  Every byte below 1MB is one a DOS box
+;--- can already read, so this shows a native program nothing a 16-bit
+;--- one could not see; what a box can also do is WRITE there, and that
+;--- is what a slot is for keeping a native program from.
+;---
+;--- LMF_RAM is the one store, and it is the kernel's own: a byte's
+;--- complement written and read back, the byte put back, interrupts
+;--- off for the three instructions.  It is how "RAM" is told from
+;--- "ROM" and from "nothing at all" in the adapter area - none of
+;--- which reading can decide, because shadowed ROM reads the same as
+;--- ROM and unused RAM can read as anything.  Kept to A0000h and up:
+;--- below that everything is RAM and some of it is this kernel's.
+fF1_lowmem:
+        cmp     word ptr [ebp+F_CS],SEL_PROG_CS
+        jne     i21_unsup
+        movzx   eax,byte ptr [ebp+F_EAX+2]
+        cmp     eax,LMF_READ
+        je      flm_read
+        cmp     eax,LMF_RAM
+        je      flm_ram
+        jmp     i21_unsup
+
+flm_read:
+        mov     esi,[ebp+F_EBX]
+        mov     ecx,[ebp+F_ECX]
+        cmp     ecx,LMF_MAXREAD
+        ja      flm_bad
+        cmp     esi,LMF_TOP
+        jae     flm_bad
+        mov     eax,esi
+        add     eax,ecx
+        cmp     eax,LMF_TOP
+        ja      flm_bad
+        mov     eax,[ebp+F_EDI]
+        call    cbuf_ok
+        jc      buf_deny
+        mov     edi,[ebp+F_EDI]
+        cld
+        rep     movsb
+        jmp     i21_ok
+
+flm_ram:
+        mov     esi,[ebp+F_EBX]
+        cmp     esi,LMF_RAMLO
+        jb      flm_bad
+        cmp     esi,LMF_TOP
+        jae     flm_bad
+        xor     edx,edx
+        pushfd
+        cli
+        mov     ah,[esi]                ; what is there now
+        mov     al,ah
+        not     al
+        mov     [esi],al
+        jmp     short flm_settle        ; a bus with nothing on it can
+flm_settle:                             ; hold a value for an instruction
+        cmp     [esi],al
+        jne     flm_notram
+        inc     edx
+flm_notram:
+        mov     [esi],ah
+        popfd
+        mov     [ebp+F_EAX],edx
+        jmp     i21_ok
+
+flm_bad:
+        mov     ax,ERR_BADDATA
+        jmp     i21_fail
+
+;--- AL=21h: A BIOS CALL THAT ONLY ASKS.  DL = the interrupt, ESI -> a
+;--- BQ_LEN record (PMDOS.INC): the registers in, and the registers,
+;--- ES, DS and the flags out.
+;---
+;--- THE LIST IS THE POINT.  The thunk underneath will run any
+;--- interrupt with any registers, and INT 15h alone has a function
+;--- that moves extended memory and one that leaves real mode by
+;--- itself - neither of which may be reached from ring 3 by a program
+;--- that only wanted to know what model of machine it is on.  So a
+;--- call goes through if its interrupt and AH (and for two of them
+;--- its AL or BL) are in bq_table, and is refused if they are not.
+;--- Every row is a question: none of them changes anything.
+fF1_biosq:
+        cmp     word ptr [ebp+F_CS],SEL_PROG_CS
+        jne     i21_unsup
+        mov     eax,[ebp+F_ESI]
+        mov     ecx,BQ_LEN
+        call    cbuf_ok
+        jc      buf_deny
+        mov     esi,[ebp+F_ESI]
+        mov     dl,[ebp+F_EDX]          ; the interrupt
+        mov     dh,[esi+BQ_EAX+1]       ; and the AH it is to be given
+        mov     ebx,OFFSET bq_table
+fbq_scan:
+        mov     al,[ebx]
+        or      al,al
+        jz      fbq_deny
+        cmp     al,dl
+        jne     fbq_next
+        mov     al,[ebx+2]              ; BQK_*
+        cmp     al,BQK_ANYAH
+        je      fbq_go
+        cmp     dh,[ebx+1]
+        jne     fbq_next
+        cmp     al,BQK_ANY
+        je      fbq_go
+        mov     ah,[esi+BQ_EAX]
+        cmp     al,BQK_AL
+        je      fbq_which
+        mov     ah,[esi+BQ_EBX]
+fbq_which:
+        cmp     ah,[ebx+3]
+        je      fbq_go
+fbq_next:
+        add     ebx,4
+        jmp     short fbq_scan
+fbq_deny:
+        mov     ax,ERR_ACCESS
+        jmp     i21_fail
+
+fbq_go:
+        xor     ah,ah
+        call    rtc_prep                ; the frame, zeroed
+        mov     eax,[esi+BQ_EAX]
+        mov     dword ptr ds:[RMR_EAX],eax
+        mov     eax,[esi+BQ_EBX]
+        mov     dword ptr ds:[RMR_EBX],eax
+        mov     eax,[esi+BQ_ECX]
+        mov     dword ptr ds:[RMR_ECX],eax
+        mov     eax,[esi+BQ_EDX]
+        mov     dword ptr ds:[RMR_EDX],eax
+        mov     eax,[esi+BQ_ESI]
+        mov     dword ptr ds:[RMR_ESI],eax
+        mov     eax,[esi+BQ_EDI]
+        mov     dword ptr ds:[RMR_EDI],eax
+        mov     al,dl
+        call    dword ptr ds:[IOS_REALINT]
+        mov     edi,[ebp+F_ESI]
+        mov     eax,dword ptr ds:[RMR_EAX]
+        mov     [edi+BQ_EAX],eax
+        mov     eax,dword ptr ds:[RMR_EBX]
+        mov     [edi+BQ_EBX],eax
+        mov     eax,dword ptr ds:[RMR_ECX]
+        mov     [edi+BQ_ECX],eax
+        mov     eax,dword ptr ds:[RMR_EDX]
+        mov     [edi+BQ_EDX],eax
+        mov     eax,dword ptr ds:[RMR_ESI]
+        mov     [edi+BQ_ESI],eax
+        mov     eax,dword ptr ds:[RMR_EDI]
+        mov     [edi+BQ_EDI],eax
+        mov     ax,word ptr ds:[RMR_ES]
+        mov     [edi+BQ_ES],ax
+        mov     ax,word ptr ds:[RMR_DS]
+        mov     [edi+BQ_DS],ax
+        mov     eax,dword ptr ds:[RMR_FLAGS]
+        mov     [edi+BQ_FLAGS],eax
+        jmp     i21_ok
+
+;--- the interrupt, its AH, BQK_*, and the AL or BL that goes with it
+bq_table:
+        db      10h, 0Fh, BQK_ANY,   0  ; the video mode, columns and page
+        db      10h, 12h, BQK_BL,  10h  ; EGA: memory, colour or mono, switches
+        db      10h, 1Ah, BQK_AL,  00h  ; VGA: the display combination
+        db      11h, 00h, BQK_ANYAH, 0  ; the equipment word
+        db      12h, 00h, BQK_ANYAH, 0  ; conventional memory, in K
+        db      14h, 03h, BQK_ANY,   0  ; a serial port's line and modem status
+        db      15h, 84h, BQK_ANY,   0  ; the game port: switches and sticks
+        db      15h, 88h, BQK_ANY,   0  ; extended memory, in K
+        db      15h, 0C0h, BQK_ANY,  0  ; ES:BX -> the configuration table
+        db      15h, 0C1h, BQK_ANY,  0  ; ES = the extended BIOS data area
+        db      15h, 0D8h, BQK_AL, 00h  ; EISA: what is in a slot
+        db      17h, 02h, BQK_ANY,   0  ; a printer's status
+        db      0
 
 ;--- AL=18h: DELETE PROTECTION'S STATE.  EAX = UNDF_* bits, ECX = the
 ;--- share of the free space kept files may hold.  UNDELETE.EXE asks,
@@ -10314,50 +10951,57 @@ f32_bad:
 ;=====================================================================
 ; 38h - country information.  DS:DX -> a 34-byte buffer, BX = country.
 ;
-; ONE COUNTRY, ANSWERED HONESTLY.  PM-DOS has no COUNTRY.SYS and no
-; codepage machinery, so it knows the United States and says so: any
-; other country asked for is refused rather than answered with US
-; punctuation under a foreign code, because a program that formats a
-; date from a wrong answer produces a wrong date and never finds out.
+; THE COUNTRY IN USE IS THE ONE COUNTRY= NAMED, and the United States
+; where CONFIG.SYS named none.  Another country asked for is read out
+; of COUNTRY.SYS there and then (NLS.INC, nls_load) - MS-DOS needed
+; NLSFUNC resident for that - and one the file does not have is
+; refused rather than answered with somebody else's punctuation,
+; because a program that formats a date from a wrong answer produces a
+; wrong date and never finds out.
 ;
 ; The case-map field is a FAR CALL a program may make to uppercase a
-; character.  It points at the RETF in the guest block, so the call
-; returns having done nothing - which is right for a codepage with no
-; case mapping beyond ASCII, and is in any event what a caller can
-; survive.  Zero there would be a call into the interrupt table.
+; character.  It points at twelve bytes in the DOS data segment that
+; look AL up in the table 6502h hands out (GNLS_CASEMAP).  It was a
+; bare RETF while the only table was the identity.
 ;=====================================================================
 fn38:
-        ; AL = 0 asks about the current country; AL = FFh means the
-        ; code is in BX.  Setting a country is the same call with
-        ; DX = FFFFh, and there is only one to set.
-        mov     al,[ebp+F_EAX]
-        or      al,al
-        jz      f38_get
-        cmp     al,0FFh
-        jne     f38_wrong               ; a specific country, and not ours
-        mov     ax,word ptr [ebp+F_EBX]
-        cmp     ax,CTRY_USA
-        jne     f38_wrong
-f38_get:
-        mov     ax,word ptr [ebp+F_EDX]
-        cmp     ax,0FFFFh
+        ; AL = 0 asks about the country in use, AL = 1 to FEh names
+        ; one, and AL = FFh means the code is in BX.  Setting a country
+        ; is the same call with DX = FFFFh.
+        movzx   ebx,byte ptr [ebp+F_EAX]
+        cmp     bl,0FFh
+        jne     f38_which
+        movzx   ebx,word ptr [ebp+F_EBX]
+f38_which:
+        cmp     bx,word ptr [ctry_code]
+        jne     f38_named
+        xor     ebx,ebx                 ; EBX = 0: the one in use
+f38_named:
+        cmp     word ptr [ebp+F_EDX],0FFFFh
         je      f38_set
 
         mov     eax,[ebp+F_EDX]
         mov     ecx,CTRY_SIZE
         call    cbuf_ok
         jc      buf_deny
-        mov     edi,[ebp+F_EDX]
         mov     esi,OFFSET ctry_block
+        or      ebx,ebx
+        jz      f38_copy
+        mov     eax,ebx                 ; another country's, in the code
+        movzx   edx,word ptr [ctry_page]        ; page in use
+        xor     ecx,ecx
+        call    nls_load
+        jc      f38_wrong
+        mov     esi,OFFSET nls_sinfo
+f38_copy:
+        mov     edi,[ebp+F_EDX]
         mov     ecx,CTRY_SIZE
         rep     movsb
 
         ; The case-map far call, patched in rather than stored: the
         ; segment is not known until vdm_lolinit has run.
         mov     edi,[ebp+F_EDX]
-        movzx   eax,word ptr ds:[vdm_lolseg]
-        shl     eax,16
-        mov     ax,GLOL_RETF
+        call    nls_mapptr
         mov     [edi+CTRY_CASEMAP],eax
 
         ; BX is where the country code is documented to come back, and
@@ -10365,13 +11009,23 @@ f38_get:
         ; say "AX destroyed", and what real DOS actually destroys it
         ; with is the answer.  Checked against 6.22 by dumping every
         ; register after the call on both; see TOOLS\CTRYDMP.ASM.
-        mov     word ptr [ebp+F_EAX],CTRY_USA
-        mov     word ptr [ebp+F_EBX],CTRY_USA
+        or      ebx,ebx
+        jnz     f38_code
+f38_inuse:
+        movzx   ebx,word ptr [ctry_code]
+f38_code:
+        mov     word ptr [ebp+F_EAX],bx
+        mov     word ptr [ebp+F_EBX],bx
         jmp     i21_ok
 f38_set:
-        mov     word ptr [ebp+F_EAX],CTRY_USA
-        mov     word ptr [ebp+F_EBX],CTRY_USA
-        jmp     i21_ok
+        or      ebx,ebx                 ; the one in use already
+        jz      f38_inuse
+        mov     eax,ebx
+        movzx   edx,word ptr [ctry_page]
+        mov     cl,1
+        call    nls_load
+        jc      f38_wrong
+        jmp     short f38_inuse
 f38_wrong:
         mov     ax,ERR_NOFILE           ; what DOS says for a country it
         jmp     i21_fail                ; has no table for
@@ -10542,61 +11196,107 @@ fn65:
         je      f65_capasciz
         cmp     al,23h
         je      f65_yesno
-        mov     ax,ERR_FUNC             ; the table subfunctions, and
-        jmp     i21_fail                ; anything not invented yet
+        cmp     al,0A0h                 ; DOS 7's three for file names: the
+        je      f65_capchar             ; same table, so the same answers
+        cmp     al,0A1h
+        je      f65_capstr
+        cmp     al,0A2h
+        je      f65_capasciz
+        mov     ax,ERR_FUNC             ; anything not invented yet
+        jmp     i21_fail
 
 ;--- 01h: the country block, with the extended header on the front ---
-; ES:DI -> buffer, CX = how big it is.  DOS truncates to the buffer
+; ES:DI -> buffer, CX = how big it is, BX = a code page and DX = a
+; country, each FFFFh for the one in use.  DOS truncates to the buffer
 ; rather than failing, which is what lets a DOS 4 program call a DOS 6
-; kernel and get the part it understands.
+; kernel and get the part it understands - and says in CX how much it
+; wrote.
+;
+; A pair that is not the one in use is read out of COUNTRY.SYS, as 38h
+; reads another country.  The answer is built whole and then cut to
+; the buffer as MS-DOS cuts it (DOS6SRC dos/getset.asm): the length
+; word is what follows it - country, code page and the block, 38 - or
+; as much of that as CX left room for; CX comes back as what was
+; written, and AX as the code page the system started in.  Five bytes
+; is the least it will write into.
 f65_info:
         movzx   ecx,word ptr [ebp+F_ECX]
-        cmp     ecx,7                   ; the header is written whole, so a
-        jb      f65_small               ; buffer shorter than it is refused
-                                        ; rather than half filled
-        cmp     ecx,CTRY_SIZE + 7
+        cmp     ecx,5
+        jb      f65_small
+        movzx   eax,word ptr [ebp+F_EDX]
+        cmp     eax,0FFFFh
+        jne     f65_ctry
+        movzx   eax,word ptr [ctry_code]
+f65_ctry:
+        movzx   edx,word ptr [ebp+F_EBX]
+        cmp     edx,0FFFFh
+        jne     f65_page
+        movzx   edx,word ptr [ctry_page]
+f65_page:
+        mov     esi,OFFSET ctry_block
+        cmp     ax,word ptr [ctry_code]
+        jne     f65_other
+        cmp     dx,word ptr [ctry_page]
+        je      f65_build
+f65_other:
+        xor     ecx,ecx
+        call    nls_load
+        jc      f38_wrong
+        mov     esi,OFFSET nls_sinfo
+f65_build:
+        mov     edi,OFFSET f65_ans
+        mov     byte ptr [edi],1        ; info id
+        mov     word ptr [edi+1],CTRY_SIZE + 4
+        mov     word ptr [edi+3],ax
+        mov     word ptr [edi+5],dx
+        add     edi,7
+        mov     ecx,CTRY_SIZE
+        rep     movsb
+        call    nls_mapptr              ; the case-map call - same patch as
+        mov     dword ptr [f65_ans+7+CTRY_CASEMAP],eax  ; fn38, same reason
+
+        movzx   ecx,word ptr [ebp+F_ECX]
+        sub     ecx,3                   ; the room after the length word
+        cmp     ecx,CTRY_SIZE + 4
         jbe     f65_fit
-        mov     ecx,CTRY_SIZE + 7
+        mov     ecx,CTRY_SIZE + 4
 f65_fit:
+        mov     word ptr [f65_ans+1],cx
+        add     ecx,3
         mov     eax,[ebp+F_EDI]         ; ECX is exactly what is written
         call    cbuf_ok
         jc      buf_deny
+        mov     word ptr [ebp+F_ECX],cx
+        mov     ax,word ptr [ctry_syspage]
+        mov     word ptr [ebp+F_EAX],ax
         mov     edi,[ebp+F_EDI]
-        push    ecx
-
-        mov     byte ptr [edi],1        ; info id
-        mov     word ptr [edi+1],CTRY_SIZE + 7
-        mov     word ptr [edi+3],CTRY_USA
-        mov     word ptr [edi+5],437    ; the only codepage here
-
-        ; The country block itself, and then the case-map pointer over
-        ; the top of it - same patch as fn38, same reason.
-        pop     ecx
-        push    edi
-        sub     ecx,7
-        jbe     f65_hdronly
-        add     edi,7
-        mov     esi,OFFSET ctry_block
+        mov     esi,OFFSET f65_ans
         rep     movsb
-f65_hdronly:
-        pop     edi
-        movzx   ecx,word ptr [ebp+F_ECX]
-        cmp     ecx,7 + CTRY_CASEMAP + 4
-        jb      f65_done                ; the buffer stopped short of it
-        movzx   eax,word ptr ds:[vdm_lolseg]
-        shl     eax,16
-        mov     ax,GLOL_RETF
-        mov     [edi+7+CTRY_CASEMAP],eax
-f65_done:
         jmp     i21_ok
 f65_small:
         mov     ax,ERR_FUNC
         jmp     i21_fail
 
 ;--- 02h/04h/05h/06h/07h: a table - EDX is its offset in the segment --
+; The tables are the country's in use and there is one set of them, so
+; a call that names another country or code page in DX and BX is
+; refused, as MS-DOS refuses it with no NLSFUNC loaded.  FFFFh in
+; either is "the one in use", and is what a program passes.
 f65_table:
         cmp     word ptr [ebp+F_ECX],5
         jb      f65_small
+        movzx   eax,word ptr [ebp+F_EDX]
+        cmp     eax,0FFFFh
+        je      f65_tctry
+        cmp     ax,word ptr [ctry_code]
+        jne     f65_small
+f65_tctry:
+        movzx   eax,word ptr [ebp+F_EBX]
+        cmp     eax,0FFFFh
+        je      f65_tpage
+        cmp     ax,word ptr [ctry_page]
+        jne     f65_small
+f65_tpage:
         mov     eax,[ebp+F_EDI]
         mov     ecx,5
         call    cbuf_ok
@@ -10609,17 +11309,17 @@ f65_table:
         mov     ax,dx
         mov     [edi+1],eax             ; and where
         mov     word ptr [ebp+F_ECX],5
+        mov     ax,word ptr [ctry_syspage]
+        mov     word ptr [ebp+F_EAX],ax
         jmp     i21_ok
 
 ;--- 20h: capitalise the character in DL ------------------------------
-; ASCII only, and that is the whole of codepage 437's case mapping
-; that DOS itself performed for the United States.  cfg_upcase is
-; CONFIG.SYS's own, borrowed rather than written twice: a second
-; upcase that drifted from the first would show up as a file the
-; parser can open and this call cannot.
+; ASCII's letters, and for 80h and up the table 6502h hands out - one
+; table and one answer, whichever way a program asks.  With no
+; COUNTRY= line that table is the identity, as it always was.
 f65_capchar:
         mov     al,[ebp+F_EDX]
-        call    cfg_upcase
+        call    nls_upchar
         mov     byte ptr [ebp+F_EDX],al
         jmp     i21_ok
 
@@ -10633,7 +11333,7 @@ f65_capstr:
         mov     esi,[ebp+F_EDX]
 f65_strloop:
         mov     al,[esi]
-        call    cfg_upcase
+        call    nls_upchar
         mov     [esi],al
         inc     esi
         dec     ecx
@@ -10648,7 +11348,7 @@ f65_azloop:
         mov     al,[esi]
         or      al,al
         jz      f65_azdone
-        call    cfg_upcase
+        call    nls_upchar
         mov     [esi],al
         inc     esi
         jmp     short f65_azloop
@@ -10659,14 +11359,19 @@ f65_azdone:
 ; -> AX = 0 no, 1 yes, 2 neither.  The one place a country's answer
 ; really does change the behaviour of ordinary software, which is why
 ; DOS gave it a call of its own instead of leaving programs to compare
-; against 'Y'.  Here the country is the United States and the letters
-; are the English ones.
+; against 'Y'.  The letters are the country's - J and N in Germany, O
+; and N in France - and Y and N where COUNTRY.SYS gives none.
 f65_yesno:
         mov     al,[ebp+F_EDX]
-        call    cfg_upcase
-        cmp     al,'Y'
+        call    nls_upchar
+        mov     ah,al
+        mov     al,[ctry_yes]
+        call    nls_upchar
+        cmp     al,ah
         je      f65_yes
-        cmp     al,'N'
+        mov     al,[ctry_no]
+        call    nls_upchar
+        cmp     al,ah
         je      f65_no
         mov     word ptr [ebp+F_EAX],2
         jmp     i21_ok
@@ -10790,6 +11495,10 @@ f5a_try     dd  0
 ; The 38h answer, copied out whole.  The case-map far call is patched
 ; over on the way out - see fn38 - because the segment it points into
 ; is not known until the guest block has been allocated.
+;
+; THE UNITED STATES, UNTIL COUNTRY= SAYS OTHERWISE: nls_use (NLS.INC)
+; writes another country's block over this one, and the code, the code
+; page and the rest of what goes with it are beside nls_load there.
 ctry_block:
             dw  0                       ; mm/dd/yy
             db  '$',0,0,0,0             ; currency symbol
@@ -10803,6 +11512,9 @@ ctry_block:
             dd  0                       ; case map - patched per call
             db  ',',0                   ; data list separator
             db  10 dup(0)               ; reserved
+            db  0,0                     ; and 6501h's answer, built whole
+f65_ans     db  CTRY_SIZE + 7 dup(0)    ; before it is cut to the buffer
+            db  0,0,0
 
 ; The register structure INT 28h is issued through.  Padded to a
 ; multiple of four because it is zeroed with STOSD and RMCS_LEN is 32h,
@@ -10833,9 +11545,11 @@ exec_tail   db  132 dup(0)
 exec_envlen dd  0                       ; and the environment, which has the
 exec_env    db  SLOT_ENVMAX dup(0)      ; same problem twice over - see
                                         ; exec_cpenv
-exec_sig    dd  0,0                     ; the eight bytes that say whose
-                                        ; kind of executable this is: the
-                                        ; 16-bit jump, and the magic behind it
+exec_sig    db  EXEC_SIGLEN dup(0)      ; the front of a file, where it says
+                                        ; whose kind of executable it is -
+                                        ; see d32_find
+exec_skip   dd  0                       ; exec_load: how far into the cluster
+                                        ; in clus_buf the image starts
 
 ; One record per nesting level, describing the program that is WAITING
 ; - not the one running.

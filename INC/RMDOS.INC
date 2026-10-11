@@ -58,10 +58,11 @@
 ;=====================================================================
 
 RMDOS_SIG       EQU     00444D52h               ; 'RMD' as the dword reads in memory
-RMDOS_VER       EQU     0104h                   ; 1.04 - this contract.  1.00 had no
+RMDOS_VER       EQU     0105h                   ; 1.05 - this contract.  1.00 had no
                                         ; extended memory in it, 1.01 no
                                         ; RMH_STUBS, 1.02 no RMH_LOWSEG, 1.03
-                                        ; no RMH_WINCACHE.  RMDOS
+                                        ; no RMH_WINCACHE, 1.04 no country
+                                        ; (RMH_CTRY).  RMDOS
                                         ; checks it: an image built for another
                                         ; layout would read the header wrong,
                                         ; and says so instead
@@ -255,14 +256,30 @@ RMH_LASTDRV     EQU     RMH_DRIVES + RMH_DRVROWS * RMD_LEN
 RMH_CDSEG       EQU     RMH_LASTDRV + 1 ; dw  RMCD.SYS's segment, or 0: the
                                         ; CD-ROM under Windows, loaded by the
                                         ; park after RMDOS's 64K (RMCD.ASM)
-IF RMH_CDSEG + 2 GT RM_ORG + 100h
+;--- the country, as the kernel has it when it parks (1.05).  RMDOS
+;--- answers 38h, 65h and 66h for this one and reads no COUNTRY.SYS;
+;--- the tables that go with it are in the low block already (RL_NLS).
+RMH_CTRYCODE    EQU     RMH_CDSEG + 2   ; dw  the country code
+RMH_CTRYPAGE    EQU     RMH_CTRYCODE + 2        ; dw  the code page in use
+RMH_CTRYSYS     EQU     RMH_CTRYPAGE + 2        ; dw  ...and the one at startup
+RMH_CTRYYES     EQU     RMH_CTRYSYS + 2 ; db  6523h's letter for yes
+RMH_CTRYNO      EQU     RMH_CTRYYES + 1 ; db  ...and for no
+RMH_CTRY        EQU     RMH_CTRYNO + 1  ; 34 bytes: 38h's block
+RMH_CTRYLEN     EQU     34
+IF RMH_CTRY + RMH_CTRYLEN GT RM_ORG + 100h
         .ERR    <RMDOS.INC: the handoff block runs into RMDOS's code>
 ENDIF
 
 ;--- RMCD.SYS's own header: the park fills it in, RMDOS reads it -------
 RC_SIG          EQU     'DCMR'          ; "RMCD", as a dword reads it
+RC_VER          EQU     1               ; this header, and what RMCD takes
+                                        ; from RMDOS (RMSDA.INC).  The park
+                                        ; loads no other: RMCD.SYS is an
+                                        ; ordinary file, SYS does not carry
+                                        ; it, and one left from another
+                                        ; release may be the one found
 RCH_SIG         EQU     00h             ; dd  RC_SIG
-RCH_VER         EQU     04h             ; dw
+RCH_VER         EQU     04h             ; dw  RC_VER
 RCH_INIT        EQU     06h             ; dw  cd_init's offset: FAR called
                                         ; with ES = the block below 64K
 RCH_LETTER      EQU     08h             ; db  the CD's letter, 0 = A
@@ -408,11 +425,15 @@ RL_USERID       EQU     0124h           ; dw - the one DOSMGR really uses
 RL_CRITPATCH    EQU     0126h           ; dw
 RL_UMBHEAD      EQU     0128h           ; dw
 RL_NLS          EQU     0130h           ; the kernel's country tables, left
-RL_NLSEND       EQU     02D0h           ; alone; 65h's tables point into them
+RL_NLSEND       EQU     02E8h           ; alone; 65h's tables point into them
 RL_NLSUP        EQU     RL_NLS          ; 6502h and 6504h: the upper case
 RL_NLSTERM      EQU     RL_NLS + 82h    ; 6505h: what ends a file name
 RL_NLSCOLL      EQU     RL_NLS + 9Ah    ; 6506h: the collating sequence
 RL_NLSDBCS      EQU     RL_NLS + 19Ch   ; 6507h: double-byte ranges (none)
+RL_NLSMAP       EQU     RL_NLS + 1A0h   ; the case-map FAR CALL's code, and
+                                        ; after it the INT 09h stub KEYB
+                                        ; leaves in the chain (GNLS_CASEMAP
+                                        ; and GNLS_KBSTUB in PMDOS.INC)
 RL_FSHARE       EQU     0303h           ; db  SHARE's "installed" flag
 RL_SDA          EQU     0320h           ; the swappable data area: DOS 5's,
 RL_SDALEN       EQU     02E0h           ; to the CDS array.  The first SD_LEN

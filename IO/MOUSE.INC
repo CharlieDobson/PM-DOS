@@ -396,10 +396,13 @@ ms_irqon:
 ; something - its command byte, or the interface test - because its
 ; answer is a byte without bit 5, and IRQ 1 would take that for a scan
 ; code.  Those two exchanges are made with interrupts off and a bounded
-; loop, as kb_typematic makes its own.
+; loop.
 ;
 ; ms_probing is up for the whole of any conversation with the mouse:
-; irq_mouse and the timer then leave its bytes for the code that asked.
+; irq_mouse and the timer then leave its bytes for the code that asked,
+; and the keyboard driver begins nothing with the keyboard (kb_tick) -
+; a byte of its own between a D4h and the mouse's byte would change
+; places with it.
 ;=====================================================================
 
 ;---------------------------------------------------------------------
@@ -435,6 +438,10 @@ MS_ACKTICKS     EQU     6               ; a third of a second for an FAh
 ms_ps2start:
         pushad
         mov     byte ptr [ms_probing],1
+        call    kb_quiet                ; the keyboard driver has stopped
+                                        ; beginning things; let it finish
+                                        ; one, or its answer is read below
+                                        ; as the controller's
         mov     al,byte ptr ds:[BDA_EQUIP]
         mov     byte ptr [plog+PLM_EQUIP],al
         mov     byte ptr [plog+PLM_SEEN],0
@@ -3440,6 +3447,7 @@ mpa_downhw:
         cmp     byte ptr [ms_hw],MS_PS2
         jne     mpa_downser
         mov     byte ptr [ms_probing],1
+        call    kb_quiet                ; as ms_ps2start
         mov     al,0F5h                 ; stop reporting
         call    ms_auxcmd
         call    ms_auxdrain

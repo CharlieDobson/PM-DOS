@@ -4,7 +4,7 @@
 ;   SYS16 d:        transfer the PM-DOS system to drive d:
 ;
 ; The same three jobs as the native CMD\SYS\SYS.ASM - boot sector, stage 2
-; and the three system files - done by a real-mode 16-bit .COM, so a
+; and the system files - done by a real-mode 16-bit .COM, so a
 ; PM-DOS disk can be built on any DOS machine instead of only on a
 ; machine that already has one.
 ;
@@ -241,6 +241,14 @@ sy_files:
         call    sy_copy
         mov     si,OFFSET name_dos
         call    sy_copy
+        ; RMDOS.SYS - the DOS the kernel leaves in charge under Windows -
+        ; is a system file too and wears the same attributes, but only
+        ; if it is there: without it the disk still boots and runs
+        ; everything but Windows.  SYS.COM treats it the same.
+        mov     byte ptr [cp_optional],1
+        mov     si,OFFSET name_rm
+        call    sy_copy
+        mov     byte ptr [cp_optional],0
         mov     si,OFFSET name_cmd
         mov     byte ptr [sys_attr],ATTR_ARCHIVE
         call    sy_copy
@@ -251,6 +259,25 @@ sy_files:
         mov     si,OFFSET name_c16
         call    sy_copy
         mov     byte ptr [cp_optional],0
+
+        ; RMCD.SYS, the CD-ROM's letter under Windows, is an ordinary
+        ; file now and COPY carries it.  One an earlier SYS left on the
+        ; target as a system file is made ordinary, so that COPY can
+        ; replace it.  SYS.COM does the same.
+        mov     si,OFFSET name_cd
+        mov     di,OFFSET tgt_path + 3
+        call    sy_strcpy
+        mov     dx,OFFSET tgt_path
+        mov     ax,4300h
+        int     21h
+        jc      sy_cddone               ; the target has none
+        test    cl,ATTR_SYSTEM
+        jz      sy_cddone
+        mov     dx,OFFSET tgt_path
+        mov     cx,ATTR_ARCHIVE
+        mov     ax,4301h
+        int     21h
+sy_cddone:
 
         mov     si,OFFSET msg_done
         call    sy_puts
@@ -921,6 +948,8 @@ sys_attr    db  0
 
 name_io     db  'PMIO.SYS',0
 name_dos    db  'PMDOS.SYS',0
+name_rm     db  'RMDOS.SYS',0
+name_cd     db  'RMCD.SYS',0
 name_cmd    db  'CMD.EXE',0
 name_c16    db  'COMMAND.COM',0
 cp_optional db  0
@@ -945,12 +974,14 @@ msg_usage   db  'Makes a PM-DOS boot disk from ordinary DOS.',13,10,13,10
             db  '  SYS16 d:',13,10,13,10
             db  '  d:   the drive to make bootable - any letter, not just '
             db  'A: to D:',13,10,13,10
-            db  'PMIO.SYS, PMDOS.SYS, CMD.EXE and COMMAND.COM are taken from the',13,10
-            db  'directory SYS16.COM was run from.  The boot code is built INTO this '
-            db  'program,',13,10
-            db  'so it is only as current as the build that produced it.  The '
-            db  'target',13,10
-            db  'keeps its own BPB and its own FATs: format it first.',13,10,13,10
+            db  'PMIO.SYS, PMDOS.SYS, RMDOS.SYS, CMD.EXE and COMMAND.COM are '
+            db  'taken from',13,10
+            db  'the directory SYS16.COM was run from.  The boot code is built'
+            db  13,10
+            db  'INTO this program, so it is only as current as the build that '
+            db  'produced it.',13,10
+            db  'The target keeps its own BPB and its own FATs: format it first.'
+            db  13,10,13,10
             db  'Run it from real DOS.  Writing sector 0 from inside Windows '
             db  'needs a',13,10
             db  'volume lock this program does not take, and Windows will '

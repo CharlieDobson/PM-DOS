@@ -687,7 +687,13 @@ x65_info:
         call    puts
         mov     word ptr [cbuf+3],0AA55h
         mov     ax,6501h
-        mov     bx,0FFFFh               ; the current country
+        mov     bx,0FFFFh               ; the code page in use,
+        mov     dx,0FFFFh               ; and the country: DX was
+                                        ; whatever puts had left in
+                                        ; it, which MS-DOS refuses
+                                        ; too (dos/getset.asm) and
+                                        ; this kernel did not read
+                                        ; until COUNTRY.SYS
         mov     cx,41
         mov     di,OFFSET cbuf
         push    es

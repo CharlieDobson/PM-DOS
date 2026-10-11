@@ -805,10 +805,24 @@ f37_ok:
         jmp     i21_ok
 
 ;=====================================================================
-; 38h - country information.  One country, the United States, which is
-;       the one PM-DOS answers too.
+; 38h - country information.  One country: the one the kernel was
+;       using when it parked, which COUNTRY= chose (RMH_CTRY).  Another
+;       is refused - there is no COUNTRY.SYS read down here.
 ;=====================================================================
 fn38:
+        mov     al,byte ptr [bp+F_AX]   ; 0 the country in use, FFh the one
+        xor     ah,ah                   ; in BX, anything else a code
+        cmp     al,0FFh
+        jne     f38_which
+        mov     ax,[bp+F_BX]
+f38_which:
+        or      ax,ax
+        jz      f38_ours
+        cmp     ax,[h_ctrycode]
+        je      f38_ours
+        mov     ax,ERR_NOFILE           ; as the kernel says for a country
+        jmp     i21_fail                ; it has no table for
+f38_ours:
         mov     ax,[bp+F_DX]
         cmp     ax,0FFFFh
         je      f38_set
@@ -824,7 +838,8 @@ fn38:
         rep     movsb
         pop     ds
         pop     es
-        mov     word ptr [bp+F_BX],1    ; the country code
+        mov     ax,[h_ctrycode]
+        mov     [bp+F_BX],ax            ; the country code
         jmp     i21_ok
 f38_set:
         jmp     i21_ok                  ; there is only one to set it to
@@ -1178,6 +1193,10 @@ f65_info:
         mov     cx,F65_INFOLEN
 f65_fits:
         mov     [bp+F_CX],cx
+        mov     ax,[h_ctrycode]         ; the kernel's country and page
+        mov     word ptr [f65_hdr+3],ax
+        mov     ax,[h_ctrypage]
+        mov     word ptr [f65_hdr+5],ax
         push    es
         mov     es,[bp+F_ES]
         mov     di,[bp+F_DI]
@@ -1214,22 +1233,49 @@ f65_table:
         jmp     i21_ok
 
 ;--- 6523h: is the character in DL a yes or a no?  AX = 1 yes, 0 no,
-;--- 2 neither.  Y and N, in either case: this is the one country.
+;--- 2 neither.  The country's two letters, in either case.
 f65_yesno:
         mov     al,byte ptr [bp+F_DX]
-        call    rd_upcase
+        call    rd_nlsup
+        mov     ah,al
         mov     word ptr [bp+F_AX],1
-        cmp     al,'Y'
+        mov     al,[h_ctryyes]
+        call    rd_nlsup
+        cmp     al,ah
         je      f65_ynout
         mov     word ptr [bp+F_AX],0
-        cmp     al,'N'
+        mov     al,[h_ctryno]
+        call    rd_nlsup
+        cmp     al,ah
         je      f65_ynout
         mov     word ptr [bp+F_AX],2
 f65_ynout:
         jmp     i21_ok
+
+;--- rd_nlsup - AL in upper case, as 65h means it: ASCII's letters, and
+;--- from 80h up the country's table in the low block (RL_NLSUP), which
+;--- is the one 6502h hands out.  rd_upcase stays ASCII's alone - it is
+;--- what file names go through, here as in the kernel.
+rd_nlsup:
+        cmp     al,80h
+        jae     rnu_high
+        jmp     rd_upcase
+rnu_high:
+        cmp     word ptr [rd_lowseg],0
+        je      rnu_out
+        push    bx
+        push    es
+        mov     es,[rd_lowseg]
+        mov     bl,al
+        xor     bh,bh
+        mov     al,es:[bx + RL_NLSUP + 2 - 80h]
+        pop     es
+        pop     bx
+rnu_out:
+        ret
 f65_upchar:
         mov     al,byte ptr [bp+F_DX]
-        call    rd_upcase
+        call    rd_nlsup
         mov     byte ptr [bp+F_DX],al
         jmp     i21_ok
 f65_upmem:
@@ -1240,7 +1286,7 @@ f65_upmem:
         jcxz    f65_memdone
 f65_memloop:
         mov     al,es:[di]
-        call    rd_upcase
+        call    rd_nlsup
         mov     es:[di],al
         inc     di
         loop    f65_memloop
@@ -1255,7 +1301,7 @@ f65_azloop:
         mov     al,es:[di]
         or      al,al
         jz      f65_azdone
-        call    rd_upcase
+        call    rd_nlsup
         mov     es:[di],al
         inc     di
         jmp     short f65_azloop
@@ -1269,10 +1315,11 @@ f65_hdr     db  1                       ; info ID
             dw  437                     ; code page
 
 ;=====================================================================
-; 66h - the global code page.  437 is the only one there is: 6601h
-; says so for both the active and the system page, and 6602h accepts
-; 437 and refuses anything else, as DOS does for a page it has no
-; tables for.
+; 66h - the global code page.  The kernel's, as it was at the park:
+; 6601h answers the page in use and the one the system started in, and
+; 6602h accepts the page in use and refuses anything else, as DOS does
+; for a page it has no tables for - changing it is the kernel's to do,
+; out of COUNTRY.SYS.
 ;=====================================================================
 fn66:
         mov     al,byte ptr [bp+F_AX]
@@ -1280,12 +1327,15 @@ fn66:
         je      f66_get
         cmp     al,2
         jne     f66_fn
-        cmp     word ptr [bp+F_BX],437
+        mov     ax,[h_ctrypage]
+        cmp     [bp+F_BX],ax
         jne     f66_bad
         jmp     i21_ok
 f66_get:
-        mov     word ptr [bp+F_BX],437
-        mov     word ptr [bp+F_DX],437
+        mov     ax,[h_ctrypage]
+        mov     [bp+F_BX],ax
+        mov     ax,[h_ctrysys]
+        mov     [bp+F_DX],ax
         jmp     i21_ok
 f66_bad:
         mov     ax,ERR_NOFILE           ; what DOS says when it cannot load it
@@ -1573,21 +1623,6 @@ i2F_iret:
 ; Data
 ;=====================================================================
 rd_dbcs     dw  0
-
-rd_country:
-        dw  0                           ; date format, month first
-        db  '$',0,0,0,0                 ; currency
-        db  ',',0                       ; thousands
-        db  '.',0                       ; decimal
-        db  '-',0                       ; date separator
-        db  ':',0                       ; time separator
-        db  0                           ; currency format
-        db  2                           ; digits after the point
-        db  0                           ; twelve-hour clock
-        dd  0                           ; the case-map far call: rd_lowsave
-                                        ; points it at the low block's far
-                                        ; return (RL_DEVRET).  Zero here was
-                                        ; a call into the interrupt table,
-                                        ; which WfW 3.11's network made
-        db  ',',0                       ; list separator
-        db  10 dup(0)
+                                        ; rd_country, 38h's block, is in the
+                                        ; handoff header now: the kernel
+                                        ; fills it in (RMDOS.ASM, RMH_CTRY)

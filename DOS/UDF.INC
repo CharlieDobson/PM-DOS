@@ -177,8 +177,27 @@ udf_dstart   dd 0                       ; the walk: the directory's data
 udf_dlen     dd 0                       ; how many bytes of it there are
 udf_doff     dd 0                       ; and how far in we have read
 udf_wbase    dd 0                       ; the byte offset udf_dbuf holds
+udf_wdir     dd 0                       ; ...of which directory's data
 udf_wok      db 0
              db 0, 0, 0
+
+; WHERE THE WALK OF A DIRECTORY GOT TO, as ISO9660.INC keeps it and for
+; its reason - see iso_curget there.  A row is less here: the walk is
+; one number, the byte offset into the directory's data.
+UDF_NCUR        EQU     4               ; directories remembered at once
+UCU_EXT         EQU     0               ; dd - the directory's first data
+                                        ; block, FFFFFFFFh in a row not in use
+UCU_ORD         EQU     4               ; dd - the record it is in front of
+UCU_DOFF        EQU     8               ; dd - udf_doff as it was there
+UCU_LEN         EQU     12
+IF UDF_NCUR - 4
+.ERR    ; udf_curs is written out for UDF_NCUR = 4
+ENDIF
+udf_curs     dd 0FFFFFFFFh, 0, 0
+             dd 0FFFFFFFFh, 0, 0
+             dd 0FFFFFFFFh, 0, 0
+             dd 0FFFFFFFFh, 0, 0
+udf_curnext  dd 0                       ; the row given up next
 
 ; TWO BLOCKS, because a UDF directory is a plain byte stream and a
 ; record in it MAY CROSS A BLOCK BOUNDARY - which is the exact
@@ -681,6 +700,100 @@ udf_diropen:
         mov     dword ptr [udf_parfe],0
         ret
 
+;=====================================================================
+; THE WALK, TAKEN UP WHERE IT WAS LEFT - iso_curget's job, and its
+; comment says why, for the other format.
+;
+; udf_curget   EBP = the record wanted in the directory dc_isoext and
+;              dc_isolen describe.  Leaves the walk in front of that
+;              record or of one before it, -> ECX = how many records
+;              to step over to reach it.
+; udf_curput   the walk stands in front of record EBP: remember that.
+; udf_curreset forget all of them, and what the window holds.
+;
+; THE WINDOW IS LEFT AS IT IS, which is the other half of the saving:
+; udf_window knows whose two blocks it holds, so the next record of
+; the same directory is read out of memory.  udf_diropen threw them
+; away, and every record asked for was the drive spoken to again.
+;=====================================================================
+udf_curreset:
+        push    ecx
+        push    esi
+        mov     esi,OFFSET udf_curs
+        mov     ecx,UDF_NCUR
+ucx_lp:
+        mov     dword ptr [esi+UCU_EXT],0FFFFFFFFh
+        add     esi,UCU_LEN
+        dec     ecx
+        jnz     ucx_lp
+        mov     dword ptr [udf_curnext],0
+        mov     byte ptr [udf_wok],0
+        pop     esi
+        pop     ecx
+        ret
+
+udf_curget:
+        push    eax
+        push    esi
+        mov     eax,[dc_isoext]
+        mov     [udf_dstart],eax
+        mov     ecx,[dc_isolen]
+        mov     [udf_dlen],ecx
+        mov     dword ptr [udf_parfe],0
+        mov     esi,OFFSET udf_curs
+        mov     ecx,UDF_NCUR
+ucg_look:
+        cmp     dword ptr [esi+UCU_EXT],eax
+        je      ucg_this
+        add     esi,UCU_LEN
+        dec     ecx
+        jnz     ucg_look
+        jmp     short ucg_front
+ucg_this:
+        cmp     dword ptr [esi+UCU_ORD],ebp
+        ja      ucg_front               ; it is past the record wanted
+        mov     eax,[esi+UCU_DOFF]
+        mov     [udf_doff],eax
+        mov     ecx,ebp
+        sub     ecx,[esi+UCU_ORD]
+        pop     esi
+        pop     eax
+        ret
+ucg_front:
+        mov     dword ptr [udf_doff],0
+        mov     ecx,ebp
+        pop     esi
+        pop     eax
+        ret
+
+udf_curput:
+        push    eax
+        push    ecx
+        push    esi
+        mov     eax,[udf_dstart]
+        mov     esi,OFFSET udf_curs
+        mov     ecx,UDF_NCUR
+ucw_look:
+        cmp     dword ptr [esi+UCU_EXT],eax
+        je      ucw_have                ; a directory has one row
+        add     esi,UCU_LEN
+        dec     ecx
+        jnz     ucw_look
+        mov     esi,[udf_curnext]
+        inc     dword ptr [udf_curnext]
+        and     dword ptr [udf_curnext],UDF_NCUR - 1
+        imul    esi,esi,UCU_LEN
+        add     esi,OFFSET udf_curs
+        mov     dword ptr [esi+UCU_EXT],eax
+ucw_have:
+        mov     dword ptr [esi+UCU_ORD],ebp
+        mov     eax,[udf_doff]
+        mov     dword ptr [esi+UCU_DOFF],eax
+        pop     esi
+        pop     ecx
+        pop     eax
+        ret
+
 udf_dirnext:
         push    eax
         push    ebx
@@ -762,29 +875,34 @@ udf_window:
         and     eax,NOT (ISO_BLKSIZE - 1)       ; the block it is in
         cmp     byte ptr [udf_wok],0
         je      uw_load
-        cmp     eax,[udf_wbase]
+        mov     ecx,[udf_dstart]
+        cmp     ecx,[udf_wdir]                  ; another directory's blocks
+        jne     uw_load                         ; at the same offset are not
+        cmp     eax,[udf_wbase]                 ; these
         je      uw_have
 uw_load:
         mov     [udf_wbase],eax
+        mov     ecx,[udf_dstart]
+        mov     [udf_wdir],ecx
         mov     byte ptr [udf_wok],0
         shr     eax,11                          ; -> which block of the file
         add     eax,[udf_dstart]
-        mov     edi,OFFSET udf_dbuf
-        mov     ecx,2
-        call    udf_rdblk
-        jnc     uw_loaded
-        ; THE SECOND BLOCK MAY NOT EXIST - a directory that ends at the
-        ; last block of the partition has nothing after it.  One block
-        ; is enough whenever the record does not cross, so this falls
-        ; back to one rather than failing the walk.
-        mov     eax,[udf_wbase]
-        shr     eax,11
-        add     eax,[udf_dstart]
+        ; A BLOCK AT A TIME, because one block is what cd_read sends
+        ; through the cache and two it hands straight to the drive.
+        ; The window moves on a block at a time, so the second of its
+        ; blocks is the first of the next window - asked for as one
+        ; transfer of two, every block of a directory was read twice.
         mov     edi,OFFSET udf_dbuf
         mov     ecx,1
         call    udf_rdblk
         jc      uw_bad
-uw_loaded:
+        ; THE SECOND BLOCK MAY NOT EXIST - a directory that ends at the
+        ; last block of the partition has nothing after it.  One block
+        ; is enough whenever the record does not cross, so failing to
+        ; read the second does not fail the walk.
+        inc     eax
+        add     edi,ISO_BLKSIZE
+        call    udf_rdblk
         mov     byte ptr [udf_wok],1
 uw_have:
         mov     esi,[udf_doff]
@@ -865,17 +983,18 @@ ude_sub:
         sub     ebp,2
 
 ude_walk:
-        mov     eax,[dc_isoext]
-        mov     edx,[dc_isolen]
-        call    udf_diropen
-        mov     ecx,ebp
+        call    udf_curget              ; -> ECX = records to step over
 ude_skip:
+        or      ecx,ecx
+        jz      ude_here
         call    udf_dirnext
         jc      ude_none
-        or      ecx,ecx
-        jz      ude_got
         dec     ecx
         jmp     short ude_skip
+ude_here:
+        call    udf_curput              ; in front of record EBP
+        call    udf_dirnext
+        jc      ude_none
 
 ude_got:
         ; ESI is the record.  Its File Entry has everything the record

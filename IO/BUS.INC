@@ -256,6 +256,8 @@ box_hlt:
         call    ms_hlt
         jnc     bxh_out
         call    vd_hlt
+        jnc     bxh_out
+        call    kb_hlt                  ; where INT 09h ends, under KEYB
 bxh_out:
         ret
 
@@ -270,4 +272,5 @@ box_park:
         pop     eax
         call    vd_park
         call    vt_park
+        call    kb_park
         ret

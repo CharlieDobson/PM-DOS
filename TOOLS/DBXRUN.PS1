@@ -4,6 +4,8 @@ param(
     [string]$Floppy = '',                        # boot from this floppy image instead
     [string]$Floppy2 = '',                       # ...with this one in B: - the test disk
     [string]$Multi = '',                         # optional second disk (D:...)
+    [string]$Cd = '',                            # an .iso in an ATAPI CD-ROM drive, the
+                                                 # master on the secondary IDE channel
     [int]$Seconds = 240,                         # DOSBox-X's -time-limit
     [string]$Cap = '',                           # record the screen here (emptied first)
     [string]$Lpt = '',                           # LPT1 captured to this file
@@ -21,8 +23,8 @@ param(
 # DBXRUN.PS1 - boot PM-DOS from a hard-disk image in DOSBox-X with NO
 # window, and let the time limit end the run.
 #
-#   powershell -File TOOLS\DBXRUN.PS1 -Hd X.IMG [-Multi M.IMG] [-Seconds n]
-#              [-Cap DIR] [-Lpt FILE] [-E9] [-Log type,type...]
+#   powershell -File TOOLS\DBXRUN.PS1 -Hd X.IMG [-Multi M.IMG] [-Cd X.ISO]
+#              [-Seconds n] [-Cap DIR] [-Lpt FILE] [-E9] [-Log type,type...]
 #   powershell -File TOOLS\DBXRUN.PS1 -Floppy A.IMG [-Floppy2 B.IMG] [-Hd X.IMG] ...
 #
 # -MemMB and -Cpu set the machine: 32MB and DOSBox-X's own choice of
@@ -122,6 +124,10 @@ if ( $Floppy -ne '' ) { $lines += "imgmount a: `"$Floppy`" -t floppy" }
 if ( $Floppy2 -ne '' ) { $lines += "imgmount b: `"$Floppy2`" -t floppy" }
 if ( $Hd -ne '' ) { $lines += "imgmount 2 `"$Hd`" -size 512,63,16,$( Get-Cylinders $Hd ) -fs none" }
 if ( $Multi -ne '' ) { $lines += "imgmount 3 `"$Multi`" -size 512,63,16,$( Get-Cylinders $Multi ) -fs none" }
+# The letter is DOSBox-X's own and means nothing once the guest has
+# booted: PM-DOS gives the drive the letter after its hard disks.  A
+# UDF-only image is refused without a word; an ISO 9660 one is taken.
+if ( $Cd -ne '' ) { $lines += "imgmount e: `"$Cd`" -t iso -ide 2m" }
 $lines += if ( $Floppy -ne '' ) { 'boot -l a' } else { 'boot -l c' }
 Set-Content -Path $conf -Value $lines -Encoding ascii
 

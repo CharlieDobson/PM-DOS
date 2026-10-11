@@ -1666,8 +1666,39 @@ vli_colput:
         inc     al
         jnz     vli_col
 
+        ; THE CASE MAP: what the FAR CALL in the country block reaches.
+        ; A program hands it a character in AL from 80h up and gets the
+        ; capital back, out of the table above - which is the United
+        ; States' until COUNTRY= puts another country's there, and so
+        ; this needs writing only once.
+        ;
+        ;       cmp al,80h / jb done / push bx
+        ;       mov bx,GNLS_UPCASE + 2 - 80h / xlat cs:[bx]
+        ;       pop bx / done: retf
+        mov     edi,DOSDATA + GNLS_CASEMAP
+        mov     dword ptr [edi],0772803Ch
+        mov     byte ptr [edi+4],53h
+        mov     byte ptr [edi+5],0BBh
+        mov     word ptr [edi+6],GNLS_UPCASE + 2 - 80h
+        mov     dword ptr [edi+8],0CB5BD72Eh
+
+        ; AND WHERE INT 09h ENDS IN A DOS BOX UNDER KEYB: a HLT the
+        ; keyboard driver answers (kb_hlt, IO\KEYBD.INC).  Nothing
+        ; points at it until KEYB loads a layout.
+        mov     dword ptr ds:[DOSDATA + GNLS_KBSTUB],9090CFF4h
+        mov     byte ptr ds:[DOSDATA + GNLS_KBSTUB + 4],90h
+
         popad
         ret
+IF GNLS_MAPLEN NE 12
+        .ERR    <vdm_lolinit writes a twelve-byte case map>
+ENDIF
+IF GNLS_KBSTUB LT GNLS_CASEMAP + GNLS_MAPLEN
+        .ERR    <GNLS: the INT 09h stub is on top of the case map>
+ENDIF
+IF GNLS_END LT GNLS_KBSTUB + GNLS_STUBLEN
+        .ERR    <GNLS: the INT 09h stub runs past the end of the tables>
+ENDIF
 
 ; What 6505h hands back, byte for byte MS-DOS 6's: the table's length,
 ; three bytes of permissible range (01h, lowest, highest), an excluded
@@ -3196,7 +3227,12 @@ vco_run:
 ; wrong here means either handing the kernel an offset with no segment
 ; or turning a character into a megabyte-wide address.
 vdm_ctryext:
+        ; BX AS WELL, since 2026-10-10: 6501h takes a code page in it
+        ; and a country in DX, and until COUNTRY.SYS there was one of
+        ; each and nothing read them.  It was scratch here, and came
+        ; back to the guest as part of ES times sixteen.
         movzx   eax,word ptr [vdm_ctx+V86C_EAX]
+        movzx   ebx,word ptr [vdm_ctx+V86C_EBX]
         movzx   ecx,word ptr [vdm_ctx+V86C_ECX]
         movzx   edx,word ptr [vdm_ctx+V86C_EDX]
         movzx   edi,word ptr [vdm_ctx+V86C_EDI]
@@ -3212,17 +3248,21 @@ vce_nottab:
         je      vce_dsdx
         cmp     al,22h
         je      vce_dsdx
+        cmp     al,0A1h                 ; and DOS 7's names for the two
+        je      vce_dsdx
+        cmp     al,0A2h
+        je      vce_dsdx
         jmp     short vce_run           ; 20h, 23h and anything unknown
 
 vce_esdi:
-        mov     ebx,dword ptr [vdm_ctx+V86C_ES]
-        shl     ebx,4
-        add     edi,ebx
+        mov     esi,dword ptr [vdm_ctx+V86C_ES]
+        shl     esi,4
+        add     edi,esi
         jmp     short vce_run
 vce_dsdx:
-        mov     ebx,dword ptr [vdm_ctx+V86C_DS]
-        shl     ebx,4
-        add     edx,ebx
+        mov     esi,dword ptr [vdm_ctx+V86C_DS]
+        shl     esi,4
+        add     edx,esi
         ; 21h and 22h answer in the string, not in DX - which comes back
         ; as the guest left it, for the reason vdm_do21 gives
         push    dword ptr [vdm_ctx+V86C_EDX]
@@ -3759,8 +3799,9 @@ vdm_child:
 
         ; A 32-BIT PROGRAM, asked for by a 16-bit one - see vdm_d32.
         ; Asked of the file, as 4Bh always asks it: the extension says
-        ; nothing, and every D32 image carries an MZ stub that would
-        ; otherwise load here and print that it needs 32-bit DOS.
+        ; nothing, and a D32 command has an MS-DOS program in front of
+        ; its image that would otherwise load here and print that it
+        ; needs 32-bit DOS.
         mov     edx,OFFSET vdm_cpath
         call    exec_kind
         cmp     eax,EK_D32
@@ -4236,13 +4277,13 @@ vc_overlay:
         jc      vov_ioerr
         cmp     eax,EXE_HDRLEN
         jb      vov_flat                        ; too short to be an .EXE
+        call    d32_find                        ; an image, bare or behind an
+        jnc     vov_badfmt                      ; MS-DOS program: not an overlay
         mov     ax,word ptr ds:[vdm_hdrbuf+EXE_SIG]
         cmp     ax,EXE_MZ
         je      vov_exe
         cmp     ax,EXE_ZM
         je      vov_exe
-        cmp     dword ptr ds:[vdm_hdrbuf+D32H_MAGIC],D32_MAGIC
-        je      vov_badfmt
 
 ;--- a flat overlay: the whole file, where it was asked for ----------
 vov_flat:
@@ -5685,6 +5726,10 @@ vdm_subptr:
         db  0F1h, 19h,  P_DX            ; a file to delete and not keep
                                         ; (18h carries nothing)
         db  0F1h, 1Ch,  P_DI            ; a SCSI adapter's, or a device's
+        db  0F1h, 21h,  P_SI            ; the registers a BIOS call is given
+                                        ; and gives back.  20h's pointer
+                                        ; depends on its function, so
+                                        ; r3_pflags answers that one by hand
         db  0F0h, 04h,  P_SI           ; cells onto the screen - EBX is a
                                         ; CELL NUMBER, not a pointer
         db  0F0h, 05h,  P_DI            ; and back off it

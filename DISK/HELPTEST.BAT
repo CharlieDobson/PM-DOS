@@ -48,6 +48,8 @@ ECHO --- DATE ---
 DATE /?
 ECHO --- TIME ---
 TIME /?
+ECHO --- CHCP ---
+CHCP /?
 ECHO --- PAUSE ---
 PAUSE /?
 ECHO --- REM ---
@@ -161,6 +163,19 @@ ECHO --- SHUTDOWN (must NOT write anything or switch the computer off) ---
 SHUTDOWN /?
 ECHO --- SHUTDOWN with something else AND /?: still help, still running ---
 SHUTDOWN NOW /?
+ECHO --- KEYB ---
+KEYB /?
+ECHO --- KEYB with a layout to load AND /?: still help, no layout loaded ---
+KEYB GR /?
+KEYB
+ECHO --- PMD (must NOT take the screen over) ---
+PMD /?
+ECHO --- PMD with a report to write AND /?: still help, no file written ---
+PMD /P C:\NOFILE.TXT /?
+ECHO --- DOSSHELL (must NOT take the screen over) ---
+DOSSHELL /?
+ECHO --- DOSSHELL with a screen to start in AND /?: still help, still text ---
+DOSSHELL /G:M1 /?
 ECHO --- FC (must NOT compare anything) ---
 FC /?
 ECHO --- FC with two names AND /?: still help, no comparison ---
@@ -183,6 +198,10 @@ ECHO --- CHKDSK (must NOT check a disk) ---
 CHKDSK /?
 ECHO --- CHKDSK with a drive AND /F AND /?: still help, still no fix ---
 CHKDSK C: /F /?
+ECHO --- SCANDISK (must NOT take the screen over, or check a disk) ---
+SCANDISK /?
+ECHO --- SCANDISK with a drive AND /AUTOFIX AND /?: still help, still no repair ---
+SCANDISK C: /AUTOFIX /?
 ECHO --- LABEL (must NOT show a label or ask for one) ---
 LABEL /?
 ECHO --- LABEL with a drive AND a label AND /?: still help, no label ---

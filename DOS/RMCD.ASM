@@ -11,8 +11,11 @@
 ; This is that letter's other half, the way MS-DOS had it: a REDIRECTOR,
 ; as MSCDEX is.  The park loads it beside RMDOS when the kernel has a
 ; CD-ROM on an IDE channel (PARK.INC, park_loadcd) and tells it the
-; channel's ports and which drive; RMDOS marks the letter's current
-; directory structure as a redirector's - in use, redirected, and kept
+; channel's ports and which drive.  The file is an ordinary one, kept
+; with the system's others - where CMD.EXE is, or in the boot drive's
+; root - and a system without it has no CD-ROM letter under Windows and
+; is otherwise whole.  RMDOS marks the letter's current directory
+; structure as a redirector's - in use, redirected, and kept
 ; out of the network's list of connections, as MSCDEX marks it - and
 ; calls cd_init, which hooks INT 2Fh.  From then on every DOS call that
 ; names the letter reaches here as INT 2Fh AH=11h with MS-DOS's working
@@ -152,7 +155,7 @@ _RC     SEGMENT USE16 PUBLIC 'CODE'
 
 ;--- the header --------------------------------------------------------
 cd_sig      dd  RC_SIG                  ; also what a file's SFT_DEVPTR
-cd_ver      dw  1                       ; points at: one of ours
+cd_ver      dw  RC_VER                  ; points at: one of ours
 cd_initp    dw  OFFSET cd_init
 cd_letter   db  0
 cd_sel      db  0
