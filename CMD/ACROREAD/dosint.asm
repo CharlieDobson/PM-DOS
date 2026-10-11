@@ -1,6 +1,6 @@
 ;
-; DOSINT.ASM - entry point, the INT 21h thunk and the way to the screen
-; for ACROREAD.EXE, the PM-DOS PDF reader.  Open Watcom WASM.
+; DOSINT.ASM - entry point, the INT 21h and INT 33h thunks and the way to
+; the screen for ACROREAD.EXE, the PM-DOS PDF reader.  Open Watcom WASM.
 ;
 ; The same D32 layout as EDIT's and PMD's: the kernel loads the file
 ; whole at slot offset 2000h, so this module is FIRST on the link line
@@ -84,6 +84,39 @@ _int21  proc    near
         pop     ebp
         ret
 _int21  endp
+
+; The same for INT 33h, the mouse: a native program reaches the driver
+; with the registers Microsoft's takes, whole
+        public  _int33
+_int33  proc    near
+        push    ebp
+        push    ebx
+        push    esi
+        push    edi
+        mov     eax,[esp+20]            ; REGS *
+        push    eax
+        mov     ebx,[eax+4]
+        mov     ecx,[eax+8]
+        mov     edx,[eax+12]
+        mov     esi,[eax+16]
+        mov     edi,[eax+20]
+        mov     eax,[eax]
+        int     33h
+        xchg    eax,[esp]               ; EAX = REGS *, [ESP] = result EAX
+        mov     [eax+4],ebx
+        mov     [eax+8],ecx
+        mov     [eax+12],edx
+        mov     [eax+16],esi
+        mov     [eax+20],edi
+        pop     ebx
+        mov     [eax],ebx
+        cld
+        pop     edi
+        pop     esi
+        pop     ebx
+        pop     ebp
+        ret
+_int33  endp
 
 ; INT 23h: ^C is a key here.  A program that died on it would leave
 ; the shell a graphics screen to write its prompt on.

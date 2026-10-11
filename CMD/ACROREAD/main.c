@@ -34,7 +34,8 @@ static const char usage[] =
     "  /X        Writes the text of the document to standard output.\r\n"
     "\r\n"
     "Pages are drawn 640 by 480: in color when the video BIOS has VBE 2.0\r\n"
-    "or later, in 16 grays when it has not.  F1 lists the keys.\r\n";
+    "or later, in 16 grays when it has not.  F1 lists the keys and what the\r\n"
+    "mouse does.\r\n";
 
 static void say( const char *text )
 {
@@ -47,6 +48,7 @@ void out_of_memory( void )
         pdf_fail( PE_NOMEM );
     }
     video_text();
+    sys_mouse_reset();                      /* the pointer off the screen */
     say( "Not enough memory\r\n" );
     sys_exit( 8 );
 }

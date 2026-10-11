@@ -25,7 +25,11 @@ extern VSCREEN screen;
 int   video_probe( void );
 int   video_set( int kind );
 void  video_text( void );
-void  video_show( const CANVAS *cv, int from_x, int from_y, int top, int bottom, int back );
+
+/* a line of the screen, asked for as it goes out: 640 pixels into
+   "row", screen.canvas_bpp bytes each */
+typedef void (*COMPOSE)( int ypos, u8 *row );
+void  video_rows( int top, int bottom, COMPOSE compose );
 
 /* what MAIN.C asks for */
 #define WANT_BEST   0           /* colour if VBE 2.0 is there, else greys, else text */

@@ -5,8 +5,10 @@
  * screen and the keyboard are 21h/F0h, as EDIT's are; a graphics screen
  * is 21h/F1h AL=1Fh, which sets the mode and hands back a selector for
  * its frame buffer, and gfx_put (DOSINT.ASM) is how a scan line gets
- * there.  SYS_NT.C is the same calls for a test program on Windows,
- * which has files and no screen.
+ * there.  The mouse is INT 33h.  SYS_NT.C is the same calls for a test
+ * program on Windows, which has files and no screen: the screen's calls
+ * do nothing there, and the mouse's are not there at all - nothing that
+ * is built for Windows asks for them.
  *
  * Errors are DOS error codes; 0 is success.
  */
@@ -53,7 +55,30 @@ void  sys_cursor_shape( int kind );
 /* the keyboard: a key is AL = ASCII, AH = scan code */
 int   sys_key_ready( void );
 int   sys_key_read( int *shift_now );
-u32   sys_hundredths( void );
+u32   sys_hundredths( void );               /* 2Ch: good to a tick of the timer, 18.2 a second */
+u32   sys_clock_ms( void );                 /* milliseconds, counted while it is asked often */
+
+/* a key or the mouse, whichever is first: 1 for a key, 2 for the mouse
+   having moved or a button changed, 0 for neither if asked not to wait */
+#define EVF_NOWAIT      0x01
+#define EVF_MOUSE       0x02
+int   sys_event( int flags );
+
+/*
+ * The mouse, INT 33h.  Positions are the driver's: pixels on a graphics
+ * screen, and on a text one whatever sys_mouse_extent says the far
+ * corner is.  The driver draws its own pointer on a text screen and on
+ * no VBE one, so on a graphics screen the pointer is the program's and
+ * the driver's stays hidden.
+ */
+int   sys_mouse_reset( void );              /* -> buttons, 0 for no mouse; hides it */
+void  sys_mouse_show( int show );
+void  sys_mouse_state( int *xpos, int *ypos, int *buttons );
+int   sys_mouse_presses( int *xpos, int *ypos );  /* of the left button since last asked */
+void  sys_mouse_extent( int *xmax, int *ymax );
+void  sys_mouse_range( int xmax, int ymax );
+void  sys_mouse_move( int xpos, int ypos );
+void  sys_mouse_inject( int buttons );      /* test mode: buttons as if pressed */
 
 /* files */
 int   sys_open_read( const char *path, u32 *handle );

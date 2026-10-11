@@ -1,20 +1,20 @@
 /*
- * VIDEO.C - the graphics screen: finding a mode, and putting a canvas
- * on it.
+ * VIDEO.C - the graphics screen: finding a mode, and putting lines of
+ * pixels on it.
  *
  * TWO KINDS OF SCREEN, both 640 by 480.
  *
  * With VBE 2.0 or later in the video BIOS, the mode with the most
  * colours that has a linear frame buffer: 32 or 24 bits a pixel, else
  * 16 or 15, else 256 colours with a palette of this program's own.
- * The canvas for these is three bytes a pixel, and a line of it is
- * turned into the mode's own pixels on its way to the frame buffer.
+ * A line for these is three bytes a pixel, and is turned into the
+ * mode's own pixels on its way to the frame buffer.
  *
  * Without - a VGA and nothing more, or a BIOS whose VBE is 1.2 and has
  * banks instead of a frame buffer - mode 12h, sixteen colours, which
  * every VGA has.  Sixteen colours is not enough for a page in colour,
  * but sixteen greys is enough for one in grey: the palette is set to a
- * grey scale, the canvas is one byte a pixel, and a pattern of two
+ * grey scale, a line is one byte a pixel, and a pattern of two
  * neighbouring greys makes up the levels between.  Text that has been
  * drawn with coverage needs those greys far more than it needs red.
  *
@@ -23,6 +23,12 @@
  * a port, and a port from ring 3 is a trap into the kernel - so the
  * screen is written a band of lines at a time: four planes' worth of
  * bits made in memory, then four masks and four copies.
+ *
+ * WHAT IS ON A LINE IS THE CALLER'S.  video_rows asks for each line as
+ * it is about to go out (VIEW.C's compose), which is how the page, the
+ * scroll bars, the bar at the foot and the mouse's pointer come to be
+ * on one screen without any of them being drawn into another: moving
+ * the pointer is the few lines under it asked for again.
  */
 #include "gfx.h"
 #include "view.h"
@@ -45,6 +51,15 @@ static const u8 bayer[4][4] = {
     {  3, 11,  1,  9 },
     { 15,  7, 13,  5 } };
 
+/* For each of the pattern's sixteen places and each of 256 levels, the
+   level a screen with fewer shows: of 16 (the greys), of 6 (a side of
+   the colour cube) and of 40 (the cube's own greys).  Made once; a
+   division a pixel is what they save. */
+#define SHADES_16   0
+#define SHADES_6    1
+#define SHADES_40   2
+static u8 *shades;
+
 static void line_need( u32 bytes )
 {
     if ( bytes > line_cap ) {
@@ -53,6 +68,25 @@ static void line_need( u32 bytes )
         }
         line = (u8 *)xalloc( bytes );
         line_cap = bytes;
+    }
+}
+
+static void shades_make( void )
+{
+    static const int tops[3] = { 15, 5, 39 };
+    int kind, place, level;
+
+    if ( shades ) {
+        return;
+    }
+    shades = (u8 *)xalloc( 3 * 16 * 256 );
+    for ( kind = 0; kind < 3; kind++ ) {
+        for ( place = 0; place < 16; place++ ) {
+            for ( level = 0; level < 256; level++ ) {
+                shades[(kind * 16 + place) * 256 + level] =
+                    (u8)((level * tops[kind] * 16 + place * 255) / (255 * 16));
+            }
+        }
     }
 }
 
@@ -159,6 +193,7 @@ int video_set( int kind )
 {
     u32 bytes = 0, pitch = 0;
 
+    shades_make();
     if ( kind == VS_VBE ) {
         if ( vbe_mode == 0 || sys_gfx_set( vbe_mode, &bytes, &pitch ) != 0 || pitch == 0 ) {
             return 0;
@@ -170,7 +205,7 @@ int video_set( int kind )
         if ( vbe_bits == 8 ) {
             cube_palette();
         }
-        line_need( 640 * 4 );
+        line_need( 640 * 4 + 640 * 3 );
     } else {
         if ( sys_gfx_set( MODE_VGA16, &bytes, &pitch ) != 0 ) {
             return 0;
@@ -179,7 +214,7 @@ int video_set( int kind )
         screen.bits = 4;
         screen.canvas_bpp = 1;
         vga_greys();
-        line_need( VGA_BAND * 80 * 4 );
+        line_need( VGA_BAND * 80 * 4 + 640 );
     }
     screen.width = 640;
     screen.height = 480;
@@ -195,15 +230,16 @@ void video_text( void )
 }
 
 /* ------------------------------------------------------------------ */
-/* a canvas onto the screen                                            */
+/* lines onto the screen                                               */
 /* ------------------------------------------------------------------ */
 
 /* one line of colour, 640 pixels as blue, green, red, to the screen's
    own kind of pixel at "out": how many bytes that made */
 static u32 pack_line( const u8 *bgr, u8 *out, int ypos )
 {
+    const u8 *six, *forty;
     u32 pixel;
-    int col, red, green, blue, spread;
+    int col, red, green, blue;
 
     switch ( screen.bits ) {
     case 24:
@@ -234,86 +270,69 @@ static u32 pack_line( const u8 *bgr, u8 *out, int ypos )
     }
     /* 256 colours: the nearer of two cube levels, by the pattern */
     for ( col = 0; col < 640; col++, bgr += 3 ) {
+        six = shades + (SHADES_6 * 16 + bayer[ypos & 3][col & 3]) * 256;
         blue = bgr[0];
         green = bgr[1];
         red = bgr[2];
-        spread = bayer[ypos & 3][col & 3];
         if ( red == green && green == blue ) {
-            out[col] = (u8)(216 + (red * 39 * 16 + spread * 255) / (255 * 16));
+            forty = six + (SHADES_40 - SHADES_6) * 16 * 256;
+            out[col] = (u8)(216 + forty[red]);
         } else {
-            out[col] = (u8)(((red * 5 * 16 + spread * 255) / (255 * 16)) * 36 +
-                            ((green * 5 * 16 + spread * 255) / (255 * 16)) * 6 +
-                            (blue * 5 * 16 + spread * 255) / (255 * 16));
+            out[col] = (u8)(six[red] * 36 + six[green] * 6 + six[blue]);
         }
     }
     return 640;
 }
 
 /*
- * Lines "top" up to "bottom" of the screen, from the canvas: the
- * screen's column 0 is the canvas's column "from_x" and its line "top"
- * is the canvas's line "from_y", and where the canvas has nothing -
- * the page is narrower than the screen, or ends above its foot - there
- * is "back", a grey.
+ * Lines "top" up to "bottom" of the screen.  "compose" is asked for
+ * each: 640 pixels into "row", a byte each of grey for the sixteen-
+ * grey screen and three each - blue, green, red - for a VBE one
+ * (screen.canvas_bpp says which).
  */
-void video_show( const CANVAS *cv, int from_x, int from_y, int top, int bottom, int back )
+void video_rows( int top, int bottom, COMPOSE compose )
 {
-    static u8 row[640 * 3];
-    const u8 *src;
-    u8 *plane;
-    int ypos, cy, col, first, last, level, band = 0, plane_no, bit;
+    const u8 *tab;
+    u8 *row, *plane;
+    int ypos, col, band = 0, plane_no, bit, level, bits0, bits1, bits2, bits3;
 
-    /* the columns of the screen the canvas covers */
-    first = -from_x;
-    last = cv->width - from_x;
-    if ( first < 0 ) {
-        first = 0;
+    if ( top < 0 ) {
+        top = 0;
     }
-    if ( last > 640 ) {
-        last = 640;
+    if ( bottom > 480 ) {
+        bottom = 480;
     }
-    if ( screen.kind == VS_VGA ) {
-        mem_set( line, 0, VGA_BAND * 80 * 4 );
-    }
-    for ( ypos = top; ypos < bottom; ypos++ ) {
-        cy = from_y + (ypos - top);
-        src = cy >= 0 && cy < cv->height && first < last
-                  ? cv->pix + (u32)cy * cv->stride + (u32)(from_x + first) * (u32)cv->bpp : NULL;
-        if ( screen.kind == VS_VBE ) {
-            mem_set( row, back, sizeof( row ) );
-            if ( src && cv->bpp == 3 ) {
-                mem_cpy( row + first * 3, src, (u32)(last - first) * 3 );
-            } else if ( src ) {
-                for ( col = first; col < last; col++ ) {
-                    row[col * 3] = row[col * 3 + 1] = row[col * 3 + 2] = src[col - first];
-                }
-            }
+    if ( screen.kind == VS_VBE ) {
+        row = line + 640 * 4;
+        for ( ypos = top; ypos < bottom; ypos++ ) {
+            compose( ypos, row );
             gfx_put( (u32)ypos * vbe_pitch, line, pack_line( row, line, ypos ) );
-            continue;
         }
-        /* sixteen greys: each pixel's level, a bit into each plane */
+        return;
+    }
+    if ( screen.kind != VS_VGA ) {
+        return;
+    }
+    /* sixteen greys: each pixel's level, a bit into each plane */
+    row = line + VGA_BAND * 80 * 4;
+    for ( ypos = top; ypos < bottom; ypos++ ) {
+        compose( ypos, row );
         plane = line + (u32)band * 320;
-        for ( col = 0; col < 640; col++ ) {
-            level = back;
-            if ( src && col >= first && col < last ) {
-                level = cv->bpp == 1 ? src[col - first]
-                                     : (src[(col - first) * 3 + 2] * 77 + src[(col - first) * 3 + 1] * 150 +
-                                        src[(col - first) * 3] * 29) >> 8;
+        for ( col = 0; col < 640; ) {
+            bits0 = bits1 = bits2 = bits3 = 0;
+            for ( bit = 0; bit < 8; bit++, col++ ) {
+                tab = shades + (SHADES_16 * 16 + bayer[ypos & 3][col & 3]) * 256;
+                level = tab[row[col]];
+                bits0 = (bits0 << 1) | (level & 1);
+                bits1 = (bits1 << 1) | ((level >> 1) & 1);
+                bits2 = (bits2 << 1) | ((level >> 2) & 1);
+                bits3 = (bits3 << 1) | (level >> 3);
             }
-            level = (level * 15 * 16 + bayer[ypos & 3][col & 3] * 255) / (255 * 16);
-            bit = 0x80 >> (col & 7);
-            if ( level & 1 ) {
-                plane[col >> 3] |= (u8)bit;
-            }
-            if ( level & 2 ) {
-                plane[80 + (col >> 3)] |= (u8)bit;
-            }
-            if ( level & 4 ) {
-                plane[160 + (col >> 3)] |= (u8)bit;
-            }
-            if ( level & 8 ) {
-                plane[240 + (col >> 3)] |= (u8)bit;
-            }
+            plane[0] = (u8)bits0;
+            plane[80] = (u8)bits1;
+            plane[160] = (u8)bits2;
+            plane[240] = (u8)bits3;
+            plane++;
         }
         if ( ++band == VGA_BAND || ypos == bottom - 1 ) {
             /* the band, a plane at a time: a line's four planes lie
@@ -326,7 +345,6 @@ void video_show( const CANVAS *cv, int from_x, int from_y, int top, int bottom, 
                 }
             }
             port_out( 0x3C5, 0x0F );
-            mem_set( line, 0, VGA_BAND * 80 * 4 );
             band = 0;
         }
     }
