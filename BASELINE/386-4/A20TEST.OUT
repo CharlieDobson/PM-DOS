@@ -1,0 +1,20 @@
+A20TEST.COM - the A20 gate, reached through the hardware
+  on entry the gate is shut
+  port 92h:
+    OK   set: the wrap is gone
+    OK   cleared: the wrap is back
+    OK   reads back what it was written
+  keyboard controller:
+    OK   D1h output port bit 1 clear: wrap present
+    OK   D1h output port bit 1 set: wrap gone
+    OK   D0h reads the output port back correctly
+    OK   D0h again, gate shut: bit 1 clear, no stale state
+    OK   DDh shortcut: wrap present
+    OK   DFh shortcut: wrap gone
+  INT 15h AH=24h:
+    OK   2400h disable: wrap present
+    OK   2401h enable: wrap gone
+    OK   2402h agrees the gate is open
+  and does XMS agree?
+    OK   function 07h tracked the hardware both ways
+A20TEST done - and the kernel is still here

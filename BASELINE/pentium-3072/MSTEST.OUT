@@ -1,0 +1,42 @@
+
+MSTEST - INT 33h from a DOS box
+  INT 33h points at a driver ok
+  00h reset: AX FFFFh, two buttons ok
+  24h version 8.20, and the type ok
+  21h software reset ok
+  2Ah hidden, hot spot 0,0, the type again ok
+  03h after a reset: the middle, no buttons ok
+  04h, and 03h rounds to a cell ok
+  26h 640 by 200 ok
+  07h range, and the pointer inside it ok
+  08h range ok
+  movement: 8 mickeys a cell across, 16 down ok
+  0Bh counts, and starts again ok
+  0Fh ratio ok
+  1Ah/1Bh speed 100 moves twice as far ok
+  1Ah back to 50 ok
+  back up and left ok
+  stops at the edge of the range ok
+  slow movement adds up ok
+  a PS/2 packet and a serial one, decoded ok
+  a PS/2 packet through the 8042 and IRQ 12 ok
+  05h/06h left press and release ok
+  05h/06h right and middle ok
+  text cursor drawn, moved, and kept off a write ok
+  0Ah hardware cursor ok
+  10h region hides it, 01h shows it ok
+  1Dh/1Eh page ok
+  15h/16h/17h save and restore ok
+  0Ch handler on movement, with the registers ok
+  0Ch handler on the buttons ok
+  0Ch mask chooses the events ok
+  14h swaps the handler out ok
+  18h/19h Ctrl handler ok
+  1Fh/20h disable and enable ok
+  INT 15h C2h refused ok
+  the 8042's mouse is out of a box's reach ok
+  32h, 25h, 6Dh, 4Dh ok
+  mode 13h cursor ok
+  mode 12h cursor, VGA registers kept ok
+  mode 4 cursor ok
+MSTEST done.

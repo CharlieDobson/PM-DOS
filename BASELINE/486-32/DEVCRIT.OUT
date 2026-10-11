@@ -1,0 +1,10 @@
+DEVCRIT - a character device that says no, and INT 24h
+
+ 1 TESTDEV is loaded and opens       FAILED
+
+TESTDEV.SYS is not loaded.  Put DEVICE=\TESTDEV.SYS in
+CONFIG.SYS and boot again: there is nothing else in this
+machine that can be made to fail on purpose.
+
+result: X
+failures: 1

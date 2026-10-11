@@ -1,0 +1,20 @@
+
+DPMIV32 - a 32-bit client's own handlers, and what is there without one
+
+ 1 into protected mode                    ok
+ 2 a thousand calls to the BIOS     ####  ok
+ 3 0204h: a default each      0047 00C0  ok
+ 4 INT 60h goes to real mode        6060  ok
+ 5 ...a thousand times, in ticks    ####  ok
+ 6 0205h: our handler answers       1234  ok
+ 7 ...and passes it on              6060  ok
+ 8 INT 21h through a handler (so is this) 0003  ok
+ 9 INT 10h through a handler        0001  ok
+10 INT 31h through a handler        0003  ok
+11 0205h: the default, given back         ok
+12 0205h refuses a data segment           ok
+13 IRQ 8, passed on, 1s        #### ####  ok
+14 ...and leaves the flags alone    ####  ok
+
+Result: ..............
+DPMIV32: all checks passed

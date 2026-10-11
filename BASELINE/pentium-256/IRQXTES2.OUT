@@ -1,0 +1,11 @@
+
+IRQXTEST - a resident driver's interrupts, with no box running
+
+ticks since /I ........... #
+INT 1Ch calls, 9/10 ...... # OK
+IRQ 8 interrupts, 3/tick . # OK
+and calls the clock did not ask for .. #
+and calls made in real mode ......... 0 OK
+Zs typed by INT 1Ch ...... # OK
+
+IRQXTEST: all checks passed

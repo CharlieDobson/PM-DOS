@@ -1,0 +1,39 @@
+NETTEST - a redirector of its own, on the DOS under Windows
+parking the kernel, to make the calls there...
+on RMDOS:
+  5D06h, the SDA at 0400:0320 ok
+  the highest letter with no drive: Z:, taken ok
+  1100h with no redirector: AL=00 ok
+  1100h with this one hooked: AL=FF ok
+  3Ch create a file: calls 17  ok
+  40h eleven bytes into it: calls 09  ok
+  4202h, compatibility mode, from the entry: calls  ok
+  3Eh: calls 06  ok
+  3Dh open it to read, deny none: calls 16  ok
+  4202h, deny none, from the redirector: calls 21  ok
+  3Fh read it into an odd offset: calls 08  ok
+  5700h, the date it was given: calls  ok
+  4400h and 440Ah, bit 15: calls 8059 8059 ok
+  45h, and both closed: calls 06 06  ok
+  5Bh on a name that is there: calls 17  ok
+  4409h on the drive:  calls 1000 ok
+  4301h and 4300h: calls 0E 0F  ok
+  4Eh and 4Fh, *.*: calls 1B 1C  ok
+  56h to a new name: calls 11  ok
+  39h, 3Bh, a relative 3Ch, 47h, 41h, 3Bh \, 3Ah: calls 03 05 17 06 13 05 01  ok
+  36h and 1Ch: calls 0C 0C  ok
+  60h: calls  ok
+  3Dh with a wildcard, refused before it is asked: calls  ok
+  4B00h, a program on the drive: calls 16 08 08 06 22 1D  ok
+  4B00h, a child that ends with a file there open: calls 16 08 08 06 16 22 06 1D  ok
+  with nobody on INT 2Fh, 3Dh fails and gives the handle back: 0001 ok
+  the letter put back, 3Dh on it: 0003 ok
+and what IFSMGR asks of a hard disk before it takes one:
+  4408h and 32h on C:, its block and the block's driver: AL=00 RMDISK  ok
+  the chain from LoL+0 reaches it, and C:'s CDS names it: ok
+  INT 25h sector 0 into xxxx:0012h, seen on INT 13h: 0201 buffer:0012 80 ok
+  2Fh AH=13h, and a handler of ours sees the next read: 0001 ok
+  checks failed here: 00
+the far side ended with 00
+all checks passed.
+NETTEST done

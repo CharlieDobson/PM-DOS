@@ -1,0 +1,17 @@
+
+FPUTEST - the coprocessor, MMX and SSE in a DOS box
+
+  the kernel says (21h/F1h AL=13h)  21
+  CPUID says                        00000139
+
+   1 a coprocessor answers                     ok
+   2 ...and the kernel says the same           ok
+   3 it can add                                ok
+   4 MMX                                       not in this processor
+   5 SSE runs                                  not in this processor
+   6 an unmasked error reaches INT 75h         this coprocessor reports no errors
+   8 a child starts with a fresh state         ok
+   9 control word and stack survive it  0F7F 3000 ok
+  10 ...and MXCSR                         no SSE here
+
+FPUTEST: all checks passed

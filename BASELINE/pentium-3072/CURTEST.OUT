@@ -1,0 +1,11 @@
+
+CURTEST - one cursor, or two?
+  the BIOS moves it, DOS writes:
+    OK   the character landed where the BIOS left the cursor
+    OK   and the BIOS can see where DOS left it
+  and alternating, on one line:
+    OK   INT 10h then INT 21h wrote YZ, side by side
+    OK   and both of them moved the cursor on
+  and DOS moves it, the BIOS reads it back:
+    OK   the same position, both ways round
+CURTEST done

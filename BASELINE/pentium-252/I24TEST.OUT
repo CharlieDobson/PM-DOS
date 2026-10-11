@@ -1,0 +1,5 @@
+I24TEST - a DOS box.s own INT 24h handler
+
+TESTDEV.SYS is not loaded.  Put DEVICE=\TESTDEV.SYS in
+CONFIG.SYS and boot again: it is the only failure in this
+machine that happens on every machine.

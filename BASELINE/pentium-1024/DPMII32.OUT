@@ -1,0 +1,14 @@
+
+DPMII32 - a card's interrupt, and its memory, in a 32-bit client
+
+ 1 into protected mode                    ok
+ 2 0205h: a handler on INT 70h            ok
+ 3 IRQ 8 arrives there, 1s          #### ok
+ 4 interrupts off/on           ####/#### ok
+ 5 0800h refuses the first megabyte       ok
+ 6 0800h maps FFFF0000h                   ok
+ 7 ...and it can be read                  ok
+ 8 ...and it is the ROM         EA5BE000 ok
+
+Result: ........
+DPMII32: all checks passed

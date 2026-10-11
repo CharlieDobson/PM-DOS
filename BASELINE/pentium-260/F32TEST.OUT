@@ -1,0 +1,18 @@
+F32TEST - 7302h, 7304h and 7305h, as DOS 7.1 has them
+
+ 1 7302h answers for the default drive    ok
+ 2 ...sector size agrees with 7303h       ok
+ 3 ...cluster size agrees with 7303h      ok
+ 4 ...cluster count agrees with 7303h     ok
+ 5 ...length word, and no DPB chain       ok
+ 6 a short buffer: 18h, and untouched     ok
+ 7 DL = the drive number names it         ok
+ 8 a guard-page pointer is refused        ok
+ 9 7304h reports the active-FAT flags     ok
+10 ...and refuses to change them          ok
+11 7305h reads sector 0, and it is a BPB  ok
+12 ...and insists on CX = FFFFh           ok
+13 ...and past the end is error 1Bh       ok
+
+Result: .............
+F32TEST: all checks passed

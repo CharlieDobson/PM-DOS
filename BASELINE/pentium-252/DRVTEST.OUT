@@ -1,0 +1,38 @@
+DRVTEST - a CONFIG.SYS driver asked what DOS asks one
+  52h: the IOCDEV device is in the chain behind NUL ok
+  3Dh: opened by name ok
+  4400h: device information C8C0 ok
+  4402h: the status block, opens counted 0001 ok
+  34h now, against what it said at INIT 0400:0321 ok
+  52h now, against what it said at INIT 0400:0026 ok
+  4402h: the 8-byte handshake, and the entry it gives ok
+  4403h: written, and read back by 4402h ok
+  40h: abc, x^Zy, and what it was given 0003 0001 0004 ok
+  3Fh cooked: a line, a line, the ^Z 0006 0006 0001 ok
+  4401h raw, then 3Fh: all of it C8E0 000D ok
+  4406h done and rewound, 4407h 00 FF FF ok
+  440Ch: GENI, and an unknown one fails 0016 ok
+  INT 2Fh DF00h: the hook from INIT ok
+  3Eh: closes counted 0001 ok
+  checks failed here: 00
+parking the kernel, to ask again...
+and on the DOS under Windows, after the handover:
+  52h: the IOCDEV device is in the chain behind NUL ok
+  3Dh: opened by name ok
+  4400h: device information C8C0 ok
+  4402h: the status block, opens counted 0001 ok
+  34h now, against what it said at INIT 0400:0321 ok
+  52h now, against what it said at INIT 0400:0026 ok
+  4402h: the 8-byte handshake, and the entry it gives ok
+  4403h: written, and read back by 4402h ok
+  40h: abc, x^Zy, and what it was given 0003 0001 0004 ok
+  3Fh cooked: a line, a line, the ^Z 0006 0006 0001 ok
+  4401h raw, then 3Fh: all of it C8E0 000D ok
+  4406h done and rewound, 4407h 00 FF FF ok
+  440Ch: GENI, and an unknown one fails 0016 ok
+  INT 2Fh DF00h: the hook from INIT ok
+  3Eh: closes counted 0001 ok
+  checks failed here: 00
+the far side ended with 00
+all checks passed.
+DRVTEST done

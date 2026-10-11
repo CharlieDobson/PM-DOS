@@ -1,0 +1,19 @@
+HOOKTEST: the DOS vectors through a program's own hooks, and ^C
+  ok    INT 21h went through a hook and on to DOS
+  ok    INT 2Fh went through a hook, and past it to the kernel's XMS
+  ok    the INT 21h vector answers PUSHF/CALL FAR, as a TSR chains
+  ok    INT 29h reached the screen
+  ok    INT 25h read sector 0, both forms, flags left on the stack
+  ok    INT 26h wrote it back and it reads the same
+  ok    ^C, handler IRETs: the read is made again
+  ok    ^C, handler RETF 2: the read is made again
+  ok    ^C, handler RETF with carry clear: the read is made again
+  ok    ^C, handler changes AH: that function is made instead
+  ok    ^C, handler RETF with carry set: the child ends, 4Dh says ^C
+  a child that ^C is about to end
+  ok    ^C, no handler: the default ends the child, 4Dh says ^C
+  ok    its own parent: 4Ch went to PSP:0Ah and the program carried on
+  ok    INT 24h hooked by a child is put back when it ends
+  ok    INT 2Fh AH=12h: install, 04h, 11h, 12h, 13h, 1Ah and 1Eh answer as DOS does
+  ok    0Bh sees a key in the buffer, and 08h reads it
+HOOKTEST: 0 failed

@@ -1,0 +1,43 @@
+LOCKTEST: the locks at 40:17, the lights at 40:97, and the keys
+nothing pressed    00 0  
+keypad 7 5 1 .     00 0  4700 4F00 5300 
+num lock           20 2  
+keypad 7 5 1 .     20 2  4737 4C35 4F31 532C 
+shift keypad 7 1   20 2  4700 4F00 
+ctrl keypad 4 5 6  20 2  7300 8F00 7400 
+keypad - +         20 2  4A2D 4E2B 
+cursor left, home  20 2  4BE0 47E0 
+num lock, held     00 0  
+shift keypad 7 1   00 0  4737 4F31 
+caps lock          40 4  
+key 1E, shift 1E   40 4  1E41 1E61 
+caps lock, held    00 0  
+key 1E             00 0  1E61 
+scroll lock        10 1  
+pause              10 1  
+ctrl num lock      10 1  
+ctrl break         10 1  
+ctrl scroll lock   10 1  
+num, ctrl, num up  10 1  
+num and caps lock  70 7  
+written: num off   50 5  
+written: all off   00 0  
+with INT 09h hooked, and each key passed on:
+nothing pressed    00 0  
+keypad 7 5 1 .     00 0  4700 4F00 5300 
+num lock           20 2  
+keypad 7 5 1 .     20 2  4737 4C35 4F31 532C 
+shift keypad 7 1   20 2  4700 4F00 
+ctrl keypad 4 5 6  20 2  7300 8F00 7400 
+keypad - +         20 2  4A2D 4E2B 
+cursor left, home  20 2  4BE0 47E0 
+num lock, held     00 0  
+shift keypad 7 1   00 0  4737 4F31 
+caps lock          40 4  
+key 1E, shift 1E   40 4  1E41 1E61 
+caps lock, held    00 0  
+key 1E             00 0  1E61 
+scroll lock        10 1  
+num and caps lock  70 7  
+written: num off   50 5  
+written: all off   00 0  

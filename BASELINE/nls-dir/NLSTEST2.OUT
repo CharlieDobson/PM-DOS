@@ -1,0 +1,13 @@
+38h, the country in use     - 0031 0031 01 00 44 4D 00 00 00 2E 00 2C 00 2E 00 3A 00 03 02 01 D0 02 00 04 3B 00 
+38h, country 49             - 0031 0031 01 00 44 4D 00 00 00 2E 00 2C 00 2E 00 3A 00 03 02 01 D0 02 00 04 3B 00 
+38h, country 998            C 0002 03E6 
+6501h, in use               - 0029 01 26 00 31 00 52 03 01 00 44 4D 00 00 00 2E 00 2C 00 2E 00 3A 00 03 02 01 
+6501h, country 33, page 850 - 0029 01 26 00 21 00 52 03 01 00 46 00 00 00 00 20 00 2C 00 2F 00 3A 00 03 02 01 
+6501h, into ten bytes       - 000A 01 07 00 31 00 52 03 01 00 44 FE FE 
+6502h: length, sum, 80h-8Fh 0080 F718 80 9A 90 B6 8E B7 8F 80 D2 D3 D4 D8 D7 DE 8E 8F 
+6506h: length, sum, 80h-8Fh 0100 8548 43 55 45 41 41 41 41 43 45 45 45 49 49 49 41 41 
+6520h on 61 7A 81 82 84 87 94 A4 E1: 41 5A 9A 90 8E 80 99 A5 E1 
+the case-map call on the same:       61 7A 9A 90 8E 80 99 A5 E1 
+6521h on a string           50 4D 2D 44 4F 53 9A 8E 99 90 
+6523h: y=2 Y=2 n=0 N=0 j=1 J=1 o=2 O=2 s=2 S=2 k=2 K=2 e=2 E=2 t=2 T=2 x=2 
+6601h, in use/at startup    850/437

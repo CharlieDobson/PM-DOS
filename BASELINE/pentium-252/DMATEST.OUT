@@ -1,0 +1,8 @@
+
+DMATEST - does the 8237 write where a DOS box said?
+
+channel 3 reads back ... 4010/0C/01FF OK
+channel 5 reads back ... 2008/0C/00FF OK
+Sound Blaster at 220h .. none (the rest is skipped)
+
+DMATEST: all checks passed

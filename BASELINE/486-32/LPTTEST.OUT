@@ -1,0 +1,7 @@
+LPTTEST - is there a printer port on this machine?
+BIOS says LPT1 is at port: 0378
+status register reads:     00DF
+data register reads back:  0041  and  0055
+four strobes, A B C D, sent.
+and one line through INT 17h.
+Look in VMs\PM-DOS\printer for a .txt naming which one worked.

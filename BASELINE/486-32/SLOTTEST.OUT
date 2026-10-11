@@ -1,0 +1,10 @@
+SLOTTEST - every EXEC level in a slot of its own
+
+ 1 levels nest, and keep their memory    ok
+     levels below this one: 7
+ 2 a null pointer still faults: 255      ok
+ 3 ...and the guard page's last dword    ok
+ 4 every slot went back to the arena     ok
+
+Result: ....
+SLOTTEST: all checks passed

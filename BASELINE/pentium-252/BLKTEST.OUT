@@ -1,0 +1,12 @@
+BLKTEST - a CONFIG.SYS block driver, as a drive on both DOSes
+  36h: the 32K drive is D: ok
+  3Ch/40h: KERNEL.TXT written on it ok
+parking the kernel, to use it from there...
+and on the DOS under Windows, after the handover:
+  36h: the 32K drive is D: ok
+  3Dh/3Fh: KERNEL.TXT, as the kernel wrote it ok
+  3Ch/40h: RMDOS.TXT written on it ok
+the far side ended with 00
+  back on the kernel, RMDOS.TXT as RMDOS wrote it ok
+all checks passed.
+BLKTEST done

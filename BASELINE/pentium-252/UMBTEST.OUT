@@ -1,0 +1,16 @@
+UMBTEST - upper memory, from inside a DOS box
+
+upper memory begins at segment 9FFF
+ 1 they start linked                 ok
+ 2 the strategy byte round-trips     ok
+ 3 48h upper-only lands up there     ok
+ 4 and the memory is really there    ok
+ 5 49h takes it back                 ok
+ 6 58h/03h unlinks them              ok
+ 7 unlinked, upper-only must fail    ok
+ 8 relinked, and it works again      ok
+ 9 the MCB chain runs through it     ok
+10 XMS 10h hands out the same pool   ok
+11 XMS 11h releases it               ok
+
+results: ...........   failures: 00

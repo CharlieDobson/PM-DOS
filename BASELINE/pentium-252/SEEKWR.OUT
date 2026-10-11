@@ -1,0 +1,27 @@
+SEEKWR - writes past the end, and the write of nothing
+--- on the kernel
+4 bytes at 100000 in an empty file: ok
+  100004 long: ok
+  read back from 100000: ok
+nothing written at 300000, 300000 long: ok
+  its clusters taken from the free count: ok
+4 bytes at 250000, read back: ok
+  the ones at 100000 still there: ok
+nothing written at 50000, 50000 long: ok
+  the clusters past it given back: ok
+closed and opened again, still 50000 long: ok
+deleted, every cluster back: ok
+parking the kernel, to make them there too...
+--- on RMDOS
+4 bytes at 100000 in an empty file: ok
+  100004 long: ok
+  read back from 100000: ok
+nothing written at 300000, 300000 long: ok
+  its clusters taken from the free count: ok
+4 bytes at 250000, read back: ok
+  the ones at 100000 still there: ok
+nothing written at 50000, 50000 long: ok
+  the clusters past it given back: ok
+closed and opened again, still 50000 long: ok
+deleted, every cluster back: ok
+SEEKWR: all ok

@@ -1,0 +1,8 @@
+
+ALLOCTST - does a program's memory come back?
+(the leak is silent: it is a largest-free-block that shrinks)
+
+  1 asked for and freed by the same program   ok
+  2 asked for by a child that never freed it  ok
+
+ALLOCTST: all checks passed

@@ -1,0 +1,19 @@
+VBETEST - VBE and the linear frame buffer, for a native program
+
+ 1 VBF_INFO: the VESA block and its mode list ......... ok
+     VBE 2.0, 2048K, 53 modes: S3 Incorporated. Trio64
+ 2 VBF_MODE for every mode, and one to test with ...... ok
+     testing mode 0101h: 640x480, 8 bits
+ 3 VBF_SET: SEL_VBE, its limit, and the mode set ...... ok
+ 4 all of video memory, written and read back ......... ok
+ 5 4F07h moves the display start, and says so ......... ok
+ 6 VBF_PALETTE: 256 entries set and read back ......... ok
+ 7 bad requests refused, with the right errors ........ ok
+ 8 a child's mode 13h, and this one's back after it ... ok
+ 9 VGA mode 13h: the 64K window at A0000h ............. ok
+10 VBF_RESTORE: the first mode back, SEL_VBE empty .... ok
+11 a child leaves a mode set: the first one back ...... ok
+12 a child faults in its mode: the first one back ..... ok
+
+Result: ............
+VBETEST: all checks passed

@@ -1,0 +1,21 @@
+
+SHARETST - file sharing and record locking
+-------------------------------------------
+2Fh/1000h installed?          OK
+compat read, twice            OK
+deny-write beside compat: 20h OK
+deny-write + deny-none read   OK
+...+ deny-none write: 20h     OK
+3Ch on a deny-all file: 20h   OK
+two r/w handles, lock 0-9     OK
+lock 5-14 on the other: 21h   OK
+lock 0-9 again, same one: 21h OK
+read 0-3 on the other: 21h    OK
+read 0-3 on the locker        OK
+read 10-13 on the other       OK
+unlock, then read on the otherOK
+unlock again: 21h             OK
+twenty locks, then 24h        OK
+close frees them all          OK
+
+SHARETST done, 0 failed

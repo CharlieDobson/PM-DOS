@@ -1,0 +1,13 @@
+
+BUFTEST - what a DOS call may be told to write on
+
+  1 40h reading the thunk frame        ok
+  2 3Fh writing the thunk frame        ok
+  3 3Fh whose COUNT reaches the kernel ok
+  4 1Ah refused, old DTA intact        ok
+  5 a DTA in the HMA is allowed        ok
+  6 ...but 4Eh will not fill it        ok
+  7 DTA back, ordinary find works      ok
+  8 file still at 0 and unchanged      ok
+
+tests: ........  failures: 00

@@ -1,0 +1,16 @@
+
+VPICTEST - does a DOS box get a card's interrupt?
+
+mask, first controller .. A5 OK
+mask, second controller . 5A OK
+clock runs, all masked ..  OK
+IRQ 8 at INT 70h, 1s .... #### OK
+in service, in handler .. 01/04 OK
+in service, outside it .. 00/00 OK
+interrupts with no EOI .. 0001 OK
+and after the EOI ....... #### OK
+interrupts while masked . 0000 OK
+and after unmasking ..... #### OK
+IRQ 4 at INT 0Ch, COM1 .. 0001 OK
+
+VPICTEST: all checks passed

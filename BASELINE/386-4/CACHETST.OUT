@@ -1,0 +1,4 @@
+
+CACHETST - the disk cache through INT 2Fh AX=4A10h
+-------------------------------------------------
+4A10/0000 installed?    no cache installed - nothing to test

@@ -1,0 +1,28 @@
+PCITEST - what is on the PCI bus?
+
+ 1 the kernel answers                     ok
+    buses: 1, functions: 2, level-triggered lines: 0000
+    00:00.0  121A:0001  class 040000
+    00:01.0  5333:8811  class 030000
+ 2 the bus says the same                  ok
+ 3 and the list ends there                ok
+ 4 each is found by vendor and device     ok
+ 5 and by class                           ok
+ 6 a register in three widths             ok
+ 7 a byte written, and only that byte     skipped
+      register 0: memory D0000000 size 01000000 prefetchable
+      register 0: memory E0000000 size 00800000 prefetchable
+ 8 what each card decodes                 ok
+ 9 a card's memory can be mapped          ok
+    mapped D0000000 for 16384K
+10 memory is where it is said to be       ok
+11 whose interrupt line is whose          ok
+    line 0: kernel open   taken #, to a box #, unclaimed 0
+    line 1: kernel open   taken #, to a box #, unclaimed 0
+    line 2: kernel open   taken #, to a box #, unclaimed 0
+    line 8: box    open   taken #, to a box #, unclaimed 0
+    line 12: kernel open   taken #, to a box #, unclaimed 0
+    line 13: kernel open   taken #, to a box #, unclaimed 0
+
+Result: ......-....
+PCITEST: all checks passed

@@ -1,0 +1,17 @@
+
+FPU32 - the coprocessor, MMX and SSE in a native program
+
+  the kernel says (21h/F1h AL=13h)  21
+  CPUID says                        00000009
+
+   1 the kernel says there is a coprocessor    ok
+   2 it can add                                ok
+   3 MMX                                       not in this processor
+   4 SSE runs                                  not in this processor
+   5 a child starts with a fresh state         ok
+   6 control word and stack survive it  0F7F 3000 ok
+   7 ...and MXCSR                         no SSE here
+   8 a DOS program as the child: the same      ok
+   9 control word and stack survive it  0F7F 3000 ok
+
+FPU32: all checks passed

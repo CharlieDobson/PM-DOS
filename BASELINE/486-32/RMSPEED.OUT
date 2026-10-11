@@ -1,0 +1,5 @@
+RMSPEED - what does a DOS call cost here?
+20000 x AH=30h # ticks, # ms each
+ 2000 x INT 13h read # ticks, # ms each
+  200 x open+close   C:\WINDOWS\SYSTEM.INI would not open, code     2
+done.
