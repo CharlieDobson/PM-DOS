@@ -51,11 +51,12 @@ p_loop:
         jne     p_time
         inc     dword ptr [npoll]
 p_time:
-        ; THE TIME, ONE TURN IN 256.  2Ch asks the BIOS's clock, from real
-        ; mode, and every such call is a window in which the clock's
-        ; interrupts reach a handler through the vector table in real mode
-        ; rather than as this test means them to - asked on every turn it
-        ; was most of them.
+        ; THE TIME, ONE TURN IN 256.  2Ch asked the BIOS's clock, from real
+        ; mode, when this was written, and every such call was a window
+        ; in which the clock's interrupts reached a handler through the
+        ; vector table in real mode rather than as this test means them
+        ; to - asked on every turn it was most of them.  2Ch counts ticks
+        ; now and asks the BIOS once a minute; one turn in 256 still does.
         inc     byte ptr [turns]
         jnz     p_loop
         call    secs

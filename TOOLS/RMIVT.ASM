@@ -8,15 +8,15 @@
 ; page is read-only.  A BIOS call now runs with a copy of the table
 ; taken when CONFIG.SYS was finished (IO\RMCALL.INC, rm_freeze).
 ;
-;   1  INT 1AH HOOKED, AND 2CH ASKED A HUNDRED TIMES.  The kernel reads
+;   1  INT 1AH HOOKED, AND 2AH ASKED A HUNDRED TIMES.  The kernel reads
 ;      the clock through INT 1Ah; the hook is not called in real mode.
 ;   2  THE BOX'S OWN INT 1AH still reaches the hook.
-;   3  INT 08H AND INT 1CH HOOKED, and 2Ch asked for a second: neither
+;   3  INT 08H AND INT 1CH HOOKED, and 2Ah asked for a second: neither
 ;      is called in real mode.
 ;   4  THE CLOCK'S PERIODIC INTERRUPT, 64 a second, goes on arriving
-;      while 2Ch is asked for a second, and never in real mode.  The
+;      while 2Ah is asked for a second, and never in real mode.  The
 ;      BIOS's handler, given one of a program's, switches it off.
-;   5  2CH ASKED ON EVERY TURN for two of the real-time clock's
+;   5  2AH ASKED ON EVERY TURN for two of the real-time clock's
 ;      seconds: 40:6C counts eighteen a second.  Moving the 8259s'
 ;      vector bases for every call threw away a tick that was waiting,
 ;      and on 86Box's 486 a quarter of them went.
@@ -25,6 +25,15 @@
 ;
 ; On an emulator whose BIOS answers at once, few interrupts land
 ; inside a call; on one whose BIOS waits for the clock, many do.
+;
+; 2AH, THE DATE, AND NOT 2CH, THE TIME, which is what this asked until
+; 2026-10-11.  2Ch was a BIOS call every time then; it counts the
+; timer's ticks now and asks the BIOS once a minute (INT21.INC, fn2C),
+; so a loop of it no longer takes the kernel down to real mode at all
+; and every check here passed without testing anything.  2Ah still asks
+; the clock chip for the date on every call.  The second that checks 5
+; and 6 wait for is read by this program's own INT 1Ah, which is a call
+; made in the box and not one of the kernel's.
 ;
 ; Linked with:  wlink form raw bin order clname CODE offset=0x100
 ;=====================================================================
@@ -66,16 +75,16 @@ start:
         pop     es
 
 ;=====================================================================
-; 1 - INT 1Ah, from the kernel's 2Ch
+; 1 - INT 1Ah, from the kernel's 2Ah
 ;=====================================================================
         mov     dx,OFFSET h1a
         mov     ax,251Ah
         int     21h
         mov     dx,OFFSET t_1arm
         call    puts
-        mov     di,100                  ; not CX, which 2Ch answers in
+        mov     di,100                  ; not CX, which 2Ah answers in
 c1_lp:
-        mov     ah,2Ch
+        mov     ah,2Ah
         int     21h
         dec     di
         jnz     c1_lp
@@ -113,7 +122,7 @@ c2_unhook:
         pop     ds
 
 ;=====================================================================
-; 3 - INT 08h and INT 1Ch, while 2Ch is asked for a second
+; 3 - INT 08h and INT 1Ch, while 2Ah is asked for a second
 ;=====================================================================
         mov     dx,OFFSET h08
         mov     ax,2508h
@@ -130,7 +139,7 @@ c2_unhook:
         mov     si,es:[6Ch]
         mov     dword ptr [turns],00100000h     ; a clock that does not move
 c3_lp:
-        mov     ah,2Ch
+        mov     ah,2Ah
         int     21h
         mov     ax,es:[6Ch]
         sub     ax,si
@@ -162,7 +171,7 @@ c3_bad:
         call    bad
 
 ;=====================================================================
-; 4 - the clock's own interrupt, 64 a second, while 2Ch is asked for a
+; 4 - the clock's own interrupt, 64 a second, while 2Ah is asked for a
 ;     second: it goes on arriving, and it is never called in real mode
 ;=====================================================================
 c4:
@@ -204,7 +213,7 @@ c4:
         mov     si,es:[6Ch]
         mov     dword ptr [turns],00100000h
 c4_lp:
-        mov     ah,2Ch
+        mov     ah,2Ah
         int     21h
         mov     ax,es:[6Ch]
         sub     ax,si
@@ -256,7 +265,7 @@ c4b_bad:
         call    bad
 
 ;=====================================================================
-; 5 - 2Ch on every turn, at the BIOS's own rate
+; 5 - 2Ah on every turn, at the BIOS's own rate
 ;=====================================================================
 c5:
         mov     dx,OFFSET t_clock
@@ -396,17 +405,17 @@ rtcput:
 
 ;=====================================================================
 ; clock2s - AX = how far 40:6C moves in two of the real-time clock's
-;           seconds, asking 2Ch on every turn.
+;           seconds, asking 2Ah on every turn.
 ;=====================================================================
 clock2s:
         push    bx
         push    es
         mov     bx,40h
         mov     es,bx
-        call    sec2c                   ; to the edge of a second
+        call    secrtc                  ; to the edge of a second
         mov     bx,es:[6Ch]
-        call    sec2c
-        call    sec2c
+        call    secrtc
+        call    secrtc
         mov     ax,es:[6Ch]
         sub     ax,bx
         pop     es
@@ -414,22 +423,36 @@ clock2s:
         ret
 
 ;=====================================================================
-; sec2c - 2Ch until its seconds change.  Bounded by a turn count.
+; secrtc - until the real-time clock's second changes, with 2Ah asked
+;          on every turn.  2Ah is the kernel going down to the BIOS;
+;          the second is read by this program's own INT 1Ah, in the
+;          box.  A clock that is busy (CF) is asked again.  Bounded by
+;          a turn count.
 ;=====================================================================
-sec2c:
+secrtc:
         pusha
-        mov     ah,2Ch
-        int     21h
-        mov     bl,dh
         mov     dword ptr [turns],00400000h
-s2_lp:
-        mov     ah,2Ch
-        int     21h
-        cmp     dh,bl
-        jne     s2_out
+sr_first:
+        mov     ah,02h
+        int     1Ah
+        jnc     sr_have
         dec     dword ptr [turns]
-        jnz     s2_lp
-s2_out:
+        jnz     sr_first
+        jmp     short sr_out
+sr_have:
+        mov     bl,dh
+sr_lp:
+        mov     ah,2Ah
+        int     21h
+        mov     ah,02h
+        int     1Ah
+        jc      sr_same
+        cmp     dh,bl
+        jne     sr_out
+sr_same:
+        dec     dword ptr [turns]
+        jnz     sr_lp
+sr_out:
         popa
         ret
 
@@ -515,12 +538,12 @@ fails       db  0
 
 msg_hi      db  13,10,'RMIVT - does a BIOS call reach a DOS box''s vectors?'
             db  13,10,13,10,'$'
-t_1arm      db  'INT 1Ah, real mode, 2Ch x100 .. $'
+t_1arm      db  'INT 1Ah, real mode, 2Ah x100 .. $'
 t_1abox     db  'INT 1Ah, from the box ......... $'
 t_tick      db  'INT 08h/1Ch, in real mode ..... $'
 t_rtc       db  'IRQ 8 at 64 a second, 1s ...... $'
 t_rtcrm     db  'IRQ 8, in real mode ........... $'
-t_clock     db  '2Ch: clock in 2 RTC s ......... $'
+t_clock     db  '2Ah: clock in 2 RTC s ......... $'
 t_fast      db  'timer x4: clock in 2 RTC s .... $'
 msg_ok      db  ' OK',13,10,'$'
 msg_bad     db  ' FAILED',13,10,'$'

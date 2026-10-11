@@ -32,6 +32,20 @@ _KT     SEGMENT USE16 PUBLIC 'CODE'
         ORG     0
 
 start:
+        ; NUM LOCK ON AND THE OTHER TWO OFF, until the end.  The
+        ; keypad's row and the Caps Lock rows take that for granted,
+        ; and how the BIOS left the three is a different answer on
+        ; every machine.  LOCKTEST is the one that asks about them.
+        push    es
+        push    40h
+        pop     es
+        mov     al,es:[17h]
+        mov     [was17],al
+        and     al,8Fh
+        or      al,20h
+        mov     es:[17h],al
+        pop     es
+
         mov     dx,OFFSET msg_plain
         call    puts
         call    run_cases
@@ -60,6 +74,17 @@ start:
         mov     ax,[n_int9]
         call    put4
         call    crlf
+
+        push    es                      ; the locks as they were found
+        push    40h
+        pop     es
+        mov     al,es:[17h]
+        and     al,8Fh
+        mov     ah,[was17]
+        and     ah,70h
+        or      al,ah
+        mov     es:[17h],al
+        pop     es
         mov     ax,4C00h
         int     21h
 
@@ -213,6 +238,7 @@ msg_hooked  db  'with INT 09h hooked, and each key passed on:',13,10,'$'
 msg_count   db  'INT 09h calls the handler saw: $'
 old9        dd  0
 n_int9      dw  0
+was17       db  0
 
 _KT     ENDS
         END     start

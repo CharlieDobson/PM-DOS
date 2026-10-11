@@ -19,6 +19,9 @@ param(
 #   KEYB xx     the layout, and KEYB alone to say which
 #   KBLTEST     forty keys pressed by scan code, with INT 09h alone and
 #               with a handler passing each one on (TOOLS\KBLTEST.ASM)
+#   LOCKTEST    Caps, Num and Scroll Lock, where the handler the keys
+#               are passed on to is KEYB's stub and not the ROM's, and
+#               again after a park (TOOLS\LOCKTEST.ASM)
 #   DIR, CHCP   what the interpreter makes of the country
 #   SFTSCAN     parks the kernel under the real-mode DOS and comes back,
 #               so that KBLTEST after it is the layout after a park
@@ -35,7 +38,7 @@ $all = [ordered]@{
     # the kernel's own country: every way KEYB can be asked and refused,
     # and a second Italian keyboard by its ID
     'nls-us' = @( '', 'KEYB,KEYB XX,KEYB GR;999,KEYB GR;;C:\NOSUCH.SYS,KEYB /?,KEYB GR IT,KEYB IT;;/ID:142,KEYB,KBLTEST,KEYB US,KEYB,CHCP,CHCP 850,CHCP 999,CHCP' )
-    'nls-gr' = @( 'COUNTRY=049', 'NLSTEST,KEYB GR,KEYB,KBLTEST,SFTSCAN,KBLTEST,KEYB US,KEYB,CHCP 850,CHCP,NLSTEST' )
+    'nls-gr' = @( 'COUNTRY=049', 'NLSTEST,KEYB GR,KEYB,KBLTEST,LOCKTEST,SFTSCAN,KBLTEST,LOCKTEST,KEYB US,KEYB,CHCP 850,CHCP,NLSTEST' )
     'nls-fr' = @( 'COUNTRY=033,850', 'NLSTEST,KEYB FR,KEYB,KBLTEST' )
     'nls-uk' = @( 'COUNTRY=044', 'NLSTEST,KEYB UK,KBLTEST' )
     'nls-dk' = @( 'COUNTRY=045', 'NLSTEST,KEYB DK,KEYB,KBLTEST' )

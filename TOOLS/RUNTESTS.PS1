@@ -129,7 +129,7 @@ $default = @(
     'CFGTEST', 'CTRYDMP', 'CTRYTEST', 'CURTEST', 'DEVCRIT', 'DEVTEST', 'DMATEST', 'DPMIFP32', 'DPMIFPU',
     'DPMII32', 'DPMIIRQ', 'DPMITEST', 'DPMIV32', 'DPMIVEC', 'DRIVES', 'EMSTEST', 'EXECLEAK', 'EXECTST',
     'F32TEST', 'FCBTEST', 'FNDTEST', 'FPU32', 'FPUTEST', 'HELLO', 'HELLOX', 'HNDTEST', 'HOOKTEST',
-    'HWPROBE', 'I13TEST', 'I24TEST', 'IDLETEST /T', 'IRQTEST', 'ISAPNP', 'KBLTEST', 'LFNAPI', 'LOLTEST', 'LPTTEST',
+    'HWPROBE', 'I13TEST', 'I24TEST', 'IDLETEST /T', 'IRQTEST', 'ISAPNP', 'KBLTEST', 'LFNAPI', 'LOCKTEST', 'LOLTEST', 'LPTTEST',
     'MCBTEST', 'MEMPROBE', 'MS32TEST', 'MSTEST', 'NICIRQ', 'NLSTEST', 'PCITEST', 'PEKID', 'PMD /S', 'PROBE13', 'R3TEST',
     'RMFIND', 'RMFSTEST', 'RMIVT', 'RMSPEED', 'RMTEST', 'SFTSCAN',
     # these four park the kernel too, as SFTSCAN does, so they follow it:
@@ -169,7 +169,7 @@ $masks = @(
     , @( '(clock ticks in 2 RTC s \.+ )[0-9A-F]{4}', '$1####' )
     # RMIVT: the same count, with the kernel calling the BIOS meanwhile
     # (its IRQ 8 count is ", 1s" above)
-    , @( '((2Ch|timer x4): clock in 2 RTC s \.+ )[0-9A-F]{4}', '$1####' )
+    , @( '((2Ah|timer x4): clock in 2 RTC s \.+ )[0-9A-F]{4}', '$1####' )
     # IRQXTEST and IRQXWAIT: what happened while the clock ran
     , @( '(ticks since /I \.+ )\d+', '$1#' )
     , @( '(INT 1Ch calls, 9/10 \.+ )\d+', '$1#' )
