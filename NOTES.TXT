@@ -13387,6 +13387,118 @@ reached its prompt again.  HD32, HDBIG and MULTI do not.  The rig's
 two programs (CADTEST, A20Q) are not in the tree.  Still v0.63.
 
 
+v0.64 - THE SHELL, SCANDISK, PMD AND A PDF READER; A COUNTRY AND A
+        KEYBOARD; LRGDISK 1.4 (2026-10-11)
+---------------------------------------------------------------------
+
+Charlie, with pre-release merged into main and the branch deleted:
+"Let's tag the kernel as v0.64 so I can turn this into a new release".
+INC\PMVER.INC now says 64.  The entries above, from "RMDOS.SYS AND
+RMCD.SYS ARE SYSTEM FILES" on 2026-10-09 down to the Ctrl-Alt-Del one,
+are this release.  Most of them end "Still v0.63"; that is left as
+written.  This entry is the list.
+
+PROGRAMS
+  - DOSSHELL.EXE is the MS-DOS Shell made again as a native program:
+    the file windows, the program list, the menus and DOSSHELL.INI, in
+    text, in the EGA's and the VGA's graphics modes, and in 640x480
+    with 256 colours where the video BIOS has VBE 2.0.
+  - SCANDISK.EXE checks FAT12, FAT16 and FAT32 volumes and their long
+    file names, scans the surface, keeps an Undo file and reads
+    SCANDISK.INI, with MS-DOS 6.22's switches.  Its screens are MS-DOS
+    ScanDisk's, in text and (/G) in graphics.
+  - PMD.EXE is MSD for the system itself: MSD's thirteen pages, its
+    report and its switches, and a processor asked through CPUID.
+  - ACROREAD.EXE reads PDF files, a page as a picture (VBE 2.0 at
+    640x480, or 16 grays on any VGA) or as its text, with a mouse,
+    scroll bars and a menu bar.  There is no floating point in it, so a
+    386 with no coprocessor runs it.
+  - CHKDSK /F works again.  Its lock call had been refused since 440Dh
+    began to check a native program's pointer, and the check at boot
+    went with it; writing SCANDISK found that.
+
+THE KERNEL
+  - A country and a keyboard, as MS-DOS has them.  COUNTRY= reads
+    COUNTRY.SYS, which is in MS-DOS's format and has forty countries;
+    KEYB.COM loads a layout out of KEYBOARD.SYS; CMD.EXE follows the
+    country's date order and separators and has CHCP.
+  - The system's files need not be in the root.  They are looked for
+    beside the interpreter (SHELL=C:\DOS\CMD.EXE /P) and then in the
+    root of the boot drive.  PMIO.SYS, PMDOS.SYS, CONFIG.SYS and
+    AUTOEXEC.BAT are what still has to be there.
+  - RMDOS.SYS is read-only, hidden and system, as PMIO.SYS and
+    PMDOS.SYS are, and SYS carries it.  RMCD.SYS is an ordinary file.
+  - A D32 program begins 'CD', and every command has an MS-DOS program
+    in front of it that says what it needs when MS-DOS starts it
+    (TOOLS\D32BIND.C, D32STUB.ASM).
+  - Caps, Num and Scroll Lock are the bits at 40:17 and nothing else.
+    The keyboard's lights follow them, the keypad follows Num Lock,
+    and NUMLOCK= in CONFIG.SYS does what it says.
+  - INT 21h/2Ch counts timer ticks and no longer asks the BIOS every
+    time, so it has hundredths: EDIT's, DOSSHELL's and FDISK's mouse
+    and SCANDISK's screen were waiting on them.
+  - A CD-ROM's directory is counted through once, not once for every
+    record in it.  DOSSHELL had stopped at the ninety-sixth directory
+    of Charlie's disc.
+  - Ctrl-Alt-Del goes back to real mode, writes 1234h at 40:72 and
+    jumps to the ROM at FFFF:0000.  It was a reset through the 8042
+    and a triple fault in the same breath; Charlie's machine beeped
+    and would not start again.
+  - 21h/F1h has three more calls for native programs: AL=20h (bytes
+    below 1MB), 21h (a BIOS call off a list) and 22h (a keyboard
+    layout handed to the kernel).
+
+WINDOWS
+  - LRGDISK.386 is 1.4.  1.3 moves PIO by the block (READ and WRITE
+    MULTIPLE), looks for the next block before it leaves the
+    interrupt, and moves 32 bits at a time where that is proven.  1.4
+    has a device number (4C44h) and answers what it has in use, and
+    LRGSTAT.EXE, a Windows program, shows the answer.
+
+BUILD, TESTS AND FILES
+  - RUNTESTS: 87 tests on each of seven machines.  New: PMD /S,
+    KBLTEST, NLSTEST and LOCKTEST.  TOOLS\NLSTESTS.PS1 boots a machine
+    for each of nine country rows.
+  - BASELINE is not in the repository any more.  Charlie took it out
+    and .gitignore names it (b02e2f8, 3116014); the answers are in the
+    directory as before, where RUNTESTS reads them, and no diff shows
+    one moving.
+  - One branch.  pre-release was merged into main (0b5218b) and
+    deleted.
+  - New in the tree: CMD\DOSSHELL, CMD\SCANDISK, CMD\PMD, CMD\ACROREAD
+    and CMD\KEYB; NLS\ and DOS\NLS.INC; CMD\LRGDISK\LRGSTAT.C and
+    LRGAPI.ASM; TOOLS\D32BIND.C and D32STUB.ASM; and the sources of
+    the new tests in TOOLS\.
+
+PMIO.SYS is 59,099 bytes, PMDOS.SYS 163,254, RMDOS.SYS 61,219,
+RMCD.SYS 5,778, CMD.EXE 60,207 and LRGDISK.386 25,949.
+
+THE STAMP.  Three files read the equate.  PMDOS.SYS has it in two
+places, CMD.EXE and COMMAND.COM in one each.  The rebuild, in a mirror
+of the tree at 3116014, changed those four bytes (3Fh to 40h).  Of the
+other 146 files the build puts in BIN, 145 came out byte for byte as
+S:\BIN had them, and so did TESTS.IMG.
+  THE ONE THAT DID NOT IS LRGDISK.386.  Charlie reworded six of its
+messages in e9e06b6 and the copy in BIN had been built before that.
+It is 25,949 bytes with his words in it and was 25,939: the six lines
+are ten bytes longer between them.  This release carries the new one.
+  RUNTESTS is 87 x 7 with one baseline moved on every row: PMD /S
+prints the version, and "OS Version: PM-DOS 0.64, as MS-DOS 6.22" in
+PMD.OUT is all that moved.  NLSTESTS is nine rows with nothing moved.
+  S:\BIN, IMAGES\PMDOS.IMG, IMAGES\HD16.IMG and the 86Box VM's two
+copies carry it, and the four files were read back out of all four
+images.  Booted headless, a copy of the VM's HD16.IMG and a floppy
+made of S:\BIN as delivered both said "PM-DOS version 0.64" to VER,
+COMMAND /C VER and CMD /C VER.  HD32, HDBIG, MULTI, PMDOSATA and
+PMDOSFDD were not rebuilt.
+
+ON CHARLIE'S MACHINE, by his own word: the lock lights ("Lights are
+working correctly now") and Ctrl-Alt-Del ("It is working now").  These
+notes do not say which machine the rest was run on.  STILL OPEN, as
+under 0.63: Quarterdeck's Manifest for Windows, and Turbo Pascal 7's
+TPX and anything else on Borland's RTM.
+
+
 v0.61 - THE NUMBER CAUGHT UP (2026-09-30)
 ---------------------------------------------------------------------
 
