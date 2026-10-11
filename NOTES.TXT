@@ -11584,6 +11584,243 @@ rebuilt.  The whole BUILD.CMD was not run: ACROREAD's section was,
 word for word, in a mirror.  Still v0.63.
 
 
+LRGDISK 1.4 AND LRGSTAT: WHAT IS IN USE, ON A SCREEN (2026-10-11)
+---------------------------------------------------------------------
+
+Charlie asked for a companion program, or a Control Panel one, that
+shows which of LRGDISK's features are used and which are not - to
+look at, not to change anything with: "I don't know if I want the
+companion app to allow users to make changes to the behavior right
+now.  I just want to be able to see visually what got selected for
+use."  It is LRGSTAT.EXE, a Windows program, and LRGDISK had to learn
+to answer a question first.
+
+WHY THE DRIVER HAD TO CHANGE.  LRGDISK.TXT was the only account there
+was, and it is the REAL-MODE start-up's: written before Windows is in
+protected mode, and only with LRGDiskReport=on.  What matters is
+decided again afterwards - ld_initbdd asks each drive what it is a
+second time, sets the block size a second time, proves the 32-bit
+read a second time - and can change while Windows runs: a drive whose
+engine gets a transfer wrong is PIO from then on, one whose block
+command ends in an error is a sector a block from then on, and so is
+one that will not take its block size back after a DOS program's
+reset.  None of that reached a file, and none of it could: no DOS
+call can be made from where it happens.  So the driver is asked, and
+says how things stand NOW.
+
+THE API (ld_api).  LRGDISK has a device number at last - 4C44h, "LD",
+LD_DEVICE_ID - because INT 2Fh AX=1684h finds an API by number and by
+nothing else.  Microsoft gave the numbers out and no longer does;
+this one is in no list that could be found.  (Two VxDs with one
+number is the thing to fear: the second does not load.)  The
+descriptor block names ld_api for both kinds of caller, a Windows
+program and a program in a DOS box - Map_Flat turns the caller's
+ES:DI into a linear address for either - and it answers two things:
+
+    AX=0   AX = the version (0104h), BX = bytes in the account
+    AX=1   ES:DI a buffer, CX its size: the account, as much of it
+           as fits; CX = the bytes given
+
+with the caller's carry clear, and set for anything else.  NOTHING
+CAN BE CHANGED THROUGH IT, which is what was asked for.  The account
+is put together in locked memory with interrupts off - six hundred
+bytes - and copied to the caller with them back on: the caller's
+buffer is ordinary memory that may have to be paged in.
+
+THE ACCOUNT (LI_*, LIC_*, LIU_*; 608 bytes).  A heading - the
+version, the switches as SYSTEM.INI left them, whether the controller
+is a PCI one, the engine's ports; the two cables - ports, interrupt,
+whether something LRGDISK does not drive shares the cable, how many
+times DOS programs were given it and how many times they reset it;
+and the four units.  For a unit: the BIOS's disk number, how it is
+addressed (CHS, LBA, LBA48 as well), its last sector, the BIOS's
+geometry, the drive's name for itself (copied out of IDENTIFY now:
+that block is start-up data and is thrown away), and for each of DMA,
+block mode and 32-bit data THREE things - how it stands now, how
+start-up left it, and WHY NOT if it is not in use.  The reasons are
+numbers (WD_*, WB_*, W3_*) set at the very tests that decide; the
+three places that switch something off later (ldh_have's engine
+error, ldh_retry, ld_reinit) leave theirs.  For block mode and 32-bit
+data they are the report's reasons in the report's order.  For DMA
+the machine is asked before the drive - no engine at all, none for
+this cable, then no mode on the drive - where the report's line for a
+drive asks the drive first: on the 486 board LRGDISK.TXT says "no DMA
+mode is selected on the drive" under a heading that says there is no
+PCI bus-master controller, and LRGSTAT says the controller.  Both
+are so.
+"As start-up left it" is what lets a program tell STOPPED SINCE from
+NEVER WAS: the lamp LRGSTAT shows yellow.  A later LRGDISK may add to
+the end of each part; a program is given what its buffer holds.
+
+THE COUNTS, IN EVERY BUILD.  Sixteen doublewords a drive (UC_*):
+BlockDev's commands; controller commands and sectors by the engine;
+controller commands by PIO and how many of them in blocks; sectors by
+PIO and the blocks they moved in; interrupts taken; blocks found
+ready by looking and blocks left to an interrupt; blocks the drive
+ended early; interrupts with nothing to do; commands the time-out
+took up; errors, commands sent again, commands given up.  The trace
+build's counts (STAT) have been there since 1.3 and stay; these are
+beside them at the same places, an INC each on the drive whose
+command is in hand - a handful of instructions a sector against the
+sector's 128 or 256 reads of a port.
+
+"LOST INTERRUPTS" HAD TO MEAN IT.  The first cut counted every call
+of ld_kick, and a release build on QEMU said two interrupts had been
+lost in a run where the trace build said none.  Nothing was lost: the
+host was running forty-five QEMUs, a command took more than two
+seconds, the time-out looked, found the drive still busy and left it
+alone - which is what ld_kick is for.  Now the count goes up only
+where the look finds the drive DONE and takes the command up
+(ldh_kicked: the handler's own path with no interrupt behind it), and
+a look that finds the drive busy is not an "interrupt with nothing to
+do" either.  On a real machine that number is the one to watch.
+
+LRGSTAT.EXE (CMD\LRGDISK\lrgstat.c, lrgapi.asm, lrgstat.rc,
+lrgstat.ico).  A Win16 program, small model - the first thing in this
+tree built with Watcom's Windows headers and libraries.  One window,
+drawn by hand: a tab for each drive; the drive's name, where it is
+and how big; then six rows - Addressing, Bus-master DMA, Block mode,
+Look before interrupt, 32-bit data, Cable sharing - each a lamp, how
+it stands, and a grey line under it: the reason when it is not used
+("LRGDiskDMA=off is in SYSTEM.INI.", "The drive refused the block
+size.", "There is no PCI IDE controller, and the drive does not
+report 32-bit I/O."), a count when it is.  GREEN in use, GREY not,
+YELLOW stopped since Windows started.  Under them twelve counts for
+the drive, asked for again once a second and redrawn - off the screen
+first, so they do not flicker - only when something moved.  Tab, the
+arrow keys or a click change drive; Esc closes.  The lamps are three
+of the VGA's sixteen colours, so nothing is dithered, and with
+Windows' small font the whole window just fits a 640 by 480 screen.
+
+LRGSTAT /S file writes the same account as text and shows no window:
+for the rig, and for a machine nobody can take a picture of.  With no
+LRGDISK to ask, the window says why - standard mode, or no LRGDISK
+1.4 or later running, with the two SYSTEM.INI lines - and stays up.
+
+AN EXE, NOT A CONTROL PANEL APPLET - YET.  Both were offered.  The
+window is one function that asks and one that paints; a .CPL would be
+the same two behind CPlApplet in a DLL.  The EXE came first because
+it runs from File Run, from a StartUp group and from a rig's list
+with no Control Panel in between.
+
+THE BUG THE RIG FOUND IN IT.  Against LRGDISK 1.3 - no API - the
+window said "LRGDISK 1.4 or later is not running" and a second later
+Windows said LRGSTAT had caused a General Protection Fault at
+0001:1900: the far call through the driver's entry, with an entry
+that was not one.  The message is 292 characters and it was being
+copied into a 260-byte line buffer, and what lay after the buffer was
+the entry.  The text is now handed to DrawText where it is, not
+copied; the entry is asked for once, not every second; and every
+other line the program builds has been counted against its buffer.
+It was the one run in the set that was there only to see a message.
+
+WHAT ELSE MOVED.  BUILD.CMD builds LRGSTAT.EXE after LRGDISK.386
+(wasm, wcc -bt=windows -ms -zW, wrc, wlink system windows) and puts
+it on PMDOS.IMG beside the driver - the floppy had 154K to spare;
+MKHD.CMD puts it on the hard disks; AUTOEXEC.TXT names it.
+RUNTESTS.PS1 leaves LRGSTAT.EXE off its test disk as it leaves
+SYS16.COM off: it takes every .EXE and .COM in BIN for a PM-DOS
+program, and one file more on that disk moves three baselines
+(RMFIND, RMTEST, CACHETST) for nothing.  LRGDISK.386 is 25,939
+bytes (25,795), LRGSTAT.EXE 12,980.
+
+TESTED, ON THE EMULATORS.  Everything 1.3's matrix ran, again, with
+the builds of this source, each sweep ending with a rig's LRGQ.COM
+asking the driver for its account from a DOS box (lists lrg3q, cd1q):
+QEMU 11.1 headless, WfW 3.11 on PM-DOS, twenty-five sweeps - PIO
+release, trace and long-look; DMA; each switch off and all of them
+off; the 200GB LBA48 slave by PIO and by DMA; the second cable as
+disk 81h and as 82h, by PIO and by DMA; LRGDiskSerial; the CD-ROM on
+the first cable and on the second with SRSTTEST's resets, by PIO, by
+DMA and with the look off; the CompactFlash boot disk; and the two
+builds that lie about the block's size or lose interrupts on purpose.
+ALL ENDED, every compared copy the same, every I13X line clean, the
+host's check of the last 512 sectors 0 wrong - and every account said
+what its run was: the switches, "mode 2" on the LBA48 slave, "set by
+LRGDISK" on the CompactFlash card and "as the drive was set"
+elsewhere, cable flags 03 with 2 resets and 6,146 commands lent where
+the CD-ROM shared the cable, 386 blocks ended early in the build that
+believes twice the size, 1,755 commands taken up by the time-out in
+the build that loses interrupts and none anywhere else.  All switches
+off is still one interrupt a sector: 85,280 of each.
+
+Then LRGSTAT itself, the same builds (list lrgstat: the account asked
+for before the disk work and after it, LRGSTAT /S, the window with a
+picture of each drive's page, and LRGSTATD's four made-up accounts):
+WfW 3.11 by PIO and by DMA; WINDOWS 3.1 IN ENHANCED MODE by PIO and
+by DMA - the first sweeps of 1.3's PIO code on plain Windows 3.1, all
+clean; a second disk on the cable for the second tab; and for the two
+messages Windows 3.1 in standard mode and WfW on LRGDISK 1.3.  What
+LRGSTAT wrote is what LRGQ read.  On Windows 3.1 by PIO: 73,990
+sectors in 22,693 interrupts.  By DMA: 54,246 sectors by the engine
+and 19,745 by PIO, in 3,934 commands the engine could not take - on
+3.1 as on WfW, block mode matters to a DMA drive too.  And eighty
+short sweeps at once, forty on each of 1.3 and 1.4: all eighty ran to
+their end.
+
+And 86Box, minimized and never clicked or typed at, the same list and
+the same two files.  THE ASUS VL/I-486SV2G - an ISA IDE controller
+and no PCI anywhere, the nearest thing here to Charlie's 486: the
+whole list, every check clean, and LRGSTAT showing what his should -
+DMA not used, "There is no PCI bus-master IDE controller."; blocks of
+16 as the BIOS set the drive; 32-bit data not used, "There is no PCI
+IDE controller, and the drive does not report 32-bit I/O."; 80,587
+sectors in 25,993 interrupts, and not one of 432 blocks found ready
+by looking, as on 86Box none ever is.
+
+THE P3B-F: ONE RUN WENT BACK TO DOS, AND AN HOUR WENT ON A SLOW
+EMULATOR.  On the P3B-F (PIIX4, Ultra DMA mode 2, the 2047MB disk)
+LRGQ's account and LRGSTAT's window were right - "Ultra DMA mode 2",
+4,673 sectors by the engine and 20 commands by PIO thirty seconds in.
+Then, in the first run, 48 seconds after IFSBOX's batch had finished
+and with WINSWEEP three minutes from its next line, WINDOWS WAS BACK
+AT THE DOS PROMPT: DONE.TXT written, nobody having asked.  One event.
+The same list again, given the time it needs, went through all
+fourteen programs: 57,019 sectors by the engine, 2,157 commands by
+PIO in blocks of 16, 32 bits at a time, no error and nothing lost.
+It is the thing yesterday's one run in ninety-six did on QEMU -
+Windows ending by itself a while after a DOS box closed - and it is
+as unexplained.  That run had no trace.  Nothing here says it is the
+driver's and nothing says it is not.
+
+Chasing it cost an hour, and the hour found a trap, not a bug.  Short
+runs, 230 seconds each, to get many: and EVERY one "stalled after
+IFSBOX" - 1.4, a 1.4 with no device number and no API, a 1.4 with
+nothing counted, then 1.3, then 32BitDiskAccess=off with LRGDISK not
+in use at all.  What they had in common was the 230 seconds.  86BOX
+RUNS THE P3B-F AT A LITTLE OVER A THIRD OF REAL TIME ON THIS HOST
+once Windows is up (the guest's file times against the host's clock:
+62 guest seconds in 163) - a 450MHz Pentium II is more than its
+recompiler keeps up with - so 230 seconds on the wall were a hundred
+in the guest, and WINSWEEP's hundred-second wait had not ended when
+86Box was closed.  Given 420 and 600 seconds the same runs went to
+their end.  Yesterday's reading of the P3B-F runs that never logged
+"CACHEBOX: done" - cut by the time limit - was right.  The 486 board
+runs at full speed, which is why its sweep fits in ten minutes.  A
+P3B-F RUN NEEDS ABOUT THREE TIMES ITS LIST'S SECONDS, and a "stall"
+there is nothing until it has had them.
+NOT TESTED.  The real machine, which is Charlie's: his 486 will show
+whether the three PIO features of 1.3 hold there, and LRGSTAT is how
+he will see what was chosen.  A drive that really stops DMA or block
+mode after an error (the yellow lamps were seen only in LRGSTATD, a
+rig's build of LRGSTAT with made-up accounts, which is how every line
+the program can write was looked at on a screen once).  A screen
+other than 640 by 480 with the small font.
+
+TRAPS.  A WINSWEEP name that gets SHOT pictures must leave room for
+"_1" in eight characters: LRGSTAT_1.BMP was not written, and the log
+said only "(picture LRGSTAT_1 failed)".  FATGET.PL does not save what
+it fetches: it prints each file into the run's log under "--- NAME (n
+bytes)".  WfW 3.11 has no standard mode; the standard-mode message
+needed the Windows 3.1 tree (S:\WIN31HD), and THAT TREE'S SYSTEM.INI
+HAS NO device=*int13 AND NO 32BitDiskAccess LINE - its Setup found no
+controller WDCTRL knows and wrote neither.  Both have to be added
+beside device=lrgdisk.386 on such a Windows, and LRGSTAT's "not
+running" text now says so.  wsprintf wants a far pointer for every
+%s, and a small-model program hands it a near one unless the argument
+is cast.
+
+
 LRGDISK 1.3: PIO BY THE BLOCK, A LOOK BEFORE THE INTERRUPT (2026-10-10)
 ---------------------------------------------------------------------
 
