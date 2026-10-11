@@ -12286,6 +12286,764 @@ AUTOEXEC.TXT.  PMDOS.SYS is 162,318 bytes (+196), SYS.COM 1,983
 CMD.EXE are the same bytes as before.  Still v0.63.
 
 
+SCANDISK.EXE: SCANDISK FOR PM-DOS, WITH FAT32 AND LONG FILE NAMES
+(2026-10-10)
+---------------------------------------------------------------------
+Asked for as "a ScanDisk clone for PM-DOS, complete with full surface
+scanning and switch support of the MS-DOS version, and we need to make
+sure it supports FAT32 and LFN" - and then, the same day, when the
+first version was there: no lines on standard output ("it should be
+just like the real ScanDisk and use text mode"), a graphics mode as
+well, and no mono screen.  CMD\SCANDISK, C, a native program like
+CHKDSK and PMD, and put together from three: the checks began as
+CHKDSK's FAT.C, SCAN.C and LOST.C, the screen is EDIT's SCR.C by way
+of PMD, the graphics screen is DOSSHELL's GFX.C.  SCANDISK.EXE is
+115,400 bytes.  It is in BUILD.CMD, in the stub list, on PMDOS.IMG
+and in MKHD.CMD's hard disks, with DISK\SCANDISK.INI beside it.  No
+kernel change.
+
+WHAT IT DOES, in MS-DOS ScanDisk's order:
+
+  media descriptor   the BPB's byte against entry 0 of each FAT
+  FAT copies         every copy read; compared; the copy with the
+                     fewest entries that point nowhere is the one
+                     believed
+  directories        every directory read off the disk: names,
+                     attributes, sizes against chains, "." and "..",
+                     long name entries with no file, chains with a
+                     link that goes nowhere, a directory that is not
+                     one
+  file system        lost clusters (saved as FILEnnnn.CHK, or freed)
+                     and cross-linked files
+  surface scan       every sector read; a bad cluster marked, and a
+                     file in it moved out first
+
+THE ONE DESIGN DECISION THAT IS NOT CHKDSK'S: NOTHING IS CORRECTED IN
+MEMORY THAT IS NOT GOING TO THE DISK.  CHKDSK corrects the FAT it
+holds whether or not it may write and reports from that.  ScanDisk
+asks about each problem, and "Don't Fix It" has to leave the disk and
+the rest of the check alone - so the FAT in memory is the disk's, a
+repair changes it, and fat_commit() writes the sectors that repair
+touched (a flag a sector for FAT12/16, a flag a block for FAT32's
+window) to every copy.  Each repair is on the disk before the next
+thing is looked at, which is also what makes Exit safe anywhere: a
+check is left by longjmp (JMP.ASM, ACROREAD's), between two repairs
+and never inside one.
+
+CROSS-LINKED FILES ARE UNTANGLED, which CHKDSK only names.  The second
+file to claim a cluster gets clusters of its own - AS MANY AS ITS SIZE
+SAYS IT HAS and no more.  The first version copied the whole shared
+tail, and a 19K file that ran into a 60K one came out with a 60K chain
+and a size that no longer fitted; the check after the repair found
+that.  A directory that runs into another file is ended there instead.
+
+THE SURFACE SCAN reads a run of clusters at a time and only tries them
+one by one when a run fails, twice each.  A bad cluster that is free
+is marked.  One in a file is read sector by sector, written to a free
+cluster (read back and compared), linked in its place - the entry, or
+the cluster before it; a directory's own "." and its children's "..";
+the boot sector for a FAT32 root - and then marked.  The sectors that
+would not read are zeroes in the copy and the log says how many
+bytes.  The system area is read too and only reported: nothing there
+can be moved.  21h/7305h is what makes this possible - it goes round
+the cache and returns its error instead of raising a critical one.
+
+THE UNDO FILE is SCANDISK.UND on a diskette: for each write, the
+sectors as they WERE and a CRC of each as written.  The record is
+committed (68h, then 0Dh) before the sector is written, so a machine
+switched off in mid-repair has an Undo file that is true.  /UNDO puts
+the sectors back last-written-first, and only if every sector still
+holds the last thing ScanDisk wrote to it.  ONE THING HAD TO BE LEFT
+OUT OF THAT CRC: the two flag bits in entry 1 of each FAT.  The kernel
+turns the clean-shutdown bit off at the first raw write and on again
+after VLF_CHECKED, so the first sector of a FAT never still holds
+what ScanDisk wrote.  Sectors written into clusters that were free
+are not kept: with the FAT back, they are free again.  A record that
+cannot be written stops the repairs, because an Undo file with a
+change missing would put back half a repair.
+
+SWITCHES AND SCANDISK.INI are MS-DOS 6.22's: /ALL /CHECKONLY /AUTOFIX
+/NOSAVE /CUSTOM /SURFACE /NOSUMMARY /FRAGMENT /UNDO, the exit codes
+0 1 2 3 4 254 255, [ENVIRONMENT] and [CUSTOM] with every setting.  A
+6.22 file is read as it stands; the DoubleSpace settings are taken
+and ignored.  /G and Display = Graphics are this program's own.
+THERE IS NO BLACK AND WHITE SCREEN: Charlie took it out ("we can get
+rid of the mono screen option").  /MONO and Display = Mono are still
+taken, and do nothing.
+
+THE SCREENS ARE MS-DOS SCANDISK'S, MEASURED.  The first version had
+screens of its own design and, with its output or input redirected,
+wrote lines of text and read its answers from standard input.
+Charlie: "let's not do stdout output and stdin.  It should be just
+like the real ScanDisk and use text mode."  The real one runs here:
+MS-DOS 6.22's SCANDISK.EXE (Charlie's backup of 6.22; an oracle,
+never shipped) under DOSBox-X's own DOS with ver=6.22, a disk image
+mounted as D:, keys typed by KEYFEED, the screen recorded and frames
+of the recording read cell by cell for their colours.  What that
+showed, and what is here now:
+
+  - the title on row 2 with a rule under it, another rule three rows
+    from the bottom, and ONE LINE under that for how far the work has
+    got: "nn% complete" and the bar.  Everything starts in column 5
+  - grey on blue, the title and the rules light cyan.  Boxes are grey
+    with a white line and the title in the line, and a rule across
+    them over the buttons.  Buttons are grey on DARK grey; the lit
+    one is white with arrowheads for brackets; a button on the screen
+    casts half a cell of shadow, one in a box does not.  The buttons
+    under a running check show no lit one and no letters
+  - the surface scan is a BOX over the checks: the map left of a line
+    down it, the counts right, More Info and Exit and no Pause - and
+    Exit there stops the scan at once and goes to the summary
+  - More Info on a problem is a second box with the same choices and
+    "Previous Screen" in place of "More Info"
+  - /UNDO is on the screen.  /FRAGMENT, the help and a command line
+    that is wrong are lines.  Redirecting the output changes nothing
+  - Display = Off shows the same screens as Auto.  Nobody here knows
+    what it was for; it is read as Auto
+
+THE WORDING IS NOT MS-DOS'S.  Where things are, their colours and
+what the keys do are; every sentence is this program's own, as it was
+before.
+
+DARK GREY IS NOT A BACKGROUND A TEXT SCREEN HAS until the adapter is
+told that the top bit of a cell's colours means "bright" and not
+"blink".  An MS-DOS program asks INT 10h/1003h.  A native program has
+no INT 10h, and the kernel's list of BIOS calls a program may make
+(21h/F1h AL=21h) is questions only.  So SCR.C clears the bit in the
+attribute controller's mode register itself - index 10h at 3C0h, read
+back through 3C1h, the flip-flop reset through the status port beside
+the CRTC the BIOS data area names - and puts the register back when
+ScanDisk leaves.  On a VGA only, because an EGA's register cannot be
+read; anywhere else the buttons are grey on black.
+
+THE GRAPHICS SCREEN (SCANDISK /G, or Display = Graphics) IS THE SAME
+SCREENS: 640x480 and thirty lines on a VGA, 640x350 and twenty-five
+on an EGA.  SCR.C's cells became 32 bits.  The low sixteen are what a
+text screen is sent; the rest - a picture in place of the character,
+the edge of a panel, which part of a button the cell is - only GFX.C
+reads.  So UI.C and SCREEN.C draw ONE screen and ask "gfx_on" in a
+handful of places.  What graphics adds: raised buttons that take four
+scan lines of the rows above and below their text, boxes with the
+title in a bar, a progress bar that moves a pixel at a time, a sign
+in each box, and a surface map with TWO rows of blocks to a row of
+text - 1,760 blocks on a VGA where the text screen has 660.  The mode
+set, the fonts out of the video ROM (with the check DOSSHELL learned
+from Charlie's Cirrus card, which has no 8x14 font) and the
+plane-at-a-time copy are DOSSHELL's GFX.C cut down to the two planar
+modes.  A machine with neither adapter, or a kernel without 21h/F1h
+AL=20h, gets the text screen.
+
+THE CHECKS STILL KNOW NOTHING OF SCREENS.  They call fe_*() - a check
+has started, here is a problem, what is to be done - and SCREEN.C
+answers.  The host test build (MKHOST.CMD, SCANDKNT.EXE, which works
+on image files) links HOSTFE.C in its place: the first version's
+lines of text, kept for the tests and in nothing that ships.
+
+DECISIONS THAT WERE MINE, for Charlie to overrule:
+  - /MONO is still TAKEN, and ignored, so that a batch file written
+    for MS-DOS runs.  One line of MAIN.C makes it an error
+  - the summary has CHKDSK's numbers under the verdict, where MS-DOS
+    has the verdict alone; and the title line counts the problems
+    found and repaired
+  - the title is "ScanDisk"
+  - Exit during the first four checks asks before leaving.  What
+    MS-DOS does there was not seen: on a small image those checks are
+    over before a key can be sent
+  - the log is SCANDISK.LOG in the root of the BOOT drive
+  - LfnCheck = Off leaves long name entries alone (in MS-DOS it
+    treats them as damage, which would destroy every long name)
+  - a name with small letters is repaired by making them capitals
+  - no check of dates and times
+  - "SCANDISK volume-name" is refused: no DoubleSpace, no DriveSpace
+    (Charlie: "it's fine to eliminate disk compression support")
+
+WHAT WRITING IT FOUND: CHKDSK /F HAD STOPPED WORKING.  Since 440Dh
+got Get Device Parameters (2026-10-09) the kernel reads EDX as a
+pointer for every 440Dh call from a native program, and CHKDSK's
+lock call passes zero there - "access denied", which CHKDSK took for
+a lock refused: "Cannot lock drive", exit 255, and so no check at
+boot either.  CHKDSK's lock_call now points EDX at eight bytes
+nothing reads (CHKDSK.EXE 28,584); SCANDISK's does the same.  The
+kernel was left alone: the cleaner fix is there (P_DX only for
+CX=0860h) and is Charlie's to make.
+
+TESTED.  On images, with the host build: 29 kinds of damage, each on
+FAT12, FAT16 and FAT32 - found by /CHECKONLY (255), repaired by
+/AUTOFIX (254), clean on a second look (0), 87 of 87; the Undo file
+there and back with the system area byte for byte what it was,
+refused a second time and refused after the drive changed; a bad
+sector (SDBAD=X:n,n makes sectors fail on either build) in a free
+cluster, in a file (the file differs only inside the one sector), in
+a directory, in the FAT32 root's own chain, in a FAT copy and in the
+boot sector.
+
+On PM-DOS in DOSBox-X with no window, through the screens, the keys
+from a file (SDTEST; SDPOLL aims them at a running check; FFh FFh
+writes the screen to a log as text and FFh FEh a graphics screen as
+a .BMP): a clean drive, the question about the surface, the summary
+and the log; two problems with More Info and back, Fix It, Skip Undo
+and Save, and CHKDSK agreeing afterwards; the surface scan looked in
+on and left (exit 4); Exit in the directory check (3); Pause and
+Continue; the Undo disk made on a diskette, declined, used and then
+refused; /AUTOFIX with nobody at the keys on FAT16, FAT32 and a FAT12
+diskette; /CUSTOM with an .INI; bad sectors by SDBAD; the mouse on
+the buttons in text and in graphics; /G on a VGA and on DOSBox-X's
+EGA.  The text screens' colours were read from the emulator's own
+recording of a held screen, and the screen DOS gets back after
+ScanDisk - text or /G - from the same.  wasm and MASM 6.13 assemble
+DOSINT.ASM and JMP.ASM.  RUNTESTS: 86 x 7, with RMTEST re-recorded
+on the seven rows (free clusters: SCANDISK.EXE is 30K bigger than
+the first version, which was itself new to the disk).
+
+NOT TESTED: real hardware and 86Box - so neither the blink bit on a
+real VGA nor /G on the Cirrus BIOS, which is the one that caught
+DOSSHELL out; a real EGA; a sector that really will not read (only
+SDBAD's); a 43- or 50-line text screen; ScanTimeOut against a real
+slow drive; a volume of more than a few tens of megabytes.  Still
+v0.63.
+
+
+THE LOCK LIGHTS: CAPS, NUM AND SCROLL LOCK, AND NUMLOCK= (2026-10-10)
+---------------------------------------------------------------------
+Charlie, testing: "the keyboard lights don't turn on when you press
+caps lock, num lock, or scroll lock.  Functionally they work but the
+lights don't change on the keyboard."  The lights are the keyboard's
+own, and change when it is sent EDh and a byte.  The BIOS's INT 09h
+sent them; IRQ 1 has been the kernel's since v0.34, and the kernel
+never did.  And only Caps Lock did work.  Num Lock and Scroll Lock
+were not tracked at all: the keypad typed digits whatever was
+pressed, and each of the two keys put a keystroke of its own (4500h,
+4600h) in the buffer.
+
+WHAT A LOCK IS NOW (IO\KEYBD.INC).  A bit at 40:17 and nothing else:
+the driver's own Caps Lock flag is gone, and the decoder reads the
+BIOS's byte.  kb_init keeps the three bits as the BIOS left them (it
+used to clear the byte), so a machine set up to start with Num Lock
+on starts PM-DOS with it on.  What the driver keeps is that a lock
+KEY is down, so that a key held down turns its lock over once -
+Caps Lock went over on every repeat before.  Ctrl+Num Lock (Pause,
+and the Pause key's own E1 1D 45), Ctrl+Scroll Lock and E0 46 (Break)
+are not locks and change nothing.
+
+THE KEYPAD FOLLOWS NUM LOCK, and Shift turns it round while it is
+held: the digits, or the cursor keys' codes with a zero where the
+grey keys have E0h.  Ctrl and a keypad key is the BIOS's code for it
+(Ctrl-4 is 7300h; it was the character 14h).  Alt and a keypad digit
+still types the digit: composing a character by number is not
+written.
+
+THE LIGHTS ARE WHAT 40:17 SAYS (kb_tick, called from irq_timer).
+Each tick the three bits are compared with what the keyboard was
+last told, and when they differ it is told: EDh, the FAh that comes
+back through IRQ 1 (kb_reply, ahead of anything that would hand the
+byte to a DOS box), the mask, the second FAh.  Nothing waits with
+interrupts off.  Because it starts from the byte and not from the
+key it is right whoever changed the byte: the kernel's decoder, the
+ROM's INT 09h under a box that has hooked the keyboard (whose own
+EDh is still answered by vio_o60k and never sent), a program that
+writes 40:17, CONFIG.SYS.  40:97 is kept in step, once the keyboard
+has acknowledged, because a ROM's INT 16h compares the two and sends
+a command of its own when they differ.
+
+  - KEYRATE='s F3h goes the same way now, and kb_typematic only
+    notes the byte: two conversations with one keyboard have to take
+    turns
+  - FEh, or no answer in three ticks: "enable" first (a keyboard
+    that heard the command has stopped scanning to wait for the
+    argument, and enable is harmless whether it is taken for a
+    command or for that argument), then the command again from the
+    top; three tries, then nothing until the locks next change
+  - nothing is begun while the mouse driver is talking to the 8042
+    (ms_probing - and ms_ps2start and ms_park wait for the keyboard's
+    conversation to finish first, kb_quiet); nothing is sent while a
+    box is between a D4h or a 60h it was allowed and that command's
+    data byte; and nothing is said across a park, after which the
+    lights are lit again from 40:17
+
+NUMLOCK=ON|OFF IS REAL (DOS\CONFIG.INC, cfg_numlock).  It sets the
+bit and the tick lights the light.  It has left the inert list, and
+CONFIG.TXT says what it does.
+
+DECISIONS THAT WERE MINE, for Charlie to overrule:
+  - NUMLOCK= itself.  He reported the lights; the statement was
+    waiting for exactly this machinery and is twenty lines.  BUT
+    DISK\CONFIG.SYS HAS "NUMLOCK=OFF" IN IT, which did nothing and
+    now turns Num Lock off at every boot of the disk as shipped.
+    The line was left as it is
+  - the 5 of the keypad types nothing with Num Lock off (a BIOS
+    reports it to INT 16h function 10h alone)
+  - Insert's bit at 40:17 and the key-down bits at 40:18 are still
+    not kept
+
+TESTED, in DOSBox-X and in QEMU, with no window; every key was a
+test's (21h/F1h AL=23h).  TOOLS\LOCKTEST.ASM is new: each lock by its
+key, held down, with Ctrl, with the keypad and a letter under it, and
+by the program writing the byte - and after each, 40:17, the lights
+as 40:97 has them and the keys, with INT 09h the kernel's and then
+hooked.  RUNTESTS is 87 x 7 with it.  KBLTEST sets Num Lock on for
+its run, and its keypad row under a hooked INT 09h is digits now (the
+ROM used to find the byte cleared); RMFIND and RMTEST count one more
+file.  NLSTESTS: nine rows, with LOCKTEST twice in nls-gr - where the
+handler the keys are passed on to is KEYB's stub, and again after a
+park.  QEMU's trace of every byte its keyboard was sent has them (ED
+02, ED 00, ED 04 and so on in step with the test; F3 2C for
+KEYRATE=20,2; ED 02 at boot for NUMLOCK=ON, on a BIOS that starts
+with it off), and nothing the keyboard answered reached the box's
+own INT 09h handler (KBLTEST counts the calls).  The two paths no
+emulator's keyboard takes were watched the same way, in kernels
+patched for it and not kept: one deaf to every FAh (ED, F4, three
+times over, then quiet, with the keys and the locks unaffected), one
+taking each command's first FAh for an FEh (ED F4 ED nn, and the
+right lights).  wasm, and MASM 6.13 on IOPM.ASM, DOSMAIN.ASM and the
+two tests.  PMIO.SYS 59,107, PMDOS.SYS 162,362.
+
+NOT TESTED: A REAL KEYBOARD, which is the only place the lights
+are.  86Box; a keyboard that answers slowly or not at all, other
+than by the patch above; a lock key pressed during a kernel BIOS
+call or a mouse reset; Windows after a park (the lights are lit
+again on the way back up, and nothing looked).  Still v0.63.
+
+
+ACROREAD: THE MOUSE AND THE SCROLL BARS (2026-10-10)
+----------------------------------------------------
+
+Charlie, on seeing it: "Why is there no mouse or scroll bar?"  For no
+reason that would stand up: they were left out of the first version to
+keep it small, the notes said so ("a mouse (it has none)") and the
+summary he was given did not.  They are in.
+
+THE PICTURE.  A scroll bar down the right of the page always, one
+under it when the page is wider than its part of the screen, and the
+line at the foot is buttons: first, previous, next and last page, -
+and +, Text, Help.  "Page n of m" there is G, and the percentage goes
+between the page's width and the whole page.  The page itself is
+dragged.  A bar's arrows are the arrow keys and repeat while the
+button is held; its trough is a screenful, and stops when the box has
+come under the pointer; its box is dragged.  The page's part of the
+screen is 624 across now, not 640.
+
+THE TEXT.  A scroll bar in the last column; a second on the row above
+the bottom line when lines are left long (W) and one is longer than
+the screen; and each word on the bottom line is the key it names.
+The page number in the top line is G.  A click ends Help.
+
+HOW (VIEW.C's header says it again).  VIDEO.C takes no canvas any
+more: video_rows asks VIEW.C's compose() for each line of the screen
+on its way out, and compose lays the canvas, the bars, the line at the
+foot and the pointer into it.  Nothing is drawn into anything else,
+so the pointer moving is nineteen lines sent again and a box moving
+is the screen shown.  The pointer on a graphics screen is the
+program's (the kernel's driver draws none in a VBE mode; DOSSHELL does
+the same); on the text screen it is the driver's.  A press is INT
+33h/05h's - a count, and where the last was - so a click that is over
+before anybody looks is still a click.  A page held by the mouse is
+not drawn again until it is let go: what the canvas has not got is
+grey till then.  While a page is being drawn the pointer follows the
+mouse, and a press on a button or a bar ends the drawing as a key
+does.  The dither for 256 colours and for the greys is three tables
+now, not a division a pixel.
+
+2Ch IS NOT A CLOCK TO LOOP ON, and this is the kernel's business more
+than ACROREAD's.  INT 21h/2Ch here is INT 1Ah/02h, the BIOS's
+real-time clock: DL comes back 0, so its "hundredths" are whole
+seconds, and every call is a trip into the BIOS.  The held arrow was
+first written the way EDIT's key_wait is (and DOSSHELL's, PMD's and
+SCANDISK's, which are copies of it): look for a key or the mouse
+without waiting, ask the time, go round.  In QEMU, with its PS/2
+mouse worked from the monitor, a button held on an arrow was never
+seen to be let go.  A build that wrote what INT 33h/03h and 05h said
+into the title line showed the driver's buttons and its position
+standing still for as long as the loop ran - while the monitor's
+"i /b 0x64" found the 8042 empty and "info pic" nothing waiting or in
+service.  So the mouse's bytes had been read and had not reached
+ms_motion.  WHO read them was not found: the loop is in the BIOS
+nearly all the time, and that is as far as the evidence goes.  With
+the time taken from the 8254 instead - SYS_D32.C sys_clock_ms, counter
+0 latched and read through ports 43h and 40h, which vio_in passes
+straight to the hardware; the read-back command says whether it counts
+by ones or by twos - the same run is right: the arrow repeats every 70
+milliseconds after the first 400, the release is seen, and the next
+click lands.  ACROREAD now asks 2Ch only while a page is being drawn,
+once in 128 operators, and in test mode.
+  NOT CHANGED, and not looked at beyond reading them: EDIT, DOSSHELL,
+PMD and SCANDISK hold a scroll arrow down with the same loop, and
+time a double click with the same 2Ch - which, with no hundredths,
+makes "within 0.4 of a second" mean "in the same second".  2Ch from
+IOS_TICKS would have hundredths and no trip; that is a kernel change,
+and Charlie's to ask for.
+
+TEST MODE HAS THE MOUSE.  FEh in the key file, the buttons, then two
+bytes across and two down - pixels on a graphics screen, columns and
+rows on a text one: 33h/04h puts the pointer there, 21h/F0h AL=0Bh
+sets the buttons, and what that amounts to is read back through INT
+33h like anything the mouse does.  Nothing repeats in test mode.
+
+PROVEN.  DOSBox-X, headless, from key files: at 32 bits and in mode
+12h the buttons, the page dragged, both bars' arrows, troughs and
+boxes, Go to, Help and back; at 16, 15 and 8 bits the + button and
+the page dragged; the text screen's bars (wrapped, and long lines
+with W) and its bottom line; a 386 with 4MB, where the canvas is a
+piece of the page and grey.  QEMU, with NO key file and its own PS/2
+mouse moved and pressed through the monitor (mouse_move, mouse_button,
+sendkey; screendump to look) - the one rig here where the mouse is
+packets and IRQ 12: the + button, the page dragged, an arrow held and
+let go, a box dragged, Text, the text screen's arrow held, a word on
+the bottom line, Tab, F1 and a click out of Help; and a page shown at
+24 and 8 bits and on QEMU's Cirrus.
+NOT RUN: 86Box, a real machine, a serial mouse, a machine with no
+mouse (INT 33h/00h answering 0 turns all of it off; the bars are
+still drawn).  sys_clock_ms has run on QEMU's 8254 only - a key file
+holds nothing down, so DOSBox-X never asks it.  RUNTESTS and HELPTEST
+still do not know ACROREAD.
+
+RUNTESTS -All, with this ACROREAD.EXE in BIN and the kernel as BIN had
+it that night (PMIO.SYS 59,107, PMDOS.SYS 162,362): 85 of the 87 the
+same on all seven machines, RMFIND and RMTEST not.  WHAT THIS SAID OF
+THE TWO AT FIRST WAS WRONG - that somebody else had put six files in
+BIN\TESTS - and the entry below has what is so: the six are the big
+guests MKHD seeds, there since August, and seven of RMTEST's clusters
+were ACROREAD's 6,844 bytes and this change's to record.  They were
+recorded on 2026-10-11.
+
+Files: CMD\ACROREAD\VIEW.C (most of it), VIDEO.C, VIEW.H, SYS.H,
+SYS_D32.C, DOSINT.ASM (INT 33h), MAIN.C (the usage text, and the
+pointer off the screen when memory runs out); DISK\AUTOEXEC.TXT (one
+sentence).  BIN\ACROREAD.EXE is 168,484 bytes: BUILD.CMD's section for
+it, word for word, in a mirror, and D32BIND.  IMAGES\PMDOS.IMG (made
+again by BUILD.CMD's own line), IMAGES\HD16.IMG and the 86Box VM's
+HD16.IMG (FATREPL, each in place: ACROREAD.EXE and AUTOEXEC.TXT) and
+the VM's PMDOS.IMG carry it.  No kernel change.  Still v0.63.
+
+
+2Ch COUNTS TICKS, AND THE PROGRAMS THAT LOOPED ON IT (2026-10-11)
+-----------------------------------------------------------------
+
+Charlie, on being told what the entry above says of 2Ch: "Let's fix
+the other utilities so I can test before I wrap up this release."
+
+WHAT WAS WRONG WITH THEM, seen this time and not read out of the
+source: QEMU, its PS/2 mouse worked from the monitor, BIN as it was.
+EDIT's scroll arrow held down moved a line a second; let go, the
+window went on moving, and the next clicks on the bar landed anywhere.
+A press in the text runs the same loop (text_drag waits 8 hundredths
+at a time for the pointer to go past the window's edge), so of six
+double clicks one selected a word, and by the end the pointer on the
+screen was four rows behind the mouse.  DOSSHELL's file list did the
+same, lost the pointer's place on the way, and a double click on
+[Disk Utilities] never opened it.
+  THE ENTRY ABOVE NAMED TWO PROGRAMS WRONGLY AND MISSED ONE.  PMD's
+key_get_timed has no caller, and nothing in PMD does anything with a
+double click: it had the code and not the fault.  SCANDISK holds
+nothing down either; its use of the clock is SCREEN.C's pace(), which
+brings the screen up to date and looks at the keys "a twentieth of a
+second or so" apart and, with a clock of whole seconds, did both every
+few thousand calls instead.  FDISK was not named and belongs:
+FDEVENT.INC's ev_now is 2Ch, for its double click and for tu_pause.
+
+THE FIX IS THE KERNEL'S, one for all of them.  DOS\INT21.INC fn2C no
+longer asks the BIOS every time.  clk_now reads the clock chip once
+(INT 1Ah/02h, as before), keeps the tick count of that moment beside
+the answer, and from then on the time is the answer plus the ticks
+since, at 108000/19663 hundredths a tick.  DL has hundredths, good to
+a tick, and a call is a few dozen instructions with no BIOS in it:
+7,000 answers a second to a program in a box under QEMU, 29,000 under
+DOSBox-X.
+  The chip is asked again when a minute of ticks (1092) has gone by
+since it was last asked, and the count starts over from its answer
+only if the two are more than two seconds apart.  Otherwise the count
+stands, so the time is not put back by part of a second at every
+asking.  The chip's second is taken as its middle, which is why 2Ch
+less the chip reads between -50 and 150 hundredths.
+  A tick count that does not follow from the last one - a program in a
+box wrote 40:6C, or midnight took it to nothing - shows as a count a
+day or more on, or as a minute gone by, and the chip is asked.  ONE
+CASE IS LEFT: a count moved FORWARD by less than a minute is believed
+until the next asking, which is up to a minute away.  CLKTEST's "40:6C
++ 500" reads 27 seconds fast.  That is the one way the new 2Ch can be
+wrong where the old one could not.
+  2Dh (set time) starts the count again.  A chip that does not answer
+leaves the time the ticks alone give, where the old code said 0:00:00.
+  NOT CHANGED: 2Ah, and get_dostime and get_dosdate, which stamp
+files - the chip, every time, as they were.  RMDOS.SYS's 2Ch
+(RMINFO.INC), which is the one Windows runs on.
+
+DOSSHELL'S ARROW.  With a clock that works, its scroll arrow came
+again every 8 hundredths from the moment it was pressed, and once more
+for every cell the pointer moved while it was down: a click a third of
+a second long was four lines.  MAIN.C scroll_press now waits 40 before
+the first again and 8 between the rest, as EDIT does (40 and 5), and
+the pointer moving on the arrow is not the arrow again.
+
+THE REST ARE THE FILES THEY WERE: EDIT, PMD, SCANDISK, FDISK and
+ACROREAD are not rebuilt.  ACROREAD keeps its 8254 clock, for being
+finer than a tick; three comments in it said what 2Ch was and now say
+what it is (ACROREAD.EXE built again to see: the same 168,484 bytes).
+
+A TEST LOOPED ON 2Ch TOO, AND WOULD HAVE GONE ON PASSING.  RMIVT asks
+whether a program's hooks are called in real mode when the kernel
+calls the BIOS, and whether the clock loses ticks while it does; its
+way of making the kernel call the BIOS was to ask 2Ch on every turn.
+With the new 2Ch that is one BIOS call a minute, and all seven of its
+checks passed on all seven machines having tested nothing - the lines
+it prints are the same either way, so nothing said so.  It asks 2Ah
+now, the date, which is still the clock chip on every call, and reads
+the second that checks 5 and 6 wait for through its own INT 1Ah
+(secrtc).  Two of its lines say 2Ah where they said 2Ch; RUNTESTS.PS1's
+mask and the seven RMIVT baselines follow.  A TEST THAT NEEDS THE
+KERNEL IN THE BIOS MUST NOT USE 2Ch FOR IT.  IRQXWAIT asks 2Ch one
+turn in 256 so as to stay OUT of the BIOS, and only its comment
+changed; IRQTEST waits a second by it, on a kernel built for that
+test, and was left.
+
+PROVEN.  The kernel as it stood, built in a mirror of DOS\ and INC\,
+is BIN's PMDOS.SYS byte for byte (162,362), so the clock is the only
+difference in the one that replaces it (162,654); DOSSHELL as
+committed, by BUILD.CMD's own lines in a mirror, is BIN's 129,256, and
+is 129,336 now.  wasm, and MASM 6.13 on DOSMAIN.ASM.
+  THE CLOCK, by a scratch program that is not in the tree (CLKTEST:
+2Ch asked over and over, each answer against the one before, and 2Ch
+against INT 1Ah/02h).  DOSBox-X for 130 seconds: 3.8 million answers,
+none earlier than the one before, no step over 6 hundredths.  QEMU the
+same for 3 seconds and for 70; and with the machine started at
+23:59:25, for 40 seconds across midnight - nothing went back, and TIME
+and DATE said 23:59:40 10-10-2026 before and 00:00:27 10-11-2026
+after.  40:6C written to 1000, on by 2000 and to FFFFFFF0: 2Ch half a
+second from the chip at once, each time.  A kernel patched, in a
+scratch copy, so that the chip never answers: the ticks' own time,
+0.19 of a second from the chip's.
+  THE PROGRAMS, in QEMU at its PS/2 mouse, on the new kernel.  EDIT:
+the arrow held three seconds runs down the file, stops when let go,
+and two clicks on the other arrow are a line each; five double clicks
+a quarter of a second apart select their five words, and three pairs
+0.8 apart select nothing.  DOSSHELL: fifteen lines in two seconds,
+stopped when let go, a quick click and a slow one a line each, a
+double click shuts the tree's root, two slow clicks choose [Disk
+Utilities] and a double one opens it.  PMD: Memory and Mouse by a
+click.  FDISK: its Help and Disk menus by a click.  SCANDISK: Yes by a
+click, and the surface scan of a 32MB and of an 83MB disk, caught half
+way with its map and its bar drawn.  ACROREAD: the + button, the page
+dragged, the arrow held and let go, the box dragged, Text.
+  WHAT WAS DELIVERED, booted: a copy of the 86Box VM's HD16.IMG -
+EDIT's arrow again, and DOSSHELL, which that disk's DOSSHELL.INI
+starts on its graphics screen: the list held and let go, a double
+click opening the Command Prompt - and a copy of the VM's boot floppy,
+to its prompt.
+
+NOT RUN: 86Box and a real machine - and a real machine is where a
+clock is a crystal and a BIOS, not an emulator's arithmetic.  Windows:
+nothing counts while the machine is parked, the count is checked
+against the chip within a minute of coming back, and nobody watched.
+A chip that answers wrongly for a while and then rightly.  A serial
+mouse.
+
+RUNTESTS -All.  First in S: as it stands, with only the new PMDOS.SYS
+and DOSSHELL.EXE put in BIN: every one of the 609 answers byte for
+byte what the same run said an hour before on the old kernel.  Then in
+a copy of the tree whose BIN\TESTS is what a build leaves, with the
+new RMIVT: RMIVT and RMTEST differ and nothing else.  Both recorded,
+and the run made again: 87 of 87 on all seven machines.
+  WHY S: ITSELF SAYS 85.  RMFIND and RMTEST have differed in every run
+made in S:, and the entry above blamed files "somebody else has put in
+BIN\TESTS".  Nobody had.  They are the six big 16-bit guests MKHD
+seeds - DISKSTAT, REVEAL, MSD, NMAKE, EXEHDR and MEM622, there since
+August - which no build makes, which RUNTESTS puts on its disk with
+the rest of BIN\TESTS, and which the baselines are recorded without.
+They are RMFIND's six entries and 492 of RMTEST's clusters.  THE OTHER
+SEVEN CLUSTERS WERE A STALE BASELINE, AND THIS SESSION'S: ACROREAD.EXE
+grew by 6,844 bytes the night before and RMTEST was not recorded
+again.  It is now: 7338 to 7331, in hexadecimal, on every row.
+  There is NO test of 2Ch in RUNTESTS: CLKTEST was scratch.
+
+Files: DOS\INT21.INC (fn2C, clk_now, clk_count, clk_chip; one line in
+fn2D), CMD\DOSSHELL\MAIN.C (scroll_press), TOOLS\RMIVT.ASM, a comment
+in TOOLS\IRQXWAIT.ASM and three in CMD\ACROREAD\ (SYS.H, SYS_D32.C,
+VIEW.C), TOOLS\RUNTESTS.PS1 (one mask), BASELINE\ RMIVT.OUT and
+RMTEST.OUT on the seven machines' rows.  BIN\PMDOS.SYS 162,654,
+BIN\DOSSHELL.EXE 129,336, BIN\TESTS\RMIVT.COM 1,285.
+IMAGES\PMDOS.IMG and IMAGES\TESTS.IMG (each made again by BUILD.CMD's
+own line), IMAGES\HD16.IMG and the 86Box VM's HD16.IMG (FATREPL, each
+in place) and the VM's PMDOS.IMG and TESTS.IMG carry them.  HD32,
+HDBIG and MULTI do not.  Still v0.63.
+
+
+ACROREAD: THE MENUS (2026-10-11)
+--------------------------------
+
+Charlie, with the mouse working: "ACROREAD could use a File menu
+across the top so a user can select File > Exit which makes it a bit
+more intuitive to use with a mouse."
+
+WHAT THERE IS.  A line at the head of both screens with the menus'
+names: File, View, Page and Help, and Search on the text screen.  File
+has Exit.  The rest are the keys there already were, a line to a key.
+HE ASKED FOR FILE AND EXIT; THE OTHERS ARE THIS SESSION'S DOING,
+because a bar with one name on it and one line under that looked like
+something left unfinished.  View: Zoom In, Zoom Out, Actual Size, Fit
+Width, Whole Page, Turn Right, Turn Left and Text in the picture; in
+the text, Wrap Long Lines or Leave Lines Long, whichever it is not
+doing, and Picture.  Page: Next, Previous, First, Last, Go to Page.
+Search: Find, Find Again.  Help: Keys, which is F1's screen.  Each
+line says its key beside it.
+  F10 lets the first one down, Alt and a menu's letter that one, and a
+press on a name that one; then the arrows, Enter, Esc, and the letter
+underlined in a line.  With the mouse a line is chosen by letting the
+button go on it, so a press on the name pulled down to the line is one
+movement and a click on each is the same in two.  The line under the
+pointer is marked; a press on another name changes menus; a press
+anywhere else puts the menu away and does nothing more.
+  F10 LEFT ACROREAD UNTIL NOW, with Esc, Q and Alt+X, and nothing said
+so.  It is the menus' key in EDIT and DOSSHELL, and is here now.
+
+HOW.  A line of a menu is a key (VIEW.C, MITEM), and menu_key() stands
+between event_get() and each loop's switch: a key that is the menus'
+runs them (menu_run) and comes back as the key of the line chosen, or
+as nothing.  So neither loop knows a menu was there, and a menu cannot
+do what a key cannot.
+  On the graphics screen the top line is a canvas of its own, as the
+line at the foot is, and a menu that is down is a third; compose()
+lays the one into the first sixteen lines and the other over whatever
+is under it, so putting a menu away is those lines sent again.  The
+page's part of the screen is 448 lines now and not 464, and starts at
+line 16: a Letter page whole is 57% where it was 59%.
+  On the text screen the names share the top line with the file's name
+and the page number, which keeps every row of text there was.  A menu
+is a box of line-drawing characters, and the text under it is shown
+again when it goes.
+  The two canvases are had from the heap when ACROREAD starts - 146K -
+and not when a menu is first wanted, when a page may have all the
+memory there is; and not as arrays in the program, which the linker
+writes into the file: that made a 174K .EXE a 320K one.
+
+HELP had one line more to say and no row to say it in, so "With the
+mouse:" gave up its row to "The top line   The menus: click a name,
+or press F10".  And "There are 1 pages" (Go to, in a document of one)
+is "There is 1 page".
+
+PROVEN.  DOSBox-X from key files: the picture at 32 bits and the text
+screen, with every menu let down - by F10 and the arrows, by Alt and
+its letter, and by the mouse: a press pulled to a line and let go, a
+click and a click, a press off the menus - and a 386 with 4MB, where
+the page is grey and the menus are not.  QEMU at its own PS/2 mouse
+and keyboard, nothing redirected: File and Exit pointed at, View
+pulled down to Whole Page, Page and Go to Page by two clicks, F10 and
+the arrows, Alt+V and T, and on the text screen Alt+S and then File
+and Exit by the mouse, which is how each run ends.  The same in the
+sixteen greys (/G).  The scroll bars, the page dragged and the buttons
+at the foot again, now that the page starts sixteen lines down.  And a
+copy of the 86Box VM's own disk, the same run.
+NOT RUN: 86Box, a real machine, a serial mouse, a machine with no
+mouse (F10 and Alt are all there is then, and they are what the key
+files use), a text screen of other than 25 rows.
+
+RUNTESTS -All in a copy of the tree with BIN\TESTS as a build leaves
+it, and this ACROREAD.EXE in BIN: 86 of 87 on all seven machines, and
+the one is RMTEST's free clusters - 7331 to 732C, the five clusters
+ACROREAD.EXE grew by.  Recorded.  RUNTESTS and HELPTEST still do not
+know ACROREAD.
+
+Files: CMD\ACROREAD\VIEW.C; DISK\AUTOEXEC.TXT (two sentences);
+BASELINE\ RMTEST.OUT on the seven machines' rows.  BIN\ACROREAD.EXE is
+174,044 bytes: BUILD.CMD's section for it, word for word, in a mirror,
+and D32BIND.  IMAGES\PMDOS.IMG (made again by BUILD.CMD's own line),
+IMAGES\HD16.IMG and the 86Box VM's HD16.IMG (FATREPL, each in place:
+ACROREAD.EXE and AUTOEXEC.TXT) and the VM's PMDOS.IMG carry it.  HD32,
+HDBIG and MULTI do not.  No kernel change.  Still v0.63.
+
+
+A CD-ROM DIRECTORY, COUNTED THROUGH ONCE (2026-10-11)
+----------------------------------------------------
+
+Charlie: "DOSSHELL locked up when scanning a CD-ROM drive.  It stopped
+after scanning 96 directories.  The CD light would blink every so
+often, but showed no indication that it was going to complete."
+
+WHAT IT WAS.  The kernel hands a CD-ROM's directory to everything above
+it one record at a time, by number (iso_entry, through dir_seek), and a
+directory on a disc can only be counted through from the front.  It
+counted from the front for every record: record 7,000 was reached by
+walking 6,999 others and fetching each block they are in out of the
+cache again.  So a listing cost the SQUARE of what was in the
+directory, and finding one name in it cost as much again.  DOSSHELL
+reads a drive by listing each directory and then looking up every
+directory inside it by name - one more whole pass for each.
+  NOTHING HERE WAS BIG ENOUGH TO SHOW IT.  The largest directory on
+win16ddk.iso holds 347 names; all 985 of that disc's directories are
+read in two seconds on the 86Box PM-DOS machine (VS440FX, Pentium Pro
+166) and in six on its 486DX2-66 with a 4x drive, before this change
+and after.  TOOLS\MKBIGCD.PS1 makes the disc that does show it,
+S:\Software\PMDOSCD\BIGDIR.ISO: a hundred small directories, then BIG
+with 8,000 files and five directories in it, then thirty more.  On the
+Pentium Pro the shell stood at "Directories read: 96" for 124 seconds
+(the count moved every thirty-two, and 120 had been read when it
+reached BIG).  QEMU with the old kernel did not finish DIR D:\ /S of
+it in nine minutes.
+  WHAT CHARLIE'S DISC WAS IS NOT KNOWN, nor which machine it was in, so
+this is the fault his words fit and not one seen on his disc.  The
+light is my reading too: the drive is sent TEST UNIT READY once for
+every DOS call that names it (iso_chkmedia), and here the calls came a
+pass apart.
+
+THE KERNEL.  The place each walk reached is kept - the directory's
+first block, the record it stood in front of, and the walk's three
+numbers - and a request for a record at or past it starts from there
+(iso_curget, iso_curput in ISO9660.INC).  Four directories at once,
+given up in turn, because a path is walked through its parents and a
+listing is commonly interleaved with listings of what is inside it.  A
+request for an earlier record starts from the front as before.
+iso_mount forgets them all and so does a read that fails: a place is
+good for as long as the disc is the same disc.
+  UDF.INC had the same count and gets the same answer (udf_curget), and
+had something worse beside it: udf_diropen threw the two-block window
+away, so every record asked for was the DRIVE read again, and as one
+transfer of two blocks, which cd_read does not send through the cache.
+The window knows whose blocks it holds now (udf_wdir) and is filled a
+block at a time, through the cache.
+  WHAT IS STILL A WALK.  A search by name starts at record zero, so a
+directory of N names with K directories in it costs the shell K walks
+of N.  Each is one pass now and not N of them - BIG's five are nothing
+- but a directory holding thousands of DIRECTORIES was not made and
+not measured.
+
+THE SHELL.  "Directories read" follows the clock, five times a second,
+and not the count (TREE.C, scan_note): a number that moves every
+thirty-two directories stands still for as long as the slowest
+thirty-two take.  And the file list behind the box said "The drive is
+not ready." all through the first read of a drive; it says nothing
+until the read is over (tree_reading).  There is still no key that
+stops a read, as there is none in the MS-DOS Shell.
+
+RUN.  BIGDIR.ISO on the 86Box Pentium Pro, new kernel and shell: the
+batch file's marker files either side of the read carry the same time
+(file times are two seconds apart at best), text screen and /G; on the
+486DX2-66 with the 4x drive, two seconds.  DIR D:\ /S of it there,
+8,813 names: eight seconds.
+  OLD KERNEL AGAINST NEW, the same batch file on the same disc in QEMU
+and what each left compared byte for byte: DIR /S from CMD and from
+COMMAND.COM, files typed and copied from both ends of a big directory,
+CD and "..", XCOPY /S, ATTRIB, and the shell's tree opened whole.  Nine
+discs: win16ddk and offnt42 (plain ISO9660), lfntest (Joliet), RRTEST
+and RRDEEP (Rock Ridge, with the relocated directory walked into and
+out of), UDFTEST, a UDF disc with 700 long names in one directory, and
+BIG at 1,500 files with and without Joliet.  Every listing the same.
+What differed was the time of day in the shell's status line and on
+directories XCOPY made, and one cluster of free space on C: - the
+kernel is a cluster bigger.
+  RUNTESTS, all seven machines: 87 of 87 but for RMTEST's free clusters
+(732C to 732B, that cluster) and, on the six that cache, CACHETST's
+"a write is owed" (0004 to 0005, which moves with where files land).
+Recorded, thirteen files, from a second full run.
+  NOT RUN: a real drive, or any machine but the emulated ones.
+
+Files: DOS\ISO9660.INC, DOS\UDF.INC; CMD\DOSSHELL\TREE.C, MAIN.C and
+SHELL.H (a line each in the last two); TOOLS\MKBIGCD.PS1 (new);
+BASELINE\ RMTEST.OUT and CACHETST.OUT.  BIN\PMDOS.SYS is 163,254 bytes
+and BIN\DOSSHELL.EXE 129,412, each built by BUILD.CMD's own lines in a
+mirror of the directories they read.  IMAGES\PMDOS.IMG (made again by
+BUILD.CMD's own line), IMAGES\HD16.IMG and the 86Box VM's HD16.IMG
+(FATREPL, each in place) and the VM's PMDOS.IMG carry them.  HD32,
+HDBIG and MULTI do not.  Still v0.63.
+
+
 v0.61 - THE NUMBER CAUGHT UP (2026-09-30)
 ---------------------------------------------------------------------
 
