@@ -12,8 +12,8 @@ FDISK, MOUNT, MOVE, ATTRIB, CHKDSK, LABEL, CACHE, UNDELETE, CDEX,
 FC, FIND, DISKCOPY, DISKCOMP, ISAPNP, SHUTDOWN, PMD, DOSSHELL,
 ACROREAD, SCANDISK and KEYB - the two files of tables KEYB and
 COUNTRY= read,
-KEYBOARD.SYS and COUNTRY.SYS - and LRGDISK.386, which is for a
-Windows on a hard disk.
+KEYBOARD.SYS and COUNTRY.SYS - and LRGDISK.386 with LRGSTAT.EXE,
+which are for a Windows on a hard disk.
 ONLY PMIO.SYS AND PMDOS.SYS HAVE TO BE IN A ROOT.  On a hard disk
 the rest can go in a directory of its own, with one line in
 CONFIG.SYS to say which - SHELL=C:\DOS\CMD.EXE /P - and that
