@@ -853,7 +853,7 @@ static void draw_files( FWIN *win, int focused )
         }
     }
     if ( win->files.count == 0 ) {
-        empty = !win_ok( win ) ? "The drive is not ready."
+        empty = !win_ok( win ) ? (tree_reading ? "" : "The drive is not ready.")
                 : win->search ? "No files were found."
                 : "No files in this directory.";
         scr_put( win->row_top, left + 3, empty, pal.pane );
@@ -1431,7 +1431,8 @@ static int held_next( int hundredths )
 static void scroll_press( int top, int bottom, int *first, int rows, int total )
 {
     int part = sbar_hit( top, bottom, 0, *first, rows, total, mouse.row );
-    int limit = total - rows, step, got;
+    int limit = total - rows, step, got, delay = 40;
+    int arrow = part == SB_UP || part == SB_DOWN;
 
     if ( limit < 0 ) {
         limit = 0;
@@ -1450,10 +1451,16 @@ static void scroll_press( int top, int bottom, int *first, int rows, int total )
             *first = 0;
         }
         redraw_now();
-        got = held_next( part == SB_THUMB ? -1 : 8 );
+        /* an arrow waits longer before its first again than between the
+           rest, so that a click is one line; and the pointer moving on the
+           arrow is not the arrow again */
+        do {
+            got = held_next( part == SB_THUMB ? -1 : arrow ? delay : 8 );
+        } while ( arrow && got == 1 );
         if ( got == 0 ) {
             return;
         }
+        delay = 8;
         if ( part == SB_THUMB && got == 1 ) {
             *first = sbar_drag( top, bottom, rows, total, mouse.row );
         } else if ( part == SB_PGUP || part == SB_PGDN ) {

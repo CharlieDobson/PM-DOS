@@ -246,6 +246,7 @@ typedef struct {
 } DTREE;
 
 DTREE *tree_get( int drive, int reread );       /* NULL: the drive cannot be read */
+extern int tree_reading;                        /* inside tree_get, reading a drive */
 void   tree_path( DTREE *tree, int node, char *buf );   /* "C:\A\B"; the root is "C:\" */
 int    tree_find( DTREE *tree, const char *path );      /* the nearest node there is */
 int    tree_vis_of( DTREE *tree, int node );    /* its line, opening what hides it */

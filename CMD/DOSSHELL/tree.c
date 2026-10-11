@@ -27,7 +27,10 @@ static DTREE   trees[26];
 static FINDREC rec;
 static char    scan_path[PATH_MAX + 16];
 static u32     scan_count;
+static u32     scan_shown;              /* when the screen last said how far */
 static int     scan_failed;
+
+int tree_reading;                       /* a drive is being read now */
 
 /* ------------------------------------------------------------------ */
 /* the array                                                           */
@@ -146,10 +149,23 @@ static void sort_names( char **names, int count )
     }
 }
 
+/* THE COUNT ON THE SCREEN FOLLOWS THE CLOCK, not the count: five times
+   a second, however many directories that was.  It was every thirty-two
+   of them, and a drive that takes its time over one directory - a
+   CD-ROM with thousands of files in it - left a number standing still
+   that looked like a machine that had stopped. */
+#define SCAN_EVERY  20u                 /* hundredths of a second */
+
 static void scan_note( void )
 {
     char line[48], num[16];
+    u32 now = sys_hundredths();
 
+    if ( now - scan_shown < SCAN_EVERY ) {
+        return;                         /* past midnight the difference is
+                                           huge, and the box is drawn */
+    }
+    scan_shown = now;
     str_cpy( line, "Directories read: " );
     str_catn( line, fmt_num( scan_count, 0, num ), sizeof( line ) );
     busy_show( "Reading disk information...", line );
@@ -197,9 +213,8 @@ static void scan_dir( DTREE *tree, int node )
     for ( index = 0; index < count && !scan_failed; index++ ) {
         child = node_insert( tree, tree->count, names[index], node,
                              tree->node[node].depth + 1 );
-        if ( (++scan_count & 31) == 0 ) {
-            scan_note();
-        }
+        scan_count++;
+        scan_note();
         if ( len + str_len( names[index] ) + 2 < sizeof( scan_path ) ) {
             str_cpy( scan_path + len, names[index] );
             str_catn( scan_path, "\\", sizeof( scan_path ) );
@@ -247,8 +262,11 @@ DTREE *tree_get( int drive, int reread )
     scan_failed = 0;
     sys_crit_seen();
     node_insert( tree, 0, "", -1, 0 );
+    tree_reading = 1;
     busy_show( "Reading disk information...", NULL );
+    scan_shown = sys_hundredths();
     scan_dir( tree, 0 );
+    tree_reading = 0;
     if ( scan_failed ) {
         tree_free( tree );
         return NULL;
