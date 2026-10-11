@@ -1080,6 +1080,14 @@ it_auxnext:
         loop    it_aux
 it_noaux:
 
+;--- the keyboard's lights -------------------------------------------
+; The BIOS's INT 09h lit them and there is none; and its INT 16h put
+; right a lock that a program had changed behind its back.  Both are
+; one comparison here - the locks at 40:17 against what the keyboard
+; was last told - and the conversation that follows when they differ
+; is KEYBD.INC's, along with the reason it starts from the clock.
+        call    kb_tick
+
 ;--- the floppy motor-off countdown ----------------------------------
 ; Zero means "no motor running and nothing to do", which is also the
 ; state the count is left in after it fires, so this costs two

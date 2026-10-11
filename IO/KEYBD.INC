@@ -73,9 +73,36 @@ KBF_SHIFT       EQU     01h
 KBF_CTRL        EQU     02h
 KBF_ALT         EQU     04h
 KBF_E0          EQU     08h
-KBF_CAPS        EQU     10h
+KBF_CAPSDN      EQU     10h             ; the Caps Lock KEY is down - which
+                                        ; is not Caps Lock being on.  That
+                                        ; is at 40:17 and nowhere else; see
+                                        ; kb_lock
 KBF_ALTGR       EQU     20h             ; the right-hand Alt is down, on a
                                         ; layout where that key is AltGr
+KBF_NUMDN       EQU     40h             ; the Num Lock key is down
+KBF_SCRLDN      EQU     80h             ; ...and the Scroll Lock key
+
+; A command for the keyboard is two bytes and two acknowledgements, and
+; kb_cmdst is how far through one the driver is - see kb_tick.
+KCS_IDLE        EQU     0
+KCS_CMD         EQU     1               ; the command has gone: its FAh is owed
+KCS_ARG         EQU     2               ; ...and its argument: the second FAh
+KCS_END         EQU     3               ; that try failed, and the keyboard
+                                        ; has been told to carry on: that
+                                        ; FAh, if it comes
+
+KBD_SETLEDS     EQU     0EDh            ; then bit 0 Scroll, 1 Num, 2 Caps
+KBD_SETRATE     EQU     0F3h            ; then the typematic byte
+KBD_ENABLE      EQU     0F4h
+KBD_ACK         EQU     0FAh
+KBD_RESEND      EQU     0FEh
+
+KB_CMDTICKS     EQU     3               ; ticks an answer is waited for.  A
+                                        ; keyboard has 20ms to give one
+KB_CMDTRIES     EQU     3               ; times a command is sent in all
+KB_QUIETTICKS   EQU     24              ; kb_quiet's patience: longer than
+                                        ; every try of one command, each
+                                        ; with its "enable" behind it
 
 KBQ_SIZE        EQU     32              ; scan codes held for a DOS box.  A
                                         ; key is at most three of them, and
@@ -103,9 +130,20 @@ kb_init:
         mov     word ptr ds:[BDA_KBEND],KB_RINGHI
         mov     word ptr ds:[BDA_KBHEAD],KB_RINGLO
         mov     word ptr ds:[BDA_KBTAIL],KB_RINGLO
-        mov     byte ptr ds:[BDA_KBFLAG],0
+
+        ; THE LOCKS STAY AS THE BIOS LEFT THEM - a machine set up to
+        ; start with Num Lock on starts PM-DOS with it on - and the
+        ; lights are taken to be showing exactly that, because the BIOS
+        ; lit them from this byte.  Nothing is said to the keyboard
+        ; until one of the three changes.
+        and     byte ptr ds:[BDA_KBFLAG],BDAK_LOCKS
+        mov     al,byte ptr ds:[BDA_KBFLAG]
+        shr     al,4
+        and     al,7
+        mov     byte ptr [kb_ledcur],al
         mov     byte ptr ds:[BDA_KBFLAG2],0
         mov     byte ptr [kb_flags],0
+        mov     byte ptr [kb_cmdst],KCS_IDLE
 ki_drain:
         in      al,KB_CMD
         test    al,1                    ; output buffer full?
@@ -186,6 +224,14 @@ irq_keyboard:
 kb_have:
         in      al,KB_DATA
 
+        ; An answer to something this driver said to the keyboard is
+        ; nobody's keystroke, and least of all a DOS box's.
+        cmp     byte ptr [kb_cmdst],KCS_IDLE
+        je      kb_byte
+        call    kb_reply
+        jc      kb_byte                 ; a key after all
+        ret
+
 kb_byte:                                ; AL = a byte from the keyboard - or
                                         ; from KLS_INJECT, which is a test's
                                         ; way of pressing a key
@@ -238,6 +284,10 @@ kb_realmod:
         je      kb_alt
         cmp     al,3Ah                  ; caps lock
         je      kb_caps
+        cmp     al,45h                  ; num lock
+        je      kb_num
+        cmp     al,46h                  ; scroll lock
+        je      kb_scroll
 
         test    ah,ah
         jnz     kb_clr_e0               ; break code for an ordinary key
@@ -287,6 +337,11 @@ kb_nohot:
 kb_plain:
         cmp     al,59h                  ; beyond our translation tables?
         jae     kb_clr_e0
+        cmp     al,47h                  ; the numeric keypad is two sets of
+        jb      kb_typed                ; keys, and Num Lock says which
+        cmp     al,53h
+        jbe     kb_keypad
+kb_typed:
         cmp     byte ptr [kb_layon],0
         jne     kb_nat                  ; KEYB's layout first
 kb_us:
@@ -295,7 +350,7 @@ kb_us:
         test    byte ptr [kb_flags],KBF_SHIFT
         jnz     kb_shifted
         mov     al,byte ptr [kb_lower + ebx]
-        test    byte ptr [kb_flags],KBF_CAPS
+        test    byte ptr ds:[BDA_KBFLAG],BDAK_CAPS
         jz      kb_haveasc
         cmp     al,'a'                  ; caps lock affects letters only
         jb      kb_haveasc
@@ -305,7 +360,7 @@ kb_us:
         jmp     short kb_haveasc
 kb_shifted:
         mov     al,byte ptr [kb_upper + ebx]
-        test    byte ptr [kb_flags],KBF_CAPS
+        test    byte ptr ds:[BDA_KBFLAG],BDAK_CAPS
         jz      kb_haveasc
         cmp     al,'A'
         jb      kb_haveasc
@@ -334,8 +389,9 @@ kb_haveasc:
 ; The keypad is left out of this on purpose.  Alt with a keypad digit
 ; is how a character is entered by number, and a real BIOS answers it
 ; by composing rather than by reporting anything at all; giving those
-; keys an extended code would be inventing a third behaviour.  Without
-; Num Lock tracking the honest thing is to let them stay digits.
+; keys an extended code would be inventing a third behaviour.  Until
+; the composing is written they stay digits, whatever Num Lock says
+; (kb_keypad sends them here).
 kb_altkey:
         cmp     ah,47h
         jae     kb_store                ; keypad and beyond: leave it be
@@ -459,17 +515,66 @@ kf11_alt:
         add     ah,6
         jmp     kb_store
 
-; Ctrl and a cursor-pad key, indexed by scan code from 47h (Home).
-; A zero means the BIOS has no code for that combination.
+;=====================================================================
+; THE NUMERIC KEYPAD.
+;
+; Two sets of keys on one block: the digits, and the cursor keys
+; printed underneath them.  Num Lock says which, and Shift says the
+; other one for as long as it is held - the BIOS's rule, and the reason
+; a keyboard wraps a grey key in fake shifts (see above).  Until Num
+; Lock was tracked this was the digits always, and the light said
+; whatever the BIOS had left it saying.
+;
+; As a cursor key the code is the grey key's with a zero where that one
+; has E0h, which is how INT 16h function 10h tells the two apart.  The
+; 5 has nothing printed under it and types nothing: a BIOS reports it
+; to function 10h alone, and the DOS console is the other function.
+;
+; CTRL IS THE SAME KEY WHATEVER THE LIGHT SAYS - Ctrl-Left for the 4,
+; and so on down kb_ctrlnav - and so are the minus and the plus.  Alt
+; is kb_altkey's business.
+;=====================================================================
+kb_keypad:
+        test    byte ptr [kb_flags],KBF_ALT
+        jnz     kb_typed
+        test    byte ptr [kb_flags],KBF_CTRL
+        jnz     kb_padctrl
+        cmp     al,4Ah
+        je      kb_typed
+        cmp     al,4Eh
+        je      kb_typed
+        mov     ah,byte ptr ds:[BDA_KBFLAG]
+        and     ah,BDAK_NUM
+        test    byte ptr [kb_flags],KBF_SHIFT
+        jz      kb_padwhich
+        xor     ah,BDAK_NUM
+kb_padwhich:
+        or      ah,ah
+        jnz     kb_typed                ; the digits, and the decimal point
+        cmp     al,4Ch
+        je      kb_clr_e0
+        mov     ah,al
+        xor     al,al
+        jmp     kb_store
+kb_padctrl:
+        movzx   ebx,al
+        mov     ah,byte ptr [kb_ctrlnav + ebx - 47h]
+        xor     al,al
+        jmp     kb_store
+
+; Ctrl and a cursor-pad key, indexed by scan code from 47h (Home) - and
+; Ctrl and a key of the numeric keypad, which has three keys the cursor
+; pad has not.  A zero would mean the BIOS has no code for that
+; combination, and kb_grey still looks for one.
 kb_ctrlnav:
         db      77h                     ; 47 Home    -> Ctrl-Home
         db      8Dh                     ; 48 Up
         db      84h                     ; 49 PgUp
-        db      0                       ; 4A grey minus - keypad only
+        db      8Eh                     ; 4A the minus - keypad only
         db      73h                     ; 4B Left
-        db      0                       ; 4C
+        db      8Fh                     ; 4C the 5 - keypad only
         db      74h                     ; 4D Right
-        db      0                       ; 4E grey plus - keypad only
+        db      90h                     ; 4E the plus - keypad only
         db      75h                     ; 4F End
         db      91h                     ; 50 Down
         db      76h                     ; 51 PgDn
@@ -528,17 +633,65 @@ kb_alt_up:
         and     byte ptr [kb_flags],NOT KBF_ALT
         jmp     kb_mod
 
+;--- the lock keys ----------------------------------------------------
+; WHETHER A LOCK IS ON IS A BIT AT 40:17 AND IS KEPT NOWHERE ELSE.  This
+; driver had Caps Lock in its own flags and did not have the other two
+; at all, and the lights said so: they stayed as the BIOS left them
+; whatever was pressed.  The bit in the BIOS's byte is the one a
+; program reads, the one a program WRITES to turn Num Lock off, and the
+; one the ROM's handler turns over when a DOS box has the keyboard - so
+; it is the one this decoder reads too, and kb_tick makes the lights
+; say what it says, whoever changed it.
+;
+; What the driver does keep is that the KEY is down.  A held key
+; repeats, and a lock that turned over on every repeat would end up
+; wherever the count left it.
+;
+; A code that is the box's is the box's to act on.  Its chain ends at
+; the ROM, or at the stub and kb_boxkey, and the bit is turned over
+; there - once.
 kb_caps:
+        mov     bl,KBF_CAPSDN
+        mov     bh,BDAK_CAPS
+        jmp     short kb_lock
+kb_num:
+        mov     bl,KBF_NUMDN
+        mov     bh,BDAK_NUM
+        jmp     short kb_lockx
+kb_scroll:
+        mov     bl,KBF_SCRLDN
+        mov     bh,BDAK_SCROLL
+kb_lockx:
+        ; WITH CTRL DOWN THESE TWO ARE OTHER KEYS.  Ctrl and Num Lock
+        ; is Pause - and is what the Pause key itself sends, E1 1D 45 -
+        ; and Ctrl and Scroll Lock is Break, which a 101-key board
+        ; sends as E0 46.  None of them is a lock.  A key coming UP is
+        ; noted all the same, or one let go after Ctrl went down would
+        ; be held for ever.
         test    ah,ah
-        jnz     kb_clr_e0               ; toggle on the make code only
-        xor     byte ptr [kb_flags],KBF_CAPS
+        jnz     kb_lock_up
+        test    byte ptr [kb_flags],KBF_CTRL OR KBF_E0
+        jnz     kb_clr_e0
+kb_lock:
+        test    ah,ah
+        jnz     kb_lock_up
+        test    byte ptr [kb_flags],bl
+        jnz     kb_clr_e0               ; still down: the keyboard repeating
+        or      byte ptr [kb_flags],bl
+        cmp     byte ptr [kb_forbox],0
+        jne     kb_clr_e0
+        xor     byte ptr ds:[BDA_KBFLAG],bh
+        jmp     kb_clr_e0
+kb_lock_up:
+        not     bl
+        and     byte ptr [kb_flags],bl
+        jmp     kb_clr_e0
 
 kb_mod:
         ; 40:17 has ONE writer at a time, for the reason the ring does.
         ; While the box owns the keystroke the ROM's handler is
-        ; publishing the shift state - and it tracks Num Lock and
-        ; Scroll Lock, which this driver does not, so writing over it
-        ; here would turn its lock lights off on every shift key.
+        ; publishing the shift state, from the codes the box has been
+        ; given - which is not always every code that has arrived.
         cmp     byte ptr [kb_forbox],0
         jne     kb_clr_e0
         call    kb_bdaflags
@@ -725,17 +878,13 @@ kb_boxreset:
 ; conversion from the numbers MODE CON uses to the byte the hardware
 ; wants - the kernel's side of the line is the hardware's units.
 ;
-; INTERRUPTS OFF FOR THE WHOLE EXCHANGE, and the acknowledgements are
-; swallowed here rather than left for the decoder.  A command to the
-; keyboard is a CONVERSATION - F3h, an ACK, the argument, another ACK -
-; and by the time this runs IRQ 1 belongs to irq_keyboard, which would
-; take those ACKs off the port as though they were keystrokes.  They
-; are harmless when it does (FAh has bit 7 set, so it reads as a break
-; code for a key nobody pressed), but a HALF-DELIVERED conversation is
-; not harmless at all: a keyboard left waiting for its argument treats
-; the next thing it is sent as one.  So the two bytes go out together
-; and the two answers come back here, and the controller is drained
-; afterwards so that nothing is left in it when interrupts come back.
+; THE BYTE IS ONLY NOTED HERE, AND kb_tick SENDS IT.  It used to go out
+; from this routine, with interrupts off and the two acknowledgements
+; read off the port by hand, and that was sound while nothing else ever
+; spoke to the keyboard.  The lock lights do now, at a moment nobody
+; chooses, and an F3h sent while an EDh's answer was still on its way
+; would have taken that answer for its own.  One keyboard, one
+; conversation at a time, and one piece of code that holds it.
 ;
 ; A keyboard that will not talk simply keeps the rate it had.  Nothing
 ; here waits for ever and nothing here reports failure: a typematic
@@ -743,53 +892,225 @@ kb_boxreset:
 ; from the way somebody asked is better than one that does not boot.
 ;=====================================================================
 kb_typematic:
+        mov     byte ptr [kb_ratewant],al
+        mov     byte ptr [kb_rateowed],1
+        ret
+
+;=====================================================================
+; TALKING TO THE KEYBOARD.
+;
+; The lock lights are the keyboard's own, and it changes them when it
+; is told to: EDh, and then a byte with a bit for each light.  The
+; typematic rate is F3h and a byte in the same way.  Each of the two
+; bytes is answered with FAh, and the answer arrives as a scan code
+; does - IRQ 1, a millisecond or two later.
+;
+; NOBODY WAITS FOR IT.  The command goes out from the timer tick
+; (kb_tick), irq_keyboard hands the answers to kb_reply, and kb_reply
+; sends the argument when the first one comes.  It is how the BIOS
+; does it, and it costs no time with interrupts off; a key pressed in
+; the middle is a key, and goes where keys go.
+;
+; THE LIGHTS ARE WHAT 40:17 SAYS.  The tick compares the three lock
+; bits with what the keyboard was last told and says so when they
+; differ - whoever changed them: kb_lock, the ROM's handler under a DOS
+; box that has hooked INT 09h, a program that wrote the byte, NUMLOCK=
+; in CONFIG.SYS.  A box's own EDh never reaches the keyboard (vio_o60k)
+; and does not have to.
+;
+; WHEN IT GOES WRONG - FEh, which is the keyboard asking for a byte
+; again, or no answer in KB_CMDTICKS - the keyboard is sent "enable"
+; before anything else.  One that heard the command has stopped
+; scanning to wait for the argument, and what it makes of the next
+; byte depends on who built it: a command in the argument's place ends
+; the wait on IBM's, and on others it IS the argument.  Enable is
+; harmless as either.  Then the command goes again from the top,
+; KB_CMDTRIES times in all, and after the last the keyboard is left
+; alone until the locks next change.
+;
+; NOT WHILE SOMEBODY ELSE IS IN THE MIDDLE OF A SENTENCE.  The 8042 has
+; one data port for two devices: after D4h the next byte written is the
+; mouse's, and after 60h it is the controller's own.  A byte of ours
+; landing between a command like that and its data would go to the
+; wrong device, and the data byte to the keyboard - as a command.  So
+; nothing is begun while the mouse driver is talking (ms_probing, and
+; it waits for us first: kb_quiet), and nothing is sent while a DOS box
+; is half way through one of those (kb_tell).
+;=====================================================================
+
+;---------------------------------------------------------------------
+; kb_tick - irq_timer, once an interrupt.  Everything preserved.
+;---------------------------------------------------------------------
+kb_tick:
+        push    eax
+        cmp     byte ptr [kb_cmdst],KCS_IDLE
+        jne     kt_busy
+        cmp     byte ptr [kb_parked],0
+        jne     kt_out
+        cmp     byte ptr ds:[ms_probing],0
+        jne     kt_out
+        call    kb_boxmid
+        jc      kt_out
+        cmp     byte ptr [kb_rateowed],0
+        jne     kt_rate
+        mov     al,byte ptr ds:[BDA_KBFLAG]     ; Scroll, Num and Caps are
+        shr     al,4                            ; bits 4 to 6 there and 0
+        and     al,7                            ; to 2 to the keyboard
+        cmp     al,byte ptr [kb_ledcur]
+        je      kt_out
+        mov     ah,KBD_SETLEDS
+        jmp     short kt_new
+kt_rate:
+        mov     byte ptr [kb_rateowed],0
+        mov     al,byte ptr [kb_ratewant]
+        mov     ah,KBD_SETRATE
+kt_new:
+        mov     byte ptr [kb_cmdarg],al
+        mov     byte ptr [kb_cmdbyte],ah
+        mov     byte ptr [kb_cmdleft],KB_CMDTRIES
+        call    kb_cmdgo
+kt_out:
+        pop     eax
+        ret
+
+kt_busy:
+        mov     eax,dword ptr ds:[BDA_TICKS]
+        sub     eax,dword ptr [kb_cmdwhen]
+        cmp     eax,KB_CMDTICKS
+        jb      kt_out
+        call    kb_cmdfail                      ; no answer
+        jmp     short kt_out
+
+;---------------------------------------------------------------------
+; kb_cmdgo - the command byte, and the wait for its FAh.
+;            kb_cmdfail - FEh, or no answer in time: "enable", and the
+;            wait for that one's.
+;            kb_cmdnext - and when the enable has been answered, or has
+;            not: the command again if there is a try left.
+;            EAX is lost by all three.
+;---------------------------------------------------------------------
+kb_cmdgo:
+        mov     al,byte ptr [kb_cmdbyte]
+        call    kb_tell
+        mov     byte ptr [kb_cmdst],KCS_CMD
+kb_cmdstamp:
+        mov     eax,dword ptr ds:[BDA_TICKS]
+        mov     dword ptr [kb_cmdwhen],eax
+        ret
+
+kb_cmdfail:
+        cmp     byte ptr [kb_cmdst],KCS_END
+        je      kb_cmdnext
+        mov     al,KBD_ENABLE
+        call    kb_tell
+        mov     byte ptr [kb_cmdst],KCS_END
+        jmp     short kb_cmdstamp
+
+kb_cmdnext:
+        dec     byte ptr [kb_cmdleft]
+        jnz     kb_cmdgo
+        cmp     byte ptr [kb_cmdbyte],KBD_SETLEDS
+        jne     kcn_idle
+        mov     al,byte ptr [kb_cmdarg]         ; not lit, but not to be
+        mov     byte ptr [kb_ledcur],al         ; asked for every tick
+kcn_idle:
+        mov     byte ptr [kb_cmdst],KCS_IDLE
+        ret
+
+;---------------------------------------------------------------------
+; kb_reply - AL = a byte off the keyboard while an answer is owed.  CF
+;            set, and AL kept, if it is not one: a key, pressed in the
+;            middle of things.
+;---------------------------------------------------------------------
+kb_reply:
+        cmp     al,KBD_ACK
+        je      kr_ack
+        cmp     al,KBD_RESEND
+        je      kr_resend
+        stc
+        ret
+kr_resend:
+        call    kb_cmdfail
+        clc
+        ret
+kr_ack:
+        cmp     byte ptr [kb_cmdst],KCS_CMD
+        jne     kr_second
+        mov     al,byte ptr [kb_cmdarg]
+        call    kb_tell
+        mov     byte ptr [kb_cmdst],KCS_ARG
+        call    kb_cmdstamp
+        clc
+        ret
+kr_second:
+        cmp     byte ptr [kb_cmdst],KCS_ARG
+        jne     kr_closed
+        cmp     byte ptr [kb_cmdbyte],KBD_SETLEDS
+        jne     kr_idle
+        mov     al,byte ptr [kb_cmdarg]         ; lit - and the BIOS's own
+        mov     byte ptr [kb_ledcur],al         ; note of the lights, which
+        mov     ah,byte ptr ds:[BDA_KBLED]      ; its INT 16h compares with
+        and     ah,NOT BDAL_LEDS                ; 40:17, says the same
+        or      ah,al
+        mov     byte ptr ds:[BDA_KBLED],ah
+kr_idle:
+        mov     byte ptr [kb_cmdst],KCS_IDLE
+        clc
+        ret
+kr_closed:                              ; the enable's
+        call    kb_cmdnext
+        clc
+        ret
+
+;---------------------------------------------------------------------
+; kb_boxmid - CF set while a DOS box is between a controller command it
+;             was allowed (D4h, 60h: vio_o64) and that command's data
+;             byte.  The real 8042 is waiting for that byte.
+;
+;             kb_tell - AL = a byte for the keyboard, sent unless that
+;             is so.  Not sent is not answered, and the wait for the
+;             answer running out is what sends it again.
+;---------------------------------------------------------------------
+kb_boxmid:
+        cmp     byte ptr ds:[vio_kbdcmd],0
+        jne     kbm_yes
+        cmp     byte ptr ds:[vio_kbdaux],1
+        je      kbm_yes
+        clc
+        ret
+kbm_yes:
+        stc
+        ret
+
+kb_tell:
+        call    kb_boxmid
+        jnc     kb_send
+        ret
+
+;---------------------------------------------------------------------
+; kb_quiet - wait until nothing is being said to the keyboard.  For
+;            code about to talk to the 8042 itself, AFTER it has done
+;            what stops kb_tick beginning anything new.  Interrupts are
+;            turned on for the wait, whatever the caller had: the
+;            answers are interrupts and so is the clock that bounds it.
+;---------------------------------------------------------------------
+kb_quiet:
         pushfd
-        cli
         push    eax
-        mov     ah,al
-        mov     al,0F3h                 ; "set typematic rate/delay"
-        call    kb_send
-        call    kb_eat                  ; its ACK
-        mov     al,ah
-        call    kb_send
-        call    kb_eat                  ; and the argument's
+        push    ebx
+        sti
+        mov     ebx,dword ptr ds:[BDA_TICKS]
+kq_lp:
+        cmp     byte ptr [kb_cmdst],KCS_IDLE
+        je      kq_out
+        mov     eax,dword ptr ds:[BDA_TICKS]
+        sub     eax,ebx
+        cmp     eax,KB_QUIETTICKS
+        jb      kq_lp
+kq_out:
+        pop     ebx
         pop     eax
-        call    kb_drain                ; anything else it had to say
         popfd
-        ret
-
-;---------------------------------------------------------------------
-; kb_eat - wait a moment for a byte from the keyboard and swallow it.
-;          kb_drain - swallow whatever is there without waiting.
-;---------------------------------------------------------------------
-kb_eat:
-        push    eax
-        push    ecx
-        mov     ecx,200000
-ke_wait:
-        in      al,KB_CMD
-        test    al,1                    ; output buffer full?
-        jnz     ke_take
-        dec     ecx
-        jnz     ke_wait
-        jmp     short ke_out
-ke_take:
-        in      al,KB_DATA
-ke_out:
-        pop     ecx
-        pop     eax
-        ret
-
-kb_drain:
-        push    eax
-kd_lp:
-        in      al,KB_CMD
-        test    al,1
-        jz      kd_out
-        in      al,KB_DATA
-        jmp     short kd_lp
-kd_out:
-        pop     eax
         ret
 
 ;---------------------------------------------------------------------
@@ -872,14 +1193,14 @@ kg_notgrey:
 ; kb_bdaflags - mirror the modifier state into 40:17, where a program
 ;               that wants to know whether Shift is down looks for it.
 ;
-; The internal byte stays the master because it carries KBF_E0, which
-; is a decoding state and not a fact about the keyboard.  Only the bits
-; this driver genuinely tracks are written: Num Lock and Scroll Lock
-; are not tracked, and setting their bits would be a claim rather than
-; a report.  Left and right shift are not told apart here either, so
-; both bits move together - a program testing either one gets the right
-; answer, and one testing them separately learns that both are down,
-; which is the least wrong thing available.
+; The internal byte stays the master for the keys that are HELD,
+; because it carries KBF_E0, which is a decoding state and not a fact
+; about the keyboard.  The top four bits of 40:17 are not held keys
+; and are not written from here: the three locks have their master
+; there (kb_lock), and Insert is nobody's.  Left and right shift are
+; not told apart here, so both bits move together - a program testing
+; either one gets the right answer, and one testing them separately
+; learns that both are down, which is the least wrong thing available.
 ;=====================================================================
 kb_bdaflags:
         push    eax
@@ -898,10 +1219,9 @@ kbf_noctrl:
         jz      kbf_noalt
         or      al,BDAK_ALT
 kbf_noalt:
-        test    bl,KBF_CAPS
-        jz      kbf_nocaps
-        or      al,BDAK_CAPS
-kbf_nocaps:
+        mov     bl,byte ptr ds:[BDA_KBFLAG]
+        and     bl,0F0h
+        or      al,bl
         mov     byte ptr ds:[BDA_KBFLAG],al
         pop     ebx
         pop     eax
@@ -998,9 +1318,10 @@ kn_first:
         jz      kn_nosh
         inc     edx
 kn_nosh:
-        test    bl,KBF_CAPS             ; Caps Lock shifts the keys the
-        jz      kn_nocaps               ; layout says it shifts, and Shift
-        test    byte ptr [edi+KBLK_FLAGS],KBLK_CAPS     ; undoes it
+        test    byte ptr ds:[BDA_KBFLAG],BDAK_CAPS      ; Caps Lock shifts
+        jz      kn_nocaps               ; the keys the layout says it
+                                        ; shifts, and Shift undoes it
+        test    byte ptr [edi+KBLK_FLAGS],KBLK_CAPS
         jz      kn_nocaps
         xor     edx,1
 kn_nocaps:
@@ -1340,22 +1661,34 @@ kb_boxkey:
 ;           the stub goes on to the ROM, and Windows and its DOS boxes
 ;           have the US keyboard under their own drivers.  AL = 1: it
 ;           has come back.
+;
+; THE LIGHTS GO DOWN WITH THE KEYBOARD.  Nothing new is said to it once
+; the trip has begun and whatever was being said is finished first: the
+; answer to a command would arrive down there, where nobody is waiting
+; for it, at a keyboard left waiting for the rest.  And what ran down
+; there lit them as it liked, so coming back they are lit again from
+; 40:17 whatever the driver last told them.
 ;=====================================================================
 kb_park:
+        or      al,al
+        jnz     kbp_up
+        mov     byte ptr [kb_parked],1
+        call    kb_quiet
         cmp     byte ptr [kb_stubon],0
         je      kbp_out
         push    eax
-        or      al,al
-        jnz     kbp_back
         mov     byte ptr ds:[DOSDATA + GNLS_KBSTUB],0EAh        ; JMP FAR
         mov     eax,dword ptr [kb_bios9]
         mov     dword ptr ds:[DOSDATA + GNLS_KBSTUB + 1],eax
         pop     eax
         ret
-kbp_back:
+kbp_up:
+        mov     byte ptr [kb_parked],0
+        mov     byte ptr [kb_ledcur],0FFh       ; no three lights say this
+        cmp     byte ptr [kb_stubon],0
+        je      kbp_out
         mov     dword ptr ds:[DOSDATA + GNLS_KBSTUB],9090CFF4h  ; HLT, IRET
         mov     byte ptr ds:[DOSDATA + GNLS_KBSTUB + 4],90h
-        pop     eax
 kbp_out:
         ret
 
@@ -1421,7 +1754,20 @@ kb_stubon   db  0                       ; 1 once INT 09h ends at GNLS_KBSTUB
 kb_dead     db  0                       ; a dead key is waiting: its number
                                         ; and one
 kb_deadscan db  0                       ; ...and the key it was
+kb_ledcur   db  0                       ; the lights as the keyboard was
+                                        ; last told: bit 0 Scroll, 1 Num,
+                                        ; 2 Caps.  FFh for "ask again"
+kb_parked   db  0                       ; the machine is real mode's: nothing
+                                        ; is said to the keyboard
+kb_cmdst    db  0                       ; a KCS_*: where the conversation
+                                        ; with the keyboard has got to
+kb_cmdbyte  db  0                       ; ...the command it is about
+kb_cmdarg   db  0                       ; ...that command's argument
+kb_cmdleft  db  0                       ; ...and the tries it has left
+kb_rateowed db  0                       ; KEYRATE= has not been sent yet
+kb_ratewant db  0                       ; ...and is this byte
             db  0,0
+kb_cmdwhen  dd  0                       ; the tick the last byte was sent at
 kb_layout   dd  0                       ; -> the KBL_ record, in PMDOS's
                                         ; memory, or 0 for the US keyboard
 kb_bios9    dd  0                       ; INT 09h as the ROM left it, once
