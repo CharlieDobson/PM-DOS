@@ -359,7 +359,7 @@ rem each one has to be named here too: a directory missing from this
 rem list is one whose failed assembly links yesterday's object.  (A
 rem failed COMPILE does not need it - wcc386, unlike wasm, returns an
 rem error - but CHKDSK's and LABEL's startup is assembled like the rest.)
-for %%D in (ACROREAD ATTRIB CACHE CDEX CHKDSK CHOICE DISKCOMP DISKCOPY DRIVES EDIT FC FDISK FIND FORMAT ISAPNP KEYB LABEL LFNAPI LRGDISK MEM MORE MOUNT MOVE PMD SHUTDOWN SORT SYS UNDELETE XCOPY) do if exist CMD\%%D\*.obj del /q CMD\%%D\*.obj
+for %%D in (ACROREAD ATTRIB CACHE CDEX CHKDSK CHOICE DISKCOMP DISKCOPY DRIVES EDIT FC FDISK FIND FORMAT ISAPNP KEYB LABEL LFNAPI LRGDISK MEM MORE MOUNT MOVE PMD SCANDISK SHUTDOWN SORT SYS UNDELETE XCOPY) do if exist CMD\%%D\*.obj del /q CMD\%%D\*.obj
 if exist NLS\*.obj del /q NLS\*.obj
 
 rem FSIZE asserts the sizes the checks below used to test with FOR's
@@ -823,6 +823,43 @@ wlink form raw bin option offset=0x2000 name ..\..\BIN\ACROREAD.EXE ^
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
 cd ..\..
 
+rem SCANDISK is C: MS-DOS 6.22's ScanDisk for PM-DOS - the media
+rem descriptor, the FAT copies, the directory tree, lost clusters and
+rem cross-linked files, and a surface scan that moves a file out of a
+rem cluster that will not read - for FAT12, FAT16 and FAT32, with long
+rem file names.  Its checks began as CHKDSK's; its screens are MS-DOS
+rem ScanDisk's, drawn the way EDIT's and PMD's are, and with /G the same
+rem screens in a graphics mode, drawn the way DOSSHELL's are (GFX.C).
+rem SCANDISK.INI (DISK\) is MS-DOS's file.  Its test mode is SDTEST and
+rem keys from a redirected file, and SDBAD in the environment names
+rem sectors that are to fail (VOL.C).  MKHOST.CMD in its directory
+rem builds the checks as a Windows console program that works on disk
+rem images, with HOSTFE.C for a front end; nothing here needs it.
+cd CMD\SCANDISK
+wasm -q -i=..\..\INC dosint.asm                 || goto :fail
+wasm -q jmp.asm                                 || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 main.c    || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 ini.c     || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 vol.c     || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 lfn.c     || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 check.c   || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 filesys.c || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 surface.c || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 undo.c    || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 frag.c    || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 problem.c || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 text.c    || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 screen.c  || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 ui.c      || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 scr.c     || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 gfx.c     || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 rt.c      || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 sys_d32.c || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\BIN\SCANDISK.EXE ^
+    file dosint.obj,jmp.obj,main.obj,ini.obj,vol.obj,lfn.obj,check.obj,filesys.obj,surface.obj,undo.obj,frag.obj,problem.obj,text.obj,screen.obj,ui.obj,scr.obj,gfx.obj,rt.obj,sys_d32.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+
 echo === the MS-DOS stub, in front of every 32-bit command ===
 rem Every link above wrote a bare D32 image: 'CD' at byte zero.  The
 rem ones that SHIP get TOOLS\D32STUB.EXE put in front, so that real MS-DOS
@@ -840,7 +877,7 @@ rem version of its own names that .EXE to D32BIND in place of the stub.
 for %%F in (CMD.EXE CHOICE.COM MORE.COM SORT.COM SYS.COM FORMAT.COM MEM.EXE FDISK.EXE MOUNT.EXE ^
   CACHE.EXE UNDELETE.EXE CDEX.EXE SHUTDOWN.EXE FIND.EXE DISKCOPY.COM DISKCOMP.COM MOVE.EXE ^
   ATTRIB.EXE CHKDSK.EXE LABEL.EXE XCOPY.EXE EDIT.EXE FC.EXE ISAPNP.EXE PMD.EXE DOSSHELL.EXE ^
-  ACROREAD.EXE KEYB.COM) do TOOLS\D32BIND.EXE BIN\%%F TOOLS\D32STUB.EXE || goto :fail
+  ACROREAD.EXE SCANDISK.EXE KEYB.COM) do TOOLS\D32BIND.EXE BIN\%%F TOOLS\D32STUB.EXE || goto :fail
 
 echo === HELLO.COM (a real 16-bit .COM, for the VDM) ===
 rem An ordinary real-mode DOS program.  It is not part of the kernel;
@@ -1228,6 +1265,15 @@ rem on.  The answers are the US keyboard's until KEYB has run.
 cd TOOLS
 wasm -q kbltest.asm                             || goto :fail
 wlink form raw bin name ..\BIN\TESTS\KBLTEST.COM file kbltest.obj order clname CODE offset=0x100 || goto :fail
+cd ..
+
+echo === LOCKTEST.COM (Caps, Num and Scroll Lock: the bits, the lights, the keys) ===
+rem Presses the three lock keys with 21h/F1h AL=23h and prints 40:17,
+rem the lights as 40:97 has them once the keyboard has acknowledged
+rem them, and what the keypad and a letter then type.
+cd TOOLS
+wasm -q locktest.asm                            || goto :fail
+wlink form raw bin name ..\BIN\TESTS\LOCKTEST.COM file locktest.obj order clname CODE offset=0x100 || goto :fail
 cd ..
 
 echo === CTRYDMP.COM (the country block as bytes, for diffing) ===
@@ -1759,9 +1805,9 @@ echo === PMDOS.IMG (the boot disk) ===
 TOOLS\MKDISK.EXE IMAGES\PMDOS.IMG BIN\BOOT.BIN -nolfn BIN\PMIO.SYS BIN\PMDOS.SYS BIN\CMD.EXE BIN\COMMAND.COM ^
     BIN\CHOICE.COM BIN\MORE.COM BIN\SORT.COM BIN\SYS.COM BIN\FORMAT.COM BIN\MEM.EXE ^
     BIN\FDISK.EXE BIN\MOUNT.EXE BIN\CACHE.EXE BIN\UNDELETE.EXE BIN\CDEX.EXE BIN\MOVE.EXE BIN\ATTRIB.EXE BIN\CHKDSK.EXE BIN\LABEL.EXE BIN\XCOPY.EXE BIN\EDIT.EXE ^
-    BIN\FC.EXE BIN\FIND.EXE BIN\DISKCOPY.COM BIN\DISKCOMP.COM BIN\ISAPNP.EXE BIN\SHUTDOWN.EXE BIN\PMD.EXE BIN\DOSSHELL.EXE BIN\ACROREAD.EXE ^
+    BIN\FC.EXE BIN\FIND.EXE BIN\DISKCOPY.COM BIN\DISKCOMP.COM BIN\ISAPNP.EXE BIN\SHUTDOWN.EXE BIN\PMD.EXE BIN\DOSSHELL.EXE BIN\ACROREAD.EXE BIN\SCANDISK.EXE ^
     BIN\KEYB.COM BIN\COUNTRY.SYS BIN\KEYBOARD.SYS ^
-    BIN\RMDOS.SYS BIN\RMCD.SYS BIN\LRGDISK.386 README.TXT DISK\CONFIG.SYS DISK\CONFIG.TXT DISK\AUTOEXEC.BAT DISK\AUTOEXEC.TXT || goto :fail
+    BIN\RMDOS.SYS BIN\RMCD.SYS BIN\LRGDISK.386 README.TXT DISK\CONFIG.SYS DISK\CONFIG.TXT DISK\SCANDISK.INI DISK\AUTOEXEC.BAT DISK\AUTOEXEC.TXT || goto :fail
 
 rem === TESTS.IMG - the test disk ===
 rem Everything written to prove one thing about the kernel: BIN\TESTS\
@@ -1786,7 +1832,7 @@ TOOLS\MKDISK.EXE IMAGES\TESTS.IMG BIN\BOOT.BIN -label "PM-DOS TEST" -dir ^
     BIN\TESTS\UDTEST.COM BIN\TESTS\ALLOCTST.COM BIN\TESTS\MCBTEST.COM BIN\TESTS\FCBTEST.COM ^
     BIN\TESTS\BUFTEST.COM BIN\TESTS\UMBTEST.COM BIN\TESTS\EMSTEST.COM BIN\TESTS\EMS4TEST.COM BIN\TESTS\DEVCRIT.EXE ^
     BIN\TESTS\I24TEST.COM BIN\TESTS\VFYTEST.EXE BIN\TESTS\IDETEST.EXE BIN\TESTS\HWPROBE.EXE BIN\TESTS\F32TEST.COM BIN\TESTS\FNDTEST.EXE ^
-    BIN\TESTS\CFGTEST.COM BIN\TESTS\CACHETST.COM BIN\TESTS\VFTEST.COM BIN\TESTS\SHARETST.COM BIN\TESTS\TESTDEV.SYS BIN\TESTS\TESTBLK.SYS BIN\TESTS\IOCDEV.SYS BIN\TESTS\DRVTEST.COM BIN\TESTS\CDSTEST.COM BIN\TESTS\NETTEST.COM BIN\TESTS\SEEKWR.COM BIN\TESTS\BLKTEST.COM BIN\TESTS\CTRYDMP.COM BIN\TESTS\NLSTEST.COM BIN\TESTS\KBLTEST.COM ^
+    BIN\TESTS\CFGTEST.COM BIN\TESTS\CACHETST.COM BIN\TESTS\VFTEST.COM BIN\TESTS\SHARETST.COM BIN\TESTS\TESTDEV.SYS BIN\TESTS\TESTBLK.SYS BIN\TESTS\IOCDEV.SYS BIN\TESTS\DRVTEST.COM BIN\TESTS\CDSTEST.COM BIN\TESTS\NETTEST.COM BIN\TESTS\SEEKWR.COM BIN\TESTS\BLKTEST.COM BIN\TESTS\CTRYDMP.COM BIN\TESTS\NLSTEST.COM BIN\TESTS\KBLTEST.COM BIN\TESTS\LOCKTEST.COM ^
     BIN\TESTS\CTRYTEST.COM BIN\TESTS\CRASH.EXE BIN\TESTS\R3TEST.EXE BIN\TESTS\MS32TEST.EXE BIN\TESTS\VPICTEST.COM BIN\TESTS\TIMERTST.COM BIN\TESTS\RMIVT.COM BIN\TESTS\IRQXTEST.COM BIN\TESTS\IRQXWAIT.EXE BIN\TESTS\DMATEST.COM BIN\TESTS\DPMIIRQ.COM BIN\TESTS\DPMII32.COM BIN\TESTS\DPMIVEC.COM BIN\TESTS\DPMIV32.COM BIN\TESTS\VDSTEST.COM BIN\TESTS\NICIRQ.COM BIN\TESTS\PCITEST.EXE BIN\TESTS\IRQTEST.EXE BIN\TESTS\FPUTEST.COM BIN\TESTS\FPU32.EXE BIN\TESTS\DPMIFPU.COM BIN\TESTS\DPMIFP32.COM ^
     BIN\TESTS\LPTTEST.COM BIN\TESTS\RMSPEED.COM BIN\TESTS\HNDTEST.COM BIN\TESTS\RMFSTEST.COM BIN\TESTS\WINDRV.EXE BIN\TESTS\VBETEST.EXE ^
     BIN\TESTS\EXECLEAK.EXE BIN\TESTS\SLOTTEST.EXE BIN\TESTS\BIGMEM.EXE BIN\TESTS\LRGTEST.COM BIN\TESTS\ATAPIRD.COM BIN\TESTS\SRSTTEST.COM ^
