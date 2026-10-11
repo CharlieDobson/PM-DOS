@@ -288,14 +288,19 @@ int sys_get_bpb( int drv, u8 *sector )
     return 0;
 }
 
+/* EDX points at something although a lock takes nothing there: since
+   440Dh has had Get Device Parameters, the kernel reads EDX as a pointer
+   for every 440Dh call, and a zero from a native program came back
+   "access denied" - which /F took for a lock refused. */
 static int lock_call( int drv, u32 cx )
 {
+    static u8 unused[8];
     REGS regs;
 
     clear( &regs );
     regs.ebx = (u32)drv + 1;                    /* BH = lock level 0 */
     regs.ecx = cx;
-    regs.edx = 0;
+    regs.edx = (u32)unused;
     call21( &regs, 0x440D );
     if ( !CF( regs ) ) {
         return 0;
