@@ -1,6 +1,3 @@
-REM PM-DOS CONFIG.SYS
-REM See CONFIG.TXT for what each statement does.
-
 REM MS-DOS statements
 BUFFERS=30,8
 FILES=40
@@ -9,11 +6,7 @@ LASTDRIVE=Z
 STACKS=9,256
 DOS=HIGH,UMB
 SWITCHES=/K
-NUMLOCK=OFF
-SET TEMP=C:\TEMP
-REM Windows for Workgroups needs its helper driver.  Without one at
-REM C:\WINDOWS the boot shows the line, says so and goes on.
-DEVICE=C:\WINDOWS\IFSHLP.SYS
+NUMLOCK=ON
 
 REM PM-DOS statements
 EMS=AUTO
@@ -27,9 +20,3 @@ MENUITEM=NORMAL,Normal boot
 MENUDEFAULT=NORMAL,5
 [NORMAL]
 INCLUDE=BASE
-
-REM Tests.  The commented lines print a banner at boot.
-SET PMDOSTEST=hello from config
-REM DEVICEHIGH=\TESTS\TESTDEV.SYS
-REM DEVICE=\TESTS\TESTBLK.SYS
-REM INSTALLHIGH=\TESTS\TSRTEST.COM
