@@ -302,9 +302,7 @@ static void run_screen( void )
 /* ------------------------------------------------------------------ */
 
 static const char help_text[] =
-    "Shows what PM-DOS has found in this computer: the processor, memory,\r\n"
-    "video, drives, ports and interrupt lines, and the programs and drivers\r\n"
-    "that are in memory.\r\n"
+    "PM-DOS Diagnostics\r\n"
     "\r\n"
     "PMD [/I]\r\n"
     "PMD /F[drive:][path]filename\r\n"
@@ -318,7 +316,6 @@ static const char help_text[] =
     "  /S   Writes the summary report to specified file.  If no filename\r\n"
     "       is specified, output will be to the screen.\r\n";
 
-/* what follows a switch: joined to it, or the next word */
 static const char *switch_name( const char *tail, char *name, u32 max )
 {
     u32 len = 0;
@@ -344,7 +341,7 @@ static void ask_customer( CUSTOMER *who )
 {
     int index;
 
-    say( "\r\nWho is this report from?  Press ENTER to leave a line empty.\r\n\r\n" );
+    say( "\r\nWho is this report from?  Press ENTER to leave line empty.\r\n\r\n" );
     for ( index = 0; index < 8; index++ ) {
         say( customer_labels[index] );
         sys_stdin_line( who->field[index], sizeof( who->field[index] ) );
