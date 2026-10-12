@@ -1,5 +1,6 @@
 #!/usr/bin/perl
-# mkedkeys.pl OUTDIR - the key files DISK\EDTEST.BAT types into EDIT.
+# mkedkeys.pl OUTDIR - the key files DISK\EDTEST.BAT types into EDIT, and
+# DISK\HLPTEST.BAT into HELP.
 #
 # EDIT is tested the way CMD.EXE's line editor is (see MKKEYS.PL): with
 # EDTEST naming a log and standard input taken from a file, EDIT reads
@@ -201,7 +202,29 @@ my %scripts = (
     #     puts its name in the box; a double click on B.TXT opens it, as
     #     Enter would.
     ED17 => '{CLICK 0,3}{CLICK 3,3}{CLICK 9,10}{DUMP}{DCLICK 10,10}{DUMP}{CLICK 0,3}{CLICK 10,3}',
+
+    # HELP.EXE reads the same files (HLPTEST names the log).  What
+    # DISK\HLPTEST.BAT checks after each is in its comments.
+    # HL1: the contents; Tab to the first command and Enter; Alt+B back;
+    #      Alt+N the next topic; the three menus; F1; About; the Find
+    #      dialog; the Print dialog; PgDn; a click on a link in the
+    #      contents (row 9, column 3); the letter C to the next link
+    #      starting with it; out through the File menu
+    HL1 => '{DUMP}{TAB}{DUMP}{ENTER}{DUMP}{ALT+B}{DUMP}{ALT+N}{DUMP}'
+         . '{ALT}F{DUMP}{ESC}{ESC}{ALT}S{DUMP}{ESC}{ESC}{ALT}H{DUMP}{ESC}{ESC}'
+         . '{F1}{DUMP}{ALT}HA{DUMP}{ENTER}{ALT}SF{DUMP}{ESC}{ALT}FP{DUMP}{ESC}'
+         . '{ALT+C}{PGDN}{DUMP}{ALT+C}{CLICK 9,3}{DUMP}{ALT+C}c{DUMP}{ALT}FX',
+    # HL2: HELP DIR: the frozen lines; Tab to Examples and Enter; back;
+    #      Ctrl+End; Find "wildcards"; F3; F1 in the File menu (the help
+    #      box); the status bar's Contents clicked; the scroll bar's
+    #      arrows clicked; out
+    HL2 => '{DUMP}{TAB}{DUMP}{ENTER}{DUMP}{ALT+B}{DUMP}{CEND}{DUMP}'
+         . '{ALT}SFwildcards{ENTER}{DUMP}{F3}{DUMP}{ALT}F{F1}{DUMP}{ENTER}{ESC}{ESC}'
+         . '{CLICK 24,5}{DUMP}{CLICK 23,79}{CLICK 23,79}{DUMP}{CLICK 2,79}{DUMP}{ALT}FX',
+    # HL3: HELP NOSUCH: the message, then the contents
+    HL3 => '{DUMP}{ENTER}{DUMP}{ALT}FX',
 );
+
 
 for my $name (sort keys %scripts) {
     open(my $fh, '>:raw', "$out/$name.KEY") or die "$out/$name.KEY: $!";
