@@ -1,0 +1,771 @@
+#! 10INTERN.TXT - the shell's internal commands, BREAK to DOSKEY, and
+#! the two shells.  What each one takes is what CMD.ASM's /? says.
+#topic CMD|Cmd
+Starts another copy of CMD.EXE, the PM-DOS command interpreter.
+
+CMD.EXE is the shell the kernel starts at boot: 32-bit, with long file
+names and DOSKEY built in.  Every command in the [[Contents]] marked as
+internal is part of it.
+
+{b}Syntax{p}
+
+    CMD [/P [/D]] [/C string]
+
+{b}Switches{p}
+
+/P
+    Permanent: runs AUTOEXEC.BAT when it starts, and EXIT does not end
+    it.  This is how the kernel starts the first shell, and how a
+    SHELL= line in CONFIG.SYS asks for one.
+
+/D
+    With /P: skips AUTOEXEC.BAT.  The kernel adds /D when Shift or F5
+    at startup bypasses the startup files.
+
+/C string
+    Runs string as a command line and then exits, with the command's
+    errorlevel.  A batch file named there runs to its end.  Everything
+    after /C is the command, switches and all.
+
+{b}Related Commands{p}
+
+For the 16-bit shell that DOS programs get, see [[COMMAND]].  To end a
+shell started without /P, see [[EXIT]].  To choose the shell at boot,
+see [[SHELL]].
+#notes
+{b}Nested shells{p}
+
+CMD without /P is a nested interpreter with an environment of its own,
+copied from the one that started it.  Changes to the environment in it
+are lost when EXIT returns to the shell that started it.
+
+{b}What is internal{p}
+
+BREAK, CALL, CD, CHCP, CLS, COPY, CTTY, DATE, DEL, DIR, DOSKEY, ECHO,
+ERASE, EXIT, FOR, GOTO, IF, LH, LOADHIGH, MD, PATH, PAUSE, PROMPT, RD,
+REM, REN, SET, SHIFT, TIME, TYPE, VER, VERIFY and VOL are part of
+CMD.EXE, and so is a drive letter followed by a colon.  Anything else
+typed at the prompt is looked for as a .COM, .EXE or .BAT file, in the
+current directory and then along the PATH.
+
+{b}Redirection and pipes{p}
+
+A command's output can be sent to a file with >, added to the end of a
+file with >>, and its input taken from a file with <.  A pipe, |, sends
+one command's output to the next one's input:
+
+    DIR > LIST.TXT
+    DIR >> LIST.TXT
+    SORT < NAMES.TXT
+    DIR | MORE
+#examples
+To run a batch file and come straight back to the prompt with its
+errorlevel:
+
+    cmd /c backup.bat
+
+To start a second shell, work in it, and come back:
+
+    cmd
+    ...
+    exit
+#topic COMMAND|Command
+Starts a copy of COMMAND.COM, the 16-bit command interpreter.
+
+COMMAND.COM is the shell a DOS program gets when it starts a shell of
+its own, because COMSPEC names it: a 32-bit program cannot run inside
+a DOS program, and under Windows nothing 32-bit runs at all.  It has
+the commands of MS-DOS 6.22's COMMAND.COM and behaves as that one does.
+At the prompt, PM-DOS's own shell is [[CMD]].
+
+{b}Syntax{p}
+
+    COMMAND [[drive:]path] [device] [/E:nnnnn] [/P [/D]] [/F]
+            [/C command | /K command]
+
+{b}Parameters{p}
+
+[drive:]path
+    The directory COMMAND.COM is in; with /P, what COMSPEC is set to.
+
+device
+    The device to take input from and send output to, such as COM1.
+
+{b}Switches{p}
+
+/E:nnnnn
+    The size of the environment, 160 to 32768 bytes.
+
+/P
+    Permanent: runs AUTOEXEC.BAT, and EXIT does not end it.
+
+/D
+    With /P: skips AUTOEXEC.BAT, and the date and time prompts.
+
+/F
+    Answers Fail to every critical error without asking.
+
+/C command
+    Runs the command and returns.
+
+/K command
+    Runs the command and then carries on taking commands.
+
+{b}Related Commands{p}
+
+For PM-DOS's own shell, see [[CMD]].
+#notes
+{b}What it has{p}
+
+COMMAND.COM's internal commands are MS-DOS 6.22's: BREAK, CALL, CD,
+CHCP, CLS, COPY, CTTY, DATE, DEL, DIR, ECHO, ERASE, EXIT, FOR, GOTO,
+IF, LH, LOADHIGH, MD, PATH, PAUSE, PROMPT, RD, REM, REN, SET, SHIFT,
+TIME, TRUENAME, TYPE, VER, VERIFY and VOL.  Each answers /? with its
+own help.  DOSKEY is not built in, as it is in CMD.EXE.
+
+{b}When it runs{p}
+
+A DOS program that shells out, or a batch file run with COMMAND /C,
+runs COMMAND.COM.  The 32-bit commands in the PM-DOS directory cannot
+be run from inside it; MS-DOS's own 16-bit versions can.
+#examples
+To run a batch file under the 16-bit shell and see what it prints:
+
+    command /c test.bat
+#topic BREAK|Break
+Turns extended Ctrl+C checking on or off.
+
+{b}Syntax{p}
+
+    BREAK [ON | OFF]
+
+Type BREAK on its own to see the setting.
+
+{b}Parameters{p}
+
+ON
+    Programs are told Ctrl+C is to be checked for during disk work as
+    well as during screen and keyboard work.
+
+OFF
+    Ctrl+C is checked for during screen and keyboard work only.  This
+    is the setting at startup.
+
+{b}Related Commands{p}
+
+BREAK= in CONFIG.SYS sets the same flag at boot: see [[BREAK (CONFIG.SYS)|BREAK=]].
+#notes
+{b}What the setting does here{p}
+
+BREAK sets the flag that programs read with INT 21h AX=3300h, which is
+what MS-DOS does.  PM-DOS itself does not yet look at the flag: Ctrl+C
+stops a command or a batch file whichever way it is set.
+#examples
+To turn extended checking on:
+
+    break on
+
+To see whether it is on:
+
+    break
+#topic CALL|Call
+Runs one batch file from another, and then carries on with the first.
+
+{b}Syntax{p}
+
+    CALL [drive:][path]filename [batch-parameters]
+
+{b}Parameters{p}
+
+[drive:][path]filename
+    The batch file to run.  .BAT is assumed.
+
+batch-parameters
+    Anything the batch file needs on its command line: it sees them as
+    %1 to %9.
+
+{b}Related Commands{p}
+
+For the other commands written for batch files, see [[Batch Commands|Batch]].
+#notes
+{b}Without CALL{p}
+
+A batch file named on its own in another batch file replaces it: when
+the second one ends, the prompt comes back, and the rest of the first
+one never runs.  CALL comes back to the line after it.
+
+{b}How deep{p}
+
+CALL can nest eight deep.  A batch file can CALL itself, as long as
+something stops the chain.
+
+{b}Redirection{p}
+
+Redirection on a CALL line is not carried into the batch file called:
+each command inside it redirects for itself.
+#examples
+To run CHECK.BAT from inside another batch file and go on afterwards:
+
+    call check.bat
+    echo CHECK is done
+
+To pass it two parameters:
+
+    call check.bat c: full
+#topic CD|Cd|CHDIR|Chdir
+#title CD (CHDIR)
+Shows the name of the current directory, or changes to another.
+
+{b}Syntax{p}
+
+    CD [drive:][path]
+    CD[..]
+    CHDIR [drive:][path]
+    CHDIR[..]
+
+Type CD on its own to see the current drive and directory.  Type CD
+and a drive letter and colon to see the current directory on that
+drive.
+
+{b}Parameters{p}
+
+[drive:][path]
+    The directory to change to.  With a drive, the current directory
+    on that drive is changed, but the current drive is not.
+
+..
+    The directory above the current one.
+
+{b}Related Commands{p}
+
+To make a directory, see [[MD]]; to remove one, see [[RD]].
+#notes
+{b}Long names{p}
+
+A directory with a long name can be named in full, in quotes when the
+name has spaces in it, or by its short name.  CD shows the name the
+way the directory has it.
+
+{b}Each drive remembers{p}
+
+Every drive keeps a current directory of its own.  CD D:\WORK changes
+D:'s and leaves you on C:; typing D: then takes you to D:\WORK.
+
+{b}A root, and a name with no path{p}
+
+CD \ goes to the root of the drive.  A name with no backslash is a
+directory under the current one.
+#examples
+To go to the directory SPECS under the current one:
+
+    cd specs
+
+To go to \PUBLIC\SPECS from anywhere on the drive:
+
+    cd \public\specs
+
+To go up one level, and to the root:
+
+    cd ..
+    cd \
+
+To see where you are on drive D:
+
+    cd d:
+#topic CHCP|Chcp
+Shows or changes the code page in use.
+
+{b}Syntax{p}
+
+    CHCP [nnn]
+
+Type CHCP on its own to see the code page in use.
+
+{b}Parameters{p}
+
+nnn
+    A code page the country has in COUNTRY.SYS: 437 or 850 for most
+    countries.  COUNTRY= in CONFIG.SYS lists the pages each country
+    has.
+
+{b}Related Commands{p}
+
+See [[COUNTRY]] for the countries and their code pages, and [[KEYB]] for
+the keyboard.
+#notes
+{b}What a code page changes{p}
+
+The code page sets which letters count as capitals of which, how SORT
+orders them, and the tables COUNTRY= gives programs.  It does not
+change the characters the screen shows: those are the ones in the
+video card, code page 437 on most.
+
+{b}No NLSFUNC{p}
+
+There is nothing to load first.  The kernel goes back to COUNTRY.SYS
+by itself when the page changes.
+
+{b}The keyboard{p}
+
+Run KEYB again after changing the code page if a keyboard layout is
+loaded, so that its table matches.
+#examples
+To see the code page in use:
+
+    chcp
+
+To change to code page 850:
+
+    chcp 850
+#topic CLS|Cls
+Clears the screen.
+
+The cleared screen shows the prompt and the cursor, and nothing else.
+
+{b}Syntax{p}
+
+    CLS
+#topic COPY|Copy
+Copies one or more files to another place.  Several files can be
+joined into one.
+
+{b}Syntax{p}
+
+    COPY [/A | /B] source [/A | /B] [+ source [/A | /B] [+ ...]]
+         [destination [/A | /B]] [/V] [/Y | /-Y]
+
+{b}Parameters{p}
+
+source
+    The file or files to copy: a name, a name with wildcards, or a
+    directory.  Several sources joined with + are written to one file.
+
+destination
+    Where the copies go: a drive, a directory, a file name, or any of
+    them together.  With no destination, the copy goes to the current
+    directory under the same name.
+
+{b}Switches{p}
+
+/A
+    The file is text: copying stops at the first Ctrl+Z, and one is
+    written at the end.
+
+/B
+    The file is binary: every byte is copied, and nothing is added.
+    This is how files are copied unless /A is given or files are being
+    joined.  A switch before the first name applies to all of them; a
+    switch after a name applies to that name and the ones after it.
+
+/V
+    Reads each copy back to check it was written correctly.
+
+/Y
+    Replaces a file at the destination without asking.
+
+/-Y
+    Asks before replacing a file at the destination.
+
+{b}Related Commands{p}
+
+To copy directories and their subdirectories too, see [[XCOPY]].  To
+move files instead of copying them, see [[MOVE]].  To copy a whole
+diskette, see [[DISKCOPY]].
+#notes
+{b}Asking before replacing{p}
+
+COPY asks before it writes over a file, unless /Y is given or the
+COPYCMD environment variable holds /Y.  SET COPYCMD=/Y stops the
+asking for every COPY; /-Y on the command line asks again for that
+one.
+
+{b}Joining files{p}
+
+With + between the sources, or with wildcards and a single file as the
+destination, the sources are written one after another into the
+destination.  Files joined this way are treated as text unless /B says
+otherwise: a Ctrl+Z ends each one.
+
+{b}A file onto itself{p}
+
+COPY refuses to copy a file onto itself.
+
+{b}Devices{p}
+
+CON, PRN and the port names can stand as source or destination.  COPY
+CON FILE.TXT takes what is typed until Ctrl+Z and ENTER; COPY FILE.TXT
+PRN prints it.
+
+{b}Long names{p}
+
+Names with spaces go in quotes.  A long name is kept on a disk that
+can hold one.
+#examples
+To copy MEMO.DOC to LETTER.DOC in the current directory:
+
+    copy memo.doc letter.doc
+
+To copy every file in the current directory to \BACKUP on drive D:
+
+    copy *.* d:\backup
+
+To join three text files into one:
+
+    copy part1.txt + part2.txt + part3.txt whole.txt
+
+To make a text file from the keyboard, ending with Ctrl+Z:
+
+    copy con notes.txt
+
+To copy a file and check the copy:
+
+    copy report.doc a: /v
+#topic CTTY|Ctty
+Changes the device the shell takes its commands from and writes to.
+
+{b}Syntax{p}
+
+    CTTY device
+
+{b}Parameters{p}
+
+device
+    The device to use: COM1, COM2, AUX, or CON to come back to the
+    keyboard and screen.
+
+{b}Related Commands{p}
+
+To send one command's output somewhere else, use redirection instead:
+see [[CMD]].
+#notes
+{b}Coming back{p}
+
+After CTTY COM1 the keyboard and screen are no longer in use.  A
+program that writes to the screen directly still appears there, but
+the prompt is on the serial port.  Type CTTY CON on the new device to
+come back.
+
+{b}What moves{p}
+
+Only the shell's own input and output move, and that of programs that
+read and write through DOS.  A program that reads the keyboard through
+the BIOS keeps using it.
+#examples
+To take commands from the first serial port:
+
+    ctty com1
+
+To come back to the keyboard and screen, typed on that port:
+
+    ctty con
+#topic DATE|Date
+Shows the date, or sets it.
+
+{b}Syntax{p}
+
+    DATE [mm-dd-yyyy]
+
+Type DATE on its own to see the date and be asked for a new one.
+Press ENTER to keep it.
+
+{b}Parameters{p}
+
+mm-dd-yyyy
+    The date to set.  The parts can be separated with hyphens, slashes
+    or full stops.  With COUNTRY= in CONFIG.SYS, the parts come in that
+    country's order: dd-mm-yyyy or yyyy-mm-dd.
+
+{b}Related Commands{p}
+
+To set the time, see [[TIME]].  To choose the date's order, see
+[[COUNTRY]].
+#notes
+{b}Where the date goes{p}
+
+The date is written to the real-time clock, so it is kept when the
+machine is switched off.  Every file written or changed is stamped
+with it.
+
+{b}Years{p}
+
+A year can be written in full, 1980 to 2099, or as two digits: 80 to
+99 are the 1900s, 00 to 79 the 2000s.
+#examples
+To set the date to the 21st of March 2026, with the United States
+setting:
+
+    date 03-21-2026
+
+With COUNTRY=044 (the United Kingdom):
+
+    date 21-03-2026
+#topic DEL|Del|ERASE|Erase
+#title DEL (ERASE)
+Deletes one or more files.
+
+{b}Syntax{p}
+
+    DEL [drive:][path]filename [/P] [/S]
+    ERASE [drive:][path]filename [/P] [/S]
+
+{b}Parameters{p}
+
+[drive:][path]filename
+    The file or files to delete.  Wildcards name several.  A directory
+    name on its own, or *.*, deletes every file in that directory, and
+    DEL asks first.
+
+{b}Switches{p}
+
+/P
+    Asks before deleting each file.
+
+/S
+    Deletes the files named in the current directory and in every
+    directory below it.
+
+{b}Related Commands{p}
+
+To get a deleted file back, see [[UNDELETE]].  To remove a directory,
+see [[RD]].
+#notes
+{b}Delete protection{p}
+
+With UNDELETE=ON in CONFIG.SYS, which is the setting unless changed,
+a deleted file is kept in a hidden RECYCLED directory on its drive
+until the space is needed, and UNDELETE brings it back.  Files bigger
+than a tenth of the free space, *.TMP and *.$$$ files, and anything
+deleted inside RECYCLED are gone at once.
+
+{b}Read-only files{p}
+
+A read-only file is not deleted.  ATTRIB -R clears the attribute
+first.
+
+{b}Directories{p}
+
+DEL deletes files, not directories.  RD removes an empty directory.
+#examples
+To delete one file:
+
+    del notes.bak
+
+To delete every .BAK file, being asked about each one:
+
+    del *.bak /p
+
+To delete every .TMP file in \WORK and the directories under it:
+
+    del \work\*.tmp /s
+#topic DIR|Dir
+Lists the files and subdirectories in a directory.
+
+With no parameters, DIR shows the drive's label and serial number, one
+line for each file or directory with its size, date and time, and then
+how many files there are, how much they hold, and how much of the disk
+is free.
+
+{b}Syntax{p}
+
+    DIR [drive:][path][filename] [/P] [/W] [/A[[:]attributes]]
+        [/O[[:]sortorder]] [/S] [/B] [/L] [/C[H]] [/4]
+
+{b}Parameters{p}
+
+[drive:][path]
+    The drive and directory to list.
+
+[filename]
+    A file, or files named with wildcards, to list.
+
+{b}Switches{p}
+
+/P
+    Pauses after each screenful.  Press a key for the next.
+
+/W
+    Wide: names only, five to a line.
+
+/A[[:]attributes]
+    Lists only files with the attributes given.  With no attributes,
+    every file, hidden and system ones included.  Without /A, hidden
+    and system files are left out.  The letters, which can be put
+    together, with - in front of one meaning "not":
+
+    D    directories              -D    files only
+    H    hidden files             -H    files that are not hidden
+    S    system files             -S    files that are not system
+    R    read-only files          -R    files that are not read-only
+    A    files ready to archive   -A    files not changed since backup
+
+/O[[:]sortorder]
+    Lists in order.  With no order, directories first and then files,
+    each set by name.  The letters, which can be put together, with -
+    in front of one to reverse it:
+
+    N    by name                  E    by extension
+    D    by date and time         S    by size, smallest first
+    G    directories before files
+
+/S
+    Lists the files named in the directory and every one below it.
+
+/B
+    Bare: one name a line, with no heading or summary.  With /S, each
+    name has its path in front of it.
+
+/L
+    Names in lowercase.
+
+/C[H]
+    Shows the compression ratio of each file.  PM-DOS has no
+    compressed drives, so the switch is accepted and changes nothing.
+
+/4
+    Four-digit years in the dates.
+
+{b}Related Commands{p}
+
+For the directories alone, laid out as a tree, see [[DOSSHELL]].
+#notes
+{b}DIRCMD{p}
+
+Switches you want on every listing go in the DIRCMD environment
+variable: SET DIRCMD=/O/P makes every DIR sorted and paused.  A switch
+on the command line with - after the slash turns a DIRCMD switch off
+for that listing: DIR /-P.
+
+{b}Long names{p}
+
+A file with a long name is listed with its short name in the first
+columns and the long name after the time.  Names with spaces are
+matched in quotes: DIR "My Letters".
+
+{b}Sizes{p}
+
+Sizes and totals are written with the country's thousands separator:
+a comma unless COUNTRY= says otherwise.
+
+{b}The order of the list{p}
+
+Without /O the entries come in the order the directory holds them.
+Several order letters together sort by the first, then by the second
+among entries the first leaves equal: /OE-S is by extension, and the
+largest first within each extension.
+
+{b}Redirection{p}
+
+DIR /B /S lists every file under a directory, one path a line, which
+is what a batch file or a pipe wants.
+#examples
+To list the current directory one screen at a time:
+
+    dir /p
+
+To list every file, hidden and system ones included, by name:
+
+    dir /a /on
+
+To list only the directories, newest first:
+
+    dir /ad /o-d
+
+To list every .TXT file on drive C, with its path, into a file:
+
+    dir c:\*.txt /s /b > txtfiles.lst
+
+To make every listing wide and paused until the variable is changed:
+
+    set dircmd=/w/p
+#topic DOSKEY|Doskey
+Recalls and edits command lines, and makes macros.  DOSKEY is part of
+CMD.EXE and is always on; the command sets it up and lists what it
+holds.
+
+{b}Syntax{p}
+
+    DOSKEY [/REINSTALL] [/BUFSIZE=size] [/MACROS] [/HISTORY]
+           [/INSERT | /OVERSTRIKE] [macroname=[text]]
+
+{b}Parameters{p}
+
+macroname
+    The name of a macro to make.  Typing the name at the prompt runs
+    its text.
+
+text
+    The commands the macro stands for.
+
+{b}Switches{p}
+
+/REINSTALL
+    Starts again with an empty history and no macros.
+
+/BUFSIZE=size
+    How many bytes the history and the macros share.
+
+/MACROS
+    Lists the macros.  /M is the same.
+
+/HISTORY
+    Lists the commands typed so far.  /H is the same.
+
+/INSERT
+    Typing in the middle of a line pushes the rest along.
+
+/OVERSTRIKE
+    Typing in the middle of a line writes over it.  This is the
+    setting at startup; INS switches between the two for one line.
+
+{b}Related Commands{p}
+
+For the shell itself, see [[CMD]].
+#notes
+{b}Recalling commands{p}
+
+    UP ARROW, DOWN ARROW   the previous and the next command
+    PAGE UP, PAGE DOWN     the oldest and the newest
+    F7                     the history, numbered
+    F8                     the earlier commands that start with what
+                           has been typed so far, one per press
+    F9                     a command by its number
+    ALT+F7                 forgets the history
+
+{b}Editing a line{p}
+
+    LEFT, RIGHT ARROW      a character
+    CTRL+LEFT, RIGHT       a word
+    HOME, END              the ends of the line
+    ESC                    clears the line
+    INS                    insert or overstrike for this line
+    F1, F2, F3             copy a character, up to a character, the
+                           rest, from the previous command
+
+{b}Macros{p}
+
+A macro is a name for a command line.  In its text, $1 to $9 stand for
+the parameters typed after the name and $* for all of them; $G is >,
+$L is <, $B is |, and $T separates two commands.  A macro runs only
+when its name is the first word on the line; it does not run from a
+batch file.  Typing the name with nothing after the = removes it.
+
+{b}COMMAND.COM{p}
+
+The 16-bit shell has no DOSKEY of its own; MS-DOS's DOSKEY.COM can be
+loaded for it.
+#examples
+To see the commands typed so far:
+
+    doskey /history
+
+To make a macro that lists a directory wide and paused:
+
+    doskey ld=dir $1 /w /p
+
+To make one that runs two commands:
+
+    doskey cls2=cls $t dir
+
+To remove it:
+
+    doskey cls2=

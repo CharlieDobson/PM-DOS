@@ -1,0 +1,800 @@
+#! 11INTERN.TXT - the shell's internal commands, ECHO to VOL, and the
+#! Batch Commands topic.
+#topic ECHO|Echo
+Shows a message, or turns the echoing of commands on or off.
+
+{b}Syntax{p}
+
+    ECHO [ON | OFF]
+    ECHO [message]
+
+Type ECHO on its own to see whether echoing is on.
+
+{b}Parameters{p}
+
+ON | OFF
+    Whether each line of a batch file is shown as it runs.  Echoing is
+    on until a batch file turns it off.
+
+message
+    Text to show.
+
+{b}Related Commands{p}
+
+For the other commands written for batch files, see [[Batch Commands|Batch]].
+#notes
+{b}The usual first line{p}
+
+@ECHO OFF at the top of a batch file turns echoing off without showing
+that line either: an @ in front of any command keeps that one line
+from being echoed.
+
+{b}A blank line{p}
+
+ECHO with nothing after it reports the setting.  To show an empty
+line, put a full stop straight after the word: ECHO.
+
+{b}Redirection{p}
+
+ECHO's text can go to a file or a device: ECHO text > FILE.TXT makes a
+one-line file, and ECHO text >> FILE.TXT adds a line to it.
+#examples
+To stop a batch file echoing its commands, the line itself included:
+
+    @echo off
+
+To show a message and a blank line after it:
+
+    echo Backing up the files...
+    echo.
+
+To write a line into a file:
+
+    echo PATH C:\DOS >> autoexec.bat
+#topic EXIT|Exit
+Ends the shell, when it was started by another program or by CMD.
+
+{b}Syntax{p}
+
+    EXIT
+
+{b}Related Commands{p}
+
+For the shells, see [[CMD]] and [[COMMAND]].
+#notes
+{b}The first shell{p}
+
+The shell the kernel starts at boot runs with /P and ignores EXIT.  A
+shell started by typing CMD, or by a program, ends and returns to
+whatever started it.
+#topic FOR|For
+Runs a command once for each of a set of files, or for each line of a
+file.
+
+{b}Syntax{p}
+
+    FOR %variable IN (set) DO command [parameters]
+    FOR /F ["options"] %variable IN (source) DO command [parameters]
+
+In a batch file, write %%variable instead of %variable.
+
+{b}Parameters{p}
+
+%variable
+    A letter.  In the command, it stands for one member of the set at
+    a time.
+
+(set)
+    One or more names, separated by spaces.  A name with wildcards
+    stands for every file it matches.
+
+command
+    The command to run each time, with the variable where the name
+    goes.
+
+parameters
+    Anything the command needs.
+
+{b}Switches{p}
+
+/F ["options"]
+    Reads the lines of the files in (source) and runs the command once
+    for each line, cut into tokens.  The options, together inside one
+    pair of quotes:
+
+    eol=c         a line starting with c is skipped (; without it)
+    skip=n        the first n lines are skipped
+    delims=xxx    the characters that separate tokens (space and tab)
+    tokens=x,y,m-n[*]
+                  which tokens go into the variable and the ones after
+                  it: tokens=1,3 puts the first in %a and the third in
+                  %b; a * at the end puts the rest of the line in one
+                  more
+
+{b}Related Commands{p}
+
+For the other commands written for batch files, see [[Batch Commands|Batch]].
+#notes
+{b}Two percent signs{p}
+
+At the prompt the variable is %A.  In a batch file the shell replaces
+%A with a parameter, so the variable is written %%A there.
+
+{b}The variable is one letter{p}
+
+Capitals and small letters are different variables.  With /F and
+several tokens, the letters after the one named are used in order:
+%%A, %%B, %%C.
+
+{b}Nesting{p}
+
+A FOR cannot run another FOR with the same variable.  It can run a
+batch file with CALL, and that batch file can have a FOR of its own.
+#examples
+To type every .TXT file in the current directory:
+
+    for %f in (*.txt) do type %f
+
+In a batch file, to copy three named files to A:
+
+    for %%f in (one.txt two.txt three.txt) do copy %%f a:
+
+To read NAMES.TXT a line at a time and show each line:
+
+    for /f "delims=" %%l in (names.txt) do echo %%l
+
+To show the first and third words of each line, with words separated
+by commas:
+
+    for /f "tokens=1,3 delims=," %%a in (list.csv) do echo %%a %%b
+#topic GOTO|Goto
+Jumps to a labelled line in a batch file.
+
+{b}Syntax{p}
+
+    GOTO label
+
+{b}Parameters{p}
+
+label
+    The name of a line in the batch file.  The line itself starts with
+    a colon and then the name.
+
+{b}Related Commands{p}
+
+For IF, which usually decides whether to jump, see [[IF]].  For the
+other commands written for batch files, see [[Batch Commands|Batch]].
+#notes
+{b}Labels{p}
+
+A label is a line of its own: a colon, the name, nothing else.  The
+first eight characters of the name count.  Capitals and small letters
+are the same.  A label the file has not got stops the batch file with
+"Label not found".
+
+{b}Where it looks{p}
+
+GOTO looks through the whole file, forwards from the top, so a jump
+backwards works and makes a loop.
+#examples
+To skip the rest of a batch file when there is no parameter:
+
+    if "%1"=="" goto nofile
+    copy %1 a:
+    goto end
+    :nofile
+    echo Name the file to copy.
+    :end
+#topic IF|If
+Runs a command only when something is true.
+
+{b}Syntax{p}
+
+    IF [NOT] ERRORLEVEL number command
+    IF [NOT] string1==string2 command
+    IF [NOT] EXIST filename command
+
+{b}Parameters{p}
+
+NOT
+    Runs the command when the condition is false instead.
+
+ERRORLEVEL number
+    True when the last program run ended with an exit code of number
+    or more.
+
+string1==string2
+    True when the two strings are the same.  Capitals and small
+    letters are different.
+
+EXIST filename
+    True when the file is there.  Wildcards are allowed.
+
+command
+    The command to run.
+
+{b}Related Commands{p}
+
+For the other commands written for batch files, see [[Batch Commands|Batch]].
+#notes
+{b}ERRORLEVEL means "at least"{p}
+
+IF ERRORLEVEL 1 is true for an exit code of 1, 2 or anything higher.
+To test for exactly one code, test the higher ones first:
+
+    if errorlevel 2 goto two
+    if errorlevel 1 goto one
+
+{b}Comparing a parameter that may be missing{p}
+
+If %1 is empty, IF %1==X has nothing on the left and fails to parse.
+Put something round both sides: IF "%1"=="X", or IF %1.==X.
+
+{b}EXIST and directories{p}
+
+EXIST tests for a file.  To test for a directory, test for a file it
+always has: IF EXIST C:\DOS\NUL.
+#examples
+To stop when a file is missing:
+
+    if not exist setup.inf echo SETUP.INF is missing
+
+To act on what CHOICE returned:
+
+    choice /c:yn Carry on
+    if errorlevel 2 goto no
+    if errorlevel 1 goto yes
+
+To check a parameter:
+
+    if "%1"=="full" goto full
+#topic LOADHIGH|Loadhigh|LH|Lh
+#title LOADHIGH (LH)
+Loads a 16-bit program into upper memory, when there is room for it.
+
+{b}Syntax{p}
+
+    LOADHIGH [drive:][path]filename [parameters]
+    LH [drive:][path]filename [parameters]
+
+{b}Parameters{p}
+
+[drive:][path]filename
+    The program to load, usually one that stays resident.
+
+parameters
+    Anything the program needs on its command line.
+
+{b}Related Commands{p}
+
+For the upper memory LOADHIGH uses, see [[DOS]].  For drivers, see
+[[DEVICEHIGH]].  To see what is loaded where, see [[MEM]].
+#notes
+{b}When it loads low{p}
+
+Upper memory is there only with DOS=UMB in CONFIG.SYS.  Without it, or
+when no block is big enough, the program loads in conventional memory
+and runs just the same.
+
+{b}32-bit programs{p}
+
+PM-DOS's own commands are 32-bit and run above the first megabyte
+anyway.  LOADHIGH is for DOS programs.
+#examples
+To load MS-DOS's DOSKEY into upper memory for COMMAND.COM:
+
+    lh doskey
+#topic MD|Md|MKDIR|Mkdir
+#title MD (MKDIR)
+Makes a directory.
+
+{b}Syntax{p}
+
+    MD [drive:]path
+    MKDIR [drive:]path
+
+{b}Parameters{p}
+
+[drive:]path
+    The directory to make.  With no drive or leading backslash, it is
+    made under the current directory.
+
+{b}Related Commands{p}
+
+To change to a directory, see [[CD]]; to remove one, see [[RD]].
+#notes
+{b}Long names{p}
+
+A name longer than eight and three, or with spaces in it, is kept as
+a long name on a FAT disk that has room for one.  Put a name with
+spaces in quotes.
+
+{b}One level at a time{p}
+
+The directory above the new one must exist already: MD \A\B needs \A.
+#examples
+To make SPECS under the current directory:
+
+    md specs
+
+To make \PUBLIC\DRAFTS on drive D:
+
+    md d:\public\drafts
+
+To make a directory with a long name:
+
+    md "Letters 2026"
+#topic PATH|Path
+Shows or sets the directories searched for a program that is not in
+the current one.
+
+{b}Syntax{p}
+
+    PATH [[drive:]path[;...]]
+    PATH ;
+
+Type PATH on its own to see the search path.
+
+{b}Parameters{p}
+
+[drive:]path
+    A directory to search, with a drive letter so that it is found
+    from any drive.  Several are separated with semicolons.
+
+;
+    On its own: clears the path, so only the current directory is
+    searched.
+
+{b}Related Commands{p}
+
+PATH is kept in the environment; see [[SET]].
+#notes
+{b}The order{p}
+
+A program typed at the prompt is looked for in the current directory
+first, then in each PATH directory in turn, as a .COM, an .EXE and a
+.BAT in each.  The first one found runs.
+
+{b}What the boot disk sets{p}
+
+AUTOEXEC.BAT on the PM-DOS disk sets the path to its root.  A system
+kept in C:\DOS puts that directory in the path, so its commands run
+from anywhere.
+
+{b}Length{p}
+
+The path is a line of the environment, which SET shows.
+#examples
+To search C:\DOS and then C:\UTILS after the current directory:
+
+    path c:\dos;c:{u}tils
+
+To see it:
+
+    path
+
+To clear it:
+
+    path ;
+#topic PAUSE|Pause
+Stops a batch file until a key is pressed.
+
+{b}Syntax{p}
+
+    PAUSE
+
+PAUSE shows "Press any key to continue . . ." and waits.
+
+{b}Related Commands{p}
+
+To ask a question and act on the answer, see [[CHOICE]].  For the other
+commands written for batch files, see [[Batch Commands|Batch]].
+#notes
+{b}Stopping the batch file{p}
+
+Ctrl+C at the pause ends the batch file instead of going on.
+
+{b}A message{p}
+
+PAUSE says the same thing every time.  Put an ECHO before it to say
+what is being waited for.
+#examples
+To let the user change diskettes:
+
+    echo Put the next diskette in drive A
+    pause
+    copy a:*.* c:\letters
+#topic PROMPT|Prompt
+Changes the command prompt.
+
+{b}Syntax{p}
+
+    PROMPT [text]
+
+Type PROMPT on its own to go back to the drive letter and >.
+
+{b}Parameters{p}
+
+text
+    The new prompt: ordinary characters, and these codes:
+
+    $P    the current drive and directory
+    $N    the current drive
+    $D    the date
+    $T    the time
+    $V    the PM-DOS version
+    $G    >
+    $L    <
+    $B    |
+    $Q    =
+    $$    $
+    $E    the escape character, for ANSI sequences
+    $H    a backspace, which rubs out the character before it
+    $_    the end of the line: the prompt goes on below
+
+{b}Related Commands{p}
+
+The prompt is the PROMPT environment variable; see [[SET]].
+#notes
+{b}The usual one{p}
+
+AUTOEXEC.BAT on the PM-DOS disk sets PROMPT $P$G, which shows where you
+are: C:\DOS>.
+
+{b}Two lines{p}
+
+$_ ends a line of the prompt, so the date can go on a line of its own
+above the drive and directory.
+#examples
+To show the directory and a >:
+
+    prompt $p$g
+
+To show the date and time on one line and the directory on the next:
+
+    prompt $d $t$_$p$g
+
+To show a message:
+
+    prompt Yes, master? $g
+#topic RD|Rd|RMDIR|Rmdir
+#title RD (RMDIR)
+Removes an empty directory.
+
+{b}Syntax{p}
+
+    RD [drive:]path
+    RMDIR [drive:]path
+
+{b}Parameters{p}
+
+[drive:]path
+    The directory to remove.
+
+{b}Related Commands{p}
+
+To delete the files in it first, see [[DEL]].  To change to a
+directory, see [[CD]].
+#notes
+{b}It must be empty{p}
+
+A directory that still holds files, hidden ones included, or other
+directories is not removed.  DIR /A shows what is left in it.
+
+{b}Not the current one{p}
+
+The current directory, and the current directory of another drive,
+cannot be removed: CD out of it first.
+#examples
+To remove \WORK\OLD once it is empty:
+
+    rd \work\old
+#topic REM|Rem
+Marks a line as a remark, in a batch file or in CONFIG.SYS.
+
+{b}Syntax{p}
+
+    REM [comment]
+
+{b}Parameters{p}
+
+comment
+    Anything.  The line is shown when echoing is on, and nothing is
+    done with it.
+
+{b}Related Commands{p}
+
+For the other commands written for batch files, see [[Batch Commands|Batch]].
+#notes
+{b}In CONFIG.SYS{p}
+
+A REM line in CONFIG.SYS is skipped.  The boot disk's CONFIG.SYS uses
+REM to keep three test lines ready to turn on.
+
+{b}Redirection characters{p}
+
+A > or | in a remark is still read as redirection when the batch file
+runs the line.  Keep them out of remarks, or turn echoing off.
+#examples
+    rem This batch file backs up \LETTERS to drive A
+#topic REN|Ren|RENAME|Rename
+#title REN (RENAME)
+Renames a file or a directory.
+
+{b}Syntax{p}
+
+    REN [drive:][path]filename1 filename2
+    RENAME [drive:][path]filename1 filename2
+
+{b}Parameters{p}
+
+[drive:][path]filename1
+    The file or directory to rename.  Wildcards rename several.
+
+filename2
+    The new name.  No drive or path: a file stays where it is.
+
+{b}Related Commands{p}
+
+To move files to another directory, see [[MOVE]].
+#notes
+{b}Wildcards{p}
+
+With wildcards in both names, each file is renamed in turn, the ? and
+* in the new name taking the characters from the old one: REN *.TXT
+*.BAK gives every text file a .BAK extension.
+
+{b}A name in use{p}
+
+A file or directory with the new name already there stops the rename
+with "Duplicate file name".
+
+{b}Long names{p}
+
+A new name that is long or has spaces in it is kept as a long name.
+Put it in quotes.
+#examples
+To rename one file:
+
+    ren draft.txt final.txt
+
+To change every .LST to .TXT:
+
+    ren *.lst *.txt
+
+To rename a directory:
+
+    ren oldwork archive
+#topic SET|Set
+Shows, sets or removes environment variables.
+
+{b}Syntax{p}
+
+    SET [variable=[string]]
+
+Type SET on its own to see every variable and its value.
+
+{b}Parameters{p}
+
+variable
+    The name.  Capitals and small letters are the same.
+
+string
+    The value.  Everything after the = up to the end of the line,
+    spaces included.  With nothing after the =, the variable is
+    removed.
+
+{b}Related Commands{p}
+
+SET in CONFIG.SYS sets a variable before AUTOEXEC.BAT runs: see
+[[SET (CONFIG.SYS)|SET=]].  PATH and PROMPT are variables too: see
+[[PATH]] and [[PROMPT]].
+#notes
+{b}Who sees a variable{p}
+
+Every program started from the shell gets a copy of the environment
+as it is then.  A variable set inside a nested shell or a program is
+gone when that shell or program ends.
+
+{b}Variables the shell uses{p}
+
+    PATH       where programs are looked for
+    PROMPT     the prompt
+    COMSPEC    the shell DOS programs get, COMMAND.COM
+    DIRCMD     switches for every DIR
+    COPYCMD    /Y or /-Y for every COPY, MOVE and XCOPY
+    TEMP       where temporary files go
+
+{b}In batch files{p}
+
+%NAME% in a batch file is replaced by the variable's value.
+#examples
+To set a variable:
+
+    set temp=c:\temp
+
+To remove it:
+
+    set temp=
+
+To see them all:
+
+    set
+#topic SHIFT|Shift
+Moves the batch file's parameters down one: %1 becomes %0, %2 becomes
+%1, and so on.
+
+{b}Syntax{p}
+
+    SHIFT
+
+{b}Related Commands{p}
+
+For the other commands written for batch files, see [[Batch Commands|Batch]].
+#notes
+{b}More than nine{p}
+
+A batch file sees %0 to %9.  After a SHIFT the tenth parameter is %9,
+so a loop of SHIFTs can get at any number of them.
+
+{b}No way back{p}
+
+A parameter shifted off %0 is gone.
+#examples
+To copy every file named on the command line to drive A:
+
+    :next
+    if "%1"=="" goto done
+    copy %1 a:
+    shift
+    goto next
+    :done
+#topic TIME|Time
+Shows the time, or sets it.
+
+{b}Syntax{p}
+
+    TIME [time]
+
+Type TIME on its own to see the time and be asked for a new one.
+Press ENTER to keep it.
+
+{b}Parameters{p}
+
+time
+    The time to set: hours and minutes, and seconds if wanted, on the
+    24-hour clock, separated by colons.  12-hour times take a or p
+    after them.
+
+{b}Related Commands{p}
+
+To set the date, see [[DATE]].
+#notes
+{b}Where the time goes{p}
+
+The time is written to the real-time clock and kept when the machine
+is off.  Files are stamped with it.
+
+{b}The separator{p}
+
+COUNTRY= in CONFIG.SYS chooses the character between the hours and
+the minutes when the time is shown.  Typing it, a colon always works.
+#examples
+To set the time to twenty past two in the afternoon:
+
+    time 14:20
+    time 2:20p
+#topic TYPE|Type
+Shows a text file on the screen.
+
+{b}Syntax{p}
+
+    TYPE [drive:][path]filename
+
+{b}Parameters{p}
+
+[drive:][path]filename
+    The file to show.  One file at a time: no wildcards.
+
+{b}Related Commands{p}
+
+To stop after each screenful, send the text through [[MORE]].  To
+change a file, see [[EDIT]].
+#notes
+{b}Long files{p}
+
+TYPE does not pause.  TYPE FILE.TXT | MORE shows a screen at a time,
+and so does MORE FILE.TXT.
+
+{b}Other files{p}
+
+A file that is not text shows as whatever its bytes happen to be.
+
+{b}Devices{p}
+
+TYPE can read a character device: TYPE CON shows what is typed until
+Ctrl+Z.
+#examples
+To show a file:
+
+    type readme.txt
+
+To show it a screen at a time:
+
+    type readme.txt | more
+#topic VER|Ver
+Shows the version of PM-DOS.
+
+{b}Syntax{p}
+
+    VER
+#topic VERIFY|Verify
+Turns checking of what is written to disk on or off.
+
+{b}Syntax{p}
+
+    VERIFY [ON | OFF]
+
+Type VERIFY on its own to see the setting.
+
+{b}Parameters{p}
+
+ON
+    Every sector written is read back and compared.  Writing is slower.
+
+OFF
+    Nothing is read back.  This is the setting at startup.
+
+{b}Related Commands{p}
+
+COPY /V and XCOPY /V check one copy without changing the setting: see
+[[COPY]] and [[XCOPY]].
+#notes
+{b}The cache{p}
+
+With VERIFY ON the disk cache writes straight through instead of
+behind, so that what is checked is what is on the disk.  See [[CACHE]].
+#examples
+To turn checking on:
+
+    verify on
+#topic VOL|Vol
+Shows a disk's volume label and serial number.
+
+{b}Syntax{p}
+
+    VOL [drive:]
+
+{b}Parameters{p}
+
+drive:
+    The drive to look at.  The current one if none is given.
+
+{b}Related Commands{p}
+
+To change the label, see [[LABEL]].
+#examples
+To see drive A's label:
+
+    vol a:
+#group Batch Commands|Batch|Batch commands
+A batch file is a text file of commands with the extension .BAT.
+Typing its name runs the commands one after another.
+
+Any command can go in a batch file.  These were written for them:
+
+{i}[[Call|CALL]]                    [[If|IF]]{p}
+{i}[[Choice|CHOICE]]                  [[Pause|PAUSE]]{p}
+{i}[[Echo|ECHO]]                    [[Rem|REM]]{p}
+{i}[[For|FOR]]                     [[Shift|SHIFT]]{p}
+{i}[[Goto|GOTO]]{p}
+
+In a batch file, %1 to %9 stand for the words typed after its name,
+%0 for the name itself, and %NAME% for the environment variable NAME.
+An @ at the start of a line keeps that line from being echoed; @ECHO
+OFF keeps every line after it quiet.
+
+Ctrl+C stops a batch file.
+
+AUTOEXEC.BAT in the root of the boot drive runs when PM-DOS starts;
+see [[Starting PM-DOS|Starting]].

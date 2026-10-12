@@ -1,0 +1,982 @@
+#! 20EXTERN.TXT - the external commands, ACROREAD to FORMAT.  Each
+#! topic's switches are the ones the program's own /? lists.
+#topic ACROREAD|Acroread
+Shows a PDF document on the screen, a page at a time, as a picture or
+as its text.
+
+{b}Syntax{p}
+
+    ACROREAD [drive:][path]filename [/T | /G] [/P:n] [/X]
+
+{b}Parameters{p}
+
+[drive:][path]filename
+    The document.  .PDF is added to a name that has no extension.
+
+{b}Switches{p}
+
+/T
+    Starts with the text of the page, on the text screen, instead of
+    the page drawn.
+
+/G
+    Draws the pages in sixteen greys on the standard VGA screen,
+    without asking the video BIOS for a better mode.
+
+/P:n
+    Starts at page n.
+
+/X
+    Writes the document's text to standard output, a form feed between
+    pages, and does not show a screen at all.
+
+{b}Related Commands{p}
+
+To read a plain text file, see [[EDIT]] or [[TYPE]].
+#notes
+{b}The screens{p}
+
+A page is drawn 640 by 480: in colour when the video BIOS has VBE 2.0
+or later, in sixteen greys on a plain VGA.  The menu bar has File,
+View, Page, Search and Help; F1 lists the keys.  PAGE DOWN and PAGE UP
+turn the pages, the arrow keys move around a page, and the mouse drags
+it or works the scroll bars.
+
+{b}What it reads{p}
+
+Any PDF from version 1.0 to 2.0, including files saved many times
+over, files with damaged cross-reference tables, and files encrypted
+with the standard handler.  Pictures and fonts are drawn as far as
+the program knows how; what it leaves out is left blank.
+#examples
+To read a manual:
+
+    acroread manual.pdf
+
+To start at page 12 with the text view:
+
+    acroread manual /t /p:12
+
+To print the words of a document:
+
+    acroread manual /x > prn
+#topic ATTRIB|Attrib
+Shows or changes the attributes of files: read-only, archive, system
+and hidden.
+
+{b}Syntax{p}
+
+    ATTRIB [+R | -R] [+A | -A] [+S | -S] [+H | -H]
+           [[drive:][path][filename]] [/S]
+
+Type ATTRIB on its own to see the attributes of every file in the
+current directory.
+
+{b}Parameters{p}
+
++
+    Sets the attribute that follows.
+
+-
+    Clears it.
+
+R
+    Read-only: the file cannot be changed or deleted.
+
+A
+    Archive: the file has changed since it was last backed up.  Every
+    file written gets it; XCOPY /M clears it.
+
+S
+    System.
+
+H
+    Hidden: DIR leaves the file out unless /A asks for it.
+
+[drive:][path][filename]
+    The file or files to show or change.  Wildcards name several.
+
+{b}Switches{p}
+
+/S
+    Works on the files named in the directory and in every directory
+    below it.
+
+{b}Related Commands{p}
+
+To copy files by their archive attribute, see [[XCOPY]].
+#notes
+{b}What it shows{p}
+
+One line a file: the attribute letters in columns, then the path and
+name.  A directory named on the command line is shown with its own
+attributes, not opened.
+
+{b}The other bits{p}
+
+The directory and volume-label attributes belong to the file system
+and cannot be set or cleared here.
+
+{b}A hidden or system file{p}
+
+Clearing R, S and H together is how a system file is made ordinary
+again.  PM-DOS's own PMIO.SYS, PMDOS.SYS and RMDOS.SYS are marked
+read-only, hidden and system, and SYS puts the marks back.
+#examples
+To see the attributes of every file here:
+
+    attrib
+
+To make a file read-only:
+
+    attrib +r report.doc
+
+To take the hidden and system attributes off a file:
+
+    attrib -h -s secret.dat
+
+To mark every .TXT file below the current directory as needing a
+backup:
+
+    attrib +a *.txt /s
+#topic CACHE|Cache
+Shows what the disk cache built into PM-DOS is doing, and controls it.
+
+{b}Syntax{p}
+
+    CACHE [/X] [drive[+ | -] ...] [/C | /R] [/Q | /S]
+
+Type CACHE on its own for the report: each drive and how it is cached,
+and the cache's size.
+
+{b}Parameters{p}
+
+drive
+    A drive letter on its own: that drive is read-cached only, with
+    write-behind turned off.
+
+drive+
+    Write-behind turned on for that drive.
+
+drive-
+    That drive not cached at all.
+
+{b}Switches{p}
+
+/X
+    Turns write-behind off for every drive.
+
+/C
+    Writes everything the cache is holding to the disks.
+
+/R
+    Writes everything out, then empties the cache and starts it again.
+
+/Q
+    Says nothing.
+
+/S
+    Adds the hit and miss counts and the number of elements to the
+    report.
+
+{b}Related Commands{p}
+
+The cache's size is set by [[CACHE=]] in CONFIG.SYS, and the one
+Windows uses by [[WINCACHE=]].  [[SHUTDOWN]] writes everything out
+before switching off.
+#notes
+{b}What is cached{p}
+
+Hard disks are read- and write-cached.  Floppies, CD-ROMs and drives
+from loaded block drivers are read-cached only, and that has no
+switch.
+
+{b}Write-behind{p}
+
+With write-behind on, a file's sectors are written when the program
+ends or the cache has to make room, and always before the prompt
+comes back, so switching off at the prompt is safe.  CACHE /C writes
+them out at once.  VERIFY ON writes straight through.
+
+{b}The three sizes{p}
+
+The report shows what the cache holds now, the least it will shrink
+to when a program needs memory, and the most it may grow to.  All
+three come from CACHE= in CONFIG.SYS.
+#examples
+To see the report with the hit counts:
+
+    cache /s
+
+To write everything out before a program that reads the disk its own
+way:
+
+    cache /c
+
+To stop caching drive A: and keep write-behind on for C:
+
+    cache a- c+
+#topic CDEX|Cdex
+Lists the CD-ROM drives and their drive letters.
+
+{b}Syntax{p}
+
+    CDEX
+
+{b}Related Commands{p}
+
+[[CDROM=]] in CONFIG.SYS chooses the first letter; [[SCSI=]] turns the
+SCSI drivers on and off.  To give an .ISO file a drive letter, see
+[[MOUNT]].
+#notes
+{b}What the lines say{p}
+
+One line a drive: its letter, the unit number that MSCDEX-style
+programs count it by, where it is (an IDE channel or a SCSI ID), the
+label of the disc in it, and the name the drive reports.  With a
+drive on a SCSI card, the cards are listed under the table; "SCSI 1
+ID 2" is ID 2 on the first card.
+
+{b}No MSCDEX{p}
+
+The CD-ROM extensions are part of the kernel, and a drive has its
+letter from boot.  There is nothing to load.
+#examples
+    cdex
+#topic CHKDSK|Chkdsk
+Checks a disk and reports on it.  With /F, it repairs what it finds.
+
+{b}Syntax{p}
+
+    CHKDSK [drive:][[path]filename] [/F] [/V]
+
+Type CHKDSK on its own to check the current drive.
+
+{b}Parameters{p}
+
+[drive:][path]
+    The drive to check.
+
+filename
+    A file, or files named with wildcards, to report on: CHKDSK says
+    whether each one is stored in one piece.
+
+{b}Switches{p}
+
+/F
+    Fixes errors.  Without it, CHKDSK reports them and changes nothing.
+
+/V
+    Lists the path and name of every file on the disk as it goes.
+
+{b}Related Commands{p}
+
+For a check that asks about each problem, keeps an undo disk and can
+scan the surface, see [[SCANDISK]].  [[AUTOCHECK=]] in CONFIG.SYS runs
+CHKDSK at startup on a disk that was not shut down properly.
+#notes
+{b}What it checks{p}
+
+The file allocation tables, the directories, and every file's chain
+of clusters: clusters that belong to no file, and clusters two files
+claim.  Then it reports the disk's size and how much of it each kind
+of thing takes.
+
+{b}Lost clusters{p}
+
+With /F, clusters that belong to no file are saved as FILE0000.CHK
+and so on in the root directory, where they can be looked at and
+deleted.
+
+{b}When it runs{p}
+
+Nothing else should be writing to the disk while CHKDSK /F runs.
+CHKDSK cannot check a network drive.
+
+{b}The exit code{p}
+
+255 when a problem was found, 0 otherwise.
+#examples
+To check drive C and fix what is wrong:
+
+    chkdsk c: /f
+
+To find out whether a file is in one piece:
+
+    chkdsk c:\data\big.dat
+#topic CHOICE|Choice
+Asks a question in a batch file and sets the errorlevel to the answer.
+
+{b}Syntax{p}
+
+    CHOICE [/C[:]keys] [/N] [/S] [/T[:]c,nn] [text]
+
+{b}Parameters{p}
+
+text
+    The question.  CHOICE shows it, then the keys in brackets and a
+    question mark.
+
+{b}Switches{p}
+
+/C[:]keys
+    The keys that count as answers.  Y and N if not given.
+
+/N
+    Shows the question without the keys and the question mark.
+
+/S
+    Capitals and small letters are different answers.
+
+/T[:]c,nn
+    Takes c as the answer after nn seconds with no key pressed.
+
+{b}Related Commands{p}
+
+To act on the errorlevel, see [[IF]].  For the other commands written
+for batch files, see [[Batch Commands|Batch]].
+#notes
+{b}The errorlevel{p}
+
+The first key in the list sets errorlevel 1, the second 2, and so on.
+Test the highest number first, because IF ERRORLEVEL means "that or
+more".
+
+{b}Wrong keys{p}
+
+A key that is not in the list makes a beep and CHOICE waits again.
+#examples
+To ask yes or no:
+
+    choice Delete the old files
+    if errorlevel 2 goto no
+    if errorlevel 1 goto yes
+
+To offer three choices and take the first after ten seconds:
+
+    choice /c:abc /t:a,10 Which backup
+#topic DEFRAG|Defrag
+Puts every file on a disk into one piece and moves the files to the
+start of the disk, so they read faster and the free space is in one
+block.
+
+{b}Syntax{p}
+
+    DEFRAG [drive:] [/F] [/S[:]order] [/H] [/B] [/G]
+    DEFRAG [drive:] [/U] [/H] [/B] [/G]
+
+With no switches, DEFRAG looks at the drive, recommends a method, and
+asks.
+
+{b}Parameters{p}
+
+drive:
+    The drive to optimize.
+
+{b}Switches{p}
+
+/F
+    Full optimization: every file in one piece, and no free space
+    between files.
+
+/U
+    Unfragments the files only.  Free space may be left between them.
+
+/S[:]order
+    Sorts the files in each directory, by one of:
+
+    N    name                     E    extension
+    D    date and time            S    size
+
+    A minus sign after the letter reverses the order: /SN-.
+
+/H
+    Moves hidden files too.  System files are never moved.
+
+/B
+    Restarts the computer when DEFRAG has finished.
+
+/G
+    Uses a graphics screen.
+
+{b}Related Commands{p}
+
+DEFRAG checks the drive first and offers [[SCANDISK]] when it finds
+errors.  [[CHKDSK]] reports whether a file is in one piece.
+#notes
+{b}The screen{p}
+
+A map of the disk, a block for each group of clusters, shows the
+files being moved.  The Optimize menu starts, stops and sets the
+method; the mouse works the menus and the buttons.
+
+{b}Safe to interrupt{p}
+
+Files are moved in an order that leaves the disk whole at every step,
+so a power cut in the middle loses nothing.  Run DEFRAG again to
+finish.
+
+{b}What is not moved{p}
+
+System files, and hidden files unless /H is given.  Windows' swap
+file is left where it is.
+
+{b}The exit code{p}
+
+    0    the drive was optimized
+    2    no free cluster to work with
+    3    stopped at the keyboard
+    4    the command line was wrong, or the drive cannot be used
+    5    a cluster could not be read
+    6    a cluster could not be written
+    7    the file system has errors: run ScanDisk
+    9    not enough memory
+
+/SKIPHIGH, /LCD, /BW and /G0 are MS-DOS's switches: they are accepted
+and do nothing.
+#examples
+To optimize drive C fully, with the files in each directory in order
+of name:
+
+    defrag c: /f /sn
+
+To unfragment the files on D: without moving them together:
+
+    defrag d: /u
+#topic DISKCOMP|Diskcomp
+Compares two diskettes track for track.
+
+{b}Syntax{p}
+
+    DISKCOMP [drive1: [drive2:]] [/1] [/8]
+
+{b}Parameters{p}
+
+drive1:
+    The drive with the first diskette.
+
+drive2:
+    The drive with the second.  The same drive as the first, or left
+    out, means one drive: the first diskette is read whole, and then
+    DISKCOMP asks for the second.
+
+{b}Switches{p}
+
+/1
+    Compares the first side only.
+
+/8
+    Compares only the first eight sectors of each track.
+
+{b}Related Commands{p}
+
+To make the copy DISKCOMP checks, see [[DISKCOPY]].  To compare files
+rather than diskettes, see [[FC]].
+#notes
+{b}What counts as the same{p}
+
+Every sector of every track.  Two diskettes with the same files
+copied onto them with COPY are not the same to DISKCOMP, because the
+files lie in different places; a diskette and its DISKCOPY are.
+
+{b}The diskettes must match{p}
+
+Both diskettes must be of the same kind.  Hard disks and network
+drives cannot be compared.
+
+{b}The exit code{p}
+
+0 the same, 1 different, 2 stopped with Ctrl+C, 3 a track could not
+be read, 4 the command line, the drives, memory, or diskettes of two
+kinds.  With several comparisons, the last one's.
+#examples
+To compare the diskette in A: with the one in B:
+
+    diskcomp a: b:
+
+To compare two diskettes using one drive:
+
+    diskcomp a: a:
+#topic DISKCOPY|Diskcopy
+Copies one diskette onto another, track for track.
+
+{b}Syntax{p}
+
+    DISKCOPY [drive1: [drive2:]] [/1] [/V] [/M]
+
+{b}Parameters{p}
+
+drive1:
+    The drive with the diskette to copy.
+
+drive2:
+    The drive with the diskette to copy onto.  The same drive, or left
+    out, means one drive: the source is read whole, and DISKCOPY asks
+    for the diskette to write, as many times as you like.
+
+{b}Switches{p}
+
+/1
+    Copies the first side only.
+
+/V
+    Reads each track back after writing it, to check it.
+
+/M
+    Keeps the copy in conventional memory, which means more than one
+    pass for most diskettes.
+
+{b}Related Commands{p}
+
+To check a copy, see [[DISKCOPY]]'s partner [[DISKCOMP]].  To copy
+files rather than a whole diskette, see [[COPY]] and [[XCOPY]].
+#notes
+{b}What it copies{p}
+
+Everything, boot sector included: the copy is a diskette the same as
+the first, bootable if it was.  Whatever was on the second diskette
+is gone.
+
+{b}Both of one kind{p}
+
+The two diskettes must be the same kind.  A diskette that is not
+formatted is formatted as it is written.
+
+{b}The exit code{p}
+
+0 copied, 1 a read or write error (the copy is finished as well as it
+can be), 2 stopped with Ctrl+C, 3 the source could not be read, 4 the
+command line, the drives, memory, or diskettes that do not match.
+With several copies, the last one's.
+#examples
+To copy the diskette in A: to the one in B:
+
+    diskcopy a: b:
+
+To make several copies of one diskette with one drive, checking each:
+
+    diskcopy a: a: /v
+#topic DOSSHELL|Dosshell
+Starts the PM-DOS Shell: the drives, directories, files and programs
+in lists and menus, with the keyboard or the mouse.
+
+{b}Syntax{p}
+
+    DOSSHELL [/T[:res]] [/G[:res]] [/256]
+
+With no switch, the shell starts the way it was last left.
+
+{b}Switches{p}
+
+/T[:res]
+    Starts in text mode.  res is L for 25 lines or H for 50 (43 on an
+    EGA).
+
+/G[:res]
+    Starts in graphics mode.  res is L for 25 lines, M1 for 30, M2 for
+    34, H1 for 43 or H2 for 60.  L and H1 are 640 by 350 and run on an
+    EGA; the others are 640 by 480 and need a VGA.
+
+/256
+    With /G:M1, /G:M2 or /G:H2: 256 colours.  Needs VBE 2.0.
+
+{b}Related Commands{p}
+
+For the commands the shell runs, see the [[Contents]].
+#notes
+{b}The screen{p}
+
+A line of drives, the directory tree of the chosen drive beside the
+files of the chosen directory, a list of programs in groups, and a
+menu bar: File, Options, View, Tree and Help.  Long file names are
+shown in every list.
+
+{b}Running a program{p}
+
+Choose a file or a program entry and press ENTER, or double-click it.
+The shell runs one program at a time: there is no Task Swapper, as
+PM-DOS does not swap programs.
+
+{b}Settings{p}
+
+The view, the colours and the program groups are kept in DOSSHELL.INI
+beside DOSSHELL.EXE.
+#examples
+To start the shell in 50-line text mode:
+
+    dosshell /t:h
+
+To start it in graphics with 256 colours:
+
+    dosshell /g:m2 /256
+#topic EDIT|Edit
+Starts the PM-DOS Editor, for making and changing text files.
+
+{b}Syntax{p}
+
+    EDIT [/B] [/H] [/R] [/S] [/nnn] [[drive:][path]filename ...]
+
+{b}Parameters{p}
+
+[drive:][path]filename
+    The file to edit.  Several can be named, and wildcards name
+    several.  A name that does not exist yet is a new file.
+
+{b}Switches{p}
+
+/B
+    Black and white, for a monochrome screen on a colour card.
+
+/H
+    As many lines as the screen can show: 43 or 50.
+
+/R
+    Opens the files read-only.
+
+/S
+    Shows files by their short names.
+
+/nnn
+    Opens the files as binary, nnn bytes to a line (10 to 1024).
+
+{b}Related Commands{p}
+
+To look at a file without changing it, see [[TYPE]] and [[MORE]].
+#notes
+{b}The editor{p}
+
+Up to nine files open at once, one or two windows, the File, Edit,
+Search, View, Options and Help menus, cut and paste, find and
+replace, and the WordStar keys.  F1 inside the editor explains them.
+
+{b}What it writes{p}
+
+Lines end with CR LF, and tabs are kept as tabs.  A file with LF line
+ends is read, and written back with CR LF.
+#examples
+To edit a file:
+
+    edit autoexec.bat
+
+To open every .TXT file in the directory, read-only, in 50 lines:
+
+    edit *.txt /r /h
+#topic FC|Fc
+Compares two files, or two sets of files, and shows where they differ.
+
+{b}Syntax{p}
+
+    FC [/A] [/C] [/L] [/LBn] [/N] [/T] [/W] [/nnnn]
+       [drive1:][path1]filename1 [drive2:][path2]filename2
+    FC /B [drive1:][path1]filename1 [drive2:][path2]filename2
+
+{b}Parameters{p}
+
+[drive1:][path1]filename1
+    The first file.  Wildcards name several; each is compared with
+    the second name, whose wildcards are filled in from the first.
+
+[drive2:][path2]filename2
+    The second file.
+
+{b}Switches{p}
+
+/A
+    Shows only the first and last line of each set of differences.
+
+/B
+    Compares byte by byte and lists each byte that differs.  Files
+    named .EXE, .COM, .SYS, .OBJ, .LIB and .BIN are compared this way
+    unless /L says otherwise.
+
+/C
+    Treats capitals and small letters as the same.
+
+/L
+    Compares the files as lines of text.
+
+/LBn
+    Gives up after n differing lines in a row.  100 if not given.
+
+/N
+    Shows line numbers.
+
+/T
+    Keeps tabs as they are instead of expanding them to every eighth
+    column.
+
+/W
+    Treats runs of spaces and tabs as one space, and ignores them at
+    either end of a line and on lines with nothing else on them.
+
+/nnnn
+    How many lines must match before a difference is taken to have
+    ended.  2 if not given.
+
+{b}Related Commands{p}
+
+To compare whole diskettes, see [[DISKCOMP]].
+#notes
+{b}How a text comparison is shown{p}
+
+Each set of differences is shown under ***** and the file's name: the
+last line that matched, the lines that differ, and the first line
+that matches again.  When the files never match again within the
+lines FC keeps, it says "Resync failed.  Files are too different".
+
+{b}The exit code{p}
+
+0 whatever the files hold; 1 only when a file could not be read or
+the command line was wrong.
+#examples
+To compare two text files, with line numbers:
+
+    fc /n old.txt new.txt
+
+To compare two programs byte by byte:
+
+    fc /b prog1.exe prog2.exe
+
+To compare every .C file here with the copy in \BACKUP:
+
+    fc *.c \backup\*.c
+#topic FDISK|Fdisk
+Sets up the partitions on a hard disk: makes, deletes, moves and
+resizes them, and marks one active.
+
+{b}Syntax{p}
+
+    FDISK
+    FDISK /STATUS
+    FDISK /L
+    FDISK /C d:p [n [tt]]
+    FDISK /D d:p
+    FDISK /A d:p
+    FDISK /M d:p n
+    FDISK /S d:p n
+    FDISK /MBR d
+
+FDISK on its own shows the disks and their partitions on the screen,
+where they can be chosen and changed with the keyboard or the mouse.
+
+{b}Parameters{p}
+
+d:p
+    Disk d, partition p: 1:1 is the first partition on the first disk.
+
+n
+    A number of sectors, or a size with M after it: 40M.
+
+tt
+    A partition type, in hexadecimal: 06 for FAT16, 0B for FAT32.
+
+{b}Switches{p}
+
+/STATUS
+    Reports every disk's partition table.
+
+/L
+    The same report with the logical drives inside the extended
+    partition walked.
+
+/C d:p [n [tt]]
+    Creates partition p on disk d in the largest free gap, or only n
+    of it, and of type tt.
+
+/D d:p
+    Deletes the partition.
+
+/A d:p
+    Marks the partition active, so the machine boots from it.
+
+/M d:p n
+    Moves the partition so that it starts at sector n.
+
+/S d:p n
+    Resizes the partition to n sectors, or n megabytes written 40M.
+
+/MBR d
+    Writes a fresh master boot record on disk d, leaving the partition
+    table as it is.
+
+{b}Related Commands{p}
+
+A new partition needs [[FORMAT]] before it can hold files, and [[SYS]]
+to boot.
+#notes
+{b}The screen{p}
+
+Each disk is a bar with its partitions drawn to scale.  A partition
+can be chosen with the keyboard or clicked, and its edges dragged to
+resize or move it.  Nothing is written until W writes the changes;
+ESC throws them away.
+
+{b}Resizing with files on it{p}
+
+FDISK moves and resizes a partition with its file system inside, and
+refuses when the files would not survive it.  Back the disk up first
+all the same.
+
+{b}Letters{p}
+
+Drive letters are given out at boot: a partition made or deleted
+changes the letters of the ones after it from the next boot on.
+#examples
+To see every disk's partitions:
+
+    fdisk /status
+
+To make a 100MB FAT16 partition in the free space on the second disk:
+
+    fdisk /c 2:1 100m 06
+
+To make the first partition of the first disk the one that boots:
+
+    fdisk /a 1:1
+#topic FIND|Find
+Searches files for lines that contain a piece of text.
+
+{b}Syntax{p}
+
+    FIND [/V] [/C] [/N] [/I] "string" [[drive:][path]filename ...]
+
+With no file named, FIND searches what is typed at the keyboard, or
+what another command sends it through a pipe.
+
+{b}Parameters{p}
+
+"string"
+    The text to look for, in double quotes.  Two quotes inside it
+    stand for one.
+
+[drive:][path]filename
+    The files to search.  No wildcards: each file is named as it is.
+
+{b}Switches{p}
+
+/V
+    Shows the lines that do NOT contain the text.
+
+/C
+    Shows only how many lines contain it.
+
+/N
+    Puts each line's number in front of it.
+
+/I
+    Capitals and small letters are the same.
+
+{b}Related Commands{p}
+
+To compare two files, see [[FC]].  To sort what FIND finds, see
+[[SORT]].
+#notes
+{b}How the output looks{p}
+
+Each file gets a heading: a blank line and ten hyphens and its name.
+With /C the count is on that line.  Text from a pipe gets no heading.
+
+{b}The exit code{p}
+
+0 when any line contained the text (with /V, when any line did not),
+1 when none did, 2 for an error.
+
+{b}Capitals{p}
+
+/I compares through the country's table of capitals, so accented
+letters match their capitals too.
+#examples
+To list the lines of a file that mention a word:
+
+    find "PATH" autoexec.bat
+
+To count the lines of a listing that are directories:
+
+    dir | find /c "<DIR>"
+
+To number the lines that do not contain REM:
+
+    find /v /n "REM" setup.bat
+#topic FORMAT|Format
+Prepares a disk for use: writes fresh file allocation tables and an
+empty root directory, and on a diskette lays the tracks down.
+
+{b}Syntax{p}
+
+    FORMAT drive: [/V[:label]] [/Q] [/U] [/F:size] [/B | /S] [/C]
+
+{b}Parameters{p}
+
+drive:
+    The drive to format.  Everything on it is lost.
+
+{b}Switches{p}
+
+/V[:label]
+    The volume label.  Without a label, FORMAT asks for one.
+
+/Q
+    Quick: the tables and the root directory only.  The data is not
+    tested.
+
+/U
+    Unconditional: nothing of the old format is trusted.  A diskette
+    has every track laid down again.
+
+/F:size
+    The capacity of the diskette: 160, 180, 320, 360, 720, 1.2, 1.44,
+    1.68 or 2.88.  1.68 is DMF on a 1.44M diskette.
+
+/B
+    Accepted, and does nothing: SYS puts the system on afterwards.
+
+/S
+    Copies the system files afterwards, so the disk boots.
+
+/C
+    Tests the clusters an earlier format marked bad instead of
+    keeping the marks.
+
+{b}Related Commands{p}
+
+To put the system on a disk that is formatted already, see [[SYS]].
+To check a disk without losing what is on it, see [[SCANDISK]].
+#notes
+{b}A disk that has a format already{p}
+
+The layout is kept and the tables are written afresh.  Every data
+sector is read back and the bad ones' clusters marked, unless /Q
+skips the reading.  The boot sector is not touched, so a disk that
+booted still boots.  A hard disk always gets this: there are no
+tracks to lay down on an IDE disk.
+
+{b}A diskette with no format, or the wrong one{p}
+
+Every track is formatted and read back, and then the boot sector,
+tables and root directory are written for the capacity asked for, or
+the drive's own.
+
+{b}Bad cluster marks{p}
+
+Marks from an earlier format are kept, because somebody waited for
+the test that made them.  /C or /U tests those clusters again.
+
+{b}The exit code{p}
+
+0 when the format was done, 1 otherwise.
+#examples
+To format the diskette in A: and label it:
+
+    format a: /v:letters
+
+To format a 720K diskette in a 1.44M drive:
+
+    format a: /f:720
+
+To make a bootable diskette:
+
+    format a: /s
+
+To format a hard disk partition quickly:
+
+    format d: /q

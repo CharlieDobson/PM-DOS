@@ -1,0 +1,949 @@
+#! 21EXTERN.TXT - the external commands, HELP to XCOPY.
+#topic HELP|Help
+Starts PM-DOS Help: this program.
+
+{b}Syntax{p}
+
+    HELP [topic]
+
+{b}Parameters{p}
+
+topic
+    The command or CONFIG.SYS statement to open at.  With none, the
+    contents.
+
+{b}Related Commands{p}
+
+Every command answers /? with a short account of itself: DIR /?.  For
+how this program is used, see [[How to Use PM-DOS Help|Help on Help]].
+#notes
+{b}Where the text is{p}
+
+The text comes from HELP.HLP, looked for in the current directory,
+then where HELP.EXE itself is, then along the PATH.  Without the
+file, HELP says so and ends.
+
+{b}Changing the text{p}
+
+HELP.HLP is plain text in the layout Microsoft's HELPMAKE took: EDIT
+can change it.  A topic starts with one or more .context lines naming
+it, a .topic line with its title, and .freeze with how many lines
+stay at the top; then its text.  In the text, \b and \p turn bold on
+and off, \i and \p the link colour, and a link is written as
+\aWORDS\vNAME\v, with the brackets round it typed as they are.
+
+On the PM-DOS source disk the file is made from the parts in
+DISK\HELP by TOOLS\MKHELP.PL, which also checks that every link leads
+to a topic.
+
+{b}The exit code{p}
+
+0, or 1 when HELP.HLP was not found or could not be read.
+#examples
+To read about COPY:
+
+    help copy
+
+To open at the contents:
+
+    help
+#topic ISAPNP|Isapnp
+Lists the ISA Plug and Play cards in the machine, and switches their
+devices on.
+
+{b}Syntax{p}
+
+    ISAPNP
+    ISAPNP /A
+    ISAPNP card.device [IO=port[,port ...]] [IRQ=n[,n]] [DMA=n[,n]]
+           [MEM=address[,address ...]] [ON | OFF]
+
+ISAPNP on its own lists every card and every device on it, and what
+each is using now.
+
+{b}Parameters{p}
+
+card.device
+    The device to set, numbered as the list numbers it: 1.0 is the
+    first device on the first card.  Given resources, the device is
+    given those and switched on; ON or OFF alone switches it as it is.
+
+IO=port
+    The port, or ports, in hexadecimal: IO=220.
+
+IRQ=n
+    The interrupt line, in decimal.
+
+DMA=n
+    The DMA channel, in decimal.
+
+MEM=address
+    A memory window, in hexadecimal.
+
+{b}Switches{p}
+
+/A
+    Switches on every device that is off, giving each the first set of
+    resources it offers in which nothing collides with anything the
+    machine is known to be using.
+
+{b}Related Commands{p}
+
+To see what the machine is using, see [[PMD]].
+#notes
+{b}Why it is needed{p}
+
+A Plug and Play card starts with every device on it off.  A machine
+with a Plug and Play BIOS switches them on before PM-DOS starts; a
+486 with an ISA bus usually has no such BIOS, and this program does
+the job the card's own setup program did under MS-DOS.  The kernel
+switches on only what it needs itself, an IDE port for a CD-ROM.
+
+{b}What /A knows is taken{p}
+
+The ports every PC has, the serial and printer ports and their lines,
+the lines PCI cards use, the lines and channels the kernel keeps, and
+what the other Plug and Play devices hold.  A card that is not Plug
+and Play cannot be seen: give a device its resources by hand when one
+of them is taken.  Memory windows are never chosen by /A.
+
+{b}When to run it{p}
+
+From AUTOEXEC.BAT, before the programs that use the cards.
+#examples
+To see the cards:
+
+    isapnp
+
+To switch everything on:
+
+    isapnp /a
+
+To give a sound card's first device the classic settings:
+
+    isapnp 1.0 io=220 irq=5 dma=1,5
+#topic KEYB|Keyb
+Loads a keyboard layout for another country.
+
+{b}Syntax{p}
+
+    KEYB [xx[,[page][,file]]] [/ID:nnn]
+
+Type KEYB on its own to see which layout is in use.
+
+{b}Parameters{p}
+
+xx
+    The two letters of the layout:
+
+    BE  Belgium            IT  Italy              SF  Switzerland, French
+    BR  Brazil             LA  Latin America      SG  Switzerland, German
+    CF  Canada, French     NL  Netherlands        SL  Slovakia
+    CZ  Czech Republic     NO  Norway             SP  Spain
+    DK  Denmark            PL  Poland             SU  Finland
+    DV  US Dvorak          PO  Portugal           SV  Sweden
+    FR  France             RU  Russia             TR  Turkey
+    GK  Greece             UK  United Kingdom     US  United States
+    GR  Germany            HU  Hungary            YU  Yugoslavia
+    IS  Iceland
+
+page
+    The code page to use the layout in.  Without one, the code page in
+    use.
+
+file
+    The file of layouts.  Without one, KEYBOARD.SYS where the system's
+    files are.
+
+{b}Switches{p}
+
+/ID:nnn
+    Which keyboard, for a country that has two: /ID:142 is the second
+    Italian layout, /ID:457 the Polish programmer's, /ID:440 the
+    Turkish F layout.
+
+{b}Related Commands{p}
+
+For the country's dates and letters, see [[COUNTRY]]; for the code
+page, see [[CHCP]].  See also [[International Commands|International]].
+#notes
+{b}Nothing stays resident{p}
+
+KEYB hands the layout to the kernel, which owns the keyboard, and
+ends.  It goes in AUTOEXEC.BAT, not in CONFIG.SYS.
+
+{b}Switching back{p}
+
+Ctrl+Alt+F1 switches to the US keyboard and Ctrl+Alt+F2 back to the
+layout, while it stays loaded.  KEYB US loads the built-in US layout
+for good.
+
+{b}After CHCP{p}
+
+Run KEYB again after changing the code page, so that the layout
+matches it.
+
+{b}The file{p}
+
+KEYBOARD.SYS is PM-DOS's own; MS-DOS's file is a different one and is
+refused.
+
+{b}The exit code{p}
+
+0 when the layout loaded; 1 for a bad command line or a layout or
+code page the file has not got; 2 when the file is missing or is not
+a KEYBOARD.SYS.
+#examples
+To load the German layout:
+
+    keyb gr
+
+To load it for code page 850:
+
+    keyb gr,850
+
+To load the second Italian layout:
+
+    keyb it,,/id:142
+#topic LABEL|Label
+Makes, changes or removes a disk's volume label.
+
+{b}Syntax{p}
+
+    LABEL [drive:][label]
+
+With no label, LABEL shows the label the disk has and asks for a new
+one.  ENTER with nothing typed asks whether to delete the old label.
+
+{b}Parameters{p}
+
+drive:
+    The drive.  The current one if none is given.
+
+label
+    The new label, up to eleven characters.
+
+{b}Related Commands{p}
+
+To see a label, see [[VOL]] or [[DIR]].  FORMAT /V sets one when the
+disk is formatted: see [[FORMAT]].
+#notes
+{b}What a label may hold{p}
+
+Letters, digits, spaces and most punctuation.  Not * ? / \ | . , ; :
++ = [ ] < > or quotes.
+
+{b}Network drives{p}
+
+A network drive's label cannot be changed from here.
+#examples
+To label drive A:
+
+    label a: letters
+
+To be asked:
+
+    label
+#topic MEM|Mem
+Shows how much memory the machine has, and what is using it.
+
+{b}Syntax{p}
+
+    MEM [/DEBUG | /FREE]
+
+Type MEM on its own for the summary: conventional, upper, extended
+and expanded memory, how much of each is free, and the largest
+program that will fit.
+
+{b}Switches{p}
+
+/DEBUG or /D
+    Lists every block in the DOS arena and in upper memory, with its
+    owner and size.
+
+/FREE or /F
+    Lists the free blocks only.
+
+{b}Related Commands{p}
+
+To put a program in upper memory, see [[LOADHIGH]]; to set upper
+memory up, see [[DOS]].  For expanded memory, see [[EMS=]].
+#notes
+{b}What the numbers mean{p}
+
+Conventional memory is the 640K DOS programs run in.  Upper memory is
+the blocks between 640K and 1MB that DOS=UMB sets up.  Extended
+memory is everything above 1MB, which the kernel, the cache and
+32-bit programs use; expanded memory is what EMS= gives DOS
+programs.
+
+{b}The kernel is not in the 640K{p}
+
+PM-DOS runs above the first megabyte, so nearly all of conventional
+memory is free for DOS programs.  The 32-bit commands run above it
+too and never appear in MEM's list.
+#examples
+To see the summary:
+
+    mem
+
+To see who has what, a screen at a time:
+
+    mem /d | more
+#topic MORE|More
+Shows output one screen at a time.
+
+{b}Syntax{p}
+
+    MORE [drive:][path]filename
+    MORE < [drive:][path]filename
+    command | MORE
+
+{b}Parameters{p}
+
+[drive:][path]filename
+    A file to show.
+
+command
+    A command whose output is to be shown.
+
+{b}Related Commands{p}
+
+To show a file without pausing, see [[TYPE]].
+#notes
+{b}The pause{p}
+
+After each screenful MORE shows "-- More --" and waits for a key.
+Ctrl+C stops it.
+
+{b}The file name{p}
+
+MS-DOS's MORE took its text only from standard input.  This one takes
+a file name too; a long name goes in quotes.
+#examples
+To read a file a screen at a time:
+
+    more readme.txt
+
+To page a long listing:
+
+    dir /s | more
+#topic MOUNT|Mount
+Gives a file a drive letter: a diskette image, a hard disk image or a
+CD-ROM image can be read like the disk it came from.
+
+{b}Syntax{p}
+
+    MOUNT
+    MOUNT [drive:] file [/R]
+    MOUNT /U drive:
+
+MOUNT on its own lists what is mounted.
+
+{b}Parameters{p}
+
+drive:
+    The letter to give the file.  Without one, the next free letter.
+
+file
+    The image file.
+
+{b}Switches{p}
+
+/R
+    Read-only.  An .ISO is read-only anyway.
+
+/U drive:
+    Unmounts the drive and gives the letter back.
+
+{b}Related Commands{p}
+
+For the CD-ROM drives themselves, see [[CDEX]].
+#notes
+{b}What is in the file decides{p}
+
+A file is read as whatever it holds, not as its name says: an
+ISO9660 or UDF disc image, a FAT diskette or partition image, or a
+whole-disk image with a partition table, whose first FAT partition
+becomes the drive.  .ISO, .IMG, .IMA and .DSK are the usual names.
+
+{b}Writing{p}
+
+A mounted FAT image can be written to unless /R was given; the file
+changes with it.
+
+{b}Under Windows{p}
+
+Mounted drives are not there while Windows runs.
+#examples
+To read a CD-ROM image as drive E:
+
+    mount e: c:\images\disc.iso
+
+To mount a diskette image on the next free letter, read-only:
+
+    mount boot.img /r
+
+To let go of E:
+
+    mount /u e:
+#topic MOVE|Move
+Moves files to another directory or drive, and renames files and
+directories.
+
+{b}Syntax{p}
+
+    MOVE [/Y | /-Y] [drive:][path]filename1[,...] destination
+    MOVE [/Y | /-Y] [drive:][path]dirname1 dirname2
+
+{b}Parameters{p}
+
+[drive:][path]filename1
+    The file or files to move.  Wildcards name several, and several
+    names are separated with commas.
+
+destination
+    Where they go: a drive, a directory, or both.  Moving one file,
+    the destination can be a new name for it.
+
+[drive:][path]dirname1
+    A directory to rename.
+
+dirname2
+    Its new name.
+
+{b}Switches{p}
+
+/Y
+    Replaces a file at the destination without asking.
+
+/-Y
+    Asks before replacing one.  This is what MOVE does unless /Y is
+    given or COPYCMD holds /Y.
+
+{b}Related Commands{p}
+
+To copy instead of moving, see [[COPY]] and [[XCOPY]].  To rename
+without moving, see [[REN]].
+#notes
+{b}On one drive, nothing is copied{p}
+
+A file moved within a drive is moved by changing the directories, in
+the time it takes to write two sectors, however big it is.
+
+{b}Across drives{p}
+
+Between two drives the file is copied and then deleted, and the
+source is deleted only once the copy is complete.  Anything that goes
+wrong before that removes the part-written copy and leaves the source
+alone.
+
+{b}Directories{p}
+
+A directory can be renamed, but not moved to another drive.
+
+{b}The exit code{p}
+
+0 when every file was moved, 1 otherwise.
+#examples
+To move every .DOC file to \LETTERS:
+
+    move *.doc \letters
+
+To move a file to another drive under a new name:
+
+    move report.doc d:\archive\report1.doc
+
+To rename a directory:
+
+    move oldname newname
+#topic PMD|Pmd
+Shows what is in the machine: the processor, memory, disks, video,
+mouse, ports, interrupts and the kernel's own settings, a page at a
+time.
+
+{b}Syntax{p}
+
+    PMD [/I]
+    PMD /F [drive:][path]filename
+    PMD /P [drive:][path]filename
+    PMD /S [[drive:][path]filename]
+
+PMD on its own shows a screen of buttons, one for each page.
+
+{b}Switches{p}
+
+/I
+    Skips the look at the hardware before the first screen; each page
+    is looked at when it is opened.
+
+/F file
+    Asks who the report is for, then writes the whole report to the
+    file.
+
+/P file
+    Writes the whole report to the file without asking anything.
+
+/S [file]
+    Writes the summary to the file, or to the screen with no file.
+
+{b}Related Commands{p}
+
+For memory alone, see [[MEM]]; for the CD-ROM drives, see [[CDEX]];
+for the Plug and Play cards, see [[ISAPNP]].
+#notes
+{b}The pages{p}
+
+Computer, Memory, Video, Network, OS Version, Mouse, Other Adapters,
+Disk Drives, LPT Ports, COM Ports, IRQ Status, TSR Programs and
+Device Drivers, as MSD had them.  Press a page's letter or click its
+button; the File, Utilities and Help menus are on the bar.
+
+{b}Where the facts come from{p}
+
+The kernel is asked, and its answers are what it is running with: the
+memory it has, the drives it mounted, the interrupt lines it keeps.
+#examples
+To look round the machine:
+
+    pmd
+
+To write the full report to a file for someone else to read:
+
+    pmd /p c:\report.txt
+#topic SCANDISK|Scandisk|ScanDisk
+Checks a disk for errors and repairs them, and can test the surface.
+
+{b}Syntax{p}
+
+    SCANDISK [drive: [drive: ...] | /ALL]
+             [/CHECKONLY | /AUTOFIX [/NOSAVE] | /CUSTOM]
+             [/SURFACE] [/G] [/NOSUMMARY]
+    SCANDISK /FRAGMENT [drive:][path]filename
+    SCANDISK /UNDO [undo-drive:] [/G]
+
+SCANDISK on its own checks the current drive, asking about each
+problem it finds.
+
+{b}Parameters{p}
+
+drive:
+    The drive to check.  Several can be named.
+
+{b}Switches{p}
+
+/ALL
+    Checks every hard disk.
+
+/CHECKONLY
+    Looks for errors and repairs nothing.
+
+/AUTOFIX
+    Repairs errors without asking.  Lost clusters are saved as files
+    in the root directory.
+
+/NOSAVE
+    With /AUTOFIX: frees lost clusters instead of saving them.
+
+/CUSTOM
+    Runs as the [CUSTOM] section of SCANDISK.INI says.
+
+/SURFACE
+    Scans the surface of the disk after the other checks, without
+    asking first.
+
+/G
+    Uses a graphics screen.
+
+/NOSUMMARY
+    Shows no summary after each drive, and does not ask for an Undo
+    disk.
+
+/FRAGMENT
+    Reports which of the files named are in more than one piece.
+
+/UNDO
+    Undoes the repairs ScanDisk last made, from the Undo disk in
+    undo-drive.  A: if none is given.
+
+{b}Related Commands{p}
+
+For the report alone, see [[CHKDSK]].  To put the files into one piece
+afterwards, see [[DEFRAG]].  [[AUTOCHECK=]] in CONFIG.SYS checks a disk
+at startup when it was not shut down properly.
+#notes
+{b}What it checks{p}
+
+The media descriptor, the file allocation tables, the directory
+structure and the file system, in that order, and then the surface
+if asked.  Long file names are checked with the rest.
+
+{b}The Undo disk{p}
+
+Before repairing, ScanDisk offers to write what it changes onto a
+diskette, so that SCANDISK /UNDO can put the disk back as it was.
+
+{b}SCANDISK.INI{p}
+
+The settings - whether to ask, what to do with lost clusters, whether
+to scan the surface - are read from SCANDISK.INI where the system's
+files are.  The [CUSTOM] section is what /CUSTOM runs.  The settings
+about DoubleSpace and DriveSpace are read and ignored: PM-DOS has no
+compressed drives.
+
+{b}The exit code{p}
+
+    0    no problems found
+    1    the command line was wrong, or a drive cannot be checked
+    2    out of memory
+    3    left before the checks had finished
+    4    every check finished, but a surface scan was left early
+  254    problems found, and all of them repaired
+  255    problems found, and not all of them repaired
+#examples
+To check drive C and be asked about each problem:
+
+    scandisk c:
+
+To check every hard disk and repair without asking, from a batch
+file:
+
+    scandisk /all /autofix /nosummary
+
+To test the surface of a diskette:
+
+    scandisk a: /surface
+
+To find out whether a file is in one piece:
+
+    scandisk /fragment c:\data\*.dbf
+#topic SHUTDOWN|Shutdown
+Writes everything still owed to the disks, then switches the computer
+off.
+
+{b}Syntax{p}
+
+    SHUTDOWN
+
+{b}Related Commands{p}
+
+To write the cache out without switching off, see [[CACHE]].
+#notes
+{b}ACPI{p}
+
+The power is switched off through ACPI.  On a computer without ACPI,
+SHUTDOWN says "ACPI not found", writes nothing, and the computer keeps
+running.
+
+{b}At the prompt it is safe anyway{p}
+
+Everything is written to the disks before the prompt comes back, so
+a machine at the prompt can be switched off by hand.  SHUTDOWN is for
+a machine that can switch itself off.
+
+{b}No other argument{p}
+
+Any argument but /? is refused: a mistyped switch must not switch the
+machine off.
+#examples
+    shutdown
+#topic SORT|Sort
+Sorts lines of text and writes them to the screen, a file or another
+command.
+
+{b}Syntax{p}
+
+    SORT [/R] [/+n] [[drive1:][path1]filename1] [> [drive2:][path2]filename2]
+    SORT [/R] [/+n] < [drive1:][path1]filename1 [> [drive2:][path2]filename2]
+    [command |] SORT [/R] [/+n] [> [drive2:][path2]filename2]
+
+{b}Parameters{p}
+
+[drive1:][path1]filename1
+    The file to sort.  A long name goes in quotes.
+
+[drive2:][path2]filename2
+    A file to write the sorted lines to.
+
+command
+    A command whose output is to be sorted.
+
+{b}Switches{p}
+
+/R
+    Reverses the order: Z to A, then 9 to 0.
+
+/+n
+    Compares from column n instead of the start of each line.
+
+{b}Related Commands{p}
+
+To pick lines out first, see [[FIND]]; to see the result a screen at
+a time, see [[MORE]].
+#notes
+{b}The order{p}
+
+Capitals and small letters sort together, and letters with accents
+sort by the country's table.
+
+{b}How much{p}
+
+Up to 8192 lines and 256K of text.
+#examples
+To sort a file into another:
+
+    sort names.txt > sorted.txt
+
+To list a directory by size, which DIR shows from column 14:
+
+    dir | sort /+14
+
+To sort in reverse:
+
+    sort /r < list.txt
+#topic SYS|Sys
+Puts the PM-DOS system files on a disk, so that it boots.
+
+{b}Syntax{p}
+
+    SYS drive:
+
+{b}Parameters{p}
+
+drive:
+    The disk to make bootable.  The current drive is the source, and
+    must be a system disk.
+
+{b}Related Commands{p}
+
+FORMAT /S formats and puts the system on in one go: see [[FORMAT]].
+#notes
+{b}What is copied{p}
+
+The boot sector's code, with the target's own layout spliced into it;
+on a hard disk, the second-stage loader in the partition's reserved
+sectors; then PMIO.SYS, PMDOS.SYS and RMDOS.SYS, marked read-only,
+hidden and system, and CMD.EXE and COMMAND.COM.  RMDOS.SYS and
+COMMAND.COM are copied when the source has them: without RMDOS.SYS a
+disk boots and runs everything but Windows, and without COMMAND.COM
+a DOS program cannot start a shell.
+
+{b}Where the files come from{p}
+
+PMIO.SYS and PMDOS.SYS from the root of the source.  The other three
+from the root, or from the directory the shell was started from when
+that is on the source drive.  They always go into the target's root.
+
+{b}Room{p}
+
+Nothing on a PM-DOS disk has to be in a particular place, so SYS
+works on a disk that already has files on it.
+#examples
+To make the diskette in A: boot:
+
+    sys a:
+#topic UNDELETE|Undelete
+Brings back deleted files.
+
+{b}Syntax{p}
+
+    UNDELETE [drive:][path][name] [/LIST | /ALL] [/S]
+    UNDELETE [drive:] /PURGE
+    UNDELETE [drive:] /STATUS
+
+UNDELETE on its own lists the files deleted from the current
+directory and asks about each one.
+
+{b}Parameters{p}
+
+[drive:][path]
+    The directory the files were deleted from.  The current one if
+    none is given.
+
+name
+    Which of them.  Wildcards name several, matched against the short
+    name and the long one.
+
+{b}Switches{p}
+
+/LIST
+    Lists the files and recovers nothing.
+
+/ALL
+    Recovers them all without asking.
+
+/S
+    Takes in the directories below as well.
+
+/PURGE
+    Deletes every kept file on the drive for good.
+
+/STATUS
+    Shows what is being kept and how much room it takes.
+
+{b}Related Commands{p}
+
+[[UNDELETE=]] in CONFIG.SYS turns delete protection off.  See [[DEL]]
+for what is never kept.
+#notes
+{b}How it works{p}
+
+With UNDELETE=ON, which is the setting unless changed, the kernel
+does not free a deleted file: it moves it into a hidden RECYCLED
+directory on the same drive and notes where it came from.  UNDELETE
+reads those notes, and recovering a file is moving it back.
+
+{b}Nothing is written over{p}
+
+A file whose name has been used again since comes back with # in
+place of its first letter.  A directory that has gone is made again.
+
+{b}What is kept{p}
+
+Up to a tenth of the drive's free space.  When more room is needed
+the oldest kept files go first.  Files bigger than that, *.TMP and
+*.$$$ files, and anything deleted inside RECYCLED are gone at once.
+Protection does not work while Windows is running.
+#examples
+To see what can be brought back from the current directory:
+
+    undelete /list
+
+To bring back every deleted .DOC file in \LETTERS:
+
+    undelete \letters\*.doc /all
+
+To free the space the kept files take on drive C:
+
+    undelete c: /purge
+#topic XCOPY|Xcopy
+Copies files and directories, subdirectories included.
+
+{b}Syntax{p}
+
+    XCOPY source [destination] [/A | /M] [/D[:date]] [/P] [/S [/E]]
+          [/V] [/W] [/C] [/I] [/Q] [/F] [/L] [/H] [/R] [/T] [/U] [/K]
+          [/N] [/Y | /-Y]
+
+{b}Parameters{p}
+
+source
+    The file or files to copy: a name, a name with wildcards, or a
+    directory.
+
+destination
+    Where the copies go.  With none, the current directory.
+
+{b}Switches{p}
+
+/A
+    Copies only files with the archive attribute set, and leaves it
+    set.
+
+/M
+    Copies only files with the archive attribute set, and clears it.
+
+/D[:date]
+    Copies only files changed on or after the date.  With no date,
+    only files newer than their copy at the destination.
+
+/P
+    Asks before making each copy.
+
+/S
+    Copies the subdirectories too, except empty ones.
+
+/E
+    With /S: empty subdirectories as well.
+
+/V
+    Checks each copy.
+
+/W
+    Waits for a key before starting.
+
+/C
+    Carries on after an error.
+
+/I
+    With several files and a destination that does not exist, takes
+    the destination to be a directory without asking.
+
+/Q
+    Does not show the names as it copies.
+
+/F
+    Shows the full source and destination name of each copy.
+
+/L
+    Lists the files that would be copied, and copies nothing.
+
+/H
+    Copies hidden and system files too.
+
+/R
+    Writes over read-only files.
+
+/T
+    Makes the directory structure and copies no files.  With /E, the
+    empty directories too.
+
+/U
+    Copies only files that already exist at the destination.
+
+/K
+    Keeps the attributes.  Without it, read-only is cleared on the
+    copies.
+
+/N
+    Copies using the short names.
+
+/Y
+    Replaces files at the destination without asking.
+
+/-Y
+    Asks before replacing.
+
+{b}Related Commands{p}
+
+For a file or two, see [[COPY]].  To move rather than copy, see
+[[MOVE]].  To set the archive attribute /A and /M look at, see
+[[ATTRIB]].
+#notes
+{b}File or directory?{p}
+
+When the destination does not exist and more than one file is being
+copied, XCOPY asks whether it is a file or a directory.  A backslash
+on the end of the name, or /I, makes it a directory without asking.
+
+{b}Long names{p}
+
+Names are copied as they are on the disk, long ones included.  /N
+copies under the short names, for a disk that cannot hold long ones.
+
+{b}COPYCMD{p}
+
+SET COPYCMD=/Y stops the asking before files are replaced, for XCOPY
+as for COPY and MOVE.
+
+{b}The exit code{p}
+
+0 files were copied, 1 nothing was found to copy, 2 stopped with
+Ctrl+C, 4 could not start or out of space, 5 a file could not be read
+or written.
+#examples
+To copy a directory and everything under it to another drive:
+
+    xcopy c:\work d:\work /s /e
+
+To copy only the files changed since a backup, clearing the mark:
+
+    xcopy c:\work a: /m /s
+
+To copy the files changed on or after a date:
+
+    xcopy *.doc d:\recent /d:03-01-2026
+
+To see what would be copied without copying it:
+
+    xcopy c:\work d:\work /s /l

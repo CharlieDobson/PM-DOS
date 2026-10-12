@@ -1,0 +1,419 @@
+#! 00HELP.TXT - the contents, the topics about PM-DOS Help itself, and
+#! the topics its menus and dialogs show on F1.  TOOLS\MKHELP.PL turns
+#! the parts in this directory into BIN\HELP.HLP; its header says how
+#! the directives and the {} characters work.
+#plain Contents|Command Reference|cmdcontents
+.topic Command Reference
+
+Use the scroll bar to see more of the list, or press PAGE DOWN.  To find
+out how PM-DOS Help works, choose How to Use PM-DOS Help from the Help
+menu, or press F1.  To leave, press ALT, F, X.
+
+[[About PM-DOS|About PM-DOS]]
+
+#contents
+
+Every command and every CONFIG.SYS statement PM-DOS has is listed.  A
+command's topic says what it does, how it is written, and what each
+switch means; Notes and Examples are a key away at the top of it.
+
+                                      {*}
+#group About PM-DOS|About PM-DOS
+#nolist
+PM-DOS is a 32-bit operating system that runs the programs written for
+MS-DOS.  The kernel runs in protected mode above the first megabyte and
+leaves nearly all of the 640K to DOS programs; its own commands are
+32-bit programs that have no such limit.
+
+What it has that MS-DOS has not:
+
+{o} Long file names, the way Windows 95 names them, on FAT12, FAT16 and
+  FAT32 disks.  LFN= in CONFIG.SYS turns them off for programs that
+  cannot cope.
+{o} A disk cache, file sharing, expanded memory, a DPMI host, a mouse
+  driver and CD-ROM drivers built in.  There is no SMARTDRV, SHARE,
+  EMM386, MSCDEX or MOUSE to load.
+{o} IDE disks of any size, with UltraDMA; FAT32; partitions that FDISK
+  can move and resize.
+{o} Delete protection: a deleted file can be brought back with UNDELETE
+  until the space is needed.
+{o} A shell, CMD.EXE, with DOSKEY built in.  COMMAND.COM is also there,
+  for the DOS programs that start a shell of their own.
+
+What it needs: a 386 or later, 4MB of memory, and 1.5MB of disk.
+
+The command reference is the [[Contents]].  [[CONFIG.SYS commands|CONFIG]]
+lists the statements CONFIG.SYS takes, and [[Starting PM-DOS|Starting]]
+says what happens when the machine starts.
+#plain Help on Help|h.pg1|How to Use PM-DOS Help
+.topic How To Use PM-DOS Help
+
+                            How To Use PM-DOS Help
+
+ Choose a topic below.
+
+ [[Moving Through PM-DOS Help|Navigating]]
+ [[Finding Text in PM-DOS Help|Searching]]
+ [[Help on Menus and Dialogs|Context Help]]
+ [[Using the Menus|Menus]]
+ [[Using a Dialog Box|Dialogs]]
+ [[Starting PM-DOS Help from the Command Line|Help Command Line]]
+ [[Using PM-DOS Help with the Keyboard|Help Keys]]
+
+ To read a topic, click it.  Or press TAB until the cursor is on it,
+ and then press ENTER.
+
+ To leave PM-DOS Help, choose Exit from the File menu: press ALT, then
+ F, then X.
+
+#plain Navigating|Moving Through PM-DOS Help
+.topic Moving Through PM-DOS Help
+
+                          Moving Through PM-DOS Help
+
+ To scroll the text, click the arrows on the scroll bar, or press PAGE
+ DOWN and PAGE UP.
+
+ Links
+
+ A link leads to another topic.  Links are shown between brackets, like
+ this: [[DIR]].  Many topics start with links to their Notes and their
+ Examples, which stay at the top of the window while the rest scrolls.
+
+ To move the cursor to the next link
+
+ {o} Press TAB.  Or press the first letter of the link.
+
+ To move the cursor to the previous link
+
+ {o} Press SHIFT+TAB.  Or press SHIFT and the first letter of the link.
+
+ To read the topic a link leads to
+
+ {o} Click the link.  Or move the cursor onto it and press ENTER.
+
+ To see the contents
+
+ {o} Click Contents on the bottom line, or press ALT+C.
+
+ To read the topic after this one
+
+ {o} Click Next on the bottom line, or press ALT+N.  The topics are in
+   the order the help file has them, which is the contents' order.
+
+ To go back to the topics you have read
+
+ {o} Click Back on the bottom line, or press ALT+B.  Each press goes
+   back one more topic.
+
+#plain Searching|Finding Text in PM-DOS Help
+.topic Finding Text in PM-DOS Help
+
+                          Finding Text in PM-DOS Help
+
+ Find, on the Search menu, looks for a piece of text in every topic of
+ the help file, not only the one on the screen.
+
+ Type the text and choose OK.  The search starts after the cursor and
+ goes on through the topics that follow, round to the start of the
+ file and back to where it began.  When the text is found, the topic it
+ is in is shown with the cursor on it.  Press F3 to find the next one.
+
+ Match Upper/Lowercase finds only text written with the same capitals.
+ Whole Word skips the text when it is part of a longer word.
+
+ With nothing found, PM-DOS Help says "Match not found".
+
+#plain Context Help|Help on Menus and Dialogs|gah
+.topic Help on Menus and Dialogs
+
+                           Help on Menus and Dialogs
+
+ F1 says what the thing in front of you is for.
+
+ To get help on a menu
+
+ {o} Press ALT to go to the menu bar, move to the menu with the LEFT and
+   RIGHT ARROW keys, and press F1.
+
+ To get help on a command in a menu
+
+ {o} Open the menu, move to the command with the UP and DOWN ARROW keys,
+   and press F1.
+
+ To get help on a dialog box
+
+ {o} Press F1, or choose its Help button.
+
+ The help comes up in a box over whatever you were doing; choose OK to
+ get back to it.
+
+#plain Menus|Using the Menus
+.topic Using the Menus
+
+                               Using the Menus
+
+ The menu bar at the top of the screen has three menus: File, Search
+ and Help.
+
+ To open a menu           With the mouse: click its name.
+                          With the keyboard: press ALT, then the letter
+                          shown in white in its name.  Or press ALT and
+                          move to it with the LEFT and RIGHT ARROW keys,
+                          then press ENTER or DOWN ARROW.
+
+ To choose a command      With the mouse: click it.
+                          With the keyboard: press its white letter, or
+                          move to it with the arrow keys and press ENTER.
+
+ To close a menu          Press ESC, or click somewhere else.
+
+ [[File Menu]]  [[Search Menu]]  [[Help Menu]]
+
+#plain Dialogs|Using a Dialog Box
+.topic Using a Dialog Box
+
+                              Using a Dialog Box
+
+ Find and Print ask what you want in a dialog box.
+
+ To move to a part of the box    Press TAB, or SHIFT+TAB to go back.
+                                 Or press ALT and the white letter in
+                                 its name.  Or click it.
+
+ To choose an option             Move to the group with TAB and use the
+                                 arrow keys.  Or click the option.
+
+ To turn a check box on or off   Move to it and press the SPACEBAR, or
+                                 click it.
+
+ To press a button               Move to it and press ENTER, or click
+                                 it.  ENTER anywhere in the box presses
+                                 the button with the white brackets.
+
+ To close the box doing nothing  Press ESC, or choose Cancel.
+
+#plain Help Command Line|Starting PM-DOS Help from the Command Line
+.topic Starting PM-DOS Help from the Command Line
+
+                   Starting PM-DOS Help from the Command Line
+
+ The HELP command starts PM-DOS Help.
+
+ {o} Type HELP on its own for the contents.
+
+ {o} Type HELP and the name of a command or a CONFIG.SYS statement to
+   open at its topic.  For example:
+
+   help copy
+   help country
+
+ A name PM-DOS Help does not know gets "Match not found", and then the
+ contents.
+
+ HELP reads its text from HELP.HLP, which is looked for in the current
+ directory, then where HELP.EXE itself is, then along the PATH.  The
+ file is plain text and can be changed with EDIT; the [[HELP]] topic
+ says how it is laid out.
+
+#plain Help Keys|Using PM-DOS Help with the Keyboard
+.topic Using PM-DOS Help with the Keyboard
+
+                      Using PM-DOS Help with the Keyboard
+
+ Choose a table below.
+
+ [[Cursor Keys]]
+ [[Scrolling Keys]]
+ [[Link Keys]]
+ [[Other Help Keys]]
+
+#plain Cursor Keys
+.topic Cursor Keys
+
+                                  Cursor Keys
+
+ To move the cursor             Press
+{-x76}
+ One character left             LEFT ARROW
+ One character right            RIGHT ARROW
+ One word left                  CTRL+LEFT ARROW
+ One word right                 CTRL+RIGHT ARROW
+ One line up                    UP ARROW
+ One line down                  DOWN ARROW
+ To the start of the line       HOME
+ To the end of the line         END
+ To the start of the topic      CTRL+HOME
+ To the end of the topic        CTRL+END
+
+#plain Scrolling Keys
+.topic Scrolling Keys
+
+                                Scrolling Keys
+
+ To scroll                      Press
+{-x76}
+ One line up                    CTRL+UP ARROW
+ One line down                  CTRL+DOWN ARROW
+ One window up                  PAGE UP
+ One window down                PAGE DOWN
+
+#plain Link Keys
+.topic Link Keys
+
+                                   Link Keys
+
+ To                                             Press
+{-x76}
+ Move the cursor to the next link               TAB
+ Move the cursor to the previous link           SHIFT+TAB
+ Move to the next link starting with a letter   the letter
+ Move to the previous one                       SHIFT and the letter
+ Read the topic the link leads to               ENTER
+ Show the contents                              ALT+C
+ Show the next topic                            ALT+N, or CTRL+F1
+ Show the previous topic                        SHIFT+CTRL+F1
+ Go back to the topic read before               ALT+B
+
+#plain Other Help Keys
+.topic Other Help Keys
+
+                                Other Help Keys
+
+ To                                             Press
+{-x76}
+ Read how PM-DOS Help works                     F1
+ Get help on a menu, a command or a dialog box  F1, with it in front
+ Open the menu bar                              ALT, or F10
+ Look for text                                  ALT+S, then F
+ Look for the same text again                   F3
+ Leave PM-DOS Help                              ALT+F, then X
+
+#plain File Menu|m.f
+.topic File Menu
+
+{b}File Menu{p}
+
+The File menu has Print and Exit.
+
+Print writes the topic on the screen to a printer or a file.  Exit
+leaves PM-DOS Help.
+
+To open the menu, click File, or press ALT and then F.  To choose a
+command, click it, or press its white letter.
+#plain Search Menu|m.s
+.topic Search Menu
+
+{b}Search Menu{p}
+
+The Search menu has Find and Repeat Last Find.
+
+Find looks for text in every topic.  Repeat Last Find, or F3, looks
+for the same text again from where the cursor is.
+
+To open the menu, click Search, or press ALT and then S.  To choose a
+command, click it, or press its white letter.
+#plain Help Menu|m.h
+.topic Help Menu
+
+{b}Help Menu{p}
+
+The Help menu has How to Use PM-DOS Help and About.
+
+How to Use PM-DOS Help explains the window, the links and the keys.
+About shows the version of PM-DOS Help.
+
+To open the menu, click Help, or press ALT and then H.  To choose a
+command, click it, or press its white letter.
+#plain Print Command
+.topic Print Command
+
+{b}Print Command{p}
+
+Writes the topic on the screen, as plain text, to a printer or to a
+file.  A dialog box asks which.
+#plain Exit Command
+.topic Exit Command
+
+{b}Exit Command{p}
+
+Leaves PM-DOS Help and goes back to the command prompt.
+#plain Find Command
+.topic Find Command
+
+{b}Find Command{p}
+
+Looks for text in every topic of the help file, starting after the
+cursor.  The topic the text is found in is shown with the cursor on
+it.  A dialog box asks for the text, and whether capitals and whole
+words matter.
+#plain Repeat Last Find Command
+.topic Repeat Last Find Command
+
+{b}Repeat Last Find Command{p}
+
+Looks again for the text Find last looked for, from the cursor on.
+F3 does the same.
+
+Before Find has been used, Repeat Last Find looks for the word the
+cursor is on, or the word to its left.  With no word there it asks for
+the text, as Find does.
+#plain Help on Help Command
+.topic How to Use PM-DOS Help Command
+
+{b}How to Use PM-DOS Help Command{p}
+
+Shows the topics that explain PM-DOS Help itself: moving between
+topics, finding text, the menus, the dialog boxes and the keys.  F1
+shows the same topics.
+#plain About Command
+.topic About Command
+
+{b}About Command{p}
+
+Shows the version of PM-DOS Help.
+#plain Find Dialog|Find Command Dialog Box
+.topic Find Dialog Box
+
+{b}Find Dialog Box{p}
+
+Looks for text in every topic.
+
+{ul}{-x16} Find {-x37}{ur}
+{bl} Find What: {sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}{sh}  {bl}
+{bl}                                                          {bl}
+{bl}   [ ] Match Upper/Lowercase          [ ] Whole Word     {bl}
+{bl}                                                          {bl}
+{bl}       < OK >          < Cancel >        < Help >         {bl}
+{ll}{-x58}{lr}
+
+Find What holds the text to look for; the word the cursor was on is
+offered.  Up to 127 characters.
+
+Match Upper/Lowercase finds only text written with the same capitals
+and small letters.  Whole Word skips the text when it is part of a
+longer word: "cat" is not found in "catalogue".
+
+The search starts after the cursor and goes through every topic, round
+to the start of the file and back to where it began.  F3 finds the
+next one.
+#plain Print Dialog
+.topic Print Dialog
+
+{b}Print Dialog{p}
+
+Writes the topic on the screen to a printer or a file.
+
+Choose Printer to print on the port named, LPT1 unless Printer Setup
+has chosen another.  Choose File and type a name to write the topic to
+a file; a name without a path goes in the current directory.  A file
+of that name is replaced.
+
+The text is written as it is shown, with a form feed at the end.
+#plain Printer Setup Dialog
+.topic Printer Setup Dialog
+
+{b}Printer Setup Dialog{p}
+
+Chooses the port the printer is on: LPT1, LPT2, LPT3, COM1 or COM2.
+The choice lasts until PM-DOS Help is left.
