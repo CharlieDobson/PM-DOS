@@ -44,6 +44,8 @@ rem     PMDOS.IMG    the boot disk: a bootable 1.44M floppy with PM-DOS
 rem                  on it and nothing else - the kernel, the shells,
 rem                  the commands, CONFIG.SYS, AUTOEXEC.BAT, the two
 rem                  text files, LRGDISK.386 and LRGSTAT.EXE
+rem     HELP.IMG     the help disk: HELP.EXE and HELP.HLP, which do not
+rem                  fit on the boot disk
 rem     TESTS.IMG    the test disk: every test program, batch file and
 rem                  key file, in \TESTS, and the long-named fixtures
 rem                  in its root.  Not a system disk.  The tests left
@@ -359,7 +361,7 @@ rem each one has to be named here too: a directory missing from this
 rem list is one whose failed assembly links yesterday's object.  (A
 rem failed COMPILE does not need it - wcc386, unlike wasm, returns an
 rem error - but CHKDSK's and LABEL's startup is assembled like the rest.)
-for %%D in (ACROREAD ATTRIB CACHE CDEX CHKDSK CHOICE DISKCOMP DISKCOPY DRIVES EDIT FC FDISK FIND FORMAT ISAPNP KEYB LABEL LFNAPI LRGDISK MEM MORE MOUNT MOVE PMD SCANDISK SHUTDOWN SORT SYS UNDELETE XCOPY) do if exist CMD\%%D\*.obj del /q CMD\%%D\*.obj
+for %%D in (ACROREAD ATTRIB CACHE CDEX CHKDSK CHOICE DEFRAG DISKCOMP DISKCOPY DRIVES EDIT FC FDISK FIND FORMAT HELP ISAPNP KEYB LABEL LFNAPI LRGDISK MEM MORE MOUNT MOVE PMD SCANDISK SHUTDOWN SORT SYS UNDELETE XCOPY) do if exist CMD\%%D\*.obj del /q CMD\%%D\*.obj
 if exist NLS\*.obj del /q NLS\*.obj
 
 rem FSIZE asserts the sizes the checks below used to test with FOR's
@@ -716,7 +718,29 @@ wlink form raw bin option offset=0x2000 name ..\..\BIN\EDIT.EXE ^
     file dosint.obj,main.obj,doc.obj,view.obj,scr.obj,ui.obj,dlgs.obj,help.obj,rt.obj,sys_d32.obj ^
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
 cd ..\..
-rem FC is C, one file and its startup: 6.22's line resync is easier to
+rem HELP is C, on EDIT's screen, menus and dialogs: MS-DOS 6's HELP -
+rem QBASIC /QHELP and HELP.HLP - as a native program.  The text it
+rem shows is DISK\HELP.HLP, plain text in HELPMAKE's source format,
+rem which TOOLS\MKHELP.PL writes from the parts in DISK\HELP (run it
+rem by hand after changing one, as MKNLS.PS1 is).  Its test mode is
+rem HLPTEST and keys from a redirected file: DISK\HLPTEST.BAT, with
+rem key files MKEDKEYS.PL writes.
+cd CMD\HELP
+wasm -q -dD32 -i=..\..\INC dosint.asm           || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 main.c    || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 hlp.c     || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 view.c    || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 scr.c     || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 ui.c      || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 dlgs.c    || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 rt.c      || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 sys_d32.c || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\BIN\HELP.EXE ^
+    file dosint.obj,main.obj,hlp.obj,view.obj,scr.obj,ui.obj,dlgs.obj,rt.obj,sys_d32.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+rem FC is C, one file and its startup:
+ 6.22's line resync is easier to
 rem keep exact in C than in assembler.  Linked as CHKDSK and LABEL are.
 cd CMD\FC
 wasm -q -i=..\..\INC dosint.asm                 || goto :fail
@@ -871,6 +895,41 @@ wlink form raw bin option offset=0x2000 name ..\..\BIN\SCANDISK.EXE ^
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
 cd ..\..
 
+rem DEFRAG is C: MS-DOS 6.22's DEFRAG for PM-DOS - every file put in one
+rem piece and, with Full Optimization, all of them together at the start
+rem of the drive, directories first - for FAT12, FAT16 and FAT32, with
+rem long file names.  Its screen is MS-DOS DEFRAG's, measured from the
+rem real program; /G is the same screen in a graphics mode.  It reads a
+rem drive whole before it moves anything, and that reading is a check:
+rem a drive with errors is not touched, and DEFRAG offers to run SCANDISK
+rem on it.  A move goes to the disk in an order that leaves every file
+rem whole wherever it is stopped (MOVE.C).  Its volume, screen and
+rem graphics code is SCANDISK's.  Its test mode is DFTEST and keys from
+rem a redirected file, and DFBAD in the environment names sectors that
+rem are to fail (VOL.C).  MKHOST.CMD in its directory builds the moving
+rem as a Windows console program that works on a disk image and can cut
+rem the power at any write (SYS_NT.C: DFCRASH); nothing here needs it.
+cd CMD\DEFRAG
+wasm -q -i=..\..\INC dosint.asm                 || goto :fail
+wasm -q jmp.asm                                 || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 main.c    || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 vol.c     || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 tree.c    || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 dirs.c    || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 move.c    || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 optim.c   || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 text.c    || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 screen.c  || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 ui.c      || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 scr.c     || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 gfx.c     || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 rt.c      || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 sys_d32.c || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\BIN\DEFRAG.EXE ^
+    file dosint.obj,jmp.obj,main.obj,vol.obj,tree.obj,dirs.obj,move.obj,optim.obj,text.obj,screen.obj,ui.obj,scr.obj,gfx.obj,rt.obj,sys_d32.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+
 echo === the MS-DOS stub, in front of every 32-bit command ===
 rem Every link above wrote a bare D32 image: 'CD' at byte zero.  The
 rem ones that SHIP get TOOLS\D32STUB.EXE put in front, so that real MS-DOS
@@ -888,7 +947,7 @@ rem version of its own names that .EXE to D32BIND in place of the stub.
 for %%F in (CMD.EXE CHOICE.COM MORE.COM SORT.COM SYS.COM FORMAT.COM MEM.EXE FDISK.EXE MOUNT.EXE ^
   CACHE.EXE UNDELETE.EXE CDEX.EXE SHUTDOWN.EXE FIND.EXE DISKCOPY.COM DISKCOMP.COM MOVE.EXE ^
   ATTRIB.EXE CHKDSK.EXE LABEL.EXE XCOPY.EXE EDIT.EXE FC.EXE ISAPNP.EXE PMD.EXE DOSSHELL.EXE ^
-  ACROREAD.EXE SCANDISK.EXE KEYB.COM) do TOOLS\D32BIND.EXE BIN\%%F TOOLS\D32STUB.EXE || goto :fail
+  ACROREAD.EXE SCANDISK.EXE DEFRAG.EXE KEYB.COM HELP.EXE) do TOOLS\D32BIND.EXE BIN\%%F TOOLS\D32STUB.EXE || goto :fail
 
 echo === HELLO.COM (a real 16-bit .COM, for the VDM) ===
 rem An ordinary real-mode DOS program.  It is not part of the kernel;
@@ -1816,9 +1875,17 @@ echo === PMDOS.IMG (the boot disk) ===
 TOOLS\MKDISK.EXE IMAGES\PMDOS.IMG BIN\BOOT.BIN -nolfn BIN\PMIO.SYS BIN\PMDOS.SYS BIN\CMD.EXE BIN\COMMAND.COM ^
     BIN\CHOICE.COM BIN\MORE.COM BIN\SORT.COM BIN\SYS.COM BIN\FORMAT.COM BIN\MEM.EXE ^
     BIN\FDISK.EXE BIN\MOUNT.EXE BIN\CACHE.EXE BIN\UNDELETE.EXE BIN\CDEX.EXE BIN\MOVE.EXE BIN\ATTRIB.EXE BIN\CHKDSK.EXE BIN\LABEL.EXE BIN\XCOPY.EXE BIN\EDIT.EXE ^
-    BIN\FC.EXE BIN\FIND.EXE BIN\DISKCOPY.COM BIN\DISKCOMP.COM BIN\ISAPNP.EXE BIN\SHUTDOWN.EXE BIN\PMD.EXE BIN\DOSSHELL.EXE BIN\ACROREAD.EXE BIN\SCANDISK.EXE ^
+    BIN\FC.EXE BIN\FIND.EXE BIN\DISKCOPY.COM BIN\DISKCOMP.COM BIN\ISAPNP.EXE BIN\SHUTDOWN.EXE BIN\PMD.EXE BIN\DOSSHELL.EXE BIN\ACROREAD.EXE BIN\SCANDISK.EXE BIN\DEFRAG.EXE ^
     BIN\KEYB.COM BIN\COUNTRY.SYS BIN\KEYBOARD.SYS ^
     BIN\RMDOS.SYS BIN\RMCD.SYS BIN\LRGDISK.386 BIN\LRGSTAT.EXE README.TXT DISK\CONFIG.SYS DISK\CONFIG.TXT DISK\SCANDISK.INI DISK\AUTOEXEC.BAT DISK\AUTOEXEC.TXT || goto :fail
+
+rem === HELP.IMG - the help disk ===
+rem HELP.EXE and HELP.HLP, which is 200K of text: the boot floppy was
+rem full by the time they were written (64K free), so they travel on
+rem a third disk, as MS-DOS's did.  MKHD.CMD puts both on the hard
+rem disks, where HELP is found along the PATH.
+echo === HELP.IMG (the help disk) ===
+TOOLS\MKDISK.EXE IMAGES\HELP.IMG BIN\BOOT.BIN -label "PM-DOS HELP" -nolfn BIN\HELP.EXE DISK\HELP.HLP || goto :fail
 
 rem === TESTS.IMG - the test disk ===
 rem Everything written to prove one thing about the kernel: BIN\TESTS\
@@ -1854,7 +1921,7 @@ TOOLS\MKDISK.EXE IMAGES\TESTS.IMG BIN\BOOT.BIN -label "PM-DOS TEST" -dir ^
     DISK\DISKTEST.BAT DISK\IMGTEST.BAT DISK\DEEPTEST.BAT DISK\FDTEST.BAT DISK\NULTEST.BAT DISK\CRASHTST.BAT DISK\UDTEST.BAT DISK\UNDTEST.BAT DISK\APITEST.BAT ^
     DISK\LOLTEST.BAT DISK\PARK.BAT DISK\PARKXMS.BAT DISK\SWTEST.BAT ^
     DISK\DIRTEST.BAT DISK\GLUETEST.BAT DISK\FMTTEST.BAT DISK\FMT1.KEY DISK\FMT2.KEY DISK\RENTEST.BAT DISK\FORFTEST.BAT DISK\KEYTEST.BAT DISK\KEYTEST.KEY DISK\C16TEST.BAT DISK\C16SUB.BAT DISK\XCTEST.CMD DISK\XCEL.BAT ^
-    DISK\BUSTEST.BAT DISK\FPUTEST.BAT DISK\MSTEST.BAT DISK\EDTEST.BAT DISK\FDM1.KEY DISK\ED1.KEY DISK\ED2.KEY DISK\ED3.KEY DISK\ED4.KEY DISK\ED5.KEY DISK\ED6.KEY DISK\ED7.KEY DISK\ED8.KEY DISK\ED9.KEY DISK\ED10.KEY DISK\ED11.KEY DISK\ED12.KEY DISK\ED13.KEY DISK\ED14.KEY DISK\ED15.KEY DISK\ED16.KEY DISK\ED17.KEY DISK\EDBIN.DAT DISK\EDTABS.DAT DISK\EDLF.DAT DISK\PMDTEST.BAT DISK\PMD1.KEY DISK\PMD2.KEY DISK\PMD3.KEY DISK\PMD4.KEY DISK\PMD5.KEY ^
+    DISK\BUSTEST.BAT DISK\FPUTEST.BAT DISK\MSTEST.BAT DISK\EDTEST.BAT DISK\FDM1.KEY DISK\ED1.KEY DISK\ED2.KEY DISK\ED3.KEY DISK\ED4.KEY DISK\ED5.KEY DISK\ED6.KEY DISK\ED7.KEY DISK\ED8.KEY DISK\ED9.KEY DISK\ED10.KEY DISK\ED11.KEY DISK\ED12.KEY DISK\ED13.KEY DISK\ED14.KEY DISK\ED15.KEY DISK\ED16.KEY DISK\ED17.KEY DISK\EDBIN.DAT DISK\EDTABS.DAT DISK\EDLF.DAT DISK\PMDTEST.BAT DISK\PMD1.KEY DISK\PMD2.KEY DISK\PMD3.KEY DISK\PMD4.KEY DISK\PMD5.KEY DISK\HLPTEST.BAT DISK\HL1.KEY DISK\HL2.KEY DISK\HL3.KEY ^
     DISK\DSTEST.BAT DISK\DS1.KEY DISK\DS2.KEY DISK\DS3.KEY DISK\DS4.KEY DISK\DS5.KEY DISK\DS6.KEY DISK\DS7.KEY DISK\DS8.KEY DISK\DS9.KEY ^
     DISK\ATTRTEST.BAT DISK\MVTEST.BAT DISK\HELPTEST.BAT DISK\R3TEST.BAT DISK\D32TEST.BAT DISK\BOXTEST.BAT DISK\WINDOS.BAT DISK\BIG16.BAT ^
     DISK\CCALIVE.BAT DISK\CCFOR.BAT DISK\CCONE.BAT DISK\FDLTEST.BAT DISK\FDRTEST.BAT DISK\FD32TEST.BAT DISK\FDMTEST.BAT || goto :fail
