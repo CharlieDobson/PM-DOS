@@ -22,6 +22,7 @@ Long File Names
 FAT partition resizing
 ACPI-aware shutdown command
 VBE 2.0 with linear frame buffer
+Online help (HELP), with every command in it
 
 What PM-DOS is NOT
 ==================
