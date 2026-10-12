@@ -202,6 +202,10 @@ ECHO --- SCANDISK (must NOT take the screen over, or check a disk) ---
 SCANDISK /?
 ECHO --- SCANDISK with a drive AND /AUTOFIX AND /?: still help, still no repair ---
 SCANDISK C: /AUTOFIX /?
+ECHO --- DEFRAG (must NOT take the screen over, or read a disk) ---
+DEFRAG /?
+ECHO --- DEFRAG with a drive AND /F AND /?: still help, and nothing moved ---
+DEFRAG C: /F /?
 ECHO --- LABEL (must NOT show a label or ask for one) ---
 LABEL /?
 ECHO --- LABEL with a drive AND a label AND /?: still help, no label ---
