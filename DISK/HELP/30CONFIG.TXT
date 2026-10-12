@@ -1,0 +1,987 @@
+#! 30CONFIG.TXT - CONFIG.SYS: the statements, what each one takes,
+#! and the topics about starting the machine.  CONFIG.TXT on the boot
+#! disk says the same things at more length.
+#group CONFIG.SYS Commands|CONFIG|CONFIG.SYS|config
+CONFIG.SYS is a text file in the root of the boot drive.  PM-DOS reads
+it once at startup, before the shell, and sets itself up as it says.
+Each line is one statement.  A ; or REM at the start of a line makes
+it a remark.
+
+Every statement MS-DOS knew is accepted, so a CONFIG.SYS from an
+MS-DOS machine boots without errors; some of them do nothing here.  A
+statement PM-DOS does not know at all stops with "Unrecognized command
+in CONFIG.SYS", so a typing mistake shows.
+
+The statements MS-DOS had:
+
+{i}[[Break=|BREAK=]]                   [[Install=|INSTALL=]]{p}
+{i}[[Buffers=|BUFFERS=]]                 [[Installhigh=|INSTALLHIGH=]]{p}
+{i}[[Country=|COUNTRY=]]                 [[Lastdrive=|LASTDRIVE=]]{p}
+{i}[[Device=|DEVICE=]]                  [[Numlock=|NUMLOCK=]]{p}
+{i}[[Devicehigh=|DEVICEHIGH=]]              [[Rem|REM]]{p}
+{i}[[Dos=|DOS=]]                     [[Set=|SET=]]{p}
+{i}[[Drivparm=|DRIVPARM=]]                [[Shell=|SHELL=]]{p}
+{i}[[Fcbs=|FCBS=]]                    [[Stacks=|STACKS=]]{p}
+{i}[[Files=|FILES=]]                   [[Switches=|SWITCHES=]]{p}
+
+The statements that are PM-DOS's own.  On MS-DOS these jobs took a
+driver or a program - EMM386, SMARTDRV, SHARE, MODE - and on PM-DOS
+they are in the kernel, so those programs are not loaded:
+
+{i}[[Autocheck=|AUTOCHECK=]]               [[Keyrate=|KEYRATE=]]{p}
+{i}[[Cache=|CACHE=]]                   [[Lfn=|LFN=]]{p}
+{i}[[Cdrom=|CDROM=]]                   [[Nulltrap=|NULLTRAP=]]{p}
+{i}[[Dpmi=|DPMI=]]                    [[Scsi=|SCSI=]]{p}
+{i}[[Ems=|EMS=]]                     [[Share=|SHARE=]]{p}
+{i}[[Ide32=|IDE32=]]                   [[Undelete=|UNDELETE=]]{p}
+{i}[[Idecable=|IDECABLE=]]                [[Wincache=|WINCACHE=]]{p}
+{i}[[Idedma=|IDEDMA=]]{p}
+
+The boot menu statements - [menu], MENUITEM, MENUDEFAULT, MENUCOLOR,
+SUBMENU, INCLUDE and COMMENT - are accepted, but there is no menu:
+every line in every block is used.  See [[Multiple Configurations|Multi-config]].
+
+{b}The order{p}
+
+Lines run top to bottom, with three exceptions: SWITCHES= is read
+before anything else, DOS= next, and INSTALL= lines run last, after
+every driver has loaded.  Only the first 16K of the file is read.
+
+{b}Starting without it{p}
+
+Hold Shift, or press F5, while "Starting PM-DOS..." is on the screen,
+and neither CONFIG.SYS nor AUTOEXEC.BAT is run.  See [[Starting PM-DOS|Starting]].
+#group Starting PM-DOS|Starting|Startup|Boot
+When the machine starts, PMIO.SYS and PMDOS.SYS are loaded from the
+root of the boot disk, CONFIG.SYS is read, the shell named by SHELL=
+(CMD.EXE if there is no such line) starts, and the shell runs
+AUTOEXEC.BAT.
+
+{b}What has to be in the root{p}
+
+PMIO.SYS, PMDOS.SYS, CONFIG.SYS and AUTOEXEC.BAT.  Everything else can
+be in a directory of its own: [[SHELL=]] says which, and the kernel
+looks for its other files beside the shell, then in the root.
+
+{b}Safe mode{p}
+
+PM-DOS waits two seconds after "Starting PM-DOS..." for Shift or F5.
+With either pressed it says "Safe mode", skips CONFIG.SYS and
+AUTOEXEC.BAT, and goes straight to the prompt.  Use this when a line
+in either file stops the machine from starting.  SWITCHES=/F skips
+the wait, and SWITCHES=/N turns the keys off: see [[SWITCHES=]].
+
+{b}What is said{p}
+
+A release build prints nothing while it reads CONFIG.SYS.  The only
+messages are for a mouse, for each CD-ROM drive, and for a hard disk
+that was not shut down properly - and the last one only when there
+is one; see [[AUTOCHECK=]].
+
+{b}AUTOEXEC.BAT{p}
+
+A batch file like any other, run by the first shell.  The one on the
+PM-DOS disk sets the prompt and the path; it is where KEYB goes, and
+any program that is to run at every start.  See [[Batch Commands|Batch]].
+
+{b}Restarting{p}
+
+Ctrl+Alt+Del restarts the machine after everything owed to the disks
+is written.  [[SHUTDOWN]] switches it off.
+#group International Commands|International|Intl
+PM-DOS can show dates, times and numbers the way a country writes
+them, sort its letters in its order, and take its keyboard.
+
+{i}[[Country=|COUNTRY=]]{p}
+    In CONFIG.SYS: the country, and with it the date order, the
+    separators, the currency, and the table of capitals.  The tables
+    come from COUNTRY.SYS.
+
+{i}[[Chcp|CHCP]]{p}
+    Shows or changes the code page, within the pages the country has.
+
+{i}[[Keyb|KEYB]]{p}
+    Loads a keyboard layout from KEYBOARD.SYS.  It goes in
+    AUTOEXEC.BAT.
+
+There is no NLSFUNC to load and no DISPLAY.SYS: the kernel reads
+COUNTRY.SYS by itself, and the characters on the screen are the ones
+in the video card, code page 437 on most.
+#group Multiple Configurations|Multi-config|Multiconfig|Menu
+MS-DOS 6 let CONFIG.SYS hold several configurations in blocks, with a
+menu at startup to choose one:
+
+    [menu]
+    MENUITEM=NORMAL,Normal boot
+    MENUDEFAULT=NORMAL,5
+    [NORMAL]
+    INCLUDE=BASE
+
+PM-DOS accepts all of it - [menu], MENUITEM, MENUDEFAULT, MENUCOLOR,
+SUBMENU, INCLUDE and COMMENT, and the [block] lines - so that such a
+file boots without errors.  But there is no menu: every statement in
+every block is carried out, in the order the file has them.
+
+To keep two configurations, keep two files and copy the one wanted
+over CONFIG.SYS.
+#topic AUTOCHECK=|Autocheck=|AUTOCHECK
+#title AUTOCHECK=
+Says what happens at startup to a hard disk that was not shut down
+properly.
+
+{b}Syntax{p}
+
+    AUTOCHECK=ON | ASK | OFF
+
+{b}Parameters{p}
+
+ON
+    CHKDSK X: /F checks and repairs the drive before AUTOEXEC.BAT
+    runs.  This is the setting without the line.  In safe mode, ON
+    works like ASK.
+
+ASK
+    Asks first.
+
+OFF
+    Only names the drive.
+
+{b}Related Commands{p}
+
+See [[CHKDSK]] and [[SCANDISK]].
+#notes
+{b}The mark{p}
+
+A drive is marked when something writes to it, and unmarked once
+everything is written and no file is left open for writing, which is
+done by the time the prompt comes back.  So switching off at the
+prompt is safe; switching off while a program is saving a file, or
+while Windows is running, leaves the drive marked.
+
+The mark is the one Windows 95 and 98 use on FAT16 and FAT32 drives,
+so each system notices when the other was not shut down.  Floppies
+have no mark.  A marked drive stays marked until CHKDSK or SCANDISK
+finds nothing wrong or repairs it.
+
+{b}Where CHKDSK is{p}
+
+CHKDSK.EXE has to be in the shell's directory or in the root of the
+boot drive.
+#examples
+    AUTOCHECK=ASK
+#topic BREAK=|Break=|BREAK (CONFIG.SYS)
+#title BREAK=
+Sets the extended Ctrl+C checking flag at startup.
+
+{b}Syntax{p}
+
+    BREAK=ON | OFF
+
+{b}Parameters{p}
+
+ON | OFF
+    The flag programs read with INT 21h AX=3300h.  OFF without the
+    line.  PM-DOS itself does not yet look at the flag.
+
+{b}Related Commands{p}
+
+The [[BREAK]] command changes it at the prompt.
+#examples
+    BREAK=ON
+#topic BUFFERS=|Buffers=|BUFFERS
+#title BUFFERS=
+Accepted, and does nothing.
+
+{b}Syntax{p}
+
+    BUFFERS=n[,m]
+
+MS-DOS used the line to set aside disk buffers.  PM-DOS has a disk
+cache of its own, set by [[CACHE=]], and ignores the numbers.
+#examples
+    BUFFERS=30,8
+#topic CACHE=|Cache=
+#title CACHE=
+Sets the size of the disk cache, and whether it writes behind.
+
+{b}Syntax{p}
+
+    CACHE=max[,min[,ON | OFF]]
+    CACHE=OFF
+
+The cache is on without the line, so the line is only needed to
+change it.
+
+{b}Parameters{p}
+
+max
+    The most the cache may grow to, in KB.  K or M after the number
+    says the unit: CACHE=4M is CACHE=4096.
+
+min
+    The least it shrinks to when a program wants memory.  Without the
+    line, max is an eighth of extended memory and min a quarter of
+    max; with less than 2MB of extended memory there is no cache.
+    The same number twice gives a fixed size.
+
+ON | OFF
+    Write-behind, for hard disks only.  ON without the line.  Anything
+    waiting is written before the prompt comes back, so a power cut
+    can only lose the command that was running.  OFF writes straight
+    through, and so does VERIFY ON.
+
+OFF
+    On its own: no cache.
+
+{b}Related Commands{p}
+
+The [[CACHE]] command shows the cache and controls it while the
+machine runs.  For the cache under Windows, see [[WINCACHE=]].
+#notes
+{b}What is cached{p}
+
+Floppies, CD-ROMs and drives from loaded block drivers are only
+read-cached.  Hard disks are read- and write-cached.
+#examples
+    CACHE=4M
+    CACHE=2048,2048,OFF
+#topic CDROM=|Cdrom=
+#title CDROM=
+Chooses the drive letter of the first CD-ROM drive.
+
+{b}Syntax{p}
+
+    CDROM=x
+
+{b}Parameters{p}
+
+x
+    The letter.  Any other CD-ROM drives follow it.  Without the line
+    they come after the hard disks.  A letter a hard disk has is
+    ignored.
+
+{b}Related Commands{p}
+
+[[CDEX]] lists the drives and their letters.  [[SCSI=]] is for drives
+on SCSI cards.
+#notes
+{b}Under Windows{p}
+
+The first CD-ROM on an IDE cable keeps its letter under Windows when
+RMCD.SYS is where the shell is, or in the root of the boot drive.
+RMCD.SYS is an ordinary file: SYS does not copy it, COPY does, and
+without it only the CD-ROM under Windows is missing.  The disc's
+names are 8.3 there, as MSCDEX showed them.  Other CD-ROM drives are
+not there under Windows.
+#examples
+    CDROM=R
+#topic COUNTRY=|Country=|COUNTRY|Country
+#title COUNTRY=
+Sets the country: how dates, times, numbers and money are written,
+which letters are capitals of which, and how SORT orders them.
+
+{b}Syntax{p}
+
+    COUNTRY=code[,[page][,file]]
+
+{b}Parameters{p}
+
+code
+    The country's international dialling code: 044 is the United
+    Kingdom, 049 Germany, 033 France.  Without the line the country is
+    the United States, 001.
+
+page
+    A code page.  Without one, the first the file lists for the
+    country, which is 437 wherever 437 has the country's letters.
+
+file
+    The file of tables.  Without one, COUNTRY.SYS where the shell is,
+    then in the root of the boot drive.
+
+{b}Related Commands{p}
+
+[[CHCP]] changes the code page later; [[KEYB]] loads the keyboard.  See
+[[International Commands|International]].
+#notes
+{b}What follows the country{p}
+
+DIR, DATE, TIME and the prompt use the country's date order and
+separators.  The thousands separator in DIR's sizes is the country's.
+
+{b}No NLSFUNC{p}
+
+The kernel goes back to COUNTRY.SYS by itself when a program asks
+about another country or CHCP changes the page.  PM-DOS reads
+MS-DOS's COUNTRY.SYS as well as its own.
+
+{b}Not the keyboard, not the screen{p}
+
+COUNTRY= does not change the keyboard: that is KEYB, in AUTOEXEC.BAT.
+Neither changes the characters the screen shows, which are the ones
+in the video card.
+
+{b}The countries in the file{p}
+
+    001 United States   437 850    045 Denmark         865 850
+    002 Canada, French  863 850    046 Sweden          437 850
+    003 Latin America   437 850    047 Norway          865 850
+    007 Russia      866 437 850    048 Poland          852 850
+    027 South Africa    437 850    049 Germany         437 850
+    030 Greece      737 869 850    052 Mexico          437 850
+    031 Netherlands     437 850    054 Argentina       437 850
+    032 Belgium         437 850    055 Brazil          437 850
+    033 France          437 850    056 Chile           437 850
+    034 Spain           437 850    057 Colombia        437 850
+    036 Hungary         852 850    058 Venezuela       437 850
+    038 Yugoslavia      852 850    061 Australia       437 850
+    039 Italy           437 850    064 New Zealand     437 850
+    040 Romania         852 850    090 Turkey          857 850
+    041 Switzerland     437 850    351 Portugal        860 850
+    042 Czech Republic  852 850    353 Ireland         437 850
+    043 Austria         437 850    354 Iceland         861 850
+    044 United Kingdom  437 850    358 Finland         437 850
+    359 Bulgaria        855 850    385 Croatia         852 850
+    386 Slovenia        852 850    421 Slovakia        852 850
+#examples
+    COUNTRY=049
+    COUNTRY=049,850
+    COUNTRY=049,,C:\DOS\COUNTRY.SYS
+#topic DEVICE=|Device=|DEVICE|Device
+#title DEVICE=
+Loads a 16-bit DOS device driver.
+
+{b}Syntax{p}
+
+    DEVICE=[drive:][path]filename [options]
+
+{b}Parameters{p}
+
+[drive:][path]filename
+    The driver.
+
+options
+    Whatever the driver takes on its line.
+
+{b}Related Commands{p}
+
+[[DEVICEHIGH=]] loads a driver into upper memory.  A resident program
+goes in with [[INSTALL=]].
+#notes
+{b}What PM-DOS has already{p}
+
+The mouse, the CD-ROM drives, the cache, expanded memory, file
+sharing and DPMI are in the kernel: do not load MOUSE, MSCDEX,
+SMARTDRV, EMM386, SHARE or a DPMI host.  HIMEM.SYS is not needed.
+
+{b}Block drivers{p}
+
+A block driver's drives get the letters after the last disk.
+
+{b}Windows for Workgroups{p}
+
+The CONFIG.SYS shipped loads C:\WINDOWS\IFSHLP.SYS, which Workgroups'
+network and 32-bit file access need underneath them.  A machine with
+no Workgroups there shows "Bad or missing device driver" for the line
+at boot and goes on.
+
+{b}A driver that adds to the BIOS{p}
+
+A TSR or driver that adds to the BIOS - a printer redirector, a VBE
+driver such as UniVBE - has to be loaded here or with INSTALL=, not
+from AUTOEXEC.BAT, because the kernel's own calls to the BIOS do not
+see a program loaded after the shell starts.
+#examples
+    DEVICE=C:\WINDOWS\IFSHLP.SYS
+    DEVICE=C:\DRIVERS\ASPI4DOS.SYS
+#topic DEVICEHIGH=|Devicehigh=|DEVICEHIGH|Devicehigh
+#title DEVICEHIGH=
+Loads a 16-bit DOS device driver into upper memory.
+
+{b}Syntax{p}
+
+    DEVICEHIGH=[drive:][path]filename [options]
+
+{b}Parameters{p}
+
+[drive:][path]filename
+    The driver.
+
+options
+    Whatever the driver takes on its line.
+
+{b}Related Commands{p}
+
+Upper memory is set up by [[DOS=]].  See [[DEVICE=]] for what a driver
+is, and [[LOADHIGH]] for programs.
+#notes
+{b}When it loads low{p}
+
+Without DOS=UMB, or when no upper memory block is big enough, the
+driver loads in conventional memory and works just the same.
+#examples
+    DOS=UMB
+    DEVICEHIGH=C:\DRIVERS\ANSI.SYS
+#topic DOS=|Dos=|DOS|Dos
+#title DOS=
+Sets up upper memory for drivers and programs to load into.
+
+{b}Syntax{p}
+
+    DOS=HIGH | LOW[,UMB | NOUMB]
+
+{b}Parameters{p}
+
+HIGH | LOW
+    Accepted, and does nothing: the kernel already runs above 1MB and
+    leaves the HMA to DOS programs.
+
+UMB
+    Sets up the blocks between 640K and 1MB for DEVICEHIGH, INSTALLHIGH
+    and LOADHIGH.
+
+NOUMB
+    No upper memory.  This is the setting without the line, and then
+    those three load low.
+
+{b}Related Commands{p}
+
+See [[DEVICEHIGH=]], [[INSTALLHIGH=]] and [[LOADHIGH]].  [[MEM]] shows
+the blocks.  [[EMS=]]'s page frame takes 64K of the same room.
+#examples
+    DOS=HIGH,UMB
+#topic DPMI=|Dpmi=
+#title DPMI=
+Turns the DPMI host on or off.
+
+{b}Syntax{p}
+
+    DPMI=ON | OFF
+
+{b}Parameters{p}
+
+ON
+    DOS programs that ask for a DPMI host get the kernel's.  ON
+    without the line.
+
+OFF
+    Programs are told there is no DPMI host.  The ones that can run in
+    real mode will.
+#examples
+    DPMI=OFF
+#topic DRIVPARM=|Drivparm=|DRIVPARM
+#title DRIVPARM=
+Accepted, and does nothing.
+
+{b}Syntax{p}
+
+    DRIVPARM=/D:number [/C] [/F:factor] [/H:heads] [/I] [/N] [/S:sectors]
+             [/T:tracks]
+
+MS-DOS used the line to describe a drive the BIOS had wrong.  PM-DOS
+asks the drives themselves.  MULTITRACK= is ignored the same way.
+#topic EMS=|Ems=
+#title EMS=
+Gives DOS programs expanded memory (LIM 4.0).
+
+{b}Syntax{p}
+
+    EMS=NO | AUTO | segment
+
+Off without the line.
+
+{b}Parameters{p}
+
+NO
+    No expanded memory.
+
+AUTO
+    A 64K page frame is found in upper memory, which leaves 64K less
+    for DOS=UMB.
+
+segment
+    The page frame at that address: C000 to E000, on a 16K boundary.
+    EMS=D000 puts it at D000.
+
+{b}Related Commands{p}
+
+[[MEM]] shows the frame and the pages.  See [[DOS=]] for the upper
+memory it shares.
+#notes
+{b}What it does not do{p}
+
+Pages can be mapped into the frame only, not into conventional
+memory.  There is no EMM386 to load, and nothing to set the amount:
+the pages come from extended memory as they are asked for.
+#examples
+    EMS=AUTO
+    EMS=D000
+#topic FCBS=|Fcbs=|FCBS
+#title FCBS=
+Accepted, and does nothing.
+
+{b}Syntax{p}
+
+    FCBS=n[,m]
+
+MS-DOS used the line to set how many files old programs could open
+with file control blocks.  PM-DOS opens as many as are asked for.
+#examples
+    FCBS=4,0
+#topic FILES=|Files=|FILES|Files
+#title FILES=
+Sets how many files can be open at once, across the whole system.
+
+{b}Syntax{p}
+
+    FILES=n
+
+{b}Parameters{p}
+
+n
+    8 to 64.  64 without the line.
+#examples
+    FILES=40
+#topic IDE32=|Ide32=
+#title IDE32=
+Chooses 32-bit reads from the IDE data port.
+
+{b}Syntax{p}
+
+    IDE32=OFF | AUTO | ON
+
+{b}Parameters{p}
+
+OFF
+    16-bit reads only.
+
+AUTO
+    Each drive is tested first, and gets 32-bit reads when it passes.
+    This is the setting without the line.
+
+ON
+    32-bit reads without the test.
+
+{b}Related Commands{p}
+
+[[IDEDMA=]] chooses DMA, which does not use the data port at all.
+#notes
+{b}If a disk reads garbage{p}
+
+A disk that reads wrongly here but works on MS-DOS: try IDE32=OFF.
+IDETEST on the test disk shows what was chosen for each drive.
+#examples
+    IDE32=OFF
+#topic IDECABLE=|Idecable=
+#title IDECABLE=
+Says which IDE cable is fitted, when PM-DOS cannot tell.
+
+{b}Syntax{p}
+
+    IDECABLE=AUTO | 40 | 80
+
+{b}Parameters{p}
+
+AUTO
+    PM-DOS works out which cable is fitted.  This is the setting
+    without the line.
+
+40 | 80
+    The number of wires in the cable.  UDMA3 and faster need an
+    80-wire cable; with a 40-wire cable the limit is UDMA2.  The
+    setting covers both channels.
+
+{b}Related Commands{p}
+
+Put the line above [[IDEDMA=]].
+#examples
+    IDECABLE=80
+#topic IDEDMA=|Idedma=
+#title IDEDMA=
+Chooses how IDE disks move their data.
+
+{b}Syntax{p}
+
+    IDEDMA=OFF | AUTO | ON | mode
+
+{b}Parameters{p}
+
+OFF
+    PIO only.
+
+AUTO
+    Keeps the mode the BIOS set, and falls back to PIO when there is
+    none.  This is the setting without the line.
+
+ON
+    The fastest mode the drive, the controller and the cable can take.
+    PM-DOS knows the controller timing on Intel (PIIX and ICH) and VIA
+    chipsets; on others, ON stops at the BIOS mode or UDMA2, whichever
+    is faster.
+
+mode
+    UDMA0 to UDMA6 sets a ceiling: that mode, or the best under it
+    that works.  MWDMA0 to MWDMA2 sets that exact mode.  Naming a mode
+    also gets past the limit on other chipsets.
+
+{b}Related Commands{p}
+
+See [[IDECABLE=]] and [[IDE32=]].
+#notes
+{b}When a transfer fails{p}
+
+A DMA transfer that fails puts that disk back to PIO until the next
+boot.  A CRC error above UDMA2 drops the disk to UDMA2 first.
+#examples
+    IDEDMA=ON
+    IDEDMA=UDMA2
+#topic INSTALL=|Install=|INSTALL|Install
+#title INSTALL=
+Runs a 16-bit program, usually one that stays resident, before the
+shell starts.
+
+{b}Syntax{p}
+
+    INSTALL=[drive:][path]filename [options]
+
+{b}Parameters{p}
+
+[drive:][path]filename
+    The program.  32-bit programs cannot be loaded this way.
+
+options
+    Whatever the program takes on its line.
+
+{b}Related Commands{p}
+
+[[INSTALLHIGH=]] loads the program into upper memory.  A driver goes
+in with [[DEVICE=]].
+#notes
+{b}When it runs{p}
+
+INSTALL= lines run last, after every driver has loaded, whatever
+their place in the file.
+
+{b}A program that adds to the BIOS{p}
+
+A TSR that adds to the BIOS, such as a printer redirector or a VBE
+driver, has to be loaded here or with DEVICE=: the kernel's own disk,
+clock and printer calls do not see a program loaded from AUTOEXEC.BAT,
+and a VBE driver loaded here gives its modes to 32-bit programs too.
+#examples
+    INSTALL=C:\UTILS\REDIR.EXE
+#topic INSTALLHIGH=|Installhigh=|INSTALLHIGH|Installhigh
+#title INSTALLHIGH=
+Runs a 16-bit program before the shell starts, in upper memory.
+
+{b}Syntax{p}
+
+    INSTALLHIGH=[drive:][path]filename [options]
+
+Without DOS=UMB, or without a block big enough, the program loads in
+conventional memory and runs just the same.
+
+{b}Related Commands{p}
+
+See [[INSTALL=]] and [[DOS=]].
+#examples
+    DOS=UMB
+    INSTALLHIGH=C:\UTILS\REDIR.EXE
+#topic KEYRATE=|Keyrate=
+#title KEYRATE=
+Sets how fast a held key repeats.
+
+{b}Syntax{p}
+
+    KEYRATE=rate[,delay]
+
+Without the line the BIOS setting stays.
+
+{b}Parameters{p}
+
+rate
+    1 to 32, as MODE CON wrote it: higher is faster, and 32 is about
+    thirty keys a second.
+
+delay
+    1 to 4 quarter seconds before the first repeat.
+#notes
+{b}DOSBox{p}
+
+DOSBox 0.74 stops taking keys at KEYRATE=32,1.  Use 31,1 there.
+#examples
+    KEYRATE=31,1
+#topic LASTDRIVE=|Lastdrive=|LASTDRIVE|Lastdrive
+#title LASTDRIVE=
+Sets the highest drive letter programs should look for.
+
+{b}Syntax{p}
+
+    LASTDRIVE=x
+
+{b}Parameters{p}
+
+x
+    A letter, up to P.  LASTDRIVE never goes below the drives the
+    machine has, and adds none.  Without the line, every letter.
+
+{b}Related Commands{p}
+
+[[MOUNT]] takes the free letters.
+#notes
+{b}Under Windows{p}
+
+Under Windows the letters go up to Z, and network drives Windows for
+Workgroups connects can only use letters up to LASTDRIVE.
+#examples
+    LASTDRIVE=Z
+#topic LFN=|Lfn=
+#title LFN=
+Turns long file names on or off.
+
+{b}Syntax{p}
+
+    LFN=ON | OFF
+
+{b}Parameters{p}
+
+ON
+    Long names, the way Windows 95 keeps them.  ON without the line.
+
+OFF
+    The long-name calls (INT 21h 71xxh) are turned off and every
+    program sees 8.3 names, for a program that cannot cope with long
+    ones.
+#examples
+    LFN=OFF
+#topic NULLTRAP=|Nulltrap=
+#title NULLTRAP=
+Stops a 32-bit program that writes through a null pointer.
+
+{b}Syntax{p}
+
+    NULLTRAP=ON | OFF
+
+{b}Parameters{p}
+
+ON
+    A 32-bit program that writes to the first bytes of memory is
+    stopped before the write wrecks the first interrupt vectors.  ON
+    without the line.
+
+OFF
+    For a program that writes to low memory on purpose.
+#examples
+    NULLTRAP=OFF
+#topic NUMLOCK=|Numlock=|NUMLOCK|Numlock
+#title NUMLOCK=
+Turns Num Lock on or off at startup.
+
+{b}Syntax{p}
+
+    NUMLOCK=ON | OFF
+
+Without the line Num Lock is left as the BIOS set it.
+#examples
+    NUMLOCK=OFF
+#topic SCSI=|Scsi=
+#title SCSI=
+Turns PM-DOS's own SCSI CD-ROM drivers on or off.
+
+{b}Syntax{p}
+
+    SCSI=ON | OFF
+
+{b}Parameters{p}
+
+ON
+    The kernel's drivers for Adaptec 154x and BusLogic cards, and for
+    the SCSI port on a Pro Audio Spectrum 16.  ON without the line.
+
+OFF
+    Those drivers off.  An ASPI driver loaded with DEVICE= still
+    works.
+
+{b}Related Commands{p}
+
+[[CDEX]] lists the drives and the card each is on.
+#notes
+{b}Other cards{p}
+
+For a card PM-DOS has no driver for - an Adaptec 2940, a Sound
+Blaster 16 SCSI-2 - load the card's ASPI driver with DEVICE= and the
+drives are used through it.  The card's IRQ must then be 3, 4, 5, 7,
+9, 10 or 11.
+#examples
+    SCSI=OFF
+#topic SET=|Set=|SET (CONFIG.SYS)
+#title SET=
+Sets an environment variable before AUTOEXEC.BAT runs.
+
+{b}Syntax{p}
+
+    SET name=value
+
+Every program inherits the variable, the shell included.
+
+{b}Related Commands{p}
+
+The [[SET]] command does the same at the prompt.
+#examples
+    SET TEMP=C:\TEMP
+#topic SHARE=|Share=
+#title SHARE=
+Turns file sharing and record locking on or off.
+
+{b}Syntax{p}
+
+    SHARE=locks[,space] | ON | OFF
+
+{b}Parameters{p}
+
+locks
+    How many byte ranges can be locked at once, up to 1024, as SHARE
+    /L set it.  20 without the line.
+
+space
+    SHARE /F's number: accepted and ignored.
+
+ON
+    Sharing on with 20 locks.  This is the setting without the line.
+
+OFF
+    As MS-DOS without SHARE loaded.
+#examples
+    SHARE=100
+#topic SHELL=|Shell=|SHELL|Shell
+#title SHELL=
+Chooses the command interpreter, and with it the directory PM-DOS
+keeps its files in.
+
+{b}Syntax{p}
+
+    SHELL=[drive:][path]filename [options]
+
+Without the line, CMD.EXE /P in the root of the boot drive.
+
+{b}Parameters{p}
+
+[drive:][path]filename
+    The interpreter.  The directory it is in is where PM-DOS looks
+    for its other files: COMMAND.COM, COUNTRY.SYS, KEYBOARD.SYS,
+    RMCD.SYS, CHKDSK.EXE and the rest.  A file not there is looked for
+    in the root of the boot drive.
+
+options
+    The interpreter's switches.  Without /P, AUTOEXEC.BAT is skipped.
+
+{b}Related Commands{p}
+
+See [[CMD]] for the switches, and [[Starting PM-DOS|Starting]].
+#notes
+{b}A system in C:\DOS{p}
+
+One line puts everything but the four root files in a directory:
+
+    SHELL=C:\DOS\CMD.EXE /P
+
+PMIO.SYS, PMDOS.SYS, CONFIG.SYS and AUTOEXEC.BAT stay in the root, and
+SYS puts RMDOS.SYS there with them.  Put C:\DOS in the PATH as well.
+#examples
+    SHELL=C:\DOS\CMD.EXE /P
+#topic STACKS=|Stacks=|STACKS
+#title STACKS=
+Accepted, and does nothing.
+
+{b}Syntax{p}
+
+    STACKS=n,s
+
+MS-DOS used the line to give interrupt handlers stacks of their own.
+The kernel handles interrupts itself.
+#examples
+    STACKS=9,256
+#topic SWITCHES=|Switches=|SWITCHES|Switches
+#title SWITCHES=
+Changes what the startup keys do.
+
+{b}Syntax{p}
+
+    SWITCHES=/F /N
+
+{b}Parameters{p}
+
+/F
+    Skips the two-second wait for Shift or F5 at startup.  A key
+    pressed before the wait still counts.
+
+/N
+    Turns Shift and F5 off, so CONFIG.SYS and AUTOEXEC.BAT always
+    run.
+
+/K, /W and /E are accepted and do nothing.
+
+{b}Related Commands{p}
+
+See [[Starting PM-DOS|Starting]].
+#examples
+    SWITCHES=/F
+#topic UNDELETE=|Undelete=
+#title UNDELETE=
+Turns delete protection on or off.
+
+{b}Syntax{p}
+
+    UNDELETE=ON | OFF
+
+{b}Parameters{p}
+
+ON
+    A deleted file is kept in a hidden RECYCLED directory on its
+    drive until the space is needed, and the UNDELETE command brings
+    it back.  Up to a tenth of the free space is used, the oldest
+    files going first.  ON without the line.
+
+OFF
+    Files are deleted the ordinary way.
+
+{b}Related Commands{p}
+
+See [[UNDELETE]] and [[DEL]].
+#examples
+    UNDELETE=OFF
+#topic WINCACHE=|Wincache=
+#title WINCACHE=
+Sets the cache used while Windows runs.
+
+{b}Syntax{p}
+
+    WINCACHE=size[,LOG]
+    WINCACHE=OFF
+
+{b}Parameters{p}
+
+size
+    In KB, or with K or M after it, up to 4M.  Without the line, an
+    eighth of the free extended memory.
+
+LOG
+    Writes RMCACHE.LOG on the boot drive when Windows exits, with the
+    hit counts.
+
+OFF
+    No cache under Windows.
+
+{b}Related Commands{p}
+
+For the cache the rest of the time, see [[CACHE=]].
+#notes
+{b}Why a second cache{p}
+
+The ordinary cache gives its memory back when Windows starts, so
+Windows gets a cache of its own, built the way SMARTDRV's was:
+Windows programs that look for SMARTDRV find it, and Windows for
+Workgroups' 32-bit file access turns it off for the drives it takes
+over.  Writes always go straight through.
+#examples
+    WINCACHE=2M,LOG
