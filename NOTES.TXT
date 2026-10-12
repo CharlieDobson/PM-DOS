@@ -13387,6 +13387,138 @@ reached its prompt again.  HD32, HDBIG and MULTI do not.  The rig's
 two programs (CADTEST, A20Q) are not in the tree.  Still v0.63.
 
 
+HELP.EXE AND HELP.HLP: MS-DOS 6'S ONLINE HELP FOR PM-DOS (2026-10-11)
+---------------------------------------------------------------------
+
+Charlie: "PM-DOS needs an online help system.  As per usual, I want to
+clone the look and feel of the MS-DOS HELP system but using all PM-DOS
+internal and external commands.  The help system should pull data
+from an external file just like MS-DOS HELP did with HELP.HLP so that
+it can be easily modified without having to rewrite the executable
+every time.  We will need to update the .HLP file with every new
+internal or external command.  Leave LRGDISK.386 and LRGSTAT.EXE out
+of the documentation.  The help system should use the same linkable
+hypertext system MS-DOS used as well."
+
+WHAT MS-DOS'S HELP WAS.  HELP.COM is 413 bytes that run QBASIC /QHELP,
+and HELP.HLP is a QuickHelp database - Microsoft's HELPMAKE compiled
+it from a text source, compressed it with a keyphrase table and a
+Huffman code, and LOCKED it against decoding (HELPMAKE /L).  The
+MASM 6.11 HELPMAKE.EXE in C:\MASM611 decodes it all the same (/D;
+the lock is advisory), which gave the source back: .context lines
+naming each topic, .topic for the title, .freeze 3 for the three
+lines that stay at the top (the Notes and Examples links, a rule, a
+blank), and in the text \b and \p for bold, \i and \p for italic,
+and a link written \aWORDS\vCONTEXT\v with the brackets round it
+typed as they are - < > in the body, 0x11 and 0x10 in the frozen
+line.  428 topics, 687K of text for 300K of file.
+
+WHAT WAS COPIED, FROM THE REAL PROGRAM.  6.22's HELP ran under
+DOSBox-X's own DOS (KEYFEED for the keys) and under real MS-DOS 5 in
+QEMU (sendkey through the PS/2 port, screendump for the pictures;
+KEYFEED's keys stop reaching QBASIC the moment a menu is open - COW
+reads the keyboard round the BIOS - so the menus and dialogs came
+from QEMU).  Measured cell by cell:
+
+  - grey on black (07), bold white (0F), and EVERY '<', '>', 0x11
+    and 0x10 bright green (0A) - the brackets round a link, and the
+    "(< >)" in a sentence about brackets too.  The link text itself
+    is plain grey: the only thing that marks a link is the cursor on
+    it.  \i is green as well, which is why the source wraps the
+    arrow brackets in it.
+  - row 0 the menu bar, File and Search at the left and Help at the
+    RIGHT END (col 74), black on grey, no highlighted letters until
+    Alt; row 1 a rule with " MS-DOS Help: TITLE " black on grey in
+    the middle; rows 2-23 the text, a bar down col 0, the scroll
+    bar (B1 track, a black cell for the box, arrows) in col 79, no
+    bottom; row 24 "<Alt+C=Contents> <Alt+N=Next> <Alt+B=Back>" at
+    col 1, a bar at col 62, C and N at 66 and 68 for the lock keys,
+    and the cursor's line:column as 00008:002 at col 70.
+  - the cursor is an editor's: arrows move it, the window scrolls
+    to keep it, Tab and Shift+Tab go to the next and previous link,
+    a letter to the next link starting with it (Shift+letter back),
+    Enter follows the link under it.  A found word, or a far jump,
+    lands four rows down from the top.
+  - Alt+C contents, Alt+N next topic IN FILE ORDER (Contents, then
+    Batch Commands), Shift+Ctrl+F1 previous, Alt+B back through the
+    topics read, F1 "How To Use", F3 find again; Esc does nothing in
+    the window.  HELP NOSUCH is an empty window titled "MS-DOS Help:"
+    with a "Match not found" box over it; so is HELP /?.
+  - menus are single-line boxes starting at col 1 with a dark-grey
+    shadow; dialogs are double-line boxes, black on grey, the entry
+    field grey on black, the focused button's brackets white, the
+    hint line "F1=Help | Prints specified text" with a menu open and
+    "F1=Help  Enter=Execute  Esc=Cancel  Tab=Next Field  Arrow=Next
+    Item" with a dialog.  Find offers the word under the cursor and
+    searches every topic from the cursor round; Print has Printer
+    on LPT1 / File + name, and a Printer Setup box of LPT1-3 and
+    COM1-2; About is three lines and OK with a rule above the
+    buttons; F1 on a menu item opens a help BOX over the open menu
+    with the item's topic framed inside and an OK.
+
+THE PROGRAM (CMD\HELP).  EDIT's SCR.C, UI.C, RT.C (PMD's, for sfmt),
+SYS_D32.C and DOSINT.ASM, as PMD took them, with HELP's three menus,
+double-line dialogs, a rule control and a box control, and a greyed
+state for the Print dialog's file name.  HLP.C reads HELP.HLP whole,
+indexes the .context lines, and renders a line into cells, colours
+and link spans on demand - nothing is pre-rendered, 209K of text is
+nothing to a 32-bit program.  VIEW.C is the window, the cursor, the
+links and the scroll bar; DLGS.C Find, Print, Printer Setup and
+About; MAIN.C the command line, the history Alt+B walks (32 deep),
+the status bar and the loop.  Context names are matched whole and
+without regard to case.  HELP.HLP is looked for in the current
+directory, beside HELP.EXE, then along the PATH.  Test mode is
+EDIT's (HLPTEST names the log, keys from a redirected file,
+HLPHOLD holds the last screen for a photograph, and the dump line
+carries the window's top, line, freeze and count); DISK\HLPTEST.BAT
+and HL1-3.KEY from MKEDKEYS.PL.  42,272 bytes bound.  The first build
+read every .freeze as 0 - dec_parse refuses anything after the digits,
+and the argument ran on into the line end - and the window looked
+right all the same until a PgDn, because a topic starts at its top;
+the step-by-step dump with the numbers on it is what showed it.
+
+THE FILE IS THE SOURCE.  HELP.HLP is HELPMAKE's source format read
+as it stands: plain text, so EDIT changes it, and a new command is a
+new .context block.  No compression - the real file was compressed
+because 1993's disks were small; here the file is 209K and the boot
+floppy has 64K free, which is why there is a HELP.IMG (HELP.EXE and
+HELP.HLP, label "PM-DOS HELP") beside PMDOS.IMG and TESTS.IMG, as
+MS-DOS's help came on its own disk.  MKHD.CMD puts both on HD16 and
+HD32, where the PATH finds them.
+
+DISK\HELP\*.TXT AND TOOLS\MKHELP.PL.  Writing a hundred topics that
+all start the same way by hand is how mistakes get in, so the parts
+in DISK\HELP are the text alone - #topic NAME|Alias, #notes,
+#examples, #group, #plain, [[LINK]] - and MKHELP.PL writes
+DISK\HELP.HLP from them, lays out the frozen lines and the centred
+titles, builds the three-column contents from every topic in
+alphabetical order, and refuses to finish if a link leads nowhere or
+a line is wider than the window.  Run it by hand after a change, as
+MKNLS.PS1 is; BUILD.CMD does not run perl.  292 topics: 32 internal
+commands (CMD's own, with their aliases), the two shells, 30
+externals, 32 CONFIG.SYS statements, the groups (Batch Commands,
+CONFIG.SYS Commands, International Commands, Multiple
+Configurations, Starting PM-DOS, About PM-DOS), and the twenty-odd
+topics about Help itself that F1 and the dialogs show.  Every
+switch is the one the program's own /? lists - the texts were
+pulled out of CMD.ASM and each CMD\*\ source and paraphrased - and
+LRGDISK.386 and LRGSTAT.EXE are not in it, as asked.  The words are
+PM-DOS's and not Microsoft's.
+
+NOT DONE, AND SAID SO: reading a compiled QuickHelp .HLP (MASM's,
+MS-DOS's) - the format is known but nothing here needs it; MS-DOS
+HELP's text selection with Shift+arrows and Print's "selected text";
+a /B mono switch (the real HELP has none); the F8 step-through
+startup, which PM-DOS has not got, is not in the Starting topic.
+Tested: the viewer on a sample file and then on the real one, every
+screen photographed and the colours read back cell by cell against
+the real program's; HLPTEST.BAT headless on the built HD16; RUNTESTS
+-All, where RMTEST's free clusters and RMFIND's count moved by one
+new file in BIN and were re-recorded.  Not run: real hardware, the
+mouse through a real PS/2 path (the key files' FEh records only),
+printing to a real port.  Still v0.64.
+
+
 v0.64 - THE SHELL, SCANDISK, PMD AND A PDF READER; A COUNTRY AND A
         KEYBOARD; LRGDISK 1.4 (2026-10-11)
 ---------------------------------------------------------------------
@@ -13497,6 +13629,214 @@ working correctly now") and Ctrl-Alt-Del ("It is working now").  These
 notes do not say which machine the rest was run on.  STILL OPEN, as
 under 0.63: Quarterdeck's Manifest for Windows, and Turbo Pascal 7's
 TPX and anything else on Borland's RTM.
+
+
+DEFRAG.EXE: MS-DOS'S DEFRAG FOR PM-DOS, WITH FAT32, LONG FILE NAMES
+AND A GRAPHICS SCREEN (2026-10-11)
+---------------------------------------------------------------------
+Asked for as: "We need a disk defragmenting program that also
+compacts files near the beginning of the disk.  It should be modeled
+exactly after MS-DOS's DEFRAG command, and like ScanDisk, it should
+not have mono mode and should support graphics mode.  It should also
+detect for file system errors and if one is found, offer to run
+ScanDisk first before defrag."  CMD\DEFRAG, C, a native program, and
+built on SCANDISK's: VOL.C, SCR.C, GFX.C, SYS_D32.C, RT.C and the two
+assembly files began as that program's.  DEFRAG.EXE is 74,532 bytes.
+It is in BUILD.CMD, in the stub list, on PMDOS.IMG and in MKHD.CMD's
+hard disks.  No kernel change.
+
+  DEFRAG [drive:] [/F] [/S[:]order] [/H] [/B] [/G]
+  DEFRAG [drive:] [/U] [/H] [/B] [/G]
+
+THE SCREEN IS MS-DOS DEFRAG'S, MEASURED - the lesson of SCANDISK, taken
+first this time.  The real one runs here: MS-DOS 6.22's DEFRAG.EXE
+(Charlie's backup of 6.22; an oracle, never shipped) under DOSBox-X's
+own DOS with ver=6.22 and a disk image mounted as D:, with a copy of
+KEYFEED that keeps each screen's characters AND colours.  What that
+showed, and what is here:
+
+  - one white line along the top with one menu in it, "Optimize", and
+    F1=Help at its right - "Esc=Stop Defrag", white on black, while a
+    drive is being optimized.  The menu: Begin optimization (Alt-B),
+    Drive, Optimization Method, File sort, Map legend, About Defrag,
+    eXit (Alt-X).  There is no File menu; eXit is where it was
+  - the map under it, 76 blocks a row, on every row down to the two
+    boxes: Status (the cluster, a percentage, a bar, the elapsed time,
+    the method) and Legend.  A line along the bottom says what can be
+    done next, with the program's name at its right
+  - white on BRIGHT blue, boxes black on bright cyan with red titles,
+    grey buttons with half a cell of shadow and arrowheads on the one
+    Enter presses.  Bright backgrounds need the blink bit off, which
+    SCR.C does through the attribute controller on a VGA, as SCANDISK
+    does; anywhere else the same screen is blue, grey and cyan
+  - boxes are where that program puts them: a box H rows by W columns
+    has its top at (rows - H) / 2 and its left at (79 - W) / 2
+  - in a group of round buttons the arrow keys MOVE and the space bar
+    CHOOSES.  That is the real program's, and it is kept
+  - started with /F or /U it asks nothing and ends when the drive is
+    done; without, it reads the drive, says how much is not fragmented
+    and what it suggests, and waits
+
+MS-DOS's DEFRAG has two looks: one drawn with shapes it loads into
+the text screen's font (round buttons, a title bar, a block with a
+dot in it), and /G0, which draws with the characters there are.  A
+native program cannot load a font, so THE TEXT SCREEN HERE IS THE /G0
+LOOK and THE GRAPHICS SCREEN (/G) IS THE OTHER ONE, drawn in pixels:
+640x480 on a VGA with thirty lines, 640x350 on an EGA.  THERE IS NO
+BLACK AND WHITE SCREEN.  /BW and /LCD are taken and do nothing, and
+so are /G0 and /SKIPHIGH, so that a batch file written for MS-DOS
+runs.  The sentences are this program's own; the words on the menu
+and the buttons are the ones a user of the other knows.
+
+THE MAP'S RULE was found by giving the real program a drive whose
+every cluster was known and comparing: a block is "used" only when
+EVERY cluster in it is in use, an X if anything in it is never moved,
+a B if anything in it is bad.  A block whose clusters have all reached
+their final place turns yellow.
+
+WHAT IT DOES.  FULL OPTIMIZATION lays the drive out from its first
+cluster: every directory, then every file, directory by directory in
+the order the directories list them - each in one piece and nothing
+between.  What is not moved stays, and the layout goes round it: a
+gap in front of an obstacle that is too small for the next file gets
+the largest later file that fits.  UNFRAGMENT FILES ONLY moves just
+the files that are in pieces, each to the lowest stretch of the drive
+it fits (its own clusters counting as room), largest first, and goes
+round again while that gets anywhere.  Both squeeze the deleted
+entries out of directories, as MS-DOS's does.  FILE SORT (name,
+extension, date and time, size, either way) is done in a Full
+Optimization: directories are sorted among the files, as in MS-DOS,
+with the volume label and anything that is never moved kept at the
+top.  A LONG NAME goes with the entry it is in front of: MS-DOS's
+DEFRAG breaks long names, this one moves the group.
+
+WHAT IS NOT MOVED: a file or directory with the System attribute,
+ever; one with the Hidden attribute unless /H is given; the FAT32 root
+directory.  MS-DOS's /H frees everything.  The boot files of every
+DOS have System set, and a loader that expects them where they were
+is not something to find out about afterwards.
+
+THE CHECK, AND SCANDISK.  A drive is read whole before anything moves
+(TREE.C): every directory into memory, every chain followed, each
+cluster given its owner.  That is a check as well: FAT copies that
+differ, a chain that leaves the drive or runs into a free cluster,
+two files in one cluster, a size that disagrees with its chain, a
+directory without its "." and "..", clusters in use that nothing
+reached.  MS-DOS's DEFRAG stops at cross-linked files with a red box
+that says to run ScanDisk, and takes no notice of lost clusters.
+This one treats all of them as errors, moves nothing, and its red box
+has two buttons: ScanDisk and Exit.  ScanDisk is run (4B00h; found
+here, along PATH or in the root of the boot drive; with /G when
+DEFRAG has it) and the drive is read again when it comes back.  The
+box is shown even with /F or /U.  Exit is exit code 7.
+
+A MOVE CAN BE STOPPED ANYWHERE (MOVE.C, the only code that writes).
+The data goes into clusters the FAT calls free; then their FAT
+entries, a chain ending where the old clusters' chain went on; then
+the ONE link that pointed at the old clusters - a FAT entry, or the
+directory entry; then the old clusters are freed.  Each step is in
+every copy of the FAT before the next.  Cut off between any two, a
+file is whole and the worst left behind is lost clusters.  A
+DIRECTORY that has been arranged is written whole somewhere else and
+changed over to.  One that is only squeezed is written where it is,
+first sector to last, because squeezing only moves entries forward:
+an entry is in the part written or the part not yet, never neither.
+A SORTED directory that cannot be anywhere else - the root - is first
+written a second time BEHIND its old entries, then from the front,
+then the copy is cleared (rewrite_twice): that closed the one cut
+that did lose entries, found by the rig below.  Esc and ^C are taken
+between two moves and nowhere else.
+
+WHAT THE KERNEL KEEPS.  21h/7305h makes the kernel write what it owed
+the volume before a raw write and forget what it had cached after
+one.  It does not forget a drive's CURRENT DIRECTORY, which it knows
+by cluster (cwd_clus), so a drive's current directory is the root
+while DEFRAG has it and is set again by name when it lets go.  It
+does not forget OPEN FILES either, and nothing can put those right:
+DEFRAG will not start with its input or output redirected to a file.
+(4400h does not say which drive a handle's file is on, so the rule is
+"to a file" and not "to a file on that drive"; NUL and the other
+devices are fine.)  The clean-shutdown flag in FAT entry 1 is the
+kernel's: the copy of the FAT in memory has it off from the start
+where 21h/F1h AL=1Dh says the kernel keeps one, or every write of
+the FAT's first sector would turn it on and the kernel off again.
+
+MEMORY.  Eight bytes a cluster for the two tables and the whole FAT:
+ten for FAT16, twelve for FAT32.  A drive it cannot afford is exit
+code 9.  The exit codes are MS-DOS's: 0, 1 internal, 2 no free
+cluster, 3 stopped, 4 the command line or the drive, 5 a read, 6 a
+write, 7 the file system, 9 memory.  /B is 21h/F1h AL=1Bh.
+
+CALLS THAT WERE MINE and that nobody was asked about: System files
+stay put even with /H; the FAT32 root directory is never moved; lost
+clusters count as an error; the red box is shown even in a run that
+otherwise asks nothing, and Esc there is Exit; no redirection to a
+file; what DEFRAG suggests (nothing in pieces and little free space
+below the last file: no optimization; 95% or more not fragmented:
+Unfragment Files Only; else Full Optimization) - nothing says what
+MS-DOS's numbers are; "PM-DOS Defrag" in the corner of the screen;
+the percentage counts files and directories, not clusters.
+
+THE TESTS.  MKHOST.CMD builds the reading and the moving as a Windows
+console program that works on an image (DEFRAGNT.EXE; HOSTFE.C,
+SYS_NT.C).  With a scratch tool that fills an image with a scattered
+tree of files and afterwards compares every file's path, attributes,
+size, stamp and contents:
+
+  - FAT12, FAT16 with 1K and 16K clusters, FAT32; both methods, /H,
+    every sort: sound afterwards and every file as it was, and a
+    second run with the same switches moves nothing
+  - drives with 40, 25, 3 and ONE free cluster: the same (one free
+    cluster is sixteen thousand moves of one cluster, and finishes)
+  - eleven kinds of damage: each found, nothing written, exit code 7
+  - a cluster that will not read, one that will not write: stopped
+    with the drive sound
+  - THE POWER CUT: DFCRASH=n ends the program at its n-th write and
+    DFTORN=k lets k sectors of that write through.  More than 8,000 cuts
+    over FAT12, FAT16 and FAT32, both methods, sorted and not, torn
+    and not: no file lost or changed at any of them.  What a cut
+    leaves is lost clusters, FAT copies that differ, a ".." naming
+    where a directory was, or an entry there twice
+
+On PM-DOS in DOSBox-X, with key files (DFTEST, as SDTEST): every box,
+a run stopped and resumed and stopped, the mouse, ScanDisk run from
+the red box and the drive optimized after it, FAT12 in A:, FAT32, a
+full drive, an EGA, /G.  DEFRAG C: /F /SN run from C:'s own
+AUTOEXEC.BAT with every file in pieces (MKDISK -frag): CHKDSK clean,
+programs and the 16-bit shell run from it, it boots again; /B
+restarts.  In QEMU with a keyboard and a PS/2 mouse that are a
+keyboard and a mouse: text and /G.  MASM 6.13 assembles the two .ASM
+files.
+
+NOT RUN: real hardware; 86Box; a volume over 80 MB; a sector that
+really will not read; a text screen of 43 or 50 lines; a DOS box or
+Windows running at the time.
+
+DELIVERED.  Built clean in a scratch mirror with FORMAT.ASM and
+PMD\main.c as committed (Charlie has edits of his own in both, not
+committed; they are in no binary here): DEFRAG.EXE is the one new
+file in BIN and the other 149 are byte for byte what S: had.
+RUNTESTS, 87 x 7: RMTEST moved on all seven rows (the free space it
+reports, 732B to 72E2 clusters: one more file on the disk) and
+CACHETST on six ("a write is owed" 0005 to 0004); those thirteen
+answers were recorded again and nothing else moved.  NLSTESTS, nine
+rows.  Carried over: BIN\DEFRAG.EXE, the thirteen baselines,
+IMAGES\PMDOS.IMG and TESTS.IMG whole; DEFRAG.EXE, AUTOEXEC.TXT and
+\TESTS\HELPTEST.BAT put into IMAGES\HD16.IMG and the 86Box machine's
+own HD16.IMG by FATREPL; that machine's PMDOS.IMG and TESTS.IMG are
+copies of S:'s.  Started afterwards, in DOSBox-X: a copy of the
+machine's hard disk (DEFRAG /? prints; DEFRAG D: /F /SN ends with 0
+and CHKDSK finds nothing wrong) and a diskette made of the same BIN
+(DEFRAG C: /U, the same).  Still v0.64, uncommitted.
+
+THE SAME EVENING Charlie reworded some of DEFRAG's sentences (TEXT.C)
+and asked for that built together with his edits to FORMAT's and
+PMD's text: DEFRAG.EXE 74,532 bytes (it was 74,744), FORMAT.COM 7,393,
+PMD.EXE 90,268 - the only three files in BIN that moved.  No baseline
+holds any of the text and none of the three changed its size in
+clusters; one row of RUNTESTS (486-32) answered as before.  Carried
+over the same way: BIN, PMDOS.IMG, both HD16.IMG files by FATREPL
+(TESTS.IMG came out byte for byte what it was).
 
 
 v0.61 - THE NUMBER CAUGHT UP (2026-09-30)
