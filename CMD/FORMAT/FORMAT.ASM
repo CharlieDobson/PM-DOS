@@ -2207,8 +2207,7 @@ msg_usage   db  'Formats a disk for use with PM-DOS.',13,10,13,10
             db  '  /Q          Performs a quick format.',13,10
             db  '  /U          Performs an unconditional format.',13,10
             db  '  /F:size     Specifies the size of the floppy disk to format (such',13,10
-            db  '              as 160, 180, 320, 360, 720, 1.2, 1.44, 2.88).',13,10
-            db  '              1.68 or DMF puts 1.68M on a 1.44M diskette.',13,10
+            db  '              as 160, 180, 320, 360, 720, 1.2, 1.44, 1.68, 2.88).',13,10
             db  '  /B          Allocates space on the formatted disk for system files.',13,10
             db  '  /S          Copies system files to the formatted disk.',13,10
             db  '  /C          Tests clusters that are currently marked "bad."',13,10,13,10,'$'
