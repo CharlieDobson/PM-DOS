@@ -10,8 +10,8 @@ nothing else: the kernel, CMD.EXE and COMMAND.COM, the commands
 that are part of the system - CHOICE, MORE, SORT, SYS, FORMAT, MEM,
 FDISK, MOUNT, MOVE, ATTRIB, CHKDSK, LABEL, CACHE, UNDELETE, CDEX,
 FC, FIND, DISKCOPY, DISKCOMP, ISAPNP, SHUTDOWN, PMD, DOSSHELL,
-ACROREAD, SCANDISK and KEYB - the two files of tables KEYB and
-COUNTRY= read,
+ACROREAD, SCANDISK, DEFRAG and KEYB - the two files of tables KEYB
+and COUNTRY= read,
 KEYBOARD.SYS and COUNTRY.SYS - and LRGDISK.386 with LRGSTAT.EXE,
 which are for a Windows on a hard disk.
 ONLY PMIO.SYS AND PMDOS.SYS HAVE TO BE IN A ROOT.  On a hard disk
@@ -23,6 +23,11 @@ kernel, and it is on a SECOND DISK, TESTS.IMG, since 2026-10-08:
 the two had outgrown one floppy.  That disk has every test program,
 batch file and key file in \TESTS, and the long-named files that
 LFNTEST.BAT works on in its root.
+HELP.EXE and HELP.HLP, the online help, are on a THIRD DISK,
+HELP.IMG, since 2026-10-11: the help text is 200K and the boot disk
+had 64K left.  Put that disk in B: and run B:\HELP, or copy both
+files to a hard disk; HELP looks for its text beside itself and
+along the PATH.
 
 TWO SHELLS, since v0.60.  CMD.EXE is PM-DOS's own - 32-bit, long
 names, DOSKEY built in - and it is the one running this file.
@@ -372,8 +377,8 @@ quickest way to find out what this shell can actually do:
                 CALL, CTTY, CHCP, DOSKEY and LOADHIGH
   MEM /?        ...and MORE, SORT, CHOICE, FORMAT, SYS, FDISK,
                 MOUNT, MOVE, ATTRIB, CHKDSK, LABEL, CACHE, CDEX,
-                ISAPNP, PMD, DOSSHELL, ACROREAD, SCANDISK, KEYB, CMD,
-                COMMAND and \TESTS\DRIVES
+                ISAPNP, PMD, DOSSHELL, ACROREAD, SCANDISK, DEFRAG,
+                KEYB, CMD, COMMAND and \TESTS\DRIVES
 
 WHAT THOSE SCREENS SAY IS THIS SHELL AND NOT MS-DOS.  A switch that
 is not on the help screen is a switch this CMD.EXE does not have -
@@ -531,6 +536,33 @@ answer in lines.
 CROSS-LINKED FILES ARE UNTANGLED HERE, which CHKDSK does not do: the
 second file gets clusters of its own.  DoubleSpace and DriveSpace
 volumes are not checked; PM-DOS has none.
+
+DEFRAG puts each file on a drive in one piece.  It looks and works
+like the DEFRAG in MS-DOS 6, and handles FAT12, FAT16 and FAT32
+drives and long file names.
+
+  DEFRAG          pick a drive, see what DEFRAG suggests, then use
+                  the Optimize menu
+  DEFRAG C: /F    full optimization: every file in one piece and
+                  all files moved to the start of the drive
+  DEFRAG C: /U    unfragment files only: quicker, but free space
+                  stays scattered
+  /SN /SE /SD /SS sort each directory by name, extension, date or
+                  size (with /F); add a minus sign to reverse
+  /H              move hidden files too
+  /B              restart the computer when done
+  /G              graphics screen
+
+With /F or /U, DEFRAG starts right away and exits when it is done.
+The exit code is 0 when the drive was optimized.
+
+DEFRAG checks the drive before it moves anything.  If the drive has
+errors (lost clusters, cross-linked files and so on), DEFRAG offers
+to run SCANDISK and then carries on.
+
+System files are never moved, and hidden files only with /H.  They
+show as X on the map.  Press Esc to stop; the drive is safe to use
+at any point.  Do not redirect DEFRAG's input or output to a file.
 
 FDISK, and it is the one program on this disk that can destroy the
 machine it is running on, so read this before running it.
