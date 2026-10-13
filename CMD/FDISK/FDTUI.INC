@@ -2476,6 +2476,10 @@ tu_write:
         je      twr_seen
         cmp     dword ptr [wr_verb],OFFSET fd_mbr
         je      twr_seen
+        ; A REMOVABLE DISK NEEDS NO RESTART: the kernel places the letter
+        ; on it again the next time the letter is used (usb_relayout).
+        test    byte ptr [dsk_rec+DSK_FLAGS],DSKF_REMOVABLE
+        jnz     twr_seen
         mov     byte ptr [tu_changed],1
 twr_seen:
         mov     dword ptr [tu_stat],0

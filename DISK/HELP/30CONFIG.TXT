@@ -34,8 +34,8 @@ they are in the kernel, so those programs are not loaded:
 {i}[[Dpmi=|DPMI=]]                    [[Scsi=|SCSI=]]{p}
 {i}[[Ems=|EMS=]]                     [[Share=|SHARE=]]{p}
 {i}[[Ide32=|IDE32=]]                   [[Undelete=|UNDELETE=]]{p}
-{i}[[Idecable=|IDECABLE=]]                [[Wincache=|WINCACHE=]]{p}
-{i}[[Idedma=|IDEDMA=]]{p}
+{i}[[Idecable=|IDECABLE=]]                [[Usb=|USB=]]{p}
+{i}[[Idedma=|IDEDMA=]]                  [[Wincache=|WINCACHE=]]{p}
 
 The boot menu statements - [menu], MENUITEM, MENUDEFAULT, MENUCOLOR,
 SUBMENU, INCLUDE and COMMENT - are accepted, but there is no menu:
@@ -814,6 +814,61 @@ drives are used through it.  The card's IRQ must then be 3, 4, 5, 7,
 9, 10 or 11.
 #examples
     SCSI=OFF
+#topic USB=|Usb=
+#title USB=
+Turns PM-DOS's USB support on or off, and says how many drive letters
+to keep for USB disks.
+
+{b}Syntax{p}
+
+    USB=ON | OFF
+    USB=ON,n
+
+{b}Parameters{p}
+
+ON
+    The kernel drives the USB controllers itself: USB keyboards, mice
+    and disks work, and one drive letter is kept for a USB disk, after
+    every other letter.  ON without the line.
+
+ON,n
+    ...and n letters, up to 4, for a machine with more than one USB
+    disk plugged in at once.
+
+OFF
+    The controllers are left to the BIOS.  A USB keyboard or disk then
+    works only as far as the BIOS's own USB support takes it, as it did
+    before PM-DOS started.
+
+{b}Related Commands{p}
+
+[[USB]] lists the controllers, the devices and the disk units.
+#notes
+{b}When it takes effect{p}
+
+The controllers are taken from the BIOS once CONFIG.SYS has been read,
+so the line can be anywhere in the file.  Safe mode (Shift or F5 at
+start) leaves the controllers to the BIOS whatever the line says.
+
+{b}The drive letter{p}
+
+A USB disk's letter is there from boot, like A:, whether or not a disk
+is plugged in.  Plug a disk in and the letter answers; pull it out and
+the letter says "Not ready" until the next one comes.  Pull a disk out
+only when nothing is being written to it.
+
+A disk the BIOS showed as a hard disk at boot keeps the letter the boot
+gave it, and its USB letter stays empty.  A blank disk gets no letter
+from the boot, so the USB letter takes it.
+
+{b}Under Windows{p}
+
+When Windows or another real-mode program takes the machine, the
+controllers go back to the BIOS and the USB letters are not there until
+PM-DOS comes back.
+#examples
+    USB=ON,2
+    USB=OFF
 #topic SET=|Set=|SET (CONFIG.SYS)
 #title SET=
 Sets an environment variable before AUTOEXEC.BAT runs.

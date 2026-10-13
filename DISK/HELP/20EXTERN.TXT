@@ -804,6 +804,12 @@ tt
 A new partition needs [[FORMAT]] before it can hold files, and [[SYS]]
 to boot.
 #notes
+{b}A USB disk{p}
+
+A USB disk is a disk of its own in the list, marked removable.  A
+partition made, deleted or changed on it is used the next time its
+drive letter is used, so no restart is asked for.  See [[USB]].
+
 {b}The screen{p}
 
 Each disk is a bar with its partitions drawn to scale.  A partition
@@ -942,6 +948,13 @@ drive:
 To put the system on a disk that is formatted already, see [[SYS]].
 To check a disk without losing what is on it, see [[SCANDISK]].
 #notes
+{b}A USB disk with no format{p}
+
+A USB disk that has no file system - new, or with a partition FDISK
+has just made - gets one laid out for its size: FAT12, FAT16 or FAT32,
+with the cluster size MS-DOS and Windows would have chosen.  See
+[[USB]].
+
 {b}A disk that has a format already{p}
 
 The layout is kept and the tables are written afresh.  Every data

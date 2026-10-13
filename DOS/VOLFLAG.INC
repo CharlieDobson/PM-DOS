@@ -262,7 +262,7 @@ vfl_mounted:
         je      vmo_out
         mov     al,[cur_vol]
         call    drv_slot
-        test    byte ptr [ebx+DRV_FLAGS],DRVF_FLOPPY OR DRVF_CDROM OR DRVF_DRIVER OR DRVF_IMAGE
+        test    byte ptr [ebx+DRV_FLAGS],DRVF_FLOPPY OR DRVF_CDROM OR DRVF_DRIVER OR DRVF_IMAGE OR DRVF_USB
         jnz     vmo_out
         mov     byte ptr [vol_vf],1
         mov     edi,OFFSET clus_buf
@@ -374,7 +374,7 @@ vfl_ours:
         call    drv_slot
         test    byte ptr [ebx+DRV_FLAGS],DRVF_PRESENT
         jz      vou_no
-        test    byte ptr [ebx+DRV_FLAGS],DRVF_FLOPPY OR DRVF_CDROM OR DRVF_DRIVER OR DRVF_IMAGE
+        test    byte ptr [ebx+DRV_FLAGS],DRVF_FLOPPY OR DRVF_CDROM OR DRVF_DRIVER OR DRVF_IMAGE OR DRVF_USB
         jnz     vou_no
         pop     ebx
         clc

@@ -312,7 +312,7 @@ drs_look:
         mov     al,[ebx+DRV_FLAGS]
         test    al,DRVF_PRESENT
         jz      drs_next
-        test    al,DRVF_FLOPPY OR DRVF_CDROM OR DRVF_DRIVER OR DRVF_IMAGE
+        test    al,DRVF_FLOPPY OR DRVF_CDROM OR DRVF_DRIVER OR DRVF_IMAGE OR DRVF_USB
         jz      drs_out                 ; a partition: leave it all alone
 drs_next:
         inc     ebp
@@ -878,6 +878,16 @@ fm_notcd:
         mov     byte ptr [vol_fs],FS_FAT
         mov     al,[ebx+DRV_BIOS]
         mov     [fat_drive],al
+
+        ; A USB LETTER HAS NO FIXED PLACE ON ITS DISK: the disk in the
+        ; slot now says where the volume is (usb_locate, USBDRV.INC),
+        ; and reading its sector 0 is the first access, so an empty
+        ; slot raises its critical error here and nowhere else.
+        test    byte ptr [ebx+DRV_FLAGS],DRVF_USB
+        jz      fm_placed
+        call    usb_locate
+        jc      fm_iofail
+fm_placed:
         mov     eax,[ebx+DRV_START]
         mov     [fat_partlba],eax
         mov     eax,[ebx+DRV_SECS]
@@ -1367,6 +1377,17 @@ fct_used:
 ; Retry is the oldest reason INT 24h exists.  crit_disk's own comment
 ; says so, four lines above the call that was throwing it away.
 bios2log:
+IFDEF HANG_E9
+        push    eax
+        push    eax
+        mov     al,'B'
+        out     0E9h,al
+        pop     eax
+        call    uhx_hex8
+        mov     al,byte ptr [drv_count]
+        call    uhx_hex8
+        pop     eax
+ENDIF
         push    ebx
         push    ecx
         push    edx
@@ -1392,6 +1413,15 @@ b2l_found:
 b2l_keep:
         pop     eax                     ; AL was never touched
 b2l_out:
+IFDEF HANG_E9
+        call    uhx_hex8
+        push    eax
+        mov     al,13
+        out     0E9h,al
+        mov     al,10
+        out     0E9h,al
+        pop     eax
+ENDIF
         pop     edx
         pop     ecx
         pop     ebx
@@ -1540,6 +1570,7 @@ vol_select:
         call    vol_swap
         call    iso_chkmedia            ; the disc may not be the one this
                                         ; letter was mounted from
+        call    usb_chkmedia            ; nor the stick (USBDRV.INC)
         cmp     byte ptr [fat_ok],0
         jne     vs_ok
         call    fat_mount               ; not mounted - try it now.  Which

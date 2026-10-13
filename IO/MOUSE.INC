@@ -362,6 +362,9 @@ ms_announce:
         mov     esi,OFFSET msgMsPs2
         cmp     byte ptr [ms_hw],MS_PS2
         je      man_say
+        mov     esi,OFFSET msgMsUsb
+        cmp     byte ptr [ms_hw],MS_USB
+        je      man_say
         mov     esi,OFFSET msgMsCom
 man_say:
         call    con_str
@@ -371,6 +374,7 @@ man_out:
 
 msgMouse    db  'Mouse detected on ',0
 msgMsPs2    db  'PS/2',13,10,0
+msgMsUsb    db  'USB',13,10,0
 msgMsCom    db  'COM'
 msgMsComN   db  '1',13,10,0             ; ms_serfind's
 
@@ -2548,7 +2552,10 @@ m24_irq:
 ms_devtype:
         xor     eax,eax
         cmp     byte ptr [ms_hw],MS_PS2
-        jne     mdt_ser
+        je      mdt_ps2
+        cmp     byte ptr [ms_hw],MS_USB         ; a USB mouse is reported as
+        jne     mdt_ser                         ; a PS/2 one: no program knows
+mdt_ps2:                                        ; a third kind
         mov     al,4
 mdt_ser:
         cmp     byte ptr [ms_hw],MS_SERIAL
@@ -2667,8 +2674,13 @@ ms_hwreset:
         je      ms_ps2start
         cmp     byte ptr [ms_hw],MS_SERIAL
         je      mhr_serial
+        cmp     byte ptr [ms_hw],MS_USB
+        je      mhr_usb
         stc
         ret
+mhr_usb:
+        clc                             ; a USB mouse needs nothing done: it
+        ret                             ; reports from the moment it is in
 mhr_serial:
         mov     edx,dword ptr [ms_port]
         call    ms_sertry

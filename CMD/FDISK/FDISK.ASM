@@ -617,6 +617,11 @@ fr_head:
         call    put1
         mov     edx,OFFSET msg_sp2
         call    puts
+        test    byte ptr [dsk_rec+DSK_FLAGS],DSKF_REMOVABLE
+        jz      frh_fixed
+        mov     edx,OFFSET msg_removable        ; a USB disk
+        call    puts
+frh_fixed:
 
         movzx   eax,word ptr [dsk_rec+DSK_CYLS]
         call    put5
@@ -678,6 +683,11 @@ fr_table:
         cmp     word ptr [edi+1FEh],MBR_SIG
         jne     ft_notable
         mov     byte ptr [fd_mbrok],1
+        cmp     byte ptr [mbr_fresh],0
+        je      ft_real
+        mov     edx,OFFSET msg_fresh    ; a blank disk: the table shown
+        call    puts                    ; is the one the first change writes
+ft_real:
 
         mov     edx,OFFSET msg_thead
         call    puts
@@ -1087,6 +1097,15 @@ dk_read:
         push    edx
         push    edi
         mov     [dk_drive],al
+        mov     byte ptr [dk_ismbr],0   ; sector 0 into mbr_buf: see dk_fresh
+        or      ebx,ebx
+        jnz     dkr_notmbr
+        cmp     ecx,1
+        jne     dkr_notmbr
+        cmp     edi,[mbr_buf]
+        jne     dkr_notmbr
+        mov     byte ptr [dk_ismbr],1
+dkr_notmbr:
 dr_loop:
         or      ecx,ecx
         jz      dr_ok
@@ -1118,6 +1137,10 @@ dr_ok:
         pop     ecx
         pop     ebx
         pop     eax
+        cmp     byte ptr [dk_ismbr],0
+        je      dr_notmbr
+        call    dk_fresh
+dr_notmbr:
         ; AND WHAT THE SCREEN HAS STAGED, laid over what the disk said, so
         ; that every verb plans against the disk as it will be (FDPEND.INC)
         cmp     dword ptr [ov_n],0
@@ -1134,6 +1157,34 @@ dr_fail:
         pop     ebx
         pop     eax
         stc
+        ret
+
+;--- dk_fresh - sector 0 has just been read into mbr_buf.  A sector of
+;--- nothing at all becomes an empty table in front of our boot code,
+;--- so that a disk straight out of the packet - a USB stick, as a
+;--- rule - can be partitioned: every verb and the screen then see four
+;--- empty slots, and the first commit writes the whole sector.  A
+;--- sector with bytes in it and no signature is left as it is - that
+;--- is a record this program can say nothing about, and refusing it
+;--- is the safety the verbs rely on (see /MBR).
+dk_fresh:
+        pushad
+        mov     byte ptr [mbr_fresh],0
+        mov     edi,[mbr_buf]
+        mov     ecx,SEC_BYTES / 4
+        xor     eax,eax
+        cld
+        repe    scasd
+        jne     dkf_out
+        mov     esi,OFFSET mbr_code
+        mov     edi,[mbr_buf]
+        mov     ecx,MBRW_LEN
+        rep     movsb
+        mov     edi,[mbr_buf]
+        mov     word ptr [edi+1FEh],MBR_SIG
+        mov     byte ptr [mbr_fresh],1
+dkf_out:
+        popad
         ret
 
 ;---------------------------------------------------------------------
@@ -4598,6 +4649,7 @@ fdc_go:
         jne     fdc_refused
         mov     edx,OFFSET msg_didit
         call    puts
+        call    fd_rebootnote
         jmp     fd_done
 
 ;--- the one place a refusal is printed ------------------------------
@@ -4923,6 +4975,24 @@ fnt_out:
         ret
 
 ;---------------------------------------------------------------------
+; fd_rebootnote - after a change to the disk in dsk_rec: the rest of
+;                 the line.  A fixed disk's letters are read at a
+;                 start and nowhere else, so the machine has to be
+;                 restarted; a removable one's are placed again by the
+;                 kernel the next time one is used (DSKF_REMOVABLE).
+;---------------------------------------------------------------------
+fd_rebootnote:
+        push    edx
+        mov     edx,OFFSET msg_rebootnt
+        test    byte ptr [dsk_rec+DSK_FLAGS],DSKF_REMOVABLE
+        jz      frn_say
+        mov     edx,OFFSET msg_nownote
+frn_say:
+        call    puts
+        pop     edx
+        ret
+
+;---------------------------------------------------------------------
 ; fd_loaddisk - the disk named in pl_drive, and its table.
 ;               dsk_rec, phy_total, phy_chs and mbr_buf are filled.
 ;               Jumps to the error labels itself, as fd_change does.
@@ -5181,6 +5251,7 @@ fdn_go:
         jc      fdn_wrerr
         mov     edx,OFFSET msg_crdone
         call    puts
+        call    fd_rebootnote
         jmp     fd_done
 
 ;=====================================================================
@@ -5295,6 +5366,7 @@ fdn_delgo:
         jc      fdn_wrerr
         mov     edx,OFFSET msg_deldone
         call    puts
+        call    fd_rebootnote
         jmp     fd_done
 
 ;=====================================================================
@@ -5550,6 +5622,7 @@ ffm_wrsec:
 ffm_typed:
         mov     edx,OFFSET msg_fmtdone
         call    puts
+        call    fd_rebootnote
         jmp     fd_done
 ffm_none:
         mov     edx,OFFSET msg_fmtnone
@@ -6706,6 +6779,7 @@ fdl_nohead:
 fdl_crdone:
         mov     edx,OFFSET msg_crdone
         call    puts
+        call    fd_rebootnote
         jmp     fd_done
 
 fdl_toobig:
@@ -6921,6 +6995,7 @@ fdl_delwr:
 fdl_deldone:
         mov     edx,OFFSET msg_deldone
         call    puts
+        call    fd_rebootnote
         jmp     fd_done
 
 ;--- the refusals the chain verbs add --------------------------------
@@ -7495,6 +7570,9 @@ fd_misal    db  0                       ; something in this report is not on
 dk_armed    db  1                       ; cleared only by the screen's dry run
 dk_wrote    db  0                       ; set by any write that was tried
 dk_drive    db  0
+dk_ismbr    db  0                       ; this read is sector 0 into mbr_buf
+mbr_fresh   db  0                       ; ...and it was blank: dk_fresh made
+                                        ; the table up
 fd_sw       dd  0
 fd_nargs    dd  0
 fd_ndisks   dd  0
@@ -7680,6 +7758,8 @@ msg_thead   db  13,10,' #  A  Type            Start       Sectors'
             db  '  -------  ---',13,10,'$'
 msg_empty   db  '     (empty)',13,10,'$'
 msg_notable db  '         no partition table (no AA55 signature)',13,10,'$'
+msg_fresh   db  '         blank disk: no partition table yet.  The first change',13,10
+            db  '         writes one, with the boot code.',13,10,'$'
 msg_unread  db  '         LBA 0 will not read',13,10,'$'
 msg_badebr  db  '         the extended chain stops at an unreadable '
             db  'record',13,10,'$'
@@ -7768,7 +7848,7 @@ msg_moveroot db 13,10,'  moving the root directory$'
 msg_movefat db  13,10,'  writing the file allocation tables$'
 msg_wrboot  db  13,10,'  writing the boot record$'
 msg_wrtab   db  13,10,'  writing the partition table$'
-msg_didit   db  13,10,'  Done.  REBOOT before using the drive.',13,10,'$'
+msg_didit   db  13,10,'  Done.','$'
 msg_refused db  13,10,'  Refused: $'
 
 ;--- /C, /D and /A ---------------------------------------------------
@@ -7789,8 +7869,11 @@ msg_actrest db  ' the active one',13,10
             db  '            (every other slot becomes inactive)',13,10,'$'
 msg_crthen  db  13,10,'  It will hold no filesystem until FORMAT has '
             db  'been run on it.',13,10,'$'
-msg_crdone  db  13,10,'  Created.  REBOOT before using the drive.',13,10,'$'
-msg_deldone db  13,10,'  Deleted.  REBOOT before using the drive.',13,10,'$'
+msg_crdone  db  13,10,'  Created.','$'
+msg_deldone db  13,10,'  Deleted.','$'
+msg_rebootnt db '  REBOOT before using the drive.',13,10,'$'
+msg_nownote db  '  The drive can be used now.',13,10,'$'
+msg_removable db 'removable  ','$'
 msg_actdone db  13,10,'  Done.',13,10,'$'
 msg_delgone db  13,10,'  Everything stored in it becomes unreachable.  The '
             db  'sectors are not',13,10,'  erased and the volume can be put '
@@ -7872,7 +7955,7 @@ msg_mbrdone db  13,10,'  Written.  The partition table was not touched.',13,10,'
 ;--- the screen's format ----------------------------------------------
 msg_fmtwill db  13,10,'  The new volume: FAT$'
 msg_fmtdoing db 13,10,'  writing the boot sector, the FATs and the root directory$'
-msg_fmtdone db  13,10,'  Formatted.  REBOOT before using the drive.',13,10,'$'
+msg_fmtdone db  13,10,'  Formatted.','$'
 msg_fmtnone db  13,10,'  There is no partition there.',13,10,'$'
 msg_fmtcont db  13,10,'  An extended partition is formatted one logical '
             db  'drive at a time.',13,10,'$'

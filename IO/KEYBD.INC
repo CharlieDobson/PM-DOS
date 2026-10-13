@@ -734,6 +734,8 @@ kb_mod:
 kb_reboot:
 sys_reboot:
         cli
+        call    usb_halt                ; a USB schedule left running would
+                                        ; be writing into the BIOS's memory
         xor     al,al
         call    nt_arm
         mov     edx,dword ptr [fpu_cr0boot]
@@ -1775,7 +1777,11 @@ kb_cmdbyte  db  0                       ; ...the command it is about
 kb_cmdarg   db  0                       ; ...that command's argument
 kb_cmdleft  db  0                       ; ...and the tries it has left
 kb_rateowed db  0                       ; KEYRATE= has not been sent yet
-kb_ratewant db  0                       ; ...and is this byte
+kb_ratewant db  2Bh                     ; ...and is this byte.  2Bh is the
+                                        ; power-on rate - 10.9 a second after
+                                        ; half a second - and is what a USB
+                                        ; keyboard repeats at until KEYRATE=
+                                        ; says otherwise (USBHID.INC)
             db  0,0
 kb_cmdwhen  dd  0                       ; the tick the last byte was sent at
 kb_layout   dd  0                       ; -> the KBL_ record, in PMDOS's

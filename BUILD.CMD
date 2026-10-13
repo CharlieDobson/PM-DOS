@@ -361,7 +361,7 @@ rem each one has to be named here too: a directory missing from this
 rem list is one whose failed assembly links yesterday's object.  (A
 rem failed COMPILE does not need it - wcc386, unlike wasm, returns an
 rem error - but CHKDSK's and LABEL's startup is assembled like the rest.)
-for %%D in (ACROREAD ATTRIB CACHE CDEX CHKDSK CHOICE DEFRAG DISKCOMP DISKCOPY DRIVES EDIT FC FDISK FIND FORMAT HELP ISAPNP KEYB LABEL LFNAPI LRGDISK MEM MORE MOUNT MOVE PMD SCANDISK SHUTDOWN SORT SYS UNDELETE XCOPY) do if exist CMD\%%D\*.obj del /q CMD\%%D\*.obj
+for %%D in (ACROREAD ATTRIB CACHE CDEX CHKDSK CHOICE DEFRAG DISKCOMP DISKCOPY DRIVES EDIT FC FDISK FIND FORMAT HELP ISAPNP KEYB LABEL LFNAPI LRGDISK MEM MORE MOUNT MOVE PMD SCANDISK SHUTDOWN SORT SYS UNDELETE USB XCOPY) do if exist CMD\%%D\*.obj del /q CMD\%%D\*.obj
 if exist NLS\*.obj del /q NLS\*.obj
 
 rem FSIZE asserts the sizes the checks below used to test with FOR's
@@ -410,7 +410,9 @@ wasm -q %DEFS% -i=..\INC -i=..\BOOT iorm.asm    || goto :fail
 wlink form raw bin option offset=0x0     name iorm.bin file iorm.obj  || goto :fail
 wasm -q %DEFS% -i=..\INC iopm.asm               || goto :fail
 rem 0x200000, not 0x22000: PMIO's protected-mode half lives above 1MB
-rem now, and the stub blits it up there.  See the map in PMDOS.INC.
+rem now, and the stub blits it up there - 128K of it since the USB
+rem drivers took the body past 64K, which is why the IDT and the arena
+rem sit 64K higher than they did.  See the map in PMDOS.INC.
 wlink form raw bin option offset=0x200000 name iopm.bin file iopm.obj || goto :fail
 cd ..
 rem 4096, not 8192: the stub was halved in 0.24 and the four kilobytes
@@ -421,7 +423,7 @@ TOOLS\FSIZE.EXE -eq 4096 IO\IORM.BIN "fix the ORG padding" || goto :fail
 rem The stub blits exactly IO_PM_MAX bytes up past 1MB.  If the body
 rem outgrows that, the tail is silently left behind and the failure
 rem happens later, somewhere else, in whatever routine fell off.
-TOOLS\FSIZE.EXE -max 65536 IO\IOPM.BIN "the IO_PM_MAX the stub blits" || goto :fail
+TOOLS\FSIZE.EXE -max 131072 IO\IOPM.BIN "the IO_PM_MAX the stub blits" || goto :fail
 copy /b IO\IORM.BIN+IO\IOPM.BIN BIN\PMIO.SYS >nul
 
 echo === PMDOS.SYS ===
@@ -556,6 +558,14 @@ rem is called, over 21h/F1h AL=17h.
 cd CMD\CDEX
 wasm -q -i=..\..\INC cdex.asm                   || goto :fail
 wlink form raw bin option offset=0x2000 name ..\..\BIN\CDEX.EXE file cdex.obj || goto :fail
+cd ..\..
+rem USB lists the USB controllers, the devices on them and the disk
+rem units with their letters, over 21h/F1h AL=24h: the kernel drives
+rem the bus itself and says nothing when a device is plugged in, so
+rem this is where to look.
+cd CMD\USB
+wasm -q -i=..\..\INC usb.asm                    || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\BIN\USB.EXE file usb.obj || goto :fail
 cd ..\..
 rem SHUTDOWN switches the power off through ACPI, over 21h/F1h AL=1Eh,
 rem which writes everything the kernel owes the disks first.
@@ -947,7 +957,7 @@ rem version of its own names that .EXE to D32BIND in place of the stub.
 for %%F in (CMD.EXE CHOICE.COM MORE.COM SORT.COM SYS.COM FORMAT.COM MEM.EXE FDISK.EXE MOUNT.EXE ^
   CACHE.EXE UNDELETE.EXE CDEX.EXE SHUTDOWN.EXE FIND.EXE DISKCOPY.COM DISKCOMP.COM MOVE.EXE ^
   ATTRIB.EXE CHKDSK.EXE LABEL.EXE XCOPY.EXE EDIT.EXE FC.EXE ISAPNP.EXE PMD.EXE DOSSHELL.EXE ^
-  ACROREAD.EXE SCANDISK.EXE DEFRAG.EXE KEYB.COM HELP.EXE) do TOOLS\D32BIND.EXE BIN\%%F TOOLS\D32STUB.EXE || goto :fail
+  ACROREAD.EXE SCANDISK.EXE DEFRAG.EXE KEYB.COM HELP.EXE USB.EXE) do TOOLS\D32BIND.EXE BIN\%%F TOOLS\D32STUB.EXE || goto :fail
 
 echo === HELLO.COM (a real 16-bit .COM, for the VDM) ===
 rem An ordinary real-mode DOS program.  It is not part of the kernel;
@@ -1876,7 +1886,7 @@ TOOLS\MKDISK.EXE IMAGES\PMDOS.IMG BIN\BOOT.BIN -nolfn BIN\PMIO.SYS BIN\PMDOS.SYS
     BIN\CHOICE.COM BIN\MORE.COM BIN\SORT.COM BIN\SYS.COM BIN\FORMAT.COM BIN\MEM.EXE ^
     BIN\FDISK.EXE BIN\MOUNT.EXE BIN\CACHE.EXE BIN\UNDELETE.EXE BIN\CDEX.EXE BIN\MOVE.EXE BIN\ATTRIB.EXE BIN\CHKDSK.EXE BIN\LABEL.EXE BIN\XCOPY.EXE BIN\EDIT.EXE ^
     BIN\FC.EXE BIN\FIND.EXE BIN\DISKCOPY.COM BIN\DISKCOMP.COM BIN\ISAPNP.EXE BIN\SHUTDOWN.EXE BIN\PMD.EXE BIN\DOSSHELL.EXE BIN\ACROREAD.EXE BIN\SCANDISK.EXE BIN\DEFRAG.EXE ^
-    BIN\KEYB.COM BIN\COUNTRY.SYS BIN\KEYBOARD.SYS ^
+    BIN\KEYB.COM BIN\COUNTRY.SYS BIN\KEYBOARD.SYS BIN\USB.EXE ^
     BIN\RMDOS.SYS BIN\RMCD.SYS BIN\LRGDISK.386 BIN\LRGSTAT.EXE README.TXT DISK\CONFIG.SYS DISK\CONFIG.TXT DISK\SCANDISK.INI DISK\AUTOEXEC.BAT DISK\AUTOEXEC.TXT || goto :fail
 
 rem === HELP.IMG - the help disk ===

@@ -816,6 +816,53 @@ To bring back every deleted .DOC file in \LETTERS:
 To free the space the kept files take on drive C:
 
     undelete c: /purge
+#topic USB|Usb
+Lists the USB controllers, the devices plugged into them, and the USB
+disk units with their drive letters.
+
+{b}Syntax{p}
+
+    USB
+
+{b}Related Commands{p}
+
+[[USB=]] in CONFIG.SYS turns PM-DOS's USB support off and on and says
+how many drive letters are kept for USB disks.  [[FDISK]] and
+[[FORMAT]] work on a USB disk as on any other.
+#notes
+{b}What the lines say{p}
+
+Each controller: its kind (UHCI or OHCI), its address, how many ports
+it has, and whether it was taken from the BIOS.  Each device: where it
+is (controller:port, or the hub and port behind that), what it is
+(keyboard, mouse, disk, hub), its speed, and the name it gives itself.
+Each disk unit: its drive letter, the make and model, and the size.
+
+{b}Plugging in and pulling out{p}
+
+A USB disk's letter is there from boot, like A:, whether or not a disk
+is plugged in.  Plug one in and the letter answers; pull it out and the
+letter says "Not ready" until the next one comes.  Nothing is printed
+when a device is plugged in or removed: this command is how to see what
+the kernel found.
+
+A disk that was plugged in before the machine started, and that the
+BIOS showed as a hard disk, keeps the letter the boot gave it (D:, say)
+and is listed under that letter here.  Its USB letter stays empty.  A
+blank disk has no such letter, so the USB letter takes it and FORMAT
+works on that.
+
+Pull a disk out only when nothing is being written to it.  As with a
+diskette, what a program has written is on the disk once the program
+has finished or the prompt has come back.
+
+{b}Keyboards and mice{p}
+
+A USB keyboard and a USB mouse work from the moment the kernel has
+taken the controllers, which is just after CONFIG.SYS.  Until then the
+BIOS drives them, as it did before PM-DOS started.
+#examples
+    usb
 #topic XCOPY|Xcopy
 Copies files and directories, subdirectories included.
 

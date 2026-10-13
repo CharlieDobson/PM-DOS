@@ -4888,8 +4888,11 @@ f44_removbl:
         jc      f44_baddrv
         test    byte ptr [ebx+DRV_FLAGS],DRVF_CDROM
         jnz     f44_unsup
+        test    byte ptr [ebx+DRV_FLAGS],DRVF_USB   ; a USB disk comes and goes,
+        jnz     f44_remov                           ; whatever its number says
         cmp     byte ptr [ebx+DRV_BIOS],80h     ; the table, not the mounted volume
         jae     f44_fixed
+f44_remov:
         mov     word ptr [ebp+F_EAX],0
         jmp     i21_ok
 f44_fixed:
@@ -9533,6 +9536,9 @@ fF0_mouse:
 ;                 the US keyboard.  Native programs only (fF1_keyb)
 ;       AL = 23h: DL = a scan code - a key press, for the tests
 ;                 (fF1_kbinj)
+;       AL = 24h: bits 16-23 of EAX = a USBF_* function - the USB
+;                 controllers, the devices on them and the disk units,
+;                 for USB.EXE.  Native programs only (fF1_usb)
 ;
 ; 30h has to keep lying about being DOS 5 so that ordinary programs
 ; recognise us, which leaves nothing there to report what the kernel
@@ -9617,7 +9623,76 @@ fnF1:
         je      fF1_keyb
         cmp     al,23h
         je      fF1_kbinj
+        cmp     al,24h
+        je      fF1_usb
         jmp     i21_unsup
+
+;--- AL=24h: THE USB BUS, for USB.EXE.  Bits 16-23 of EAX say which:
+;---   USBF_DEVICE  DL = a slot, EDI -> USBD_LEN bytes; ECX = USB_MAXDEV
+;---   USBF_HC      DL = a controller, EDI -> USBH_LEN bytes; ECX = count
+;---   USBF_UNIT    DL = a disk unit, EDI -> 24 bytes for its model ->
+;---                AL = USBUF_*, AH = generation, EBX = sectors, ECX =
+;---                the device slot
+;---   USBF_PROBE   DL = a disk unit -> the medium asked: AL, EBX
+;--- CF and AX = ERR_BADDRIVE for a slot, controller or unit there is
+;--- not.  Native programs only: EDI is a flat pointer.
+fF1_usb:
+        mov     eax,[ebp+F_EAX]
+        shr     eax,16
+        mov     dl,[ebp+F_EDX]
+        cmp     al,USBF_DEVICE
+        je      fF1_usbdev
+        cmp     al,USBF_HC
+        je      fF1_usbhc
+        cmp     al,USBF_UNIT
+        je      fF1_usbunit
+        cmp     al,USBF_PROBE
+        je      fF1_usbprobe
+        jmp     i21_unsup
+fF1_usbdev:
+        mov     eax,[ebp+F_EDI]
+        mov     ecx,USBD_LEN
+        call    cbuf_ok
+        jc      buf_deny
+        mov     edi,[ebp+F_EDI]
+        mov     al,USF_DEVICE
+        jmp     short fF1_usbcall
+fF1_usbhc:
+        mov     eax,[ebp+F_EDI]
+        mov     ecx,USBH_LEN
+        call    cbuf_ok
+        jc      buf_deny
+        mov     edi,[ebp+F_EDI]
+        mov     al,USF_HC
+        jmp     short fF1_usbcall
+fF1_usbunit:
+        mov     eax,[ebp+F_EDI]
+        mov     ecx,24
+        call    cbuf_ok
+        jc      buf_deny
+        mov     edi,[ebp+F_EDI]
+        mov     al,USF_UNIT
+        call    dword ptr ds:[IOS_USB]
+        jc      fF1_usbbad
+        mov     [ebp+F_EBX],ebx
+        mov     [ebp+F_ECX],ecx
+        mov     word ptr [ebp+F_EAX],ax
+        jmp     i21_ok
+fF1_usbprobe:
+        mov     al,USF_PROBE
+        call    dword ptr ds:[IOS_USB]
+        jc      fF1_usbbad
+        mov     [ebp+F_EBX],ebx
+        mov     byte ptr [ebp+F_EAX],al
+        jmp     i21_ok
+fF1_usbcall:
+        call    dword ptr ds:[IOS_USB]
+        mov     [ebp+F_ECX],ecx
+        jc      fF1_usbbad
+        jmp     i21_ok
+fF1_usbbad:
+        mov     ax,ERR_BADDRIVE
+        jmp     i21_fail
 
 ;--- AL=23h: A KEY, AS IF THE KEYBOARD HAD SENT IT.  DL = a scan code.
 ;--- For the tests, which have nobody to press one: KBLTEST types a
@@ -10686,8 +10761,8 @@ ABS_MAXSEC      EQU     128             ; 64K a call, which is both the
                                         ; cannot overflow
 
 fF1_disk:
-        mov     eax,MAX_PHYS
-        mov     [ebp+F_ECX],eax
+        mov     eax,MAX_PHYS + USB_MAXUNITS     ; the IDE slots and then the
+        mov     [ebp+F_ECX],eax                 ; USB units, 82h up
 
         mov     al,[ebp+F_EDX]
         mov     [f1d_drive],al          ; EAX is scratch from here on
@@ -10711,8 +10786,28 @@ fF1_disk:
         mov     [edi+DSK_BIOS],al
         cmp     al,80h
         jb      fF1_nodisk
-        cmp     al,80h + MAX_PHYS
+        cmp     al,USB_DRV0 + USB_MAXUNITS
         jae     fF1_nodisk
+
+        ; A USB UNIT STANDING IN FOR A BIOS DRIVE IS THAT DRIVE'S DISK
+        ; (usb_adopt), and is reported under the BIOS number alone, so
+        ; that FDISK does not list one stick twice
+        cmp     al,USB_DRV0
+        jb      fF1_dsknotusb
+        push    edx
+        push    edi
+        movzx   edx,al
+        sub     dl,USB_DRV0
+        mov     edi,OFFSET usb_model
+        mov     al,USF_UNIT
+        call    dword ptr ds:[IOS_USB]  ; -> CH = the BIOS drive, or 0
+        pop     edi
+        pop     edx
+        jc      fF1_dsknotusb
+        test    ch,ch
+        jnz     fF1_nodisk
+fF1_dsknotusb:
+        mov     al,[f1d_drive]
 
         call    dword ptr ds:[IOS_DRVGEO]       ; CX = spt, DX = heads,
         jc      fF1_nodisk                      ; EBX = C*H*S
@@ -10748,6 +10843,19 @@ fF1_nocyl:
         mov     [edi+DSK_TOTAL],ebx
 fF1_nototal:
         mov     byte ptr [edi+DSK_FLAGS],DSKF_PRESENT
+        cmp     byte ptr [f1d_drive],USB_DRV0
+        jae     fF1_diskremov
+        ; a BIOS drive a USB unit stands in for (usb_adopt) is the same
+        ; stick, and FDISK need not restart the machine for it either
+        mov     al,[f1d_drive]
+        push    edx
+        call    usb_aliasunit
+        pop     edx
+        jc      fF1_diskdone
+fF1_diskremov:
+        or      byte ptr [edi+DSK_FLAGS],DSKF_REMOVABLE  ; a USB disk: FDISK
+                                        ; need not restart the machine
+fF1_diskdone:
         jmp     i21_ok
 
 fF1_nodisk:
@@ -10772,7 +10880,7 @@ fF1_abs:
         jb      fF1_absdrv              ; with no boot sector to mount
         cmp     al,80h
         jb      fF1_nodisk
-        cmp     al,80h + MAX_PHYS
+        cmp     al,USB_DRV0 + USB_MAXUNITS      ; the IDE slots and the USB units
         jae     fF1_nodisk
 fF1_absdrv:
 
@@ -10796,12 +10904,31 @@ fF1_absdrv:
         mov     al,[f1d_drive]
         cmp     byte ptr [f1d_write],0
         jne     fF1_abswrgo
+        ; THE CACHE SITS BETWEEN THE VOLUME AND THE DISK, AND THIS CALL
+        ; GOES ROUND IT: so what is owed to those sectors goes out first,
+        ; and a raw read sees the disk as the filesystem believes it is
+        call    cache_flushrange        ; AL drive, EBX LBA, ECX count
         call    dword ptr ds:[IOS_RDBLK]
         jc      fF1_absbad
         jmp     i21_ok
 fF1_abswrgo:
         call    dword ptr ds:[IOS_WRBLK]
         jc      fF1_absbad
+        ; ...and a raw write makes every cached copy of those sectors
+        ; stale: FORMAT's new boot sector was read back from the cache
+        ; as the blank one it replaced, and the remount said "invalid
+        ; media" over a volume that was perfectly good (2026-10-13)
+        mov     al,[f1d_drive]
+        mov     ebx,[ebp+F_EBX]
+        mov     ecx,[ebp+F_ECX]
+        call    cache_droprange
+        ; sector 0 of a USB disk rewritten - FDISK making or deleting a
+        ; partition - places the letter on it afresh at its next use,
+        ; where a fixed disk waits for a restart (usb_relayout)
+        cmp     dword ptr [ebp+F_EBX],0
+        jne     i21_ok
+        mov     al,[f1d_drive]
+        call    usb_relayout
         jmp     i21_ok
 
 fF1_absnone:

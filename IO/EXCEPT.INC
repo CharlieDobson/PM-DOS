@@ -1088,6 +1088,12 @@ it_noaux:
 ; is KEYBD.INC's, along with the reason it starts from the clock.
         call    kb_tick
 
+;--- the USB bus ------------------------------------------------------
+; The reports the keyboards and mice have sent, a look at the ports,
+; and one step of whatever device is being set up: USB.INC's, and the
+; same bargain as the lights - nothing here waits for a device.
+        call    usb_tick
+
 ;--- the floppy motor-off countdown ----------------------------------
 ; Zero means "no motor running and nothing to do", which is also the
 ; state the count is left in after it fires, so this costs two

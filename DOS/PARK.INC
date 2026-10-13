@@ -1270,8 +1270,11 @@ pfh_flags:
         ; RMDOS sends the driver the packets this kernel sends it
         ; (RMDEV.INC, rd_drvraw).  A CD-ROM and a mounted image are
         ; still the kernel's own and still are not there.
-        test    byte ptr [esi+DRV_FLAGS],DRVF_CDROM OR DRVF_IMAGE
-        jnz     pfh_absent
+        test    byte ptr [esi+DRV_FLAGS],DRVF_CDROM OR DRVF_IMAGE OR DRVF_USB
+        jnz     pfh_absent              ; (and a USB disk: the controller
+                                        ; is the BIOS's again down there,
+                                        ; and its emulation knows nothing
+                                        ; of our letters)
         test    byte ptr [esi+DRV_FLAGS],DRVF_DRIVER
         jz      pfh_notdrv
         push    ecx                     ; the loop's count

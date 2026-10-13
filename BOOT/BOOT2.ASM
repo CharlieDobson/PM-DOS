@@ -58,14 +58,32 @@ s2_lp:
         push    eax
         call    fl_c2l                  ; EAX = the cluster's first sector
         mov     ecx,[fl_spc]
+        ; A SECTOR AT A TIME, so that the load can go past 64K: fl_read
+        ; advances BX and nothing else, and a BX that has come round to
+        ; zero means the segment is full and the next sector goes 64K
+        ; further on.  PMIO.SYS passed 64K when the USB drivers went in
+        ; (2026-10-12), and until then this loop read a cluster at a go
+        ; and wrote the file's tail over its head without a word.
+s2_sec:
+        push    ecx
         mov     es,[s2_seg]
         mov     bx,[s2_off]
-        call    fl_read                 ; ECX sectors, BX advanced
-        jc      s2_diskerr
+        mov     ecx,1
+        call    fl_read                 ; one sector, BX advanced
+        pop     ecx
+        jnc     s2_secok
+        jmp     short s2_diskerr
+s2_secok:
+        mov     [s2_off],bx
+        or      bx,bx
+        jnz     s2_sameseg
+        add     word ptr [s2_seg],1000h
+s2_sameseg:
+        inc     eax                     ; the next sector of the cluster
+        loop    s2_sec
 
         xor     dx,dx                   ; back to segment 0 for the
         mov     es,dx                   ; loader's own buffers
-        mov     [s2_off],bx
         pop     eax
         call    fl_next
         jmp     short s2_lp

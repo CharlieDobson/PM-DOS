@@ -1001,6 +1001,10 @@ cmo_no:
 ;   80h,81h    -> 2,3        hard disks
 ;   E0h..EFh   -> 4..19      loaded block driver units
 ;   F0h..F7h   -> 20..27     ATAPI units
+;   82h..85h   -> 28..31     USB disks, which are read-cached like the
+;                            ATAPI units and forgotten at every commit
+;                            like the floppies: a stick is pulled out
+;                            between two commands, and nothing says so
 ;---------------------------------------------------------------------
 cache_unitof:
         movzx   ebx,al
@@ -1013,6 +1017,11 @@ cache_unitof:
         sub     ebx,80h - 2
         jmp     short cuo_ok
 cuo_hi:
+        cmp     bl,USB_DRV0 + USB_MAXUNITS
+        jae     cuo_hi2
+        sub     ebx,USB_DRV0 - 28       ; the USB units: rows 28 to 31
+        jmp     short cuo_ok
+cuo_hi2:
         cmp     bl,DL_UNIT_BASE
         jb      cuo_no
         cmp     bl,CC_CDBASE
@@ -1839,6 +1848,10 @@ cpr_blk:
         mov     al,[ebp+CBLK_DRV]
         cmp     al,2
         jb      cpr_drop                        ; a floppy
+        cmp     al,USB_DRV0
+        jb      cpr_next
+        cmp     al,USB_DRV0 + USB_MAXUNITS
+        jb      cpr_drop                        ; a USB disk
         cmp     al,CC_CDBASE
         jb      cpr_next
 cpr_drop:

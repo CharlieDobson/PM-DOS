@@ -147,6 +147,40 @@ dio_done:
                                         ; sector that reads back different
                                         ; is, whatever made it one
 dio_bad:
+IFDEF HANG_E9
+        push    eax
+        mov     al,'X'
+        out     0E9h,al
+        mov     al,[dio_drv]
+        call    uhx_hex8
+        mov     al,ah
+        call    uhx_hex8
+        mov     al,' '
+        out     0E9h,al
+        mov     al,byte ptr [dio_lba+3]
+        call    uhx_hex8
+        mov     al,byte ptr [dio_lba+2]
+        call    uhx_hex8
+        mov     al,byte ptr [dio_lba+1]
+        call    uhx_hex8
+        mov     al,byte ptr [dio_lba]
+        call    uhx_hex8
+        mov     al,' '
+        out     0E9h,al
+        mov     al,byte ptr [dio_cnt+1]
+        call    uhx_hex8
+        mov     al,byte ptr [dio_cnt]
+        call    uhx_hex8
+        mov     al,' '
+        out     0E9h,al
+        mov     al,[dio_wr]
+        call    uhx_hex8
+        mov     al,13
+        out     0E9h,al
+        mov     al,10
+        out     0E9h,al
+        pop     eax
+ENDIF
         call    crit_disk               ; -> AL = the answer
         cmp     al,CERR_RETRY
         je      dio_try

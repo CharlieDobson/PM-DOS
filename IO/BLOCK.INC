@@ -5,6 +5,8 @@
 ;
 ;   ATA PIO   hard disks that answered IDENTIFY (see ATA.INC).  The
 ;             transfer lands straight in the caller's flat buffer.
+;   USB       disks on the USB bus, drives USB_DRV0 upwards, and a
+;             BIOS drive a USB disk turned out to be (USBMSC.INC)
 ;   BIOS      everything else - floppies always, and hard disks on
 ;             machines with no IDE controller to talk to, which is
 ;             what keeps DOSBox 0.74 working.  Staged through
@@ -17,7 +19,11 @@
 ; Included by IOPM.ASM (after ATA.INC).
 ;=====================================================================
 
-MAX_DRIVES      EQU     4               ; slots: A:, B:, hd0, hd1
+MAX_DRIVES      EQU     4 + USB_MAXUNITS ; slots: A:, B:, hd0, hd1, and the
+                                        ; USB units - whose geometry is
+                                        ; never cached: a slot above the
+                                        ; four is filled afresh every ask,
+                                        ; because the disk in it changes
 
 ; per-drive geometry cache entry
 GEO_SPT         EQU     0               ; word - sectors per track
@@ -56,8 +62,13 @@ blk_slot:
         cmp     al,80h
         jb      bs_bad
         cmp     al,82h                  ; hard disks 80h and 81h
-        jae     bs_bad
+        jae     bs_usb
         sub     al,80h - 2
+        jmp     short bs_have
+bs_usb:
+        cmp     al,USB_DRV0 + USB_MAXUNITS      ; the USB units, 82h up
+        jae     bs_bad
+        sub     al,USB_DRV0 - 4
 bs_have:
         movzx   ebx,al
         imul    ebx,GEO_LEN
@@ -77,6 +88,8 @@ bs_bad:
 blk_getgeo:
         call    blk_slot
         jc      bg_out
+        cmp     al,USB_DRV0
+        jae     bg_usb
         test    word ptr [ebx+GEO_FLAGS],1
         jnz     bg_ok
 
@@ -163,6 +176,37 @@ bg_fail:
         pop     edx
         pop     ecx
         pop     eax
+        stc
+        ret
+
+;--- a USB unit: what USBMSC.INC says the disk in it is, every time,
+;--- and nothing when there is no disk in it
+bg_usb:
+        push    ecx
+        push    edx
+        push    esi
+        mov     esi,ebx                 ; the entry
+        call    usbm_geo                ; -> CX, DX, EBX
+        jc      bgu_none
+        mov     [esi+GEO_SPT],cx
+        mov     [esi+GEO_HEADS],dx
+        mov     [esi+GEO_TOTAL],ebx
+        mov     word ptr [esi+GEO_FLAGS],1
+        mov     word ptr [esi+GEO_EXT],1
+        call    usbm_capacity           ; -> EBX, the true size
+        mov     [esi+GEO_LBATOT],ebx
+        mov     ebx,esi
+        pop     esi
+        pop     edx
+        pop     ecx
+        clc
+        ret
+bgu_none:
+        mov     word ptr [esi+GEO_FLAGS],0
+        mov     ebx,esi
+        pop     esi
+        pop     edx
+        pop     ecx
         stc
         ret
 
@@ -256,6 +300,8 @@ be_out:
 blk_params:
         call    ata_capacity            ; IDENTIFY knows better than CHS
         jnc     bp_ata
+        call    usbm_capacity           ; and so does READ CAPACITY
+        jnc     bp_ata
         call    blk_getgeo
         jc      bp_out
         cmp     dword ptr [ebx+GEO_LBATOT],0
@@ -310,12 +356,16 @@ bgo_fail:
 ;=====================================================================
 blk_read:
         call    ata_owns                ; is this one of the IDE disks?
-        jc      blk_r_bios
+        jc      blk_r_notata
         push    ecx
         movzx   ecx,cx
         call    ata_read
         pop     ecx
         jmp     short blk_ata_ret
+blk_r_notata:
+        call    usbm_owns               ; or a USB one?  Then USBMSC.INC
+        jc      blk_r_bios              ; answers, status and all
+        jmp     usbm_read
 blk_r_bios:
         mov     byte ptr [bio_write],0
         jmp     short blk_go
@@ -325,12 +375,16 @@ blk_r_bios:
 ;=====================================================================
 blk_write:
         call    ata_owns
-        jc      blk_w_bios
+        jc      blk_w_notata
         push    ecx
         movzx   ecx,cx
         call    ata_write
         pop     ecx
         jmp     short blk_ata_ret
+blk_w_notata:
+        call    usbm_owns
+        jc      blk_w_bios
+        jmp     usbm_write
 blk_w_bios:
         mov     byte ptr [bio_write],1
         jmp     short blk_go

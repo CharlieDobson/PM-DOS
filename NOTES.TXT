@@ -13839,6 +13839,220 @@ over the same way: BIN, PMDOS.IMG, both HD16.IMG files by FATREPL
 (TESTS.IMG came out byte for byte what it was).
 
 
+USB IN THE KERNEL: UHCI, OHCI, KEYBOARDS, MICE AND STICKS (2026-10-12)
+---------------------------------------------------------------------
+
+Charlie asked, in three steps: what taking USB mass storage into the
+kernel on UHCI and OHCI would involve beyond the obvious (the kernel
+then owns the boot-protocol keyboard and mouse as well, which he had
+seen); how the plug-and-play nature of USB fits a DOS; and then "let's
+go ahead and add all of that", with FDISK able to partition a stick
+and FORMAT able to put a filesystem on it.
+
+WHAT THERE IS.  Five files in IO\, included after FLOPPY.INC:
+
+  USB.INC     the controllers found through PCI (class 0C03h, the
+              programming interface telling UHCI from OHCI from EHCI),
+              the memory the schedules live in, the device table, the
+              control and bulk transfers, the enumeration state
+              machine, hubs, parking, and the EHCI hand-down
+  UHCI.INC    Intel's controller: I/O ports, a frame list of 1024
+              pointers, queue heads and transfer descriptors
+  OHCI.INC    everybody else's: memory-mapped registers, endpoint and
+              transfer descriptors with the dummy-tail idiom, the done
+              queue acknowledged once a tick
+  USBHID.INC  boot-protocol keyboards and mice.  A keyboard's report is
+              diffed against the last one and turned into set-1 make
+              and break codes for kb_byte, with a software typematic
+              from kb_ratewant and the lights set by SET_REPORT; a
+              mouse's report becomes a PS/2 packet for ms_ps2byte, so
+              MOUSE.INC and INT 33h see nothing new
+  USBMSC.INC  bulk-only mass storage: CBW/CSW, INQUIRY, TEST UNIT
+              READY, READ CAPACITY, REQUEST SENSE, READ(10) and
+              WRITE(10) in 32-sector pieces, clear-halt and reset
+              recovery, a sense key to INT 13h status map; the units
+              are the block layer's drives 82h to 85h (USB_DRV0)
+
+and on the DOS side DOS\USBDRV.INC: USB= in CONFIG.SYS, the letters
+kept for USB disks, the announcement at boot, usb_locate (where on the
+disk in the slot the volume is: the first FAT partition of a partition
+table, else the whole disk when sector 0 is a boot sector), and
+usb_chkmedia, which notices from vol_select that the disk behind a
+letter has gone or changed and drops its caches and its open files.
+USB.EXE (CMD\USB) lists the controllers, the devices and the units.
+21h/F1h AL=24h is the kernel call behind it (USBF_DEVICE, HC, UNIT,
+PROBE); 0Ch reports the USB units as disks with DSKF_REMOVABLE, which
+is what FDISK reads to say "the drive can be used now" instead of
+"reboot".
+
+NOTHING WAITS.  There are no threads here and a device takes a hundred
+milliseconds and a dozen round trips to set up, so the timer tick does
+it: usb_tick (from irq_timer, after kb_tick) looks at the root ports,
+harvests the reports the keyboards and mice have queued, and moves ONE
+enumeration along ONE step - a control transfer or a timed pause - and
+the next tick asks whether it finished.  Hubs are polled one port a
+tick.  A disk, on the other hand, is spoken to only when the block
+layer asks for a sector: that is the foreground, interrupts on,
+polling its bulk transfer to the end the way ATA.INC polls a drive.
+The two share nothing but the pool of 32-byte elements, which el_alloc
+hands out with interrupts off; the foreground builds and polls its
+chains with interrupts off too, because the stage builder and the
+chain poll keep their working values in statics, and the tick keeps off
+the control queue while the foreground holds it (usb_ctlown).
+
+THE LETTER IS THERE FROM BOOT, like A:, whether or not a disk is in
+the slot (USB=ON keeps one, USB=ON,n up to four, after every other
+letter).  Plug a stick in and the letter answers; pull it out and the
+letter says "Not ready reading drive E" until the next one comes.
+Behind the letter the unit carries an attach generation, and
+usb_chkmedia compares it at every vol_select, so a different stick in
+the same slot is a different volume and nothing of the old one is
+believed.  A stick the BIOS brought up as a hard disk at boot is a
+different case: the boot already gave its volume a letter (D:, say)
+through the BIOS's INT 13h, and once the controller is taken the BIOS
+can never read it again.  So before the takeover sector 0 and the
+capacity of each non-ATA BIOS drive are saved, and a unit that answers
+with the same sector 0 - or, for a blank stick whose sector 0 is all
+zeros, the same capacity - becomes that BIOS drive (usb_adopt): reads
+of 81h go to the unit from then on, D: keeps working, and the unit's
+own USB letter stays empty.  A blank stick has no boot letter, so its
+USB letter takes it and FORMAT works on that.
+
+WHAT HAD TO MOVE.  PMIO passed 64K: IO_PM_MAX is 128K, and the IDT,
+the TSS, the kernel stacks and ARENA_BASE moved up 64K (the MEM figures
+in the test baselines shift by that).  BOOT2.ASM read a cluster at a go
+with BX wrapping at 64K and never stepped ES, which had been fine for a
+PMIO.SYS of 59K and wrote the tail of a 74K one over its head without a
+word: it reads a sector at a time now and steps the segment when BX
+comes round to zero.  The schedules live in a block PMDOS buys from
+the arena (USB_MEMNEED, 40K, 4K-aligned) and PMIO carves: frame lists,
+HCCAs, the pool, and 8K of scratch at the top, with a 4K bounce buffer
+for a caller's buffer in the A0000h-DOS_BASE band that the bus cannot
+see where the kernel does (the same rule as ata_dmaok).  A park gives
+the controllers back to the BIOS as they were found, registers and
+LEGSUP included, and takes them again on the way back.  Ctrl-Alt-Del
+halts them first, or a schedule left running would be writing into
+memory the ROM is about to use.  EHCI is not driven: its BIOS-owned
+semaphore is taken, it is stopped and reset, and CONFIGFLAG stays
+clear so that every port comes down to the UHCI or OHCI companion,
+which is what this kernel can drive.
+
+FDISK AND FORMAT.  FDISK sees a USB unit as a disk like any other,
+flagged removable, so a table written to it says "The drive can be used
+now" instead of asking for a restart, and the kernel places the letter
+on the disk afresh at its next use (usb_relayout, from 21h/F1h AL=0Eh
+when sector 0 is written - for the BIOS number of an adopted stick as
+well).  FORMAT has a third job beside diskettes and partitions: a USB
+disk with no volume on it at all (fm_freshhd) - a boot sector and FATs
+laid out from the disk's size, FAT12, FAT16 or FAT32 as MS-DOS would
+choose, written raw, then the ordinary format on the volume that made.
+A FORMAT of the empty USB letter of a stick the BIOS brought up is
+refused with "That disk is drive D:".
+  A STICK OUT OF THE PACKET HAS NO PARTITION TABLE AT ALL, and every
+verb in FDISK, the screen included, refused a sector 0 with no AA55 in
+it - rightly, for a record with bytes in it, since a table that cannot
+be recognised is one the program can say nothing about, but a blank
+one is a different thing.  dk_read notices a sector 0 read into
+mbr_buf that is nothing but zeros and makes it an empty table in front
+of our boot code (dk_fresh): the four slots show empty, C creates in
+the free space, and the commit writes the whole sector.  /STATUS says
+"blank disk: no partition table yet" over the empty table it shows.
+
+WHAT TESTING FOUND, in the order it was found, every one in QEMU 11.1
+with -device piix3-usb-uhci, pci-ohci or ich9-usb-ehci1 with a UHCI
+companion, usb-kbd, usb-mouse and usb-storage, the monitor over TCP
+for keys, screendumps and device_add/device_del, and port E9h for the
+kernel's trace (the hang kernel prints the enumeration, every control
+chain handed over, every key, every failed sector transfer):
+
+  * EVERY CONTROL TRANSFER TIMED OUT, and the controller had halted
+    itself with a process error.  The hc_* routines choose UHCI or
+    OHCI from the controller row in ESI, and usb_ctl_start left ESI on
+    the setup packet while it linked its three stages: the first byte
+    there is bmRequestType, 80h, so hc_link and hc_term went to the
+    OHCI versions and wrote the "next" pointer into dword 2 - the
+    UHCI token.  A PID of 80h is the process error.
+  * THE PRODUCT STRING WAS QUESTION MARKS and the configuration header
+    was read from stale bytes: usb_setup takes wLength in DI, and
+    three callers loaded DI after pointing EDI at the buffer, so the
+    data went to usb_scr with its low word replaced by the length.
+    The data pointer goes into EDI AFTER usb_setup, always.
+  * THE MOUSE BEHIND QEMU'S HUB WAS NEVER FOUND: usb_hubpoll stored
+    the job's device slot from CL after CL had been zeroed for wValue,
+    so every hub continuation acted on slot 0.
+  * "NOT READY READING DRIVE A" WITH A STICK IN: the unit call answers
+    EBX = sectors, and usb_locate went on using EBX as the drive-table
+    row; with a 16MB stick EBX was 7E00h, the "BIOS drive" byte came
+    out of boot-sector residue as 'S', and the read went to drive 53h.
+  * COPY SAID "WRITE ERROR" (which is CMD's name for a failed READ of
+    the source) and a file copied onto the stick lost its directory
+    update: the same call answers ECX = the device slot, and
+    usb_chkmedia went on using ECX as the unit, so the "located" flag
+    and the generation it compared were another slot's - the stick was
+    declared changed at every switch away and back, and its open files
+    were dropped under the program.
+  * USB.EXE SHOWED NO LETTER: letterof kept the drive number in CL,
+    and 21h/F1h AL=6, which it calls in its loop, answers ECX = the row
+    count.
+  * FORMAT SAID "FORMAT FAILURE" OVER A VOLUME IT HAD MADE PERFECTLY:
+    21h/F1h AL=0Dh/0Eh go round the disk cache, so the remount read
+    sector 0 back from the cache as the blank one FORMAT had replaced.
+    A raw read flushes what is owed to its sectors first now, and a raw
+    write drops every cached copy of them (cache_flushrange and
+    cache_droprange, which were there for the lock calls).
+  * FDISK /STATUS HUNG on the blank stick: the BIOS had shown it as
+    81h, nothing had adopted it (an all-zero sector 0 matches
+    anything), and FDISK's read of disk 1 went into the BIOS's dead USB
+    code.  Hence adoption by capacity as well, and 0Ch hides the USB
+    number of an adopted unit so one stick is not listed twice.
+  * An empty USB letter said "Invalid drive specification" because an
+    empty USB number was handed to the BIOS: the block layer answers
+    every USB number itself now, "not ready" for an empty slot.
+  * QEMU's -drive is deleted with the device that used it, so a second
+    device_add after a device_del found no drive: the test harness
+    uses -blockdev.  And its sendkey names are case-sensitive, which
+    is why the first typed capitals vanished - not the kernel.
+
+WHAT IS VERIFIED (QEMU, headless): a UHCI keyboard typing at the
+prompt and under the hang kernel's key trace, byte for byte the set-1
+codes; a USB mouse moving EDIT's cursor to the same cell as the PS/2
+mouse for the same motion; a stick at boot adopted as D: and read,
+written and CHKDSKed through the unit; a stick plugged in after boot
+enumerated behind the hub QEMU inserts, listed as E:, copied from and
+to, pulled ("Not ready reading drive E"), plugged in again and listed
+again; a blank 64MB stick FORMATted through its USB letter and then
+used, CHKDSK clean; FDISK /STATUS listing the stick once, removable;
+FDISK creating a partition on the blank stick from a key file and
+FORMAT making a volume in it; all of it again on OHCI (keys, stick)
+and on an EHCI with a UHCI companion (the hand-down); USB=OFF leaving
+the BIOS's stick as D: and the PS/2 keyboard typing; a boot with
+nothing plugged in; the hang kernel's traces quiet in every case.
+  RUNTESTS -All, 87 tests on 7 machines: 79 agree with the baselines on
+every row and the same eight differ on every row, all accounted for.
+MEM, BIGMEM, VDSTEST, XMSREPT and XMSTEST show the 64K the memory map
+moved (OS reserved 1,152K to 1,216K, the XMS pool and the largest block
+64K smaller, locked addresses 64K higher); the 4MB machine has one
+nested-EXEC slot fewer for the same reason.  RMFIND counts six more
+entries in \TESTS and RMTEST sees fewer free clusters, which is the
+test disk having grown since the baselines were taken on the 11th -
+111 test programs and the two dot entries are the 71h it counts.
+CACHETST says five writes are owed after its scratch file where it
+said four: on the regression disk as the bigger kernel files lay it
+out, the boot sector, each FAT copy, the root entry and the data each
+fall in a cache block of their own, five, where two shared one before.
+The baselines were rewritten from this run.
+
+WHAT IS NOT: real hardware.  No emulator here has a BIOS with SMM
+legacy emulation, so whether a real BIOS's SMM code stays out of the
+way once LEGSUP and the OHCI ownership bit are cleared, and whether it
+picks up again after a park, is untried; so are a low-speed device
+(QEMU's keyboard and mouse are full speed, so the LS bit in the UHCI
+descriptors and OHCI endpoints has never been exercised), a real hub,
+a stick that wants more than one LUN or a 2048-byte block (refused as
+"not a disk"), a stick slower than the five seconds a bulk transfer is
+given, two sticks in at once, and 86Box, which has no USB at all.
+
+
 v0.61 - THE NUMBER CAUGHT UP (2026-09-30)
 ---------------------------------------------------------------------
 

@@ -668,7 +668,18 @@ r3_pflags:
         je      rpf_lowmem
         cmp     ax,22h * 256 + 0F1h
         je      rpf_keyb
+        cmp     ax,24h * 256 + 0F1h
+        je      rpf_usb
         call    vdm_flags
+        ret
+
+; F1h/24h, the USB bus: three of its four answer into EDI, and
+; USBF_PROBE carries a unit in DL and nothing else.
+rpf_usb:
+        mov     bl,P_DI
+        cmp     byte ptr [ebp+F_EAX+2],USBF_PROBE
+        jne     rpf_out
+        xor     bl,bl
         ret
 
 ; F1h/22h, the keyboard's layout: KYF_SET hands a record over through

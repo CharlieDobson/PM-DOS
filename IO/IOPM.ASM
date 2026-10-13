@@ -97,6 +97,7 @@ svc_table:
         dd      rm_freeze       ; IOS_RMFREEZE
         dd      acpi_svc        ; IOS_ACPI
         dd      kb_laysvc       ; IOS_KBLAYOUT
+        dd      usb_svc         ; IOS_USB
 
 ;=====================================================================
 ; pm_entry - first instruction executed in 32-bit protected mode.
@@ -154,6 +155,9 @@ ENDIF
         call    irq_init                ; after pci_init: only a machine
                                         ; with a PCI bus has a register
                                         ; that says which lines are level
+        call    usb_init                ; after pci_init: the controllers
+                                        ; are on its table.  Nothing is
+                                        ; driven until PMDOS says so
         call    fpu_init                ; after irq_init: on a 386 the
                                         ; coprocessor's errors are a line
         call    pnp_init                ; before blk_init: a sound card's
@@ -313,6 +317,11 @@ ENDIF
         INCLUDE NCR5380.INC      ; ...and a Pro Audio Spectrum's port
         INCLUDE BLOCK.INC
         INCLUDE FLOPPY.INC       ; after BLOCK.INC: they are the same drives
+        INCLUDE USB.INC          ; the USB controllers and their devices...
+        INCLUDE UHCI.INC         ; ...Intel's controller
+        INCLUDE OHCI.INC         ; ...everybody else's
+        INCLUDE USBHID.INC       ; ...keyboards and mice, into KEYBD and MOUSE
+        INCLUDE USBMSC.INC       ; ...and disks, into BLOCK
         INCLUDE VDS.INC          ; where a buffer physically is
         INCLUDE VDMA.INC         ; ...and the 8237, which needs to know
         INCLUDE BUS.INC          ; and the way in to all of it

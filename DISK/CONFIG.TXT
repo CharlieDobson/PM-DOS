@@ -236,6 +236,23 @@ SCSI=ON|OFF
     OFF turns PM-DOS's own drivers off.  An ASPI driver still works.
     CDEX lists the drives and the card each one is on.
 
+USB=ON|OFF
+USB=ON,n
+    USB keyboards, mice and disks.  ON by default: PM-DOS drives the
+    USB controllers itself once CONFIG.SYS has been read, and keeps
+    one drive letter for a USB disk, after every other letter.  ON,n
+    keeps n letters, up to 4.
+    The letter is there whether or not a disk is plugged in, like A:.
+    Plug a disk in and the letter answers; pull it out and the letter
+    says "Not ready" until the next one.  USB lists what was found.
+    A disk the BIOS showed as a hard disk at boot keeps the letter the
+    boot gave it, and its USB letter stays empty.
+    OFF leaves the controllers to the BIOS, whose own USB support then
+    works as it did before PM-DOS started.  Safe mode (Shift or F5 at
+    start) is OFF whatever the line says.
+    Under Windows the controllers go back to the BIOS, and the USB
+    letters are not there until PM-DOS comes back.
+
 CACHE=max[,min[,ON|OFF]]
 CACHE=OFF
     The disk cache.  It's on by default, so you only need this line to

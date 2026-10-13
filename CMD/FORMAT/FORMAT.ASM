@@ -48,6 +48,17 @@
 ; cached notion of the old filesystem is discarded unflushed and the
 ; BPB is read back fresh, with the drive's directory back at the root.
 ;
+; A USB DISK WITH NO FORMAT is the third job (fm_freshhd).  A stick
+; straight from the shop, or a partition FDISK has just made on one,
+; has a letter and no BPB behind it, which for an IDE partition is
+; FDISK's to put right and for a diskette is the track-by-track job
+; above.  Here the layout is chosen for the size - FAT12, FAT16 or
+; FAT32 and Microsoft's cluster size for it - a boot sector and the
+; first sector of each FAT are written by drive and sector (21h/F1h
+; AL=0Eh, from the start of the volume the kernel found on the disk),
+; the kernel is asked to mount what is now there, and the ordinary
+; job takes it from there: it is a volume with a format now.
+;
 ; Linked with:  wlink form raw bin option offset=0x181000
 ;=====================================================================
         .386
@@ -250,7 +261,7 @@ fm_fixed:
         inc     dl                      ; F1h speaks 1-based drives
         mov     ax,0F101h
         int     21h
-        jc      fm_notmnt
+        jc      fm_freshhd              ; no BPB: a USB disk with none yet?
         mov     [fat_kind],al
 
 ;--- the warning -----------------------------------------------------
@@ -268,6 +279,406 @@ fm_fixed:
         call    fm_readbpb
         jc      fm_ioerr
         jmp     fm_reformat
+
+;=====================================================================
+; A USB disk with no format on it
+;=====================================================================
+fm_freshhd:
+        ; only a USB letter is made from nothing here: a hard disk's
+        ; partition is FDISK's to lay out, and a diskette has the job
+        ; above
+        test    byte ptr [drv_rec+DRV_FLAGS],DRVF_USB
+        jz      fm_notmnt
+
+        ; is there a disk in the slot at all?
+        movzx   edx,byte ptr [drv_rec+DRV_BIOS]
+        sub     dl,USB_DRV0
+        mov     edi,OFFSET fh_model
+        mov     eax,(USBF_UNIT SHL 16) OR 0F124h
+        int     21h
+        jc      fm_notmnt
+        test    al,USBUF_ATTACHED
+        jz      fm_notready
+        test    al,USBUF_NOTDISK
+        jnz     fm_notmnt
+
+        ; a disk the BIOS brought up, with a volume the boot gave a
+        ; letter: that letter is the one to format, not this one
+        mov     [fh_alias],ch
+        or      ch,ch
+        jz      fh_notalias
+        mov     al,ch
+        call    fh_letterof             ; -> AL = its first letter, or CF
+        jc      fh_notalias
+        add     al,'A'
+        mov     [msg_isdrv_l],al
+        mov     edx,OFFSET msg_isdrv
+        jmp     fm_die
+fh_notalias:
+
+        ; where the volume is: the failed mount placed the letter on the
+        ; disk that is there (usb_locate), and the row says where
+        movzx   edx,byte ptr [tgt_log]
+        mov     edi,OFFSET drv_rec
+        mov     eax,0F106h
+        int     21h
+        jc      fm_notmnt
+        mov     eax,dword ptr [drv_rec+DRV_SECS]
+        or      eax,eax
+        jz      fm_notmnt
+        mov     [fh_len],eax
+        mov     eax,dword ptr [drv_rec+DRV_START]
+        mov     [fh_start],eax
+        mov     [raw_base],eax
+        mov     al,[drv_rec+DRV_BIOS]
+        mov     [fd_bios],al
+
+        ; the disk's geometry, for the BPB - asked under the number the
+        ; kernel reports the disk by, which for one the BIOS brought up
+        ; is the BIOS's number (21h/F1h AL=0Ch hides the USB one)
+        movzx   edx,al
+        cmp     byte ptr [fh_alias],0
+        je      fh_geoown
+        movzx   edx,byte ptr [fh_alias]
+fh_geoown:
+        mov     edi,OFFSET fh_dsk
+        mov     eax,0F10Ch
+        int     21h
+        jc      fm_notmnt
+
+;--- the warning, as for any volume with data on it ------------------
+        mov     edx,OFFSET msg_warn
+        call    puts
+        mov     ah,01h
+        int     21h
+        call    fm_upcase
+        push    eax
+        call    fm_crlf
+        pop     eax
+        cmp     al,'Y'
+        jne     fm_quit
+
+;--- the layout, and the sectors that make it a volume ---------------
+        call    fh_layout
+        jc      fm_nofit
+        mov     byte ptr [raw_io],1
+        call    fh_boot
+        xor     edx,edx
+        mov     ecx,1
+        mov     ebx,[boot_sec]
+        call    sec_write
+        jc      fm_ioerr
+        cmp     byte ptr [fat_kind],32
+        jne     fh_nobackup
+        mov     edx,[g_bkboot]          ; FAT32 keeps a spare boot sector
+        mov     ecx,1
+        mov     ebx,[boot_sec]
+        call    sec_write
+        jc      fm_ioerr
+fh_nobackup:
+        call    fh_fats
+        jc      fm_ioerr
+
+;--- a volume now: the kernel mounts it and the ordinary job goes on -
+        mov     dl,[tgt_log]
+        inc     dl
+        mov     ax,0F102h
+        int     21h
+        jc      fm_ioerr
+        mov     byte ptr [raw_io],0
+        mov     byte ptr [fresh_hd],1
+        jmp     fm_reformat
+
+fm_notready:
+        mov     edx,OFFSET msg_notrdy
+        jmp     fm_die
+fm_nofit:
+        mov     edx,OFFSET msg_nofit
+        jmp     fm_die
+
+;---------------------------------------------------------------------
+; fh_layout - g_* for a volume of [fh_len] sectors, from nothing:
+;             FAT32 from 512MB, FAT12 where FAT16 would have too few
+;             clusters, FAT16 between, and the cluster size Microsoft's
+;             FORMAT would have chosen for that size and width.  CF if
+;             no layout fits.
+;---------------------------------------------------------------------
+FH_FAT32MIN     EQU     1048576         ; sectors: 512MB and up is FAT32
+FH_FAT16MIN     EQU     4085            ; clusters: fewer is FAT12
+
+fh_layout:
+        pushad
+        mov     dword ptr [g_nfats],2
+        mov     byte ptr [g_media],0F8h
+        mov     dword ptr [g_rootclus],0
+        mov     dword ptr [g_fsinfo],0
+        mov     dword ptr [g_bkboot],0
+        movzx   eax,word ptr [fh_dsk+DSK_SPT]
+        or      eax,eax
+        jnz     fhl_spt
+        mov     eax,63
+fhl_spt:
+        mov     [g_spt],eax
+        movzx   eax,word ptr [fh_dsk+DSK_HEADS]
+        or      eax,eax
+        jnz     fhl_heads
+        mov     eax,255
+fhl_heads:
+        mov     [g_heads],eax
+        mov     eax,[fh_len]
+        mov     [g_totsec],eax
+        cmp     eax,FH_FAT32MIN
+        jae     fhl_32
+
+        ; FAT16, unless the clusters come out too few
+        mov     dword ptr [g_rsvd],1
+        mov     dword ptr [g_rootent],512
+        mov     esi,OFFSET fh_tab16
+        call    fh_spcfor               ; -> ECX = sectors a cluster
+        mov     [g_spc],ecx
+        mov     eax,[fh_len]
+        sub     eax,1 + 32              ; the boot sector and the root
+        xor     edx,edx
+        div     ecx                     ; EAX = clusters, near enough
+        cmp     eax,FH_FAT16MIN
+        jb      fhl_12
+        mov     byte ptr [fat_kind],16
+        add     eax,2 + 255             ; two reserved entries, two bytes
+        shr     eax,8                   ; each, 256 to a sector, rounded up
+        mov     [g_spf],eax
+        jmp     short fhl_derive
+fhl_12:
+        mov     byte ptr [fat_kind],12
+        add     eax,2
+        lea     eax,[eax+eax*2]         ; three bytes to two entries
+        add     eax,1023
+        shr     eax,10
+        mov     [g_spf],eax
+        jmp     short fhl_derive
+
+fhl_32:
+        mov     byte ptr [fat_kind],32
+        mov     dword ptr [g_rsvd],32
+        mov     dword ptr [g_rootent],0
+        mov     dword ptr [g_rootclus],2
+        mov     dword ptr [g_fsinfo],1
+        mov     dword ptr [g_bkboot],6
+        mov     esi,OFFSET fh_tab32
+        call    fh_spcfor
+        mov     [g_spc],ecx
+        mov     eax,[fh_len]
+        sub     eax,32
+        xor     edx,edx
+        div     ecx
+        add     eax,2 + 127             ; four bytes an entry, 128 a sector
+        shr     eax,7
+        mov     [g_spf],eax
+
+fhl_derive:
+        call    fm_derive               ; rootstart, datastart, totclus
+        mov     eax,[g_totclus]
+        cmp     byte ptr [fat_kind],12
+        je      fhl_ck12
+        cmp     byte ptr [fat_kind],16
+        je      fhl_ck16
+        cmp     eax,65525               ; FAT32: at least this many
+        jb      fhl_no
+        jmp     short fhl_ok
+fhl_ck16:
+        cmp     eax,FH_FAT16MIN
+        jb      fhl_no
+        cmp     eax,65524
+        ja      fhl_no
+        jmp     short fhl_ok
+fhl_ck12:
+        cmp     eax,4084
+        ja      fhl_no
+        cmp     eax,16                  ; a volume of fewer clusters than
+        jb      fhl_no                  ; that is not worth having
+fhl_ok:
+        popad
+        clc
+        ret
+fhl_no:
+        popad
+        stc
+        ret
+
+;--- fh_spcfor - ESI -> a table of (up to this many sectors, this many
+;--- a cluster) -> ECX for [fh_len]
+fh_spcfor:
+        push    eax
+        mov     eax,[fh_len]
+fhs_row:
+        mov     ecx,[esi+4]
+        cmp     eax,[esi]
+        jbe     fhs_out
+        add     esi,8
+        jmp     short fhs_row           ; the last row takes every size
+fhs_out:
+        pop     eax
+        ret
+
+fh_tab16    dd  32680, 2, 262144, 4, 524288, 8, 1048576, 16
+            dd  0FFFFFFFFh, 32
+fh_tab32    dd  16777216, 8, 33554432, 16, 67108864, 32
+            dd  0FFFFFFFFh, 64
+
+;---------------------------------------------------------------------
+; fh_boot - a boot sector for the volume in g_*, in boot_sec, out of
+;           boot_stub: the same code and message as a diskette's, which
+;           boots nothing and says so until SYS puts a system on.
+;
+; FAT32's BPB runs on to 52h where FAT12's and FAT16's stop at 24h,
+; so for FAT32 the extended fields and the code move 1Ch further on,
+; the jump at the front says where, and the one address the code
+; holds - its message's - moves with it.
+;---------------------------------------------------------------------
+FH_EXT12        EQU     24h             ; the extended fields: drive, 29h,
+FH_EXT32        EQU     40h             ; serial, label, the width's name
+FH_SIOFF        EQU     1Ah + 0Ch       ; the message address in the code,
+                                        ; past the extended fields: see
+                                        ; boot_stub's mov si
+
+fh_boot:
+        pushad
+        mov     edi,[boot_sec]
+        push    edi
+        xor     eax,eax
+        mov     ecx,128
+        rep     stosd
+        pop     edi
+        mov     esi,OFFSET boot_stub
+        mov     ecx,BOOT_STUBLEN
+        rep     movsb                   ; the FAT12 sector, to begin with
+        mov     edi,[boot_sec]
+        mov     word ptr [edi+0Bh],512
+        mov     eax,[g_spc]
+        mov     [edi+0Dh],al
+        mov     eax,[g_rsvd]
+        mov     [edi+0Eh],ax
+        mov     eax,[g_nfats]
+        mov     [edi+10h],al
+        mov     eax,[g_rootent]
+        mov     [edi+11h],ax
+        mov     al,[g_media]
+        mov     [edi+15h],al
+        mov     eax,[g_spt]
+        mov     [edi+18h],ax
+        mov     eax,[g_heads]
+        mov     [edi+1Ah],ax
+        mov     eax,[fh_start]
+        mov     [edi+1Ch],eax           ; hidden sectors: the start
+        mov     eax,[g_totsec]
+        cmp     byte ptr [fat_kind],32
+        je      fhb_tot32
+        cmp     eax,10000h
+        jae     fhb_tot32
+        mov     [edi+13h],ax
+        jmp     short fhb_spf
+fhb_tot32:
+        mov     [edi+20h],eax
+fhb_spf:
+        mov     ebx,FH_EXT12
+        mov     eax,[g_spf]
+        cmp     byte ptr [fat_kind],32
+        je      fhb_32
+        mov     [edi+16h],ax
+        cmp     byte ptr [fat_kind],16
+        jne     fhb_ext
+        mov     dword ptr [edi+36h],'46TAF'    ; 'FAT16   '
+        mov     dword ptr [edi+3Ah],'  61'
+        jmp     short fhb_ext
+fhb_32:
+        ; the fields past 24h, and everything from there moved up
+        push    esi
+        mov     esi,OFFSET boot_stub + FH_EXT12
+        lea     edi,[edi+FH_EXT32]
+        mov     ecx,BOOT_STUBLEN - FH_EXT12
+        rep     movsb
+        pop     esi
+        mov     edi,[boot_sec]
+        mov     byte ptr [edi+1],FH_EXT32 + 1Ah - 2     ; the jump
+        add     word ptr [edi+FH_EXT32+FH_SIOFF],FH_EXT32 - FH_EXT12
+        mov     [edi+24h],eax           ; sectors a FAT
+        mov     word ptr [edi+28h],0    ; flags
+        mov     word ptr [edi+2Ah],0    ; version
+        mov     eax,[g_rootclus]
+        mov     [edi+2Ch],eax
+        mov     eax,[g_fsinfo]
+        mov     [edi+30h],ax
+        mov     eax,[g_bkboot]
+        mov     [edi+32h],ax
+        mov     ebx,FH_EXT32
+        mov     dword ptr [edi+ebx+12h],'23TAF'  ; 'FAT32   '
+        mov     dword ptr [edi+ebx+16h],'  23'
+fhb_ext:
+        mov     byte ptr [edi+ebx],80h  ; a hard disk
+        ; the serial number: the clock, as fd_newboot takes it
+        mov     ah,2Ch
+        int     21h
+        push    ecx
+        shl     ecx,16
+        mov     cx,dx
+        push    ecx
+        mov     ah,2Ah
+        int     21h
+        shl     ecx,16
+        mov     cx,dx
+        pop     eax
+        add     eax,ecx
+        pop     ecx
+        mov     edi,[boot_sec]
+        mov     [edi+ebx+3],eax
+        mov     word ptr [edi+1FEh],0AA55h
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; fh_fats - the first sector of each FAT: the media byte and the end
+;           marks, and nothing else.  The rest of each FAT is whatever
+;           the disk held, and fm_build writes every entry afresh once
+;           the kernel has mounted the volume.  CF on I/O error.
+;---------------------------------------------------------------------
+fh_fats:
+        pushad
+        mov     edi,[fat_work]
+        push    edi
+        xor     eax,eax
+        mov     ecx,128
+        rep     stosd
+        pop     edi
+        mov     al,[g_media]
+        mov     [edi],al
+        mov     byte ptr [edi+1],0FFh
+        mov     byte ptr [edi+2],0FFh
+        cmp     byte ptr [fat_kind],12
+        je      fhf_marked
+        mov     byte ptr [edi+3],0FFh
+        cmp     byte ptr [fat_kind],16
+        je      fhf_marked
+        mov     byte ptr [edi+3],0Fh
+        mov     dword ptr [edi+4],0FFFFFFFh
+fhf_marked:
+        xor     ebp,ebp                 ; EBP = the copy
+fhf_copy:
+        mov     edx,[g_spf]
+        imul    edx,ebp
+        add     edx,[g_rsvd]
+        mov     ebx,[fat_work]
+        mov     ecx,1
+        call    sec_write
+        jc      fhf_fail
+        inc     ebp
+        cmp     ebp,[g_nfats]
+        jb      fhf_copy
+        popad
+        clc
+        ret
+fhf_fail:
+        popad
+        stc
+        ret
 
 ;=====================================================================
 ; A diskette
@@ -516,6 +927,10 @@ fm_build:
 fmb_nokeep:
         mov     byte ptr [keepmarks],0
 fmb_keepset:
+        cmp     byte ptr [fresh_hd],0   ; a volume made from nothing has
+        je      fmb_marksdone           ; no marks, whatever its sectors
+        mov     byte ptr [keepmarks],0  ; happen to hold
+fmb_marksdone:
 
         cmp     byte ptr [fresh],0
         jne     fmb_fresh
@@ -960,6 +1375,47 @@ fm_iscur:
 fm_notmnt:
         mov     edx,OFFSET msg_notmnt
         jmp     fm_die
+
+;--- fh_letterof - AL = a BIOS drive number -> AL = the first letter on
+;--- it (0 = A), through 21h/F1h AL=6 row by row, or CF
+fh_letterof:
+        push    ebx
+        push    ecx
+        push    edx
+        push    edi
+        mov     [fh_want],al
+        xor     ebx,ebx
+fho_lp:
+        cmp     ebx,26
+        jae     fho_no
+        mov     edx,ebx
+        mov     edi,OFFSET drv_rec
+        mov     eax,0F106h
+        int     21h
+        jc      fho_no
+        test    byte ptr [drv_rec+DRV_FLAGS],DRVF_PRESENT
+        jz      fho_next
+        mov     al,[fh_want]
+        cmp     [drv_rec+DRV_BIOS],al
+        je      fho_hit
+fho_next:
+        inc     ebx
+        jmp     short fho_lp
+fho_hit:
+        mov     al,bl
+        pop     edi
+        pop     edx
+        pop     ecx
+        pop     ebx
+        clc
+        ret
+fho_no:
+        pop     edi
+        pop     edx
+        pop     ecx
+        pop     ebx
+        stc
+        ret
 fm_ioerr:
         mov     edx,OFFSET msg_ioerr
 fm_die:
@@ -1701,7 +2157,8 @@ swr_raw:
 sec_raw:
         mov     edi,ebx
         mov     ebx,edx
-        movzx   edx,byte ptr [fd_bios]
+        add     ebx,[raw_base]          ; where the volume starts on the
+        movzx   edx,byte ptr [fd_bios]  ; disk: 0 for a diskette
         int     21h
 sec_out:
         popad
@@ -2043,6 +2500,17 @@ has_fs      db  0                       ; the disk in it has a format
 fd_have     db  0                       ; ...this row of fd_sizes
 fd_want     db  0                       ; the row being made
 raw_io      db  0                       ; sectors go by drive, not letter
+fresh_hd    db  0                       ; a USB disk given a volume from
+fh_want     db  0                       ; fh_letterof's drive number
+fh_alias    db  0                       ; the BIOS drive the disk came up as
+                                        ; nothing: no mark in its FAT is one
+            db  0,0
+raw_base    dd  0                       ; ...and where the volume starts on
+                                        ; the drive, for the raw path
+fh_len      dd  0                       ; the fresh volume's sectors
+fh_start    dd  0                       ; ...and its first
+fh_model    db  24 dup(0)               ; 21h/F1h AL=24h's answer, unused
+fh_dsk      db  DSK_LEN dup(0)          ; the disk it is on
 fresh       db  0                       ; nothing is carried over
 keepmarks   db  0                       ; bad cluster marks stay
 mf_same     db  0                       ; mark_fat changed nothing
@@ -2180,6 +2648,8 @@ boot_stub:
         db      'Change it and press a key.',13,10,0
 BOOT_STUBLEN    EQU     $ - boot_stub
 
+msg_isdrv   db  13,10,'That disk is drive '
+msg_isdrv_l db  'A:',13,10,'$'
 msg_warn    db  13,10
             db  'WARNING: ALL DATA ON DRIVE '
 warn_drv    db  'A'
@@ -2224,6 +2694,7 @@ msg_badsize db  'Invalid size for /F',13,10,'$'
 msg_nosize  db  'Size not supported by drive',13,10,'$'
 msg_clash   db  '/B and /S cannot be used together',13,10,'$'
 msg_iscur   db  'Cannot format the current drive',13,10,'$'
+msg_nofit   db  'No FAT layout fits a volume of this size',13,10,'$'
 msg_notmnt  db  'Invalid media or Track 0 bad - disk unusable',13,10
             db  '(No readable BPB on this volume)',13,10,'$'
 msg_track0  db  13,10,'Track 0 bad - disk unusable',13,10,'$'

@@ -270,6 +270,8 @@ box_park:
         push    eax
         call    ms_park
         pop     eax
+        call    usb_park                ; the controllers back to the BIOS,
+                                        ; or taken again (USB.INC)
         call    vd_park
         call    vt_park
         call    kb_park

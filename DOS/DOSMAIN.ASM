@@ -232,6 +232,9 @@ ENDIF
         call    scsi_start              ; the SCSI cards, now that a DEVICE=
                                         ; line may have loaded a manager
                                         ; that owns one (ASPI.INC)
+        call    usb_start               ; the USB controllers, now that
+                                        ; USB= has said whether to take
+                                        ; them from the BIOS (USBDRV.INC)
         call    cd_announce             ; the CD-ROM drives and their
                                         ; letters, now that CONFIG.SYS
                                         ; has had its say about both
@@ -654,6 +657,8 @@ kbss_stop:
                                         ; cache sits between disk_read and
                                         ; the drive, and writes back through
                                         ; CRITERR's own disk_wrsure
+        INCLUDE USBDRV.INC              ; after CACHE.INC: the USB disks'
+                                        ; letters, and the cache they drop
         INCLUDE PATH.INC
         INCLUDE INT21.INC
         INCLUDE RECYCLE.INC             ; after INT21.INC: every delete goes

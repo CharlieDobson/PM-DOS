@@ -37,13 +37,13 @@ menu, or press F1.  To leave, press ALT, F, X.
 <\aDefrag\vDEFRAG\v>                     <\aKeyrate=\vKEYRATE=\v>                  <\aType\vTYPE\v>
 <\aDel\vDEL\v>                        <\aLabel\vLABEL\v>                     <\aUndelete\vUNDELETE\v>
 <\aDevice=\vDEVICE=\v>                    <\aLastdrive=\vLASTDRIVE=\v>                <\aUndelete=\vUNDELETE=\v>
-<\aDevicehigh=\vDEVICEHIGH=\v>                <\aLfn=\vLFN=\v>                      <\aVer\vVER\v>
-<\aDir\vDIR\v>                        <\aLoadhigh\vLOADHIGH\v>                  <\aVerify\vVERIFY\v>
-<\aDiskcomp\vDISKCOMP\v>                   <\aMd\vMD\v>                        <\aVol\vVOL\v>
-<\aDiskcopy\vDISKCOPY\v>                   <\aMem\vMEM\v>                       <\aWincache=\vWINCACHE=\v>
-<\aDos=\vDOS=\v>                       <\aMore\vMORE\v>                      <\aXcopy\vXCOPY\v>
-<\aDoskey\vDOSKEY\v>                     <\aMount\vMOUNT\v>
-<\aDosshell\vDOSSHELL\v>                   <\aMove\vMOVE\v>
+<\aDevicehigh=\vDEVICEHIGH=\v>                <\aLfn=\vLFN=\v>                      <\aUsb\vUSB\v>
+<\aDir\vDIR\v>                        <\aLoadhigh\vLOADHIGH\v>                  <\aUsb=\vUSB=\v>
+<\aDiskcomp\vDISKCOMP\v>                   <\aMd\vMD\v>                        <\aVer\vVER\v>
+<\aDiskcopy\vDISKCOPY\v>                   <\aMem\vMEM\v>                       <\aVerify\vVERIFY\v>
+<\aDos=\vDOS=\v>                       <\aMore\vMORE\v>                      <\aVol\vVOL\v>
+<\aDoskey\vDOSKEY\v>                     <\aMount\vMOUNT\v>                     <\aWincache=\vWINCACHE=\v>
+<\aDosshell\vDOSSHELL\v>                   <\aMove\vMOVE\v>                      <\aXcopy\vXCOPY\v>
 
 Every command and every CONFIG.SYS statement PM-DOS has is listed.  A
 command's topic says what it does, how it is written, and what each
@@ -4099,6 +4099,12 @@ to boot.
  
                                FDISK컴Notes
  
+\bA USB disk\p
+
+A USB disk is a disk of its own in the list, marked removable.  A
+partition made, deleted or changed on it is used the next time its
+drive letter is used, so no restart is asked for.  See <\aUSB\vUSB\v>.
+
 \bThe screen\p
 
 Each disk is a bar with its partitions drawn to scale.  A partition
@@ -4293,6 +4299,13 @@ To check a disk without losing what is on it, see <\aSCANDISK\vSCANDISK\v>.
  
                               FORMAT컴Notes
  
+\bA USB disk with no format\p
+
+A USB disk that has no file system - new, or with a partition FDISK
+has just made - gets one laid out for its size: FAT12, FAT16 or FAT32,
+with the cluster size MS-DOS and Windows would have chosen.  See
+<\aUSB\vUSB\v>.
+
 \bA disk that has a format already\p
 
 The layout is kept and the tables are written afresh.  Every data
@@ -5552,6 +5565,81 @@ To free the space the kept files take on drive C:
     undelete c: /purge
  
                                      
+.context USB
+.context Usb
+.topic USB
+.freeze 3
+\i\aNotes\vUSB--Notes\v  \aExamples\vUSB--Examples\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                                     USB
+ 
+Lists the USB controllers, the devices plugged into them, and the USB
+disk units with their drive letters.
+
+\bSyntax\p
+
+    USB
+
+\bRelated Commands\p
+
+<\aUSB=\vUSB=\v> in CONFIG.SYS turns PM-DOS's USB support off and on and says
+how many drive letters are kept for USB disks.  <\aFDISK\vFDISK\v> and
+<\aFORMAT\vFORMAT\v> work on a USB disk as on any other.
+ 
+                                     
+.context USB--Notes
+.topic USB--Notes
+.freeze 3
+\i\aExamples\vUSB--Examples\v  \aSyntax\vUSB\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                                USB컴Notes
+ 
+\bWhat the lines say\p
+
+Each controller: its kind (UHCI or OHCI), its address, how many ports
+it has, and whether it was taken from the BIOS.  Each device: where it
+is (controller:port, or the hub and port behind that), what it is
+(keyboard, mouse, disk, hub), its speed, and the name it gives itself.
+Each disk unit: its drive letter, the make and model, and the size.
+
+\bPlugging in and pulling out\p
+
+A USB disk's letter is there from boot, like A:, whether or not a disk
+is plugged in.  Plug one in and the letter answers; pull it out and the
+letter says "Not ready" until the next one comes.  Nothing is printed
+when a device is plugged in or removed: this command is how to see what
+the kernel found.
+
+A disk that was plugged in before the machine started, and that the
+BIOS showed as a hard disk, keeps the letter the boot gave it (D:, say)
+and is listed under that letter here.  Its USB letter stays empty.  A
+blank disk has no such letter, so the USB letter takes it and FORMAT
+works on that.
+
+Pull a disk out only when nothing is being written to it.  As with a
+diskette, what a program has written is on the disk once the program
+has finished or the prompt has come back.
+
+\bKeyboards and mice\p
+
+A USB keyboard and a USB mouse work from the moment the kernel has
+taken the controllers, which is just after CONFIG.SYS.  Until then the
+BIOS drives them, as it did before PM-DOS started.
+ 
+                                     
+.context USB--Examples
+.topic USB--Examples
+.freeze 3
+\i\aSyntax\vUSB\v  \aNotes\vUSB--Notes\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                              USB컴Examples
+ 
+    usb
+ 
+                                     
 .context XCOPY
 .context Xcopy
 .topic XCOPY
@@ -5750,8 +5838,8 @@ they are in the kernel, so those programs are not loaded:
 \i<\aDpmi=\vDPMI=\v>                    <\aScsi=\vSCSI=\v>\p
 \i<\aEms=\vEMS=\v>                     <\aShare=\vSHARE=\v>\p
 \i<\aIde32=\vIDE32=\v>                   <\aUndelete=\vUNDELETE=\v>\p
-\i<\aIdecable=\vIDECABLE=\v>                <\aWincache=\vWINCACHE=\v>\p
-\i<\aIdedma=\vIDEDMA=\v>\p
+\i<\aIdecable=\vIDECABLE=\v>                <\aUsb=\vUSB=\v>\p
+\i<\aIdedma=\vIDEDMA=\v>                  <\aWincache=\vWINCACHE=\v>\p
 
 The boot menu statements - [menu], MENUITEM, MENUDEFAULT, MENUCOLOR,
 SUBMENU, INCLUDE and COMMENT - are accepted, but there is no menu:
@@ -7134,6 +7222,88 @@ drives are used through it.  The card's IRQ must then be 3, 4, 5, 7,
                              SCSI=컴Examples
  
     SCSI=OFF
+ 
+                                     
+.context USB=
+.context Usb=
+.topic USB=
+.freeze 3
+\i\aNotes\vUSB=--Notes\v  \aExamples\vUSB=--Examples\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                                     USB=
+ 
+Turns PM-DOS's USB support on or off, and says how many drive letters
+to keep for USB disks.
+
+\bSyntax\p
+
+    USB=ON | OFF
+    USB=ON,n
+
+\bParameters\p
+
+ON
+    The kernel drives the USB controllers itself: USB keyboards, mice
+    and disks work, and one drive letter is kept for a USB disk, after
+    every other letter.  ON without the line.
+
+ON,n
+    ...and n letters, up to 4, for a machine with more than one USB
+    disk plugged in at once.
+
+OFF
+    The controllers are left to the BIOS.  A USB keyboard or disk then
+    works only as far as the BIOS's own USB support takes it, as it did
+    before PM-DOS started.
+
+\bRelated Commands\p
+
+<\aUSB\vUSB\v> lists the controllers, the devices and the disk units.
+ 
+                                     
+.context USB=--Notes
+.topic USB=--Notes
+.freeze 3
+\i\aExamples\vUSB=--Examples\v  \aSyntax\vUSB=\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                               USB=컴Notes
+ 
+\bWhen it takes effect\p
+
+The controllers are taken from the BIOS once CONFIG.SYS has been read,
+so the line can be anywhere in the file.  Safe mode (Shift or F5 at
+start) leaves the controllers to the BIOS whatever the line says.
+
+\bThe drive letter\p
+
+A USB disk's letter is there from boot, like A:, whether or not a disk
+is plugged in.  Plug a disk in and the letter answers; pull it out and
+the letter says "Not ready" until the next one comes.  Pull a disk out
+only when nothing is being written to it.
+
+A disk the BIOS showed as a hard disk at boot keeps the letter the boot
+gave it, and its USB letter stays empty.  A blank disk gets no letter
+from the boot, so the USB letter takes it.
+
+\bUnder Windows\p
+
+When Windows or another real-mode program takes the machine, the
+controllers go back to the BIOS and the USB letters are not there until
+PM-DOS comes back.
+ 
+                                     
+.context USB=--Examples
+.topic USB=--Examples
+.freeze 3
+\i\aSyntax\vUSB=\v  \aNotes\vUSB=--Notes\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                              USB=컴Examples
+ 
+    USB=ON,2
+    USB=OFF
  
                                      
 .context SET=

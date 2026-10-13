@@ -5726,6 +5726,9 @@ vdm_subptr:
         db  0F1h, 19h,  P_DX            ; a file to delete and not keep
                                         ; (18h carries nothing)
         db  0F1h, 1Ch,  P_DI            ; a SCSI adapter's, or a device's
+        db  0F1h, 24h,  P_DI            ; a USB controller's, a device's, a
+                                        ; unit's model - r3_pflags leaves
+                                        ; USBF_PROBE's EDI alone by hand
         db  0F1h, 21h,  P_SI            ; the registers a BIOS call is given
                                         ; and gives back.  20h's pointer
                                         ; depends on its function, so

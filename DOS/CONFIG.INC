@@ -244,6 +244,11 @@ ck_decide:
         mov     esi,OFFSET msgCfgSafe
         call    dword ptr ds:[IOS_CONSTR]
 
+        ; The USB controllers stay the BIOS's: a keyboard the kernel's
+        ; driver could not take is still a keyboard through the BIOS's
+        ; emulation, which is what a safe mode is for.
+        mov     byte ptr [usb_on],0
+
         ; A drive not shut down properly is asked about rather than
         ; checked: CHKDSK at boot may be the very thing that needed a
         ; safe-mode start to get past (VOLFLAG.INC).
@@ -1337,6 +1342,47 @@ cfsc_on:
         mov     byte ptr [scsi_on],1
         ret
 
+;---------------------------------------------------------------------
+; USB=ON|OFF[,n] - whether the kernel drives the USB controllers, and
+;                  how many drive letters it keeps for USB disks.
+;
+;   USB=ON      the default: the controllers are taken from the BIOS
+;               once CONFIG.SYS is finished, USB keyboards and mice
+;               are the kernel's, and one letter is kept for a USB
+;               disk, after every other letter
+;   USB=ON,2    ...two letters
+;   USB=OFF     the controllers are left to the BIOS, whose own USB
+;               keyboard and disk emulation then goes on serving the
+;               machine as it did before PM-DOS started
+;
+; Safe mode is USB=OFF whatever the line says (cfg_keys).
+;---------------------------------------------------------------------
+cfg_usb:
+        mov     edi,OFFSET cfgw_off
+        call    cfg_iskw
+        jnc     cfu_off
+        mov     edi,OFFSET cfgw_on
+        call    cfg_iskw
+        jc      cfg_badparm
+        mov     byte ptr [usb_on],1
+        cmp     byte ptr [esi+2],','
+        jne     cfu_done
+        add     esi,3
+        call    cfg_num
+        jc      cfg_badparm
+        or      eax,eax
+        jz      cfg_badparm
+        cmp     eax,USB_MAXUNITS
+        jbe     cfu_letters
+        mov     eax,USB_MAXUNITS
+cfu_letters:
+        mov     [usb_letters],al
+cfu_done:
+        ret
+cfu_off:
+        mov     byte ptr [usb_on],0
+        ret
+
 cfg_lastdrv:
         mov     al,[esi]
         or      al,al
@@ -2354,6 +2400,7 @@ cfg_table:
         dd      OFFSET cfgn_idecbl,  OFFSET cfg_idecable
         dd      OFFSET cfgn_cdrom,   OFFSET cfg_cdrom
         dd      OFFSET cfgn_scsi,    OFFSET cfg_scsi
+        dd      OFFSET cfgn_usb,     OFFSET cfg_usb
         dd      OFFSET cfgn_cache,   OFFSET cfg_cache
         dd      OFFSET cfgn_wincache,OFFSET cfg_wincache
         dd      OFFSET cfgn_share,   OFFSET cfg_share
@@ -2394,6 +2441,7 @@ cfgn_ide32    db  'IDE32',0
 cfgn_idecbl   db  'IDECABLE',0
 cfgn_cdrom    db  'CDROM',0
 cfgn_scsi     db  'SCSI',0
+cfgn_usb      db  'USB',0
 cfgn_cache    db  'CACHE',0
 cfgn_wincache db  'WINCACHE',0
 cfgn_share    db  'SHARE',0

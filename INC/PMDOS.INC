@@ -101,7 +101,9 @@ IO_PM_LOAD      EQU     IO_LOAD_BASE + RMSTUB_SIZE
 IO_SEG          EQU     0100h                   ; where the stub lives for good
 IO_BASE         EQU     00001000h
 IO_PM_BASE      EQU     00200000h               ; and its 32-bit half, above 1M
-IO_PM_MAX       EQU     00010000h               ; how much of it is blitted up
+IO_PM_MAX       EQU     00020000h               ; how much of it is blitted up:
+                                                ; 128K since the USB drivers,
+                                                ; which took it past 64K
 IO_LIMIT        EQU     IO_PM_BASE + IO_PM_MAX  ; PMIO must not grow past here
 
 ;---------------------------------------------------------------------
@@ -241,9 +243,13 @@ ENDIF
 ; below BIOS_IVT, the 1K under that - and does: at 1E9000h, or 1EF000h
 ; with the trace's buffers.  The arena
 ; starts above PMIO, the IDT, the TSS and the two ring-0 stacks, which
-; end at 220000h - the same for every build now, so nothing has to be
-; assembled to agree.
-ARENA_BASE      EQU     00220000h               ; start of the DOS memory arena
+; end at 230000h - the same for every build now, so nothing has to be
+; assembled to agree.  (220000h until the USB drivers, which took PMIO
+; from under 64K to over it: IO_PM_MAX is 128K now and everything above
+; it moved up by 64K.)
+ARENA_BASE      EQU     00230000h               ; start of the DOS memory arena:
+                                                ; 64K further on since the USB
+                                                ; drivers took PMIO past 64K
 
 ;---------------------------------------------------------------------
 ; WHERE A CALLER'S BUFFER MAY NOT BE.
@@ -692,10 +698,10 @@ R3RET_LEN       EQU     2                       ; db 0CDh,21h
 R3RET_EIP       EQU     SLOT_PSP + PSP_R3RET + R3RET_LEN
 
 
-IDT_BASE        EQU     00210000h
+IDT_BASE        EQU     00220000h
 IDT_LIMIT       EQU     07FFh                   ; 256 * 8 - 1
 
-KSTACK_TOP      EQU     00214000h               ; kernel ESP after PM switch
+KSTACK_TOP      EQU     00224000h               ; kernel ESP after PM switch
 
 ;---------------------------------------------------------------------
 ; The TSS.  Virtual-8086 mode runs at CPL 3, so every fault out of a
@@ -719,7 +725,7 @@ KSTACK_TOP      EQU     00214000h               ; kernel ESP after PM switch
 ; disagree, and clearing the real line would unmap PMDOS.SYS from
 ; underneath itself.  See vio_in / vio_out in VM86.INC.
 ;---------------------------------------------------------------------
-TSS_BASE        EQU     00214000h
+TSS_BASE        EQU     00224000h
 TSS_IOBASE      EQU     104                     ; bitmap starts right after
 TSS_TOTAL       EQU     8300                    ; 104 + 8192 + FFh, rounded
 TSS_LIMIT       EQU     TSS_TOTAL - 1
@@ -730,7 +736,7 @@ TSS_IOMAP       EQU     66h                     ; word: offset of the bitmap
 ;---------------------------------------------------------------------
 ; DPMI.  A protected-mode client runs at ring 3 out of an LDT of its
 ; own, and both of the things it needs live in the gap between the end
-; of the TSS (21606Ch) and the arena at 220000h.
+; of the TSS (22606Ch) and the arena at 230000h.
 ;
 ; THE RING-0 STACK IS NOT OPTIONAL AND IT IS NOT THE KERNEL'S.  Any
 ; interrupt taken while ring-3 code is running switches stacks through
@@ -740,15 +746,15 @@ TSS_IOMAP       EQU     66h                     ; word: offset of the bitmap
 ; client needs somewhere that is valid whenever it is running and is
 ; not somebody else's live stack.
 ;---------------------------------------------------------------------
-DPMI_KSTACK     EQU     00218000h               ; ring-0 ESP for ring-3 entries
-DPMI_LDT        EQU     00218000h               ; the client's descriptor table
+DPMI_KSTACK     EQU     00228000h               ; ring-0 ESP for ring-3 entries
+DPMI_LDT        EQU     00228000h               ; the client's descriptor table
 
 ; And the same thing for a NATIVE ring-3 program, which needs its own
 ; rather than sharing: the shell is a ring-3 program that stays running
 ; while a DOS box and a DPMI client inside it come and go, so the two
 ; stacks are live at the same time.  It sits above the LDT (2K of the
 ; 32K between DPMI_LDT and the arena) and grows down.
-R3_KSTACK       EQU     0021C000h               ; ring-0 ESP while a native
+R3_KSTACK       EQU     0022C000h               ; ring-0 ESP while a native
                                                 ; program is running
 DPMI_LDT_ENT    EQU     256                     ; descriptors in it
 DPMI_LDT_LIMIT  EQU     DPMI_LDT_ENT * 8 - 1
@@ -2713,6 +2719,144 @@ IOS_ACPI        EQU     IOSVC + 100h            ; AL = an ACPF_* function:
 IOS_KBLAYOUT    EQU     IOSVC + 104h            ; AL = a KLS_* function: the
                                                 ; layout the keyboard driver
                                                 ; decodes with (IO\KEYBD.INC)
+IOS_USB         EQU     IOSVC + 108h            ; AL = a USF_* function: the
+                                                ; USB controllers, the devices
+                                                ; on them and the disks among
+                                                ; those (IO\USB.INC)
+
+;---------------------------------------------------------------------
+; USB.  The controllers are found on the PCI bus at boot and DRIVEN
+; only once PMDOS asks (USF_START, after CONFIG.SYS has had its say):
+; taking a controller from the BIOS ends the BIOS's own keyboard and
+; disk emulation, so it is a decision CONFIG.SYS gets a vote on.  The
+; memory the controllers' schedules live in is PMDOS's to find, out of
+; the arena, and PMIO's to use.
+;---------------------------------------------------------------------
+USF_COUNT       EQU     0       ; -> ECX = UHCI and OHCI controllers found,
+                                ;    EDX = EHCI ones.  Nothing is touched
+USF_START       EQU     1       ; EBX = a 4K-aligned block of USB_MEMNEED
+                                ;    bytes -> the controllers taken over,
+                                ;    the devices present enumerated, and
+                                ;    the keyboards, mice and disks among
+                                ;    them in service.  CF if there was
+                                ;    nothing to start
+USF_UNIT        EQU     2       ; DL = a disk unit, 0 to USB_MAXUNITS-1,
+                                ;    EDI -> 24 bytes for INQUIRY's vendor
+                                ;    and product -> AL = USBUF_* flags, AH
+                                ;    = its attach generation, EBX = sectors
+                                ;    (0 until it has been asked), CL =
+                                ;    device slot, CH = the BIOS drive the
+                                ;    unit took the place of (80h/81h), or
+                                ;    0.  A unit with one answers AL = 0:
+                                ;    the disk has the BIOS drive's letters
+                                ;    and the USB letter stays empty.  CF if
+                                ;    there is no such unit.  Reads nothing
+                                ;    from the device: the tables as they
+                                ;    stand
+USF_DEVICE      EQU     3       ; DL = a device slot, EDI -> USBD_LEN bytes
+                                ;    -> that slot copied out, ECX =
+                                ;    USB_MAXDEV.  CF if the slot is empty
+USF_HC          EQU     4       ; DL = a controller, EDI -> USBH_LEN bytes
+                                ;    -> that controller, ECX = how many.
+                                ;    CF if there is no such one
+USF_RESCAN      EQU     5       ; every port looked at again, now
+USF_PROBE       EQU     6       ; DL = a disk unit -> the medium asked what
+                                ;    it is (INQUIRY, READ CAPACITY): AL =
+                                ;    USBUF_*, EBX = sectors.  CF if it is
+                                ;    not there or would not say
+
+; what 21h/F1h AL=24h asks, in bits 16-23 of EAX (fF1_usb, INT21.INC)
+USBF_DEVICE     EQU     0       ; DL = slot, EDI -> USBD_LEN bytes; ECX = slots
+USBF_HC         EQU     1       ; DL = controller, EDI -> USBH_LEN; ECX = count
+USBF_UNIT       EQU     2       ; DL = unit, EDI -> 24 bytes: USF_UNIT's answer
+USBF_PROBE      EQU     3       ; DL = unit: USF_PROBE's answer
+
+USBUF_ATTACHED  EQU     01h     ; a device is on the unit
+USBUF_READY     EQU     02h     ; ...and has said what it is
+USBUF_WRPROT    EQU     04h     ; ...and refused a write for being protected
+USBUF_NOTDISK   EQU     08h     ; ...and is not a 512-byte-sector disk (a
+                                ;    CD-ROM, or a block size this kernel
+                                ;    does not move)
+
+USB_MAXHC       EQU     4       ; controllers driven
+USB_MAXDEV      EQU     8       ; devices on all of them together
+USB_MAXUNITS    EQU     4       ; disk units: BIOS-style drives USB_DRV0 up
+USB_DRV0        EQU     82h     ; the block layer's number for unit 0; the
+                                ; two IDE slots are 80h and 81h
+USB_MEMNEED     EQU     0A000h  ; 40K: a 4K frame list a UHCI controller,
+                                ; the descriptor pool and the buffers.  4K
+                                ; aligned, and PMDOS allocates the slack
+
+; one device slot, as USF_DEVICE copies it out
+USBD_STATE      EQU     00h     ; db - USBS_*
+USBD_HC         EQU     01h     ; db - which controller
+USBD_PORT       EQU     02h     ; db - its port there, from 1
+USBD_PARENT     EQU     03h     ; db - FFh on a root port, else the hub's slot
+USBD_ADDR       EQU     04h     ; db - its USB address
+USBD_SPEED      EQU     05h     ; db - 0 full speed, 1 low
+USBD_MAXP0      EQU     06h     ; db - endpoint 0's packet size
+USBD_CLASS      EQU     07h     ; db - USBC_*: what this kernel took it for
+USBD_IFACE      EQU     08h     ; db - the interface that class is on
+USBD_EPIN       EQU     09h     ; db - its IN endpoint (interrupt or bulk)
+USBD_EPOUT      EQU     0Ah     ; db - its bulk OUT endpoint
+USBD_TOGIN      EQU     0Bh     ; db - the bulk data toggles
+USBD_TOGOUT     EQU     0Ch     ; db
+USBD_FLAGS      EQU     0Dh     ; db - USBDF_*
+USBD_UNIT       EQU     0Eh     ; db - a disk's unit; a hub's port count
+USBD_LEDS       EQU     0Fh     ; db - a keyboard's lights as last told
+USBD_MAXPIN     EQU     10h     ; dw - the IN endpoint's packet size
+USBD_MAXPOUT    EQU     12h     ; dw - ...and the OUT's
+USBD_VID        EQU     14h     ; dw - vendor
+USBD_PID        EQU     16h     ; dw - product
+USBD_QH         EQU     18h     ; dd - the interrupt queue (PMIO's own)
+USBD_RING       EQU     1Ch     ; dd - its first descriptor
+USBD_RINGI      EQU     20h     ; db - the next one to look at
+USBD_RINGN      EQU     21h     ; db - how many
+USBD_SUB        EQU     22h     ; db - where enumeration has got to
+USBD_TRIES      EQU     23h     ; db - how often the step has failed
+USBD_TIME       EQU     24h     ; dd - the tick the step began at
+USBD_REPORT     EQU     28h     ; 8 bytes - the last HID report
+USBD_REPKEY     EQU     30h     ; db - the key that is repeating, 0 for none
+USBD_CFGVAL     EQU     31h     ; db - bConfigurationValue
+USBD_HPORT      EQU     32h     ; db - a hub: the port being asked about
+USBD_HGOOD      EQU     33h     ; db - a hub: power-good time, 2ms units
+USBD_REPMS      EQU     34h     ; dw - milliseconds towards the next repeat
+USBD_IPROD      EQU     36h     ; db - the product string's index
+USBD_RSVD       EQU     37h     ; db
+USBD_NAME       EQU     38h     ; 32 bytes - the product string, ASCIIZ
+USBD_LEN        EQU     58h
+
+USBS_FREE       EQU     0       ; nothing in the slot
+USBS_ENUM       EQU     1       ; being enumerated: USBD_SUB says how far
+USBS_READY      EQU     2       ; configured and in service
+USBS_DEAD       EQU     3       ; gave up on it; it still holds its port
+USBS_GONE       EQU     4       ; unplugged, and its queues not yet taken down
+
+USBC_OTHER      EQU     0       ; a device this kernel has no use for
+USBC_KBD        EQU     1       ; boot-protocol keyboard
+USBC_MOUSE      EQU     2       ; boot-protocol mouse
+USBC_DISK       EQU     3       ; mass storage, bulk-only
+USBC_HUB        EQU     4
+
+USBDF_LOWSPEED  EQU     01h
+USBDF_ANNOUNCED EQU     02h     ; PMDOS has said it is there
+USBDF_SWEPT     EQU     80h     ; a hub: every port has been asked about once
+
+; one controller, as USF_HC copies it out
+USBH_KIND       EQU     00h     ; db - USBK_*
+USBH_NPORTS     EQU     01h     ; db
+USBH_FLAGS      EQU     02h     ; db - USBHF_*
+USBH_IRQ        EQU     03h     ; db - the line the BIOS gave it (unused)
+USBH_PCI        EQU     04h     ; dd - bus:device:function, PCI.INC's form
+USBH_BASE       EQU     08h     ; dd - I/O base (UHCI) or registers (OHCI)
+USBH_LEN        EQU     0Ch
+
+USBK_UHCI       EQU     1
+USBK_OHCI       EQU     2
+USBK_EHCI       EQU     3       ; found, told to hand its ports down, not driven
+
+USBHF_LEGACY    EQU     01h     ; the BIOS had its legacy emulation on it
+USBHF_OWNED     EQU     02h     ; this kernel is driving it
 
 KLS_SET         EQU     0       ; ESI -> a KBL_ record that stays where it is
                                 ;    and has been checked, or 0 for none; DL =
@@ -3076,6 +3220,9 @@ MS_PARAS        EQU     8                       ; the INT 33h stub below 1MB
 MS_NONE         EQU     0                       ; what PMIO found: nothing,
 MS_PS2          EQU     1                       ; a PS/2 mouse on IRQ 12,
 MS_SERIAL       EQU     2                       ; a serial one on IRQ 3 or 4
+MS_USB          EQU     3                       ; or a USB one (IO\USBHID.INC),
+                                                ; which is the kernel's from
+                                                ; the moment it is plugged in
 MSTOK_BOX       EQU     10000h                  ; an owner token: a DOS box's
                                                 ; program is this plus its PSP
                                                 ; segment, a native one its
@@ -3766,6 +3913,17 @@ DRVF_HOLD       EQU     40h                     ; ...and it was found that way
                                         ; at a mount, so it stays that way
                                         ; until a CHKDSK says the volume
                                         ; is sound (21h/F1h AL=1Dh)
+DRVF_USB        EQU     80h                     ; a USB disk's letter.  DRV_BIOS
+                                        ; is the block layer's number for
+                                        ; the unit, USB_DRV0 up, and the
+                                        ; letter is there whether or not a
+                                        ; disk is plugged in - like A:.
+                                        ; DRV_START and DRV_SECS are worked
+                                        ; out from the disk that IS there
+                                        ; each time one arrives (usb_locate,
+                                        ; FAT.INC), so a stick with a
+                                        ; partition table and one formatted
+                                        ; as a single volume both mount
 
 ;---------------------------------------------------------------------
 ; PSEUDO BIOS DRIVE NUMBERS - every range in use, in one place, which
@@ -3823,6 +3981,11 @@ DSK_LEN         EQU     10h
 
 DSKF_PRESENT    EQU     01h                     ; the BIOS or the IDE driver
                                                 ; answered for this drive
+DSKF_REMOVABLE  EQU     02h                     ; a USB disk: it can be pulled
+                                                ; out, and a partition table
+                                                ; written on it is read again
+                                                ; the next time a letter on it
+                                                ; is used - no restart
 
 ;---------------------------------------------------------------------
 ; THE DISK CACHE, as 21h/F1h AL=16h shows it to a program.  Bits 16-23
