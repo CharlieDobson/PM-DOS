@@ -1505,6 +1505,11 @@ v_pickept  db  0                        ; bases for a BIOS call; and do now
 v_boottick dd  0                        ; GV_BOOTTICK and GV_BOOTKEY: the
 v_bootkey  db  0                        ; startup keys, for PMDOS
 
+        ORG     GV_OFF + 0DCh
+v_halthook dd  0                        ; GV_HALTHOOK: what sys_reboot calls
+                                        ; first - the 32-bit drivers' halts,
+                                        ; once PMDOS has put it here
+
 ;=====================================================================
 ; Pad the stub to exactly RMSTUB_SIZE so IOPM.BIN lands at IO_PM_BASE.
 ;=====================================================================

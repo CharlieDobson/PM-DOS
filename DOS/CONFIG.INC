@@ -1618,8 +1618,18 @@ cfg_devhigh:
         ret
 
 cfg_device:
+        ; A 32-BIT DRIVER FIRST (NDLOAD.INC): nd_load knows one by its
+        ; file and loads it above the megabyte; anything else - a
+        ; real-mode driver, a file that is not there - it hands on to
+        ; dl_load with EAX = 0, and the message is dl_load's.  An
+        ; error of its own comes back as the same DLERR_* codes.
+        call    nd_load
+        jnc     cdv_out
+        or      eax,eax
+        jnz     cdv_said
         call    dl_load
         jnc     cdv_out
+cdv_said:
         push    eax
         call    cfg_show_line
         pop     eax

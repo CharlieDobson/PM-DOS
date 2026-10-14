@@ -9539,6 +9539,11 @@ fF0_mouse:
 ;       AL = 24h: bits 16-23 of EAX = a USBF_* function - the USB
 ;                 controllers, the devices on them and the disk units,
 ;                 for USB.EXE.  Native programs only (fF1_usb)
+;       AL = 25h: bits 16-23 of EAX = an NDF_* function - the 32-bit
+;                 drivers DEVICE= loaded: how many, one's row (DL,
+;                 EDI -> ND_LEN bytes), and a call into one (DL, EBX
+;                 the driver's function, EDI -> ECX bytes).  Native
+;                 programs only (INC\NDRV.INC, DOS\NDLOAD.INC)
 ;
 ; 30h has to keep lying about being DOS 5 so that ordinary programs
 ; recognise us, which leaves nothing there to report what the kernel
@@ -9625,6 +9630,8 @@ fnF1:
         je      fF1_kbinj
         cmp     al,24h
         je      fF1_usb
+        cmp     al,25h
+        je      fF1_ndrv
         jmp     i21_unsup
 
 ;--- AL=24h: THE USB BUS, for USB.EXE.  Bits 16-23 of EAX say which:
@@ -10302,6 +10309,8 @@ fF1_reboot:
         call    dos_commit
         cmp     dword ptr [cache_dirty],0
         jne     fF1_rbfail
+        call    nd_halt                         ; the 32-bit drivers' DMA
+                                                ; stopped first (NDLOAD.INC)
         call    dword ptr ds:[IOS_REBOOT]       ; and nothing after it runs
 fF1_rbfail:
         mov     ax,ERR_WRFAULT
@@ -10335,6 +10344,8 @@ fF1_pwnext:
         call    dos_commit
         cmp     dword ptr [cache_dirty],0
         jne     fF1_rbfail
+        call    nd_halt                         ; the 32-bit drivers' DMA
+                                                ; stopped first (NDLOAD.INC)
         mov     al,ACPF_OFF
         call    dword ptr ds:[IOS_ACPI]         ; and nothing after it runs,
         mov     ax,ERR_STAYEDON                 ; unless the power stayed on

@@ -57,6 +57,11 @@ DEVICEHIGH=file [options]
     driver was unable to load.  A machine with no Workgroups there
     shows the line with "Bad or missing device driver" at boot and
     goes on.
+    A 32-bit PM-DOS driver loads with the same line.  The kernel
+    tells the two kinds apart by the file, puts a 32-bit driver above
+    the first megabyte and takes none of your conventional memory for
+    it.  On MS-DOS the same file says that it needs PM-DOS and does
+    not load.
 
 INSTALL=file [options]
 INSTALLHIGH=file [options]

@@ -670,6 +670,8 @@ r3_pflags:
         je      rpf_keyb
         cmp     ax,24h * 256 + 0F1h
         je      rpf_usb
+        cmp     ax,25h * 256 + 0F1h
+        je      rpf_ndrv
         call    vdm_flags
         ret
 
@@ -679,6 +681,22 @@ rpf_usb:
         mov     bl,P_DI
         cmp     byte ptr [ebp+F_EAX+2],USBF_PROBE
         jne     rpf_out
+        xor     bl,bl
+        ret
+
+; F1h/25h, the 32-bit drivers: NDF_INFO answers into EDI, NDF_CALL
+; hands the driver a buffer at EDI when ECX says there is one - and
+; whatever EDI holds when ECX is 0 is not a pointer.  NDF_COUNT
+; carries nothing (INC\NDRV.INC).
+rpf_ndrv:
+        mov     bl,P_DI
+        cmp     byte ptr [ebp+F_EAX+2],NDF_INFO
+        je      rpf_out
+        cmp     byte ptr [ebp+F_EAX+2],NDF_CALL
+        jne     rpf_ndnone
+        cmp     dword ptr [ebp+F_ECX],0
+        jne     rpf_out
+rpf_ndnone:
         xor     bl,bl
         ret
 

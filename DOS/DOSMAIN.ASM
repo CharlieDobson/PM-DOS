@@ -33,6 +33,8 @@
         INCLUDE PMDOS.INC
         INCLUDE RMDOS.INC               ; the handover contract, for
                                         ; PARK.INC further down
+        INCLUDE NDRV.INC                ; what a 32-bit driver and the
+                                        ; kernel agree on, for NDLOAD.INC
 
 KGRP    GROUP   _DOS, _KBSS, _KBSS2
 
@@ -228,6 +230,11 @@ ENDIF
 IFDEF VDM_TEST
         call    vdm_selftest
 ENDIF
+        ; A restart stops the 32-bit drivers first, whichever road it
+        ; comes by: PMIO's sys_reboot calls what is here (NDLOAD.INC,
+        ; nd_halt), and it has to be here before CONFIG.SYS can load
+        ; one.
+        mov     dword ptr ds:[GV_HALTHOOK],OFFSET nd_halt
         call    config_run
         call    scsi_start              ; the SCSI cards, now that a DEVICE=
                                         ; line may have loaded a manager
@@ -747,6 +754,9 @@ kbss_stop:
         INCLUDE VBE.INC                 ; and VBE for a native program,
                                         ; which describes SEL_VBE the way
                                         ; RING3.INC describes a slot
+        INCLUDE NDLOAD.INC              ; and DEVICE= for a 32-BIT driver,
+                                        ; after DEVLOAD.INC because the two
+                                        ; share dl_split and its buffers
 
 ;=====================================================================
 ; Data

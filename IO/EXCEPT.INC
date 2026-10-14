@@ -1094,6 +1094,17 @@ it_noaux:
 ; same bargain as the lights - nothing here waits for a device.
         call    usb_tick
 
+;--- the 32-bit drivers' tick hooks ----------------------------------
+; Every WHOLE tick of the clock, whatever a box has done to the
+; counter: a driver loaded by DEVICE= that keeps time - a network
+; stack's retransmit timers are what this was made for - gets a call
+; with interrupts off and nothing of its own to preserve (VTIMER.INC,
+; tk_run).  Nothing here waits for one either.
+        cmp     byte ptr ds:[vt_whole],0
+        je      it_nohooks
+        call    tk_run
+it_nohooks:
+
 ;--- the floppy motor-off countdown ----------------------------------
 ; Zero means "no motor running and nothing to do", which is also the
 ; state the count is left in after it fires, so this costs two

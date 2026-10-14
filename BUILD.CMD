@@ -374,6 +374,9 @@ wcl386 -q -bt=nt -fe=fsize.exe fsize.c          || goto :fail
 rem D32BIND puts the MS-DOS program in front of a command's 32-bit
 rem image.  It is used at the end of "external commands" below.
 wcl386 -q -bt=nt -fe=d32bind.exe d32bind.c      || goto :fail
+rem D32DRV makes a 32-bit driver's .SYS out of two links of it and the
+rem real-mode stub in front (INC\NDRV.INC).  Used under "NDTEST.SYS".
+wcl386 -q -bt=nt -fe=d32drv.exe d32drv.c        || goto :fail
 cd ..
 
 rem === WHICH VERSION IS THIS? ===
@@ -458,6 +461,17 @@ wasm -q d32stub.asm                             || goto :fail
 wlink form raw bin option offset=0x0 name d32stub.exe file d32stub.obj || goto :fail
 cd ..
 TOOLS\FSIZE.EXE -eq 128 TOOLS\D32STUB.EXE "its own MZ header says 128" || goto :fail
+
+echo === DRVSTUB.BIN (the MS-DOS driver in front of every 32-bit driver) ===
+rem What real MS-DOS loads when its CONFIG.SYS names a PM-DOS driver: a
+rem block device driver that says one sentence and reports no units,
+rem which every DOS since 3.0 drops quietly.  The D32 image follows it
+rem at byte 128, D32_DRVSTUB; D32DRV puts the two together.
+cd TOOLS
+wasm -q drvstub.asm                             || goto :fail
+wlink form raw bin option offset=0x0 name drvstub.bin file drvstub.obj || goto :fail
+cd ..
+TOOLS\FSIZE.EXE -eq 128 TOOLS\DRVSTUB.BIN "the image starts at D32_DRVSTUB" || goto :fail
 
 echo === CMD.EXE ===
 cd CMD
@@ -1599,6 +1613,28 @@ wasm -q -i=..\INC nettest.asm                    || goto :fail
 wlink form raw bin name ..\BIN\TESTS\NETTEST.COM file nettest.obj order clname CODE offset=0x100 || goto :fail
 cd ..
 
+echo === NDTEST.SYS (a 32-BIT driver, loaded by DEVICE=) ===
+rem The native counterpart of TESTDEV.SYS (INC\NDRV.INC).  Linked TWICE,
+rem at 0 and at 10000000h: every dword that moved between the two is
+rem an address, and D32DRV writes those offsets after the image as its
+rem relocation table, with DRVSTUB.BIN in front - which is how every
+rem 32-bit driver is built.  The kernel adds where it landed to each.
+cd TOOLS
+wasm -q -i=..\INC ndtest.asm                     || goto :fail
+wlink form raw bin option offset=0x0 name ndtest0.bin file ndtest.obj || goto :fail
+wlink form raw bin option offset=0x10000000 name ndtest1.bin file ndtest.obj || goto :fail
+cd ..
+TOOLS\D32DRV.EXE BIN\TESTS\NDTEST.SYS TOOLS\DRVSTUB.BIN TOOLS\NDTEST0.BIN TOOLS\NDTEST1.BIN || goto :fail
+
+echo === NDRVTEST.EXE (the 32-bit drivers, asked through 21h/F1h) ===
+rem Needs NDTEST.SYS loaded by CONFIG.SYS with /I:11.  Asks the kernel
+rem what it loaded, asks NDTEST for its report, then parks the kernel
+rem with HELLO.COM on the far side and asks again, to count PARK.
+cd TOOLS
+wasm -q -i=..\INC ndrvtest.asm                   || goto :fail
+wlink form raw bin option offset=0x2000 name ..\BIN\TESTS\NDRVTEST.EXE file ndrvtest.obj || goto :fail
+cd ..
+
 echo === LRGTEST.COM (LRGDISK.386's real-mode checks, under DOS) ===
 rem Runs the real-mode start-up out of BIN\LRGDISK.386 itself with a
 rem stand-in for WIN386's loader: which disks LRGDISK would take, and
@@ -1920,7 +1956,7 @@ TOOLS\MKDISK.EXE IMAGES\TESTS.IMG BIN\BOOT.BIN -label "PM-DOS TEST" -dir ^
     BIN\TESTS\UDTEST.COM BIN\TESTS\ALLOCTST.COM BIN\TESTS\MCBTEST.COM BIN\TESTS\FCBTEST.COM ^
     BIN\TESTS\BUFTEST.COM BIN\TESTS\UMBTEST.COM BIN\TESTS\EMSTEST.COM BIN\TESTS\EMS4TEST.COM BIN\TESTS\DEVCRIT.EXE ^
     BIN\TESTS\I24TEST.COM BIN\TESTS\VFYTEST.EXE BIN\TESTS\IDETEST.EXE BIN\TESTS\HWPROBE.EXE BIN\TESTS\F32TEST.COM BIN\TESTS\FNDTEST.EXE ^
-    BIN\TESTS\CFGTEST.COM BIN\TESTS\CACHETST.COM BIN\TESTS\VFTEST.COM BIN\TESTS\SHARETST.COM BIN\TESTS\TESTDEV.SYS BIN\TESTS\TESTBLK.SYS BIN\TESTS\IOCDEV.SYS BIN\TESTS\DRVTEST.COM BIN\TESTS\CDSTEST.COM BIN\TESTS\NETTEST.COM BIN\TESTS\SEEKWR.COM BIN\TESTS\BLKTEST.COM BIN\TESTS\CTRYDMP.COM BIN\TESTS\NLSTEST.COM BIN\TESTS\KBLTEST.COM BIN\TESTS\LOCKTEST.COM ^
+    BIN\TESTS\CFGTEST.COM BIN\TESTS\CACHETST.COM BIN\TESTS\VFTEST.COM BIN\TESTS\SHARETST.COM BIN\TESTS\TESTDEV.SYS BIN\TESTS\TESTBLK.SYS BIN\TESTS\IOCDEV.SYS BIN\TESTS\DRVTEST.COM BIN\TESTS\CDSTEST.COM BIN\TESTS\NETTEST.COM BIN\TESTS\NDTEST.SYS BIN\TESTS\NDRVTEST.EXE BIN\TESTS\SEEKWR.COM BIN\TESTS\BLKTEST.COM BIN\TESTS\CTRYDMP.COM BIN\TESTS\NLSTEST.COM BIN\TESTS\KBLTEST.COM BIN\TESTS\LOCKTEST.COM ^
     BIN\TESTS\CTRYTEST.COM BIN\TESTS\CRASH.EXE BIN\TESTS\R3TEST.EXE BIN\TESTS\MS32TEST.EXE BIN\TESTS\VPICTEST.COM BIN\TESTS\TIMERTST.COM BIN\TESTS\RMIVT.COM BIN\TESTS\IRQXTEST.COM BIN\TESTS\IRQXWAIT.EXE BIN\TESTS\DMATEST.COM BIN\TESTS\DPMIIRQ.COM BIN\TESTS\DPMII32.COM BIN\TESTS\DPMIVEC.COM BIN\TESTS\DPMIV32.COM BIN\TESTS\VDSTEST.COM BIN\TESTS\NICIRQ.COM BIN\TESTS\PCITEST.EXE BIN\TESTS\IRQTEST.EXE BIN\TESTS\FPUTEST.COM BIN\TESTS\FPU32.EXE BIN\TESTS\DPMIFPU.COM BIN\TESTS\DPMIFP32.COM ^
     BIN\TESTS\LPTTEST.COM BIN\TESTS\RMSPEED.COM BIN\TESTS\HNDTEST.COM BIN\TESTS\RMFSTEST.COM BIN\TESTS\WINDRV.EXE BIN\TESTS\VBETEST.EXE ^
     BIN\TESTS\EXECLEAK.EXE BIN\TESTS\SLOTTEST.EXE BIN\TESTS\BIGMEM.EXE BIN\TESTS\LRGTEST.COM BIN\TESTS\ATAPIRD.COM BIN\TESTS\SRSTTEST.COM ^

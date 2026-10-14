@@ -270,3 +270,104 @@ vt_access       db      3                       ; how the count is written:
 vt_flip         db      0                       ; 1 = the low byte is in
 vt_lsb          db      0
 vt_whole        db      0                       ; this interrupt was a tick
+
+;=====================================================================
+; THE TICK HOOKS - a 32-bit driver's share of the clock.
+;
+; A driver loaded by DEVICE= (INC\NDRV.INC) has no thread and no box:
+; it runs when its card interrupts and when a program calls it, and
+; nothing else would ever run it.  A network stack has timers all the
+; same - a retransmission is a thing that happens because time passed
+; - so the timer interrupt offers a table of handlers, one call each
+; on every WHOLE tick of the clock (irq_timer, EXCEPT.INC): 18.2 a
+; second however a box has reprogrammed the counter, which is the
+; rate the floppy motor count and the BIOS's own clock run at.
+;
+; Each is called with interrupts off, DS and ES the kernel's, and
+; every register pushed round it, so it may use what it likes and
+; must not wait for anything.  The timer's line is the kernel's and
+; irq_hook refuses it; this is the road onto it.
+;=====================================================================
+TK_MAX          EQU     8
+
+;---------------------------------------------------------------------
+; tk_hook - IOS_TICKHOOK.  EDI = a handler.  CF if the table is full.
+;           Everything preserved.
+;---------------------------------------------------------------------
+tk_hook:
+        pushfd
+        cli
+        push    ebx
+        push    ecx
+        mov     ebx,OFFSET tk_hooks
+        mov     ecx,TK_MAX
+tkh_slot:
+        cmp     dword ptr [ebx],0
+        je      tkh_free
+        add     ebx,4
+        loop    tkh_slot
+        pop     ecx
+        pop     ebx
+        popfd
+        stc
+        ret
+tkh_free:
+        mov     dword ptr [ebx],edi
+        pop     ecx
+        pop     ebx
+        popfd
+        clc
+        ret
+
+;---------------------------------------------------------------------
+; tk_unhook - IOS_TICKUNHOOK.  EDI = the handler.  CF if it was not
+;             on the table.  Everything preserved.
+;---------------------------------------------------------------------
+tk_unhook:
+        pushfd
+        cli
+        push    ebx
+        push    ecx
+        mov     ebx,OFFSET tk_hooks
+        mov     ecx,TK_MAX
+tku_slot:
+        cmp     dword ptr [ebx],edi
+        je      tku_got
+        add     ebx,4
+        loop    tku_slot
+        pop     ecx
+        pop     ebx
+        popfd
+        stc
+        ret
+tku_got:
+        mov     dword ptr [ebx],0
+        pop     ecx
+        pop     ebx
+        popfd
+        clc
+        ret
+
+;---------------------------------------------------------------------
+; tk_run - from irq_timer, on a whole tick, interrupts off.  Every
+;          handler on the table, each with the registers kept for it.
+;---------------------------------------------------------------------
+tk_run:
+        push    ebx
+        push    ecx
+        mov     ebx,OFFSET tk_hooks
+        mov     ecx,TK_MAX
+tkr_next:
+        cmp     dword ptr [ebx],0
+        je      tkr_skip
+        pushad
+        call    dword ptr [ebx]
+        popad
+tkr_skip:
+        add     ebx,4
+        loop    tkr_next
+        pop     ecx
+        pop     ebx
+        ret
+
+tk_hooks        dd      TK_MAX dup(0)

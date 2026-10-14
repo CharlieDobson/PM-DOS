@@ -3,11 +3,14 @@ param(
     [int]$MemMB = 32,                            # the machine's RAM
     [string]$Cpu = '486',                        # DOSBox-X cputype: 386, 486, pentium...
     [string]$Name = '',                          # the baseline's name; <cpu>-<MB> if not given
-    [string[]]$Cfg = @( 'DOS=HIGH,UMB', 'DEVICE=C:\TESTS\IOCDEV.SYS', 'DEVICE=C:\TESTS\TESTBLK.SYS' ),
+    [string[]]$Cfg = @( 'DOS=HIGH,UMB', 'DEVICE=C:\TESTS\IOCDEV.SYS', 'DEVICE=C:\TESTS\TESTBLK.SYS',
+                        'DEVICE=C:\TESTS\NDTEST.SYS /I:11' ),
                                                  # CONFIG.SYS - IOCDEV.SYS is
-                                                 # what DRVTEST talks to, and
+                                                 # what DRVTEST talks to,
                                                  # TESTBLK.SYS's RAM disk (D:)
-                                                 # is what BLKTEST writes on
+                                                 # is what BLKTEST writes on,
+                                                 # and NDTEST.SYS is the 32-bit
+                                                 # driver NDRVTEST asks about
     [int]$Seconds = 240,                         # DOSBox-X's -time-limit
     [string]$Exe = '',                           # DOSBox-X, if DBXRUN.PS1 would pick wrong
     [switch]$Update,                             # keep what this run said as the baseline
@@ -135,7 +138,7 @@ $default = @(
     # these four park the kernel too, as SFTSCAN does, so they follow it:
     # every test before them still runs on a machine that has never
     # been parked
-    'BLKTEST', 'CDSTEST', 'DRVTEST', 'NETTEST', 'SEEKWR',
+    'BLKTEST', 'CDSTEST', 'DRVTEST', 'NETTEST', 'NDRVTEST', 'SEEKWR',
     'SHARETST', 'SLOTTEST', 'TIMERTST', 'TSRTEST', 'UDTEST',
     'UMBTEST', 'VBETEST', 'VDSTEST', 'VFTEST', 'VFYTEST', 'VPICTEST', 'WINTEST', 'XMSREPT', 'XMSTEST',
     # last, because it leaves a program resident: a handler on the timer

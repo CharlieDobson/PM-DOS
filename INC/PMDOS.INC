@@ -598,15 +598,33 @@ PROG_TOP        EQU     PROG_SLOT + PROG_SIZE   ; initial ESP for programs
 D32_SIG         EQU     4443h                   ; 'C','D' as a little-endian word
 D32_VER         EQU     1                       ; this layout of the header
 D32T_PROG       EQU     0                       ; D32H_TYPE: a program
+D32T_DRV        EQU     1                       ; D32H_TYPE: a 32-bit driver for
+                                                ; DEVICE= (INC\NDRV.INC); 4Bh
+                                                ; refuses it, DEVICE= loads it
 D32_STUBMIN     EQU     40h                     ; an MZ header that has a 3Ch
+D32_DRVSTUB     EQU     80h                     ; where a DRIVER's image starts
+                                                ; in its file: behind the
+                                                ; 128-byte real-mode driver
+                                                ; TOOLS\DRVSTUB.ASM puts there
 D32H_SIG        EQU     0                       ; dw - must be D32_SIG
 D32H_EXIT       EQU     2                       ; db 0CDh,20h - real DOS ends here
 D32H_VER        EQU     4                       ; db - must be D32_VER
 D32H_TYPE       EQU     5                       ; db - D32T_*; then a spare word
 D32H_BASE       EQU     8                       ; dd - load offset: SLOT_IMAGE
-D32H_ENTRY      EQU     12                      ; dd - entry point (absolute)
+                                                ; for a program; for a driver,
+                                                ; where it was LINKED, and
+                                                ; where it IS once relocated
+D32H_ENTRY      EQU     12                      ; dd - entry point (absolute);
+                                                ; a driver's TABLE (NDT_*)
 D32H_BSS        EQU     16                      ; dd - bytes to zero after image
 D32H_STACK      EQU     20                      ; dd - stack wanted (informational)
+D32H_RELOC      EQU     24                      ; dd - a driver: its relocation
+                                                ; table's offset from the
+                                                ; image's start, after the image
+D32H_NRELOC     EQU     28                      ; dd - a driver: entries in it,
+                                                ; each a dword offset of a dword
+                                                ; that holds an address.  Both
+                                                ; are 0 in a program's header
 D32H_SIZE       EQU     32
 
 ;---------------------------------------------------------------------
@@ -629,6 +647,27 @@ D32_HEAD MACRO   d32base, d32entry, d32bss, d32stack
         dd      d32bss
         dd      d32stack
         dd      0, 0                    ; pad the header to D32H_SIZE
+ENDM
+
+;---------------------------------------------------------------------
+; D32_DRVHEAD - the same header for a 32-BIT DRIVER (INC\NDRV.INC):
+; type D32T_DRV, the base the address of the header itself as the
+; linker wrote it - which is what the relocation applies to and what
+; the kernel checks afterwards - and the entry its driver table.  The
+; last two dwords are the relocation table's place and length, which
+; TOOLS\D32DRV writes into the file; the source leaves them 0.
+;---------------------------------------------------------------------
+D32_DRVHEAD MACRO d32table, d32bss
+        db      'C', 'D'                ; D32_SIG
+        db      0CDh, 20h               ; INT 20h, for a .COM that never is
+        db      D32_VER, D32T_DRV
+        dw      0                       ; spare
+        dd      $ - 8                   ; D32H_BASE: this header, as linked
+        dd      d32table                ; D32H_ENTRY: the NDT_* table
+        dd      d32bss                  ; D32H_BSS
+        dd      0                       ; D32H_STACK: a driver has no stack
+                                        ; of its own
+        dd      0, 0                    ; D32H_RELOC, D32H_NRELOC: D32DRV's
 ENDM
 
 ;---------------------------------------------------------------------
@@ -2279,6 +2318,13 @@ GV_BOOTKEY      EQU     GV_BASE + 0D8h          ; db - BOOTK_* bits
 BOOTK_SHIFT     EQU     01h                     ; a Shift key was down
 BOOTK_F5        EQU     02h                     ; an F5 was in the ring
 
+; WHAT A RESTART CALLS FIRST.  PMDOS puts the address of its nd_halt
+; here (DOS\NDLOAD.INC) before CONFIG.SYS can load a 32-bit driver, and
+; sys_reboot calls it before the ROM gets the machine, so that a
+; driver's DMA engine is stopped by whichever road the restart came:
+; 21h/F1h or Ctrl-Alt-Del.  Zero until PMDOS fills it.
+GV_HALTHOOK     EQU     GV_BASE + 0DCh          ; dd - a routine, or 0
+
 ; THE HANG REPORTER'S MAILBOX, in a kernel built with HANG_E9 (BUILD
 ; hang) and in no other.  PMDOS writes it at every INT 21h and PMIO's
 ; v86_fault at every trap a DOS box takes; PMIO's timer tick counts
@@ -2723,6 +2769,14 @@ IOS_USB         EQU     IOSVC + 108h            ; AL = a USF_* function: the
                                                 ; USB controllers, the devices
                                                 ; on them and the disks among
                                                 ; those (IO\USB.INC)
+IOS_TICKHOOK    EQU     IOSVC + 10Ch            ; EDI = a handler: called on
+                                                ; every whole tick of the clock
+                                                ; with interrupts off, free to
+                                                ; use any register.  CF if the
+                                                ; table is full (IO\VTIMER.INC)
+IOS_TICKUNHOOK  EQU     IOSVC + 110h            ; EDI = the handler again: off
+                                                ; the table.  CF if it was not
+                                                ; there
 
 ;---------------------------------------------------------------------
 ; USB.  The controllers are found on the PCI bus at boot and DRIVEN

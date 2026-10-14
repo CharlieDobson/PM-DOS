@@ -734,6 +734,16 @@ kb_mod:
 kb_reboot:
 sys_reboot:
         cli
+        ; THE 32-BIT DRIVERS FIRST, through the hook PMDOS leaves in the
+        ; globals (GV_HALTHOOK, DOS\NDLOAD.INC): a card's DMA ring left
+        ; running has the same claim on the BIOS's memory as a USB
+        ; schedule.  Zero until PMDOS has loaded, and then whichever
+        ; road the restart came by - 21h/F1h or Ctrl-Alt-Del - passes
+        ; here.
+        cmp     dword ptr ds:[GV_HALTHOOK],0
+        je      kbr_nohook
+        call    dword ptr ds:[GV_HALTHOOK]
+kbr_nohook:
         call    usb_halt                ; a USB schedule left running would
                                         ; be writing into the BIOS's memory
         xor     al,al

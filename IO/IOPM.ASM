@@ -98,6 +98,8 @@ svc_table:
         dd      acpi_svc        ; IOS_ACPI
         dd      kb_laysvc       ; IOS_KBLAYOUT
         dd      usb_svc         ; IOS_USB
+        dd      tk_hook         ; IOS_TICKHOOK
+        dd      tk_unhook       ; IOS_TICKUNHOOK
 
 ;=====================================================================
 ; pm_entry - first instruction executed in 32-bit protected mode.

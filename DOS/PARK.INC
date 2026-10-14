@@ -131,6 +131,10 @@ pk_nofill:
                                         ; stop existing
         call    park_fillhdr
         call    park_savevecs           ; the IVT as the boxes left it
+        xor     al,al
+        call    nd_park                 ; the 32-bit drivers: the machine
+                                        ; is about to be real mode's
+                                        ; (NDLOAD.INC)
         call    park_go
 
         ; And we are back.
@@ -1555,6 +1559,9 @@ ENDIF
 IFDEF EXIT_TRACE
         XTMARK32 60,056h                ; 'V'
 ENDIF
+        mov     al,1
+        call    nd_park                 ; the 32-bit drivers: it is back
+                                        ; (NDLOAD.INC)
 
         ; Every volume, again.  RMDOS has been writing to these disks
         ; and every FAT window and cluster cached up here describes the

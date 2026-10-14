@@ -14053,6 +14053,197 @@ a stick that wants more than one LUN or a 2048-byte block (refused as
 given, two sticks in at once, and 86Box, which has no USB at all.
 
 
+A 32-BIT DRIVER ON A DEVICE= LINE: THE D32 DRIVER SUBTYPE (2026-10-13)
+---------------------------------------------------------------------
+
+Charlie's plan for networking (the conversation of 2026-10-13, the
+steps at the end of this entry): a TCP/IP stack and its card drivers
+as 32-bit drivers in files of their own, loaded by DEVICE= above the
+megabyte and called as subroutines, with a VxD later that re-enters
+them while Windows has the machine.  The first step was the thing
+"FOR A DRIVER, LATER" in the 'CD' entry had left open: nothing loaded
+a native driver and nothing decided how one would be loaded.  Both
+are settled now, and NDTEST.SYS is one.
+
+THE FILE (INC\NDRV.INC, which is the whole contract).  A D32 image
+whose header says D32T_DRV, linked at offset 0, with a RELOCATION
+TABLE after the image - the offset of every dword that holds an
+address - and 128 bytes of real-mode device driver in front
+(TOOLS\DRVSTUB.ASM) for MS-DOS's sake: a DOS given the file on a
+DEVICE= line loads it as a block driver, whose INIT prints "This
+driver needs PM-DOS." and reports no units, which is the one answer
+that makes every DOS from 3.0 on drop a driver quietly and free its
+memory (SYSINIT's erase_dev_do, DOS6SRC bios/sysconf.asm: a
+character driver cannot refuse to install, a block driver with no
+units can).  PM-DOS knows the file by the eight bytes PMD32DRV in that
+header's name field, which DOS never reads.  The image's own header
+carries its link address in D32H_BASE - the macro D32_DRVHEAD writes
+"dd $ - 8" there - and the kernel's check after relocating is that the
+field now equals the block's address: a table that was not this
+image's fails that one comparison before anything is called.
+
+THE TABLE COMES FROM TWO LINKS.  wlink's raw output has no fixups, so
+TOOLS\D32DRV.C takes the same driver linked at 0 and at 10000000h and
+calls every dword that differs by exactly that a relocation; any byte
+that differs in another way stops the build, because it would be an
+address this cannot describe.  10000000h and not something small,
+because a difference all in one byte with no carry is what makes the
+scan exact: the three low bytes of an address are the same in both
+links, so a window starting one, two or three bytes early sees the
+delta shifted and never the delta.  NDTEST has 49 of them, the
+header's base and entry among them.
+
+WHAT THE KERNEL DOES (DOS\NDLOAD.INC, included last).  cfg_device
+asks nd_load first; a file that is not one of these comes back with
+EAX = 0 and goes to dl_load as before, so the message for a missing
+file is still DEVLOAD's.  nd_load reads the whole file into a block
+out of the arena - first fit, at CONFIG.SYS time, owner written as 0
+whoever is running, so 4Ch's sweep never frees it and park_xmsgrab
+never hands it to Windows (that gives away the largest FREE block) -
+applies the table, zeroes the BSS, checks the driver table (NDT_*:
+'NDRV', a version, a name, INIT/PARK/HALT/CALL entries) and calls
+INIT with ESI -> the services, EDI -> its row in nd_tab and EDX -> the
+line as dl_split kept it.  The services (NDS_*) are addresses of
+routines with the register contracts of what is behind them: the
+arena, IOS_CONSTR, IOS_TICKS, IOS_BUS, IOS_IRQHOOK and two new ones,
+IOS_TICKHOOK/UNHOOK (VTIMER.INC, tk_run from irq_timer on every WHOLE
+tick, since the timer's line is the kernel's and irq_hook refuses
+it).  PARK.INC calls nd_park with AL = 0 after park_savevecs and 1
+after park_restvecs, as usb_park is called; fF1_reboot and fF1_power
+call nd_halt before the ROM or ACPI gets the machine, and so does
+PMIO's sys_reboot through GV_HALTHOOK (IORM.ASM, GV_BASE+0DCh) so that
+Ctrl-Alt-Del passes the same way - once, whichever road.  A program
+asks through 21h/F1h AL=25h: NDF_COUNT, NDF_INFO (a row, ND_LEN bytes)
+and NDF_CALL (the driver's own function in EBX, a buffer at EDI of
+ECX bytes, checked by cbuf_ok).  RING3.INC's r3_pflags has the case:
+EDI is a pointer for NDF_INFO and for NDF_CALL when ECX is not 0.
+
+THE RULE A DRIVER KEEPS.  Its own memory, its own hardware, the
+services, nothing else: no INT 21h, no console but NDS_PRINT, no
+waiting.  That is the bridge's rule - a driver that keeps to it runs
+unchanged while Windows has the machine, called through a VxD that
+switches into the parked kernel's context - and it costs nothing at
+the native prompt.
+
+THE TEST.  TOOLS\NDTEST.ASM is the driver: INIT prints a line, keeps
+the DEVICE= line, takes 4K through NDS_ALLOC and reads a pattern
+back, hooks the clock and the line /I:n names (11 on the rig, nothing
+on it, so the hook is the test); PARK and HALT count; CALL reports
+all of it, with the one thing only a relocated driver can answer -
+"dd OFFSET drvtab" as the loader left it against the address the code
+finds itself at.  TOOLS\NDRVTEST.ASM asks the kernel what it loaded,
+asks NDTEST for the report, checks every number, waits a second of the
+clock and asks again, asks BUS_IRQSTAT whether line 11 is hooked and
+open, then parks the kernel with HELLO.COM on the far side and reads
+PARK's counts back: 0001 and 0001, in the driver and in the row.  All
+checks pass on every row.  RUNTESTS loads the driver from its
+CONFIG.SYS (DEVICE=C:\TESTS\NDTEST.SYS /I:11) and runs NDRVTEST after
+NETTEST, with the other tests that park.
+
+TRAPS, IN THE ORDER THEY CAME.
+  1. wasm folds case, and this file's equates are the lower-case
+     labels' names: nd_probe was ND_PROBE, nd_base was ND_BASE,
+     nds_alloc was NDS_ALLOC, nd_table (the test's) was ND_TABLE -
+     "Unexpected colon" and "Invalid instruction operands" at the use.
+     The buffer length is ND_PROBELEN, the block is nd_blk, the service
+     routines are ndsv_*, the test's table is drvtab.  (The trap is in
+     the memory file as well, and it still cost four builds.)
+  2. A text equate in a DB: "DRVSTUB_NAME EQU <'PMD32DRV'>" and
+     "db DRVSTUB_NAME" assembled, and the eight bytes landed one byte
+     past the label - the compare in the kernel read from 138795h and
+     the name began at 138796h, so no driver file was ever
+     recognised and every one went to DEVLOAD, which ran the stub as
+     real-mode code (hence "This driver needs PM-DOS." followed by
+     "Device driver has no units" at boot).  Found by reading the
+     bytes out of PMDOS.SYS.  The name is spelled out where it is
+     used; the equate is a comment.
+  3. The loader module was DOS\NDRV.INC and the equates INC\NDRV.INC:
+     "INCLUDE NDRV.INC" found the local one first.  NDLOAD.INC now -
+     and a scratch mirror keeps a deleted file until it is deleted
+     there too (robocopy /E does not remove), which cost one build
+     more.
+  4. r3_pflags: a new F1h subfunction that takes a pointer is not
+     translated until the table says so.  NDF_INFO and NDF_CALL were
+     refused with ERR_ACCESS - cbuf_ok saw a slot offset - until the
+     case went in.
+  5. 2Ch answers the hour and minute in CX, so a wait that counts in
+     ECX round a 2Ch loop counts to the time of day: the test hung
+     for the 5,000 seconds its "two" was.  RMIVT's note says exactly
+     this; the counter is EBX now.
+  6. How a hung test is read: its output is in the write cache and
+     never reaches the disk, so the screen is the witness.  DBXRUN
+     -Cap records the run, ZMBVSHOT.PL pulls the last frame out as a
+     BMP, and System.Drawing turns that into a PNG that can be looked
+     at.  AUTOEXEC.BAT in the test image is swapped by FATREPL for one
+     that runs the test unredirected.  Two of the traps above were
+     found that way.
+
+WHAT MOVED (RUNTESTS, 81 -> 82 tests, all seven rows): MEM, BIGMEM,
+XMSREPT and XMSTEST by the driver's two blocks (4K from NDS_ALLOC and
+768 bytes of image: XMS blocks in use 13 -> 15 on the 486), CACHETST
+by the same layout shift ("a write is owed" 5 -> 4), PCITEST by a new
+line for IRQ 11 ("driver open"), RMFIND and RMTEST by two more files
+in \TESTS.  Nothing else.  The first run showed RMFIND four entries
+SHORT, which was the scratch tree: six 16-bit guests MKHD seeds
+(REVEAL, DISKSTAT, MSD, EXEHDR, NMAKE, MEM622) live in S:\BIN\TESTS
+and are built by nothing, and the baselines were recorded with them
+on the disk - seed them into a mirror's BIN\TESTS before trusting a
+row.  MASM 6.13 assembles DOSMAIN, IOPM, IORM, NDTEST, NDRVTEST and
+DRVSTUB.
+
+NOT DONE.  MEM /D does not list the 32-bit drivers (nd_tab is only
+reachable through F1h/25h).  No C driver yet: the startup module a C
+driver needs (the header, the table, OW's #pragma aux for the
+register contracts) comes with the first real one.  HALT is counted
+by the test but never exercised headless - a restart ends the run.
+Enhanced-mode Windows with a driver loaded has not been tried on
+86Box: nd_park's two calls are proved by PARKTEST's kind of park on
+DOSBox-X only.  Nothing here has run on real hardware.
+
+THE STEPS FROM HERE, in the order they are needed (the plan agreed
+2026-10-13; the reasons are in the conversation and in INC\NDRV.INC):
+  1. The driver loader - this entry.
+  2. A link-layer test as the first piece of the stack: DHCP, ARP, a
+     ping to the gateway, which both QEMU's user-mode network and
+     86Box's SLiRP put at 10.0.2.2.  Card drivers are proved by it.
+  3. Card drivers by family, emulated ones first: DP8390 (NE1000,
+     NE2000, RTL8019AS, RTL8029AS - 86Box and QEMU both), then PCnet,
+     RTL8139, DEC Tulip, Intel 8255x and 8254x; the shared-memory
+     8390 boards and the 3C501 (86Box); the EtherLink III and
+     3C905 for Charlie's own machines, proved by him.
+  4. TCP with windows and retransmission, a socket API on F1h for
+     natives and boxes, FTP, TELNET, an HTTP fetcher, SNTP; NSTLS
+     ported for HTTPS.
+  5. SMB2 (2.0.2 over 445) with NTLMv2 through SPNEGO and
+     HMAC-SHA256 signing: NET USE to the DC and to Eternia-Storage,
+     the letters as volumes.  Mappings and the credential survive a
+     park by table and reconnect on first use.
+  6. SMB1 (NT LM 0.12 and LANMAN2.1) over NetBIOS-over-TCP with LM
+     and NTLMv1, for WfW 3.11, Win9x, NT 3.51 and NT 4 peers.
+  7. PMDOS.386: the context-switch bridge (a trampoline page mapped
+     at one linear address in both page tables; VPICD for the card's
+     line, VTD for ticks), the V86 entry RMDOS calls for USB units
+     and network letters, WINSOCK.DLL over it, the HTTP proxy and the
+     port map that give 16-bit programs TLS without knowing; then the
+     NDIS 3 adapter face so WfW's own protocols bind to the kernel's
+     card.
+  8. An SMB server, if wanted.
+
+Files: INC\NDRV.INC (new), INC\PMDOS.INC (D32T_DRV, D32_DRVSTUB,
+D32H_RELOC/NRELOC, D32_DRVHEAD, IOS_TICKHOOK/UNHOOK, GV_HALTHOOK),
+DOS\NDLOAD.INC (new), DOS\CONFIG.INC (cfg_device), DOS\PARK.INC,
+DOS\INT21.INC (fnF1, fF1_reboot, fF1_power), DOS\RING3.INC
+(rpf_ndrv), DOS\DOSMAIN.ASM, IO\VTIMER.INC (the tick hooks),
+IO\EXCEPT.INC (irq_timer), IO\KEYBD.INC (sys_reboot), IO\IOPM.ASM,
+IO\IORM.ASM, TOOLS\DRVSTUB.ASM, TOOLS\D32DRV.C, TOOLS\NDTEST.ASM,
+TOOLS\NDTEST.INC, TOOLS\NDRVTEST.ASM (all new), BUILD.CMD, MKHD.CMD,
+TOOLS\RUNTESTS.PS1, DISK\CONFIG.TXT, BASELINE\ (the nine moved
+answers and NDRVTEST, every row).  PMIO.SYS 74,563 -> 74,739,
+PMDOS.SYS 164,935 -> 166,669, NDTEST.SYS 1,087, NDRVTEST.EXE 2,654.
+S:\BIN, IMAGES\PMDOS.IMG, TESTS.IMG and HD16.IMG (FATREPL) and the
+86Box VM's two images carry it.  Still v0.64; not committed.
+
+
 v0.61 - THE NUMBER CAUGHT UP (2026-09-30)
 ---------------------------------------------------------------------
 
