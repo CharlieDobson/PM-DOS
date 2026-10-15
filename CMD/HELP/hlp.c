@@ -65,6 +65,10 @@ static int read_whole( const char *path )
         sys_close( handle );
         return rc;
     }
+    if ( size > 0x1000000UL ) {         /* 16M is more than any help file, */
+        sys_close( handle );            /* and size + 2 must not wrap round */
+        return -1;                      /* to a block of nothing */
+    }
     file = (char *)try_alloc( size + 2 );
     if ( file == NULL ) {
         sys_close( handle );

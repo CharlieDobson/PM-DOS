@@ -14244,6 +14244,173 @@ S:\BIN, IMAGES\PMDOS.IMG, TESTS.IMG and HD16.IMG (FATREPL) and the
 86Box VM's two images carry it.  Still v0.64; not committed.
 
 
+EVERY NUMBER THAT CAME FROM OUTSIDE, MEASURED BEFORE IT IS USED
+(2026-10-14)
+---------------------------------------------------------------------
+
+A review of the kernel for the places where a count or an address
+that did not come from the kernel decides what the kernel reads or
+writes.  PM-DOS was never built to protect one program from another
+and still is not (README.TXT says so); what was looked for is the
+narrower thing the ring-3 release promised, that a program's mistake
+stays a program's mistake and a damaged disk is a damaged disk and not
+a damaged kernel.  The three pointer bridges (r3_xlat, dpmi_xlat, the
+box's segment arithmetic), buf_ok and cbuf_ok, usr_wok, the DPMI
+descriptor calls, the path resolver, the IOCTL and 7305h packets, the
+INT 13h and INT 25h buffer checks, COUNTRY.SYS, KEYBOARD.SYS and the
+USB descriptor walk all held.  Seven places did not, and each now
+measures the number before it believes it:
+
+  RING3.INC    the slot heap's walk, join, free and resize read a
+               block's size out of the program's own memory and the
+               split wrote a header where that size said.  r3h_span
+               checks every header against r3h_hi first; a heap with a
+               wrong size in it stops at that block (48h: no memory;
+               49h and 4Ah: not a block), and nothing is written past
+               the slot.
+  LOWMEM.INC   the same for the chain below the megabyte, whose length
+               words are the guest's: lm_blkok checks that a block
+               ends at or below lm_chtop, in lm_scan, lm_free,
+               lm_freeown, lm_resize (the block and its neighbour) and
+               lm_coalesce.  A length that runs past the chain is the
+               broken chain it is, and a walk ends there.
+  VDM.INC      an .EXE's fixups: the segment and the offset are the
+               file's, and their sum reaches two megabytes.  vdm_fixok
+               keeps every fixup inside the load module, for a program
+               (vx_one) and for an overlay (vov_one); one outside is
+               ERR_EXEFMT.
+  FAT.INC      fat_next and fat_setnext refuse a cluster below 2 or at
+               or above fat_totclus+2 - the chain ends, the write does
+               not happen - instead of indexing the FAT12 cache or a
+               FAT sector by a number off the disk.
+  UDF.INC      a File Entry's extended-attribute and descriptor
+               lengths have to lie inside the entry's block; a File
+               Identifier longer than a block ends the directory.
+  ISO9660.INC  a directory record that runs out of its block is
+               treated as the zero that ends a block.
+  DPMI.INC     0300h/0301h/0302h ask usr_wok about the client's stack
+               before copying words off it, and the two exception
+               returns ask about the frame before reading it, so a
+               client's stack in a page that is not there is the
+               client's fault and not the kernel's.
+
+Two tests grew a check each, in the shape that proves the guard
+rather than the behaviour around it: R3TEST 15 and MCBTEST 6 each take
+a block, write a size over its header that the heap has not got, ask
+4Ah to keep the block the size it is, and want no for an answer - and
+each keeps the header after the block and puts it back, because a
+kernel without the check writes one over it, so the heap is whole on
+either kernel.  RUNTESTS, all seven rows: every other answer the same
+as before the change, and four re-recorded - the two tests' own, and
+RMTEST (36h's free count, two clusters: R3TEST.EXE crossed a cluster
+and the two answers each grew a line) and CACHETST ("a write is owed"
+4 -> 5 on every row but the 386), which is the layout shift those two
+have moved with on every size change since v0.62.  MASM 6.13 still
+assembles DOSMAIN (one short jump in iso_dirone became a near one).
+Nothing here has run on real hardware or in 86Box.
+
+The trap met on the way: a scratch mirror seeded with S:\BIN's four
+.TST key files puts them on the test disk, and RMTEST's 36h free
+count moves by a cluster.  Seed BIN\TESTS, not BIN.
+
+Files: DOS\RING3.INC, LOWMEM.INC, VDM.INC, FAT.INC, UDF.INC,
+ISO9660.INC, DPMI.INC, TOOLS\R3TEST.ASM, TOOLS\MCBTEST.ASM,
+BASELINE\ (R3TEST, MCBTEST, RMTEST and CACHETST, every row).
+PMDOS.SYS 166,669 ->
+167,101, R3TEST.EXE 2,138, MCBTEST.COM 1,265.  S:\BIN, IMAGES\PMDOS.IMG,
+TESTS.IMG and HD16.IMG (FATREPL) and the 86Box VM's two images carry
+it.  Still v0.64; not committed.
+
+
+THE APPLICATIONS' TURN: EVERY NAME AND COUNT FROM OUTSIDE, MEASURED
+AGAINST THE BUFFER IT GOES INTO (2026-10-14)
+---------------------------------------------------------------------
+
+The same review as the kernel's above, over the programs in CMD\ (not
+the tests): every place a length that came from a command line, an
+environment variable, a file or a disk decides how much is written
+into a fixed buffer, or how big a block is asked for.  Most of it
+held - the C programs' str_cpyn and str_catn, ACROREAD's checked
+readers and depth limits, the FAT checkers' cluster checks, XCOPY, FC,
+ISAPNP, FDISK's chain walk, LRGDISK, DISKCOPY's geometry checks, the
+16-bit COMMAND.COM's lines.  These did not, and now do:
+
+  CMD.ASM      COPY, DEL, DIR and REN joined a directory to a found name
+               in 144-byte buffers with copy-until-the-NUL loops.  A
+               long name made COPY write the destination over the
+               source path ("File not found" for a 148-character name);
+               DIR /S added 8.3 names to the 144-byte directory path
+               down to 32 levels, over the pattern after it, so a
+               directory listed after a deep branch matched nothing;
+               the pattern itself went into 80 bytes; 7160h's answer,
+               up to 260 bytes, went into 144.  Every such buffer is
+               SPATH_MAX (LFN_MAX) bytes now and every join goes
+               through path_cat, which refuses a path that will not
+               fit: COPY, DEL and REN say "Path too long:" and the name
+               and go on with the next file, and DIR /S does not go
+               into a directory whose path will not fit.
+  REDIR.INC    a redirection's file name was CUT to 79 characters, so
+  COMMAND.ASM  "> LONG\PATH\NAME" wrote - and with > emptied - whichever
+               file the first 79 characters named.  CMD.EXE keeps
+               SPATH_MAX now; both shells stop the command with
+               "Redirection path too long" instead of cutting.
+  FORMAT.ASM   /S copied the whole COMSPEC value into a 144-byte path
+               and on into the EXEC block that runs SYS.COM.  Only the
+               directory is copied, and only if SYS.COM fits after it.
+  UNDELETE.ASM the names in an UNDELETE.DAT record were trusted to end
+               inside their fields, and directory + long name (up to
+               530 bytes) went into 320-byte paths.  read_rec ends each
+               field itself; a file whose path will not fit is not
+               restored and says so; a stored name with '\', '/', ':'
+               or '.' in it, or a name with a path in it, is a damaged
+               record and is not restored.
+  DOSSHELL     tree_path kept 80 ancestors while the scan went deeper,
+               and into paths up to PATH_MAX + 15 that tree_path cannot
+               write: such a directory got a path with names missing
+               from it.  Both limits are PATH_MAX now.  Groups inside
+               groups in DOSSHELL.INI were read by recursion with no
+               limit: 16 deep now, deeper ones passed over.
+  EDIT         lines_reserve's cap * sizeof( LINE ) wrapped round for a
+               file of half a gigabyte of line ends; refused instead.
+  HELP, PMD    try_alloc( size + 2 ) and ( size + 1 ) for a file of 4GB
+               less a byte or two wrapped to nothing.  A HELP.HLP over
+               16MB and a file over 1MB for PMD's Insert Command are
+               refused.
+
+Left as it is: a batch line over 159 characters is cut and the rest
+run, the way MS-DOS's COMMAND.COM cuts one at 127.  Changing that is a
+change of behaviour, not a bounds fix.
+
+Tested: RUNTESTS all seven rows, 88 of 88, and NLSTESTS every row.
+RMTEST and CACHETST re-recorded on every row for the usual reason - the
+programs grew by two clusters (36h free 70AF -> 70AD, "a write is
+owed" 5 -> 4).  The shell's and the programs' own batch tests (UNDTEST
+DIRTEST RENTEST GLUETEST FORFTEST C16TEST DEEPTEST EDTEST HLPTEST
+PMDTEST DSTEST) on the old and the new build, one DOSBox-X boot each:
+the only differences are free space and file sizes.  A scratch batch
+file (not shipped) with a tree sixteen deep and a 148-character name:
+the old shell left out a directory listed after the deep branch,
+failed COPY, REN and DEL of the long name and a 101-character DIR /S
+pattern, and cut a 104-character redirection to 79; the new one does
+all of them.  Not exercised by a test: FORMAT /S with a long COMSPEC,
+UNDELETE with a damaged index, DOSSHELL's deep tree and nested INI
+groups, the size wraps (they want files of half a gigabyte to 4GB).
+Nothing here has run on real hardware or in 86Box.
+
+Files: CMD\CMD.ASM, CMD\REDIR.INC, CMD\COMMAND\COMMAND.ASM,
+CMD\FORMAT\FORMAT.ASM, CMD\UNDELETE\UNDELETE.ASM, CMD\DOSSHELL\tree.c,
+CMD\DOSSHELL\progs.c, CMD\EDIT\doc.c, CMD\HELP\hlp.c, CMD\PMD\tools.c,
+BASELINE\ (RMTEST and CACHETST, every row).  CMD.EXE 60,207 -> 61,843,
+COMMAND.COM 33,408 -> 33,463, FORMAT.COM 8,922 -> 8,926, UNDELETE.EXE
+9,495 -> 9,800, DOSSHELL.EXE 129,408 -> 129,572, EDIT.EXE 61,792 ->
+61,828, HELP.EXE 42,272 -> 42,280, PMD.EXE 90,268 -> 90,340.  S:\BIN,
+IMAGES\PMDOS.IMG and HELP.IMG, HD16.IMG (FATREPL) and the 86Box VM's
+HD16, PMDOS and HELP images carry it; HD32.IMG and MULTI.IMG do not
+(MKHD makes them).  S:\BIN's ACROREAD, DEFRAG, FC, ISAPNP and XCOPY
+were built before PMDOS.INC changed on 2026-10-13 and no longer match
+what their sources build; left alone.  Still v0.64; not committed.
+
+
 v0.61 - THE NUMBER CAUGHT UP (2026-09-30)
 ---------------------------------------------------------------------
 

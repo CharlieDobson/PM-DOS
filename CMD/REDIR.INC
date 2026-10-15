@@ -34,7 +34,12 @@
 RX_IN           EQU     1               ; rx_flags bits
 RX_OUT          EQU     2
 RX_APP          EQU     4
-RXNAME_MAX      EQU     80
+RX_LONG         EQU     8               ; a name was too long to keep
+; A redirection's file name.  It was 80 bytes and a longer name was CUT
+; to fit, so "> C:\A\LONG\PATH\FILE.TXT" wrote - and with > emptied -
+; whatever file the first 79 characters happened to name.  A name that
+; will not fit now stops the command instead.
+RXNAME_MAX      EQU     SPATH_MAX
 
 ;=====================================================================
 ; exec_line - run the command line at ESI, honouring < > >> and |.
@@ -207,13 +212,16 @@ rdn_qlp:
         cmp     al,'"'
         je      rdn_qend
         cmp     ecx,RXNAME_MAX - 1
-        jae     rdn_qsk
+        jae     rdn_qlong
         mov     [edi],al
         inc     edi
         inc     ecx
 rdn_qsk:
         inc     esi
         jmp     short rdn_qlp
+rdn_qlong:
+        or      byte ptr [rx_flags],RX_LONG
+        jmp     short rdn_qsk
 rdn_qend:
         inc     esi
         jmp     short rdn_end
@@ -232,13 +240,16 @@ rdn_lp:
         cmp     al,'|'
         je      rdn_end
         cmp     ecx,RXNAME_MAX - 1
-        jae     rdn_full
+        jae     rdn_long
         mov     [edi],al
         inc     edi
         inc     ecx
 rdn_full:
         inc     esi
         jmp     short rdn_lp
+rdn_long:
+        or      byte ptr [rx_flags],RX_LONG
+        jmp     short rdn_full
 rdn_end:
         mov     byte ptr [edi],0
         pop     ecx
@@ -258,6 +269,8 @@ redir_apply:
         push    edi
         mov     ebx,-1
         mov     ecx,-1
+        test    byte ptr [rx_flags],RX_LONG
+        jnz     rda_long
 
         ; --- stdin -----------------------------------------------
         mov     edx,OFFSET rx_inname
@@ -361,6 +374,9 @@ rda_full:
         jmp     short rda_err
 rda_syntax:
         mov     edx,OFFSET msg_syntax
+        jmp     short rda_err
+rda_long:
+        mov     edx,OFFSET msg_rxlong
         jmp     short rda_err
 rda_nofile:
         mov     edx,OFFSET msg_notfound
@@ -499,3 +515,4 @@ pipe2_name  db  '%PIPE2.$$$',0
 
 msg_nocreate db 'File creation error',13,10,'$'
 msg_handles db  'Too many open files',13,10,'$'
+msg_rxlong  db  'Redirection path too long',13,10,'$'

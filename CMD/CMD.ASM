@@ -36,6 +36,13 @@ ENV_SIZE        EQU     1024
 QVERB_MAX       EQU     128             ; a quoted verb (a long path)
 PATHDIR_MAX     EQU     128             ; one PATH= directory
 COPYBUF_SIZE    EQU     8192
+; One path the shell puts together itself - COPY's source and target,
+; DEL's victim, DIR's directory, REN's old and new names.  LFN_MAX
+; because that is the kernel's own ceiling: 7160h writes up to that
+; many bytes, and a found long name alone can be 259 characters.  Every
+; join into one of these goes through path_cat, which refuses a path
+; that will not fit rather than writing past the end of the buffer.
+SPATH_MAX       EQU     LFN_MAX
 
 ; Command switches, as sw_scan reports them: one bit per letter, bit 0
 ; for /A up to bit 25 for /Z.  Up here rather than beside sw_scan
@@ -1616,20 +1623,18 @@ dir_lastch:
 dir_glue:
         push    esi
         mov     edi,OFFSET dir_scratch
-dirg_cp:
-        lodsb
-        or      al,al
-        jz      dirg_add
-        stosb
-        jmp     short dirg_cp
-dirg_add:
-        mov     byte ptr [edi],'*'
-        mov     byte ptr [edi+1],'.'
-        mov     byte ptr [edi+2],'*'
-        mov     byte ptr [edi+3],0
+        mov     edx,OFFSET dir_scratch + SPATH_MAX
+        call    path_cat
+        jc      dirg_long
+        mov     esi,OFFSET pat_all
+        call    path_cat
+        jc      dirg_long
         pop     esi
         mov     esi,OFFSET dir_scratch
         jmp     dir_pat
+dirg_long:
+        pop     esi                     ; no room for the "*.*": the
+        jmp     dir_pat                 ; text as typed, to fail below
 dir_probe:
         mov     edx,esi
         mov     ecx,ATTR_DIR            ; CL = allowable
@@ -1645,20 +1650,17 @@ dir_probe:
         jz      dir_pat
         push    esi
         mov     edi,OFFSET dir_scratch  ; arg + "\*.*"
-dirx_cp:
-        lodsb
-        or      al,al
-        jz      dirx_add
-        stosb
-        jmp     short dirx_cp
-dirx_add:
-        mov     byte ptr [edi],'\'
-        mov     byte ptr [edi+1],'*'
-        mov     byte ptr [edi+2],'.'
-        mov     byte ptr [edi+3],'*'
-        mov     byte ptr [edi+4],0
+        mov     edx,OFFSET dir_scratch + SPATH_MAX
+        call    path_cat
+        jc      dirx_long
+        mov     esi,OFFSET pat_root
+        call    path_cat
+        jc      dirx_long
         pop     esi
         mov     esi,OFFSET dir_scratch
+        jmp     short dir_pat
+dirx_long:
+        pop     esi
 
 dir_pat:
         ; THE PATTERN IS SPLIT ONCE, HERE, and everything below works
@@ -2508,13 +2510,13 @@ drs_split:
         mov     esi,OFFSET dir_hdrbuf   ; the tail is the pattern
         add     esi,edx
         mov     edi,OFFSET dir_fpat
-drs_cp:
-        lodsb
-        stosb
-        or      al,al
-        jnz     drs_cp
+        push    edx
+        mov     edx,OFFSET dir_fpat + SPATH_MAX
+        call    path_cat
+        pop     edx
+        jc      drs_fail
 
-        cmp     edx,3                   ; "X:\" keeps its backslash;
+        cmp     edx,3                  ; "X:\" keeps its backslash;
         jbe     drs_keep                ; anything deeper drops it
         dec     edx
 drs_keep:
@@ -2532,35 +2534,22 @@ drs_fail:
         ret
 
 ;---------------------------------------------------------------------
-; dir_join - dir_scratch = dir_dirpath + '\' + dir_fpat
+; dir_join - dir_scratch = dir_dirpath + '\' + dir_fpat.  CF if the
+;            two together are too long to be a path.
 ;---------------------------------------------------------------------
 dir_join:
         pushad
+        mov     ebx,OFFSET dir_scratch
+        mov     edi,ebx
+        mov     edx,OFFSET dir_scratch + SPATH_MAX
         mov     esi,OFFSET dir_dirpath
-        mov     edi,OFFSET dir_scratch
-        xor     ecx,ecx
-dj_cp:
-        mov     al,[esi+ecx]
-        or      al,al
-        jz      dj_end
-        mov     [edi+ecx],al
-        inc     ecx
-        jmp     short dj_cp
-dj_end:
-        or      ecx,ecx
-        jz      dj_pat
-        cmp     byte ptr [edi+ecx-1],'\'
-        je      dj_pat
-        mov     byte ptr [edi+ecx],'\'
-        inc     ecx
-dj_pat:
-        add     edi,ecx
+        call    path_cat
+        jc      dj_out
+        call    path_sep
+        jc      dj_out
         mov     esi,OFFSET dir_fpat
-dj_cp2:
-        lodsb
-        stosb
-        or      al,al
-        jnz     dj_cp2
+        call    path_cat
+dj_out:
         popad
         ret
 
@@ -2656,6 +2645,7 @@ do1_defer:                              ; it looked.  WITH /S it waits for
                                         ; whole disk is one heading per
                                         ; directory and five matches
         call    dir_join
+        jc      do1_out                 ; too deep to name: stepped over
         mov     edx,OFFSET dir_scratch
         call    dir_list
         jc      do1_out
@@ -2672,12 +2662,18 @@ do1_out:
 ;---------------------------------------------------------------------
 ; dir_descend - append the 8.3 name at ESI to dir_dirpath, walk what
 ;               is now named, and cut the path back to what it was.
+;
+; A directory whose path would not fit in dir_dirpath is not walked.
+; DIR_MAXDEPTH is 32 and each level adds up to thirteen characters, so
+; the depth cap alone let the path grow to over 400 bytes - and the
+; bytes after dir_dirpath are the pattern and the walk's own pointers.
 ;---------------------------------------------------------------------
 dir_descend:
         push    ebx
         push    esi
         push    edi
-        mov     edi,OFFSET dir_dirpath
+        mov     ebx,OFFSET dir_dirpath
+        mov     edi,ebx
         xor     ecx,ecx
 dd_len:
         cmp     byte ptr [edi+ecx],0
@@ -2686,24 +2682,17 @@ dd_len:
         jmp     short dd_len
 dd_got:
         push    ecx                     ; where to cut back to
-        or      ecx,ecx
-        jz      dd_app
-        cmp     byte ptr [edi+ecx-1],'\'
-        je      dd_app
-        mov     byte ptr [edi+ecx],'\'
-        inc     ecx
-dd_app:
         add     edi,ecx
-dd_cp:
-        lodsb
-        stosb
-        or      al,al
-        jnz     dd_cp
+        mov     edx,OFFSET dir_dirpath + SPATH_MAX
+        call    path_sep
+        jc      dd_back
+        call    path_cat
+        jc      dd_back                 ; too deep to name: not walked
 
         inc     dword ptr [dir_depth]
         call    tree_walk
         dec     dword ptr [dir_depth]
-
+dd_back:
         pop     ecx
         mov     byte ptr [dir_dirpath+ecx],0
         pop     edi
@@ -2726,6 +2715,7 @@ dir_subcount:
         push    edi
         mov     dword ptr [dir_nfill],0
         call    dir_subpat
+        jc      dsc_out
         mov     edx,OFFSET dir_scratch
         mov     ecx,ATTR_DIR
         call    xfind_first
@@ -2761,6 +2751,7 @@ dir_subfill:                            ; EDI -> the block, ECX = how many
                                         ; every name comes back empty
         mov     dword ptr [dir_nfill],0
         call    dir_subpat
+        jc      dsf_out
         mov     edx,OFFSET dir_scratch
         mov     ecx,ATTR_DIR
         call    xfind_first
@@ -2797,7 +2788,7 @@ dsf_out:
         popad
         ret
 
-; dir_subpat - dir_scratch = dir_dirpath + "\*.*"
+; dir_subpat - dir_scratch = dir_dirpath + "\*.*", CF as dir_join's
 dir_subpat:
         pushad
         mov     eax,dword ptr [dir_fpat]        ; the listing's own pattern,
@@ -3037,6 +3028,76 @@ dcn_lp:
 dcn_end:
         mov     byte ptr [edi],0
         pop     edi
+        ret
+
+; path_cat - the ASCIIZ at ESI onto the end of the text at EDI, in a
+;            buffer that ends at EDX (one past its last byte).  EDI is
+;            left on the new NUL.  CF if the whole of it would not fit:
+;            the text is still terminated inside the buffer, but it is
+;            a cut name and must not be used as one.
+;
+; Every path the shell glues together goes through here.  The loops it
+; replaced copied until the NUL and trusted the buffer to be big enough
+; - which it was for 8.3 names and stopped being the day a found name
+; could be 259 characters long.
+path_cat:
+        push    eax
+        push    edx
+        dec     edx                     ; the last byte is the NUL's
+pc_lp:
+        lodsb
+        or      al,al
+        jz      pc_fit
+        cmp     edi,edx
+        jae     pc_full
+        stosb
+        jmp     short pc_lp
+pc_fit:
+        mov     byte ptr [edi],0
+        pop     edx
+        pop     eax
+        clc
+        ret
+pc_full:
+        mov     byte ptr [edi],0
+        pop     edx
+        pop     eax
+        stc
+        ret
+
+; path_sep - a '\' onto the end of the text that starts at EBX and
+;            ends at EDI, unless it is empty or already ends in '\' or
+;            ':'.  EDX as for path_cat; CF if there was no room.
+path_sep:
+        cmp     edi,ebx
+        je      ps_none
+        cmp     byte ptr [edi-1],'\'
+        je      ps_none
+        cmp     byte ptr [edi-1],':'
+        je      ps_none
+        push    edx
+        sub     edx,2                   ; the '\' and a NUL after it
+        cmp     edi,edx
+        pop     edx
+        jae     ps_full
+        mov     word ptr [edi],005Ch    ; '\',0
+        inc     edi
+ps_none:
+        clc
+        ret
+ps_full:
+        stc
+        ret
+
+; say_toolong - "Path too long: " and the name at ESI, for a file that
+;               is skipped because its path would not fit
+say_toolong:
+        push    edx
+        mov     edx,OFFSET msg_toolong
+        call    print
+        call    print_asciiz
+        call    put_crlf
+        pop     edx
         ret
 
 dir_unrecord:                           ; ESI -> the record
@@ -3831,6 +3892,7 @@ cp_source:
         push    esi                     ; remember the pattern's own
         call    cp_srcdir               ; directory - the find only
         pop     esi                     ; ever answers with bare names
+        jc      cps_dirlong
         mov     edx,esi
         xor     ecx,ecx                 ; ordinary files, no directories
         call    xfind_first
@@ -3839,15 +3901,25 @@ cp_source:
 cps_lp:
         mov     esi,OFFSET find_data + 2Ch
         call    cp_fullsrc              ; cp_srcbuf = directory + name
+        jc      cps_long
         mov     esi,OFFSET cp_srcbuf
         call    cp_file
         jc      cps_stop
+cps_more:
         mov     bx,[cp_hdl]
         call    xfind_next
         jnc     cps_lp
         mov     bx,[cp_hdl]
         call    xfind_close
 cps_none:
+        clc
+        ret
+cps_long:
+        mov     esi,OFFSET find_data + 2Ch      ; this one is skipped
+        call    say_toolong
+        jmp     short cps_more
+cps_dirlong:
+        call    say_toolong             ; the whole item is
         clc
         ret
 cps_stop:
@@ -3863,6 +3935,7 @@ cp_plain:
 ;---------------------------------------------------------------------
 ; cp_srcdir - ESI -> a path; cp_dirbuf gets everything up to and
 ;             including its last '\' or ':' (empty if it has neither).
+;             CF, and cp_dirbuf empty, if that part is too long for it.
 ;---------------------------------------------------------------------
 cp_srcdir:
         push    eax
@@ -3887,6 +3960,8 @@ csd_mark:
         mov     edx,ecx
         jmp     short csd_scan
 csd_have:
+        cmp     edx,SPATH_MAX           ; the NUL needs a byte too
+        jae     csd_long
         xor     ecx,ecx
 csd_cp:
         cmp     ecx,edx
@@ -3897,39 +3972,38 @@ csd_cp:
         jmp     short csd_cp
 csd_end:
         mov     byte ptr [edi+ecx],0
+        clc
+csd_out:
         pop     edi
         pop     esi
         pop     edx
         pop     ecx
         pop     eax
         ret
+csd_long:
+        stc
+        jmp     short csd_out
 
 ;---------------------------------------------------------------------
-; cp_fullsrc - cp_srcbuf = cp_dirbuf + the name at ESI.
+; cp_fullsrc - cp_srcbuf = cp_dirbuf + the name at ESI.  CF if the two
+;              together are too long to be a path.
 ;---------------------------------------------------------------------
 cp_fullsrc:
-        push    eax
+        push    edx
         push    esi
         push    edi
         mov     edi,OFFSET cp_srcbuf
+        mov     edx,OFFSET cp_srcbuf + SPATH_MAX
         push    esi
         mov     esi,OFFSET cp_dirbuf
-cpf_d:
-        lodsb
-        or      al,al
-        jz      cpf_dend
-        stosb
-        jmp     short cpf_d
-cpf_dend:
+        call    path_cat
         pop     esi
-cpf_n:
-        lodsb
-        stosb
-        or      al,al
-        jnz     cpf_n
+        jc      cpf_out
+        call    path_cat
+cpf_out:
         pop     edi
         pop     esi
-        pop     eax
+        pop     edx
         ret
 
 ;---------------------------------------------------------------------
@@ -3961,23 +4035,22 @@ cpb_done:
 ;---------------------------------------------------------------------
 ; cp_makedst - cp_dest = where the file at ESI is to go.  Either the
 ;              destination as typed, or the destination directory with
-;              the source's own name on the end.
+;              the source's own name on the end.  CF if that is too
+;              long to be a path.
 ;---------------------------------------------------------------------
 cp_makedst:
-        push    eax
-        push    ecx
+        push    ebx
+        push    edx
         push    esi
         push    edi
-        mov     edi,OFFSET cp_dest
+        mov     ebx,OFFSET cp_dest
+        mov     edi,ebx
+        mov     edx,OFFSET cp_dest + SPATH_MAX
         cmp     byte ptr [cp_todir],0
         jne     cpm_dir
 
         mov     esi,[cp_dstptr]         ; a file, named outright
-cpm_cp:
-        lodsb
-        stosb
-        or      al,al
-        jnz     cpm_cp
+        call    path_cat
         jmp     short cpm_out
 
 cpm_dir:
@@ -3985,35 +4058,23 @@ cpm_dir:
         mov     esi,[cp_dstptr]
         or      esi,esi
         jz      cpm_nodir               ; the current directory
-        xor     ecx,ecx                 ; ECX = last character written
-cpm_dcp:
-        lodsb
-        or      al,al
-        jz      cpm_dend
-        stosb
-        mov     ecx,eax
-        jmp     short cpm_dcp
-cpm_dend:
-        cmp     cl,'\'                  ; one separator, never two
-        je      cpm_nodir
-        cmp     cl,':'
-        je      cpm_nodir
-        mov     al,'\'
-        stosb
+        call    path_cat
+        jc      cpm_popout
+        call    path_sep                ; one separator, never two
+        jc      cpm_popout
 cpm_nodir:
         pop     esi
         call    cp_basename
-cpm_ncp:
-        lodsb
-        stosb
-        or      al,al
-        jnz     cpm_ncp
+        call    path_cat
 cpm_out:
         pop     edi
         pop     esi
-        pop     ecx
-        pop     eax
+        pop     edx
+        pop     ebx
         ret
+cpm_popout:
+        pop     esi
+        jmp     short cpm_out
 
 ;---------------------------------------------------------------------
 ; cp_samefile - CF clear if the path at ESI and cp_dest name the same
@@ -4060,6 +4121,7 @@ cp_file:
         cmp     byte ptr [cp_opened],0
         jne     cpx_chosen              ; the output is open, and named
         call    cp_makedst
+        jc      cpx_dstlong
 cpx_chosen:
         call    cp_samefile
         jc      cpx_go
@@ -4144,6 +4206,10 @@ cpx_nosrc:
         mov     edx,OFFSET msg_notfound
         call    print
         clc                             ; one bad name is not the end
+        ret
+cpx_dstlong:
+        call    say_toolong             ; no name it could be written
+        clc                             ; under: skipped, like a bad one
         ret
 cpx_declined:
         call    cp_shutsrc              ; No: this one is skipped, and not
@@ -4380,16 +4446,12 @@ cd_flat:
         ; the find gives back bare names - keep the directory part of
         ; the argument to glue in front of each one
         mov     esi,[arg_ptr]
-        mov     edi,OFFSET del_path
-        xor     ecx,ecx                 ; ECX = chars after the last \ or :
+        xor     ecx,ecx                 ; ECX = chars looked at
         xor     ebx,ebx                 ; EBX = prefix length so far
 cdp_scan:
-        mov     al,[esi]
+        mov     al,[esi+ecx]
         or      al,al
         jz      cdp_done
-        mov     [edi],al
-        inc     edi
-        inc     esi
         inc     ecx
         cmp     al,'\'
         je      cdp_mark
@@ -4398,11 +4460,15 @@ cdp_scan:
         cmp     al,':'
         jne     cdp_scan
 cdp_mark:
-        add     ebx,ecx                 ; prefix now includes this char
-        xor     ecx,ecx
+        mov     ebx,ecx                 ; prefix now includes this char
         jmp     short cdp_scan
 cdp_done:
+        cmp     ebx,SPATH_MAX           ; a name has to fit after it
+        jae     cd_long
         mov     [del_pfx],ebx
+        mov     edi,OFFSET del_path
+        mov     ecx,ebx
+        rep     movsb
 
         ; enumerate through the long-name find, so DEL sees what was
         ; typed - the classic find is pure 8.3 by design
@@ -4419,12 +4485,9 @@ cd_each:
         mov     edi,OFFSET del_path
         add     edi,[del_pfx]
         mov     esi,OFFSET find_data + 130h
-cd_glue:
-        lodsb
-        mov     [edi],al
-        inc     edi
-        or      al,al
-        jnz     cd_glue
+        mov     edx,OFFSET del_path + SPATH_MAX
+        call    path_cat
+        jc      cd_namelong
 
         test    dword ptr [del_sw],SW_P ; /P asks about each one
         jz      cd_kill
@@ -4445,6 +4508,10 @@ cd_kill:
         int     21h
         jnc     cd_killed
         mov     word ptr [del_err],ax   ; WHY it would not go: see cd_none
+        jmp     short cd_skip
+cd_namelong:
+        mov     esi,OFFSET find_data + 2Ch      ; no room for its name
+        call    say_toolong                     ; after the directory
         jmp     short cd_skip
 cd_killed:
         inc     ebp
@@ -4485,9 +4552,12 @@ cd_usage:
         mov     edx,OFFSET msg_needarg
         call    print
         ret
+cd_long:
+        call    say_toolong             ; ESI is still the argument
+        ret
 
 ;---------------------------------------------------------------------
-; del_one - what DEL /S does at one stop of the walk: the pattern in
+; del_one -what DEL /S does at one stop of the walk: the pattern in
 ;           dir_fpat, in the directory dir_dirpath, and each name it
 ;           deletes is printed IN FULL.
 ;
@@ -4498,7 +4568,8 @@ cd_usage:
 ;---------------------------------------------------------------------
 del_one:
         call    dir_join                ; dir_scratch = this directory's
-        mov     edx,OFFSET dir_scratch  ; worth of the pattern
+        jc      d1_out                  ; worth of the pattern
+        mov     edx,OFFSET dir_scratch
         xor     ecx,ecx                 ; plain files only
         call    xfind_first
         jc      d1_out
@@ -4506,31 +4577,17 @@ del_one:
 d1_each:
         ; del_path = the directory + the hit's 8.3 alias, which is
         ; unambiguous where a long name may not be
+        mov     ebx,OFFSET del_path
+        mov     edi,ebx
+        mov     edx,OFFSET del_path + SPATH_MAX
         mov     esi,OFFSET dir_dirpath
-        mov     edi,OFFSET del_path
-        xor     ecx,ecx
-d1_dir:
-        mov     al,[esi+ecx]
-        or      al,al
-        jz      d1_dend
-        mov     [edi+ecx],al
-        inc     ecx
-        jmp     short d1_dir
-d1_dend:
-        or      ecx,ecx
-        jz      d1_name
-        cmp     byte ptr [edi+ecx-1],'\'
-        je      d1_name
-        mov     byte ptr [edi+ecx],'\'
-        inc     ecx
-d1_name:
-        add     edi,ecx
+        call    path_cat
+        jc      d1_long
+        call    path_sep
+        jc      d1_long
         mov     esi,OFFSET find_data + 130h
-d1_glue:
-        lodsb
-        stosb
-        or      al,al
-        jnz     d1_glue
+        call    path_cat
+        jc      d1_long
 
         test    dword ptr [del_sw],SW_P ; /P asks about each one
         jz      d1_kill
@@ -4564,6 +4621,10 @@ d1_next:
         call    xfind_close
 d1_out:
         ret
+d1_long:
+        mov     esi,OFFSET find_data + 2Ch      ; left where it is
+        call    say_toolong
+        jmp     short d1_next
 
 ; is_star - CF set if the arg at EDI is "*" or "*.*"
 is_star:
@@ -4629,6 +4690,7 @@ rw_badparm:
 rw_chkok:
         mov     esi,[arg1_ptr]
         call    cp_srcdir               ; cp_dirbuf = the old name's directory
+        jc      rw_toolong
         mov     esi,[arg1_ptr]
         call    has_wild
         jc      rw_wild
@@ -4639,6 +4701,7 @@ rw_chkok:
         call    rw_newname              ; rw_nbuf = it, through the template
         mov     esi,OFFSET rw_nbuf
         call    rw_joinnew              ; rw_new = its directory + rw_nbuf
+        jc      rw_toolong
         mov     edx,[arg1_ptr]
         mov     edi,OFFSET rw_new
         mov     ah,56h
@@ -4710,14 +4773,20 @@ rw_each:
         call    rw_newname              ; the new name for this one
         mov     esi,OFFSET rw_nbuf
         call    rw_joinnew
+        jc      rw_eachlong
         mov     esi,ebx                 ; and the old one, in the same place
         call    rw_joinold
+        jc      rw_eachlong
         mov     edx,OFFSET rw_old
         mov     edi,OFFSET rw_new
         mov     ah,56h
         int     21h
         jnc     rw_next
         call    rn_say                  ; say why, and go on with the rest
+        jmp     short rw_next
+rw_eachlong:
+        lea     esi,[ebx+RW_LONG]       ; skipped, and said so by its name
+        call    say_toolong
 rw_next:
         pop     ebx
         inc     ebx
@@ -4741,6 +4810,10 @@ rw_nomem:
 
 rn_fail:
         call    rn_say
+        ret
+rw_toolong:
+        mov     esi,[arg1_ptr]
+        call    say_toolong
         ret
 
 ; rn_say - the message for 56h's AX
@@ -4913,41 +4986,36 @@ rwf_out:
         ret
 
 ; rw_joinnew / rw_joinold - rw_new or rw_old = cp_dirbuf + the name at
-;                           ESI: whichever directory the old name was in
+;                           ESI: whichever directory the old name was
+;                           in.  CF if that is too long to be a path.
 rw_joinnew:
+        push    edx
         push    edi
         mov     edi,OFFSET rw_new
+        mov     edx,OFFSET rw_new + SPATH_MAX
         call    rw_join
         pop     edi
+        pop     edx
         ret
 rw_joinold:
+        push    edx
         push    edi
         mov     edi,OFFSET rw_old
+        mov     edx,OFFSET rw_old + SPATH_MAX
         call    rw_join
         pop     edi
+        pop     edx
         ret
 rw_join:
-        push    eax
         push    esi
-        push    edi
         push    esi
         mov     esi,OFFSET cp_dirbuf
-rwj_dir:
-        lodsb
-        or      al,al
-        jz      rwj_name
-        stosb
-        jmp     short rwj_dir
-rwj_name:
+        call    path_cat
         pop     esi
-rwj_cp:
-        lodsb
-        stosb
-        or      al,al
-        jnz     rwj_cp
-        pop     edi
+        jc      rwj_out
+        call    path_cat
+rwj_out:
         pop     esi
-        pop     eax
         ret
 
 ;=====================================================================
@@ -6988,6 +7056,7 @@ msg_bad     db  'Bad command or file name',13,10,'$'
 msg_lhbare  db  'Required parameter missing',13,10,'$'
 msg_needarg db  'Required parameter missing',13,10,'$'
 msg_notfound db 'File not found',13,10,'$'
+msg_toolong db  'Path too long: ','$'
 msg_denied  db  'Access denied',13,10,'$'
 msg_nofiles db  'No files found',13,10,'$'
 msg_files   db  ' file(s)  ','$'
@@ -7113,9 +7182,9 @@ cp_todir    db  0                       ; the destination is a place
 cp_concat   db  0                       ; ...so there is one output
 cp_opened   db  0                       ; and it is already open
 cp_ovw      db  0                       ; replace without asking: /Y
-cp_dest     db  144 dup(0)
-cp_srcbuf   db  144 dup(0)
-cp_dirbuf   db  144 dup(0)
+cp_dest     db  SPATH_MAX dup(0)
+cp_srcbuf   db  SPATH_MAX dup(0)
+cp_dirbuf   db  SPATH_MAX dup(0)
 dir_sw      dd  0                       ; the /switches DIR was given
 dir_neg     dd  0                       ; ...and the ones it was refused
 dir_all     dd  0                       ; the attributes "DIR," adds
@@ -7136,8 +7205,8 @@ dir_recs    dd  0                       ; the block holding them
 dir_idx     dd  0                       ; and the index that gets sorted
 dir_nkey    dd  0                       ; /O: how many sort keys
 dir_keys    db  (DIR_MAXKEY * 2) dup(0) ; each a letter and a direction
-dir_dirpath db  144 dup(0)              ; the directory being listed
-dir_fpat    db  80 dup(0)               ; and the pattern within it
+dir_dirpath db  SPATH_MAX dup(0)        ; the directory being listed
+dir_fpat    db  SPATH_MAX dup(0)        ; and the pattern within it
 dir_subblk  dd  0                       ; where dir_subfill is putting names
 walk_act    dd  0                       ; what tree_walk does at each stop
 walk_rec    dd  0                       ; ...and whether it goes deeper
@@ -7160,7 +7229,7 @@ parm_blk    dd  0                       ; environment, filled per EXEC
 
 cmd_buf     db  CMDLINE_MAX + 3 dup(0)
 cwd_buf     db  68 dup(0)
-del_path    db  144 dup(0)
+del_path    db  SPATH_MAX dup(0)
 del_pfx     dd  0
 rw_n        dd  0                       ; REN: files the pattern matched
 rw_fill     dd  0                       ; ...and how many were collected
@@ -7173,12 +7242,13 @@ rw_tdot     dd  0
 rw_hdl      dw  0
             dw  0
 rw_nbuf     db  260 dup(0)              ; the new name
-rw_new      db  144 + 260 dup(0)        ; ...with the directory in front
-rw_old      db  144 + 13 dup(0)         ; and the old one, the same way
+rw_new      db  SPATH_MAX dup(0)        ; ...with the directory in front
+rw_old      db  SPATH_MAX dup(0)        ; and the old one, the same way
 del_hdl     dw  0                       ; DEL's 714Eh find handle
 del_err     dw  0                       ; ...and why the last one refused
-dir_scratch db  144 dup(0)
-dir_hdrbuf  db  144 dup(0)              ; the truenamed "Directory of"
+dir_scratch db  SPATH_MAX dup(0)
+dir_hdrbuf  db  SPATH_MAX dup(0)        ; the truenamed "Directory of",
+                                        ; which 7160h may make LFN_MAX long
 dir_showbuf db  262 dup(0)              ; dir_dirpath as it is shown
 dir_fsbuf   db  8 dup(0)                ; "X:\" for 7303h
 dir_fsrec   db  F73_SIZE dup(0)

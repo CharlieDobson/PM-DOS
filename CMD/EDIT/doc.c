@@ -91,6 +91,10 @@ static void line_release( LINE *line )
     line->len = line->cap = 0;
 }
 
+/* the most lines an array of them can hold before its size in bytes
+   no longer fits in 32 bits */
+#define LINES_MAX   (0xFFFFFFFFUL / sizeof( LINE ))
+
 static int lines_reserve( DOC *doc, u32 need )
 {
     u32 cap;
@@ -99,8 +103,14 @@ static int lines_reserve( DOC *doc, u32 need )
     if ( need <= doc->cap ) {
         return 1;
     }
+    /* A file of nothing but line ends counts one line a byte, and the
+       first pass asks for all of them at once: half a gigabyte of them
+       made cap * sizeof( LINE ) wrap round to a small block. */
+    if ( need > LINES_MAX ) {
+        return 0;
+    }
     cap = doc->cap ? doc->cap + doc->cap / 2 + 16 : 64;
-    if ( cap < need ) {
+    if ( cap < need || cap > LINES_MAX ) {
         cap = need;
     }
     grown = (LINE *)try_alloc( cap * sizeof( LINE ) );

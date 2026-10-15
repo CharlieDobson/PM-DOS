@@ -1714,6 +1714,18 @@ fn_fat:
         push    ebx
         push    ecx
 
+        ; A CLUSTER THE VOLUME HAS NOT GOT ENDS THE CHAIN.  The number
+        ; came off the disk - a directory entry's start, or the entry
+        ; before this one - and a damaged one would index the FAT12
+        ; cache past its end, or read a FAT16 or FAT32 sector past the
+        ; table, and hand back whatever was there as the next cluster.
+        mov     ebx,[fat_totclus]
+        add     ebx,2                   ; the first number that is not one
+        cmp     eax,ebx
+        jae     fn_ioerr
+        cmp     eax,2
+        jb      fn_ioerr
+
         cmp     byte ptr [fat_type],12
         jne     fn_16or32
 
@@ -1769,6 +1781,13 @@ fn_out:
 ;---------------------------------------------------------------------
 fat_setnext:
         pushad
+
+        mov     ebx,[fat_totclus]       ; the same measure fat_next takes,
+        add     ebx,2                   ; for the same reason: an entry the
+        cmp     eax,ebx                 ; table has not got is nowhere to
+        jae     fs_out                  ; write
+        cmp     eax,2
+        jb      fs_out
 
         cmp     byte ptr [fat_type],12
         jne     fs_16or32

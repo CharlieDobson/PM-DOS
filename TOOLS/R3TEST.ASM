@@ -7,7 +7,7 @@
 ; supposed to do still works, which is the half that a protection
 ; change quietly breaks.
 ;
-; Fourteen checks:
+; Fifteen checks:
 ;    1  CS is SEL_PROG_CS and its RPL is 3 - we are unprivileged
 ;    2  SS and DS are the program's data selector, not the kernel's
 ;    3  the PSP is at SLOT_PSP, in this program's own terms
@@ -24,6 +24,8 @@
 ;   14  a critical error reaches a handler at ring 3 and its answer
 ;       reaches the kernel - which is the whole call-out mechanism,
 ;       and the only check here that exercises it
+;   15  a heap header this program has written over is refused by
+;       4Ah, and nothing is written where the wrong size pointed
 ;
 ; Check 14 needs a drive that will fail, and uses B:.  A PC has a
 ; second floppy letter whether or not it has the drive, so the read
@@ -312,8 +314,68 @@ t14:
         cmp     byte ptr [ran24],1
         jne     t14_no                  ; it ran more than once
         call    ok
-        jmp     short t_done
+        jmp     short t15
 t14_no:
+        call    bad
+
+;--- 15. a heap header this program has written over ------------------
+; The sixteen bytes in front of a 48h block are its header, in this
+; program's own memory, and the kernel walks the heap by the sizes in
+; those headers - as ring 0, which the slot's limit does not stop.  A
+; size that ran out of the slot used to put a header wherever it said
+; (RING3.INC, r3h_span).  So the size is made wrong, 4Ah is asked to
+; keep the block the size it is, and the answer has to be no.  The
+; header after the block is kept and put back afterwards, because a
+; kernel without the check writes a header over it; the size goes back
+; too, and the block is freed, so the heap is whole whatever happened.
+t15:
+        mov     edx,OFFSET t15m
+        call    say
+        cld
+        mov     ebx,64
+        mov     ah,48h
+        int     21h
+        jc      t15_no
+        mov     [blk2],eax
+        mov     ecx,[eax-12]            ; MCB_SIZE: four bytes into the
+        mov     [sav_size],ecx          ; header, which is 16 bytes back
+        mov     dword ptr [nxt_hdr],0
+        lea     esi,[eax+ecx]           ; the header after the block...
+        lea     edi,[esi+16]
+        cmp     edi,ds:[SLOT_PSP + PSP_MEMTOP]
+        ja      t15_wreck               ; ...if there is room for one
+        mov     [nxt_hdr],esi
+        mov     edi,OFFSET sav_hdr
+        mov     ecx,4
+        rep     movsd
+t15_wreck:
+        mov     eax,[blk2]
+        mov     dword ptr [eax-12],7FFFFFF0h    ; a size the slot has not got
+        mov     edx,eax
+        mov     ebx,64
+        mov     ah,4Ah
+        int     21h
+        pushfd                          ; the answer, judged after the
+        mov     eax,[blk2]              ; heap is put back as it was
+        mov     ecx,[sav_size]
+        mov     [eax-12],ecx
+        mov     edi,[nxt_hdr]
+        or      edi,edi
+        jz      t15_back
+        mov     esi,OFFSET sav_hdr
+        mov     ecx,4
+        rep     movsd
+t15_back:
+        popfd
+        jnc     t15_no                  ; a yes was a header written where
+                                        ; the wrong size pointed
+        mov     edx,[blk2]
+        mov     ah,49h
+        int     21h
+        jc      t15_no
+        call    ok
+        jmp     short t_done
+t15_no:
         call    bad
 
 t_done:
@@ -428,6 +490,10 @@ n_ok        db  0
 ran24       db  0
             db  0
 blk1        dd  0
+blk2        dd  0
+sav_size    dd  0                       ; check 15: the size it really has,
+nxt_hdr     dd  0                       ; where the header after it is,
+sav_hdr     db  16 dup(0)               ; and what that header held
 old23       dd  0
 old24       dd  0
 dta         db  128 dup(0)
@@ -455,6 +521,7 @@ t11m        db  '  11  48h allocates inside the slot ............ $'
 t12m        db  '  12  that memory works, frees and comes back .. $'
 t13m        db  '  13  25h and 35h round-trip our handler ....... $'
 t14m        db  '  14  INT 24h reaches a handler at ring 3 ...... $'
+t15m        db  '  15  a heap header written over is refused .... $'
 
 ; The last thing in the image, so that check 11 can say the heap
 ; starts above it.  It has to be a defined byte and not a label at the

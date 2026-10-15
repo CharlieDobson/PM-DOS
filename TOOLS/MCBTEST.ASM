@@ -20,6 +20,8 @@
 ;   4  the chain lands exactly on the top of conventional memory, so
 ;      the blocks tile the arena with no gap and no overlap
 ;   5  every owner is either free, DOS, or a PSP inside the arena
+;   6  a block whose length runs past the chain is refused by 4Ah,
+;      and nothing is written where that length pointed
 ;
 ; Bounded at 64 blocks, because a test for an endless walk must not be
 ; an endless walk.
@@ -304,8 +306,86 @@ mc_o_inrange:
         cmp     byte ptr [badown],0
         jne     mc_o_no
         call    ok
-        jmp     short mc_done
+        jmp     short mc_grd
 mc_o_no:
+        call    bad
+
+;=====================================================================
+; 6 - a length that runs past the chain is refused.  The chain is in
+;     this program's memory, so a program can write anything over a
+;     length word, and the kernel walks and splits by those words as
+;     ring 0: a length that reached past the top of memory used to put
+;     a header where it said, in memory a DOS program cannot otherwise
+;     name (LOWMEM.INC, lm_blkok).  A block is taken, its length made
+;     to run past the chain, and 4Ah is asked to keep it the size it is
+;     - the answer has to be no.  The header after it is kept and put
+;     back, because a kernel without the check writes a header over it,
+;     and the length goes back too, so the chain is whole either way.
+;
+;     This program has every free paragraph, as a .COM does, so it
+;     gives most of them back first or there is nothing to take.
+;=====================================================================
+mc_grd:
+        mov     dx,OFFSET t_grd
+        call    puts
+        push    cs
+        pop     es
+        mov     bx,1000h                ; keep this segment, free the rest
+        mov     ah,4Ah
+        int     21h
+        jc      mc_g_no
+        mov     bx,10h                  ; 256 bytes
+        mov     ah,48h
+        int     21h
+        jc      mc_g_no
+        mov     [gblk],ax
+        dec     ax
+        mov     es,ax                   ; ES = its header
+        mov     ax,es:[3]
+        mov     [glen],ax
+        mov     bx,es                   ; the header after it, kept whole
+        add     bx,ax
+        inc     bx
+        mov     [gnext],bx
+        push    ds
+        mov     ds,bx
+        push    cs
+        pop     es
+        xor     si,si
+        mov     di,OFFSET ghdr
+        mov     cx,8
+        cld
+        rep     movsw
+        pop     ds
+        mov     ax,[gblk]
+        dec     ax
+        mov     es,ax
+        mov     word ptr es:[3],0FFFFh  ; a length past the top of memory
+        mov     es,[gblk]
+        mov     bx,10h
+        mov     ah,4Ah
+        int     21h
+        pushf                           ; judged once the chain is back
+        mov     ax,[gblk]
+        dec     ax
+        mov     es,ax
+        mov     ax,[glen]
+        mov     es:[3],ax
+        mov     es,[gnext]
+        xor     di,di
+        mov     si,OFFSET ghdr
+        mov     cx,8
+        rep     movsw
+        popf
+        jnc     mc_g_no                 ; a yes was a header written where
+                                        ; the wrong length pointed
+        mov     es,[gblk]               ; and the block goes back
+        mov     ah,49h
+        int     21h
+        jc      mc_g_no
+        call    ok
+        jmp     short mc_done
+mc_g_no:
         call    bad
 
 mc_done:
@@ -405,6 +485,10 @@ badown      db  0
 sawumb      db  0
 noend       db  0
 fails       db  0
+gblk        dw  0                       ; check 6: the block, its real
+glen        dw  0                       ; length, the header after it and
+gnext       dw  0                       ; what that header held
+ghdr        db  16 dup(0)
 
 msg_hi      db  13,10,'MCBTEST - the memory arena, walked the way MEM walks it',13,10,13,10,'$'
 msg_bye     db  13,10,'MCBTEST done.',13,10,'$'
@@ -424,6 +508,7 @@ t_end       db  13,10,'  2 the chain ends in a Z             $'
 t_sig       db  '  3 every signature was M or Z        $'
 t_top       db  '  4 and they tile to the end: got/want $'
 t_own       db  '  5 every owner is free, DOS or a PSP $'
+t_grd       db  '  6 a length past the chain is refused $'
 
 _MC     ENDS
         END     start

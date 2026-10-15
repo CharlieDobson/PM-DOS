@@ -1055,6 +1055,10 @@ vx_one:
         shl     eax,4
         movzx   edx,word ptr [esi]              ; and its offset within that
         add     eax,edx
+        movzx   ebx,word ptr ds:[vdm_loadseg]   ; INSIDE THE MODULE, or the
+        shl     ebx,4                           ; file is not an .EXE - see
+        call    vdm_fixok                       ; vdm_fixok
+        jc      vx_badexe
         mov     dx,word ptr ds:[vdm_loadseg]
         add     word ptr [eax],dx               ; the fixup itself
         add     esi,4
@@ -4384,6 +4388,10 @@ vov_one:
         shl     eax,4
         movzx   edx,word ptr [esi]
         add     eax,edx
+        mov     ebx,dword ptr ds:[vov_seg]      ; inside the overlay, or the
+        shl     ebx,4                           ; file is not one
+        call    vdm_fixok
+        jc      vov_badfmt
         mov     dx,word ptr ds:[vov_fix]
         add     word ptr [eax],dx
         add     esi,4
@@ -4455,6 +4463,34 @@ vov_where:
         pop     eax
         ret
 vw_no:
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; vdm_fixok - EAX = where a fixup lands, flat; EBX = where the load
+;             module begins, flat; [vdm_imgsz] = how long it is.  CF
+;             unless the word lies inside the module.  Preserves all.
+;
+; THE TWO WORDS OF A FIXUP ARE THE FILE'S, and a segment plus an offset
+; is a number up to two megabytes: a fixup past the module would have
+; the loader add a word to whatever is there - the kernel, the page
+; tables - on a file's say-so, where a real DOS would have wrapped at
+; the megabyte or written into the HMA.  No linker emits one; a damaged
+; or a doctored file can, and such a file is not a program.
+;---------------------------------------------------------------------
+vdm_fixok:
+        push    edx
+        cmp     eax,ebx
+        jb      vfk_bad
+        lea     edx,[eax+2]                     ; one past the word
+        sub     edx,ebx
+        cmp     edx,dword ptr ds:[vdm_imgsz]
+        ja      vfk_bad
+        pop     edx
+        clc
+        ret
+vfk_bad:
+        pop     edx
         stc
         ret
 

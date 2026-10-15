@@ -588,8 +588,17 @@ ufe_size:
         ; them
         mov     ebx,esi                         ; the fixed part's end
         add     ebx,dword ptr [edi+edx]         ; + the extended attributes
+        jc      ufe_bad
         mov     ecx,dword ptr [edi+edx+4]       ; and how many bytes of
                                                 ; descriptors there are
+        ; BOTH LENGTHS ARE THE DISC'S, and the entry is one block: the
+        ; descriptors have to lie inside it, or the walk below reads
+        ; whatever is past the buffer - or past memory - as extents.
+        mov     eax,ebx
+        add     eax,ecx
+        jc      ufe_bad
+        cmp     eax,ISO_BLKSIZE
+        ja      ufe_bad
         cmp     byte ptr [udf_adtype],UDF_AD_INLINE
         je      ufe_inline
         cmp     byte ptr [udf_adtype],UDF_AD_SHORT
@@ -827,6 +836,12 @@ udn_lp:
         add     ecx,4
         sub     ecx,eax
 udn_aligned:
+        ; AND IT HAS TO FIT THE WINDOW.  The two counts are the disc's;
+        ; a record is at most 38 + 255 + 255 bytes on a disc that is
+        ; right, and one that claims more than a block would have the
+        ; name read from past udf_dbuf.  It ends the directory instead.
+        cmp     ecx,ISO_BLKSIZE
+        ja      udn_end
         add     [udf_doff],ecx
 
         mov     al,[esi+UDF_FID_CHAR]

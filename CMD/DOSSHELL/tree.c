@@ -215,7 +215,10 @@ static void scan_dir( DTREE *tree, int node )
                              tree->node[node].depth + 1 );
         scan_count++;
         scan_note();
-        if ( len + str_len( names[index] ) + 2 < sizeof( scan_path ) ) {
+        /* Only a directory whose whole path tree_path can write is gone
+           into: one that fitted scan_path but not PATH_MAX was given a
+           path with a name missing from the middle of it. */
+        if ( len + str_len( names[index] ) + 2 < PATH_MAX ) {
             str_cpy( scan_path + len, names[index] );
             str_catn( scan_path, "\\", sizeof( scan_path ) );
             scan_dir( tree, child );
@@ -282,15 +285,19 @@ DTREE *tree_get( int drive, int reread )
 /* asking it things                                                    */
 /* ------------------------------------------------------------------ */
 
+/* Every node is at most PATH_MAX / 2 deep: a name and its backslash are
+   two characters at the least, and scan_dir only goes into a directory
+   whose path fits in PATH_MAX.  The chain held 80, and a tree deeper
+   than that lost the names nearest the root. */
 void tree_path( DTREE *tree, int node, char *buf )
 {
-    int chain[80], count = 0, index;
+    int chain[PATH_MAX / 2], count = 0, index;
 
     buf[0] = (char)('A' + tree->drive);
     buf[1] = ':';
     buf[2] = '\\';
     buf[3] = 0;
-    for ( index = node; index > 0 && count < 80; index = tree->node[index].parent ) {
+    for ( index = node; index > 0 && count < PATH_MAX / 2; index = tree->node[index].parent ) {
         chain[count++] = index;
     }
     while ( count ) {

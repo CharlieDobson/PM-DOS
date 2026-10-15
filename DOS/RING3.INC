@@ -1477,6 +1477,8 @@ rha_walk:
         jae     rha_none
         mov     edi,[r3_base]
         add     edi,ecx
+        call    r3h_span                        ; a header the program has
+        jc      rha_broken                      ; written over ends the heap
         cmp     dword ptr [edi+MCB_SIG],SIG_FREE
         jne     rha_next
         call    r3h_join                        ; free neighbours first
@@ -1518,6 +1520,8 @@ rha_whole:
         clc
         ret
 
+rha_broken:
+        xor     edx,edx                         ; nothing can be promised
 rha_none:
         mov     eax,edx
         pop     edi
@@ -1542,6 +1546,11 @@ rhj_more:
         jae     rhj_done
         cmp     dword ptr [ebx+MCB_SIG],SIG_FREE
         jne     rhj_done
+        push    edi                             ; ...and one whose size runs
+        mov     edi,ebx                         ; out of the heap is not
+        call    r3h_span                        ; joined: see r3h_span
+        pop     edi
+        jc      rhj_done
         mov     ecx,[ebx+MCB_SIZE]
         add     ecx,MCB_LEN
         add     [edi+MCB_SIZE],ecx
@@ -1568,10 +1577,43 @@ r3h_find:
         add     edi,eax
         cmp     dword ptr [edi+MCB_SIG],SIG_USED
         jne     rhf_bad
+        push    ecx
+        mov     ecx,eax                         ; and its size has to be one
+        call    r3h_span                        ; the heap could hold
+        pop     ecx
+        jc      rhf_bad
         pop     eax
         clc
         ret
 rhf_bad:
+        pop     eax
+        stc
+        ret
+
+;--- r3h_span - EDI -> a header, flat, ECX = its offset in the slot.
+;--- CF unless the block it describes ends inside the heap: at or below
+;--- r3h_hi, with no wrap on the way.  Everything preserved.
+;
+; THE SIZE FIELD IS IN THE PROGRAM'S OWN MEMORY, and a program can write
+; anything over it.  The walk above steps by it, and the split and the
+; join write a header where it says the block ends - as ring 0, which
+; the slot's limit does not stop.  So every header is measured before
+; it is believed, and a heap with a wrong size in it is a heap that
+; stops at that block: 48h says there is no memory, 49h and 4Ah say the
+; block is not one, and nothing is written outside the slot.
+r3h_span:
+        push    eax
+        mov     eax,[edi+MCB_SIZE]
+        add     eax,MCB_LEN
+        jc      rhn_bad
+        add     eax,ecx
+        jc      rhn_bad
+        cmp     eax,[r3h_hi]
+        ja      rhn_bad
+        pop     eax
+        clc
+        ret
+rhn_bad:
         pop     eax
         stc
         ret

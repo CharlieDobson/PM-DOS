@@ -1980,6 +1980,15 @@ dsi_stack:
         pop     ecx
         jc      dsi_nocopy
         add     esi,ebx
+        ; AND THE WORDS HAVE TO BE THERE TO READ.  The client's SS is a
+        ; descriptor of its own making, and a page that is not mapped
+        ; under it is a fault in the kernel's copy, not in the client.
+        push    ecx
+        add     ecx,ecx
+        mov     eax,esi
+        call    dword ptr ds:[IOS_USRWOK]
+        pop     ecx
+        jc      dsi_undo
         mov     eax,dword ptr [vdm_ctx+V86C_SS]
         shl     eax,4
         mov     edx,dword ptr [vdm_ctx+V86C_ESP]
@@ -3963,6 +3972,10 @@ dpmi_excret:
         jne     dxr_32
         movzx   esi,si
         add     esi,ebx
+        mov     eax,esi                         ; the frame has to be there:
+        mov     ecx,12                          ; see dpmi_excdef
+        call    dword ptr ds:[IOS_USRWOK]
+        jc      dxr_bad
         movzx   eax,word ptr [esi+2]            ; (E)IP
         mov     dword ptr ds:[dpmi_xeip],eax
         movzx   eax,word ptr [esi+4]            ; CS
@@ -3976,6 +3989,10 @@ dpmi_excret:
         jmp     dxr_check
 dxr_32:
         add     esi,ebx
+        mov     eax,esi
+        mov     ecx,24
+        call    dword ptr ds:[IOS_USRWOK]
+        jc      dxr_bad
         mov     eax,dword ptr [esi+4]
         mov     dword ptr ds:[dpmi_xeip],eax
         movzx   eax,word ptr [esi+8]
@@ -4041,12 +4058,24 @@ dpmi_excdef:
         jne     dxd_32
         movzx   esi,si
         add     esi,ebx
+        ; THE FRAME IS WHERE THE CLIENT'S SS:SP SAYS, and both are the
+        ; client's: a stack in a page that is not there would fault
+        ; the kernel on the read.  Asked first; a frame that cannot be
+        ; read is reported as the exception it came from.
+        mov     eax,esi
+        mov     ecx,10
+        call    dword ptr ds:[IOS_USRWOK]
+        jc      dxr_bad
         movzx   edx,word ptr [esi+4]            ; the error code
         movzx   ecx,word ptr [esi+6]            ; (E)IP
         movzx   ebx,word ptr [esi+8]            ; CS
         jmp     dxd_say
 dxd_32:
         add     esi,ebx
+        mov     eax,esi
+        mov     ecx,20
+        call    dword ptr ds:[IOS_USRWOK]
+        jc      dxr_bad
         mov     edx,dword ptr [esi+8]
         mov     ecx,dword ptr [esi+12]
         movzx   ebx,word ptr [esi+16]

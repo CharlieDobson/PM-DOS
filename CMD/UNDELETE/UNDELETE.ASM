@@ -509,6 +509,7 @@ ck_lp:
         test    byte ptr [u_rec+UDR_FLAGS],UDRF_USED
         jz      ck_next
         call    stored_path
+        jc      ck_next
         mov     edx,OFFSET u_src
         mov     eax,4300h
         int     21h
@@ -615,6 +616,7 @@ df_scan:
         call    match_rec
         jc      df_snext
         call    stored_path
+        jc      df_snext                ; not a record of anything
         mov     edx,OFFSET u_src
         mov     eax,4300h
         int     21h
@@ -823,13 +825,19 @@ recover:
 rc_sep:
         mov     [u_dname],edi
         mov     esi,OFFSET u_rec+UDR_SHORT
+        call    name_plain
+        jc      rc_damaged
         cmp     byte ptr [u_lfn],0
         je      rc_named
         cmp     byte ptr [u_rec+UDR_LONG],0
         je      rc_named
         mov     esi,OFFSET u_rec+UDR_LONG
+        call    name_plain
+        jc      rc_damaged
 rc_named:
-        call    str_cpy
+        mov     edx,OFFSET u_dst + TXT_MAX
+        call    str_cpyn
+        jc      rc_toolong
         mov     byte ptr [u_renamed],0
 
         ; taken?  Then '#' or the next free character for its first
@@ -845,7 +853,9 @@ rc_alt:
         jz      rc_noname
         mov     edi,[u_dname]
         mov     esi,OFFSET u_rec+UDR_SHORT
-        call    str_cpy
+        mov     edx,OFFSET u_dst + TXT_MAX
+        call    str_cpyn
+        jc      rc_toolong
         mov     edi,[u_dname]
         mov     [edi],al
         inc     ebx
@@ -856,6 +866,7 @@ rc_alt:
 
 rc_free:
         call    stored_path
+        jc      rc_damaged
         mov     edx,OFFSET u_src
         mov     edi,OFFSET u_dst
         mov     ah,56h
@@ -887,6 +898,12 @@ rc_noname:
         jmp     short rc_say
 rc_failed:
         mov     esi,OFFSET msg_failed
+        jmp     short rc_say
+rc_toolong:
+        mov     esi,OFFSET msg_toolong
+        jmp     short rc_say
+rc_damaged:
+        mov     esi,OFFSET msg_damaged
 rc_say:
         call    puts
         ret
@@ -970,7 +987,8 @@ pr_sep:
         je      pr_name
         mov     esi,OFFSET u_rec+UDR_LONG
 pr_name:
-        call    str_cpy
+        mov     edx,OFFSET u_tmp + TXT_MAX      ; cut to fit: it is only
+        call    str_cpyn                        ; shown
         mov     esi,OFFSET u_tmp
         call    puts
         call    crlf
@@ -1140,8 +1158,18 @@ read_rec:
         int     21h
         jc      rr_out
         cmp     eax,UDR_LEN
-        je      rr_out                  ; CF clear from the compare
+        je      rr_full
         stc
+        jmp     short rr_out
+rr_full:
+        ; EVERY NAME ENDS INSIDE ITS OWN FIELD, whatever the file says.
+        ; The index is only data on a disk: a record with no NUL in it
+        ; would otherwise run each name on into the next field, and the
+        ; last one on past u_rec.
+        mov     byte ptr [u_rec+UDR_DIR-1],0
+        mov     byte ptr [u_rec+UDR_LONG-1],0
+        mov     byte ptr [u_rec+UDR_LEN-1],0
+        clc
 rr_out:
         pop     edx
         pop     ecx
@@ -1172,11 +1200,31 @@ seek_rec:
         int     21h
         ret
 
-; stored_path - u_src = "d:\RECYCLED\" + u_rec's stored name, dotted
+; stored_path - u_src = "d:\RECYCLED\" + u_rec's stored name, dotted.
+;               CF if the stored name is not a plain 8.3 name: one with
+;               a '\' or a '.' in it would name some other file than
+;               the one in \RECYCLED.
 stored_path:
         push    esi
         push    edi
         push    ecx
+        mov     esi,OFFSET u_rec+UDR_STORED
+        cmp     byte ptr [esi],' '      ; no name at all
+        je      sp_bad
+        mov     ecx,11
+sp_chk:
+        lodsb
+        cmp     al,' '
+        jb      sp_bad
+        cmp     al,'\'
+        je      sp_bad
+        cmp     al,'/'
+        je      sp_bad
+        cmp     al,':'
+        je      sp_bad
+        cmp     al,'.'
+        je      sp_bad
+        loop    sp_chk
         mov     edi,OFFSET u_src
         call    put_bin
         mov     esi,OFFSET u_rec+UDR_STORED
@@ -1202,10 +1250,15 @@ sp_ext:
         loop    sp_ext
 sp_end:
         mov     byte ptr [edi],0
+        clc
+sp_out:
         pop     ecx
         pop     edi
         pop     esi
         ret
+sp_bad:
+        stc
+        jmp     short sp_out
 
 ;---------------------------------------------------------------------
 ; match_rec - does u_rec's file answer the path given?  CF clear if so.
@@ -1463,6 +1516,65 @@ sc_out:
         pop     eax
         ret
 
+; str_cpyn - str_cpy into a buffer that ends at EDX (one past its last
+;            byte).  CF if the text had to be cut to fit; it is still
+;            terminated, EDI on the NUL.  Registers bar EDI/ESI kept.
+str_cpyn:
+        push    eax
+        push    edx
+        dec     edx                     ; the last byte is the NUL's
+scn_lp:
+        mov     al,[esi]
+        inc     esi
+        or      al,al
+        jz      scn_end
+        cmp     edi,edx
+        jae     scn_cut
+        mov     [edi],al
+        inc     edi
+        jmp     short scn_lp
+scn_end:
+        mov     [edi],al
+        pop     edx
+        pop     eax
+        clc
+        ret
+scn_cut:
+        mov     byte ptr [edi],0
+        pop     edx
+        pop     eax
+        stc
+        ret
+
+; name_plain - CF if the ASCIIZ at ESI is empty or is not one name by
+;              itself: a '\', '/' or ':' in it would put the file
+;              somewhere other than the directory it was deleted from
+name_plain:
+        push    eax
+        push    esi
+        cmp     byte ptr [esi],0
+        je      np_bad
+np_lp:
+        lodsb
+        or      al,al
+        jz      np_ok
+        cmp     al,'\'
+        je      np_bad
+        cmp     al,'/'
+        je      np_bad
+        cmp     al,':'
+        jne     np_lp
+np_bad:
+        pop     esi
+        pop     eax
+        stc
+        ret
+np_ok:
+        pop     esi
+        pop     eax
+        clc
+        ret
+
 ; str_len - EAX = the length of the ASCIIZ at ESI
 str_len:
         xor     eax,eax
@@ -1675,6 +1787,8 @@ msg_as      db  '    The name was taken; recovered as ',0
 msg_nodir   db  '    Not recovered: its directory could not be made again.',13,10,0
 msg_noname  db  '    Not recovered: no free name for it.',13,10,0
 msg_failed  db  '    Not recovered: the rename failed.',13,10,0
+msg_toolong db  '    Not recovered: the path would be too long.',13,10,0
+msg_damaged db  '    Not recovered: its record in the index is damaged.',13,10,0
 msg_recov1  db  ' file recovered.',13,10,0
 msg_recovn  db  ' files recovered.',13,10,0
 msg_files1  db  ' file, ',0

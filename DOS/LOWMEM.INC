@@ -170,6 +170,8 @@ ls_walk:
         cmp     byte ptr [esi+RMCB_SIG],'Z'
         jne     ls_end                          ; chain is broken - stop here
 ls_live:
+        call    lm_blkok                        ; a length that runs past
+        jc      ls_end                          ; the chain is a broken chain
         cmp     word ptr [esi+RMCB_OWN],0
         jne     ls_next
         mov     eax,esi
@@ -636,6 +638,11 @@ lm_free:
         cmp     byte ptr [eax+RMCB_SIG],'Z'
         jne     lf_bad
 lf_ok:
+        push    esi
+        mov     esi,eax
+        call    lm_blkok                        ; a block whose length is
+        pop     esi                             ; wrong is not one of ours
+        jc      lf_bad
         mov     word ptr [eax+RMCB_OWN],0
         call    lm_coalesce
         pop     eax
@@ -656,6 +663,8 @@ lm_freeown:
         mov     dx,ax
         mov     esi,V86_TPA
 lo_scan:
+        call    lm_blkok
+        jc      lo_done
         cmp     word ptr [esi+RMCB_OWN],dx
         jne     lo_next
         mov     word ptr [esi+RMCB_OWN],0
@@ -691,6 +700,8 @@ lm_resize:
         jb      lr_bad
         cmp     esi,[lm_chtop]
         jae     lr_bad
+        call    lm_blkok                        ; its length has to end inside
+        jc      lr_bad                          ; the chain before it is used
 
         movzx   ecx,word ptr [esi+RMCB_LEN]      ; what we have now
         cmp     ebx,ecx
@@ -703,6 +714,13 @@ lm_resize:
         inc     eax
         shl     eax,4
         lea     edi,[esi+eax]
+        cmp     edi,[lm_chtop]                  ; ...and only one that is
+        jae     lr_toobig                       ; there, whole
+        push    esi
+        mov     esi,edi
+        call    lm_blkok
+        pop     esi
+        jc      lr_toobig
         cmp     word ptr [edi+RMCB_OWN],0
         jne     lr_toobig
         movzx   edx,word ptr [edi+RMCB_LEN]
@@ -766,6 +784,13 @@ lr_toobig:
         inc     eax
         shl     eax,4
         lea     edi,[esi+eax]
+        cmp     edi,[lm_chtop]
+        jae     lr_bad2
+        push    esi
+        mov     esi,edi
+        call    lm_blkok
+        pop     esi
+        jc      lr_bad2
         cmp     word ptr [edi+RMCB_OWN],0
         jne     lr_bad2
         movzx   eax,word ptr [edi+RMCB_LEN]
@@ -796,6 +821,8 @@ lm_coalesce:
         pushad
         mov     esi,V86_TPA
 lc_scan:
+        call    lm_blkok                        ; a length past the top of
+        jc      lc_done                         ; the chain ends the walk
         cmp     byte ptr [esi+RMCB_SIG],'Z'
         je      lc_done
         cmp     word ptr [esi+RMCB_OWN],0
@@ -806,6 +833,11 @@ lc_scan:
         lea     edi,[esi+eax]
         cmp     edi,[lm_chtop]
         jae     lc_done
+        push    esi                             ; and so does a neighbour
+        mov     esi,edi                         ; whose own length does
+        call    lm_blkok
+        pop     esi
+        jc      lc_done
         cmp     word ptr [edi+RMCB_OWN],0
         jne     lc_next
         movzx   eax,word ptr [esi+RMCB_LEN]
@@ -825,4 +857,33 @@ lc_next:
         jb      lc_scan
 lc_done:
         popad
+        ret
+
+;=====================================================================
+; lm_blkok - ESI -> a header.  CF unless the block it describes ends at
+;            or below the top of the chain.  Everything preserved.
+;
+; THE CHAIN IS IN THE GUEST'S MEMORY and a program can write anything
+; over a length word.  Every walk above steps by that word and every
+; split writes a header where it says the block ends, and a length that
+; reaches past the chain reaches past the megabyte - into PMDOS.SYS and
+; the page tables, which a V86 program cannot name any other way.  So
+; a header is measured before it is believed, once, here: a block that
+; runs past the top is the broken chain it is, and a walk stops at it
+; rather than stepping off the end.
+;=====================================================================
+lm_blkok:
+        push    eax
+        movzx   eax,word ptr [esi+RMCB_LEN]
+        inc     eax
+        shl     eax,4
+        add     eax,esi
+        cmp     eax,[lm_chtop]
+        ja      lbo_bad
+        pop     eax
+        clc
+        ret
+lbo_bad:
+        pop     eax
+        stc
         ret

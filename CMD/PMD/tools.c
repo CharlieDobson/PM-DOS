@@ -825,6 +825,12 @@ static void insert_into( const char *path, const char *command )
     rc = sys_open_read( path, &handle );
     if ( rc == 0 ) {
         rc = sys_file_size( handle, &size );
+        if ( rc == 0 && size > 0x100000UL ) {
+            /* no CONFIG.SYS is a megabyte, and size + 1 must not wrap */
+            sys_close( handle );
+            msg_box2( "The file is too big to change here.", path, MB_OK );
+            return;
+        }
         if ( rc == 0 ) {
             data = (char *)try_alloc( size + 1 );
             if ( data == NULL ) {

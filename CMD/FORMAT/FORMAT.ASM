@@ -65,6 +65,7 @@
         INCLUDE PMDOS.INC
 
 CHUNK_SECS      EQU     32              ; 16K of sectors at a time
+SYSPATH_MAX     EQU     144             ; sys_path: COMSPEC's directory + SYS.COM
 
 ; a row of fd_sizes
 FS_KB           EQU     0               ; dw - what /F: calls it
@@ -1315,7 +1316,6 @@ fsp_scan:
         mov     al,[esi+ecx]
         or      al,al
         jz      fsp_cut
-        mov     [edi+ecx],al
         inc     ecx
         cmp     al,'\'
         je      fsp_mark
@@ -1325,8 +1325,17 @@ fsp_mark:
         mov     edx,ecx                 ; keep everything up to here
         jmp     short fsp_scan
 fsp_cut:
-        mov     edi,OFFSET sys_path
-        add     edi,edx
+        ; Only the directory is copied, and only when it leaves room
+        ; for "SYS.COM" after it.  The whole value used to be copied in
+        ; while it was scanned, so a COMSPEC longer than sys_path ran on
+        ; into the EXEC block that runs SYS.COM.  A directory too long
+        ; to use is treated as no COMSPEC at all.
+        cmp     edx,SYSPATH_MAX - 8
+        jbe     fsp_dir
+        xor     edx,edx
+fsp_dir:
+        mov     ecx,edx
+        rep     movsb
 fsp_bare:
         mov     esi,OFFSET fm_sysname
 fsp_name:
@@ -2685,7 +2694,7 @@ msg_sysing  db  'Transferring the system...',13,10,'$'
 msg_nosys   db  'System not transferred (SYS.COM would not run)',13,10,'$'
 fm_comspec  db  'COMSPEC=',0
 fm_sysname  db  'SYS.COM',0
-sys_path    db  144 dup(0)              ; where SYS.COM turned out to be
+sys_path    db  SYSPATH_MAX dup(0)      ; where SYS.COM turned out to be
 sys_tail    db  16 dup(0)               ; " d:" as EXEC wants it
 sys_blk     db  16 dup(0)               ; and the parameter block
 msg_baddrv  db  'Invalid drive specification',13,10,'$'

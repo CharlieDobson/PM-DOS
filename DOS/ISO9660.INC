@@ -967,6 +967,13 @@ idn_have:
         movzx   eax,byte ptr [iso_buf+ebx+ISO_DR_LEN]
         or      eax,eax
         jz      idn_advance
+        ; ...and a record that says it runs out of its block is not a
+        ; record: the walk moves on, as it does for the zero.  The length
+        ; is the disc's, and the copy iso_entry takes is measured by it.
+        add     eax,ebx
+        cmp     eax,ISO_BLKSIZE
+        ja      idn_advance
+        sub     eax,ebx
 
         ; step past it for next time, then hand this one back
         add     dword ptr [iso_doff],eax
@@ -985,7 +992,8 @@ idn_advance:
         inc     dword ptr [iso_dext]
         mov     dword ptr [iso_doff],0
         mov     byte ptr [iso_dloaded],0
-        jmp     short idn_block
+        jmp     idn_block                       ; (too far for a short jump
+                                                ; since the length check)
 
 idn_end:
         mov     dword ptr [iso_dleft],0

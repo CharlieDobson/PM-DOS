@@ -801,17 +801,35 @@ static int is_on( const char *value )
            || str_icmp( value, "1" ) == 0;
 }
 
-/* past a "{" that belongs to the key just read */
-static void ini_open( const char *value )
+/* past a "{" that belongs to the key just read.  1 if there was one */
+static int ini_open( const char *value )
 {
     char *key, *more;
     u32 at = ini_pos;
 
     if ( value[0] == '{' ) {
-        return;
+        return 1;
     }
     if ( !ini_next( &key, &more ) || key[0] != '{' ) {
         ini_pos = at;                   /* no brace: the next line is its own */
+        return 0;
+    }
+    return 1;
+}
+
+/* past the rest of a block ini_open has opened, the blocks inside it
+   and all, without reading anything in it */
+static void ini_skip( void )
+{
+    char *key, *value;
+    int depth = 1;
+
+    while ( depth && ini_next( &key, &value ) ) {
+        if ( key[0] == '{' || (key[0] != '}' && key[0] != '[' && value[0] == '{') ) {
+            depth++;
+        } else if ( key[0] == '}' ) {
+            depth--;
+        }
     }
 }
 
@@ -840,6 +858,13 @@ static void parse_dialog( PITEM *item )
 }
 
 static void parse_group( int group );
+
+/* GROUPS INSIDE GROUPS ARE READ BY parse_group CALLING ITSELF, so how
+   deep they go has to be limited by something other than the file: a
+   file of nothing but nested groups ran the stack out.  Deeper ones are
+   passed over. */
+#define GROUP_DEPTH_MAX 16
+static int group_depth;
 
 static void parse_program( int item )
 {
@@ -879,13 +904,21 @@ static void parse_group( int group )
         } else if ( str_icmp( key, "password" ) == 0 ) {
             str_fit( items[group].password, value, sizeof( items[group].password ) );
         } else if ( str_icmp( key, "program" ) == 0 || str_icmp( key, "group" ) == 0 ) {
+            if ( ch_upper( key[0] ) == 'G' && group_depth >= GROUP_DEPTH_MAX ) {
+                if ( ini_open( value ) ) {
+                    ini_skip();
+                }
+                continue;
+            }
             item = item_new( group, ch_upper( key[0] ) == 'G' );
             ini_open( value );
             if ( item < 0 ) {
                 item = MAX_ITEMS;               /* full: read into the scratch item */
             }
             if ( ch_upper( key[0] ) == 'G' ) {
+                group_depth++;
                 parse_group( item );
+                group_depth--;
             } else {
                 parse_program( item );
             }

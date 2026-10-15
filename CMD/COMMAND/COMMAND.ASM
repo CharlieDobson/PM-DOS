@@ -652,6 +652,7 @@ es_redir:
         mov     byte ptr [rd_inname],0
         mov     byte ptr [rd_outname],0
         mov     byte ptr [rd_append],0
+        mov     byte ptr [rd_long],0
 es_copy:
         lodsb
         or      al,al
@@ -684,6 +685,8 @@ es_gt1:
         jmp     es_copy
 es_copied:
         mov     byte ptr [di],0
+        cmp     byte ptr [rd_long],0    ; a name cut to fit would be some
+        jne     es_toolong              ; other file: the command stops
 
         xor     cx,cx
         cmp     byte ptr [rd_inname],0
@@ -726,6 +729,10 @@ es_nocreate:
         mov     si,OFFSET msg_nocreate
         call    puts_err
         jmp     es_unwind
+es_toolong:
+        mov     si,OFFSET msg_rdlong
+        call    puts_err
+        ret
 
 ; rd_name - the file after < or >: SI after the sign, BX -> buffer.
 ;           Blanks first, then everything up to a blank, a sign or the
@@ -751,10 +758,13 @@ rdn_loop:
         je      rdn_end
         inc     si
         cmp     cx,PATH_MAX - 1
-        jae     rdn_loop
+        jae     rdn_over
         mov     [di],al
         inc     di
         inc     cx
+        jmp     rdn_loop
+rdn_over:
+        mov     byte ptr [rd_long],1    ; too long to be a DOS path
         jmp     rdn_loop
 rdn_end:
         mov     byte ptr [di],0
@@ -2698,6 +2708,7 @@ msg_denied  db  'Access denied',13,10,0
 msg_toobig  db  'Program too big to fit in memory',13,10,0
 msg_execfail db 'EXEC failure',13,10,0
 msg_nocreate db 'File creation error',13,10,0
+msg_rdlong  db  'Redirection path too long',13,10,0
 msg_pipefail db 'Intermediate file error during pipe',13,10,0
 msg_nomem   db  'Insufficient memory',13,10,0
 msg_envfull db  'Out of environment space',13,10,0
@@ -2780,6 +2791,7 @@ pb_live     db  0
 pl_first    db  0
 fp_hasext   db  0
 rd_append   db  0
+rd_long     db  0                       ; a redirection's name did not fit
 pn_triedroot db 0
 fn_sep      db  1, 0                    ; a word: put_dec saves it whole
 
