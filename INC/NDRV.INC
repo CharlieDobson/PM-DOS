@@ -85,7 +85,9 @@
 ;---------------------------------------------------------------------
 NDT_SIG         EQU     0               ; dd - NDT_SIGVAL
 NDT_VER         EQU     4               ; dw - NDT_VERSION
-NDT_FLAGS       EQU     6               ; dw - none defined; 0
+NDT_FLAGS       EQU     6               ; dw - NDTF_*: what kind of
+                                        ; driver, for whoever looks for
+                                        ; one of a kind
 NDT_NAME        EQU     8               ; 8 bytes, blank padded: the name
                                         ; the kernel shows for it
 NDT_INIT        EQU     16              ; dd
@@ -96,6 +98,26 @@ NDT_LEN         EQU     32
 
 NDT_SIGVAL      EQU     5652444Eh       ; 'N','D','R','V' as a dword
 NDT_VERSION     EQU     1
+
+NDTF_NIC        EQU     0001h           ; a network card: CALL answers
+                                        ; the functions in INC\NIC.INC
+NDTF_STACK      EQU     0002h           ; the TCP/IP stack: CALL answers
+                                        ; the socket functions in
+                                        ; INC\SOCKET.H, and 21h/F1h AL=26h
+                                        ; reaches it without a row number
+NDTF_REDIR      EQU     0004h           ; a network redirector (DRV\SMBFS):
+                                        ; CALL answers the REDIR_* functions
+                                        ; in INC\REDIR.H, and the kernel's
+                                        ; net-drive branches reach it by this
+                                        ; flag.  It rides on the stack through
+                                        ; NDS_SOCKCALL the way the stack rides
+                                        ; on the cards through NDS_NICCALL
+NDTF_BLOCK      EQU     0008h           ; NOT a loaded driver: a sentinel the
+                                        ; WfW bridge VxD sends brg_entry to
+                                        ; reach the kernel's own block layer
+                                        ; (IOS_BRGBLK -> blk_bridge) for USB-
+                                        ; disk sectors while parked.  Handled
+                                        ; before the nd_find_flag path
 
 ;---------------------------------------------------------------------
 ; THE SERVICES - ESI at INIT, and the address is good for life.  Each
@@ -126,6 +148,23 @@ NDT_VERSION     EQU     1
 ;                   clock with interrupts off; it may use any register
 ;                   (IOS_TICKHOOK).  CF if the table is full
 ;   NDS_TICKUNHOOK  EDI = the handler again
+;   NDS_NICCOUNT    -> EAX = how many loaded drivers are NICs (NDTF_NIC).
+;                   For the TCP/IP stack, which rides on the card drivers
+;                   rather than touching a card itself
+;   NDS_NICCALL     EAX = a NIC index (0..NDS_NICCOUNT-1), EBX = a NIC_*
+;                   function (INC\NIC.INC), EDI -> a buffer, ECX = its
+;                   length -> EAX = what the card's CALL answered, CF and
+;                   AX = ERR_* for a bad index or a card that said no.
+;                   The same path 21h/F1h AL=25h NDF_CALL takes, from one
+;                   driver to another
+;   NDS_SOCKCALL    EBX = a socket function (INC\SOCKET.H), EDI -> a
+;                   request buffer, ECX = its length -> EAX = what the one
+;                   loaded TCP/IP stack (NDTF_STACK) answered, CF and AX =
+;                   ERR_GENERAL when no stack is loaded or ERR_* from the
+;                   stack.  For a redirector (NDTF_REDIR) that makes socket
+;                   calls from inside the kernel, the path 21h/F1h AL=26h
+;                   takes for a program - the buffer is the caller's own
+;                   kernel memory, so it is not checked
 ;---------------------------------------------------------------------
 NDS_VER         EQU     0
 NDS_ALLOC       EQU     4
@@ -137,9 +176,12 @@ NDS_IRQHOOK     EQU     24
 NDS_IRQUNHOOK   EQU     28
 NDS_TICKHOOK    EQU     32
 NDS_TICKUNHOOK  EQU     36
-NDS_LEN         EQU     40
+NDS_NICCOUNT    EQU     40
+NDS_NICCALL     EQU     44
+NDS_SOCKCALL    EQU     48
+NDS_LEN         EQU     52
 
-NDS_VERSION     EQU     1
+NDS_VERSION     EQU     3
 
 ;---------------------------------------------------------------------
 ; THE KERNEL'S ROW for a loaded driver - EDI at INIT and CALL, and what
@@ -151,7 +193,10 @@ ND_BASE         EQU     8               ; dd - where the image is: its
                                         ; D32 header is the first thing
 ND_SIZE         EQU     12              ; dd - bytes kept: image and BSS
 ND_TABLE        EQU     16              ; dd - its driver table
-ND_FLAGS        EQU     20              ; dd - none defined; 0
+ND_FLAGS        EQU     20              ; dd - the table's NDT_FLAGS, so
+                                        ; that a program finds a card
+                                        ; driver by NDTF_NIC without
+                                        ; reading the table
 ND_PARKS        EQU     24              ; dd - PARK calls with AL = 0
 ND_UNPARKS      EQU     28              ; dd - ...and with AL = 1
 ND_LEN          EQU     32

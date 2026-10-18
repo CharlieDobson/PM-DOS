@@ -62,6 +62,22 @@ DEVICEHIGH=file [options]
     the first megabyte and takes none of your conventional memory for
     it.  On MS-DOS the same file says that it needs PM-DOS and does
     not load.
+    NE2000.SYS is one: the driver for an NE1000, NE2000, RTL8019 or
+    RTL8029 network card and their clones.  Without options it looks
+    on the PCI bus first and then at the usual ISA ports (300h, 280h,
+    320h, 340h, 360h), and finds the card's interrupt line by making
+    the card interrupt.  /P:300 names the first port in hex and /I:10
+    the line, for a card the probe does not find or should not look
+    for.  A card whose line can't be found is read from the clock
+    instead, which works and is slow.
+    TCPIP.SYS is the TCP/IP stack.  Load it after a card driver:
+
+        DEVICE=C:\NE2000.SYS
+        DEVICE=C:\TCPIP.SYS
+
+    It finds the card the line above loaded, asks DHCP for an address,
+    a gateway and a name server, and from then on gives programs
+    sockets.  Without a card loaded first it says so and does not load.
 
 INSTALL=file [options]
 INSTALLHIGH=file [options]

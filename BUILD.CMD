@@ -361,8 +361,13 @@ rem each one has to be named here too: a directory missing from this
 rem list is one whose failed assembly links yesterday's object.  (A
 rem failed COMPILE does not need it - wcc386, unlike wasm, returns an
 rem error - but CHKDSK's and LABEL's startup is assembled like the rest.)
-for %%D in (ACROREAD ATTRIB CACHE CDEX CHKDSK CHOICE DEFRAG DISKCOMP DISKCOPY DRIVES EDIT FC FDISK FIND FORMAT HELP ISAPNP KEYB LABEL LFNAPI LRGDISK MEM MORE MOUNT MOVE PMD SCANDISK SHUTDOWN SORT SYS UNDELETE USB XCOPY) do if exist CMD\%%D\*.obj del /q CMD\%%D\*.obj
+for %%D in (ACROREAD ATTRIB CACHE CDEX CHKDSK CHOICE DEFRAG DISKCOMP DISKCOPY DRIVES EDIT FC FDISK FIND FORMAT HELP ISAPNP KEYB LABEL LFNAPI LRGDISK MEM MORE MOUNT MOVE PMD SCANDISK SHUTDOWN SORT SYS UNDELETE USB XCOPY NET SNTP WGET FTP TELNET) do if exist CMD\%%D\*.obj del /q CMD\%%D\*.obj
+if exist CMD\NET\TLS\*.obj del /q CMD\NET\TLS\*.obj
 if exist NLS\*.obj del /q NLS\*.obj
+rem ...and the 32-bit drivers under DRV\, the shared base and a
+rem directory each.
+if exist DRV\*.obj del /q DRV\*.obj
+for %%D in (NE2000 RTL8139 PCNET TULIP EEPRO100 E1000 WD80X3 EL3C501 EL3C509 EL3C90X TCPIP) do if exist DRV\%%D\*.obj del /q DRV\%%D\*.obj
 
 rem FSIZE asserts the sizes the checks below used to test with FOR's
 rem "~z" size modifier.  That modifier is a cmd.exe command EXTENSION:
@@ -594,6 +599,103 @@ cd CMD\KEYB
 wasm -q -i=..\..\INC keyb.asm                   || goto :fail
 wlink form raw bin option offset=0x2000 name ..\..\BIN\KEYB.COM file keyb.obj || goto :fail
 cd ..\..
+
+echo === the network clients: CMD\NET shared base, then FTP/TELNET/WGET/SNTP ===
+rem CMD\NET\SOCKLIB.C wraps the socket API (21h/F1h AL=26h) and carries
+rem the console, the clock and the command tail; CMD\NET\NETSTART.ASM is
+rem the program head and the INT 21h thunk.  Each client links the two
+rem behind its own, as the card drivers link NDSTART + NETCORE.
+cd CMD\NET
+wasm -q -i=..\..\INC netstart.asm                || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC socklib.c || goto :fail
+cd ..\..
+rem the TLS port (CMD\NET\TLS): the vendored NSTLS core (ECDHE-RSA-
+rem AES-GCM TLS 1.2), the little C library it needs (PMCLIB), and the
+rem glue that drives it over SOCKLIB.  The core is third-party C, so it
+rem is built without -w4 -we; PMCLIB and TLSGLUE are ours and are not.
+cd CMD\NET\TLS
+for %%M in (AES GCM SHA SHA512 PRF BIGNUM RSA ECP256 ECP384 RNG X509 TLSREC TLSHS) do wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -zp4 %%M.C || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\..\INC pmclib.c || goto :fail
+cd ..\..\..
+cd CMD\NET
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=TLS tlsglue.c || goto :fail
+cd ..\..
+
+cd CMD\SNTP
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=..\NET sntp.c || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\BIN\SNTP.EXE file ..\NET\netstart.obj,..\NET\socklib.obj,sntp.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+
+cd CMD\WGET
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -dWITH_TLS -i=..\..\INC -i=..\NET wget.c || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\BIN\WGET.EXE ^
+    file ..\NET\netstart.obj,..\NET\socklib.obj,..\NET\tlsglue.obj,wget.obj, ^
+    ..\NET\TLS\pmclib.obj,..\NET\TLS\aes.obj,..\NET\TLS\gcm.obj,..\NET\TLS\sha.obj,..\NET\TLS\sha512.obj, ^
+    ..\NET\TLS\prf.obj,..\NET\TLS\bignum.obj,..\NET\TLS\rsa.obj,..\NET\TLS\ecp256.obj,..\NET\TLS\ecp384.obj, ^
+    ..\NET\TLS\rng.obj,..\NET\TLS\x509.obj,..\NET\TLS\tlsrec.obj,..\NET\TLS\tlshs.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+
+cd CMD\FTP
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=..\NET ftp.c || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\BIN\FTP.EXE file ..\NET\netstart.obj,..\NET\socklib.obj,ftp.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+
+cd CMD\TELNET
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=..\NET telnet.c || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\BIN\TELNET.EXE file ..\NET\netstart.obj,..\NET\socklib.obj,telnet.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+
+echo === NET.EXE (NET USE: map a share to a drive letter) ===
+rem The command that asks the kernel (21h/F1h AL=27h) to map a letter to
+rem \\server\share; the redirector driver SMBFS.SYS does the SMB2/3.  A
+rem native program over the shared net runtime, like the other clients.
+cd CMD\NET\NET
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\..\INC -i=.. net.c || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\..\BIN\NET.EXE file ..\netstart.obj,..\socklib.obj,net.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..\..
+
+echo === SMBTEST.EXE (the SMB2/3 client: NTLMv2 + signing) ===
+rem CMD\NET\SMB: the crypto NTLMv2 needs that the TLS port lacked
+rem (SMBCRYPT: MD4/MD5/HMAC-MD5/RC4), the SMB3 signing MAC (SMBSIGN:
+rem AES-CMAC + the SP800-108 KDF, over the TLS port's AES/SHA-256), the
+rem SMB2/3 engine (SMB2: NEGOTIATE 2.0.2..3.1.1, NTLMv2 SESSION_SETUP,
+rem signing, TREE_CONNECT, QUERY_DIRECTORY), and SMBTEST over SOCKLIB.
+rem SHA-512 (3.1.1 pre-auth) was added to CMD\NET\TLS\SHA512.  A bare D32
+rem image in BIN\TESTS like SOCKTEST; needs a card driver + TCPIP.SYS and
+rem an SMB server (the rig's smbshare-up.ps1 share at 10.0.2.2).  SMBCTEST.C
+rem is the host known-answer test for the crypto (built with wcl386 -bt=nt).
+cd CMD\NET\SMB
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 smbcrypt.c || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\TLS smbsign.c || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\TLS smb2.c || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\..\INC smb1.c || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\..\INC -i=.. smbtest.c || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\..\BIN\TESTS\SMBTEST.EXE ^
+    file ..\netstart.obj,..\socklib.obj,smbtest.obj,smb2.obj,smbcrypt.obj,smbsign.obj, ^
+    ..\TLS\sha.obj,..\TLS\sha512.obj,..\TLS\aes.obj,..\TLS\pmclib.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..\..
+
+echo === SMBSRV.EXE (the SMB1 file server: share PM-DOS files) ===
+rem The other half of SMB: a native program that LISTENS on NetBIOS-over-
+rem TCP port 139 and serves a PM-DOS directory to SMB1 clients (Win9x/NT,
+rem the PM-DOS SMB1 client, Samba).  SMBSRV is the transport- and FS-
+rem agnostic protocol core (NEGOTIATE..FIND..READ/WRITE); SMBSRVDOS is the
+rem INT 21h filesystem back end and the SOCKLIB listen/accept front end.
+rem SMBSRVHOST.C is the host proof (Win32 files + Winsock, wcl386 -bt=nt).
+cd CMD\NET\SMB
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\..\INC smbsrv.c || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\..\INC -i=.. smbsrvdos.c || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\..\BIN\SMBSRV.EXE ^
+    file ..\netstart.obj,..\socklib.obj,smbsrvdos.obj,smbsrv.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..\..
+
 rem COUNTRY.SYS and KEYBOARD.SYS are data and nothing else.  The two
 rem .ASM files are written by TOOLS\MKNLS.PS1 from NLS\COUNTRY.DEF and
 rem NLS\KEYBOARD.DEF, which is where a country or a layout is changed;
@@ -971,7 +1073,8 @@ rem version of its own names that .EXE to D32BIND in place of the stub.
 for %%F in (CMD.EXE CHOICE.COM MORE.COM SORT.COM SYS.COM FORMAT.COM MEM.EXE FDISK.EXE MOUNT.EXE ^
   CACHE.EXE UNDELETE.EXE CDEX.EXE SHUTDOWN.EXE FIND.EXE DISKCOPY.COM DISKCOMP.COM MOVE.EXE ^
   ATTRIB.EXE CHKDSK.EXE LABEL.EXE XCOPY.EXE EDIT.EXE FC.EXE ISAPNP.EXE PMD.EXE DOSSHELL.EXE ^
-  ACROREAD.EXE SCANDISK.EXE DEFRAG.EXE KEYB.COM HELP.EXE USB.EXE) do TOOLS\D32BIND.EXE BIN\%%F TOOLS\D32STUB.EXE || goto :fail
+  ACROREAD.EXE SCANDISK.EXE DEFRAG.EXE KEYB.COM HELP.EXE USB.EXE ^
+  SNTP.EXE WGET.EXE FTP.EXE TELNET.EXE NET.EXE SMBSRV.EXE) do TOOLS\D32BIND.EXE BIN\%%F TOOLS\D32STUB.EXE || goto :fail
 
 echo === HELLO.COM (a real 16-bit .COM, for the VDM) ===
 rem An ordinary real-mode DOS program.  It is not part of the kernel;
@@ -1635,6 +1738,175 @@ wasm -q -i=..\INC ndrvtest.asm                   || goto :fail
 wlink form raw bin option offset=0x2000 name ..\BIN\TESTS\NDRVTEST.EXE file ndrvtest.obj || goto :fail
 cd ..
 
+echo === NE2000.SYS (the DP8390 card driver, in C) ===
+rem The first card driver of the network stack (INC\NIC.INC), and the
+rem first 32-bit driver written in C: DRV\NDSTART.ASM is its start and
+rem its face to the kernel, NE2000.C the driver.  The link orders the
+rem C classes as a command's are ordered, with D32END last so that the
+rem BSS is in the file; then twice, at 0 and at 10000000h, and D32DRV
+rem puts the two together, as NDTEST.SYS above.
+cd DRV\NE2000
+wasm -q -i=..\..\INC -fo=ndstart.obj ..\NDSTART.ASM || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC ne2000.c || goto :fail
+wlink form raw bin option offset=0x0 name ne2000_0.bin file ndstart.obj,ne2000.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+wlink form raw bin option offset=0x10000000 name ne2000_1.bin file ndstart.obj,ne2000.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+TOOLS\D32DRV.EXE BIN\NE2000.SYS TOOLS\DRVSTUB.BIN DRV\NE2000\NE2000_0.BIN DRV\NE2000\NE2000_1.BIN || goto :fail
+
+echo === the shared base for the other card drivers (DRV\NETCORE.C) ===
+rem NE2000.SYS above was the first card and stands alone; every card
+rem after it is NDSTART.ASM + NETCORE.C (the queue, the counts, the
+rem DEVICE= line, the PCI bus, the four NIC_ functions) + the chip's
+rem own source.  The two shared objects are built once here and linked
+rem into each driver below.
+cd DRV
+wasm -q -i=..\INC -fo=ndstart.obj NDSTART.ASM    || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\INC netcore.c || goto :fail
+cd ..
+
+echo === RTL8139.SYS (Realtek RTL8139 Fast Ethernet, PCI) ===
+cd DRV\RTL8139
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=.. rtl8139.c || goto :fail
+wlink form raw bin option offset=0x0 name rtl8139_0.bin file ..\ndstart.obj,..\netcore.obj,rtl8139.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+wlink form raw bin option offset=0x10000000 name rtl8139_1.bin file ..\ndstart.obj,..\netcore.obj,rtl8139.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+TOOLS\D32DRV.EXE BIN\RTL8139.SYS TOOLS\DRVSTUB.BIN DRV\RTL8139\rtl8139_0.bin DRV\RTL8139\rtl8139_1.bin || goto :fail
+
+echo === PCNET.SYS (AMD PCnet-PCI, the Lance family, PCI) ===
+cd DRV\PCNET
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=.. pcnet.c || goto :fail
+wlink form raw bin option offset=0x0 name pcnet_0.bin file ..\ndstart.obj,..\netcore.obj,pcnet.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+wlink form raw bin option offset=0x10000000 name pcnet_1.bin file ..\ndstart.obj,..\netcore.obj,pcnet.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+TOOLS\D32DRV.EXE BIN\PCNET.SYS TOOLS\DRVSTUB.BIN DRV\PCNET\pcnet_0.bin DRV\PCNET\pcnet_1.bin || goto :fail
+
+echo === TULIP.SYS (DEC 21x4x Tulip, PCI) ===
+cd DRV\TULIP
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=.. tulip.c || goto :fail
+wlink form raw bin option offset=0x0 name tulip_0.bin file ..\ndstart.obj,..\netcore.obj,tulip.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+wlink form raw bin option offset=0x10000000 name tulip_1.bin file ..\ndstart.obj,..\netcore.obj,tulip.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+TOOLS\D32DRV.EXE BIN\TULIP.SYS TOOLS\DRVSTUB.BIN DRV\TULIP\tulip_0.bin DRV\TULIP\tulip_1.bin || goto :fail
+
+echo === E1000.SYS (Intel 8254x gigabit family, PCI; memory mapped) ===
+cd DRV\E1000
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=.. e1000.c || goto :fail
+wlink form raw bin option offset=0x0 name e1000_0.bin file ..\ndstart.obj,..\netcore.obj,e1000.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+wlink form raw bin option offset=0x10000000 name e1000_1.bin file ..\ndstart.obj,..\netcore.obj,e1000.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+TOOLS\D32DRV.EXE BIN\E1000.SYS TOOLS\DRVSTUB.BIN DRV\E1000\e1000_0.bin DRV\E1000\e1000_1.bin || goto :fail
+
+echo === EEPRO100.SYS (Intel 8255x PRO/100, PCI; command blocks) ===
+cd DRV\EEPRO100
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=.. eepro100.c || goto :fail
+wlink form raw bin option offset=0x0 name eepro_0.bin file ..\ndstart.obj,..\netcore.obj,eepro100.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+wlink form raw bin option offset=0x10000000 name eepro_1.bin file ..\ndstart.obj,..\netcore.obj,eepro100.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+TOOLS\D32DRV.EXE BIN\EEPRO100.SYS TOOLS\DRVSTUB.BIN DRV\EEPRO100\eepro_0.bin DRV\EEPRO100\eepro_1.bin || goto :fail
+
+echo === EL3C509.SYS (3Com EtherLink III, ISA; written, Charlie's card) ===
+cd DRV\EL3C509
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=.. el3c509.c || goto :fail
+wlink form raw bin option offset=0x0 name el3c509_0.bin file ..\ndstart.obj,..\netcore.obj,el3c509.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+wlink form raw bin option offset=0x10000000 name el3c509_1.bin file ..\ndstart.obj,..\netcore.obj,el3c509.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+TOOLS\D32DRV.EXE BIN\EL3C509.SYS TOOLS\DRVSTUB.BIN DRV\EL3C509\el3c509_0.bin DRV\EL3C509\el3c509_1.bin || goto :fail
+
+echo === WD80X3.SYS (WD/SMC shared-memory 8390, ISA; written) ===
+cd DRV\WD80X3
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=.. wd80x3.c || goto :fail
+wlink form raw bin option offset=0x0 name wd80x3_0.bin file ..\ndstart.obj,..\netcore.obj,wd80x3.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+wlink form raw bin option offset=0x10000000 name wd80x3_1.bin file ..\ndstart.obj,..\netcore.obj,wd80x3.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+TOOLS\D32DRV.EXE BIN\WD80X3.SYS TOOLS\DRVSTUB.BIN DRV\WD80X3\wd80x3_0.bin DRV\WD80X3\wd80x3_1.bin || goto :fail
+
+echo === EL3C90X.SYS (3Com 3C90x Boomerang, PCI; written, Charlie's card) ===
+cd DRV\EL3C90X
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=.. el3c90x.c || goto :fail
+wlink form raw bin option offset=0x0 name el3c90x_0.bin file ..\ndstart.obj,..\netcore.obj,el3c90x.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+wlink form raw bin option offset=0x10000000 name el3c90x_1.bin file ..\ndstart.obj,..\netcore.obj,el3c90x.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+TOOLS\D32DRV.EXE BIN\EL3C90X.SYS TOOLS\DRVSTUB.BIN DRV\EL3C90X\el3c90x_0.bin DRV\EL3C90X\el3c90x_1.bin || goto :fail
+
+echo === TCPIP.SYS (the TCP/IP stack: ARP, IP, ICMP, UDP, DHCP, DNS, TCP) ===
+rem The stack rides on a loaded card driver (NDS_NICCALL) and answers
+rem the socket functions on 21h/F1h AL=26h (INC\SOCKET.H).  It is a
+rem 32-bit driver like the cards - DRV\NDSTART.ASM in front - but it is
+rem not a card, so it links NDSTART alone, not NETCORE.
+cd DRV\TCPIP
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=.. tcpip.c || goto :fail
+wlink form raw bin option offset=0x0 name tcpip_0.bin file ..\ndstart.obj,tcpip.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+wlink form raw bin option offset=0x10000000 name tcpip_1.bin file ..\ndstart.obj,tcpip.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+TOOLS\D32DRV.EXE BIN\TCPIP.SYS TOOLS\DRVSTUB.BIN DRV\TCPIP\tcpip_0.bin DRV\TCPIP\tcpip_1.bin || goto :fail
+
+echo === SMBFS.SYS (the SMB2/3 network redirector: NET USE drive letters) ===
+rem An NDTF_REDIR driver the kernel's net-drive file branches (DOS\NETFS.INC)
+rem reach through nd_find_flag + nd_call_row.  It links the proven SMB2
+rem engine + crypto + the TLS SHA/SHA512/AES primitives (built above for
+rem SMBTEST) behind DRV\NDSTART.ASM, with a socket shim over NDS_SOCKCALL
+rem (DRVSOCK) and the little C runtime those modules need (DRVRT).  Two
+rem links + D32DRV like the cards; needs a card driver + TCPIP.SYS loaded.
+cd DRV\SMBFS
+rem DRVFIB.ASM: the cooperative worker fibre a resumable REDIR op runs on,
+rem so the WfW bridge (PMDOS.386) can poll a socket wait instead of
+rem spinning in a window that holds interrupts off (INC\REDIR.H, BA2).
+wasm -q drvfib.asm || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=. drvrt.c || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=. drvsock.c || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=..\..\CMD\NET\SMB -i=. smbfs.c || goto :fail
+cd ..\..
+wlink form raw bin option offset=0x0 name DRV\SMBFS\smbfs_0.bin ^
+    file DRV\ndstart.obj,DRV\SMBFS\drvfib.obj,DRV\SMBFS\smbfs.obj,DRV\SMBFS\drvsock.obj,DRV\SMBFS\drvrt.obj,CMD\NET\SMB\smb2.obj,CMD\NET\SMB\smb1.obj,CMD\NET\SMB\smbcrypt.obj,CMD\NET\SMB\smbsign.obj,CMD\NET\TLS\sha.obj,CMD\NET\TLS\sha512.obj,CMD\NET\TLS\aes.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+wlink form raw bin option offset=0x10000000 name DRV\SMBFS\smbfs_1.bin ^
+    file DRV\ndstart.obj,DRV\SMBFS\drvfib.obj,DRV\SMBFS\smbfs.obj,DRV\SMBFS\drvsock.obj,DRV\SMBFS\drvrt.obj,CMD\NET\SMB\smb2.obj,CMD\NET\SMB\smb1.obj,CMD\NET\SMB\smbcrypt.obj,CMD\NET\SMB\smbsign.obj,CMD\NET\TLS\sha.obj,CMD\NET\TLS\sha512.obj,CMD\NET\TLS\aes.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+TOOLS\D32DRV.EXE BIN\SMBFS.SYS TOOLS\DRVSTUB.BIN DRV\SMBFS\smbfs_0.bin DRV\SMBFS\smbfs_1.bin || goto :fail
+
+echo === NICTEST.EXE (a card driver, from the wire: DHCP, ARP, a ping) ===
+rem C, with CSTART.ASM as its startup - the first test in TOOLS\ that
+rem is: frames built field by field are easier to keep right in C.
+rem Needs NE2000.SYS loaded by CONFIG.SYS and a network behind the
+rem card that serves DHCP, which every emulator's user-mode network
+rem does (RUNTESTS.PS1 puts an NE2000 in the DOSBox-X machine).
+cd TOOLS
+wasm -q -i=..\INC cstart.asm                     || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\INC nictest.c || goto :fail
+wlink form raw bin option offset=0x2000 name ..\BIN\TESTS\NICTEST.EXE file cstart.obj,nictest.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..
+
+echo === SOCKTEST.EXE (the TCP/IP stack through its sockets) ===
+rem Needs a card driver and TCPIP.SYS on CONFIG.SYS, and a network that
+rem serves DHCP.  The TCP line wants rig\netrun.ps1 -TcpProbe, which
+rem forwards 10.0.9.9:80 to a host listener that answers PMDOS-OK.
+cd TOOLS
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\INC socktest.c || goto :fail
+wlink form raw bin option offset=0x2000 name ..\BIN\TESTS\SOCKTEST.EXE file cstart.obj,socktest.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..
+
 echo === LRGTEST.COM (LRGDISK.386's real-mode checks, under DOS) ===
 rem Runs the real-mode start-up out of BIN\LRGDISK.386 itself with a
 rem stand-in for WIN386's loader: which disks LRGDISK would take, and
@@ -1956,7 +2228,7 @@ TOOLS\MKDISK.EXE IMAGES\TESTS.IMG BIN\BOOT.BIN -label "PM-DOS TEST" -dir ^
     BIN\TESTS\UDTEST.COM BIN\TESTS\ALLOCTST.COM BIN\TESTS\MCBTEST.COM BIN\TESTS\FCBTEST.COM ^
     BIN\TESTS\BUFTEST.COM BIN\TESTS\UMBTEST.COM BIN\TESTS\EMSTEST.COM BIN\TESTS\EMS4TEST.COM BIN\TESTS\DEVCRIT.EXE ^
     BIN\TESTS\I24TEST.COM BIN\TESTS\VFYTEST.EXE BIN\TESTS\IDETEST.EXE BIN\TESTS\HWPROBE.EXE BIN\TESTS\F32TEST.COM BIN\TESTS\FNDTEST.EXE ^
-    BIN\TESTS\CFGTEST.COM BIN\TESTS\CACHETST.COM BIN\TESTS\VFTEST.COM BIN\TESTS\SHARETST.COM BIN\TESTS\TESTDEV.SYS BIN\TESTS\TESTBLK.SYS BIN\TESTS\IOCDEV.SYS BIN\TESTS\DRVTEST.COM BIN\TESTS\CDSTEST.COM BIN\TESTS\NETTEST.COM BIN\TESTS\NDTEST.SYS BIN\TESTS\NDRVTEST.EXE BIN\TESTS\SEEKWR.COM BIN\TESTS\BLKTEST.COM BIN\TESTS\CTRYDMP.COM BIN\TESTS\NLSTEST.COM BIN\TESTS\KBLTEST.COM BIN\TESTS\LOCKTEST.COM ^
+    BIN\TESTS\CFGTEST.COM BIN\TESTS\CACHETST.COM BIN\TESTS\VFTEST.COM BIN\TESTS\SHARETST.COM BIN\TESTS\TESTDEV.SYS BIN\TESTS\TESTBLK.SYS BIN\TESTS\IOCDEV.SYS BIN\TESTS\DRVTEST.COM BIN\TESTS\CDSTEST.COM BIN\TESTS\NETTEST.COM BIN\TESTS\NDTEST.SYS BIN\TESTS\NDRVTEST.EXE BIN\TESTS\NICTEST.EXE BIN\TESTS\SOCKTEST.EXE BIN\TESTS\SEEKWR.COM BIN\TESTS\BLKTEST.COM BIN\TESTS\CTRYDMP.COM BIN\TESTS\NLSTEST.COM BIN\TESTS\KBLTEST.COM BIN\TESTS\LOCKTEST.COM ^
     BIN\TESTS\CTRYTEST.COM BIN\TESTS\CRASH.EXE BIN\TESTS\R3TEST.EXE BIN\TESTS\MS32TEST.EXE BIN\TESTS\VPICTEST.COM BIN\TESTS\TIMERTST.COM BIN\TESTS\RMIVT.COM BIN\TESTS\IRQXTEST.COM BIN\TESTS\IRQXWAIT.EXE BIN\TESTS\DMATEST.COM BIN\TESTS\DPMIIRQ.COM BIN\TESTS\DPMII32.COM BIN\TESTS\DPMIVEC.COM BIN\TESTS\DPMIV32.COM BIN\TESTS\VDSTEST.COM BIN\TESTS\NICIRQ.COM BIN\TESTS\PCITEST.EXE BIN\TESTS\IRQTEST.EXE BIN\TESTS\FPUTEST.COM BIN\TESTS\FPU32.EXE BIN\TESTS\DPMIFPU.COM BIN\TESTS\DPMIFP32.COM ^
     BIN\TESTS\LPTTEST.COM BIN\TESTS\RMSPEED.COM BIN\TESTS\HNDTEST.COM BIN\TESTS\RMFSTEST.COM BIN\TESTS\WINDRV.EXE BIN\TESTS\VBETEST.EXE ^
     BIN\TESTS\EXECLEAK.EXE BIN\TESTS\SLOTTEST.EXE BIN\TESTS\BIGMEM.EXE BIN\TESTS\LRGTEST.COM BIN\TESTS\ATAPIRD.COM BIN\TESTS\SRSTTEST.COM ^

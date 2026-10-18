@@ -370,6 +370,26 @@ ushr_out:
         pop     eax
         ret
 
+;--- uh_runsched - Run/Stop on again, the configure flag and 64-byte
+;--- packets kept as uh_init set them.  ESI -> the controller's row.  For
+;--- the WfW-bridge keepalive a controller PAUSED at the park (its Run bit
+;--- cleared by uh_stoprun, the frame list and queues left exactly as
+;--- built) is woken for the span of one bridge transfer and paused again,
+;--- so it bus-masters nothing while Windows sets up its GUI.  Everything
+;--- kept: setting Run resumes the schedule from the frame it stopped on.
+;--- (Always built now; the keepalive is a runtime choice, usb_kalive -
+;--- CONFIG.SYS USB=ON,KEEPALIVE - not a build-time one.)
+uh_runsched:
+        push    eax
+        push    edx
+        mov     edx,dword ptr [esi+HC_BASE]
+        add     dx,UHR_CMD
+        mov     ax,UHC_RS OR UHC_CF OR UHC_MAXP
+        out     dx,ax
+        pop     edx
+        pop     eax
+        ret
+
 ;=====================================================================
 ; uh_halt - stopped and reset, for a restart of the machine.
 ;=====================================================================

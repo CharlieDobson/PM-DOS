@@ -20,25 +20,33 @@ switch means; Notes and Examples are a key away at the top of it.
                                       {*}
 #group About PM-DOS|About PM-DOS
 #nolist
-PM-DOS is a 32-bit operating system that runs the programs written for
-MS-DOS.  The kernel runs in protected mode above the first megabyte and
-leaves nearly all of the 640K to DOS programs; its own commands are
-32-bit programs that have no such limit.
+PM-DOS is a fully 32-bit protected-mode operating system, fully
+backward compatible with 16-bit applications.  The kernel runs above
+the first megabyte and leaves nearly all of the 640K to the programs
+under it: what was written for DOS runs as it did, and so does
+Windows 3.1.  PM-DOS's own commands are 32-bit programs with no such
+limit.
 
-What it has that MS-DOS has not:
+Key features:
 
-{o} Long file names, the way Windows 95 names them, on FAT12, FAT16 and
-  FAT32 disks.  LFN= in CONFIG.SYS turns them off for programs that
-  cannot cope.
-{o} A disk cache, file sharing, expanded memory, a DPMI host, a mouse
-  driver and CD-ROM drivers built in.  There is no SMARTDRV, SHARE,
-  EMM386, MSCDEX or MOUSE to load.
-{o} IDE disks of any size, with UltraDMA; FAT32; partitions that FDISK
-  can move and resize.
-{o} Delete protection: a deleted file can be brought back with UNDELETE
-  until the space is needed.
-{o} A shell, CMD.EXE, with DOSKEY built in.  COMMAND.COM is also there,
-  for the DOS programs that start a shell of their own.
+{o} Long file names on FAT12, FAT16 and FAT32 disks.
+{o} A disk cache, file sharing, expanded memory, a DPMI host and a
+  mouse driver, all in the kernel, with nothing to load.
+{o} IDE disks of any size, with UltraDMA up to UDMA6; partitions that
+  FDISK can move and resize.
+{o} CD-ROM drives, IDE and SCSI, with nothing to load.  MOUNT gives a
+  disk image or an .ISO file a drive letter.
+{o} USB keyboards, mice and disks, driven by the kernel.
+{o} ISA Plug and Play cards, set up with ISAPNP.
+{o} Delete protection: a deleted file comes back with UNDELETE until
+  the space is needed.
+{o} Country settings, code pages and keyboard layouts: COUNTRY=, CHCP
+  and KEYB.
+{o} SCANDISK, DEFRAG, DOSSHELL, EDIT, ACROREAD and HELP, all 32-bit;
+  SCANDISK, DEFRAG and ACROREAD have a VBE graphics screen with /G.
+{o} SHUTDOWN, which writes everything out and switches the machine off.
+{o} A shell, CMD.EXE, with DOSKEY built in.  COMMAND.COM is there for
+  the programs that start a shell of their own.
 
 What it needs: a 386 or later, 4MB of memory, and 1.5MB of disk.
 

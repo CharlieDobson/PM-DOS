@@ -1365,10 +1365,21 @@ cfg_usb:
         call    cfg_iskw
         jc      cfg_badparm
         mov     byte ptr [usb_on],1
-        cmp     byte ptr [esi+2],','
+        add     esi,2                   ; past "ON"
+        ; comma-separated arguments, each a letter count or KEEPALIVE:
+        ; USB=ON  USB=ON,2  USB=ON,KEEPALIVE  USB=ON,2,KEEPALIVE
+cfu_arg:
+        cmp     byte ptr [esi],','
         jne     cfu_done
-        add     esi,3
-        call    cfg_num
+        inc     esi                     ; past the comma, to the argument
+        mov     edi,OFFSET cfgw_keepalive
+        call    cfg_iskw
+        jc      cfu_num
+        mov     byte ptr [usb_kacfg],1  ; keep USB owned across the park (bridge)
+        add     esi,9                   ; past "KEEPALIVE"
+        jmp     short cfu_arg
+cfu_num:
+        call    cfg_num                 ; a letter count (advances ESI)
         jc      cfg_badparm
         or      eax,eax
         jz      cfg_badparm
@@ -1377,6 +1388,7 @@ cfg_usb:
         mov     eax,USB_MAXUNITS
 cfu_letters:
         mov     [usb_letters],al
+        jmp     short cfu_arg
 cfu_done:
         ret
 cfu_off:
@@ -2484,6 +2496,7 @@ cfgn_multitrk db  'MULTITRACK',0
 
 cfgw_on       db  'ON',0
 cfgw_off      db  'OFF',0
+cfgw_keepalive db 'KEEPALIVE',0
 cfgw_ask      db  'ASK',0
 cfgw_no       db  'NO',0
 cfgw_yes      db  'YES',0

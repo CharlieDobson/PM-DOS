@@ -368,7 +368,7 @@ blk_r_notata:
         jmp     usbm_read
 blk_r_bios:
         mov     byte ptr [bio_write],0
-        jmp     short blk_go
+        jmp     blk_go
 
 ;=====================================================================
 ; blk_write - IOS_WRBLK, same registers, EDI = source.
@@ -387,7 +387,7 @@ blk_w_notata:
         jmp     usbm_write
 blk_w_bios:
         mov     byte ptr [bio_write],1
-        jmp     short blk_go
+        jmp     blk_go
 
 ;--- an ATA disk answered, for better or worse.  A failure here is a
 ;--- real failure, not a reason to go asking the BIOS instead.
@@ -400,6 +400,135 @@ blk_ata_err:
         mov     ah,0Ch                  ; BIOS-style "general failure"
         stc
         ret
+
+;=====================================================================
+; blk_bridge - IOS_BRGBLK, the Windows-for-Workgroups bridge's one block
+;              entry.  Reached only through brg_entry (NDTF_BLOCK) while
+;              PM-DOS is parked and Windows owns the machine: the VxD runs
+;              this at the kernel's CR3, interrupts off, on its scratch
+;              stack, to read or write sectors of a USB disk whose driver
+;              (PMIO's own, foreground-polled, no interrupt) still owns its
+;              controller across the park.  EBP/EDI -> a block_req in the
+;              low 1:1 page, so its data buffer's linear == physical, which
+;              is what the USB host controller's bus-master DMA needs.
+;
+; The USB transfer completes by POLLING descriptor status in memory - it
+; needs no interrupt - but its wait loops `sti` and their timeout counts
+; BIOS ticks.  In a bridge window interrupts are off and the tick is
+; frozen, so this MASKS every PIC line first: a `sti` inside then sets the
+; flag with nothing deliverable (the active IDT is WIN386's and must not
+; be entered here), and the frozen tick merely means "no timeout" - a
+; healthy transfer still finishes by polling.  The masks are put back
+; exactly as found.  So the proven USB code is called UNCHANGED.
+;
+; With the keepalive (-d USB_KEEPALIVE), the controller's schedule is
+; PAUSED at the park and woken only here, around the transfer, so it is
+; not bus-mastering while Windows runs.  Pausing a halted schedule needs
+; the TD to still complete: if the poll above never returns, the wake
+; (usb_kresume) did not restart it - the HANG_E9 trace shows exactly that.
+;=====================================================================
+blk_bridge:
+        pushad
+        mov     ebp,edi                         ; EBP -> the request block
+        ; BR_OP = 2 is a USB-ownership QUERY (the WfW bridge's INT 13h hook
+        ; asks which BIOS drive numbers are USB disks of ours): no I/O, no
+        ; masks, no schedule wake - just usbm_owns.  BR_STATUS = 0 ours.
+        cmp     dword ptr [ebp+BR_OP],2
+        jne     bb_io
+        mov     eax,dword ptr [ebp+BR_DRIVE]    ; AL = the drive number
+        call    usbm_owns
+        jc      bb_qnot
+        mov     dword ptr [ebp+BR_STATUS],0
+        jmp     short bb_qdone
+bb_qnot:
+        mov     dword ptr [ebp+BR_STATUS],1
+bb_qdone:
+        popad
+        xor     eax,eax
+        clc
+        ret
+bb_io:
+        in      al,0A1h                         ; save the PIC masks
+        mov     byte ptr [bb_slmask],al
+        in      al,021h
+        mov     byte ptr [bb_mamask],al
+        mov     al,0FFh                          ; and mask everything
+        out     021h,al
+        out     0A1h,al
+        ; and tell the USB transfer poll to keep interrupts OFF: masking the
+        ; PICs is not enough on its own (a timer tick still reached the CPU
+        ; through usbm_xfer's sti and triple-faulted, the window running under
+        ; the kernel CR3 with WIN386's IDT unmapped).
+        mov     byte ptr [usb_brgwin],1
+
+        ; the keepalive paused the USB schedule at the park so it would not
+        ; bus-master while Windows ran; wake it for the span of this one
+        ; transfer (usb_kpause at bb_ret stops it again).  Runtime-gated on
+        ; usb_kalive (CONFIG USB=ON,KEEPALIVE); native parks hand USB back and
+        ; never reach blk_bridge, so this only ever runs under the bridge.
+        cmp     byte ptr [usb_kalive],0
+        je      bb_noresume
+IFDEF HANG_E9
+        mov     al,'B'
+        out     0E9h,al
+ENDIF
+        call    usb_kresume
+bb_noresume:
+
+        mov     eax,dword ptr [ebp+BR_DRIVE]    ; AL = the block drive number
+        mov     ebx,dword ptr [ebp+BR_LBA]
+        mov     ecx,dword ptr [ebp+BR_COUNT]    ; CX = sector count
+        lea     edi,[ebp+BR_DATA]
+        cmp     dword ptr [ebp+BR_OP],0
+        jne     bb_write
+        call    blk_read                        ; -> CF, AH = BIOS status
+        jmp     short bb_ret
+bb_write:
+        call    blk_write
+bb_ret:
+        mov     byte ptr [usb_brgwin],0         ; transfer over: the poll may
+                                                ; sti again outside the bridge
+                                                ; (a mov leaves CF for the jc)
+        ; the transfer is done (CF, AH = its status): pause the schedule
+        ; again so it rests until the next bridge window.  pushfd/popfd
+        ; keeps CF for the jc below; the E9 trace prints the status byte.
+        cmp     byte ptr [usb_kalive],0
+        je      bb_nopause
+        pushfd
+        push    eax
+IFDEF HANG_E9
+        mov     al,'D'
+        out     0E9h,al
+        mov     al,ah
+        call    e9_hex8
+ENDIF
+        call    usb_kpause
+        pop     eax
+        popfd
+bb_nopause:
+        mov     al,byte ptr [bb_mamask]         ; restore the masks (AH, CF kept:
+        out     021h,al                         ; mov/out touch neither)
+        mov     al,byte ptr [bb_slmask]
+        out     0A1h,al
+        jc      bb_err
+        mov     dword ptr [ebp+BR_STATUS],0
+        mov     eax,dword ptr [ebp+BR_COUNT]
+        mov     dword ptr [ebp+BR_RESULT],eax
+        popad
+        xor     eax,eax
+        clc
+        ret
+bb_err:
+        movzx   eax,ah                          ; the INT 13h status byte
+        mov     dword ptr [ebp+BR_STATUS],eax
+        mov     dword ptr [ebp+BR_RESULT],0
+        popad
+        mov     eax,1
+        clc                                     ; the call was made; the status
+        ret                                     ; in the block says why
+
+bb_mamask   db  0
+bb_slmask   db  0
 
 ;---------------------------------------------------------------------
 blk_go:

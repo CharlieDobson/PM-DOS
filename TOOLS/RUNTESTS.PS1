@@ -4,13 +4,16 @@ param(
     [string]$Cpu = '486',                        # DOSBox-X cputype: 386, 486, pentium...
     [string]$Name = '',                          # the baseline's name; <cpu>-<MB> if not given
     [string[]]$Cfg = @( 'DOS=HIGH,UMB', 'DEVICE=C:\TESTS\IOCDEV.SYS', 'DEVICE=C:\TESTS\TESTBLK.SYS',
-                        'DEVICE=C:\TESTS\NDTEST.SYS /I:11' ),
+                        'DEVICE=C:\TESTS\NDTEST.SYS /I:11', 'DEVICE=C:\NE2000.SYS' ),
                                                  # CONFIG.SYS - IOCDEV.SYS is
                                                  # what DRVTEST talks to,
                                                  # TESTBLK.SYS's RAM disk (D:)
                                                  # is what BLKTEST writes on,
-                                                 # and NDTEST.SYS is the 32-bit
-                                                 # driver NDRVTEST asks about
+                                                 # NDTEST.SYS is the 32-bit
+                                                 # driver NDRVTEST asks about,
+                                                 # and NE2000.SYS drives the
+                                                 # card DBXRUN puts in the
+                                                 # machine, for NICTEST
     [int]$Seconds = 240,                         # DOSBox-X's -time-limit
     [string]$Exe = '',                           # DOSBox-X, if DBXRUN.PS1 would pick wrong
     [switch]$Update,                             # keep what this run said as the baseline
@@ -133,7 +136,7 @@ $default = @(
     'DPMII32', 'DPMIIRQ', 'DPMITEST', 'DPMIV32', 'DPMIVEC', 'DRIVES', 'EMSTEST', 'EXECLEAK', 'EXECTST',
     'F32TEST', 'FCBTEST', 'FNDTEST', 'FPU32', 'FPUTEST', 'HELLO', 'HELLOX', 'HNDTEST', 'HOOKTEST',
     'HWPROBE', 'I13TEST', 'I24TEST', 'IDLETEST /T', 'IRQTEST', 'ISAPNP', 'KBLTEST', 'LFNAPI', 'LOCKTEST', 'LOLTEST', 'LPTTEST',
-    'MCBTEST', 'MEMPROBE', 'MS32TEST', 'MSTEST', 'NICIRQ', 'NLSTEST', 'PCITEST', 'PEKID', 'PMD /S', 'PROBE13', 'R3TEST',
+    'MCBTEST', 'MEMPROBE', 'MS32TEST', 'MSTEST', 'NICIRQ', 'NICTEST', 'NLSTEST', 'PCITEST', 'PEKID', 'PMD /S', 'PROBE13', 'R3TEST',
     'RMFIND', 'RMFSTEST', 'RMIVT', 'RMSPEED', 'RMTEST', 'SFTSCAN',
     # these four park the kernel too, as SFTSCAN does, so they follow it:
     # every test before them still runs on a machine that has never
@@ -180,6 +183,9 @@ $masks = @(
     , @( '(Zs typed by INT 1Ch \.+ )\d+', '$1#' )
     , @( '(and calls the clock did not ask for \.+ )\d+', '$1#' )
     , @( '(Zs while polling, 5s \.+ )\d+', '$1#' )
+    # NICTEST: how many frames the card saw depends on how quickly the
+    # emulator's network answered, and on what else it said
+    , @( 'frames out \d+, in \d+, interrupts \d+', 'frames out #, in #, interrupts #' )
 )
 
 # "powershell -File" hands a list over as ONE string, so -Run is split
@@ -247,11 +253,12 @@ function New-Disk {
         $files = @( $first | ForEach-Object { "BIN\$_" } ) + $programs
         # ...and the two files of tables, which COUNTRY= and KEYB look
         # for beside the interpreter.
-        $files += 'BIN\RMDOS.SYS', 'BIN\COUNTRY.SYS', 'BIN\KEYBOARD.SYS', "$stage\CONFIG.SYS", "$stage\AUTOEXEC.BAT"
+        $files += 'BIN\RMDOS.SYS', 'BIN\COUNTRY.SYS', 'BIN\KEYBOARD.SYS', 'BIN\NE2000.SYS', "$stage\CONFIG.SYS", "$stage\AUTOEXEC.BAT"
     } else {
         # The root has what the boot code reads, the half of the kernel
-        # SYS puts beside it, and the two files DOS looks for there.
-        $files = @( 'BIN\PMIO.SYS', 'BIN\PMDOS.SYS', 'BIN\RMDOS.SYS', "$stage\CONFIG.SYS", "$stage\AUTOEXEC.BAT", '-dir', $SysDir,
+        # SYS puts beside it, the two files DOS looks for there, and
+        # the card driver where $Cfg's DEVICE= line names it.
+        $files = @( 'BIN\PMIO.SYS', 'BIN\PMDOS.SYS', 'BIN\RMDOS.SYS', 'BIN\NE2000.SYS', "$stage\CONFIG.SYS", "$stage\AUTOEXEC.BAT", '-dir', $SysDir,
                     'BIN\CMD.EXE', 'BIN\COMMAND.COM' ) + $programs
         $files += 'BIN\COUNTRY.SYS', 'BIN\KEYBOARD.SYS', 'BIN\RMCD.SYS'
     }
@@ -299,7 +306,7 @@ function Read-Results {
 if ( -not ( Test-Path "$root\TOOLS\MKDISK.EXE" ) ) { throw 'Run BUILD.CMD first.' }
 New-Disk
 $dbx = & "$PSScriptRoot\DBXRUN.PS1" -Hd $image -Seconds $Seconds -MemMB $MemMB -Cpu $Cpu -Exe $Exe `
-    -Lpt ( Join-Path $work 'LPT.TXT' ) -Until $endmark -Sound:$Sound -SbType $SbType
+    -Lpt ( Join-Path $work 'LPT.TXT' ) -Until $endmark -Sound:$Sound -SbType $SbType -Nic
 $found = Read-Results
 $done = $found.ContainsKey( 'DONE.TXT' )
 $stuck = -1

@@ -237,7 +237,8 @@ ndl_relocated:
         mov     eax,[nd_total]
         mov     [edi+ND_SIZE],eax
         mov     [edi+ND_TABLE],ebx
-        mov     dword ptr [edi+ND_FLAGS],0
+        movzx   eax,word ptr [ebx+NDT_FLAGS]
+        mov     [edi+ND_FLAGS],eax
         mov     dword ptr [edi+ND_PARKS],0
         mov     dword ptr [edi+ND_UNPARKS],0
         mov     edx,esi
@@ -387,6 +388,106 @@ ndh_out:
         ret
 
 ;=====================================================================
+; nd_find_flag - EAX = an NDTF_* flag (one bit), EDX = a 0-based index:
+;                ESI -> the index-th loaded driver whose ND_FLAGS has
+;                that flag, CF if there is no such row.  Preserves every
+;                register but ESI.
+;=====================================================================
+nd_find_flag:
+        push    ecx
+        push    edx
+        mov     ecx,[nd_count]
+        mov     esi,OFFSET nd_tab
+nff_next:
+        jecxz   nff_none
+        test    dword ptr [esi+ND_FLAGS],eax
+        jz      nff_skip
+        or      edx,edx
+        jz      nff_found
+        dec     edx
+nff_skip:
+        add     esi,ND_LEN
+        dec     ecx
+        jmp     nff_next
+nff_found:
+        pop     edx
+        pop     ecx
+        clc
+        ret
+nff_none:
+        pop     edx
+        pop     ecx
+        stc
+        ret
+
+;=====================================================================
+; nd_call_row - ESI -> a driver's row, EBX = the function, ECX = the
+;               buffer's length, EDI -> the buffer: call that driver's
+;               CALL entry (the contract NDRV.INC gives it, ESI -> the
+;               row) -> EAX = what it answered, or CF and AX = ERR_FUNC
+;               for a driver with no CALL entry.
+;=====================================================================
+nd_call_row:
+        mov     eax,[esi+ND_TABLE]
+        mov     eax,[eax+NDT_CALL]
+        or      eax,eax
+        jz      ncr_nofn
+        cld
+        jmp     eax                     ; the entry returns to our caller
+ncr_nofn:
+        mov     ax,ERR_FUNC
+        stc
+        ret
+
+;=====================================================================
+; brg_entry - the one routine the Windows-for-Workgroups bridge VxD
+;             (PMDOS.386, step 7) calls, through a CR3 switch into this
+;             PARKED kernel's own page directory, to reach a loaded
+;             32-bit driver.  By then WIN386 owns the machine; this runs
+;             with the kernel's page tables active (so kernel code and
+;             nd_tab are mapped), DS and ES flat, interrupts off, on a
+;             scratch stack the VxD set up in low 1:1 memory.  It does
+;             exactly what ndsv_niccall / fF1_sock do - find the driver
+;             with the flag and call it - and nothing that waits, which
+;             is the rule every 32-bit driver already keeps.
+;
+;   In:  EAX = an NDTF_* flag (one bit), EDX = a 0-based index among the
+;             loaded drivers with that flag, EBX = the driver's function,
+;             ECX = the buffer length, EDI = the buffer (a linear address
+;             the VxD mapped so both the kernel and WIN386 see it 1:1)
+;   Out: EAX = what the driver answered; CF and AX = ERR_BADDRIVE when
+;             there is no such driver, or the driver's own error.
+;=====================================================================
+brg_entry:
+        cmp     eax,NDTF_BLOCK          ; the block sentinel is not a driver -
+        je      brg_block               ; it goes straight to the block layer
+        call    nd_find_flag            ; EAX = flag, EDX = index -> ESI = row
+        jc      brge_nodrv
+IFDEF BRG_FINDONLY
+        mov     eax,esi                 ; bisection: prove find works, do not
+        clc                             ; call the driver
+        ret
+ENDIF
+IFDEF BRG_READCALL
+        mov     ebx,[esi+ND_TABLE]      ; bisection: read (not execute) the
+        mov     ebx,[ebx+NDT_CALL]      ; driver's CALL entry - its first
+        mov     eax,[ebx]               ; dword should be 0C7FC071Eh (push ds,
+        clc                             ; pop es, cld, mov...): proves the
+        ret                             ; arena code survives and is mapped
+ENDIF
+        call    nd_call_row             ; ESI = row, EBX/ECX/EDI set -> EAX
+        ret
+brg_block:
+        ; EDI = the block_req buffer (a linear 1:1 address the VxD mapped);
+        ; blk_bridge reads/writes the USB sectors and answers in the block.
+        call    dword ptr ds:[IOS_BRGBLK]
+        ret
+brge_nodrv:
+        mov     ax,ERR_BADDRIVE
+        stc
+        ret
+
+;=====================================================================
 ; fF1_ndrv - 21h/F1h AL=25h: the 32-bit drivers, for a program.
 ;            Bits 16-23 of EAX = an NDF_* function (INC\NDRV.INC).
 ;            Native programs only: EDI is a flat pointer, and a box's
@@ -430,13 +531,6 @@ fnd_call:
         movzx   edx,byte ptr [ebp+F_EDX]
         cmp     edx,[nd_count]
         jae     fnd_norow
-        imul    esi,edx,ND_LEN
-        add     esi,OFFSET nd_tab
-        mov     ebx,[esi+ND_TABLE]
-        mov     ebx,[ebx+NDT_CALL]
-        or      ebx,ebx
-        jz      i21_unsup
-        mov     [nd_callee],ebx
         mov     ecx,[ebp+F_ECX]
         or      ecx,ecx
         jz      fnd_nobuf
@@ -444,12 +538,12 @@ fnd_call:
         call    cbuf_ok
         jc      buf_deny
 fnd_nobuf:
+        imul    esi,edx,ND_LEN
+        add     esi,OFFSET nd_tab
         mov     ebx,[ebp+F_EBX]
         mov     ecx,[ebp+F_ECX]
-        mov     edx,[ebp+F_EDX]
         mov     edi,[ebp+F_EDI]
-        cld
-        call    dword ptr [nd_callee]   ; ESI -> the row, as promised
+        call    nd_call_row             ; ESI -> the row, as promised
         jc      fnd_said_no
         mov     [ebp+F_EAX],eax
         jmp     i21_ok
@@ -457,6 +551,44 @@ fnd_said_no:
         jmp     i21_fail                ; AX = the driver's error
 fnd_norow:
         mov     ax,ERR_BADDRIVE
+        jmp     i21_fail
+
+;=====================================================================
+; fF1_sock - 21h/F1h AL=26h: the SOCKETS, for a program.  Bits 16-23
+;            of EAX = a socket function (INC\SOCKET.H), EDI -> a request
+;            buffer of ECX bytes (0: none), which the kernel has checked.
+;            The call goes to the one loaded driver that is the TCP/IP
+;            stack (NDTF_STACK), whose CALL answers EAX, or CF and an
+;            error.  No stack loaded: CF and AX = ERR_GENERAL.  Native
+;            programs only: EDI is a flat pointer, and a box's is not.
+;=====================================================================
+fF1_sock:
+        cmp     word ptr [ebp+F_CS],SEL_PROG_CS
+        jne     i21_unsup
+        mov     eax,NDTF_STACK
+        xor     edx,edx
+        call    nd_find_flag            ; ESI -> the stack's row
+        jc      fsk_nostack
+        mov     ecx,[ebp+F_ECX]
+        or      ecx,ecx
+        jz      fsk_nobuf
+        mov     eax,[ebp+F_EDI]
+        call    cbuf_ok
+        jc      buf_deny
+fsk_nobuf:
+        mov     eax,[ebp+F_EAX]
+        shr     eax,16
+        mov     ebx,eax                 ; the socket function
+        mov     ecx,[ebp+F_ECX]
+        mov     edi,[ebp+F_EDI]
+        call    nd_call_row             ; ESI -> the stack's row
+        jc      fsk_said_no
+        mov     [ebp+F_EAX],eax
+        jmp     i21_ok
+fsk_said_no:
+        jmp     i21_fail
+fsk_nostack:
+        mov     ax,ERR_GENERAL
         jmp     i21_fail
 
 ;=====================================================================
@@ -476,6 +608,9 @@ nds_table:
         dd      OFFSET ndsv_irqunhook            ; NDS_IRQUNHOOK
         dd      OFFSET ndsv_tickhook             ; NDS_TICKHOOK
         dd      OFFSET ndsv_tickunhook           ; NDS_TICKUNHOOK
+        dd      OFFSET ndsv_niccount             ; NDS_NICCOUNT
+        dd      OFFSET ndsv_niccall              ; NDS_NICCALL
+        dd      OFFSET ndsv_sockcall             ; NDS_SOCKCALL
 IF ($ - nds_table) NE NDS_LEN
         .ERR    <nds_table does not match NDS_LEN in NDRV.INC>
 ENDIF
@@ -516,6 +651,62 @@ ndsv_tickhook:
         jmp     dword ptr ds:[IOS_TICKHOOK]
 ndsv_tickunhook:
         jmp     dword ptr ds:[IOS_TICKUNHOOK]
+
+;--- ndsv_niccount - -> EAX = loaded drivers that are NICs (NDTF_NIC)
+ndsv_niccount:
+        push    ecx
+        push    esi
+        xor     eax,eax
+        mov     ecx,[nd_count]
+        jecxz   nvc_out
+        mov     esi,OFFSET nd_tab
+nvc_next:
+        test    dword ptr [esi+ND_FLAGS],NDTF_NIC
+        jz      nvc_skip
+        inc     eax
+nvc_skip:
+        add     esi,ND_LEN
+        dec     ecx
+        jnz     nvc_next
+nvc_out:
+        pop     esi
+        pop     ecx
+        ret
+
+;--- ndsv_niccall - EAX = a NIC index, EBX = a NIC_* function, EDI ->
+;--- the buffer, ECX = its length -> EAX = what the card answered, or
+;--- CF and AX = ERR_* (the stack rides on the card drivers through
+;--- here, as a program does through NDF_CALL).  The buffer is the
+;--- caller's own kernel memory, so it is not checked the way a
+;--- program's EDI is.
+ndsv_niccall:
+        mov     edx,eax                         ; the index
+        mov     eax,NDTF_NIC
+        call    nd_find_flag                    ; ESI -> that NIC's row
+        jc      nvl_norow
+        jmp     nd_call_row                     ; EBX, ECX, EDI already set
+nvl_norow:
+        mov     ax,ERR_BADDRIVE
+        stc
+        ret
+
+;--- ndsv_sockcall - EBX = a socket function (INC\SOCKET.H), EDI -> the
+;--- request, ECX = its length -> EAX = what the one NDTF_STACK driver
+;--- answered, or CF and AX = ERR_GENERAL with no stack loaded.  What
+;--- fF1_sock does for a program, for a redirector that is itself a
+;--- driver; the buffer is the caller's kernel memory, not checked.
+ndsv_sockcall:
+        push    ebx
+        mov     eax,NDTF_STACK
+        xor     edx,edx
+        call    nd_find_flag                    ; ESI -> the stack's row
+        pop     ebx
+        jc      nscl_nostack
+        jmp     nd_call_row                     ; EBX, ECX, EDI already set
+nscl_nostack:
+        mov     ax,ERR_GENERAL
+        stc
+        ret
 
 ;=====================================================================
 ; Data

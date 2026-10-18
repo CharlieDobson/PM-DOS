@@ -1554,9 +1554,16 @@ rs_done:
         INCLUDE RMNAME.INC              ; MD, RD, rename, TRUENAME, 29h
         INCLUDE RMMEM.INC               ; the arena, EXEC and terminate
         INCLUDE RMINFO.INC              ; everything that only answers
+        INCLUDE RMNET2.INC              ; ...and the SERVER for the kernel's
+                                        ; own net drives, answered through the
+                                        ; WfW bridge (BA2b) - i2F_net jumps to
+                                        ; n2_serve; needs RMINFO's SDA offsets
         INCLUDE RMNET.INC               ; a redirector's drives and files -
                                         ; after RMINFO, whose SDA equates
                                         ; it uses
+        INCLUDE RMUSB.INC               ; a USB disk's sectors, served through
+                                        ; the bridge (BC2) - rd_raw forks here
+                                        ; for a VF_DRIVER unit marked 0FFh
         INCLUDE RMXMS.INC               ; extended memory, A20 and INT 15h
         INCLUDE RMCACHE.INC             ; after it: the sector cache lives in
                                         ; that memory and moves through it

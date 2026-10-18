@@ -35,6 +35,9 @@
                                         ; PARK.INC further down
         INCLUDE NDRV.INC                ; what a 32-bit driver and the
                                         ; kernel agree on, for NDLOAD.INC
+        INCLUDE REDIR.INC               ; and what the net-drive file
+                                        ; branches and the redirector agree
+                                        ; on, for NETFS.INC
 
 KGRP    GROUP   _DOS, _KBSS, _KBSS2
 
@@ -235,6 +238,12 @@ ENDIF
         ; nd_halt), and it has to be here before CONFIG.SYS can load
         ; one.
         mov     dword ptr ds:[GV_HALTHOOK],OFFSET nd_halt
+        ; The WfW bridge's entry (PMDOS.386, step 7): published so the
+        ; VxD can find brg_entry while the kernel is parked.  The
+        ; signature is written last, so a VxD that sees it knows the
+        ; entry pointer beside it is already valid.
+        mov     dword ptr ds:[GV_BRGENTRY],OFFSET brg_entry
+        mov     dword ptr ds:[GV_BRGSIG],BRG_SIGVAL
         call    config_run
         call    scsi_start              ; the SCSI cards, now that a DEVICE=
                                         ; line may have loaded a manager
@@ -757,6 +766,9 @@ kbss_stop:
         INCLUDE NDLOAD.INC              ; and DEVICE= for a 32-BIT driver,
                                         ; after DEVLOAD.INC because the two
                                         ; share dl_split and its buffers
+        INCLUDE NETFS.INC               ; and the network-drive file branches,
+                                        ; after NDLOAD.INC (nd_find_flag) and
+                                        ; INT21.INC (i21_ok, the frame)
 
 ;=====================================================================
 ; Data

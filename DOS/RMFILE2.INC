@@ -2162,11 +2162,29 @@ fn4E:
         mov     word ptr [rd_ffent],0
         jmp     short f4F_scan
 f4E_none:
+IFDEF RMDOS_USBDBG
+        push    ax
+        mov     al,'g'
+        call    udbg1
+        pop     ax
+ENDIF
         mov     ax,ERR_NOFILE
         jmp     i21_fail
 f4E_bad:
+IFDEF RMDOS_USBDBG
+        push    ax
+        mov     al,'b'
+        call    udbg1
+        pop     ax
+ENDIF
         jmp     i21_fail
 f4E_net:
+IFDEF RMDOS_USBDBG
+        push    ax
+        mov     al,'n'
+        call    udbg1
+        pop     ax
+ENDIF
         mov     al,byte ptr [bp+F_CX]   ; a redirector's drive: the search
         call    net_sattr               ; attribute is the caller's CL
         mov     ax,111Bh
@@ -2199,6 +2217,12 @@ f4F_scan:
         mov     al,[rd_ffroot]
         mov     [rd_dfroot],al
 f4F_sector:
+IFDEF RMDOS_USBDBG
+        push    ax
+        mov     al,'S'
+        call    udbg1
+        pop     ax
+ENDIF
         mov     eax,dword ptr [rd_dfsec]
         call    dir_win
         jc      f4F_none

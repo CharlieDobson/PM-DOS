@@ -2083,6 +2083,8 @@ f36_expl:
 f36_sel:
         call    vol_select
         jc      f36_bad
+        cmp     byte ptr [vol_fs],FS_NET
+        je      net_info                ; a share has no BPB to read
         call    vol_lgeom               ; the BPB's sector, not ours
         mov     [ebp+F_EAX],ax
         mov     [ebp+F_ECX],cx
@@ -2133,6 +2135,9 @@ fn5B:
 f3C_go:
         mov     dword ptr [open_share],OM_COMPAT OR OM_RDWR
 f3C_go2:                                ; 716C, which set open_share itself
+        mov     esi,[ebp+F_EDX]
+        call    net_drive_num           ; a net create goes to the redirector
+        jnc     net_create              ; (AL = the net drive)
         mov     esi,[ebp+F_EDX]
         mov     ecx,[ebp+F_ECX]         ; requested attributes
         call    create_core
@@ -2700,6 +2705,9 @@ fn41:
         mov     byte ptr [rcy_perm],0
 f41_go:
         mov     esi,[ebp+F_EDX]
+        call    net_drive_num           ; DEL on a net drive -> the redirector
+        jnc     net_delete
+        mov     esi,[ebp+F_EDX]
         call    dev_deny                ; "DEL NUL" deletes nothing, ever
         jnc     i21_fail
         mov     esi,[ebp+F_EDX]
@@ -2770,6 +2778,9 @@ f41_deny:
 ; 39h - MKDIR.  EDX -> path.
 ;=====================================================================
 fn39:
+        mov     esi,[ebp+F_EDX]
+        call    net_drive_num           ; MD on a net drive -> the redirector
+        jnc     net_mkdir               ; (AL = the net drive)
         mov     esi,[ebp+F_EDX]
         mov     byte ptr [mk_attr],ATTR_DIR
         call    mkdir_core
@@ -2953,6 +2964,9 @@ mk_attr     db  ATTR_DIR                ; what mkdir_core's entry wears
 ;=====================================================================
 fn3A:
         mov     esi,[ebp+F_EDX]
+        call    net_drive_num           ; RD on a net drive -> the redirector
+        jnc     net_rmdir
+        mov     esi,[ebp+F_EDX]
         call    dev_deny
         jnc     i21_fail
         mov     esi,[ebp+F_EDX]
@@ -3089,6 +3103,11 @@ fn3D:
         and     al,3
         cmp     al,3
         je      f3D_deny                ; 3 is not a valid access mode
+        mov     esi,[ebp+F_EDX]         ; a file on a network drive is opened
+        call    net_drive_num           ; by the redirector, not fat_search
+        jnc     net_open                ; (AL = the net drive)
+        movzx   eax,byte ptr [ebp+F_EAX]
+        and     al,3
         movzx   eax,al
         mov     esi,[ebp+F_EDX]
         call    open_core
@@ -3818,6 +3837,18 @@ sft_close:
         pushad
         mov     byte ptr [sc_keepopen],0
 sc_body:
+        test    dword ptr [esi+SFT_FLAGS],SFTF_NET
+        jz      sc_notnet
+        cmp     byte ptr [sc_keepopen],0
+        jne     sc_netcommit            ; 68h commit: a net file has nothing
+        call    net_close               ; to flush; a close ends the SMB handle
+        popad                           ; (net_close frees the slot)
+        ret
+sc_netcommit:
+        and     dword ptr [esi+SFT_FLAGS],NOT SFTF_DIRTY
+        popad
+        ret
+sc_notnet:
         test    dword ptr [esi+SFT_FLAGS],SFTF_DIRTY
         jz      sc_clear
         test    dword ptr [esi+SFT_FLAGS],SFTF_DEVICE
@@ -3895,6 +3926,8 @@ fn3F:
         call    sft_get
         jc      f3F_bad
 
+        test    dword ptr [esi+SFT_FLAGS],SFTF_NET
+        jnz     net_read                ; the bytes are on an SMB server
         test    dword ptr [esi+SFT_FLAGS],SFTF_DEVICE
         jnz     f3F_dev
 
@@ -4196,6 +4229,8 @@ fn40:
         call    sft_get
         jc      f40_bad
 
+        test    dword ptr [esi+SFT_FLAGS],SFTF_NET
+        jnz     net_write               ; the bytes go to an SMB server
         test    dword ptr [esi+SFT_FLAGS],SFTF_DEVICE
         jz      f40_file
 
@@ -7166,6 +7201,9 @@ fn4E:
         call    dta_ok                  ; the search record is 43 bytes and
         jc      buf_deny                ; the DTA is wherever 1Ah left it
         mov     esi,[ebp+F_EDX]
+        call    net_drive_num           ; a net drive is listed by the
+        jnc     net_find                ; redirector (AL = the net drive)
+        mov     esi,[ebp+F_EDX]
         call    resolve_parent          ; sets the context, fills name_buf
         jc      f4E_rpfail              ; ([rp_noname] leaves it all-'?')
         mov     dword ptr [srch_long],0 ; classic find stays pure 8.3 -
@@ -7202,6 +7240,9 @@ fn4F:
         jc      buf_deny
         mov     edi,[dta_ptr]
         mov     al,[edi]                ; DTA+0 = the logical drive 4Eh was on
+        call    net_drive_present       ; a net find continues through the
+        jnc     net_findnext            ; redirector (AL = the net drive)
+        mov     al,[edi]
         call    vol_select
         jc      f4E_none
         mov     al,[edi+0Ch]
@@ -7481,6 +7522,9 @@ fn714E:
         mov     ecx,318                 ; every step, so it is measured
         call    cbuf_ok                 ; once here, before a handle is
         jc      buf_deny                ; spent on it
+        mov     esi,[ebp+F_EDX]         ; a net drive lists through the
+        call    net_drive_num           ; redirector (AL = the net drive)
+        jnc     net_lfn_find
         mov     ebx,[find_tblp]         ; a free handle first
         xor     ecx,ecx
         or      ebx,ebx
@@ -7572,6 +7616,9 @@ fn714F:
         jc      f71_badh
         cmp     byte ptr [ebx+FH_INUSE],0
         je      f71_badh
+        mov     al,[ebx+FH_DRIVE]
+        call    net_drive_present       ; a net find continues through the
+        jnc     net_lfn_next            ; redirector (EBX = handle, AL = drive)
         mov     [f71_hdl],ebx
         mov     byte ptr [f71_first],0
         mov     al,[ebx+FH_DRIVE]
@@ -8152,6 +8199,10 @@ fn716C:
         je      f6c_deny                ; 3 is no access mode
         mov     eax,[ebp+F_EDX]
         mov     [f6c_dx],eax
+
+        mov     esi,[ebp+F_ESI]         ; a net drive opens through the
+        call    net_drive_num           ; redirector, by the action code
+        jnc     net_lopen               ; (AL = the net drive)
 
         ; A device short-circuits the whole exists/create/truncate
         ; question: it is always there, it is never truncated, and
@@ -9544,6 +9595,13 @@ fF0_mouse:
 ;                 EDI -> ND_LEN bytes), and a call into one (DL, EBX
 ;                 the driver's function, EDI -> ECX bytes).  Native
 ;                 programs only (INC\NDRV.INC, DOS\NDLOAD.INC)
+;       AL = 26h: bits 16-23 of EAX = a socket function (INC\SOCKET.H),
+;                 EDI -> a request buffer of ECX bytes (0: none) - the
+;                 TCP/IP stack: the interface and its address, opening
+;                 and closing sockets, connecting, sending, receiving,
+;                 a name looked up, an echo sent.  CF and AX =
+;                 ERR_GENERAL if no stack is loaded.  Native programs
+;                 only (DRV\TCPIP, DOS\NDLOAD.INC fF1_sock)
 ;
 ; 30h has to keep lying about being DOS 5 so that ordinary programs
 ; recognise us, which leaves nothing there to report what the kernel
@@ -9632,6 +9690,10 @@ fnF1:
         je      fF1_usb
         cmp     al,25h
         je      fF1_ndrv
+        cmp     al,26h
+        je      fF1_sock
+        cmp     al,27h
+        je      fF1_netuse
         jmp     i21_unsup
 
 ;--- AL=24h: THE USB BUS, for USB.EXE.  Bits 16-23 of EAX say which:

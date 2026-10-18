@@ -2325,6 +2325,17 @@ BOOTK_F5        EQU     02h                     ; an F5 was in the ring
 ; 21h/F1h or Ctrl-Alt-Del.  Zero until PMDOS fills it.
 GV_HALTHOOK     EQU     GV_BASE + 0DCh          ; dd - a routine, or 0
 
+; The Windows-for-Workgroups bridge (PMDOS.386, step 7).  PMDOS writes
+; these at start-up.  The bridge VxD reads the globals block 1:1 while
+; the kernel is parked (PMIO's low stub survives, and WfW maps the low
+; megabyte 1:1), finds brg_entry here, and reaches it through a CR3
+; switch into the kernel's own page directory to call a 32-bit driver.
+; GV_BRGSIG is written last, so a non-zero signature means the entry is
+; valid.
+BRG_SIGVAL      EQU     42475250h               ; 'PRGB' - the bridge is present
+GV_BRGSIG       EQU     GV_BASE + 0E0h          ; dd - BRG_SIGVAL, or 0
+GV_BRGENTRY     EQU     GV_BASE + 0E4h          ; dd - brg_entry (NDLOAD.INC), or 0
+
 ; THE HANG REPORTER'S MAILBOX, in a kernel built with HANG_E9 (BUILD
 ; hang) and in no other.  PMDOS writes it at every INT 21h and PMIO's
 ; v86_fault at every trap a DOS box takes; PMIO's timer tick counts
@@ -2777,6 +2788,26 @@ IOS_TICKHOOK    EQU     IOSVC + 10Ch            ; EDI = a handler: called on
 IOS_TICKUNHOOK  EQU     IOSVC + 110h            ; EDI = the handler again: off
                                                 ; the table.  CF if it was not
                                                 ; there
+IOS_BRGBLK      EQU     IOSVC + 114h            ; EDI -> a block_req (BR_*) in the
+                                                ; low 1:1 page: the WfW bridge's
+                                                ; USB-disk sector read/write while
+                                                ; parked.  EAX=0, CF clear = the
+                                                ; call was made; BR_STATUS carries
+                                                ; the result (IO\BLOCK.INC)
+
+;---------------------------------------------------------------------
+; block_req - the WfW bridge's sector-I/O request, in the VxD's low 1:1
+; page (so BR_DATA's linear == physical for the USB controller's DMA).
+; Shared with CMD\PMDOS386\pmdos386.asm; a change here is a change there.
+;---------------------------------------------------------------------
+BR_OP           EQU     0                       ; 0 = read, 1 = write
+BR_DRIVE        EQU     4                       ; the block drive number (USB_DRV0 up)
+BR_LBA          EQU     8                       ; starting sector
+BR_COUNT        EQU     12                      ; sector count (1 per bridge call for now)
+BR_STATUS       EQU     16                      ; out: 0, or an INT 13h status byte
+BR_RESULT       EQU     20                      ; out: sectors moved
+BR_DATA         EQU     32                      ; the sector payload
+BR_SIZE         EQU     32 + 512                ; one sector's worth
 
 ;---------------------------------------------------------------------
 ; USB.  The controllers are found on the PCI bus at boot and DRIVEN
@@ -2818,6 +2849,9 @@ USF_PROBE       EQU     6       ; DL = a disk unit -> the medium asked what
                                 ;    it is (INQUIRY, READ CAPACITY): AL =
                                 ;    USBUF_*, EBX = sectors.  CF if it is
                                 ;    not there or would not say
+USF_KEEPALIVE   EQU     7       ; keep USB owned across the park (the WfW
+                                ;    bridge needs it), from CONFIG.SYS
+                                ;    USB=ON,KEEPALIVE.  No args; always NC
 
 ; what 21h/F1h AL=24h asks, in bits 16-23 of EAX (fF1_usb, INT21.INC)
 USBF_DEVICE     EQU     0       ; DL = slot, EDI -> USBD_LEN bytes; ECX = slots
@@ -4000,6 +4034,15 @@ IMG_MAX         EQU     8               ; images mounted at once
 IMG_UNIT_BASE   EQU     0C0h
 IMG_UNIT_TOP    EQU     IMG_UNIT_BASE + IMG_MAX
 
+; A NETWORK DRIVE is not a disk at all: it has no BIOS number and never
+; reaches the block layer.  NET USE (21h/F1h AL=27h) marks its drv_tbl
+; row with this in DRV_TYPE - a byte no partition type and no floppy,
+; CD, image, driver or USB row ever carries - and fat_mount reads it to
+; set vol_fs = FS_NET and let the file branches route the letter to the
+; NDTF_REDIR driver.  DRV_BIOS then holds the letter's own index, which
+; is the share index the redirector keeps its session under.
+NET_DRV_TYPE    EQU     0FEh
+
 ; What a mount is, as 21h/F1h AL=11h reports it.  Here rather than in
 ; IMAGE.INC because MOUNT.EXE reads them and MOUNT.EXE is a program:
 ; a flag a caller is shown is part of the API, not an internal.
@@ -4448,10 +4491,15 @@ ENDIF
 ;---------------------------------------------------------------------
 ; WHICH FILESYSTEM A MOUNTED VOLUME IS.  Lives in vol_state, so it
 ; swaps with the volume, and is the discriminator every path that used
-; to assume FAT now branches on.  There have only ever been two.
+; to assume FAT now branches on.  FAT and ISO are read by the kernel
+; itself; NET is a letter whose files live on an SMB server, reached
+; through the NDTF_REDIR driver - it has no FAT, no cluster chain and
+; no disk, so the file branches intercept it above fat_search and the
+; cluster layer never sees it.
 ;---------------------------------------------------------------------
 FS_FAT          EQU     0
 FS_ISO          EQU     1
+FS_NET          EQU     2
 
 ; A CD-ROM logical block.  HERE rather than in ISO9660.INC because
 ; FAT.INC needs it and is included first, and an EQU cannot be used
@@ -4539,6 +4587,14 @@ SFTF_DIRTY      EQU     0004h
 SFTF_DIRROOT    EQU     0008h                   ; SFT_DIRSTART is the fixed root
 SFTF_SETDT      EQU     0010h                   ; 57h set the stamp: keep it
 SFTF_RAW        EQU     0020h                   ; 44h/01h put it in binary mode
+SFTF_NET        EQU     0040h                   ; a file on a network drive: its
+                                                ; bytes are on an SMB server, read
+                                                ; and written through the NDTF_REDIR
+                                                ; driver.  SFT_CLUSTER holds the
+                                                ; redirector's open-file handle,
+                                                ; SFT_POS the byte position, SFT_SIZE
+                                                ; the size; no cluster, no directory
+                                                ; entry on any local disk
 
 ;---------------------------------------------------------------------
 ; FILE CONTROL BLOCKS - the pre-1983 file API, and the layout is the

@@ -296,6 +296,20 @@ RMDF_UNITSHIFT  EQU     4               ; four bits of the flags.  RMD_BIOS
                                         ; is the kernel's pseudo number for
                                         ; it (DL_UNIT_BASE and up), which no
                                         ; disk has.  Since 2026-10-06
+RMDF_NET        EQU     08h             ; a NET USE letter: the kernel's SMB
+                                        ; redirector has it, and RMDOS serves
+                                        ; its INT 2Fh 11xx through the bridge
+                                        ; (RMNET2.INC).  No boot sector, no
+                                        ; BIOS drive - RMD_START is zero; bit 3
+                                        ; was the one free flag.  Since BA2b
+RMDF_USB        EQU     10h             ; a USB disk the kernel keeps alive across
+                                        ; the park: its sectors come through the
+                                        ; bridge (RMUSB.INC), RMD_BIOS is the
+                                        ; kernel's block number, RMD_START the
+                                        ; volume's boot-sector LBA.  Bit 4 is free
+                                        ; because it is the driver-unit field only
+                                        ; when RMDF_DRIVER is set, and a USB row is
+                                        ; never a driver row (checked DRIVER first)
 
 ;--- RMH_FLAGS -------------------------------------------------------
 RMHF_A20        EQU     01h             ; the gate was open when we parked, and

@@ -100,6 +100,7 @@ svc_table:
         dd      usb_svc         ; IOS_USB
         dd      tk_hook         ; IOS_TICKHOOK
         dd      tk_unhook       ; IOS_TICKUNHOOK
+        dd      blk_bridge      ; IOS_BRGBLK
 
 ;=====================================================================
 ; pm_entry - first instruction executed in 32-bit protected mode.

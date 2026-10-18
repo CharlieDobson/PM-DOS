@@ -62,6 +62,13 @@ ENDIF
         mov     al,USF_START
         call    dword ptr ds:[IOS_USB]
         jc      usx_out
+        ; USB=ON,KEEPALIVE: tell PMIO to keep the controllers owned across
+        ; the park, so the WfW bridge can read the stick while Windows runs
+        cmp     byte ptr [usb_kacfg],0
+        je      usx_nokalive
+        mov     al,USF_KEEPALIVE
+        call    dword ptr ds:[IOS_USB]
+usx_nokalive:
         call    drv_addusb
         call    usb_announce
 usx_out:
@@ -521,7 +528,9 @@ ulo_anyrow  db  0                       ; usb_letterof: any row, not USB rows
 uau_want    db  0                       ; usb_aliasunit's drive number
 usb_on      db  1                       ; USB=ON|OFF: take the controllers
 usb_letters db  1                       ; ...and how many letters, USB=ON,n
-            db  0,0
+usb_kacfg   db  0                       ; USB=ON,KEEPALIVE: keep USB owned
+                                        ; across the park for the WfW bridge
+            db  0
 usb_locgen  db  USB_MAXUNITS dup(0)     ; the generation each letter was
                                         ; placed for
 usb_located db  USB_MAXUNITS dup(0)     ; ...and whether it has been

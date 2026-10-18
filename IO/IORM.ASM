@@ -1510,6 +1510,12 @@ v_halthook dd  0                        ; GV_HALTHOOK: what sys_reboot calls
                                         ; first - the 32-bit drivers' halts,
                                         ; once PMDOS has put it here
 
+        ORG     GV_OFF + 0E0h
+v_brgsig   dd  0                        ; GV_BRGSIG: PMDOS.386 bridge present
+v_brgentry dd  0                        ; GV_BRGENTRY: brg_entry, for the VxD
+                                        ; to call through a CR3 switch while
+                                        ; the kernel is parked
+
 ;=====================================================================
 ; Pad the stub to exactly RMSTUB_SIZE so IOPM.BIN lands at IO_PM_BASE.
 ;=====================================================================

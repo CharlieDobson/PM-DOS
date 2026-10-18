@@ -1121,6 +1121,15 @@ dfi_found:
 ;--- dir_first - SI = volume, EAX = start cluster (0 = root).  Sets up
 ;--- the walk state and leaves the first sector's LBA in rd_dfsec.
 dir_first:
+IFDEF RMDOS_USBDBG
+        push    ax
+        test    byte ptr [si+VOL_FLAGS],VF_DRIVER   ; the bridge-served USB disk
+        jz      dfr_notusb
+        mov     al,'U'
+        call    udbg1
+dfr_notusb:
+        pop     ax
+ENDIF
         mov     dword ptr [rd_dfclus],eax
         or      eax,eax
         jnz     dfr_sub
@@ -1143,9 +1152,21 @@ dfr_root:
         mov     byte ptr [rd_dfroot],1
         or      eax,eax
         jz      dfr_none
+IFDEF RMDOS_USBDBG
+        push    ax
+        mov     al,'r'
+        call    udbg1
+        pop     ax
+ENDIF
         clc
         ret
 dfr_none:
+IFDEF RMDOS_USBDBG
+        push    ax
+        mov     al,'z'
+        call    udbg1
+        pop     ax
+ENDIF
         stc
         ret
 dfr_sub:

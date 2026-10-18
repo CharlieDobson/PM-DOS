@@ -340,6 +340,40 @@ rsi_dpbnext:
         call    dword ptr [rd_cdinit]   ; ES = the block below 64K
 rsi_nocd:
 
+        ; THE NET DRIVES (BA2b): a letter the kernel had a NET USE on is a
+        ; redirector's here too, marked the way the CD-ROM is - in use,
+        ; redirected (so every call naming it goes to INT 2Fh AH=11h, where
+        ; RMNET2.INC's server answers it through the bridge), and bit 7, so
+        ; NET USE neither lists nor disconnects it.  No parameter block: it
+        ; is no volume down here.  Each such letter's bit is set in rd_netmap,
+        ; which the server's ownership test reads.  ES = the block below 64K.
+        mov     dword ptr [rd_netmap],0
+        xor     cx,cx
+        mov     si,OFFSET h_drives
+rsi_net:
+        cmp     cl,[h_ndrv]
+        jae     rsi_netdone
+        test    byte ptr [si+RMD_FLAGS],RMDF_NET
+        jz      rsi_netnext
+        cmp     cl,[rd_ncds]
+        jae     rsi_netnext
+        movzx   di,cl
+        imul    di,di,CDS_LEN
+        add     di,RL_CDS
+        mov     word ptr es:[di+CDS_FLAGS],0C080h
+        mov     dword ptr es:[di+CDS_DPB],0FFFFFFFFh
+        mov     eax,1
+        push    cx
+        and     cl,1Fh
+        shl     eax,cl
+        pop     cx
+        or      dword ptr [rd_netmap],eax
+rsi_netnext:
+        add     si,RMD_LEN
+        inc     cl
+        jmp     short rsi_net
+rsi_netdone:
+
         pop     es
         popa
         ret
@@ -1530,9 +1564,12 @@ i2F_none:
 i2F_net:
         or      al,al
         jz      i2F_iret
-        mov     ax,ERR_FUNC
-        stc
-        retf    2
+        jmp     n2_serve                ; the net-drive server (RMNET2.INC):
+                                        ; the kernel's NET USE letters are
+                                        ; answered through the bridge, and a
+                                        ; redirector call for any other drive
+                                        ; is still failed ERR_FUNC in there,
+                                        ; as this did before (BadFunc)
 
 ;--- 13h: DOS 3.2's "set disk interrupt handler".  DS:DX is a new
 ;--- Orig13, the handler this DOS's INT 13h hook goes on to (i13 in
@@ -1623,6 +1660,9 @@ i2F_iret:
 ; Data
 ;=====================================================================
 rd_dbcs     dw  0
+rd_netmap   dd  0                       ; bit N set = letter N is a net drive
+                                        ; (rd_sysinit's net pass; RMNET2.INC
+                                        ; reads it to own a redirector call)
                                         ; rd_country, 38h's block, is in the
                                         ; handoff header now: the kernel
                                         ; fills it in (RMDOS.ASM, RMH_CTRY)

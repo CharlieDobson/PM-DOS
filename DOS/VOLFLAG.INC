@@ -376,6 +376,8 @@ vfl_ours:
         jz      vou_no
         test    byte ptr [ebx+DRV_FLAGS],DRVF_FLOPPY OR DRVF_CDROM OR DRVF_DRIVER OR DRVF_IMAGE OR DRVF_USB
         jnz     vou_no
+        cmp     byte ptr [ebx+DRV_TYPE],NET_DRV_TYPE    ; a network drive has
+        je      vou_no                                  ; no clean-shutdown flag
         pop     ebx
         clc
         ret

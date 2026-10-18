@@ -1279,8 +1279,38 @@ pfh_flags:
                                         ; is the BIOS's again down there,
                                         ; and its emulation knows nothing
                                         ; of our letters)
+        ; A NET USE LETTER goes over as present-but-net (BA2b): the SMB
+        ; redirector still holds the share up above, and RMDOS answers the
+        ; letter's INT 2Fh 11xx through the bridge (RMNET2.INC).  It is not
+        ; a volume down there - no BIOS drive, no boot sector - so RMD_START
+        ; is zero and only RMDF_NET marks it, on top of RMDF_PRESENT.
+        cmp     byte ptr [esi+DRV_TYPE],NET_DRV_TYPE
+        jne     pfh_notnet
+        or      al,RMDF_NET
+        mov     [ebx+RMD_FLAGS],al
+        mov     dword ptr [ebx+RMD_START],0
+        jmp     short pfh_nextrow
+pfh_notnet:
         test    byte ptr [esi+DRV_FLAGS],DRVF_DRIVER
-        jz      pfh_notdrv
+        jnz     pfh_isdrv
+        ; NOT a loaded driver.  But is this BIOS drive actually a USB stick
+        ; the kernel adopted and is keeping alive across the park (usb_park
+        ; skipped its teardown)?  Then its sectors reach RMDOS only through
+        ; the bridge, never the real BIOS - hand the letter over bridge-
+        ; served (RMDF_USB, RMD_BIOS the kernel's block number, RMD_START
+        ; the volume LBA).  usb_aliasunit fails when USB is down, so a
+        ; non-keepalive park falls through to the ordinary BIOS handover.
+        push    eax
+        mov     al,[esi+DRV_BIOS]
+        call    usb_aliasunit           ; CF clear if AL is a live USB unit
+        pop     eax
+        jc      pfh_notdrv
+        or      al,RMDF_USB
+        mov     [ebx+RMD_FLAGS],al
+        mov     eax,dword ptr [esi+DRV_START]
+        mov     dword ptr [ebx+RMD_START],eax
+        jmp     short pfh_nextrow
+pfh_isdrv:
         push    ecx                     ; the loop's count
         mov     dl,al
         mov     al,[esi+DRV_BIOS]

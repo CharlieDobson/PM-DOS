@@ -1,0 +1,1802 @@
+;=====================================================================
+; PMDOS.386 - the Windows-for-Workgroups-3.11 bridge VxD
+;
+; When WfW 3.11 runs in 386 enhanced mode the PM-DOS kernel is PARKED:
+; its protected mode is gone, WIN386 owns CR0/CR3/GDT/IDT, and RMDOS is
+; the DOS underneath (DOS\PARK.INC, DOS\WINDOWS.INC).  This VxD is the
+; way back in - the "thunk home" the kernel otherwise cannot have.  It
+; runs at ring 0 inside WIN386's VMM and, through a trampoline that
+; switches CR3 to the parked kernel's own identity-mapped page
+; directory, calls the kernel's loaded 32-bit drivers (the NIC, the
+; TCP/IP stack, the SMB redirector) as subroutines.  Those drivers were
+; written to "the bridge's rule" - no INT 21h, no waiting - precisely so
+; they can be called this way (INC\NDRV.INC, DOS\NDLOAD.INC, brg_entry).
+;
+; HOW THE SWITCH IS SAFE.  The trampoline runs from a page allocated in
+; the VMM global V86 data area, which is BELOW 1MB and therefore mapped
+; linear==physical under both WfW's system VM and the kernel's identity
+; map.  That is the one place the instruction after each 'mov cr3' is
+; fetched correctly across the switch.  The page also holds the scratch
+; stack and the bounce buffer, so no kernel low memory is borrowed.  The
+; kernel publishes brg_entry (and a signature) in its globals block,
+; which this VxD reads 1:1 (PMIO's 4K stub, globals at linear 1F00h,
+; survives the park - proved).
+;
+; STAGE A (the bridge) is proved: a real driver call (NIC_INFO) through
+; the trampoline hands back the parked kernel's NIC driver's MAC and
+; name, and WfW keeps running.  Device_Init does that once as a
+; self-test.
+;
+; STAGE B begins here: a V86 API entry (DDB_V86_API_Proc), which a
+; 16-bit program under enhanced mode reaches with INT 2Fh AX=1684h,
+; BX=504Dh.  It is the entry RMDOS will call to put the parked kernel's
+; network letters and USB disks in front of a DOS box.  B1 proves the
+; path whole: the API performs the same NIC_INFO bridge call on behalf
+; of the caller and copies the answer into the caller's buffer.
+;
+; An LE VxD, laid out by wlink's "format windows vxd" as the DDK's
+; LINK386 does; the segment classes are WDCTRL.DEF's, as CMD\LRGDISK
+; does it.  No VMM.INC: the descriptor block, the one VMM service used
+; and its flags are the DDK's numbers, hand-built.
+;
+; Linked with:  wlink format windows vxd, see BUILD.CMD
+;=====================================================================
+        .386p
+        .model  flat
+
+_LTEXT  SEGMENT DWORD USE32 PUBLIC 'CODE'
+_LTEXT  ENDS
+_LDATA  SEGMENT DWORD USE32 PUBLIC 'CODE'
+_LDATA  ENDS
+_ITEXT  SEGMENT DWORD USE32 PUBLIC 'ICODE'
+_ITEXT  ENDS
+_IDATA  SEGMENT DWORD USE32 PUBLIC 'ICODE'
+_IDATA  ENDS
+
+_LGROUP GROUP   _LTEXT, _LDATA
+_IGROUP GROUP   _ITEXT, _IDATA
+
+VXDCALL MACRO   svc
+        int     20h
+        dd      svc
+        ENDM
+
+;---------------------------------------------------------------------
+; The DDK's numbers (VMM.INC), the handful this file needs.
+;---------------------------------------------------------------------
+PMDOS_DEVICE_ID         EQU     504Dh           ; "PM" - this VxD's device ID
+PMDOS_DDK_VERSION       EQU     030Ah
+UNDEFINED_INIT_ORDER    EQU     80000000h
+
+SYS_CRITICAL_INIT       EQU     0
+DEVICE_INIT             EQU     1
+
+; _Allocate_Global_V86_Data_Area (ordinal 0A8h in VMM = device 0001),
+; verified by counting VMM.INC's service table against _PageAllocate's
+; known 00010053h.  EAX = bytes, EBX = flags -> EAX = ring-0 linear
+; address below 1MB (0 on failure).  An init-only (VMM_ICODE) service.
+S_ALLOC_GV86            EQU     000100A8h
+GVDA_PAGEALIGN          EQU     00000008h
+GVDA_ZEROINIT          EQU     00000200h
+
+; Set_Global_Time_Out (VMM device 0001, ordinal 3Ch): EAX = milliseconds,
+; ESI = the callback, EDX = reference data -> the callback is entered once,
+; at interrupt time, EBX = the current VM.  A runtime service (not init-
+; only).  The same number, and the same re-arm-itself use, as LRGDISK.386.
+S_SET_GLOBAL_TIME_OUT   EQU     0001003Ch
+
+; VPICD (device 0003): the handful BA1b needs to take the card's receive
+; line and drive the parked stack from it.  The same numbers LRGDISK.386
+; uses in this tree (CMD\LRGDISK), confirmed working there.  Virtualize
+; takes EDI -> a VPICD_IRQ_Descriptor and answers EAX = a handle, CF set
+; if the line is already somebody's; the others take EAX = the handle.
+S_VPICD_VIRTUALIZE_IRQ  EQU     00030001h
+S_VPICD_CLEAR_INT_REQ   EQU     00030003h
+S_VPICD_PHYS_EOI        EQU     00030004h
+S_VPICD_PHYS_UNMASK     EQU     00030009h
+
+; VMM again: the V86 INT 13h hook (BC2's cure for the splash hang).  A
+; stick is SeaBIOS's INT 13h drive 81h, but this kernel owns its UHCI, so
+; the BIOS can no longer read 81h - WfW's boot-sector probe of it gets
+; zeroes and divides CHS by a zero geometry.  Hook_V86_Int_Chain puts the
+; VxD in front of every V86 INT 13h; for a USB disk it answers out of the
+; kernel's own USB stack (blk_bridge) and eats the call with Simulate_Iret,
+; so the BIOS is never asked.  Ordinals from the DDK VMM.INC (386/INT13
+; is the model), the same way the services above were counted.
+S_HOOK_V86_INT_CHAIN    EQU     00010041h
+S_SIMULATE_IRET         EQU     00010047h
+
+E9_PORT                 EQU     0E9h
+
+;---------------------------------------------------------------------
+; Client_Reg_Struc offsets (VMM.INC).  When the V86 API proc is called,
+; EBP -> this structure of the calling VM's registers; a 16-bit client's
+; registers are the low words of the dword fields, and its flags are the
+; low word of Client_EFlags, where bit 0 is the carry the caller reads.
+;---------------------------------------------------------------------
+C_EDI                   EQU     00h
+C_ESI                   EQU     04h
+C_EBP                   EQU     08h
+C_EBX                   EQU     10h
+C_EDX                   EQU     14h
+C_ECX                   EQU     18h
+C_EAX                   EQU     1Ch
+C_EIP                   EQU     24h
+C_CS                    EQU     28h
+C_EFLAGS                EQU     2Ch
+C_ESP                   EQU     30h
+C_SS                    EQU     34h
+C_ES                    EQU     38h
+C_DS                    EQU     3Ch
+
+;---------------------------------------------------------------------
+; The parked kernel's low-memory landmarks (INC\PMDOS.INC: IO_BASE and
+; GV_OFF).  PMIO loads at IO_BASE = 1000h, so its globals block sits
+; below 1MB, 1:1 under WfW's system VM.  This VxD reads these at their
+; own linear address; the address must be in a register, as wasm treats
+; brackets round a pure constant as the immediate, not a memory load.
+;---------------------------------------------------------------------
+KERN_IOBASE             EQU     1000h
+KERN_GVBASE             EQU     KERN_IOBASE + 0F00h     ; 1F00h
+KL_GV_PGDIR             EQU     KERN_GVBASE + 14h       ; dd - kernel CR3 (00180000)
+KL_GV_DOSSIZE           EQU     KERN_GVBASE + 04h       ; dd - bytes of PMDOS.SYS
+KL_GV_BRGSIG            EQU     KERN_GVBASE + 0E0h      ; dd - BRG_SIGVAL when supported
+KL_GV_BRGENTRY          EQU     KERN_GVBASE + 0E4h      ; dd - brg_entry
+BRG_SIGVAL              EQU     42475250h               ; 'PRGB', PMDOS.INC's value
+
+; The contract brg_entry answers (INC\NDRV.INC, NIC.INC, SOCKET.H)
+NDTF_NIC                EQU     1               ; the card
+NDTF_STACK              EQU     2               ; the TCP/IP stack
+NIC_INFO                EQU     0
+NIC_WAKE                EQU     5               ; bring the parked card up, polled
+NIC_WAKE_IRQ            EQU     6               ; ...or with its interrupt live
+NIC_NOIRQ               EQU     0FFh            ; NICI_IRQ when the card is polled
+NICI_LEN                EQU     52
+NICI_MAC                EQU     0
+NICI_IRQ                EQU     12
+NICI_NAME               EQU     20
+
+; The stack's functions the bridge drives (INC\SOCKET.H)
+SOCK_IFSTAT            EQU     0               ; the interface and its address
+SOCK_RESOLVE            EQU     9               ; a name to an address (polled)
+SOCK_PUMP               EQU     11              ; one step of the parked stack
+SOCKIF_LEN             EQU     60
+SIF_UP                 EQU     26              ; SOCK_IF: 1 once an address is held
+SOCKRES_LEN             EQU     136
+SR_IP                   EQU     0               ; SOCK_RES fields
+SR_STATE                EQU     4
+SR_NAME                 EQU     8
+NET_PENDING             EQU     0               ; a lookup's state
+NET_DONE                EQU     1
+NET_FAIL                EQU     2
+
+; The redirector (NDTF_REDIR), which the bridge drives for a net drive -
+; BA2.  The op is ORed with REDIR_RESUME so the parked SMBFS driver runs
+; it on its worker fibre and yields whenever a socket wait has no data;
+; REDIR_PENDING in the request's status word is "poll me again" (the
+; bridge lets Windows run between polls, so the tick and the card's
+; interrupt advance the parked stack).  Offsets and values are
+; INC\REDIR.INC's (the redir_req struct in INC\REDIR.H).
+NDTF_REDIR              EQU     4
+REDIR_MOUNT             EQU     1
+REDIR_FINDFIRST         EQU     3
+REDIR_RESUME            EQU     1000h
+REDIR_PENDING           EQU     0FFh
+NR_OP                   EQU     0               ; the REDIR_* op the caller wants run
+NR_DRIVE                EQU     4
+NR_RESULT               EQU     28              ; bytes a read moved
+NR_BUFPTR               EQU     48              ; a read's destination, flat linear
+REDIR_READ              EQU     6               ; so the trace can dump what a read fetched
+NR_STATUS               EQU     12
+NR_SIZELO               EQU     32
+NR_ATTR                 EQU     40
+NR_SPARE                EQU     60
+NR_PATH                 EQU     64
+NR_NAME                 EQU     340
+NR_SERVER               EQU     356
+NR_SHARE                EQU     420
+NR_USER                 EQU     500
+NR_PASS                 EQU     564
+NR_DOMAIN               EQU     628
+NR_SIZE                 EQU     692
+REDIR_SRCH              EQU     16h             ; the find's search attribute (dirs too)
+PD_SELFDRIVE            EQU     13              ; the self-test's net-drive slot (N:)
+
+; The block bridge (USB disks while parked).  NDTF_BLOCK is a sentinel to
+; brg_entry, not a loaded driver; the block_req (BR_*) matches INC\PMDOS.INC.
+NDTF_BLOCK              EQU     8
+BR_OP                   EQU     0               ; 0 = read, 1 = write
+BR_DRIVE                EQU     4               ; the block drive number (USB_DRV0 up)
+BR_LBA                  EQU     8
+BR_COUNT                EQU     12
+BR_STATUS               EQU     16              ; out: 0, or an INT 13h status byte
+BR_RESULT               EQU     20              ; out: sectors moved
+BR_DATA                 EQU     32              ; the sector payload
+BR_SIZE                 EQU     32 + 512
+PD_USBDRIVE             EQU     82h             ; USB_DRV0: the first USB stick's unit
+
+; The async tick: a SOCK_PUMP every PD_TICKMS, a trace every PD_HEARTBEAT
+; of them.  55 ms is the kernel's own tick, so the parked stack is driven
+; at the cadence it was written for.
+PD_TICKMS               EQU     55
+PD_HEARTBEAT            EQU     18
+
+; The V86 API's sub-functions (client AX)
+PDAPI_NICINFO           EQU     0               ; B1 proof: NIC_INFO -> caller's buffer
+PDAPI_BLOCK             EQU     2               ; BC2: one USB-disk sector read/write for
+                                                ; RMDOS - the caller's block_req at ES:DX,
+                                                ; the op in BR_OP, the answer in BR_STATUS.
+                                                ; One bridge window does it (no PENDING);
+                                                ; AX=0FFFFh + CF = the tick held the bridge,
+                                                ; retry
+PDAPI_REDIR             EQU     1               ; BA2: run one resumable redirector slice
+                                                ; on the caller's redir_req at ES:DX; the
+                                                ; op is in its NR_OP, the answer in NR_STATUS
+                                                ; (REDIR_PENDING = the caller should yield
+                                                ; and call again - RMDOS does, with INT 2Fh
+                                                ; 1680h, so Windows and the tick run between)
+
+; The low page's layout (offsets from the page base, which the
+; trampoline keeps in EBP; the page is 4K and zero-filled).  The stub is
+; first, then the saved/request cells, then a scratch stack that grows
+; down from the buffer, then the bounce buffer.
+PGO_STUB                EQU     000h            ; the trampoline (under 200h bytes)
+PGO_WCR3                EQU     200h            ; saved WIN386 CR3
+PGO_WESP                EQU     204h            ; saved WIN386 ESP
+PGO_RET                 EQU     208h            ; brg_entry's answer
+PGO_FLAGS               EQU     20Ch            ; brg_entry's flags (CF)
+PGO_RQEAX               EQU     210h            ; request: NDTF_* flag
+PGO_RQEDX               EQU     214h            ;          index
+PGO_RQEBX               EQU     218h            ;          driver function
+PGO_RQECX               EQU     21Ch            ;          buffer length
+PGO_RQEDI               EQU     220h            ;          buffer (page+PGO_BUF)
+PGO_KCR3                EQU     224h            ; the kernel's CR3
+PGO_KENTRY              EQU     228h            ; brg_entry's linear address
+PGO_WCR0                EQU     22Ch            ; saved WIN386 CR0 (for WP)
+PGO_WGDTR               EQU     230h            ; WIN386's GDTR (6 bytes), saved
+PGO_LGDTR               EQU     238h            ; GDTR for the low GDT copy
+PGO_GDT                 EQU     400h            ; a copy of WIN386's GDT (<=512B)
+PGO_STKTOP              EQU     0C00h           ; scratch stack top (grows down)
+PGO_BUF                 EQU     0C00h           ; bounce buffer (0C00h..0EFFh)
+PGO_RES                 EQU     0F00h           ; a buffer that persists between
+                                                ; calls, which the async tick
+                                                ; polls: the BA1 lookup's SOCK_RES
+PGO_IFS                 EQU     0F90h           ; the tick's own scratch (SOCK_IF,
+                                                ; and SOCK_PUMP's ignored buffer),
+                                                ; kept off PGO_BUF so the tick
+                                                ; never disturbs an API call's
+
+;=====================================================================
+; LOCKED DATA - resident for the life of the system: the device
+; descriptor block, and the bridge state the V86 API proc reads on
+; every call (the low page's address, the kernel's CR3 and brg_entry).
+;=====================================================================
+_LDATA  SEGMENT
+        PUBLIC  PMDOS_DDB
+
+PMDOS_DDB       dd      0                       ; DDB_Next
+                dw      PMDOS_DDK_VERSION
+                dw      PMDOS_DEVICE_ID
+                db      0, 1                    ; PMDOS.386 0.1
+                dw      0
+                db      'PMDOS   '
+                dd      UNDEFINED_INIT_ORDER
+                dd      OFFSET FLAT:pd_control
+                dd      OFFSET FLAT:pd_v86api   ; DDB_V86_API_Proc
+                dd      0                       ; no PM API yet
+                dd      0, 0
+                dd      0
+                dd      0, 0
+
+; Bridge state, set once at Device_Init, read by the V86 API proc.
+pd_pg           dd      0                       ; the low 1:1 page (trampoline + buffer)
+pd_kcr3         dd      0                       ; the parked kernel's CR3
+pd_kentry       dd      0                       ; brg_entry's linear address
+pd_clbuf        dd      0                       ; a call's client buffer, linear
+
+; The async bridge's state, read and written by the tick and the API.
+pd_busy         db      0                       ; a bridge call is in progress
+                db      0, 0, 0
+pd_pumps        dd      0                       ; SOCK_PUMP calls made (a trace count)
+pd_hbctr        dd      0                       ; ticks since the last heartbeat
+pd_ba1          db      0                       ; the self-test lookup: 0 idle,
+                                                ; 1 outstanding, 2 finished
+pd_nicirq       db      0                       ; the card's line, from NIC_INFO
+                db      0, 0
+pd_nich         dd      0                       ; VPICD's handle for that line (BA1b)
+pd_ints         dd      0                       ; card interrupts fielded (a trace count)
+pd_ba2          db      0                       ; the BA2 redirector self-test: 0 prepare the
+                                                ; mount, 1 mounting, 2 prepare the find, 3
+                                                ; finding, 4 done
+pd_usbtest      db      0                       ; the USB sector-0 self-test: 0 not yet, 1 done
+                db      0, 0
+pd_usbmask      db      0                       ; bit (DL-80h) set = a USB BIOS disk the
+                                                ; INT 13h hook serves (found at Device_Init)
+                db      0, 0, 0
+pd_i13drv       dd      0                       ; the INT 13h hook's scratch: the drive,
+pd_i13lba       dd      0                       ; the absolute LBA in hand,
+pd_i13cnt       dd      0                       ; sectors asked,
+pd_i13done      dd      0                       ; sectors moved, and
+pd_i13buf       dd      0                       ; the V86 buffer, linear
+
+; VPICD_IRQ_Descriptor for the card's receive line (BA1b).  The IRQ word
+; is patched from the card's reported line at Device_Init.  pd_nicint
+; drains the card through the bridge and ends the interrupt at the
+; controller; pd_niceoi mirrors LRGDISK's EOI proc and is never reached
+; here (the interrupt is serviced whole, never reflected to a VM).
+pd_vid          dw      0                       ; the IRQ, patched at init
+                dw      0                       ; options: not shared
+                dd      OFFSET FLAT:pd_nicint    ; hw-int proc
+                dd      0                       ; no virtual-interrupt procedure
+                dd      OFFSET FLAT:pd_niceoi    ; EOI proc
+                dd      0                       ; mask-change proc
+                dd      0                       ; IRET proc
+                dd      500                     ; ms, as LRGDISK uses
+
+pd_tifup        db      13, 10, 'PMDOS.386: BA1 interface up, looking up example.com, pumps=', 0
+pd_tdone        db      13, 10, 'PMDOS.386: BA1 name lookup finished, pumps=', 0
+pd_tstate       db      ' state=', 0
+pd_tip          db      ' ip=', 0
+pd_thb          db      13, 10, 'PMDOS.386: tick heartbeat, pumps=', 0
+pd_tints        db      ' ints=', 0
+
+pd_rv86         db      13, 10, 'PMDOS.386: V86 API call', 0
+pd_rok          db      ' ok, answer=', 0
+pd_rmac         db      ' MAC=', 0
+pd_rfail        db      ' - no answer (bridge not ready or bad function)', 13, 10, 0
+pd_rcrlf        db      13, 10, 0
+pd_msgscrit     db      13, 10, 'PMDOS.386: V86 INT 13h hooked at Sys_Critical_Init', 13, 10, 0
+
+; USB-over-bridge self-test (step 7, Stage B USB): read the parked kernel's
+; USB stick's sector 0 through the bridge, once, and show it.  A healthy
+; read of drive 82h LBA 0 (the stick's MBR) answers status=0, first4=
+; 8EC033FA (bytes FA 33 C0 8E) and sig510=0000AA55 - proof the controller
+; and the enumerated device survived the park and the bridge read them.
+pd_usbhdr       db      13, 10, 'PMDOS.386: USB sector0 read status=', 0
+pd_usbs0        db      ' first4=', 0
+pd_usbsig       db      ' sig510=', 0
+; BC2: each block op RMDOS asks of the bridge (PDAPI_BLOCK), so a DIR U:
+; in a DOS box shows the stick's sectors coming through the bridge
+pd_blkhdr       db      13, 10, 'PMDOS.386: USB blk drv=', 0
+pd_blklba       db      ' lba=', 0
+pd_blkst        db      ' st=', 0
+pd_blkd0        db      ' d0=', 0
+
+; BA2 self-test: the SMB1 peer's address and credentials (the step-6
+; reference peer smb1peer.pl, reached through the rig's guest-forward at
+; 10.0.2.200:139), and the traces.  Resident, because the async tick runs
+; the test and the tick's code and data outlive Device_Init.
+pd_b2srv        db      '10.0.2.200', 0
+pd_b2shr        db      'PMSHARE', 0
+pd_b2usr        db      'pmdostest', 0
+pd_b2pwd        db      'PmdosSmb!2026', 0
+pd_b2pat        db      '*', 0
+pd_b2mnt        db      13, 10, 'PMDOS.386: BA2 mount begin (SMB1 \\10.0.2.200\PMSHARE), pumps=', 0
+pd_b2mok        db      13, 10, 'PMDOS.386: BA2 mounted, pumps=', 0
+pd_b2mfail      db      13, 10, 'PMDOS.386: BA2 mount failed, status=', 0
+pd_b2fbeg       db      13, 10, 'PMDOS.386: BA2 findfirst begin, pumps=', 0
+pd_b2fok        db      13, 10, 'PMDOS.386: BA2 findfirst done, name=', 0
+pd_b2fattr      db      ' attr=', 0
+pd_b2fsize      db      ' size=', 0
+pd_b2ffail      db      13, 10, 'PMDOS.386: BA2 findfirst failed, status=', 0
+
+; BA2b: the V86 API redirector path's trace (one line per finished op).
+pd_rdop         db      13, 10, 'PMDOS.386: BA2 API redir op=', 0
+pd_rdst         db      ' status=', 0
+pd_rdnm         db      ' name=', 0
+pd_rdat         db      ' attr=', 0
+pd_rdsz         db      ' size=', 0
+pd_rdres        db      ' result=', 0
+_LDATA  ENDS
+
+;=====================================================================
+; LOCKED CODE - resident for the life of the system: the control
+; procedure, the V86 API entry, the bridge call and the E9h tracers.
+;=====================================================================
+_LTEXT  SEGMENT
+        ASSUME  ds:FLAT, es:FLAT, ss:FLAT
+
+pd_control:
+        cmp     eax,DEVICE_INIT
+        je      pc_devinit
+        cmp     eax,SYS_CRITICAL_INIT
+        je      pd_syscrit
+pc_other:
+        clc
+        ret
+pc_devinit:
+        jmp     pd_devinit
+
+;---------------------------------------------------------------------
+; pd_syscrit - Sys_Critical_Init, the earliest VxD message.  Hook V86
+; INT 13h NOW, before WfW's enhanced-mode init first reads the USB BIOS
+; drive's sector 0: too late (at Device_Init) and WfW has already read it
+; off a BIOS that cannot reach the controller, got zeroes, and wedged on
+; the zero-geometry divide.  The mask starts covering the USB BIOS range
+; (81h..85h) and Device_Init narrows it to what usbm_owns actually claims;
+; until the bridge is up the hook answers those drives "not ready" (a
+; clean error, not a zero sector), which is enough to keep WfW off the
+; divide.  The stick is still reached as D: through RMDOS, not INT 13h.
+;---------------------------------------------------------------------
+pd_syscrit:
+        pushad
+        mov     byte ptr [pd_usbmask],3Eh
+        mov     eax,13h
+        mov     esi,OFFSET FLAT:pd_i13hook
+        VXDCALL S_HOOK_V86_INT_CHAIN
+        mov     esi,OFFSET FLAT:pd_msgscrit
+        call    pd_e9str
+        popad
+        clc
+        ret
+
+;---------------------------------------------------------------------
+; pd_bridge_call - perform one driver call through the trampoline.
+;   EAX = NDTF_* flag, EDX = index, EBX = driver function, ECX = length,
+;   EDI = the buffer's OFFSET in the low page (PGO_BUF, or PGO_RES for a
+;   call whose buffer must persist between calls).  The driver reads and
+;   writes that buffer; the low page is 1:1 under both maps.
+;   -> EAX = brg_entry's answer, CF = the driver's carry.
+;
+; Interrupts are held off from before the shared page is touched until
+; after the switch returns, so no interrupt-time caller (the async tick,
+; a hardware ISR) can interpose on the page mid-call; the caller's own
+; interrupt flag is then restored, so this is safe to call from such a
+; context.  A re-entrant call (should not happen under that discipline)
+; is refused rather than allowed to corrupt the page.  If the bridge did
+; not come up, CF is set and EAX = FFFFFFFFh; on a refused re-entry,
+; FFFFFFFEh.  Keeps every register but EAX and the flags.
+;---------------------------------------------------------------------
+pd_bridge_call:
+        pushfd                                  ; the caller's flags (its IF)
+        cli
+        push    ebp
+        mov     ebp,[pd_pg]
+        test    ebp,ebp
+        jz      pbc_notready
+        cmp     byte ptr [pd_busy],0
+        jne     pbc_reentry
+        mov     byte ptr [pd_busy],1
+        add     edi,ebp                         ; the buffer, absolute linear
+        mov     [ebp+PGO_RQEAX],eax
+        mov     [ebp+PGO_RQEDX],edx
+        mov     [ebp+PGO_RQEBX],ebx
+        mov     [ebp+PGO_RQECX],ecx
+        mov     [ebp+PGO_RQEDI],edi
+        mov     eax,ebp                         ; the page base = the trampoline
+        call    eax                             ; -> EAX answer, flags = driver's,
+                                                ; IF still off (the trampoline no
+                                                ; longer forces it on)
+        mov     byte ptr [pd_busy],0            ; (a mov leaves the driver's CF)
+        jc      pbc_drvcf
+        pop     ebp
+        popfd                                   ; the caller's IF back
+        clc
+        ret
+pbc_drvcf:
+        pop     ebp
+        popfd
+        stc                                     ; the driver raised CF
+        ret
+pbc_reentry:
+        pop     ebp
+        popfd
+        mov     eax,0FFFFFFFEh
+        stc
+        ret
+pbc_notready:
+        pop     ebp
+        popfd
+        mov     eax,0FFFFFFFFh
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; pd_tick - a global time-out every PD_TICKMS, the async heart of the
+; bridge.  While Windows owns the machine the parked kernel's network
+; has no clock tick and no card interrupt of its own, so this drives it:
+; one SOCK_PUMP bridge call takes frames off the card (NIC_SERVICE),
+; runs the protocol over them and runs the stack's timers - exactly what
+; the kernel's own tick would do, at the same 55 ms cadence.  Windows is
+; never paused for it: the stack runs here, in the background, between
+; everything else.  The BA1 self-test's name lookup is polled here until
+; it is done.  The time-out is one-shot, so this re-arms it.
+;
+; Entered at interrupt time with EBX = the current VM.  pd_bridge_call
+; holds interrupts off across each switch and restores them, so firing
+; here cannot collide with a DOS box's API call that is mid-bridge.
+;---------------------------------------------------------------------
+pd_tick:
+        pushad
+        ; one step of the parked stack - takes frames off the card, runs
+        ; the protocol and the timers (DHCP among them).  The buffer is
+        ; the tick's own scratch, never PGO_BUF, so a DOS box's API call
+        ; cannot have its result overwritten from here.
+        mov     eax,NDTF_STACK
+        xor     edx,edx
+        mov     ebx,SOCK_PUMP
+        xor     ecx,ecx
+        mov     edi,PGO_IFS
+        call    pd_bridge_call
+        inc     dword ptr [pd_pumps]
+
+        cmp     byte ptr [pd_ba1],1
+IFDEF BA2_TICKSELFTEST
+        ja      pt_ba2                          ; 2 = DNS done: drive the redirector test
+ELSE
+        ; BA2b: the redirector is driven by the V86 API (PDAPI_REDIR), which
+        ; RMDOS - or the BA2API test program - polls.  There is one worker
+        ; fibre and one bounce buffer, so the tick must not also run a
+        ; redirector op; it keeps pumping the stack (above) so the API's
+        ; op advances between the caller's polls.  pt_ba2 stays assembled
+        ; for reproducing BA2a (-d BA2_TICKSELFTEST), but is not reached.
+        ja      pt_usb                          ; 2 = DNS done: run the USB self-test once
+ENDIF
+        je      pt_poll                         ; 1 = lookup outstanding
+
+        ; pd_ba1 = 0: wait for the interface.  DHCP runs on the tick just
+        ; driven, so this comes up a little after the first ticks; the
+        ; name is already in PGO_RES (Device_Init put it there).
+        mov     eax,NDTF_STACK
+        xor     edx,edx
+        mov     ebx,SOCK_IFSTAT
+        mov     ecx,SOCKIF_LEN
+        mov     edi,PGO_IFS
+        call    pd_bridge_call
+        jc      pt_hb
+        mov     ebp,[pd_pg]
+        cmp     byte ptr [ebp+PGO_IFS+SIF_UP],0
+        je      pt_hb                           ; not up yet; wait
+        ; up: start the lookup through the parked stack's DNS
+        mov     eax,NDTF_STACK
+        xor     edx,edx
+        mov     ebx,SOCK_RESOLVE
+        mov     ecx,SOCKRES_LEN
+        mov     edi,PGO_RES
+        call    pd_bridge_call
+        mov     byte ptr [pd_ba1],1
+        mov     esi,OFFSET FLAT:pd_tifup
+        call    pd_e9str
+        mov     eax,[pd_pumps]
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_rcrlf
+        call    pd_e9str
+        jmp     pt_hb
+
+pt_poll:
+        ; poll the outstanding lookup
+        mov     eax,NDTF_STACK
+        xor     edx,edx
+        mov     ebx,SOCK_RESOLVE
+        mov     ecx,SOCKRES_LEN
+        mov     edi,PGO_RES
+        call    pd_bridge_call
+        jc      pt_hb                           ; busy this tick: try the next
+        cmp     eax,NET_PENDING
+        je      pt_hb
+        mov     byte ptr [pd_ba1],2             ; DONE (with an address) or FAIL
+        mov     esi,OFFSET FLAT:pd_tdone
+        call    pd_e9str
+        mov     eax,[pd_pumps]
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_tstate
+        call    pd_e9str
+        mov     ebp,[pd_pg]
+        mov     eax,[ebp+PGO_RES+SR_STATE]
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_tip
+        call    pd_e9str
+        mov     ebp,[pd_pg]
+        mov     eax,[ebp+PGO_RES+SR_IP]
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_rcrlf
+        call    pd_e9str
+        jmp     pt_hb                           ; this tick's work is done
+
+;---------------------------------------------------------------------
+; BA2 - with the stack up and the DNS self-test done, prove the
+; redirector runs through the bridge under the async model: a resumable
+; SMB1 MOUNT then FINDFIRST against the reference peer, one slice a tick,
+; the parked stack advancing between slices on this tick and the card's
+; receive interrupt.  pd_ba2 walks 0 prepare the mount, 1 mount, 2
+; prepare the find, 3 find, 4 done.  The request block lives in the
+; bounce buffer (NR_SIZE <= PGO_RES - PGO_BUF); the driver keeps its own
+; copy across slices and writes REDIR_PENDING here until the op finishes.
+;---------------------------------------------------------------------
+pt_ba2:
+        movzx   eax,byte ptr [pd_ba2]
+        cmp     eax,4
+        jae     pt_hb                           ; done
+        or      eax,eax
+        jz      pt_b2prep
+        cmp     eax,1
+        je      pt_b2mount
+        cmp     eax,2
+        je      pt_b2fprep
+        jmp     pt_b2find                       ; 3
+
+pt_b2prep:
+        mov     ebp,[pd_pg]
+        lea     edi,[ebp+PGO_BUF]
+        mov     ecx,NR_SIZE
+        call    pd_rzero
+        mov     ebp,[pd_pg]
+        mov     dword ptr [ebp+PGO_BUF+NR_DRIVE],PD_SELFDRIVE
+        mov     dword ptr [ebp+PGO_BUF+NR_SPARE],1      ; SMB1 (NR_SPARE picks it)
+        lea     edi,[ebp+PGO_BUF+NR_SERVER]
+        mov     esi,OFFSET FLAT:pd_b2srv
+        call    pd_rcopy
+        mov     ebp,[pd_pg]
+        lea     edi,[ebp+PGO_BUF+NR_SHARE]
+        mov     esi,OFFSET FLAT:pd_b2shr
+        call    pd_rcopy
+        mov     ebp,[pd_pg]
+        lea     edi,[ebp+PGO_BUF+NR_USER]
+        mov     esi,OFFSET FLAT:pd_b2usr
+        call    pd_rcopy
+        mov     ebp,[pd_pg]
+        lea     edi,[ebp+PGO_BUF+NR_PASS]
+        mov     esi,OFFSET FLAT:pd_b2pwd
+        call    pd_rcopy
+        mov     byte ptr [pd_ba2],1
+        mov     esi,OFFSET FLAT:pd_b2mnt
+        call    pd_e9str
+        mov     eax,[pd_pumps]
+        call    pd_e9hex
+        jmp     pt_hb
+
+pt_b2mount:
+        mov     eax,NDTF_REDIR
+        xor     edx,edx
+        mov     ebx,REDIR_MOUNT OR REDIR_RESUME
+        mov     ecx,NR_SIZE
+        mov     edi,PGO_BUF
+        call    pd_bridge_call
+        jc      pt_hb                           ; bridge busy this tick; poll next
+        mov     ebp,[pd_pg]
+        mov     eax,[ebp+PGO_BUF+NR_STATUS]
+        cmp     eax,REDIR_PENDING
+        je      pt_hb                           ; still working
+        or      eax,eax
+        jnz     pt_b2mfail
+        mov     byte ptr [pd_ba2],2             ; mounted
+        mov     esi,OFFSET FLAT:pd_b2mok
+        call    pd_e9str
+        mov     eax,[pd_pumps]
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_rcrlf
+        call    pd_e9str
+        jmp     pt_hb
+pt_b2mfail:
+        mov     byte ptr [pd_ba2],4
+        push    eax
+        mov     esi,OFFSET FLAT:pd_b2mfail
+        call    pd_e9str
+        pop     eax
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_rcrlf
+        call    pd_e9str
+        jmp     pt_hb
+
+pt_b2fprep:
+        mov     ebp,[pd_pg]
+        lea     edi,[ebp+PGO_BUF]
+        mov     ecx,NR_SIZE
+        call    pd_rzero
+        mov     ebp,[pd_pg]
+        mov     dword ptr [ebp+PGO_BUF+NR_DRIVE],PD_SELFDRIVE
+        mov     dword ptr [ebp+PGO_BUF+NR_ATTR],REDIR_SRCH
+        lea     edi,[ebp+PGO_BUF+NR_PATH]
+        mov     esi,OFFSET FLAT:pd_b2pat         ; "*" - the share's root, every name
+        call    pd_rcopy
+        mov     byte ptr [pd_ba2],3
+        mov     esi,OFFSET FLAT:pd_b2fbeg
+        call    pd_e9str
+        mov     eax,[pd_pumps]
+        call    pd_e9hex
+        jmp     pt_hb
+
+pt_b2find:
+        mov     eax,NDTF_REDIR
+        xor     edx,edx
+        mov     ebx,REDIR_FINDFIRST OR REDIR_RESUME
+        mov     ecx,NR_SIZE
+        mov     edi,PGO_BUF
+        call    pd_bridge_call
+        jc      pt_hb
+        mov     ebp,[pd_pg]
+        mov     eax,[ebp+PGO_BUF+NR_STATUS]
+        cmp     eax,REDIR_PENDING
+        je      pt_hb
+        or      eax,eax
+        jnz     pt_b2ffail
+        mov     byte ptr [pd_ba2],4             ; found: trace the first entry
+        mov     esi,OFFSET FLAT:pd_b2fok
+        call    pd_e9str
+        mov     ebp,[pd_pg]
+        lea     esi,[ebp+PGO_BUF+NR_NAME]        ; the 8.3 name, ASCIIZ
+        call    pd_e9str
+        mov     esi,OFFSET FLAT:pd_b2fattr
+        call    pd_e9str
+        mov     ebp,[pd_pg]
+        movzx   eax,byte ptr [ebp+PGO_BUF+NR_ATTR]
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_b2fsize
+        call    pd_e9str
+        mov     ebp,[pd_pg]
+        mov     eax,[ebp+PGO_BUF+NR_SIZELO]
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_rcrlf
+        call    pd_e9str
+        jmp     pt_hb
+pt_b2ffail:
+        mov     byte ptr [pd_ba2],4
+        push    eax
+        mov     esi,OFFSET FLAT:pd_b2ffail
+        call    pd_e9str
+        pop     eax
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_rcrlf
+        call    pd_e9str
+        jmp     pt_hb
+
+;---------------------------------------------------------------------
+; pt_usb - the USB-over-bridge self-test, run ONCE after the network
+; settled.  Read sector 0 of the parked kernel's USB stick (block drive
+; 82h) through the bridge - EAX = NDTF_BLOCK routes brg_entry straight to
+; blk_bridge, which masks the PICs and calls the kernel's own block layer.
+; A healthy read answers status=0, first4=8EC033FA (the MBR's FA 33 C0 8E)
+; and sig510=0000AA55, which proves the controller and the enumerated
+; device survived the park and the bridge read real sectors off the stick.
+;---------------------------------------------------------------------
+pt_usb:
+        cmp     byte ptr [pd_usbtest],0
+        jne     pt_hb                           ; once only
+        mov     byte ptr [pd_usbtest],1
+        mov     ebp,[pd_pg]
+        lea     edi,[ebp+PGO_BUF]
+        mov     ecx,BR_SIZE
+        call    pd_rzero                        ; BR_OP, BR_LBA = 0: read sector 0
+        mov     ebp,[pd_pg]
+        mov     dword ptr [ebp+PGO_BUF+BR_DRIVE],PD_USBDRIVE
+        mov     dword ptr [ebp+PGO_BUF+BR_COUNT],1
+        mov     eax,NDTF_BLOCK
+        xor     edx,edx
+        xor     ebx,ebx
+        mov     ecx,BR_SIZE
+        mov     edi,PGO_BUF
+        call    pd_bridge_call
+        mov     esi,OFFSET FLAT:pd_usbhdr
+        call    pd_e9str
+        mov     ebp,[pd_pg]
+        mov     eax,[ebp+PGO_BUF+BR_STATUS]
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_usbs0
+        call    pd_e9str
+        mov     ebp,[pd_pg]
+        mov     eax,[ebp+PGO_BUF+BR_DATA]       ; the first four bytes of the sector
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_usbsig
+        call    pd_e9str
+        mov     ebp,[pd_pg]
+        movzx   eax,word ptr [ebp+PGO_BUF+BR_DATA+510]  ; the AA55 boot signature
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_rcrlf
+        call    pd_e9str
+        jmp     pt_hb
+
+pt_hb:
+        ; a heartbeat every PD_HEARTBEAT ticks: a run shows the tick is
+        ; firing and the pump count climbing even before the lookup ends
+        inc     dword ptr [pd_hbctr]
+        cmp     dword ptr [pd_hbctr],PD_HEARTBEAT
+        jb      pt_rearm
+        mov     dword ptr [pd_hbctr],0
+        mov     esi,OFFSET FLAT:pd_thb
+        call    pd_e9str
+        mov     eax,[pd_pumps]
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_tints         ; the card-interrupt count too:
+        call    pd_e9str                         ; a climbing count is the proof
+        mov     eax,[pd_ints]                    ; the VPICD receive line is live
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_rcrlf
+        call    pd_e9str
+
+pt_rearm:
+        mov     eax,PD_TICKMS
+        xor     edx,edx
+        mov     esi,OFFSET FLAT:pd_tick
+        VXDCALL S_SET_GLOBAL_TIME_OUT
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; pd_nicint - VPICD_Hw_Int_Proc for the card's receive line (BA1b).
+; Entered at interrupt time, interrupts off, EAX = the IRQ handle, EBX =
+; the current VM.  One SOCK_PUMP bridge call takes the frames the card
+; raised the interrupt for off its ring, runs the protocol over them and
+; runs the stack's timers - the same step the tick makes, but now the
+; instant a frame lands, not up to a tick later.  Draining the card
+; dismisses the chip's interrupt status (card_service writes it back), so
+; a level-triggered line has deasserted by the time this ends it at the
+; controller with Phys_EOI; no storm.  The current VM may be any VM, but
+; the trampoline's page and the kernel's identity map are global, so the
+; switch is good from any of them (as the tick, entered the same way, is).
+;
+; The hw-int proc and the tick can never be mid-bridge at once:
+; pd_bridge_call holds interrupts off across the whole switch, so a
+; hardware interrupt cannot land while a bridge call is in progress.
+;---------------------------------------------------------------------
+pd_nicint:
+        pushad
+        inc     dword ptr [pd_ints]
+        mov     eax,NDTF_STACK
+        xor     edx,edx
+        mov     ebx,SOCK_PUMP
+        xor     ecx,ecx
+        mov     edi,PGO_IFS
+        call    pd_bridge_call
+        mov     eax,[pd_nich]
+        VXDCALL S_VPICD_PHYS_EOI
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; pd_niceoi - VPICD_EOI_Proc, entered EAX = the handle.  The card's
+; interrupt is serviced whole in pd_nicint and never reflected on to a
+; VM, so this is not reached; it mirrors LRGDISK's EOI proc for a
+; well-formed descriptor.
+;---------------------------------------------------------------------
+pd_niceoi:
+        push    eax
+        VXDCALL S_VPICD_CLEAR_INT_REQ
+        pop     eax
+        VXDCALL S_VPICD_PHYS_EOI
+        ret
+
+;---------------------------------------------------------------------
+; pd_v86api - the V86 API entry (DDB_V86_API_Proc).  Entered at ring 0
+; with EBP -> the calling VM's Client_Reg_Struc and EBX = its VM handle,
+; DS = ES = the VMM flat data selector (base 0).  The caller reached it
+; by far-calling the address INT 2Fh AX=1684h BX=504Dh handed back.
+;
+; The calling VM is current, so its first megabyte is mapped 1:1 at
+; linear 0: the caller's buffer at ES:DX is reachable here as the flat
+; linear (ES<<4)+DX, the same 1:1 low memory the bridge already uses.
+;
+; B1 (AX = PDAPI_NICINFO): do the NIC_INFO bridge call and copy the
+; fixed 52 bytes into the caller's buffer.  The copy length is the
+; driver's own constant, never a value from the caller, so a caller
+; cannot make it write past its buffer's size (it owns where it points).
+;---------------------------------------------------------------------
+pd_v86api:
+        pushad                                  ; pushad leaves EBP = the struct
+        movzx   eax,word ptr [ebp+C_EAX]        ; the sub-function
+        cmp     ax,PDAPI_NICINFO
+        je      pv_nicinfo
+        cmp     ax,PDAPI_REDIR
+        je      pv_redir
+        cmp     ax,PDAPI_BLOCK
+        je      pv_block
+        jmp     pv_fail
+
+pv_nicinfo:
+        mov     esi,OFFSET FLAT:pd_rv86         ; B1's trace (one call, so no flood)
+        call    pd_e9str
+        ; the caller's buffer, as a flat linear address
+        movzx   edi,word ptr [ebp+C_ES]
+        shl     edi,4
+        movzx   eax,word ptr [ebp+C_EDX]
+        add     edi,eax
+        mov     [pd_clbuf],edi
+
+        mov     eax,NDTF_NIC
+        xor     edx,edx
+        mov     ebx,NIC_INFO
+        mov     ecx,NICI_LEN
+        mov     edi,PGO_BUF
+        call    pd_bridge_call                  ; -> EAX answer, CF driver CF
+        jc      pv_fail
+
+        ; the parked kernel's NIC driver filled the bounce buffer; hand
+        ; the fixed 52 bytes to the caller
+        push    eax
+        mov     esi,[pd_pg]
+        add     esi,PGO_BUF
+        mov     edi,[pd_clbuf]
+        mov     ecx,NICI_LEN
+        cld
+        rep     movsb
+        pop     eax
+
+        mov     word ptr [ebp+C_EAX],ax         ; caller's AX = the answer
+        and     word ptr [ebp+C_EFLAGS],0FFFEh  ; caller's CF = 0: it worked
+
+        mov     esi,OFFSET FLAT:pd_rok
+        call    pd_e9str
+        push    eax
+        call    pd_e9hex
+        pop     eax
+        mov     esi,OFFSET FLAT:pd_rmac
+        call    pd_e9str
+        mov     esi,[pd_pg]
+        add     esi,PGO_BUF + NICI_MAC
+        mov     ecx,6
+        call    pd_e9mac
+        mov     esi,OFFSET FLAT:pd_rcrlf
+        call    pd_e9str
+        jmp     pv_done
+
+;---------------------------------------------------------------------
+; pv_redir (PDAPI_REDIR) - run one resumable slice of the caller's
+; redirector request through the bridge.  The caller's redir_req is at
+; ES:DX (692 bytes); its NR_OP holds the REDIR_* op.  One slice: copy
+; the block into the bounce buffer, bridge {NDTF_REDIR, op|REDIR_RESUME}
+; into the parked SMBFS driver (which runs it on its worker fibre and
+; yields when a socket wait has no data), copy the block back.  The
+; caller reads NR_STATUS (and gets it in AX): REDIR_PENDING means poll
+; again - the caller yields (INT 2Fh 1680h) so Windows and the async
+; tick run and advance the parked stack before the next slice.  CF is
+; left clear whenever the slice ran (the status carries the result);
+; the copy length is the struct's fixed size, never the caller's, so a
+; caller cannot make this write past the buffer it owns.
+;---------------------------------------------------------------------
+pv_redir:
+        ; the caller's redir_req, as a flat linear address
+        movzx   edi,word ptr [ebp+C_ES]
+        shl     edi,4
+        movzx   eax,word ptr [ebp+C_EDX]
+        add     edi,eax
+        mov     [pd_clbuf],edi
+        ; copy it into the bounce buffer
+        mov     esi,[pd_clbuf]
+        mov     edi,[pd_pg]
+        add     edi,PGO_BUF
+        mov     ecx,NR_SIZE
+        cld
+        rep     movsb
+        ; one slice; the op comes from NR_OP, ORed with REDIR_RESUME
+        mov     esi,[pd_pg]
+        mov     ebx,[esi+PGO_BUF+NR_OP]
+        or      ebx,REDIR_RESUME
+        mov     eax,NDTF_REDIR
+        xor     edx,edx
+        mov     ecx,NR_SIZE
+        mov     edi,PGO_BUF
+        call    pd_bridge_call                  ; preserves EBP (the client struct)
+        jc      pv_rbusy
+        ; copy the request block back to the caller
+        mov     esi,[pd_pg]
+        add     esi,PGO_BUF
+        mov     edi,[pd_clbuf]
+        mov     ecx,NR_SIZE
+        cld
+        rep     movsb
+        ; the caller's AX = NR_STATUS, carry clear
+        mov     esi,[pd_pg]
+        mov     eax,[esi+PGO_BUF+NR_STATUS]
+        mov     word ptr [ebp+C_EAX],ax
+        and     word ptr [ebp+C_EFLAGS],0FFFEh
+        ; trace only a finished op, so polling does not flood the log
+        cmp     eax,REDIR_PENDING
+        je      pv_done
+        call    pd_redir_trace
+        jmp     pv_done
+pv_rbusy:
+        ; the tick held the bridge this instant: tell the caller to poll
+        ; again (REDIR_PENDING), carry clear
+        mov     word ptr [ebp+C_EAX],REDIR_PENDING
+        and     word ptr [ebp+C_EFLAGS],0FFFEh
+        jmp     pv_done
+
+;---------------------------------------------------------------------
+; pv_block (PDAPI_BLOCK) - one USB-disk sector read or write for RMDOS,
+; which cannot reach the kernel's block layer except through here.  The
+; caller's block_req is at ES:DX (BR_SIZE); BR_OP/BR_DRIVE/BR_LBA/BR_COUNT
+; say what, BR_DATA carries the sector.  Unlike the redirector this is not
+; resumable: blk_bridge masks the PICs and polls the USB transfer to the
+; end inside the one bridge window, so one call finishes it.  The copy
+; length is the struct's fixed size, never the caller's.
+;---------------------------------------------------------------------
+pv_block:
+        movzx   edi,word ptr [ebp+C_ES]
+        shl     edi,4
+        movzx   eax,word ptr [ebp+C_EDX]
+        add     edi,eax
+        mov     [pd_clbuf],edi
+        mov     esi,[pd_clbuf]
+        mov     edi,[pd_pg]
+        add     edi,PGO_BUF
+        mov     ecx,BR_SIZE
+        cld
+        rep     movsb
+        mov     esi,[pd_pg]
+        mov     ebx,[esi+PGO_BUF+BR_OP]
+        mov     eax,NDTF_BLOCK
+        xor     edx,edx
+        mov     ecx,BR_SIZE
+        mov     edi,PGO_BUF
+        call    pd_bridge_call                  ; -> brg_entry -> blk_bridge
+        jc      pv_bbusy
+        mov     esi,[pd_pg]
+        add     esi,PGO_BUF
+        mov     edi,[pd_clbuf]
+        mov     ecx,BR_SIZE
+        cld
+        rep     movsb                           ; the data and status back
+        mov     esi,[pd_pg]
+        mov     eax,[esi+PGO_BUF+BR_STATUS]
+        mov     word ptr [ebp+C_EAX],ax         ; caller's AX = BR_STATUS, CF clear
+        and     word ptr [ebp+C_EFLAGS],0FFFEh
+        ; trace drive / LBA / status, so a DIR U: shows RMDOS reading the
+        ; stick through the bridge
+        mov     esi,OFFSET FLAT:pd_blkhdr
+        call    pd_e9str
+        mov     esi,[pd_pg]
+        movzx   eax,byte ptr [esi+PGO_BUF+BR_DRIVE]
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_blklba
+        call    pd_e9str
+        mov     esi,[pd_pg]
+        mov     eax,[esi+PGO_BUF+BR_LBA]
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_blkst
+        call    pd_e9str
+        mov     esi,[pd_pg]
+        mov     eax,[esi+PGO_BUF+BR_STATUS]
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_blkd0
+        call    pd_e9str
+        mov     esi,[pd_pg]
+        mov     eax,[esi+PGO_BUF+BR_DATA]       ; the first four bytes read
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_rcrlf
+        call    pd_e9str
+        jmp     pv_done
+pv_bbusy:
+        ; the tick held the bridge this instant: AX=0FFFFh, CF set = retry
+        mov     word ptr [ebp+C_EAX],0FFFFh
+        or      word ptr [ebp+C_EFLAGS],1
+        jmp     pv_done
+
+pv_fail:
+        or      word ptr [ebp+C_EFLAGS],1       ; caller's CF = 1: it did not
+        mov     esi,OFFSET FLAT:pd_rv86
+        call    pd_e9str
+        mov     esi,OFFSET FLAT:pd_rfail
+        call    pd_e9str
+pv_done:
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; pd_redir_trace - E9 one finished redirector slice: the op, the status,
+; and the found entry's name, attribute and size (meaningful for a find;
+; a mount leaves them zero).  Reads the bounce buffer; preserves all
+; registers (so the client struct in EBP is untouched).
+;---------------------------------------------------------------------
+pd_redir_trace:
+        pushad
+        mov     esi,OFFSET FLAT:pd_rdop
+        call    pd_e9str
+        mov     esi,[pd_pg]
+        mov     eax,[esi+PGO_BUF+NR_OP]
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_rdst
+        call    pd_e9str
+        mov     esi,[pd_pg]
+        mov     eax,[esi+PGO_BUF+NR_STATUS]
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_rdnm
+        call    pd_e9str
+        mov     esi,[pd_pg]
+        lea     esi,[esi+PGO_BUF+NR_NAME]
+        call    pd_e9str
+        mov     esi,OFFSET FLAT:pd_rdat
+        call    pd_e9str
+        mov     esi,[pd_pg]
+        movzx   eax,byte ptr [esi+PGO_BUF+NR_ATTR]
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_rdsz
+        call    pd_e9str
+        mov     esi,[pd_pg]
+        mov     eax,[esi+PGO_BUF+NR_SIZELO]
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_rdres         ; bytes moved (a read's answer)
+        call    pd_e9str
+        mov     esi,[pd_pg]
+        mov     eax,[esi+PGO_BUF+NR_RESULT]
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_rcrlf
+        call    pd_e9str
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; pd_e9str - write the NUL-terminated string at DS:ESI to port E9h.
+;---------------------------------------------------------------------
+pd_e9str:
+        push    eax
+        push    edx
+        push    esi
+        mov     dx,E9_PORT
+        cld
+pe_next:
+        lodsb
+        or      al,al
+        jz      pe_done
+        out     dx,al
+        jmp     pe_next
+pe_done:
+        pop     esi
+        pop     edx
+        pop     eax
+        ret
+
+;---------------------------------------------------------------------
+; pd_e9hex - write EAX to port E9h as eight hex digits, high first.
+;---------------------------------------------------------------------
+pd_e9hex:
+        push    eax
+        push    ebx
+        push    ecx
+        push    edx
+        mov     ebx,eax
+        mov     ecx,8
+        mov     dx,E9_PORT
+ph_next:
+        rol     ebx,4
+        mov     al,bl
+        and     al,0Fh
+        cmp     al,10
+        jb      ph_dig
+        add     al,'A' - 10
+        jmp     ph_put
+ph_dig:
+        add     al,'0'
+ph_put:
+        out     dx,al
+        dec     ecx
+        jnz     ph_next
+        pop     edx
+        pop     ecx
+        pop     ebx
+        pop     eax
+        ret
+
+;---------------------------------------------------------------------
+; pd_e9mac - write ECX bytes at DS:ESI to port E9h as colon-separated
+; hex pairs (a MAC address).
+;---------------------------------------------------------------------
+pd_e9mac:
+        push    eax
+        push    ebx
+        push    ecx
+        push    edx
+        push    esi
+        mov     dx,E9_PORT
+        cld
+pm_next:
+        lodsb
+        mov     bl,al
+        mov     al,bl
+        shr     al,4
+        call    pm_nib
+        mov     al,bl
+        and     al,0Fh
+        call    pm_nib
+        dec     ecx
+        jz      pm_done
+        mov     al,':'
+        out     dx,al
+        jmp     pm_next
+pm_done:
+        pop     esi
+        pop     edx
+        pop     ecx
+        pop     ebx
+        pop     eax
+        ret
+pm_nib:
+        and     al,0Fh
+        cmp     al,10
+        jb      pm_dig
+        add     al,'A' - 10
+        jmp     pm_out
+pm_dig:
+        add     al,'0'
+pm_out:
+        out     dx,al
+        ret
+
+;---------------------------------------------------------------------
+; pd_rzero - zero ECX bytes at ES:EDI.  pd_rcopy - copy the ASCIIZ string
+; at DS:ESI to ES:EDI, at most 127 bytes and a terminator.  Resident
+; (the async tick builds the BA2 request with them); pd_strcopy is the
+; same but init-only, so it is not reached from the tick.
+;---------------------------------------------------------------------
+pd_rzero:
+        push    eax
+        xor     al,al
+        cld
+        rep     stosb
+        pop     eax
+        ret
+pd_rcopy:
+        push    eax
+        push    ecx
+        mov     ecx,127
+        cld
+prc_next:
+        lodsb
+        stosb
+        or      al,al
+        jz      prc_done
+        dec     ecx
+        jnz     prc_next
+        xor     al,al
+        stosb
+prc_done:
+        pop     ecx
+        pop     eax
+        ret
+
+;---------------------------------------------------------------------
+; pd_i13hook - the V86 INT 13h chain hook (Hook_V86_Int_Chain).  Entered
+; at interrupt time, interrupts off, EBX = the current VM, EBP -> the
+; Client_Reg_Struc.  For a USB disk this kernel serves (a bit set in
+; pd_usbmask) the call is answered here, out of the kernel's own USB stack
+; through the bridge, and EATEN with Simulate_Iret - so WfW never reflects
+; it to the BIOS, which can no longer reach the controller and would hang
+; or hand back a zero sector WfW then divides a CHS geometry by.  Any other
+; drive is left to the chain (carry set).  The DDK's 386\INT13 is the model:
+; not ours -> stc; ours -> Simulate_Iret, set the client regs + carry, clc.
+; A fixed 63-sector, 16-head geometry, which matches the stick's own MBR and
+; BPB, so CHS<->LBA is self-consistent; reads loop one sector a bridge call.
+;---------------------------------------------------------------------
+pd_i13hook:
+        pushad
+        ; TRACE (BC2 diag): 'i' for EVERY V86 INT 13h that reaches this hook,
+        ; then the drive number's low nibble - shows whether WfW reflects
+        ; INT 13h to the V86 chain at all, and for which drives.
+        mov     dx,0E9h
+        mov     al,'i'
+        out     dx,al
+        mov     al,byte ptr [ebp+C_EDX]
+        shr     al,4
+        and     al,0Fh
+        add     al,'0'
+        cmp     al,'9'
+        jbe     pdi_t1
+        add     al,7
+pdi_t1:
+        out     dx,al
+        mov     al,byte ptr [ebp+C_EDX]
+        and     al,0Fh
+        add     al,'0'
+        cmp     al,'9'
+        jbe     pdi_t2
+        add     al,7
+pdi_t2:
+        out     dx,al
+        mov     eax,dword ptr [ebp+C_EDX]
+        and     eax,0FFh                        ; DL = the drive
+        cmp     al,80h
+        jb      pdi_chain                       ; a diskette is never ours
+        cmp     al,88h
+        jae     pdi_chain
+        mov     ecx,eax
+        sub     ecx,80h
+        mov     edx,1
+        shl     edx,cl
+        test    byte ptr [pd_usbmask],dl
+        jz      pdi_chain
+
+        ; TRACE (BC2): the hook fired for a USB drive - 'H' then the
+        ; function digit (H2 = read, H8 = geometry), so a run shows WHETHER
+        ; WfW's INT 13h for the stick reaches this V86 chain hook at all.
+        mov     dx,0E9h
+        mov     al,'H'
+        out     dx,al
+        mov     al,byte ptr [ebp+C_EAX+1]
+        add     al,'0'
+        out     dx,al
+
+        VXDCALL S_SIMULATE_IRET                  ; eat the int: the VM returns past it
+        movzx   eax,byte ptr [ebp+C_EAX+1]       ; AH = the function
+        cmp     al,02h
+        je      pdi_read
+        cmp     al,08h
+        je      pdi_geom
+        cmp     al,41h
+        je      pdi_noext
+        cmp     al,15h
+        je      pdi_type
+        cmp     al,03h
+        je      pdi_badcmd                       ; write: not served yet (init only reads)
+        jmp     pdi_ok                           ; reset/status/verify/etc: succeed
+
+pdi_chain:
+        popad
+        stc                                      ; not ours: reflect to the chain
+        ret
+
+pdi_ok:
+        mov     byte ptr [ebp+C_EAX+1],0
+        and     word ptr [ebp+C_EFLAGS],0FFFEh
+        jmp     pdi_done
+pdi_badcmd:
+        mov     byte ptr [ebp+C_EAX+1],01h       ; invalid command
+        or      word ptr [ebp+C_EFLAGS],1
+        jmp     pdi_done
+pdi_noext:                                       ; INT 13h extensions: say no -> CHS used
+        mov     byte ptr [ebp+C_EAX+1],01h
+        or      word ptr [ebp+C_EFLAGS],1
+        jmp     pdi_done
+pdi_type:                                        ; AH=15h: a fixed disk is present
+        mov     byte ptr [ebp+C_EAX+1],03h
+        and     word ptr [ebp+C_EFLAGS],0FFFEh
+        jmp     pdi_done
+pdi_geom:                                        ; AH=08h: 63 spt, 16 heads, 1024 cyl
+        mov     word ptr [ebp+C_ECX],0FFFFh      ; CH = cyl low, CL = cyl-hi | 63 sectors
+        mov     byte ptr [ebp+C_EDX+1],0Fh       ; DH = max head = 15 (16 heads)
+        mov     eax,475h
+        movzx   eax,byte ptr [eax]               ; BDA hard-disk count
+        mov     byte ptr [ebp+C_EDX],al          ; DL = number of drives
+        mov     byte ptr [ebp+C_EAX+1],0
+        and     word ptr [ebp+C_EFLAGS],0FFFEh
+        jmp     pdi_done
+
+pdi_read:
+        mov     dword ptr [pd_i13done],0
+        cmp     dword ptr [pd_pg],0
+        je      pdi_rerr                         ; bridge not up yet: a clean error,
+                                                 ; not zeroes - keeps WfW off the divide
+        mov     eax,dword ptr [ebp+C_EDX]
+        and     eax,0FFh
+        mov     [pd_i13drv],eax
+        movzx   ecx,word ptr [ebp+C_ECX]         ; CX
+        mov     edx,ecx
+        and     edx,3Fh                          ; sector 1..63
+        mov     eax,ecx
+        shr     eax,8
+        and     eax,0FFh                         ; CH = cylinder low 8
+        mov     ebx,ecx
+        and     ebx,0C0h
+        shl     ebx,2                            ; cylinder bits 8-9
+        or      eax,ebx                          ; EAX = cylinder
+        movzx   ebx,byte ptr [ebp+C_EDX+1]       ; DH = head
+        shl     eax,4                            ; cyl * 16 heads
+        add     eax,ebx                          ; + head
+        imul    eax,eax,63                       ; * 63 sectors
+        dec     edx
+        add     eax,edx                          ; + (sector-1) = absolute LBA
+        mov     [pd_i13lba],eax
+        movzx   eax,byte ptr [ebp+C_EAX]         ; AL = sector count
+        mov     [pd_i13cnt],eax
+        mov     dword ptr [pd_i13done],0
+        movzx   eax,word ptr [ebp+C_ES]
+        shl     eax,4
+        movzx   ebx,word ptr [ebp+C_EBX]
+        add     eax,ebx                          ; ES:BX -> V86 linear buffer
+        mov     [pd_i13buf],eax
+pdi_rloop:
+        mov     eax,[pd_i13done]
+        cmp     eax,[pd_i13cnt]
+        jae     pdi_rok
+        mov     esi,[pd_pg]
+        mov     dword ptr [esi+PGO_BUF+BR_OP],0
+        mov     eax,[pd_i13drv]
+        mov     dword ptr [esi+PGO_BUF+BR_DRIVE],eax
+        mov     eax,[pd_i13lba]
+        mov     dword ptr [esi+PGO_BUF+BR_LBA],eax
+        mov     dword ptr [esi+PGO_BUF+BR_COUNT],1
+        mov     eax,NDTF_BLOCK
+        xor     edx,edx
+        xor     ebx,ebx
+        mov     ecx,BR_SIZE
+        mov     edi,PGO_BUF
+        call    pd_bridge_call                   ; EBP (the client) is kept
+        jc      pdi_rerr
+        mov     esi,[pd_pg]
+        cmp     dword ptr [esi+PGO_BUF+BR_STATUS],0
+        jne     pdi_rerr
+        lea     esi,[esi+PGO_BUF+BR_DATA]
+        mov     edi,[pd_i13buf]
+        mov     ecx,128                          ; 512 bytes
+        cld
+        rep     movsd
+        inc     dword ptr [pd_i13lba]
+        add     dword ptr [pd_i13buf],512
+        inc     dword ptr [pd_i13done]
+        jmp     pdi_rloop
+pdi_rok:
+        mov     eax,[pd_i13done]
+        mov     byte ptr [ebp+C_EAX],al          ; AL = sectors read
+        mov     byte ptr [ebp+C_EAX+1],0         ; AH = 0
+        and     word ptr [ebp+C_EFLAGS],0FFFEh
+        jmp     pdi_done
+pdi_rerr:
+        mov     eax,[pd_i13done]
+        mov     byte ptr [ebp+C_EAX],al
+        mov     byte ptr [ebp+C_EAX+1],04h       ; sector not found / read error
+        or      word ptr [ebp+C_EFLAGS],1
+pdi_done:
+        popad
+        clc                                      ; serviced: do not reflect
+        ret
+
+_LTEXT  ENDS
+
+;=====================================================================
+; INIT CODE - run once at Device_Init, then discarded.  It brings the
+; bridge up (reads the parked kernel's landmarks, allocates the low
+; page, installs the trampoline, copies WIN386's GDT) and proves it
+; with one NIC_INFO call before handing over to the resident API.
+;=====================================================================
+_ITEXT  SEGMENT
+        ASSUME  ds:FLAT, es:FLAT, ss:FLAT
+
+pd_devinit:
+        pushad                                  ; VMM's registers (EBX = the
+                                                ; System VM) are preserved
+        mov     esi,OFFSET FLAT:pd_hello
+        call    pd_e9str
+
+        ; The parked kernel's globals, read 1:1 - CR3 and the bridge
+        ; signature/entry it published.
+        mov     esi,OFFSET FLAT:pd_msgpgd
+        call    pd_e9str
+        mov     ebx,KL_GV_PGDIR
+        mov     eax,[ebx]
+        mov     [pd_kcr3],eax
+        call    pd_e9hex
+
+        mov     ebx,KL_GV_BRGSIG
+        mov     eax,[ebx]
+        cmp     eax,BRG_SIGVAL
+        jne     pd_nobridge
+        mov     ebx,KL_GV_BRGENTRY
+        mov     eax,[ebx]
+        mov     [pd_kentry],eax
+        mov     esi,OFFSET FLAT:pd_msgent
+        call    pd_e9str
+        call    pd_e9hex
+
+        ; A low page from the VMM global V86 data area: below 1MB, so
+        ; 1:1 under both maps - the only safe home for the switch stub,
+        ; its scratch stack and the bounce buffer.  The service has a
+        ; leading underscore in the DDK, so it is C-callable (args pushed
+        ; right to left, the caller clears the stack), not register-based.
+        push    GVDA_PAGEALIGN OR GVDA_ZEROINIT ; flags (2nd arg)
+        push    1000h                           ; nBytes (1st arg)
+        VXDCALL S_ALLOC_GV86
+        add     esp,8
+        or      eax,eax
+        jz      pd_noalloc
+        mov     [pd_pg],eax
+        mov     esi,OFFSET FLAT:pd_msgpg
+        call    pd_e9str
+        mov     eax,[pd_pg]
+        call    pd_e9hex
+
+        ; Install the trampoline at the page's start.
+        mov     edi,[pd_pg]
+        mov     esi,OFFSET FLAT:pd_tramp_src
+        mov     ecx,pd_tramp_end - pd_tramp_src
+        cld
+        rep     movsb
+
+        ; Fill the page's fixed cells: the kernel's CR3 and brg_entry.
+        mov     ebp,[pd_pg]
+        mov     eax,[pd_kcr3]
+        mov     [ebp+PGO_KCR3],eax
+        mov     eax,[pd_kentry]
+        mov     [ebp+PGO_KENTRY],eax
+
+        ; Copy WIN386's GDT into the low page and build a GDTR for it.  A
+        ; segment load during the window (the driver's 'pop es') makes the
+        ; CPU fetch a descriptor at the GDTR's base; WIN386's GDT is at a
+        ; high linear address unmapped under the kernel's CR3, so the
+        ; window runs on this low, 1:1 copy instead - the descriptors are
+        ; identical, so every already-loaded selector stays valid.
+        sgdt    [ebp+PGO_WGDTR]
+        movzx   ecx,word ptr [ebp+PGO_WGDTR]    ; the limit
+        inc     ecx                             ; bytes in the GDT
+        mov     esi,[ebp+PGO_WGDTR+2]           ; WIN386's GDT base
+        lea     edi,[ebp+PGO_GDT]
+        push    ds
+        pop     es
+        cld
+        rep     movsb
+        mov     ax,word ptr [ebp+PGO_WGDTR]     ; the low GDTR: same limit,
+        mov     word ptr [ebp+PGO_LGDTR],ax     ; base = the copy
+        lea     eax,[ebp+PGO_GDT]
+        mov     dword ptr [ebp+PGO_LGDTR+2],eax
+
+        ; Self-test: one NIC_INFO through the bridge, as Stage A proved.
+        mov     esi,OFFSET FLAT:pd_msgcall
+        call    pd_e9str
+        mov     eax,NDTF_NIC
+        xor     edx,edx
+        mov     ebx,NIC_INFO
+        mov     ecx,NICI_LEN
+        mov     edi,PGO_BUF
+        call    pd_bridge_call
+        push    eax
+        call    pd_e9hex                        ; the answer (NICI_LEN = 34h)
+        pop     eax
+
+        mov     esi,OFFSET FLAT:pd_msgmac
+        call    pd_e9str
+        mov     ebp,[pd_pg]
+        lea     esi,[ebp+PGO_BUF+NICI_MAC]
+        mov     ecx,6
+        call    pd_e9mac
+        mov     esi,OFFSET FLAT:pd_msgname
+        call    pd_e9str
+        mov     ebp,[pd_pg]
+        lea     esi,[ebp+PGO_BUF+NICI_NAME]
+        call    pd_e9str
+        mov     esi,OFFSET FLAT:pd_crlf
+        call    pd_e9str
+
+        ;=============================================================
+        ; STAGE B, BA1 - bring the parked network up under Windows and
+        ; prove it runs, driven only by the bridge's async tick.
+        ;=============================================================
+
+        ; The card's line, as the self-test's NIC_INFO just reported it.
+        ; NIC_NOIRQ (0FFh), or 0, means the card is polled; a real line is
+        ; what BA1b hands to VPICD so a received frame reaches the parked
+        ; stack the instant it lands, not a tick later.
+        mov     ebp,[pd_pg]
+        movzx   eax,byte ptr [ebp+PGO_BUF+NICI_IRQ]
+        mov     [pd_nicirq],al
+        mov     esi,OFFSET FLAT:pd_msgirq
+        call    pd_e9str
+        call    pd_e9hex
+
+        ; Take the line from VPICD and wake the card with its interrupt
+        ; live.  If the card is polled, or VPICD will not give the line
+        ; (another device has it), fall back to the polled wake: the tick
+        ; alone then drains the card, a tick later at worst.  The order is
+        ; deliberate - virtualize and unmask the PIC while the card's own
+        ; interrupt mask is still clear (the park stopped it), THEN wake
+        ; the card, so there is no moment when it asserts with no handler.
+        cmp     byte ptr [pd_nicirq],NIC_NOIRQ
+        je      pd_wakepolled
+        cmp     byte ptr [pd_nicirq],0
+        je      pd_wakepolled
+        movzx   eax,byte ptr [pd_nicirq]
+        mov     word ptr [pd_vid],ax            ; the line into the descriptor
+        mov     edi,OFFSET FLAT:pd_vid
+        VXDCALL S_VPICD_VIRTUALIZE_IRQ
+        jc      pd_wakepolled                   ; the line is taken: polled
+        mov     [pd_nich],eax                   ; VPICD's handle
+        VXDCALL S_VPICD_PHYS_UNMASK             ; EAX = the handle: let it in
+        mov     esi,OFFSET FLAT:pd_msgvirq
+        call    pd_e9str
+        mov     eax,[pd_nich]
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_msgwkirq
+        call    pd_e9str
+        mov     eax,NDTF_NIC
+        xor     edx,edx
+        mov     ebx,NIC_WAKE_IRQ
+        xor     ecx,ecx
+        mov     edi,PGO_BUF
+        call    pd_bridge_call
+        call    pd_e9hex                        ; 1 if the card is running
+        jmp     pd_wokedone
+
+pd_wakepolled:
+        ; The park stopped the card and cleared its running flag before
+        ; this VxD's Device_Init; NIC_WAKE sets it up again, polled (its
+        ; interrupt masked, so nothing is left unserviced under Windows),
+        ; and marks it running so NIC_SERVICE drains the ring.
+        mov     esi,OFFSET FLAT:pd_msgwake
+        call    pd_e9str
+        mov     eax,NDTF_NIC
+        xor     edx,edx
+        mov     ebx,NIC_WAKE
+        xor     ecx,ecx
+        mov     edi,PGO_BUF
+        call    pd_bridge_call
+        call    pd_e9hex                        ; 1 if the card is running
+pd_wokedone:
+
+        ; Prepare the self-test's name lookup: put its SOCK_RES (the name
+        ; to resolve) in the persistent low-page buffer.  The lookup is
+        ; not started here - DHCP may not have finished before the park,
+        ; so the tick waits for the interface to come up (SOCK_IFSTAT),
+        ; then starts the lookup and polls it to DONE (an address came
+        ; back) or FAIL (no answer after the stack's own retries, which
+        ; itself proves the stack's clock and timers ran under Windows).
+        mov     ebp,[pd_pg]
+        lea     edi,[ebp+PGO_RES]               ; zero the persistent SOCK_RES
+        xor     eax,eax
+        mov     ecx,SOCKRES_LEN / 4
+        cld
+        rep     stosd
+        lea     edi,[ebp+PGO_RES+SR_NAME]       ; the name to look up
+        mov     esi,OFFSET FLAT:pd_resname
+        call    pd_strcopy
+        mov     byte ptr [pd_ba1],0
+        mov     esi,OFFSET FLAT:pd_msgkick
+        call    pd_e9str
+
+        ; BC2 - the cure for the USB splash hang.  Find which BIOS hard-disk
+        ; numbers (80h..87h) are USB disks this kernel serves: blk_bridge's
+        ; query op (BR_OP=2) answers from usbm_owns, which claims the stick's
+        ; INT 13h alias (81h) because the BIOS can no longer read it.  Then
+        ; hook V86 INT 13h so WfW's reads of those drives come here, not to
+        ; the BIOS that would hang / hand back a zero sector.
+        mov     byte ptr [pd_usbmask],0
+        mov     ecx,80h
+pdv_disc:
+        cmp     ecx,88h
+        jae     pdv_dischook
+        mov     ebp,[pd_pg]
+        mov     dword ptr [ebp+PGO_BUF+BR_OP],2
+        mov     dword ptr [ebp+PGO_BUF+BR_DRIVE],ecx
+        push    ecx
+        mov     eax,NDTF_BLOCK
+        xor     edx,edx
+        xor     ebx,ebx
+        mov     ecx,BR_SIZE
+        mov     edi,PGO_BUF
+        call    pd_bridge_call
+        pop     ecx
+        jc      pdv_discnext
+        mov     ebp,[pd_pg]
+        cmp     dword ptr [ebp+PGO_BUF+BR_STATUS],0
+        jne     pdv_discnext
+        push    ecx
+        sub     ecx,80h
+        mov     eax,1
+        shl     eax,cl
+        or      byte ptr [pd_usbmask],al
+        pop     ecx
+pdv_discnext:
+        inc     ecx
+        jmp     pdv_disc
+pdv_dischook:
+        mov     esi,OFFSET FLAT:pd_msgi13
+        call    pd_e9str
+        movzx   eax,byte ptr [pd_usbmask]
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_rcrlf
+        call    pd_e9str
+        ; the hook is already installed (pd_syscrit); the discovery above
+        ; has just narrowed its drive mask to what usbm_owns really claims.
+
+        ; Arm the async tick.  From here the parked stack runs on its own,
+        ; PD_TICKMS apart, with Windows never paused.
+        mov     esi,OFFSET FLAT:pd_msgarm
+        call    pd_e9str
+        mov     eax,PD_TICKMS
+        xor     edx,edx
+        mov     esi,OFFSET FLAT:pd_tick
+        VXDCALL S_SET_GLOBAL_TIME_OUT
+        jmp     pd_done
+
+pd_nobridge:
+        mov     esi,OFFSET FLAT:pd_msgnobr
+        call    pd_e9str
+        jmp     pd_done
+pd_noalloc:
+        mov     esi,OFFSET FLAT:pd_msgnoal
+        call    pd_e9str
+pd_done:
+        popad
+        clc
+        ret
+
+;---------------------------------------------------------------------
+; pd_strcopy - copy the ASCIIZ string at DS:ESI to ES:EDI, at most 127
+; bytes and a terminator (the SOCK_RES name field is 128).  The source
+; is a fixed string, so it cannot run away, but it is bounded regardless.
+;---------------------------------------------------------------------
+pd_strcopy:
+        push    eax
+        push    ecx
+        mov     ecx,127
+        cld
+psc_next:
+        lodsb
+        stosb
+        or      al,al
+        jz      psc_done
+        dec     ecx
+        jnz     psc_next
+        xor     al,al
+        stosb                                   ; force the terminator
+psc_done:
+        pop     ecx
+        pop     eax
+        ret
+
+;---------------------------------------------------------------------
+; pd_tramp_src..pd_tramp_end - the world-switch trampoline, copied into
+; the low page and run there.  Position-independent: EBP is the page
+; base on entry, every cell is reached as [ebp+disp], and the page base
+; is recovered after brg_entry from the page-aligned scratch stack (so
+; it survives whatever brg_entry does to EBP).  No stack or non-page
+; memory is touched while the kernel's map is active.
+;---------------------------------------------------------------------
+pd_tramp_src:
+        cli
+        mov     eax,cr3
+        mov     [ebp+PGO_WCR3],eax              ; save WIN386's CR3
+        mov     [ebp+PGO_WESP],esp              ; save WIN386's ESP
+        ; The native kernel marks its own pages read-only but runs with
+        ; CR0.WP clear, so its own ring-0 stores still land (pg_protect,
+        ; PAGING.INC).  WIN386 runs with WP set, so clear it for the
+        ; window, or brg_entry's and the driver's writes to kernel pages
+        ; fault - and an exception here, with WfW's IDT unreachable under
+        ; the kernel's map, is a triple fault.
+        mov     eax,cr0
+        mov     [ebp+PGO_WCR0],eax
+        and     eax,0FFFEFFFFh                  ; CR0.WP = 0 (bit 16)
+        mov     cr0,eax
+        mov     eax,[ebp+PGO_KCR3]
+        mov     cr3,eax                         ; --> the kernel's identity map
+        lgdt    fword ptr [ebp+PGO_LGDTR]       ; --> the low GDT copy, so segment
+                                                ; loads find their descriptors
+        lea     esp,[ebp+PGO_STKTOP]            ; scratch stack, in the low page
+        mov     eax,[ebp+PGO_RQEAX]
+        mov     edx,[ebp+PGO_RQEDX]
+        mov     ebx,[ebp+PGO_RQEBX]
+        mov     ecx,[ebp+PGO_RQECX]
+        mov     edi,[ebp+PGO_RQEDI]
+        mov     esi,[ebp+PGO_KENTRY]
+        call    esi                             ; brg_entry: find + call driver
+        pushfd                                  ; keep its CF before AND clears it
+        mov     ebp,esp
+        and     ebp,0FFFFF000h                  ; EBP = the page base again
+        mov     [ebp+PGO_RET],eax
+        pop     eax
+        mov     [ebp+PGO_FLAGS],eax
+        lgdt    fword ptr [ebp+PGO_WGDTR]       ; --> back to WIN386's GDT
+        mov     eax,[ebp+PGO_WCR3]
+        mov     cr3,eax                         ; --> back to WIN386's map
+        mov     eax,[ebp+PGO_WCR0]
+        mov     cr0,eax                         ; restore WIN386's WP
+        mov     esp,[ebp+PGO_WESP]
+        mov     eax,[ebp+PGO_FLAGS]
+        push    eax
+        popfd                                   ; live flags = the driver's (its
+                                                ; CF for the caller; IF stays off,
+                                                ; as it was through the window)
+        mov     eax,[ebp+PGO_RET]
+        ret                                     ; no sti: pd_bridge_call restores
+                                                ; the caller's interrupt flag, so
+                                                ; an ISR/tick caller keeps its own
+pd_tramp_end:
+.ERRE   (pd_tramp_end - pd_tramp_src) LE 200h, <the trampoline overruns the low page's cells>
+_ITEXT  ENDS
+
+_IDATA  SEGMENT
+pd_hello        db      'PMDOS.386: Device_Init - bridge VxD loaded', 13, 10, 0
+pd_msgpgd       db      'PMDOS.386: kernel CR3=', 0
+pd_msgent       db      ' brg_entry=', 0
+pd_msgpg        db      ' page=', 0
+pd_msgcall      db      13, 10, 'PMDOS.386: self-test NIC_INFO, answer(exp 00000034)=', 0
+pd_msgmac       db      ' MAC=', 0
+pd_msgname      db      ' name=', 0
+pd_msgnobr      db      13, 10, 'PMDOS.386: kernel has no bridge signature', 13, 10, 0
+pd_msgnoal      db      13, 10, 'PMDOS.386: global V86 allocation failed', 13, 10, 0
+pd_crlf         db      13, 10, 0
+pd_msgirq       db      13, 10, 'PMDOS.386: card IRQ=', 0
+pd_msgvirq      db      13, 10, 'PMDOS.386: VPICD took the card line, handle=', 0
+pd_msgwkirq     db      13, 10, 'PMDOS.386: NIC_WAKE_IRQ (interrupt live), running=', 0
+pd_msgwake      db      13, 10, 'PMDOS.386: NIC_WAKE, running=', 0
+pd_msgkick      db      13, 10, 'PMDOS.386: BA1 name set, the tick will look up example.com once the interface is up', 13, 10, 0
+pd_msgi13       db      13, 10, 'PMDOS.386: USB INT 13h hook, drive mask=', 0
+pd_msgarm       db      13, 10, 'PMDOS.386: async tick armed - the parked stack now runs', 13, 10, 0
+pd_resname      db      'example.com', 0
+_IDATA  ENDS
+
+        END

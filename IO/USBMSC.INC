@@ -76,6 +76,11 @@ MR_GONE         EQU     3               ; nothing is there
 
 MSC_READYTRIES  EQU     40              ; TEST UNIT READY, two seconds' worth
 MSC_SECS_XFER   EQU     XFER_MAX / 512  ; sectors a READ(10) asks for at once
+USBM_XSPIN      EQU     20000000        ; a bridged transfer polls with IF off,
+                                        ; so the tick clock cannot time it out:
+                                        ; bound the poll by this many turns (far
+                                        ; more than any healthy transfer takes,
+                                        ; a wedge gives up in well under a second)
 MSC_BAND_LO     EQU     0A0000h         ; a buffer here is not where the bus
 MSC_BAND_HI     EQU     DOS_BASE        ; thinks it is: see ATA.INC's ata_dmaok
 
@@ -633,11 +638,32 @@ ucm_gone:
 usbm_xfer:
         call    usb_blk_start
         jc      umx_nostart
+        mov     dword ptr [usbm_spinleft],USBM_XSPIN
 umx_wait:
-        sti
+        cmp     byte ptr [usb_brgwin],0
+        jne     umx_bounded             ; a bridged transfer: leave interrupts
+        sti                             ; off.  The bridge window runs under the
+        jmp     short umx_poll          ; kernel's CR3 with WIN386's IDT out of
+                                        ; reach, so an interrupt delivered mid
+                                        ; poll triple-faults; blk_bridge both
+                                        ; masks the PICs and sets usb_brgwin.
+umx_bounded:
+        ; interrupts stay off here, so usb_blk_poll's tick timeout cannot
+        ; fire (the tick clock is frozen with IF off); bound the poll by a
+        ; count instead, so a wedged device fails the transfer rather than
+        ; spinning for ever and freezing Windows.
+        dec     dword ptr [usbm_spinleft]
+        jz      umx_spinout
+umx_poll:
         call    usb_blk_poll
         cmp     al,XS_PENDING
         je      umx_wait
+        ret
+umx_spinout:
+        call    usb_blk_abort           ; stop and free the stuck transfer
+        mov     al,XS_ERROR
+        mov     ah,USBE_TIMEOUT
+        xor     ecx,ecx
         ret
 umx_nostart:
         mov     al,XS_ERROR
@@ -1213,3 +1239,7 @@ usbm_tag    dd  0
 usbm_lba    dd  0
 usbm_count  dd  0
 usbm_rwbuf  dd  0
+usbm_spinleft dd 0                      ; bridged-transfer poll bound (no tick
+                                        ; clock to time out against with IF off)
+                                        ; - named apart from the USBM_XSPIN
+                                        ; equate, which wasm folds case-blind

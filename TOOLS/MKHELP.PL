@@ -98,26 +98,6 @@ sub listname {
 my @listed = sort { lc( listname( $a ) ) cmp lc( listname( $b ) ) }
              grep { $_->{list} && $_->{kind} ne 'plain' } @topics;
 my @contents;
-{
-    my $rows = int( ( @listed + 2 ) / 3 );
-    my @cols = ( 0, 29, 57 );
-    for my $r ( 0 .. $rows - 1 ) {
-        my $line = '';
-        for my $c ( 0 .. 2 ) {
-            my $idx = $c * $rows + $r;
-            next if $idx >= @listed;
-            my $t = $listed[$idx];
-            my $plain = '<' . listname( $t ) . '>';
-            $line .= ' ' x ( $cols[$c] - length( $line ) ) if length( $line ) < $cols[$c];
-            $line .= '<\\a' . listname( $t ) . '\\v' . $t->{names}[0] . '\\v>';
-            # keep column positions by the shown width: the escapes take no room
-            my $shown = $line;
-            $shown =~ s/\\a//g; $shown =~ s/\\v[^\\]*\\v//g;
-            $line .= ' ' x ( $cols[$c] + length( $plain ) - length( $shown ) ) if 0;
-        }
-        push @contents, $line;
-    }
-}
 
 # the escapes have no width: pad by what is shown, not what is written
 sub shown_len {
@@ -127,11 +107,10 @@ sub shown_len {
     $l =~ s/\\[abiup]//g;
     return length( $l );
 }
-# redo the columns properly
-@contents = ();
+# three columns, alphabetical
 {
     my $rows = int( ( @listed + 2 ) / 3 );
-    my @cols = ( 0, 29, 57 );
+    my @cols = ( 0, 27, 54 );
     for my $r ( 0 .. $rows - 1 ) {
         my $line = '';
         for my $c ( 0 .. 2 ) {

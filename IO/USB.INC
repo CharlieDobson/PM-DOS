@@ -325,7 +325,16 @@ usb_svc:
         je      usb_frescan
         cmp     al,USF_PROBE
         je      usbm_fprobe
+        cmp     al,USF_KEEPALIVE
+        je      usb_fkalive
         stc
+        ret
+
+;--- USF_KEEPALIVE: CONFIG.SYS asked USB=ON,KEEPALIVE, so keep the
+;--- controllers owned across the park for the WfW bridge --------------
+usb_fkalive:
+        mov     byte ptr [usb_kalive],1
+        clc
         ret
 
 ;--- USF_COUNT: how many controllers there are to drive -------------
@@ -1489,6 +1498,31 @@ ubp_gone:
         mov     ah,USBE_GONE
         xor     ecx,ecx
         jmp     ubp_out
+
+;---------------------------------------------------------------------
+; usb_blk_abort - stop and free the bulk transfer in progress, so the next
+;                 one starts clean.  For the bridged poll that overran its
+;                 bound (usbm_xfer); mirrors usb_blk_poll's unplugged-device
+;                 cleanup.  Every register kept.
+;---------------------------------------------------------------------
+usb_blk_abort:
+        pushad
+        pushfd
+        cli
+        cmp     byte ptr [usb_bxbusy],0
+        je      uba_done
+        mov     ebx,[usb_bxdev]
+        call    dev_hc                  ; ESI -> the controller
+        mov     edi,dword ptr [esi+HC_BLKQ]
+        call    hc_stop
+        mov     eax,dword ptr [usb_bxfirst]
+        call    el_freechain
+        mov     dword ptr [usb_bxfirst],0
+        mov     byte ptr [usb_bxbusy],0
+uba_done:
+        popfd
+        popad
+        ret
 
 ;---------------------------------------------------------------------
 ; usb_blktog - the toggle the bulk endpoint is on after the transfer
@@ -3096,6 +3130,30 @@ usb_park:
         je      upk_out
         or      al,al
         jnz     upk_up
+        cmp     byte ptr [usb_kalive],0
+        je      upk_teardown            ; native: hand the controllers back
+        ; THE WfW BRIDGE KEEPS USB OWNED across the park: the controllers
+        ; stay owned, every device stays enumerated, and the frame list and
+        ; queues stay exactly as built, so the bridge (PMDOS.386 ->
+        ; blk_bridge) can read a stick's sectors while Windows owns the
+        ; machine - the same way the NIC is kept awake for the parked stack.
+        ; Nothing is handed to the BIOS; a reboot still resets the
+        ; controller through usb_halt, so the "schedule into BIOS memory"
+        ; hazard is covered.  Built only for the WfW-bridge rig
+        ; (-d USB_KEEPALIVE); the default build hands the controllers back
+        ; as it always has (BC2's opt-in is to become a CONFIG USB= option).
+        ;
+        ; The SCHEDULE IS PAUSED here (Run/Stop cleared, the controller
+        ; halted) so it bus-masters NOTHING while Windows runs its GUI
+        ; init - the bridge wakes it for the span of each transfer
+        ; (blk_bridge: usb_kresume ... usb_kpause) and pauses it again.
+        ; usb_started stays 1: the stick is still mounted and readable,
+        ; only the hardware schedule rests.  (Decoupling the live schedule
+        ; from the park - direction A of the BC2 boot-blocker chase.)
+        call    usb_kpause
+        popad
+        ret
+upk_teardown:
         cmp     byte ptr [usb_started],0
         je      upk_out
         mov     byte ptr [usb_started],0
@@ -3131,6 +3189,15 @@ upk_parked:
         jmp     upk_out
 
 upk_up:
+        cmp     byte ptr [usb_kalive],0
+        je      upk_retakeall           ; native: re-take the controllers afresh
+        ; the keepalive never tore anything down at the park - it only
+        ; paused the schedule - so coming back just resumes it; the
+        ; foreground kernel's own tick drives USB from here as before.
+        call    usb_kresume
+        popad
+        ret
+upk_retakeall:
         cmp     byte ptr [usb_parked],0
         je      upk_out
         mov     byte ptr [usb_parked],0
@@ -3176,6 +3243,77 @@ uha_next:
         inc     ecx
         jmp     uha_hc
 uha_out:
+        popad
+        ret
+
+;=====================================================================
+; usb_kpause / usb_kresume - the WfW-bridge keepalive's schedule gate.
+; Stop / run every OWNED UHCI's schedule, keeping every register and the
+; built frame list and queues.  usb_kpause runs at the park and after
+; each bridge transfer; usb_kresume runs on the way back and before each
+; transfer.  UHCI only: the rig's stick is on a PIIX3 UHCI; an OHCI (the
+; rig has none) is left as it was.  usb_started is never touched.
+;
+; The HANG_E9 traces make one rig run tell where a transfer stops: 'Q' at
+; a pause, then per transfer 'R' <CMD> <STS> at the resume - CMD's low
+; byte should read C1 (Run|ConfigFlag|MaxPacket) and STS's should clear
+; its 20h HALTED bit, proving the schedule actually restarted.
+;=====================================================================
+usb_kpause:
+        pushad
+IFDEF HANG_E9
+        mov     al,'Q'
+        out     0E9h,al
+ENDIF
+        xor     ecx,ecx
+ukp_hc:
+        cmp     cl,[usb_hcn]
+        jae     ukp_out
+        imul    esi,ecx,HC_LEN
+        add     esi,OFFSET usb_hcs
+        test    byte ptr [esi+HC_FLAGS],USBHF_OWNED
+        jz      ukp_next
+        cmp     byte ptr [esi+HC_KIND],USBK_UHCI
+        jne     ukp_next
+        call    uh_stoprun
+ukp_next:
+        inc     ecx
+        jmp     ukp_hc
+ukp_out:
+        popad
+        ret
+
+usb_kresume:
+        pushad
+        xor     ecx,ecx
+ukr_hc:
+        cmp     cl,[usb_hcn]
+        jae     ukr_out
+        imul    esi,ecx,HC_LEN
+        add     esi,OFFSET usb_hcs
+        test    byte ptr [esi+HC_FLAGS],USBHF_OWNED
+        jz      ukr_next
+        cmp     byte ptr [esi+HC_KIND],USBK_UHCI
+        jne     ukr_next
+        call    uh_runsched
+IFDEF HANG_E9
+        mov     al,'R'
+        out     0E9h,al
+        mov     edx,dword ptr [esi+HC_BASE]
+        add     dx,UHR_CMD
+        in      ax,dx
+        movzx   eax,ax
+        call    e9_hex8                 ; CMD: low byte C1 = Run|CF|MaxP
+        mov     edx,dword ptr [esi+HC_BASE]
+        add     dx,UHR_STS
+        in      ax,dx
+        movzx   eax,ax
+        call    e9_hex8                 ; STS: 20h HALTED should be gone
+ENDIF
+ukr_next:
+        inc     ecx
+        jmp     ukr_hc
+ukr_out:
         popad
         ret
 
@@ -3298,6 +3436,17 @@ ehd_out:
 usb_hcn     db  0                       ; controllers in usb_hcs
 usb_ehcin   db  0                       ; ...of which EHCI
 usb_started db  0                       ; the tick is driving them
+usb_kalive  db  0                       ; CONFIG.SYS USB=ON,KEEPALIVE: keep the
+                                        ; controllers owned + the stick enumerated
+                                        ; across the park so the WfW bridge can
+                                        ; read it (set via IOS_USB USF_KEEPALIVE;
+                                        ; 0 = hand USB back at the park, native)
+usb_brgwin  db  0                       ; a bridged USB transfer is running
+                                        ; (set by blk_bridge): the transfer
+                                        ; poll must NOT sti, because the bridge
+                                        ; window runs under the kernel's CR3
+                                        ; with WIN386's IDT out of reach - an
+                                        ; interrupt delivered here triple-faults
 usb_parked  db  0                       ; handed back for a park
 usb_forcescan db 0                      ; every connected port is new
 usb_job     db  0                       ; JOB_*

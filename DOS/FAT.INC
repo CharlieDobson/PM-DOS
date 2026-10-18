@@ -846,6 +846,21 @@ fm_start:
         test    byte ptr [ebx+DRV_FLAGS],DRVF_PRESENT
         jz      fm_nodrive
 
+        ; A NETWORK DRIVE is not a disk at all.  NET USE (21h/F1h AL=27h)
+        ; marked its row with NET_DRV_TYPE and the redirector driver holds
+        ; the live SMB session; there is no boot record to read and no FAT
+        ; to lay out, so "mounting" it is just saying which filesystem it
+        ; is.  vol_fs = FS_NET sends every file branch to NETFS.INC.
+        cmp     byte ptr [ebx+DRV_TYPE],NET_DRV_TYPE
+        jne     fm_notnet
+        mov     byte ptr [vol_fs],FS_NET
+        mov     byte ptr [fat_drive],NET_DRV_TYPE
+        mov     byte ptr [fat_ok],1
+        popad
+        clc
+        ret
+fm_notnet:
+
         ; A CD-ROM is not a partition on a disk and there is no boot
         ; record to read.  DRV_BIOS names the ATAPI unit; ISO9660.INC
         ; does the rest and sets fat_ok itself.

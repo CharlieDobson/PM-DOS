@@ -672,7 +672,27 @@ r3_pflags:
         je      rpf_usb
         cmp     ax,25h * 256 + 0F1h
         je      rpf_ndrv
+        cmp     ax,26h * 256 + 0F1h
+        je      rpf_sock
+        cmp     ax,27h * 256 + 0F1h
+        je      rpf_netuse
         call    vdm_flags
+        ret
+
+; F1h/27h, NET USE: the netuse_req is always handed over through EDI
+; (its length is fixed), so EDI is always the pointer to flatten.
+rpf_netuse:
+        mov     bl,P_DI
+        ret
+
+; F1h/26h, the sockets: every function that carries a buffer hands it
+; over through EDI with the length in ECX, and whatever EDI holds when
+; ECX is 0 is not a pointer - the same rule NDF_CALL keeps.
+rpf_sock:
+        mov     bl,P_DI
+        cmp     dword ptr [ebp+F_ECX],0
+        jne     rpf_out
+        xor     bl,bl
         ret
 
 ; F1h/24h, the USB bus: three of its four answer into EDI, and

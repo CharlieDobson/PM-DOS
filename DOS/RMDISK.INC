@@ -121,13 +121,26 @@ rvi_one:
         ; flags' top four bits, and the volume starts at its sector 0
         ; (RMDOS.INC, RMDF_DRIVER).
         test    byte ptr [si+RMD_FLAGS],RMDF_DRIVER
-        jz      rvi_bios
+        jz      rvi_notdrv
         or      byte ptr [di+VOL_FLAGS],VF_DRIVER
         mov     dword ptr [di+VOL_DRVHDR],eax
         mov     dword ptr [di+VOL_START],0
         mov     al,[si+RMD_FLAGS]
         shr     al,RMDF_UNITSHIFT
         mov     [di+VOL_UNIT],al
+        jmp     short rvi_bios
+rvi_notdrv:
+        ; A BRIDGE-SERVED USB DISK (RMDF_USB): reuse the driver path's
+        ; VF_DRIVER - so rd_mount skips the BIOS geometry and the letter
+        ; gets a local DPB's CDS - but mark the unit 0FFh so rd_raw sends
+        ; its sectors to rd_usbraw (the bridge) and not a real driver's
+        ; packets, and keep VOL_START = the volume's boot-sector LBA (not
+        ; zeroed as a driver's is), because the bridge addresses the whole
+        ; disk and the FAT volume starts at that absolute LBA.
+        test    byte ptr [si+RMD_FLAGS],RMDF_USB
+        jz      rvi_bios
+        or      byte ptr [di+VOL_FLAGS],VF_DRIVER
+        mov     byte ptr [di+VOL_UNIT],0FFh
 rvi_bios:
         add     si,RMD_LEN
         add     di,VOL_LEN
@@ -784,7 +797,9 @@ ENDIF
 rd_raw:
         test    byte ptr [rd_vflags],VF_DRIVER
         jz      rdr_bios
-        jmp     rd_drvraw               ; RMDEV.INC
+        cmp     byte ptr [rd_dunit],0FFh    ; the USB-bridge sentinel (rd_volinit)
+        je      rd_usbraw               ; RMUSB.INC - sectors through the bridge
+        jmp     rd_drvraw               ; RMDEV.INC - a real driver's packets
 rdr_bios:
         push    es
         pushad

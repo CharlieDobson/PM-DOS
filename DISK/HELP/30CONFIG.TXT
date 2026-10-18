@@ -14,28 +14,28 @@ in CONFIG.SYS", so a typing mistake shows.
 
 The statements MS-DOS had:
 
-{i}[[Break=|BREAK=]]                   [[Install=|INSTALL=]]{p}
-{i}[[Buffers=|BUFFERS=]]                 [[Installhigh=|INSTALLHIGH=]]{p}
-{i}[[Country=|COUNTRY=]]                 [[Lastdrive=|LASTDRIVE=]]{p}
-{i}[[Device=|DEVICE=]]                  [[Numlock=|NUMLOCK=]]{p}
-{i}[[Devicehigh=|DEVICEHIGH=]]              [[Rem|REM]]{p}
-{i}[[Dos=|DOS=]]                     [[Set=|SET=]]{p}
-{i}[[Drivparm=|DRIVPARM=]]                [[Shell=|SHELL=]]{p}
-{i}[[Fcbs=|FCBS=]]                    [[Stacks=|STACKS=]]{p}
-{i}[[Files=|FILES=]]                   [[Switches=|SWITCHES=]]{p}
+{i}[[Break|BREAK=]]                    [[Install|INSTALL=]]{p}
+{i}[[Buffers|BUFFERS=]]                  [[Installhigh|INSTALLHIGH=]]{p}
+{i}[[Country|COUNTRY=]]                  [[Lastdrive|LASTDRIVE=]]{p}
+{i}[[Device|DEVICE=]]                   [[Numlock|NUMLOCK=]]{p}
+{i}[[Devicehigh|DEVICEHIGH=]]               [[Rem|REM]]{p}
+{i}[[Dos|DOS=]]                      [[Set|SET=]]{p}
+{i}[[Drivparm|DRIVPARM=]]                 [[Shell|SHELL=]]{p}
+{i}[[Fcbs|FCBS=]]                     [[Stacks|STACKS=]]{p}
+{i}[[Files|FILES=]]                    [[Switches|SWITCHES=]]{p}
 
 The statements that are PM-DOS's own.  On MS-DOS these jobs took a
 driver or a program - EMM386, SMARTDRV, SHARE, MODE - and on PM-DOS
 they are in the kernel, so those programs are not loaded:
 
-{i}[[Autocheck=|AUTOCHECK=]]               [[Keyrate=|KEYRATE=]]{p}
-{i}[[Cache=|CACHE=]]                   [[Lfn=|LFN=]]{p}
-{i}[[Cdrom=|CDROM=]]                   [[Nulltrap=|NULLTRAP=]]{p}
-{i}[[Dpmi=|DPMI=]]                    [[Scsi=|SCSI=]]{p}
-{i}[[Ems=|EMS=]]                     [[Share=|SHARE=]]{p}
-{i}[[Ide32=|IDE32=]]                   [[Undelete=|UNDELETE=]]{p}
-{i}[[Idecable=|IDECABLE=]]                [[Usb=|USB=]]{p}
-{i}[[Idedma=|IDEDMA=]]                  [[Wincache=|WINCACHE=]]{p}
+{i}[[Autocheck|AUTOCHECK=]]                [[Keyrate|KEYRATE=]]{p}
+{i}[[Cache|CACHE=]]                    [[Lfn|LFN=]]{p}
+{i}[[Cdrom|CDROM=]]                    [[Nulltrap|NULLTRAP=]]{p}
+{i}[[Dpmi|DPMI=]]                     [[Scsi|SCSI=]]{p}
+{i}[[Ems|EMS=]]                      [[Share|SHARE=]]{p}
+{i}[[Ide32|IDE32=]]                    [[Undelete|UNDELETE=]]{p}
+{i}[[Idecable|IDECABLE=]]                 [[Usb|USB=]]{p}
+{i}[[Idedma|IDEDMA=]]                   [[Wincache|WINCACHE=]]{p}
 
 The boot menu statements - [menu], MENUITEM, MENUDEFAULT, MENUCOLOR,
 SUBMENU, INCLUDE and COMMENT - are accepted, but there is no menu:
@@ -92,7 +92,7 @@ is written.  [[SHUTDOWN]] switches it off.
 PM-DOS can show dates, times and numbers the way a country writes
 them, sort its letters in its order, and take its keyboard.
 
-{i}[[Country=|COUNTRY=]]{p}
+{i}[[Country|COUNTRY=]]{p}
     In CONFIG.SYS: the country, and with it the date order, the
     separators, the currency, and the table of capitals.  The tables
     come from COUNTRY.SYS.
@@ -124,7 +124,7 @@ every block is carried out, in the order the file has them.
 
 To keep two configurations, keep two files and copy the one wanted
 over CONFIG.SYS.
-#topic AUTOCHECK=|Autocheck=|AUTOCHECK
+#topic AUTOCHECK=|Autocheck
 #title AUTOCHECK=
 Says what happens at startup to a hard disk that was not shut down
 properly.
@@ -169,7 +169,7 @@ CHKDSK.EXE has to be in the shell's directory or in the root of the
 boot drive.
 #examples
     AUTOCHECK=ASK
-#topic BREAK=|Break=|BREAK (CONFIG.SYS)
+#topic BREAK=|Break (CONFIG.SYS)
 #title BREAK=
 Sets the extended Ctrl+C checking flag at startup.
 
@@ -188,7 +188,7 @@ ON | OFF
 The [[BREAK]] command changes it at the prompt.
 #examples
     BREAK=ON
-#topic BUFFERS=|Buffers=|BUFFERS
+#topic BUFFERS=|Buffers
 #title BUFFERS=
 Accepted, and does nothing.
 
@@ -200,7 +200,7 @@ MS-DOS used the line to set aside disk buffers.  PM-DOS has a disk
 cache of its own, set by [[CACHE=]], and ignores the numbers.
 #examples
     BUFFERS=30,8
-#topic CACHE=|Cache=
+#topic CACHE=|Cache (CONFIG.SYS)
 #title CACHE=
 Sets the size of the disk cache, and whether it writes behind.
 
@@ -245,7 +245,7 @@ read-cached.  Hard disks are read- and write-cached.
 #examples
     CACHE=4M
     CACHE=2048,2048,OFF
-#topic CDROM=|Cdrom=
+#topic CDROM=|Cdrom
 #title CDROM=
 Chooses the drive letter of the first CD-ROM drive.
 
@@ -275,7 +275,7 @@ names are 8.3 there, as MSCDEX showed them.  Other CD-ROM drives are
 not there under Windows.
 #examples
     CDROM=R
-#topic COUNTRY=|Country=|COUNTRY|Country
+#topic COUNTRY=|Country
 #title COUNTRY=
 Sets the country: how dates, times, numbers and money are written,
 which letters are capitals of which, and how SORT orders them.
@@ -347,9 +347,9 @@ in the video card.
     COUNTRY=049
     COUNTRY=049,850
     COUNTRY=049,,C:\DOS\COUNTRY.SYS
-#topic DEVICE=|Device=|DEVICE|Device
+#topic DEVICE=|Device
 #title DEVICE=
-Loads a 16-bit DOS device driver.
+Loads a device driver: a 16-bit DOS one, or a 32-bit PM-DOS one.
 
 {b}Syntax{p}
 
@@ -378,6 +378,20 @@ SMARTDRV, EMM386, SHARE or a DPMI host.  HIMEM.SYS is not needed.
 
 A block driver's drives get the letters after the last disk.
 
+{b}32-bit drivers{p}
+
+A 32-bit PM-DOS driver loads with the same line.  The kernel tells
+the two kinds apart by the file, puts a 32-bit driver above the
+first megabyte and takes no conventional memory for it.  NE2000.SYS
+is one: the driver for an NE1000, NE2000, RTL8019 or RTL8029 network
+card.  Without options it looks on the PCI bus and then at the usual
+ISA ports, and finds the card's interrupt line by making the card
+interrupt; /P:300 names the first port in hex and /I:10 the line.
+
+TCPIP.SYS is the TCP/IP stack.  Load it after a card driver: it finds
+the card, asks DHCP for an address, a gateway and a name server, and
+gives programs sockets.  Without a card loaded first it does not load.
+
 {b}Windows for Workgroups{p}
 
 The CONFIG.SYS shipped loads C:\WINDOWS\IFSHLP.SYS, which Workgroups'
@@ -394,7 +408,8 @@ see a program loaded after the shell starts.
 #examples
     DEVICE=C:\WINDOWS\IFSHLP.SYS
     DEVICE=C:\DRIVERS\ASPI4DOS.SYS
-#topic DEVICEHIGH=|Devicehigh=|DEVICEHIGH|Devicehigh
+    DEVICE=C:\NE2000.SYS /P:300 /I:10
+#topic DEVICEHIGH=|Devicehigh
 #title DEVICEHIGH=
 Loads a 16-bit DOS device driver into upper memory.
 
@@ -422,7 +437,7 @@ driver loads in conventional memory and works just the same.
 #examples
     DOS=UMB
     DEVICEHIGH=C:\DRIVERS\ANSI.SYS
-#topic DOS=|Dos=|DOS|Dos
+#topic DOS=|Dos
 #title DOS=
 Sets up upper memory for drivers and programs to load into.
 
@@ -450,7 +465,7 @@ See [[DEVICEHIGH=]], [[INSTALLHIGH=]] and [[LOADHIGH]].  [[MEM]] shows
 the blocks.  [[EMS=]]'s page frame takes 64K of the same room.
 #examples
     DOS=HIGH,UMB
-#topic DPMI=|Dpmi=
+#topic DPMI=|Dpmi
 #title DPMI=
 Turns the DPMI host on or off.
 
@@ -469,7 +484,7 @@ OFF
     real mode will.
 #examples
     DPMI=OFF
-#topic DRIVPARM=|Drivparm=|DRIVPARM
+#topic DRIVPARM=|Drivparm
 #title DRIVPARM=
 Accepted, and does nothing.
 
@@ -480,7 +495,7 @@ Accepted, and does nothing.
 
 MS-DOS used the line to describe a drive the BIOS had wrong.  PM-DOS
 asks the drives themselves.  MULTITRACK= is ignored the same way.
-#topic EMS=|Ems=
+#topic EMS=|Ems
 #title EMS=
 Gives DOS programs expanded memory (LIM 4.0).
 
@@ -516,7 +531,7 @@ the pages come from extended memory as they are asked for.
 #examples
     EMS=AUTO
     EMS=D000
-#topic FCBS=|Fcbs=|FCBS
+#topic FCBS=|Fcbs
 #title FCBS=
 Accepted, and does nothing.
 
@@ -528,7 +543,7 @@ MS-DOS used the line to set how many files old programs could open
 with file control blocks.  PM-DOS opens as many as are asked for.
 #examples
     FCBS=4,0
-#topic FILES=|Files=|FILES|Files
+#topic FILES=|Files
 #title FILES=
 Sets how many files can be open at once, across the whole system.
 
@@ -542,7 +557,7 @@ n
     8 to 64.  64 without the line.
 #examples
     FILES=40
-#topic IDE32=|Ide32=
+#topic IDE32=|Ide32
 #title IDE32=
 Chooses 32-bit reads from the IDE data port.
 
@@ -572,7 +587,7 @@ A disk that reads wrongly here but works on MS-DOS: try IDE32=OFF.
 IDETEST on the test disk shows what was chosen for each drive.
 #examples
     IDE32=OFF
-#topic IDECABLE=|Idecable=
+#topic IDECABLE=|Idecable
 #title IDECABLE=
 Says which IDE cable is fitted, when PM-DOS cannot tell.
 
@@ -596,7 +611,7 @@ AUTO
 Put the line above [[IDEDMA=]].
 #examples
     IDECABLE=80
-#topic IDEDMA=|Idedma=
+#topic IDEDMA=|Idedma
 #title IDEDMA=
 Chooses how IDE disks move their data.
 
@@ -635,7 +650,7 @@ boot.  A CRC error above UDMA2 drops the disk to UDMA2 first.
 #examples
     IDEDMA=ON
     IDEDMA=UDMA2
-#topic INSTALL=|Install=|INSTALL|Install
+#topic INSTALL=|Install
 #title INSTALL=
 Runs a 16-bit program, usually one that stays resident, before the
 shell starts.
@@ -670,7 +685,7 @@ clock and printer calls do not see a program loaded from AUTOEXEC.BAT,
 and a VBE driver loaded here gives its modes to 32-bit programs too.
 #examples
     INSTALL=C:\UTILS\REDIR.EXE
-#topic INSTALLHIGH=|Installhigh=|INSTALLHIGH|Installhigh
+#topic INSTALLHIGH=|Installhigh
 #title INSTALLHIGH=
 Runs a 16-bit program before the shell starts, in upper memory.
 
@@ -687,7 +702,7 @@ See [[INSTALL=]] and [[DOS=]].
 #examples
     DOS=UMB
     INSTALLHIGH=C:\UTILS\REDIR.EXE
-#topic KEYRATE=|Keyrate=
+#topic KEYRATE=|Keyrate
 #title KEYRATE=
 Sets how fast a held key repeats.
 
@@ -711,7 +726,7 @@ delay
 DOSBox 0.74 stops taking keys at KEYRATE=32,1.  Use 31,1 there.
 #examples
     KEYRATE=31,1
-#topic LASTDRIVE=|Lastdrive=|LASTDRIVE|Lastdrive
+#topic LASTDRIVE=|Lastdrive
 #title LASTDRIVE=
 Sets the highest drive letter programs should look for.
 
@@ -735,7 +750,7 @@ Under Windows the letters go up to Z, and network drives Windows for
 Workgroups connects can only use letters up to LASTDRIVE.
 #examples
     LASTDRIVE=Z
-#topic LFN=|Lfn=
+#topic LFN=|Lfn
 #title LFN=
 Turns long file names on or off.
 
@@ -754,7 +769,7 @@ OFF
     ones.
 #examples
     LFN=OFF
-#topic NULLTRAP=|Nulltrap=
+#topic NULLTRAP=|Nulltrap
 #title NULLTRAP=
 Stops a 32-bit program that writes through a null pointer.
 
@@ -773,7 +788,7 @@ OFF
     For a program that writes to low memory on purpose.
 #examples
     NULLTRAP=OFF
-#topic NUMLOCK=|Numlock=|NUMLOCK|Numlock
+#topic NUMLOCK=|Numlock
 #title NUMLOCK=
 Turns Num Lock on or off at startup.
 
@@ -784,7 +799,7 @@ Turns Num Lock on or off at startup.
 Without the line Num Lock is left as the BIOS set it.
 #examples
     NUMLOCK=OFF
-#topic SCSI=|Scsi=
+#topic SCSI=|Scsi
 #title SCSI=
 Turns PM-DOS's own SCSI CD-ROM drivers on or off.
 
@@ -814,7 +829,7 @@ drives are used through it.  The card's IRQ must then be 3, 4, 5, 7,
 9, 10 or 11.
 #examples
     SCSI=OFF
-#topic USB=|Usb=
+#topic USB=|Usb (CONFIG.SYS)
 #title USB=
 Turns PM-DOS's USB support on or off, and says how many drive letters
 to keep for USB disks.
@@ -869,7 +884,7 @@ PM-DOS comes back.
 #examples
     USB=ON,2
     USB=OFF
-#topic SET=|Set=|SET (CONFIG.SYS)
+#topic SET=|Set (CONFIG.SYS)
 #title SET=
 Sets an environment variable before AUTOEXEC.BAT runs.
 
@@ -884,7 +899,7 @@ Every program inherits the variable, the shell included.
 The [[SET]] command does the same at the prompt.
 #examples
     SET TEMP=C:\TEMP
-#topic SHARE=|Share=
+#topic SHARE=|Share
 #title SHARE=
 Turns file sharing and record locking on or off.
 
@@ -908,7 +923,7 @@ OFF
     As MS-DOS without SHARE loaded.
 #examples
     SHARE=100
-#topic SHELL=|Shell=|SHELL|Shell
+#topic SHELL=|Shell
 #title SHELL=
 Chooses the command interpreter, and with it the directory PM-DOS
 keeps its files in.
@@ -944,7 +959,7 @@ PMIO.SYS, PMDOS.SYS, CONFIG.SYS and AUTOEXEC.BAT stay in the root, and
 SYS puts RMDOS.SYS there with them.  Put C:\DOS in the PATH as well.
 #examples
     SHELL=C:\DOS\CMD.EXE /P
-#topic STACKS=|Stacks=|STACKS
+#topic STACKS=|Stacks
 #title STACKS=
 Accepted, and does nothing.
 
@@ -956,7 +971,7 @@ MS-DOS used the line to give interrupt handlers stacks of their own.
 The kernel handles interrupts itself.
 #examples
     STACKS=9,256
-#topic SWITCHES=|Switches=|SWITCHES|Switches
+#topic SWITCHES=|Switches
 #title SWITCHES=
 Changes what the startup keys do.
 
@@ -981,7 +996,7 @@ Changes what the startup keys do.
 See [[Starting PM-DOS|Starting]].
 #examples
     SWITCHES=/F
-#topic UNDELETE=|Undelete=
+#topic UNDELETE=|Undelete (CONFIG.SYS)
 #title UNDELETE=
 Turns delete protection on or off.
 
@@ -1005,7 +1020,7 @@ OFF
 See [[UNDELETE]] and [[DEL]].
 #examples
     UNDELETE=OFF
-#topic WINCACHE=|Wincache=
+#topic WINCACHE=|Wincache
 #title WINCACHE=
 Sets the cache used while Windows runs.
 

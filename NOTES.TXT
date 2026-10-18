@@ -14053,6 +14053,184 @@ a stick that wants more than one LUN or a 2048-byte block (refused as
 given, two sticks in at once, and 86Box, which has no USB at all.
 
 
+THE CARD FAMILIES: A SHARED BASE AND EIGHT MORE DRIVERS (2026-10-15)
+---------------------------------------------------------------------
+
+The rest of step 3: a driver for every card family, on a shared base so
+that each one is only its chip.  NE2000.SYS (the entry below) was
+written out whole as the first; it stands alone as the reference, and
+everything after it is DRV\NDSTART.ASM (the D32 driver head and the four
+kernel entries, in C's terms) + DRV\NETCORE.C (the receive queue, the
+counts, the DEVICE= line, the PCI bus, the four NIC_ functions) + a file
+per chip of card_find/card_setup/card_stop/card_send/card_service.  The
+contract is INC\NETDRV.H; a card driver is #define ND_DRIVER + it, and
+links the two shared objects behind its own.  Bus-master cards hand the
+chip the pointers net_alloc returns: the kernel is identity-mapped
+(IO\PAGING.INC), so a linear address is a physical one, as the USB
+drivers already rely on.
+
+THE DRIVERS, and how far each is proved (the rig is the scratchpad's
+rig\netrun.ps1; [[reference-pmdos-net-rig]]):
+
+  RTL8139.SYS  Realtek RTL8139 (PCI).  QEMU and 86Box, DHCP + ARP +
+               3/3 ping, clean.
+  PCNET.SYS    AMD PCnet-PCI, the Lance family.  QEMU and 86Box, clean.
+               Uses the 32-bit software style (BCR20) so a descriptor
+               can name a buffer above 16MB, which the old 24-bit Lance
+               format could not.
+  TULIP.SYS    DEC 21x4x.  QEMU, DHCP + ARP, and the station address out
+               of the serial EEPROM, with a perfect-filter SETUP FRAME
+               so unicast is taken.  2 of 3 pings on QEMU's tulip (all
+               three replies arrive; one is mishandled) - a quirk of
+               that model under burst; 86Box has no Tulip to check it.
+  E1000.SYS    Intel 8254x (e1000), memory-mapped (net_pci_map).  QEMU,
+               clean.  The address is read from the receive-address
+               registers the chip loads from its EEPROM, no bit-banging.
+  EEPRO100.SYS Intel 8255x PRO/100.  QEMU finds the card and reads its
+               EEPROM address, but the command-block (CU/RU) transmit
+               and receive are still quiescent - WRITTEN, NOT WORKING.
+  WD80X3.SYS   WD/SMC shared-memory 8390 (WD8003/8013).  86Box finds the
+               card and reads its SMC address, but no frame crosses the
+               memory window yet - WRITTEN, NOT WORKING (the window
+               placement against the kernel's upper memory needs sorting
+               - the 8390 programming is NE2000's, which works).
+  EL3C509.SYS  3Com EtherLink III (ISA), Charlie's 486's card.  No
+               emulator has it: WRITTEN to the 3Com spec, for the real
+               card to prove.  Programmed-I/O FIFO, window registers,
+               the ID-port activation sequence.
+  EL3C90X.SYS  3Com 3C90x Boomerang (PCI), Charlie's other card.  No
+               emulator has it: WRITTEN, for the real card to prove.
+               Download and upload descriptor lists.
+
+NOT WRITTEN: the 3C501 (an obsolete 1982 part, single buffer, almost
+useless - 86Box has it, and it can be added if a reason appears) and
+the 3C503 (a 3Com shared-memory 8390 with its own control registers,
+not WD's; a sibling of WD80X3.SYS to add when WD80X3 works).
+
+The emulated-card NIC config names and the rig are in
+[[reference-pmdos-net-rig]].  Nothing shipped is loaded by RUNTESTS but
+NE2000.SYS (NICTEST's card), so no baseline moved; the eight new drivers
+are in S:\BIN and on the hard disk (MKHD's list - and a missing space
+there, "NE2000.SYSBIN\LRGDISK.386" from the 2026-10-15 NE2000 edit, was
+fixed in passing).  NICTEST's ping now sends all three and collects the
+replies, so a late reply is still counted.  Files: INC\NETDRV.H,
+INC\NIC.H already; DRV\NDSTART.ASM, DRV\NETCORE.C, DRV\<card>\<card>.C
+(eight); BUILD.CMD, MKHD.CMD, TOOLS\NICTEST.C.  v0.64 still; uncommitted.
+
+
+THE LINK LAYER, AND THE FIRST CARD: NE2000.SYS AND DHCP (2026-10-15)
+---------------------------------------------------------------------
+
+Step 2 of the networking plan (the step list is in the D32-driver entry
+below) with step 3's first card, because step 2 needs a card to send
+on.  A 32-bit DEVICE= driver that drives a network card, the shape of
+the whole stack's card layer, and a test that proves it by doing on the
+wire the three things every stack has to do before it does anything
+else: DHCP for an address, ARP for the gateway, and a ping.
+
+THE DRIVER CONTRACT FOR A CARD (INC\NIC.INC, INC\NIC.H).  A card driver
+is a D32 driver (INC\NDRV.INC) with NDTF_NIC in its table's flags - a
+new field there, copied into the kernel's row (ND_FLAGS) so a program
+finds a card driver by the flag without reading the table.  Its CALL
+entry answers four functions: NIC_INFO (the station address, the ports,
+the line, the bus, a name), NIC_SEND (an Ethernet frame whole, 14 to
+1514 bytes, padded to 60 on the wire), NIC_RECV (the oldest frame that
+has arrived, or nothing), NIC_STATS (counts).  A frame is an Ethernet
+frame and nothing in the card layer knows what is in one: ARP, IP and
+the rest are the caller's, which is NICTEST here and the stack later.
+
+A 32-BIT DRIVER IN C (DRV\NDSTART.ASM, INC\NDRV.H).  NDTEST.SYS was
+assembler; a card driver is too much to write that way, so NDSTART.ASM
+is the C counterpart of NDTEST's head: the D32 driver header first, the
+four entries turned from the kernel's register contracts into cdecl
+calls (nd_init/nd_park/nd_halt/nd_call), the services turned the other
+way (nds_alloc/free/print/ticks/bus/irqhook/irqunhook/tickhook/
+tickunhook), and the interrupt and clock handlers.  ES is made DS at
+every entry, because C compiled flat assumes it and the kernel promises
+it only at INIT.  A C driver is #define ND_DRIVER + ndrv.h, provides the
+six nd_* functions and the table, and links behind NDSTART.ASM the way a
+command links behind its DOSINT.ASM - CODE, DATA, BSS, D32END - then
+twice (0 and 10000000h) and D32DRV, as every 32-bit driver.
+
+NE2000.SYS (DRV\NE2000\NE2000.C) - THE DP8390 FAMILY.  The card
+everybody cloned, so the one card driver covers the NE1000, the NE2000,
+the Realtek RTL8019AS (ISA) and RTL8029AS (PCI) and their clones - every
+card the emulators have.  It finds the card three ways, in this order:
+the PCI bus (the 8029 and the nine clone IDs), ISA Plug and Play (the
+kernel's BUS_PNP* services configure an RTL8019AS or anything that calls
+itself PNP80D6 at a port and a free line of the driver's choosing - such
+a card decodes nothing until it is told to), then the usual ISA ports
+(300h, 280h, 320h, 340h, 360h).  /P:port (hex) and /I:line override.
+The line is found, when no /I: and no PCI line, by making the card
+interrupt with a handler on every line it could be jumpered to and
+keeping the one that answers; a card whose line is found by nobody is
+read from the clock eighteen times a second, which works and is slow.
+Frames that arrive are taken off the 8390's receive ring into a queue of
+the driver's own at interrupt time (the ring is small and the card drops
+what does not fit); NIC_RECV hands over the queue's oldest.  At a park
+the card is stopped and set up again from nothing, because Windows may
+drive the same card while the kernel is parked.
+
+NICTEST.EXE (TOOLS\NICTEST.C, TOOLS\CSTART.ASM) - FROM THE WIRE.  A
+native C program (CSTART.ASM is the C startup for a test, as CMD\FC's
+DOSINT.ASM is for a command): it finds the NIC driver by its flag, asks
+NIC_INFO, then builds the frames by hand, field by field, big-endian,
+with no stack underneath - a DHCP DISCOVER/REQUEST, an ARP request, and
+three ICMP echoes - and checks every answer.  Every emulator's user-mode
+network answers the same way (the gateway is 10.0.2.2, the address given
+10.0.2.15), so the lines are identical on all three.
+
+PROVED, six emulated cards, all three emulators, DHCP + ARP + 3/3 pings:
+  QEMU   ne2k_isa  (NE2000 ISA, 300h/IRQ9, 16-bit)
+  QEMU   ne2k_pci  (RTL8029AS PCI, IRQ from the BIOS)
+  86Box  novell_ne2k (NE2000 ISA)
+  86Box  novell_ne1k (NE1000 ISA, 8-bit - the single-PROM path)
+  86Box  ne2kpci   (RTL8029AS PCI)
+  86Box  ne2kpnp   (RTL8019AS, ISA Plug and Play: the kernel isolated
+                    it, the driver configured it to 220h/IRQ11 and
+                    activated it, ISAPNP.EXE then saw it on)
+The rig is the scratchpad's rig\netrun.ps1 (-Rig dbx|qemu|86box, -Nic,
+-RomDir, -Cmds): one boot of a small disk with the card in the machine,
+the driver on CONFIG.SYS and the test's output fetched back, nothing
+shown and nothing typed.  86box's RTL8019AS wants its 75-byte PnP
+resource file RTL8019A.BIN, which the installed 86Box ROM set has NOT
+got (only the 64K boot ROM rtl8019as.rom); it comes from the 86Box/roms
+repo and is handed in through a second ROM path with -R (netrun -RomDir
+scratchpad\roms86\network\rtl8019as).  Its config name is "ne2kpnp", not
+"rtl8019as" - the wrong name leaves no card and no word about it.
+
+NOT PROVED.  The polled path (no interrupt line) - every emulated card
+has a line, so nd_tick as the only reader of the card has not been run.
+The 3C509 and 3C905 Charlie has are a different chip and a driver of
+their own (step 3's later cards), and no emulator has them.  DOSBox-X's
+installed vsbuild has no network backend at all ("ETHERNET: Backend not
+supported in this build: slirp"), so under it NE2000.SYS finds no card
+and NICTEST prints "nothing to test here" and passes - which is the
+stable baseline RUNTESTS records.  Nothing here has run on real hardware.
+
+WHAT MOVED (RUNTESTS, 88 -> 89 tests, all seven rows): NICTEST is new
+(its DOSBox-X baseline is the "nothing to test" line); RMFIND, RMTEST
+and CACHETST by the two new files on the test disk (NE2000.SYS in the
+root, NICTEST.EXE in \TESTS), the same layout shift every added file
+makes; 386-4\LOCKTEST is the usual 386 timing noise and was NOT
+re-recorded.  NDRVTEST still matches: RUNTESTS loads NDTEST.SYS before
+NE2000.SYS, so NDTEST stays row 0.  MASM 6.13 assembles NDSTART and
+CSTART.
+
+Files: INC\NIC.INC, INC\NIC.H, INC\NDRV.H (new), INC\NDRV.INC (NDTF_NIC,
+ND_FLAGS now the table's flags), DOS\NDLOAD.INC (the row carries the
+flags), DRV\NDSTART.ASM, DRV\NE2000\NE2000.C, TOOLS\CSTART.ASM,
+TOOLS\NICTEST.C (all new), BUILD.CMD + MKHD.CMD (NE2000.SYS, NICTEST.EXE,
+the DRV\ obj clean), TOOLS\RUNTESTS.PS1 (the card in $Cfg, NICTEST in the
+list, a mask for its frame counts), TOOLS\DBXRUN.PS1 (-Nic),
+DISK\CONFIG.TXT and DISK\HELP\30CONFIG.TXT (the 32-bit-driver and NE2000
+paragraphs).  BIN\NE2000.SYS 10,360, BIN\TESTS\NICTEST.EXE 10,548;
+PMDOS.SYS 167,101 (the loader change is a handful of bytes, same length;
+PMIO unchanged).  Delivered to S:\BIN, IMAGES\PMDOS/TESTS/HELP.IMG, HD16
+by FATREPL, the 86Box VM's four images, 27 moved baselines.  Still not
+committed, on top of the uncommitted D32-driver and bounds-review work.
+
+
 A 32-BIT DRIVER ON A DEVICE= LINE: THE D32 DRIVER SUBTYPE (2026-10-13)
 ---------------------------------------------------------------------
 
@@ -14201,23 +14379,45 @@ Enhanced-mode Windows with a driver loaded has not been tried on
 DOSBox-X only.  Nothing here has run on real hardware.
 
 THE STEPS FROM HERE, in the order they are needed (the plan agreed
-2026-10-13; the reasons are in the conversation and in INC\NDRV.INC):
-  1. The driver loader - this entry.
+2026-10-13; the reasons are in the conversation and in INC\NDRV.INC).
+Steps 1 and 2 are done, and so is step 3's first family - see the entry
+above, "THE LINK LAYER, AND THE FIRST CARD (2026-10-15)":
+  1. The driver loader - this entry.  DONE.
   2. A link-layer test as the first piece of the stack: DHCP, ARP, a
      ping to the gateway, which both QEMU's user-mode network and
      86Box's SLiRP put at 10.0.2.2.  Card drivers are proved by it.
-  3. Card drivers by family, emulated ones first: DP8390 (NE1000,
-     NE2000, RTL8019AS, RTL8029AS - 86Box and QEMU both), then PCnet,
-     RTL8139, DEC Tulip, Intel 8255x and 8254x; the shared-memory
-     8390 boards and the 3C501 (86Box); the EtherLink III and
-     3C905 for Charlie's own machines, proved by him.
-  4. TCP with windows and retransmission, a socket API on F1h for
-     natives and boxes, FTP, TELNET, an HTTP fetcher, SNTP; NSTLS
-     ported for HTTPS.
-  5. SMB2 (2.0.2 over 445) with NTLMv2 through SPNEGO and
-     HMAC-SHA256 signing: NET USE to the DC and to Eternia-Storage,
-     the letters as volumes.  Mappings and the credential survive a
-     park by table and reconnect on first use.
+     DONE (TOOLS\NICTEST.C).
+  3. Card drivers by family - DONE but for two that need more work and
+     two that want the real hardware; see "THE CARD FAMILIES (2026-10-15)"
+     above.  Working: NE2000 (DP8390), RTL8139, PCnet, e1000; Tulip
+     (2/3 ping on QEMU).  Written, not yet working: EEPRO100 (Intel
+     8255x), WD80X3 (shared-memory 8390).  Written for Charlie's
+     machines: EL3C509 (3C509), EL3C90X (3C905).  Not written: 3C501,
+     3C503.
+  4. TCP with windows and retransmission, a socket API on F1h, FTP,
+     TELNET, an HTTP fetcher, SNTP; NSTLS ported for HTTPS.  DONE.  The
+     stack and the sockets are in "THE STACK: TCPIP.SYS AND SOCKETS ON
+     F1h AL=26h (2026-10-15)"; the clients and HTTPS are in "THE
+     CLIENTS: FTP, TELNET, WGET, SNTP, AND HTTPS (2026-10-15)" below.
+     SNTP sets the clock from an NTP server, WGET fetches over HTTP and
+     HTTPS, FTP logs in and lists and transfers, TELNET is a terminal -
+     all proved against real servers through the emulator's NAT, and
+     HTTPS proved by fetching example.com over TLS 1.2 (ECDHE-RSA-
+     AES128-GCM, the NSTLS core vendored into CMD\NET\TLS).  AND NOW the
+     certificate is verified too: a trust bundle of 24 common roots
+     ships as CACERT.BND and WGET checks the chain, the host name and
+     the dates against it - see "HTTPS: THE CA BUNDLE AND CERTIFICATE
+     VERIFICATION (2026-10-16)" below.  Step 4 is complete.
+  5. SMB2/3 over 445 with NTLMv2 and signing: NET USE to the DC and to
+     Eternia-Storage, the letters as volumes.  Mappings and the
+     credential survive a park by table and reconnect on first use.
+     IN PROGRESS: the client engine (NEGOTIATE 2.0.2..3.1.1, NTLMv2
+     SESSION_SETUP, per-dialect signing, TREE_CONNECT, QUERY_DIRECTORY)
+     is written and PROVED - it lists a real Windows 11 share over SMB
+     3.1.1 with AES-CMAC signing, both on the host and from the PM-DOS
+     VM (SMBTEST.EXE).  See "STEP 5 BEGINS ... (2026-10-16)" below.
+     Still to do: the kernel redirector that turns this into NET USE
+     drive letters, and the park/reconnect.
   6. SMB1 (NT LM 0.12 and LANMAN2.1) over NetBIOS-over-TCP with LM
      and NTLMv1, for WfW 3.11, Win9x, NT 3.51 and NT 4 peers.
   7. PMDOS.386: the context-switch bridge (a trampoline page mapped
@@ -14242,6 +14442,525 @@ answers and NDRVTEST, every row).  PMIO.SYS 74,563 -> 74,739,
 PMDOS.SYS 164,935 -> 166,669, NDTEST.SYS 1,087, NDRVTEST.EXE 2,654.
 S:\BIN, IMAGES\PMDOS.IMG, TESTS.IMG and HD16.IMG (FATREPL) and the
 86Box VM's two images carry it.  Still v0.64; not committed.
+
+
+THE STACK: TCPIP.SYS AND SOCKETS ON F1h AL=26h (2026-10-15)
+---------------------------------------------------------------------
+
+Step 4, the part that makes the card worth having: a TCP/IP stack, and
+a socket API a program can reach.  ARP, IPv4, ICMP, UDP, DHCP, DNS and
+a small but honest TCP - a handshake, a window, retransmission and an
+orderly close.  Proved, on QEMU and on 86Box, by SOCKTEST: DHCP brings
+the interface up at 10.0.2.15, a ping to the gateway comes back, a name
+is looked up through the DNS server DHCP gave, and an HTTP GET to
+example.com over real TCP returns its page.  The client programs the
+plan lists (FTP, TELNET, the HTTP fetcher, an SNTP clock) and HTTPS
+through NSTLS come on top of this; they are not here yet.
+
+WHERE IT LIVES.  The stack is a 32-bit DEVICE= driver, DRV\TCPIP\
+TCPIP.C, built like a card driver (DRV\NDSTART.ASM in front) but it is
+NOT a card: its table carries NDTF_STACK, not NDTF_NIC, and it links
+NDSTART alone, not NETCORE.  TCP in the kernel's assembler would have
+been a month of pain; in C, behind the same D32 head the cards use, it
+is one file.  It touches no hardware - the card driver does that - so
+it has no interrupt of its own.  It works on two occasions only: the
+clock tick, and a socket call.
+
+HOW IT REACHES THE CARD.  A driver may call only the services it is
+given at INIT (NDRV.INC's NDS_*).  The stack needs to send and receive
+frames through whatever card is loaded, so the services grew two:
+NDS_NICCOUNT (how many loaded drivers are NICs) and NDS_NICCALL (call
+the Nth NIC's CALL entry - NIC_INFO/SEND/RECV/STATS, INC\NIC.INC).
+That is the same road a program takes to a driver through 21h/F1h
+AL=25h NDF_CALL, one driver reaching another: NDLOAD.INC factors
+nd_find_flag (the Nth row with a given NDTF_ flag) and nd_call_row (set
+up the contract and jump into a row's CALL), and fnd_call, the new
+service and the new socket call all share them.  So the stack is
+card-agnostic: SOCKTEST passes the same on QEMU's RTL8139 and 86Box's,
+and would on any card whose driver answers the NIC contract.
+
+HOW A PROGRAM REACHES IT: 21h/F1h AL=26h, the sockets (INC\SOCKET.H).
+Bits 16-23 of EAX are the function - SOCK_OPEN, CONNECT, LISTEN,
+ACCEPT, SEND, RECV, STATE, CLOSE, RESOLVE (DNS), PING, IFSTAT - EDI
+points at the request block and ECX is its length, EAX comes back with
+a handle, a state or a byte count.  INT21.INC's fF1_sock finds the one
+NDTF_STACK driver (no row number needed) and calls it; RING3.INC's
+rpf_sock flattens EDI the way NDF_CALL does.  An address is a u32,
+most significant octet first (10.0.2.2 is 0x0A000202); the stack puts
+it big-endian on the wire itself, so nothing cares which way the
+processor stores a word.
+
+NOTHING BLOCKS.  The stack runs on the clock tick (nd_tick) and at the
+start of every socket call (nd_call): drain whatever the card has, run
+the timers, then answer.  A pumping flag keeps the tick off the stack
+while a call is in it.  A connect sends the SYN and returns; the caller
+watches SOCK_STATE for SS_ESTABLISHED.  A receive gives what has
+arrived, or none.  The waiting - for a handshake, for a byte, with a
+timeout - is the caller's, which is where TOOLS\SOCKTEST keeps it (and
+where a SOCKLIB for the client programs will).  DHCP is a state machine
+on the tick, not a wait at INIT: INIT sends the first DISCOVER and
+returns, and the interface is up a second or two into the first
+program that asks - which is why it does not depend on the card's
+receive working at CONFIG.SYS time.
+
+THE TCP.  A send buffer and a receive buffer per socket (4K each, a
+fixed pool allocated once at INIT so no arena call ever happens from a
+tick), go-back-N over the send ring: snd_una is the first unacked
+byte, snd_nxt the next to send, retransmit from snd_una on a timeout
+that doubles to about six seconds and gives up after six tries.
+Receive takes in-order data and advertises the ring's free space as
+the window; out-of-order is dropped and the peer retransmits.  SYN and
+FIN each take a sequence number; a listening socket spawns a child per
+SYN for ACCEPT to hand over; close is a FIN and a short TIME_WAIT.  No
+SACK, no window scaling, no timestamps - enough to talk to a real
+server for a request and a reply, which is what the clients will do.
+
+THE BUG THAT COST THE MOST.  udp_send copied its payload with "if
+(dlen)" when the DHCP and DNS builders had already placed the payload
+and passed data == NULL - so it did memcpy(dst, NULL, len) and wrote
+300 bytes of address zero over the DISCOVER.  The card reported the
+send fine (tx counted), nothing came back (rx stayed zero), and it
+looked like a receive fault until a send/receive/tick counter showed
+the sends leaving and nothing returning.  The fix is "if (dlen &&
+data)".  The diagnosis is the lesson: a counter in the driver read back
+through SOCK_IFSTAT beat any amount of staring.
+
+THE RIG.  SOCKTEST (TOOLS\SOCKTEST.C, CSTART.ASM in front as NICTEST)
+is run by the scratchpad's rig\netrun.ps1 with a card driver and
+TCPIP.SYS on CONFIG.SYS; the frames it needs - DHCP, DNS, a real TCP
+server - come from the emulator's user-mode network and, for TCP, the
+host's own internet through SLiRP's NAT (example.com resolves and
+answers, so the whole path is real).  A QEMU guestfwd to a host
+listener was tried for an offline TCP peer and abandoned: this QEMU's
+SLiRP completes both handshakes but does not relay the payload between
+the guest and the host socket (the capture shows the GET sent and
+ACKed, then nothing), so the straightforward outbound GET to a real
+server is the proof instead ([[reference-pmdos-net-rig]] has the
+guestfwd syntax and the finding).
+
+Files: INC\NDRV.INC (NDTF_STACK, NDS_NICCOUNT/NICCALL, NDS_VERSION 2,
+NDS_LEN 48), INC\NDRV.H (the same, + nds_niccount/nds_niccall),
+INC\SOCKET.H (new), DRV\NDSTART.ASM (the two new service wrappers),
+DRV\TCPIP\TCPIP.C (new), DOS\NDLOAD.INC (nd_find_flag, nd_call_row,
+fnd_call refactor, fF1_sock, ndsv_niccount/niccall, the services
+table), DOS\INT21.INC (fnF1 AL=26h and its doc), DOS\RING3.INC
+(rpf_sock), TOOLS\SOCKTEST.C (new), BUILD.CMD (TCPIP.SYS and
+SOCKTEST.EXE), MKHD.CMD (TCPIP.SYS, SOCKTEST.EXE on both HD images),
+DISK\CONFIG.TXT and DISK\HELP\30CONFIG.TXT (the DEVICE=TCPIP.SYS
+paragraph).  PMDOS.SYS 166,669 -> 167,321; PMIO.SYS unchanged;
+TCPIP.SYS 15,860; SOCKTEST.EXE 11,736.  S:\BIN, IMAGES\ (PMDOS.IMG,
+HELP.IMG, HD16/HD32 via MKHD) and the 86Box VM's images carry it.
+The test disk grew by SOCKTEST.EXE, so the RUNTESTS cluster-count
+baselines (RMFIND, RMTEST, CACHETST) are owed a full -Update re-record
+when the suite is next run.  Still v0.64; not committed.
+
+
+THE CLIENTS: FTP, TELNET, WGET, SNTP, AND HTTPS (2026-10-15)
+---------------------------------------------------------------------
+
+The rest of step 4: the programs a person actually runs, on top of the
+sockets.  All four are proved against real servers on the internet, out
+through the emulator's user-mode NAT (DNS already works, so a name
+resolves and the connection is real).
+
+A SHARED RUNTIME, as the card drivers share a base.  CMD\NET\SOCKLIB.C
+wraps the socket API (21h/F1h AL=26h) into calls that wait with a
+timeout - connect, send-all, a line, a datagram, resolve, ping - and
+carries the console (40h/0Bh/08h), the clock (2Ch) and the command tail
+(62h, the PSP's bytes at 80h).  CMD\NET\NETSTART.ASM is the program
+head and the INT 21h thunk.  Each client links the two behind its own,
+as a card links NDSTART + NETCORE.
+
+  SNTP.EXE (CMD\SNTP)  one UDP packet to a time server's port 123, the
+    transmit timestamp out of the 48 bytes back, the civil date worked
+    out in 32-bit arithmetic (Hinnant) and the clock set (2Bh/2Dh).
+    "SNTP [server] [/S] [/Z:+-h]"; the default server is pool.ntp.org.
+    Proved: it set the clock from pool.ntp.org.
+  WGET.EXE (CMD\WGET)  an HTTP/1.0 GET with Connection: close, the body
+    streamed to the screen or /O:file.  HTTP and HTTPS.  Proved: the
+    example.com page over both.
+  FTP.EXE (CMD\FTP)  the Berkeley ftp interface - open, user, ls/dir,
+    get, put, cd, pwd, ascii, binary, close, bye - on a control
+    connection, with the data connection the server names in its PASV
+    answer (passive only: a client behind the kernel's one address
+    cannot usefully be called back).  Commands come from handle 0 a byte
+    at a time (3Fh), so a redirected script drives it as the keyboard
+    does.  Proved: anonymous login to ftp.gnu.org, the multi-line 230
+    welcome, a PASV directory listing (the 227 line's six numbers are
+    read from inside the parentheses, NOT from the code), QUIT.
+  TELNET.EXE (CMD\TELNET)  a terminal: type and it goes, bytes come back
+    and show.  The Telnet option bytes (IAC, RFC 854) are answered -
+    refuse every option but let the server echo and suppress go-ahead -
+    so a session is clean, not full of 255s.  Control-] quits; /T:N
+    quits after N idle seconds (which is how it is tested headless).
+    Proved: the telehack.com banner, IAC handled, rendered clean.
+
+HTTPS IS THE NSTLS PORT.  S:\CPP\DU32\NSTLS is TLS 1.2 + crypto in
+portable C that already built under Open Watcom and already spoke
+ECDHE-RSA-AES128-GCM-SHA256 to real servers; it was not rewritten, it
+was vendored.  CMD\NET\TLS holds the thirteen core modules (AES, GCM,
+SHA, SHA512, PRF, BIGNUM, RSA, ECP256, ECP384, RNG, X509, TLSREC,
+TLSHS) lifted unchanged but for two touch-ups to the copies: RNG.C's
+rng_init scraped Windows entropy, now it reads the CPU time-stamp
+counter (rdtsc, emitted as its two opcode bytes because the build is
+-3r and the assembler will not take the mnemonic) across a little
+jitter; and X509.C's one tolower is a local function, so <ctype.h>'s
+library table is not needed.  CMD\NET\TLS\PMCLIB.C is the little C
+library the core wants - malloc/free/realloc over one big 21h/48h block
+(bytes, on PM-DOS), first fit, and the mem/str primitives - since a
+native program links no C runtime (-zl).  CMD\NET\TLSGLUE.C drives the
+core's blocking wrappers (tls_client_handshake / tls_write_app /
+tls_read_app, TLSHS.H) over SOCKLIB's send and recv; WGET asks for it
+only when built -dWITH_TLS.  The core is built without -w4 -we (it is
+third-party); PMCLIB, TLSGLUE and WGET keep both.  Proved: WGET fetched
+https://example.com/ whole, the bytes decrypted.  NOT done:
+CERTIFICATE VERIFICATION IS OFF.  tls_new leaves verify 0 and no CA
+bundle is shipped, so the connection is encrypted but the server is not
+authenticated - a man in the middle would not be caught.  The X.509
+chain check is ported and compiled in; turning it on wants roots on the
+disk and the one call that sets them.  Also no TLS 1.3, no ECDHE_ECDSA
+suites, no session resumption - a real server's RSA-cert ECDHE-GCM path
+is what works.
+
+Files: CMD\NET\ (NETSTART.ASM, SOCKLIB.C/.H, TLSGLUE.C/.H), CMD\NET\TLS\
+(the 13 NSTLS modules + PMCLIB.C), CMD\SNTP\SNTP.C, CMD\WGET\WGET.C,
+CMD\FTP\FTP.C, CMD\TELNET\TELNET.C (all new), BUILD.CMD (the NET base,
+the TLS core, the four clients, D32BIND), MKHD.CMD (the four on both HD
+images).  SNTP.EXE 14,628; WGET.EXE 69,856 (TLS makes most of it); FTP.
+EXE 23,120; TELNET.EXE 18,504.  The kernel did not change this time, so
+no baselines moved; S:\BIN, IMAGES\HD16/HD32 (via MKHD) and the 86Box
+VM's two HD images carry them.  The clients are on the HD images, not
+the boot floppy, because networking is an installed-system thing and
+the floppy is tight.  Still v0.64; not committed.
+
+
+HTTPS: THE CA BUNDLE AND CERTIFICATE VERIFICATION (2026-10-16)
+---------------------------------------------------------------------
+
+The gap the clients entry left open is closed: HTTPS now authenticates
+the server, it does not only encrypt to it.  WGET verifies the
+certificate chain, the host name and the dates against a bundle of
+trusted roots before it sends a byte of the request, and stops with a
+reason if any of the three does not hold.
+
+THE BUNDLE is DISK\CACERT.BND - 24 common roots as a plain
+concatenation of DER certificates, which is exactly the form the
+NSTLS port already walks (TLSHS.C's ca_next: one SEQUENCE TLV after
+another, long-form lengths and all).  No index, no PEM, no parsing on
+our side beyond the X.509 walk that was already there.  25,649 bytes.
+The roots are the ones that anchor most of the public web: Sectigo's
+AAA Certificate Services and USERTrust (RSA and ECC), ISRG Root X1,
+five DigiCert roots, four GlobalSign, GTS R1, the two Microsoft 2017
+roots, Go Daddy, Starfield, Entrust, Baltimore, Certum, IdenTrust.
+AAA is first in the file on purpose: it is what example.com's chain
+anchors to today (Cloudflare serves an SSL.com intermediate that AAA
+cross-signs), so the common case matches on the first root tried.
+
+Only roots whose key the port can use are in it - RSA, or EC on P-256
+or P-384 - because those are the issuer keys x509_verify_signed knows.
+A root the port cannot parse would just be skipped at verify time, so
+a stray one is harmless, but the list is kept to usable keys on
+purpose.
+
+HOW IT IS BUILT: TOOLS\MKCABND.PS1 reads each root out of the Windows
+certificate store by thumbprint and writes the concatenation.  No
+download - the roots are the ones Windows already trusts, so the file
+is reproducible on this machine, and a root is added by putting its
+thumbprint in the script's list.  The file is kept in the tree
+(DISK\) and shipped as data, like HELP.HLP; the build does not
+regenerate it.
+
+HOW WGET USES IT: a new tls_open(handle, host, ca, calen, insecure,
+&outcome) in TLSGLUE calls tls_set_verify with the host, the clock as
+"YYYYMMDDHHMMSS" (SOCKLIB's new sl_now14, off 21h/2Ah+2Ch) and the
+bundle, then reads tls_verify_error if the handshake is refused so the
+caller learns WHY.  WGET finds the bundle with /CA:file, then the
+CACERT environment variable, then CACERT.BND in the current directory,
+then each PATH entry (SOCKLIB's new sl_getenv walks the PSP
+environment the way HELP does).  Flags: /CA:file a bundle to use
+instead; /K connect without checking (prints nothing unless /V); /V
+say whether the certificate verified.  With a bundle found and no /K
+the check is REQUIRED - a bad certificate stops the fetch; with no
+bundle found WGET connects but warns, on handle 2 so a piped body
+stays clean, that the certificate was not checked.
+
+Because the server is authenticated now, the one-line reason on a
+failure matters, so each X509_ERR_ maps to words: the name does not
+match / expired or not yet valid / not trusted (no path to a root in
+the bundle) / unsupported key or signature / could not be parsed.
+
+PROVED on QEMU (rtl8139 + TCPIP.SYS), the bundle carried onto C:\ by
+the rig's -Extra, against real servers through SLiRP's NAT:
+  - WGET /V https://example.com/ -> "certificate verified for
+    example.com" and the page (chain to AAA, host and dates all OK);
+  - https://expired.badssl.com/ -> refused, "expired or not yet
+    valid" (the date path, and proof the guest clock reads ~now);
+  - https://wrong.host.badssl.com/ -> refused, "the name does not
+    match the certificate" (its cert is *.badssl.com, two labels do
+    not match a one-label wildcard);
+  - https://self-signed.badssl.com/ -> refused, "not trusted (no path
+    to a root in the bundle)";
+  - WGET /V /K https://self-signed.badssl.com/ -> "certificate not
+    checked (/K)" and the page, so the override works.
+
+LIMITS, still: TLS 1.2 only, and the ClientHello offers only
+ECDHE-RSA (and plain-RSA) suites, so a dual-cert server hands over its
+RSA chain - which is why the bundle is chosen for RSA/EC roots and the
+leaf must have an RSA key.  No TLS 1.3, no ECDHE-ECDSA leaf, no
+revocation (CRL/OCSP).  Good enough to authenticate the ordinary HTTPS
+server; not a general-purpose validator.
+
+Files: TOOLS\MKCABND.PS1 (new), DISK\CACERT.BND (new), CMD\NET\SOCKLIB.H
+and SOCKLIB.C (sl_getenv, sl_now14), CMD\NET\TLSGLUE.H and TLSGLUE.C
+(the new tls_open + tls_verify_reason), CMD\WGET\WGET.C (/CA, /K, /V,
+the bundle search), MKHD.CMD (CACERT.BND on both HD lists).  WGET.EXE
+69,856 -> 113,424 (the 40K bundle buffer is BSS in the raw image; WGET
+is an HD tool, not a floppy one).  S:\BIN, IMAGES\HD16/HD32 (via MKHD)
+and the 86Box VM's two HD images carry it.  The kernel did not change,
+so no baselines moved by code - but CACERT.BND is one more root file on
+the HD images, so RMFIND/RMTEST (free clusters) and CACHETST owe a
+re-record on the next full RUNTESTS -Update, the same debt SOCKTEST.EXE
+opened.  Still v0.64; not committed.
+
+
+STEP 5 BEGINS: AN SMB2/3 CLIENT - NTLMv2 AND 3.1.1 SIGNING (2026-10-16)
+---------------------------------------------------------------------
+
+Step 5 is SMB.  The first piece - the client engine that speaks the
+protocol and authenticates - is written and proved, the same way the
+stack was proved with a tool (SOCKTEST) before anything was built on
+it.  It lists a real Windows 11 share over SMB 3.1.1 with NTLMv2 and
+AES-CMAC signing, on the host and from the PM-DOS VM.
+
+DECISIONS (Charlie): prove against a controlled share on this machine
+(the VM reaches the host at 10.0.2.2 through the emulator's user-net),
+and negotiate the whole 2.0.2..3.1.1 range.  Against Windows 11 that
+lands on 3.1.1, so the full modern path had to be built, not the 2.0.2
+minimum.
+
+THE CRYPTO SMB NEEDED that the TLS port did not already carry, in
+CMD\NET\SMB, all with known-answer tests (SMBCTEST.C, a host build;
+15 vectors incl. the MS-NLMP NTOWFv2 example and the RFC 4493 CMAC
+vectors):
+  - SMBCRYPT.C: MD4, MD5, HMAC-MD5, RC4, and nt_hash / ntowf_v2.
+  - SMBSIGN.C: AES-128-CMAC (RFC 4493, over the TLS port's AES-128) -
+    SMB 3.x's signing MAC - and smb3_kdf, the SP800-108 counter-mode
+    HMAC-SHA256 key derivation.
+  - SHA-512 added to CMD\NET\TLS\SHA512 (it had only SHA-384; 3.1.1's
+    pre-auth integrity hash is SHA-512).  Same core, new init vector,
+    full 64-byte output - a sibling of sha384, not a change to it.
+
+THE ENGINE is CMD\NET\SMB\SMB2.C, transport-agnostic the way the TLS
+core is (send/recv callbacks), so it is proved on the host over Winsock
+(SMB2HOST.C) and then run on PM-DOS over SOCKLIB (SMBTEST.C) unchanged.
+The conversation: NEGOTIATE (dialects 2.0.2,2.1,3.0,3.0.2,3.1.1, with
+the 3.1.1 pre-auth-integrity and encryption negotiate contexts) ->
+SESSION_SETUP x2 (RAW NTLMSSP, no SPNEGO wrapper, which Windows takes;
+NTLMv2 with a MIC because the CHALLENGE carries a timestamp) ->
+TREE_CONNECT -> CREATE (the share root as a directory) ->
+QUERY_DIRECTORY.  Direct-TCP transport (the 4-byte length header).
+Per-dialect signing: HMAC-SHA256 for 2.x, AES-CMAC for 3.x, the key
+from smb3_kdf over the session key and (3.1.1) the pre-auth hash.
+
+PROVED: SMB2HOST against 127.0.0.1 (this host's SMB) and SMBTEST.EXE
+from the PM-DOS VM against 10.0.2.2, both: dialect 0x0311, AES-CMAC
+signing, and the share listed exactly - HELLO.TXT (24), README.TXT
+(63), SUB <DIR>, with . and .. .  The NTLMv2 session key with no key
+exchange is the session base key; signing uses it through the KDF.
+
+TWO THINGS THE SERVER TAUGHT on the way: (1) Windows set
+SIGNING_REQUIRED in the NEGOTIATE response, so TREE_CONNECT came back
+STATUS_ACCESS_DENIED (0xC0000022) until every post-session request was
+signed - the unsigned-listing shortcut does not exist against Windows
+11.  (2) CREATE came back STATUS_INVALID_PARAMETER (0xC000000D) with
+ImpersonationLevel 0 (Anonymous) and without the one Buffer byte the
+StructureSize=57 convention counts; Impersonation=2 and a 1-byte buffer
+fixed it.
+
+THE SHARE for testing is made by the scratchpad rig scripts
+smbshare-up.ps1 / smbshare-down.ps1 (RUN ELEVATED; creating a local
+account needs admin, and a UAC prompt is not driven from a headless
+session): a throwaway user pmdostest / PmdosSmb!2026, the share
+\\10.0.2.2\PMSHARE over C:\PMDOSSMB, a narrow 445 firewall rule.
+
+Files: CMD\NET\SMB\SMBCRYPT.C/.H, SMBSIGN.C/.H, SMB2.C/.H, SMBTEST.C
+(the DOS tool), SMB2HOST.C and SMBCTEST.C (host test/KAT, built with
+wcl386 -bt=nt), all new; CMD\NET\TLS\SHA512.C/.H (sha512 added);
+BUILD.CMD (the SMB section -> BIN\TESTS\SMBTEST.EXE, a bare D32 image
+like SOCKTEST), MKHD.CMD (SMBTEST on both HD lists).  SMBTEST.EXE
+78,912.  S:\BIN\TESTS, IMAGES\HD16/HD32 (via MKHD) and the 86Box VM's
+two HD images carry it.  The kernel did not change, so no baselines
+moved by code - but SMBTEST is one more test-disk file, so
+RMFIND/RMTEST/CACHETST owe a re-record with the CA-bundle debt.  Still
+v0.64; not committed.
+
+STEP 5 FINISHED: THE KERNEL REDIRECTOR - NET USE IS A DRIVE LETTER
+(2026-10-16)
+---------------------------------------------------------------------
+
+The other half of step 5: the engine above is now wired into the native
+kernel so that `NET USE K: \\server\share` makes K: an ordinary drive -
+DIR, TYPE, COPY, MD, DEL and RD all work on it, their file calls going
+out over SMB2/3.  Proved on QEMU against Windows 11: NET USE maps the
+share; DIR K:\ lists it with real sizes, dates and attributes (root and
+a subdirectory); TYPE reads a file; COPY K:\a K:\b reads and writes back
+a byte-identical file the host then shows; MD/DEL/RD create and remove.
+
+THE NATIVE KERNEL HAS NO REDIRECTOR AND NO CDS, on purpose (ISO9660.INC
+says why): a letter is a volume and vol_fs says which filesystem it is.
+So a third filesystem was added - FS_NET - and the file functions test
+the letter at their entry and, for a net one, route the request to the
+redirector instead of to fat_search and the cluster layer.  Every
+non-net call is left exactly as it was; the net branch is a few
+instructions at the top of each handler (DOS\NETFS.INC).
+
+  - A net letter's drv_tbl row carries NET_DRV_TYPE in DRV_TYPE, a byte
+    no partition, floppy, CD, image, driver or USB row uses.  fat_mount
+    reads it and "mounts" the letter by just saying FS_NET - no boot
+    record, no FAT.  vfl_ours excludes it from clean-shutdown.
+  - The redirector is a DEVICE= driver, DRV\SMBFS, carrying a new flag
+    NDTF_REDIR; the kernel reaches it with nd_find_flag + nd_call_row,
+    exactly as a program reaches a driver and as the stack reaches a
+    card.  It links the proved SMB2 engine, the crypto, the TLS SHA/AES
+    primitives, a socket shim (DRVSOCK) over a NEW kernel service
+    NDS_SOCKCALL - the stack directly, the way NDS_NICCALL gives a
+    driver a card - and a tiny C runtime (DRVRT).
+  - 21h/F1h AL=27h is NET USE (fF1_netuse): map, unmap, query.  NET.EXE
+    is the command.  The path work - folding . and .., splitting a
+    find's directory from its wildcard, DOS 8.3 wildcard matching, the
+    Windows FILETIME-to-DOS-stamp - is all in the driver's C, where it
+    can be read, not in the kernel.
+  - The file branches: 3Dh/3Ch/5Bh/716Ch open and create, 3Fh read,
+    40h write, 3Eh close (through sft_close), 4Eh/4Fh the classic find,
+    714Eh/714Fh the LFN find DIR actually uses, 36h free space, 39h/3Ah
+    mkdir/rmdir, 41h delete.  A net file's SFT carries SFTF_NET and the
+    driver's open handle in SFT_CLUSTER; it reads and writes by byte
+    offset, which is why it could not ride the CD-ROM cluster path.
+
+THREE THINGS THE INTEGRATION TAUGHT, each a VM cycle: (1) a native
+program's pointer is an offset in its slot, not a linear address, so
+F1h/27h's request buffer had to be added to r3_pflags (EDI is the
+pointer) or cbuf_ok refused it as outside the slot.  (2) INT 21h is
+entered through an interrupt gate with interrupts OFF; the driver's SMB
+waits need them ON (the card's receive IRQ, the clock tick for the
+timeout), so net_fire enables them around the driver call and restores
+the caller's flags.  (3) DIR lists through the LFN find (714Eh), not the
+classic 4Eh - hooking only 4Eh listed nothing.
+
+LIMITS, for the next push: a park drops the sessions (nd_park frees them
+on the way back) rather than reconnecting with the kept credentials -
+re-NET USE after a Windows handover; rename (56h) is not wired yet;
+truncating an existing file on 3Ch uses SMB OVERWRITE_IF, which is
+right, but there is no SET_EOF for a mid-file shorten; long server names
+are shown as their 8.3 head until the find tracks LFNs; 36h reports a
+fixed large free space.  None of these is in the proved paths above.
+
+Files, all new unless noted: INC\NDRV.INC/.H (NDTF_REDIR, NDS_SOCKCALL,
+NDS_VERSION 3), INC\REDIR.INC/.H (the contract), DOS\NETFS.INC (the
+branches), DOS\NDLOAD.INC (ndsv_sockcall), DRV\NDSTART.ASM (the
+_nds_sockcall thunk), DRV\SMBFS\SMBFS.C/DRVSOCK.C/.H/DRVRT.C, CMD\NET\NET
+\NET.C; edits to INC\PMDOS.INC (FS_NET, NET_DRV_TYPE, SFTF_NET),
+DOS\FAT.INC (fat_mount net arm), DOS\VOLFLAG.INC (vfl_ours), DOS\PATH is
+untouched, DOS\INT21.INC (the handler hooks + the F1h/27h dispatch),
+DOS\RING3.INC (rpf_netuse), DOS\DOSMAIN.ASM (the includes),
+CMD\NET\SMB\SMB2.C/.H (smb2_list_dir, smb2_open_disp, smb2_delete/mkdir/
+rmdir - additive, SMBTEST still passes), BUILD.CMD and MKHD.CMD (SMBFS.SYS
++ NET.EXE).  Delivered: S:\BIN (PMDOS.SYS grew, SMBFS.SYS and NET.EXE
+new), IMAGES\HD16/HD32/MULTI + PMDOS.IMG (via MKHD and the floppy
+rebuild) and the 86Box VM's images.  The kernel changed, so its baselines
+move on the next full RUNTESTS -Update (with the CACERT.BND + SMBTEST
+debt).  Still v0.64; not committed.
+
+
+STEP 6: THE SMB1 CLIENT, AND STEP 8: THE SMB SERVER (2026-10-16)
+---------------------------------------------------------------------
+
+Step 5 reaches modern Windows over SMB2/3.  Step 6 is the other end of
+the family: SMB1 ("NT LM 0.12"), for the down-level peers that do not
+speak SMB2 - Win9x/ME, NT4, OS/2 LAN Server, Samba in NT1 mode.  And
+step 8 is the server side, so PM-DOS can SHARE its own files, not only
+mount other machines'.  Both proved on QEMU, 2026-10-16.
+
+THE SMB1 CLIENT (CMD\NET\SMB\SMB1.C/.H) is a second engine beside the
+SMB2 one, the same transport-agnostic shape (send/recv callbacks) and
+the SAME answer types (smb2_fh, smb2_dirent), so the redirector drives
+both through one code path.  SMB1 is NetBIOS-over-TCP: a session
+request on port 139, then every message on the 4-byte NBT length
+header; the 32-byte CIFS header; OEM (8-bit) names; NT status.  It
+negotiates NT LM 0.12, authenticates with the OLD LM + NTLMv1
+challenge-response (not NTLMSSP) - which is what the down-level peers
+understand - lists with TRANS2 FIND_FIRST2 (info level 0x101,
+FILETIME + attributes + long name), opens with OPEN_ANDX, moves bytes
+with READ_ANDX / WRITE_ANDX, and uses the classic DELETE, CREATE
+DIRECTORY and DELETE DIRECTORY.
+
+LM + NTLMv1 NEED DES, which the SMB2 path (NTLMv2 = MD4 + HMAC-MD5)
+did not: SMBCRYPT gained a plain FIPS-46 DES, the LM one-way function
+and DESL (the three-key spread of a 16-byte hash over the 8-byte
+challenge).  SMBCTEST pins all of it against known answers: the
+textbook DES block, LM("") and LM("password"), and the MS-NLMP 4.2.2
+NTLMv1 worked example - so the auth math is proved against the
+authority, independent of any peer.
+
+THE REDIRECTOR chooses the protocol per mount.  NET USE gained /SMB1
+(NET.EXE), which sets NUF_SMB1 in the netuse_req; the kernel copies it
+into the mount request's NR_SPARE (DOS\NETFS.INC), and SMBFS.SYS reads
+it to connect on 139 and run smb1_connect instead of 445 and
+smb2_connect.  The session struct holds the one engine it needs in a
+union; a handful of sess_* wrappers fan out to smb1_* or smb2_*.
+
+THE SMB SERVER (CMD\NET\SMB\SMBSRV.C + SMBSRVDOS.C -> SMBSRV.EXE) is a
+native program that LISTENS on port 139 (SOCKLIB gained sl_listen /
+sl_accept over the stack's passive open) and serves a PM-DOS directory
+to SMB1 clients.  The protocol core SMBSRV.C is transport- and
+filesystem-agnostic - it answers NEGOTIATE..FIND..READ/WRITE through a
+srv_vfs vtable - so it runs two ways: the INT 21h back end on PM-DOS
+(SMBSRVDOS: 3Dh/3Fh/40h/4Eh, and the DTA find's DOS date turned back
+into a FILETIME) and a Win32 back end on the host (SMBSRVHOST) for
+proving.  `SMBSRV C:\` shares a drive; any SMB1 client mounts it.
+
+PROVED WITHOUT A WINDOWS SMB1 SERVER (Windows 11 has SMB1 off, and
+turning it on is a change to the daily driver nobody wanted).  Instead
+an INDEPENDENT reference peer was written from the wire format, not
+from this C - rig\smb1peer.pl, a Perl SMB1 server the client is proved
+against, so interop is shown against a second implementation.  The methodology is the project's usual host-first:
+  - SMB1 client over Winsock (SMB1HOST) vs smb1peer.pl: connect, list,
+    read, write+read-back, delete, mkdir, rmdir - all pass.
+  - SMB server over Winsock (SMBSRVHOST) vs the SAME proven client:
+    all pass (client validated above, so it validates the server).
+  - Then the VM: NET USE /SMB1 against smb1peer.pl reached through the
+    emulator guest-forward (10.0.2.200:139) - DIR root + subdir, TYPE,
+    COPY, MD, DEL, RD, NET USE, the share left as it started.
+  - And the VM server: PM-DOS running SMBSRV.EXE sharing C:\, reached
+    from the host through a port-forward, mounted by the proven
+    client - it listed 30 real PM-DOS files with their true sizes and
+    DOS attributes (PMIO.SYS read-only/hidden/system), read one,
+    wrote and read back a temp file, deleted it, made and removed a
+    directory.  PM-DOS served its own files over the wire.
+
+SECURITY.  The parsers read untrusted bytes - the client reads a
+server's replies, the server reads a client's requests - so each
+length and offset is checked before use: nbt_recv caps the frame to
+the buffer; FIND entries are walked inside the returned data count and
+names clamped to the field; a read reply's data offset is refused if
+it is past what arrived; and SMBSRVDOS's dpath, which joins an
+untrusted path onto the share root, is bounded on every byte it writes
+(a long remote name cannot overrun the DOS path buffer) and rejects
+"..".  The server's TRANS2 and WRITE offsets are kept inside the
+received message.
+
+LIMITS.  The dialect is NT LM 0.12, so a vanilla WfW 3.11 that only
+speaks LANMAN2.1 is not covered (Win95 up, and NT, are); the server is
+SMB1-only (a real Windows client reaches it only with its SMB1 client
+feature on); one client at a time on the server; no rename; park still
+drops a mapped SMB1 session as it does an SMB2 one.  Files are
+CMD\NET\SMB\SMB1.C/.H, SMBSRV.C/.H, SMBSRVDOS.C, SMBSRVHOST.C,
+SMB1HOST.C, additions to SMBCRYPT.C/.H and SMBCTEST.C; INC\REDIR.H/.INC
+(NUF_SMB1), DOS\NETFS.INC, CMD\NET\NET\NET.C; BUILD.CMD and MKHD.CMD
+(smb1.obj into SMBFS.SYS, the SMBSRV.EXE section, SMBSRV.EXE shipped).
+Delivered to S:\BIN, IMAGES and the 86Box VM; still v0.64, not
+committed; the reference peer is a host process that leaves nothing
+installed.
 
 
 EVERY NUMBER THAT CAME FROM OUTSIDE, MEASURED BEFORE IT IS USED

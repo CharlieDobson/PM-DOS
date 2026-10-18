@@ -10,40 +10,40 @@ menu, or press F1.  To leave, press ALT, F, X.
 
 <\aAbout PM-DOS\vAbout PM-DOS\v>
 
-<\aAcroread\vACROREAD\v>                   <\aDpmi=\vDPMI=\v>                     <\aMulti-config\vMultiple Configurations\v>
-<\aAttrib\vATTRIB\v>                     <\aDrivparm=\vDRIVPARM=\v>                 <\aNulltrap=\vNULLTRAP=\v>
-<\aAutocheck=\vAUTOCHECK=\v>                 <\aEcho\vECHO\v>                      <\aNumlock=\vNUMLOCK=\v>
-<\aBatch\vBatch Commands\v>                      <\aEdit\vEDIT\v>                      <\aPath\vPATH\v>
-<\aBreak\vBREAK\v>                      <\aEms=\vEMS=\v>                      <\aPause\vPAUSE\v>
-<\aBreak=\vBREAK=\v>                     <\aExit\vEXIT\v>                      <\aPmd\vPMD\v>
-<\aBuffers=\vBUFFERS=\v>                   <\aFc\vFC\v>                        <\aPrompt\vPROMPT\v>
-<\aCache\vCACHE\v>                      <\aFcbs=\vFCBS=\v>                     <\aRd\vRD\v>
-<\aCache=\vCACHE=\v>                     <\aFdisk\vFDISK\v>                     <\aRem\vREM\v>
-<\aCall\vCALL\v>                       <\aFiles=\vFILES=\v>                    <\aRen\vREN\v>
-<\aCd\vCD\v>                         <\aFind\vFIND\v>                      <\aScandisk\vSCANDISK\v>
-<\aCdex\vCDEX\v>                       <\aFor\vFOR\v>                       <\aScsi=\vSCSI=\v>
-<\aCdrom=\vCDROM=\v>                     <\aFormat\vFORMAT\v>                    <\aSet\vSET\v>
-<\aChcp\vCHCP\v>                       <\aGoto\vGOTO\v>                      <\aSet=\vSET=\v>
-<\aChkdsk\vCHKDSK\v>                     <\aHelp\vHELP\v>                      <\aShare=\vSHARE=\v>
-<\aChoice\vCHOICE\v>                     <\aIde32=\vIDE32=\v>                    <\aShell=\vSHELL=\v>
-<\aCls\vCLS\v>                        <\aIdecable=\vIDECABLE=\v>                 <\aShift\vSHIFT\v>
-<\aCmd\vCMD\v>                        <\aIdedma=\vIDEDMA=\v>                   <\aShutdown\vSHUTDOWN\v>
-<\aCommand\vCOMMAND\v>                    <\aIf\vIF\v>                        <\aSort\vSORT\v>
-<\aCONFIG\vCONFIG.SYS Commands\v>                     <\aInstall=\vINSTALL=\v>                  <\aStacks=\vSTACKS=\v>
-<\aCopy\vCOPY\v>                       <\aInstallhigh=\vINSTALLHIGH=\v>              <\aStarting\vStarting PM-DOS\v>
-<\aCountry=\vCOUNTRY=\v>                   <\aInternational\vInternational Commands\v>             <\aSwitches=\vSWITCHES=\v>
-<\aCtty\vCTTY\v>                       <\aIsapnp\vISAPNP\v>                    <\aSys\vSYS\v>
-<\aDate\vDATE\v>                       <\aKeyb\vKEYB\v>                      <\aTime\vTIME\v>
-<\aDefrag\vDEFRAG\v>                     <\aKeyrate=\vKEYRATE=\v>                  <\aType\vTYPE\v>
-<\aDel\vDEL\v>                        <\aLabel\vLABEL\v>                     <\aUndelete\vUNDELETE\v>
-<\aDevice=\vDEVICE=\v>                    <\aLastdrive=\vLASTDRIVE=\v>                <\aUndelete=\vUNDELETE=\v>
-<\aDevicehigh=\vDEVICEHIGH=\v>                <\aLfn=\vLFN=\v>                      <\aUsb\vUSB\v>
-<\aDir\vDIR\v>                        <\aLoadhigh\vLOADHIGH\v>                  <\aUsb=\vUSB=\v>
-<\aDiskcomp\vDISKCOMP\v>                   <\aMd\vMD\v>                        <\aVer\vVER\v>
-<\aDiskcopy\vDISKCOPY\v>                   <\aMem\vMEM\v>                       <\aVerify\vVERIFY\v>
-<\aDos=\vDOS=\v>                       <\aMore\vMORE\v>                      <\aVol\vVOL\v>
-<\aDoskey\vDOSKEY\v>                     <\aMount\vMOUNT\v>                     <\aWincache=\vWINCACHE=\v>
-<\aDosshell\vDOSSHELL\v>                   <\aMove\vMOVE\v>                      <\aXcopy\vXCOPY\v>
+<\aAcroread\vACROREAD\v>                 <\aDpmi\vDPMI=\v>                     <\aMulti-config\vMultiple Configurations\v>
+<\aAttrib\vATTRIB\v>                   <\aDrivparm\vDRIVPARM=\v>                 <\aNulltrap\vNULLTRAP=\v>
+<\aAutocheck\vAUTOCHECK=\v>                <\aEcho\vECHO\v>                     <\aNumlock\vNUMLOCK=\v>
+<\aBatch\vBatch Commands\v>                    <\aEdit\vEDIT\v>                     <\aPath\vPATH\v>
+<\aBreak\vBREAK\v>                    <\aEms\vEMS=\v>                      <\aPause\vPAUSE\v>
+<\aBreak (CONFIG.SYS)\vBREAK=\v>       <\aExit\vEXIT\v>                     <\aPmd\vPMD\v>
+<\aBuffers\vBUFFERS=\v>                  <\aFc\vFC\v>                       <\aPrompt\vPROMPT\v>
+<\aCache\vCACHE\v>                    <\aFcbs\vFCBS=\v>                     <\aRd\vRD\v>
+<\aCache (CONFIG.SYS)\vCACHE=\v>       <\aFdisk\vFDISK\v>                    <\aRem\vREM\v>
+<\aCall\vCALL\v>                     <\aFiles\vFILES=\v>                    <\aRen\vREN\v>
+<\aCd\vCD\v>                       <\aFind\vFIND\v>                     <\aScandisk\vSCANDISK\v>
+<\aCdex\vCDEX\v>                     <\aFor\vFOR\v>                      <\aScsi\vSCSI=\v>
+<\aCdrom\vCDROM=\v>                    <\aFormat\vFORMAT\v>                   <\aSet\vSET\v>
+<\aChcp\vCHCP\v>                     <\aGoto\vGOTO\v>                     <\aSet (CONFIG.SYS)\vSET=\v>
+<\aChkdsk\vCHKDSK\v>                   <\aHelp\vHELP\v>                     <\aShare\vSHARE=\v>
+<\aChoice\vCHOICE\v>                   <\aIde32\vIDE32=\v>                    <\aShell\vSHELL=\v>
+<\aCls\vCLS\v>                      <\aIdecable\vIDECABLE=\v>                 <\aShift\vSHIFT\v>
+<\aCmd\vCMD\v>                      <\aIdedma\vIDEDMA=\v>                   <\aShutdown\vSHUTDOWN\v>
+<\aCommand\vCOMMAND\v>                  <\aIf\vIF\v>                       <\aSort\vSORT\v>
+<\aCONFIG\vCONFIG.SYS Commands\v>                   <\aInstall\vINSTALL=\v>                  <\aStacks\vSTACKS=\v>
+<\aCopy\vCOPY\v>                     <\aInstallhigh\vINSTALLHIGH=\v>              <\aStarting\vStarting PM-DOS\v>
+<\aCountry\vCOUNTRY=\v>                  <\aInternational\vInternational Commands\v>            <\aSwitches\vSWITCHES=\v>
+<\aCtty\vCTTY\v>                     <\aIsapnp\vISAPNP\v>                   <\aSys\vSYS\v>
+<\aDate\vDATE\v>                     <\aKeyb\vKEYB\v>                     <\aTime\vTIME\v>
+<\aDefrag\vDEFRAG\v>                   <\aKeyrate\vKEYRATE=\v>                  <\aType\vTYPE\v>
+<\aDel\vDEL\v>                      <\aLabel\vLABEL\v>                    <\aUndelete\vUNDELETE\v>
+<\aDevice\vDEVICE=\v>                   <\aLastdrive\vLASTDRIVE=\v>                <\aUndelete (CONFIG.SYS)\vUNDELETE=\v>
+<\aDevicehigh\vDEVICEHIGH=\v>               <\aLfn\vLFN=\v>                      <\aUsb\vUSB\v>
+<\aDir\vDIR\v>                      <\aLoadhigh\vLOADHIGH\v>                 <\aUsb (CONFIG.SYS)\vUSB=\v>
+<\aDiskcomp\vDISKCOMP\v>                 <\aMd\vMD\v>                       <\aVer\vVER\v>
+<\aDiskcopy\vDISKCOPY\v>                 <\aMem\vMEM\v>                      <\aVerify\vVERIFY\v>
+<\aDos\vDOS=\v>                      <\aMore\vMORE\v>                     <\aVol\vVOL\v>
+<\aDoskey\vDOSKEY\v>                   <\aMount\vMOUNT\v>                    <\aWincache\vWINCACHE=\v>
+<\aDosshell\vDOSSHELL\v>                 <\aMove\vMOVE\v>                     <\aXcopy\vXCOPY\v>
 
 Every command and every CONFIG.SYS statement PM-DOS has is listed.  A
 command's topic says what it does, how it is written, and what each
@@ -55,27 +55,29 @@ switch means; Notes and Examples are a key away at the top of it.
 .topic About PM-DOS
                                  About PM-DOS
  
-PM-DOS is a 32-bit operating system that runs the programs written for
-MS-DOS.  The kernel runs in protected mode above the first megabyte and
-leaves nearly all of the 640K to DOS programs; its own commands are
-32-bit programs that have no such limit.
+PM-DOS is a 32-bit protected-mode operating system, fully backward
+compatible with 16-bit applications.  PM-DOS is an evolution of
+the Disk Operating System, including features not found in previous
+DOS releases.  PM-DOS also runs 32-bit applications that break the
+640K barrier.
 
-What it has that MS-DOS has not:
+Key features:
 
-Ч Long file names, the way Windows 95 names them, on FAT12, FAT16 and
-  FAT32 disks.  LFN= in CONFIG.SYS turns them off for programs that
-  cannot cope.
-Ч A disk cache, file sharing, expanded memory, a DPMI host, a mouse
-  driver and CD-ROM drivers built in.  There is no SMARTDRV, SHARE,
-  EMM386, MSCDEX or MOUSE to load.
-Ч IDE disks of any size, with UltraDMA; FAT32; partitions that FDISK
-  can move and resize.
-Ч Delete protection: a deleted file can be brought back with UNDELETE
-  until the space is needed.
-Ч A shell, CMD.EXE, with DOSKEY built in.  COMMAND.COM is also there,
-  for the DOS programs that start a shell of their own.
-
-What it needs: a 386 or later, 4MB of memory, and 1.5MB of disk.
+О©╫ Long File Names.
+О©╫ FAT16 and FAT32 partitions.
+О©╫ A disk cache, file sharing, expanded memory, a DPMI host and a
+  mouse driver, all in the kernel, with nothing to load.
+О©╫ IDE disks of any size, with UltraDMA up to UDMA6 (UltraDMS/133).
+О©╫ FDISK can create, delete, move, and resize partitions.  
+О©╫ CD-ROM drives, IDE and SCSI, with nothing to load.
+О©╫ Mount disk image and ISO files as drives.
+О©╫ USB keyboards, mice and flash drives.
+О©╫ ISA Plug and Play cards, set up with ISAPNP.
+О©╫ Delete protection built into the kernel.
+О©╫ Native SCANDISK, DEFRAG, DOSSHELL, EDIT, ACROREAD and HELP.
+  SCANDISK, DEFRAG and ACROREAD have a VBE graphics screen with /G.
+О©╫ ACPI-aware SHUTDOWN.EXE, which flushes the cache and turns off the machine.
+О©╫ The PM-DOS shell, CMD.EXE, with DOSKEY features built in.
 
 The command reference is the <\aContents\vContents\v>.  <\aCONFIG.SYS commands\vCONFIG\v>
 lists the statements CONFIG.SYS takes, and <\aStarting PM-DOS\vStarting\v>
@@ -124,28 +126,28 @@ says what happens when the machine starts.
 
  To move the cursor to the next link
 
- Ч Press TAB.  Or press the first letter of the link.
+ О©╫ Press TAB.  Or press the first letter of the link.
 
  To move the cursor to the previous link
 
- Ч Press SHIFT+TAB.  Or press SHIFT and the first letter of the link.
+ О©╫ Press SHIFT+TAB.  Or press SHIFT and the first letter of the link.
 
  To read the topic a link leads to
 
- Ч Click the link.  Or move the cursor onto it and press ENTER.
+ О©╫ Click the link.  Or move the cursor onto it and press ENTER.
 
  To see the contents
 
- Ч Click Contents on the bottom line, or press ALT+C.
+ О©╫ Click Contents on the bottom line, or press ALT+C.
 
  To read the topic after this one
 
- Ч Click Next on the bottom line, or press ALT+N.  The topics are in
+ О©╫ Click Next on the bottom line, or press ALT+N.  The topics are in
    the order the help file has them, which is the contents' order.
 
  To go back to the topics you have read
 
- Ч Click Back on the bottom line, or press ALT+B.  Each press goes
+ О©╫ Click Back on the bottom line, or press ALT+B.  Each press goes
    back one more topic.
 
 .context Searching
@@ -180,17 +182,17 @@ says what happens when the machine starts.
 
  To get help on a menu
 
- Ч Press ALT to go to the menu bar, move to the menu with the LEFT and
+ О©╫ Press ALT to go to the menu bar, move to the menu with the LEFT and
    RIGHT ARROW keys, and press F1.
 
  To get help on a command in a menu
 
- Ч Open the menu, move to the command with the UP and DOWN ARROW keys,
+ О©╫ Open the menu, move to the command with the UP and DOWN ARROW keys,
    and press F1.
 
  To get help on a dialog box
 
- Ч Press F1, or choose its Help button.
+ О©╫ Press F1, or choose its Help button.
 
  The help comes up in a box over whatever you were doing; choose OK to
  get back to it.
@@ -253,9 +255,9 @@ says what happens when the machine starts.
 
  The HELP command starts PM-DOS Help.
 
- Ч Type HELP on its own for the contents.
+ О©╫ Type HELP on its own for the contents.
 
- Ч Type HELP and the name of a command or a CONFIG.SYS statement to
+ О©╫ Type HELP and the name of a command or a CONFIG.SYS statement to
    open at its topic.  For example:
 
    help copy
@@ -290,7 +292,7 @@ says what happens when the machine starts.
                                   Cursor Keys
 
  To move the cursor             Press
-дддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд
+О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫
  One character left             LEFT ARROW
  One character right            RIGHT ARROW
  One word left                  CTRL+LEFT ARROW
@@ -309,7 +311,7 @@ says what happens when the machine starts.
                                 Scrolling Keys
 
  To scroll                      Press
-дддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд
+О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫
  One line up                    CTRL+UP ARROW
  One line down                  CTRL+DOWN ARROW
  One window up                  PAGE UP
@@ -322,7 +324,7 @@ says what happens when the machine starts.
                                    Link Keys
 
  To                                             Press
-дддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд
+О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫
  Move the cursor to the next link               TAB
  Move the cursor to the previous link           SHIFT+TAB
  Move to the next link starting with a letter   the letter
@@ -340,7 +342,7 @@ says what happens when the machine starts.
                                 Other Help Keys
 
  To                                             Press
-дддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд
+О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫
  Read how PM-DOS Help works                     F1
  Get help on a menu, a command or a dialog box  F1, with it in front
  Open the menu bar                              ALT, or F10
@@ -452,13 +454,13 @@ Shows the version of PM-DOS Help.
 
 Looks for text in every topic.
 
-здддддддддддддддд Find ддддддддддддддддддддддддддддддддддддд©
-Ё Find What: ╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠╠  Ё
-Ё                                                          Ё
-Ё   [ ] Match Upper/Lowercase          [ ] Whole Word     Ё
-Ё                                                          Ё
-Ё       < OK >          < Cancel >        < Help >         Ё
-юдддддддддддддддддддддддддддддддддддддддддддддддддддддддддды
+О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫ Find О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫д©
+О©╫ Find What: О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫  О©╫
+О©╫                                                          О©╫
+О©╫   [ ] Match Upper/Lowercase          [ ] Whole Word     О©╫
+О©╫                                                          О©╫
+О©╫       < OK >          < Cancel >        < Help >         О©╫
+О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫
 
 Find What holds the text to look for; the word the cursor was on is
 offered.  Up to 127 characters.
@@ -497,7 +499,7 @@ The choice lasts until PM-DOS Help is left.
 .topic CMD
 .freeze 3
 \i\aNotes\vCMD--Notes\v  \aExamples\vCMD--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      CMD
  
@@ -538,9 +540,9 @@ see <\aSHELL\vSHELL\v>.
 .topic CMD--Notes
 .freeze 3
 \i\aExamples\vCMD--Examples\v  \aSyntax\vCMD\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                                CMDддNotes
+                                CMDО©╫О©╫Notes
  
 \bNested shells\p
 
@@ -573,9 +575,9 @@ one command's output to the next one's input:
 .topic CMD--Examples
 .freeze 3
 \i\aSyntax\vCMD\v  \aNotes\vCMD--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              CMDддExamples
+                              CMDО©╫О©╫Examples
  
 To run a batch file and come straight back to the prompt with its
 errorlevel:
@@ -594,7 +596,7 @@ To start a second shell, work in it, and come back:
 .topic COMMAND
 .freeze 3
 \i\aNotes\vCOMMAND--Notes\v  \aExamples\vCOMMAND--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                    COMMAND
  
@@ -648,9 +650,9 @@ For PM-DOS's own shell, see <\aCMD\vCMD\v>.
 .topic COMMAND--Notes
 .freeze 3
 \i\aExamples\vCOMMAND--Examples\v  \aSyntax\vCOMMAND\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              COMMANDддNotes
+                              COMMANDО©╫О©╫Notes
  
 \bWhat it has\p
 
@@ -671,9 +673,9 @@ be run from inside it; MS-DOS's own 16-bit versions can.
 .topic COMMAND--Examples
 .freeze 3
 \i\aSyntax\vCOMMAND\v  \aNotes\vCOMMAND--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                            COMMANDддExamples
+                            COMMANDО©╫О©╫Examples
  
 To run a batch file under the 16-bit shell and see what it prints:
 
@@ -685,7 +687,7 @@ To run a batch file under the 16-bit shell and see what it prints:
 .topic BREAK
 .freeze 3
 \i\aNotes\vBREAK--Notes\v  \aExamples\vBREAK--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                     BREAK
  
@@ -716,9 +718,9 @@ BREAK= in CONFIG.SYS sets the same flag at boot: see <\aBREAK (CONFIG.SYS)\vBREA
 .topic BREAK--Notes
 .freeze 3
 \i\aExamples\vBREAK--Examples\v  \aSyntax\vBREAK\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               BREAKддNotes
+                               BREAKО©╫О©╫Notes
  
 \bWhat the setting does here\p
 
@@ -731,9 +733,9 @@ stops a command or a batch file whichever way it is set.
 .topic BREAK--Examples
 .freeze 3
 \i\aSyntax\vBREAK\v  \aNotes\vBREAK--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             BREAKддExamples
+                             BREAKО©╫О©╫Examples
  
 To turn extended checking on:
 
@@ -749,7 +751,7 @@ To see whether it is on:
 .topic CALL
 .freeze 3
 \i\aNotes\vCALL--Notes\v  \aExamples\vCALL--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      CALL
  
@@ -777,9 +779,9 @@ For the other commands written for batch files, see <\aBatch Commands\vBatch\v>.
 .topic CALL--Notes
 .freeze 3
 \i\aExamples\vCALL--Examples\v  \aSyntax\vCALL\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               CALLддNotes
+                               CALLО©╫О©╫Notes
  
 \bWithout CALL\p
 
@@ -802,9 +804,9 @@ each command inside it redirects for itself.
 .topic CALL--Examples
 .freeze 3
 \i\aSyntax\vCALL\v  \aNotes\vCALL--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              CALLддExamples
+                              CALLО©╫О©╫Examples
  
 To run CHECK.BAT from inside another batch file and go on afterwards:
 
@@ -823,7 +825,7 @@ To pass it two parameters:
 .topic CD (CHDIR)
 .freeze 3
 \i\aNotes\vCD--Notes\v  \aExamples\vCD--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                   CD (CHDIR)
  
@@ -858,9 +860,9 @@ To make a directory, see <\aMD\vMD\v>; to remove one, see <\aRD\vRD\v>.
 .topic CD (CHDIR)--Notes
 .freeze 3
 \i\aExamples\vCD--Examples\v  \aSyntax\vCD\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                            CD (CHDIR)ддNotes
+                            CD (CHDIR)О©╫О©╫Notes
  
 \bLong names\p
 
@@ -883,9 +885,9 @@ directory under the current one.
 .topic CD (CHDIR)--Examples
 .freeze 3
 \i\aSyntax\vCD\v  \aNotes\vCD--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                           CD (CHDIR)ддExamples
+                           CD (CHDIR)О©╫О©╫Examples
  
 To go to the directory SPECS under the current one:
 
@@ -910,7 +912,7 @@ To see where you are on drive D:
 .topic CHCP
 .freeze 3
 \i\aNotes\vCHCP--Notes\v  \aExamples\vCHCP--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      CHCP
  
@@ -939,9 +941,9 @@ the keyboard.
 .topic CHCP--Notes
 .freeze 3
 \i\aExamples\vCHCP--Examples\v  \aSyntax\vCHCP\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               CHCPддNotes
+                               CHCPО©╫О©╫Notes
  
 \bWhat a code page changes\p
 
@@ -965,9 +967,9 @@ loaded, so that its table matches.
 .topic CHCP--Examples
 .freeze 3
 \i\aSyntax\vCHCP\v  \aNotes\vCHCP--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              CHCPддExamples
+                              CHCPО©╫О©╫Examples
  
 To see the code page in use:
 
@@ -983,7 +985,7 @@ To change to code page 850:
 .topic CLS
 .freeze 3
 
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      CLS
  
@@ -1001,7 +1003,7 @@ The cleared screen shows the prompt and the cursor, and nothing else.
 .topic COPY
 .freeze 3
 \i\aNotes\vCOPY--Notes\v  \aExamples\vCOPY--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      COPY
  
@@ -1056,9 +1058,9 @@ diskette, see <\aDISKCOPY\vDISKCOPY\v>.
 .topic COPY--Notes
 .freeze 3
 \i\aExamples\vCOPY--Examples\v  \aSyntax\vCOPY\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               COPYддNotes
+                               COPYО©╫О©╫Notes
  
 \bAsking before replacing\p
 
@@ -1094,9 +1096,9 @@ can hold one.
 .topic COPY--Examples
 .freeze 3
 \i\aSyntax\vCOPY\v  \aNotes\vCOPY--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              COPYддExamples
+                              COPYО©╫О©╫Examples
  
 To copy MEMO.DOC to LETTER.DOC in the current directory:
 
@@ -1124,7 +1126,7 @@ To copy a file and check the copy:
 .topic CTTY
 .freeze 3
 \i\aNotes\vCTTY--Notes\v  \aExamples\vCTTY--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      CTTY
  
@@ -1150,9 +1152,9 @@ see <\aCMD\vCMD\v>.
 .topic CTTY--Notes
 .freeze 3
 \i\aExamples\vCTTY--Examples\v  \aSyntax\vCTTY\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               CTTYддNotes
+                               CTTYО©╫О©╫Notes
  
 \bComing back\p
 
@@ -1172,9 +1174,9 @@ the BIOS keeps using it.
 .topic CTTY--Examples
 .freeze 3
 \i\aSyntax\vCTTY\v  \aNotes\vCTTY--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              CTTYддExamples
+                              CTTYО©╫О©╫Examples
  
 To take commands from the first serial port:
 
@@ -1190,7 +1192,7 @@ To come back to the keyboard and screen, typed on that port:
 .topic DATE
 .freeze 3
 \i\aNotes\vDATE--Notes\v  \aExamples\vDATE--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      DATE
  
@@ -1220,9 +1222,9 @@ To set the time, see <\aTIME\vTIME\v>.  To choose the date's order, see
 .topic DATE--Notes
 .freeze 3
 \i\aExamples\vDATE--Examples\v  \aSyntax\vDATE\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               DATEддNotes
+                               DATEО©╫О©╫Notes
  
 \bWhere the date goes\p
 
@@ -1240,9 +1242,9 @@ A year can be written in full, 1980 to 2099, or as two digits: 80 to
 .topic DATE--Examples
 .freeze 3
 \i\aSyntax\vDATE\v  \aNotes\vDATE--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              DATEддExamples
+                              DATEО©╫О©╫Examples
  
 To set the date to the 21st of March 2026, with the United States
 setting:
@@ -1261,7 +1263,7 @@ With COUNTRY=044 (the United Kingdom):
 .topic DEL (ERASE)
 .freeze 3
 \i\aNotes\vDEL--Notes\v  \aExamples\vDEL--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                  DEL (ERASE)
  
@@ -1298,9 +1300,9 @@ see <\aRD\vRD\v>.
 .topic DEL (ERASE)--Notes
 .freeze 3
 \i\aExamples\vDEL--Examples\v  \aSyntax\vDEL\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                            DEL (ERASE)ддNotes
+                            DEL (ERASE)О©╫О©╫Notes
  
 \bDelete protection\p
 
@@ -1324,9 +1326,9 @@ DEL deletes files, not directories.  RD removes an empty directory.
 .topic DEL (ERASE)--Examples
 .freeze 3
 \i\aSyntax\vDEL\v  \aNotes\vDEL--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                          DEL (ERASE)ддExamples
+                          DEL (ERASE)О©╫О©╫Examples
  
 To delete one file:
 
@@ -1346,7 +1348,7 @@ To delete every .TMP file in \\WORK and the directories under it:
 .topic DIR
 .freeze 3
 \i\aNotes\vDIR--Notes\v  \aExamples\vDIR--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      DIR
  
@@ -1425,9 +1427,9 @@ For the directories alone, laid out as a tree, see <\aDOSSHELL\vDOSSHELL\v>.
 .topic DIR--Notes
 .freeze 3
 \i\aExamples\vDIR--Examples\v  \aSyntax\vDIR\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                                DIRддNotes
+                                DIRО©╫О©╫Notes
  
 \bDIRCMD\p
 
@@ -1464,9 +1466,9 @@ is what a batch file or a pipe wants.
 .topic DIR--Examples
 .freeze 3
 \i\aSyntax\vDIR\v  \aNotes\vDIR--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              DIRддExamples
+                              DIRО©╫О©╫Examples
  
 To list the current directory one screen at a time:
 
@@ -1494,7 +1496,7 @@ To make every listing wide and paused until the variable is changed:
 .topic DOSKEY
 .freeze 3
 \i\aNotes\vDOSKEY--Notes\v  \aExamples\vDOSKEY--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                     DOSKEY
  
@@ -1546,9 +1548,9 @@ For the shell itself, see <\aCMD\vCMD\v>.
 .topic DOSKEY--Notes
 .freeze 3
 \i\aExamples\vDOSKEY--Examples\v  \aSyntax\vDOSKEY\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              DOSKEYддNotes
+                              DOSKEYО©╫О©╫Notes
  
 \bRecalling commands\p
 
@@ -1588,9 +1590,9 @@ loaded for it.
 .topic DOSKEY--Examples
 .freeze 3
 \i\aSyntax\vDOSKEY\v  \aNotes\vDOSKEY--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             DOSKEYддExamples
+                             DOSKEYО©╫О©╫Examples
  
 To see the commands typed so far:
 
@@ -1614,7 +1616,7 @@ To remove it:
 .topic ECHO
 .freeze 3
 \i\aNotes\vECHO--Notes\v  \aExamples\vECHO--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      ECHO
  
@@ -1645,9 +1647,9 @@ For the other commands written for batch files, see <\aBatch Commands\vBatch\v>.
 .topic ECHO--Notes
 .freeze 3
 \i\aExamples\vECHO--Examples\v  \aSyntax\vECHO\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               ECHOддNotes
+                               ECHOО©╫О©╫Notes
  
 \bThe usual first line\p
 
@@ -1670,9 +1672,9 @@ one-line file, and ECHO text >> FILE.TXT adds a line to it.
 .topic ECHO--Examples
 .freeze 3
 \i\aSyntax\vECHO\v  \aNotes\vECHO--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              ECHOддExamples
+                              ECHOО©╫О©╫Examples
  
 To stop a batch file echoing its commands, the line itself included:
 
@@ -1693,7 +1695,7 @@ To write a line into a file:
 .topic EXIT
 .freeze 3
 \i\aNotes\vEXIT--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      EXIT
  
@@ -1712,9 +1714,9 @@ For the shells, see <\aCMD\vCMD\v> and <\aCOMMAND\vCOMMAND\v>.
 .topic EXIT--Notes
 .freeze 3
 \i\aSyntax\vEXIT\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               EXITддNotes
+                               EXITО©╫О©╫Notes
  
 \bThe first shell\p
 
@@ -1728,7 +1730,7 @@ whatever started it.
 .topic FOR
 .freeze 3
 \i\aNotes\vFOR--Notes\v  \aExamples\vFOR--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      FOR
  
@@ -1784,9 +1786,9 @@ For the other commands written for batch files, see <\aBatch Commands\vBatch\v>.
 .topic FOR--Notes
 .freeze 3
 \i\aExamples\vFOR--Examples\v  \aSyntax\vFOR\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                                FORддNotes
+                                FORО©╫О©╫Notes
  
 \bTwo percent signs\p
 
@@ -1809,9 +1811,9 @@ batch file with CALL, and that batch file can have a FOR of its own.
 .topic FOR--Examples
 .freeze 3
 \i\aSyntax\vFOR\v  \aNotes\vFOR--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              FORддExamples
+                              FORО©╫О©╫Examples
  
 To type every .TXT file in the current directory:
 
@@ -1836,7 +1838,7 @@ by commas:
 .topic GOTO
 .freeze 3
 \i\aNotes\vGOTO--Notes\v  \aExamples\vGOTO--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      GOTO
  
@@ -1862,9 +1864,9 @@ other commands written for batch files, see <\aBatch Commands\vBatch\v>.
 .topic GOTO--Notes
 .freeze 3
 \i\aExamples\vGOTO--Examples\v  \aSyntax\vGOTO\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               GOTOддNotes
+                               GOTOО©╫О©╫Notes
  
 \bLabels\p
 
@@ -1883,9 +1885,9 @@ backwards works and makes a loop.
 .topic GOTO--Examples
 .freeze 3
 \i\aSyntax\vGOTO\v  \aNotes\vGOTO--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              GOTOддExamples
+                              GOTOО©╫О©╫Examples
  
 To skip the rest of a batch file when there is no parameter:
 
@@ -1902,7 +1904,7 @@ To skip the rest of a batch file when there is no parameter:
 .topic IF
 .freeze 3
 \i\aNotes\vIF--Notes\v  \aExamples\vIF--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                       IF
  
@@ -1942,9 +1944,9 @@ For the other commands written for batch files, see <\aBatch Commands\vBatch\v>.
 .topic IF--Notes
 .freeze 3
 \i\aExamples\vIF--Examples\v  \aSyntax\vIF\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                                IFддNotes
+                                IFО©╫О©╫Notes
  
 \bERRORLEVEL means "at least"\p
 
@@ -1969,9 +1971,9 @@ always has: IF EXIST C:\\DOS\\NUL.
 .topic IF--Examples
 .freeze 3
 \i\aSyntax\vIF\v  \aNotes\vIF--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               IFддExamples
+                               IFО©╫О©╫Examples
  
 To stop when a file is missing:
 
@@ -1995,7 +1997,7 @@ To check a parameter:
 .topic LOADHIGH (LH)
 .freeze 3
 \i\aNotes\vLOADHIGH--Notes\v  \aExamples\vLOADHIGH--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                 LOADHIGH (LH)
  
@@ -2024,9 +2026,9 @@ For the upper memory LOADHIGH uses, see <\aDOS\vDOS\v>.  For drivers, see
 .topic LOADHIGH (LH)--Notes
 .freeze 3
 \i\aExamples\vLOADHIGH--Examples\v  \aSyntax\vLOADHIGH\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                           LOADHIGH (LH)ддNotes
+                           LOADHIGH (LH)О©╫О©╫Notes
  
 \bWhen it loads low\p
 
@@ -2044,9 +2046,9 @@ anyway.  LOADHIGH is for DOS programs.
 .topic LOADHIGH (LH)--Examples
 .freeze 3
 \i\aSyntax\vLOADHIGH\v  \aNotes\vLOADHIGH--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                         LOADHIGH (LH)ддExamples
+                         LOADHIGH (LH)О©╫О©╫Examples
  
 To load MS-DOS's DOSKEY into upper memory for COMMAND.COM:
 
@@ -2060,7 +2062,7 @@ To load MS-DOS's DOSKEY into upper memory for COMMAND.COM:
 .topic MD (MKDIR)
 .freeze 3
 \i\aNotes\vMD--Notes\v  \aExamples\vMD--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                   MD (MKDIR)
  
@@ -2086,9 +2088,9 @@ To change to a directory, see <\aCD\vCD\v>; to remove one, see <\aRD\vRD\v>.
 .topic MD (MKDIR)--Notes
 .freeze 3
 \i\aExamples\vMD--Examples\v  \aSyntax\vMD\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                            MD (MKDIR)ддNotes
+                            MD (MKDIR)О©╫О©╫Notes
  
 \bLong names\p
 
@@ -2105,9 +2107,9 @@ The directory above the new one must exist already: MD \\A\\B needs \\A.
 .topic MD (MKDIR)--Examples
 .freeze 3
 \i\aSyntax\vMD\v  \aNotes\vMD--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                           MD (MKDIR)ддExamples
+                           MD (MKDIR)О©╫О©╫Examples
  
 To make SPECS under the current directory:
 
@@ -2127,7 +2129,7 @@ To make a directory with a long name:
 .topic PATH
 .freeze 3
 \i\aNotes\vPATH--Notes\v  \aExamples\vPATH--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      PATH
  
@@ -2160,9 +2162,9 @@ PATH is kept in the environment; see <\aSET\vSET\v>.
 .topic PATH--Notes
 .freeze 3
 \i\aExamples\vPATH--Examples\v  \aSyntax\vPATH\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               PATHддNotes
+                               PATHО©╫О©╫Notes
  
 \bThe order\p
 
@@ -2185,9 +2187,9 @@ The path is a line of the environment, which SET shows.
 .topic PATH--Examples
 .freeze 3
 \i\aSyntax\vPATH\v  \aNotes\vPATH--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              PATHддExamples
+                              PATHО©╫О©╫Examples
  
 To search C:\\DOS and then C:\\UTILS after the current directory:
 
@@ -2207,7 +2209,7 @@ To clear it:
 .topic PAUSE
 .freeze 3
 \i\aNotes\vPAUSE--Notes\v  \aExamples\vPAUSE--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                     PAUSE
  
@@ -2229,9 +2231,9 @@ commands written for batch files, see <\aBatch Commands\vBatch\v>.
 .topic PAUSE--Notes
 .freeze 3
 \i\aExamples\vPAUSE--Examples\v  \aSyntax\vPAUSE\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               PAUSEддNotes
+                               PAUSEО©╫О©╫Notes
  
 \bStopping the batch file\p
 
@@ -2247,9 +2249,9 @@ what is being waited for.
 .topic PAUSE--Examples
 .freeze 3
 \i\aSyntax\vPAUSE\v  \aNotes\vPAUSE--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             PAUSEддExamples
+                             PAUSEО©╫О©╫Examples
  
 To let the user change diskettes:
 
@@ -2263,7 +2265,7 @@ To let the user change diskettes:
 .topic PROMPT
 .freeze 3
 \i\aNotes\vPROMPT--Notes\v  \aExamples\vPROMPT--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                     PROMPT
  
@@ -2303,9 +2305,9 @@ The prompt is the PROMPT environment variable; see <\aSET\vSET\v>.
 .topic PROMPT--Notes
 .freeze 3
 \i\aExamples\vPROMPT--Examples\v  \aSyntax\vPROMPT\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              PROMPTддNotes
+                              PROMPTО©╫О©╫Notes
  
 \bThe usual one\p
 
@@ -2322,9 +2324,9 @@ above the drive and directory.
 .topic PROMPT--Examples
 .freeze 3
 \i\aSyntax\vPROMPT\v  \aNotes\vPROMPT--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             PROMPTддExamples
+                             PROMPTО©╫О©╫Examples
  
 To show the directory and a >:
 
@@ -2346,7 +2348,7 @@ To show a message:
 .topic RD (RMDIR)
 .freeze 3
 \i\aNotes\vRD--Notes\v  \aExamples\vRD--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                   RD (RMDIR)
  
@@ -2372,9 +2374,9 @@ directory, see <\aCD\vCD\v>.
 .topic RD (RMDIR)--Notes
 .freeze 3
 \i\aExamples\vRD--Examples\v  \aSyntax\vRD\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                            RD (RMDIR)ддNotes
+                            RD (RMDIR)О©╫О©╫Notes
  
 \bIt must be empty\p
 
@@ -2391,9 +2393,9 @@ cannot be removed: CD out of it first.
 .topic RD (RMDIR)--Examples
 .freeze 3
 \i\aSyntax\vRD\v  \aNotes\vRD--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                           RD (RMDIR)ддExamples
+                           RD (RMDIR)О©╫О©╫Examples
  
 To remove \\WORK\\OLD once it is empty:
 
@@ -2405,7 +2407,7 @@ To remove \\WORK\\OLD once it is empty:
 .topic REM
 .freeze 3
 \i\aNotes\vREM--Notes\v  \aExamples\vREM--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      REM
  
@@ -2430,9 +2432,9 @@ For the other commands written for batch files, see <\aBatch Commands\vBatch\v>.
 .topic REM--Notes
 .freeze 3
 \i\aExamples\vREM--Examples\v  \aSyntax\vREM\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                                REMддNotes
+                                REMО©╫О©╫Notes
  
 \bIn CONFIG.SYS\p
 
@@ -2449,9 +2451,9 @@ runs the line.  Keep them out of remarks, or turn echoing off.
 .topic REM--Examples
 .freeze 3
 \i\aSyntax\vREM\v  \aNotes\vREM--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              REMддExamples
+                              REMО©╫О©╫Examples
  
     rem This batch file backs up \\LETTERS to drive A
  
@@ -2463,7 +2465,7 @@ runs the line.  Keep them out of remarks, or turn echoing off.
 .topic REN (RENAME)
 .freeze 3
 \i\aNotes\vREN--Notes\v  \aExamples\vREN--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                  REN (RENAME)
  
@@ -2491,9 +2493,9 @@ To move files to another directory, see <\aMOVE\vMOVE\v>.
 .topic REN (RENAME)--Notes
 .freeze 3
 \i\aExamples\vREN--Examples\v  \aSyntax\vREN\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                           REN (RENAME)ддNotes
+                           REN (RENAME)О©╫О©╫Notes
  
 \bWildcards\p
 
@@ -2516,9 +2518,9 @@ Put it in quotes.
 .topic REN (RENAME)--Examples
 .freeze 3
 \i\aSyntax\vREN\v  \aNotes\vREN--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                          REN (RENAME)ддExamples
+                          REN (RENAME)О©╫О©╫Examples
  
 To rename one file:
 
@@ -2538,7 +2540,7 @@ To rename a directory:
 .topic SET
 .freeze 3
 \i\aNotes\vSET--Notes\v  \aExamples\vSET--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      SET
  
@@ -2571,9 +2573,9 @@ SET in CONFIG.SYS sets a variable before AUTOEXEC.BAT runs: see
 .topic SET--Notes
 .freeze 3
 \i\aExamples\vSET--Examples\v  \aSyntax\vSET\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                                SETддNotes
+                                SETО©╫О©╫Notes
  
 \bWho sees a variable\p
 
@@ -2599,9 +2601,9 @@ gone when that shell or program ends.
 .topic SET--Examples
 .freeze 3
 \i\aSyntax\vSET\v  \aNotes\vSET--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              SETддExamples
+                              SETО©╫О©╫Examples
  
 To set a variable:
 
@@ -2621,7 +2623,7 @@ To see them all:
 .topic SHIFT
 .freeze 3
 \i\aNotes\vSHIFT--Notes\v  \aExamples\vSHIFT--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                     SHIFT
  
@@ -2641,9 +2643,9 @@ For the other commands written for batch files, see <\aBatch Commands\vBatch\v>.
 .topic SHIFT--Notes
 .freeze 3
 \i\aExamples\vSHIFT--Examples\v  \aSyntax\vSHIFT\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               SHIFTддNotes
+                               SHIFTО©╫О©╫Notes
  
 \bMore than nine\p
 
@@ -2659,9 +2661,9 @@ A parameter shifted off %0 is gone.
 .topic SHIFT--Examples
 .freeze 3
 \i\aSyntax\vSHIFT\v  \aNotes\vSHIFT--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             SHIFTддExamples
+                             SHIFTО©╫О©╫Examples
  
 To copy every file named on the command line to drive A:
 
@@ -2678,7 +2680,7 @@ To copy every file named on the command line to drive A:
 .topic TIME
 .freeze 3
 \i\aNotes\vTIME--Notes\v  \aExamples\vTIME--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      TIME
  
@@ -2707,9 +2709,9 @@ To set the date, see <\aDATE\vDATE\v>.
 .topic TIME--Notes
 .freeze 3
 \i\aExamples\vTIME--Examples\v  \aSyntax\vTIME\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               TIMEддNotes
+                               TIMEО©╫О©╫Notes
  
 \bWhere the time goes\p
 
@@ -2726,9 +2728,9 @@ the minutes when the time is shown.  Typing it, a colon always works.
 .topic TIME--Examples
 .freeze 3
 \i\aSyntax\vTIME\v  \aNotes\vTIME--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              TIMEддExamples
+                              TIMEО©╫О©╫Examples
  
 To set the time to twenty past two in the afternoon:
 
@@ -2741,7 +2743,7 @@ To set the time to twenty past two in the afternoon:
 .topic TYPE
 .freeze 3
 \i\aNotes\vTYPE--Notes\v  \aExamples\vTYPE--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      TYPE
  
@@ -2766,9 +2768,9 @@ change a file, see <\aEDIT\vEDIT\v>.
 .topic TYPE--Notes
 .freeze 3
 \i\aExamples\vTYPE--Examples\v  \aSyntax\vTYPE\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               TYPEддNotes
+                               TYPEО©╫О©╫Notes
  
 \bLong files\p
 
@@ -2789,9 +2791,9 @@ Ctrl+Z.
 .topic TYPE--Examples
 .freeze 3
 \i\aSyntax\vTYPE\v  \aNotes\vTYPE--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              TYPEддExamples
+                              TYPEО©╫О©╫Examples
  
 To show a file:
 
@@ -2807,7 +2809,7 @@ To show it a screen at a time:
 .topic VER
 .freeze 3
 
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      VER
  
@@ -2823,7 +2825,7 @@ Shows the version of PM-DOS.
 .topic VERIFY
 .freeze 3
 \i\aNotes\vVERIFY--Notes\v  \aExamples\vVERIFY--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                     VERIFY
  
@@ -2853,9 +2855,9 @@ COPY /V and XCOPY /V check one copy without changing the setting: see
 .topic VERIFY--Notes
 .freeze 3
 \i\aExamples\vVERIFY--Examples\v  \aSyntax\vVERIFY\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              VERIFYддNotes
+                              VERIFYО©╫О©╫Notes
  
 \bThe cache\p
 
@@ -2867,9 +2869,9 @@ behind, so that what is checked is what is on the disk.  See <\aCACHE\vCACHE\v>.
 .topic VERIFY--Examples
 .freeze 3
 \i\aSyntax\vVERIFY\v  \aNotes\vVERIFY--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             VERIFYддExamples
+                             VERIFYО©╫О©╫Examples
  
 To turn checking on:
 
@@ -2881,7 +2883,7 @@ To turn checking on:
 .topic VOL
 .freeze 3
 \i\aExamples\vVOL--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      VOL
  
@@ -2905,9 +2907,9 @@ To change the label, see <\aLABEL\vLABEL\v>.
 .topic VOL--Examples
 .freeze 3
 \i\aSyntax\vVOL\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              VOLддExamples
+                              VOLО©╫О©╫Examples
  
 To see drive A's label:
 
@@ -2947,7 +2949,7 @@ see <\aStarting PM-DOS\vStarting\v>.
 .topic ACROREAD
 .freeze 3
 \i\aNotes\vACROREAD--Notes\v  \aExamples\vACROREAD--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                    ACROREAD
  
@@ -2989,9 +2991,9 @@ To read a plain text file, see <\aEDIT\vEDIT\v> or <\aTYPE\vTYPE\v>.
 .topic ACROREAD--Notes
 .freeze 3
 \i\aExamples\vACROREAD--Examples\v  \aSyntax\vACROREAD\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             ACROREADддNotes
+                             ACROREADО©╫О©╫Notes
  
 \bThe screens\p
 
@@ -3013,9 +3015,9 @@ the program knows how; what it leaves out is left blank.
 .topic ACROREAD--Examples
 .freeze 3
 \i\aSyntax\vACROREAD\v  \aNotes\vACROREAD--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                            ACROREADддExamples
+                            ACROREADО©╫О©╫Examples
  
 To read a manual:
 
@@ -3035,7 +3037,7 @@ To print the words of a document:
 .topic ATTRIB
 .freeze 3
 \i\aNotes\vATTRIB--Notes\v  \aExamples\vATTRIB--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                     ATTRIB
  
@@ -3089,9 +3091,9 @@ To copy files by their archive attribute, see <\aXCOPY\vXCOPY\v>.
 .topic ATTRIB--Notes
 .freeze 3
 \i\aExamples\vATTRIB--Examples\v  \aSyntax\vATTRIB\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              ATTRIBддNotes
+                              ATTRIBО©╫О©╫Notes
  
 \bWhat it shows\p
 
@@ -3115,9 +3117,9 @@ read-only, hidden and system, and SYS puts the marks back.
 .topic ATTRIB--Examples
 .freeze 3
 \i\aSyntax\vATTRIB\v  \aNotes\vATTRIB--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             ATTRIBддExamples
+                             ATTRIBО©╫О©╫Examples
  
 To see the attributes of every file here:
 
@@ -3142,7 +3144,7 @@ backup:
 .topic CACHE
 .freeze 3
 \i\aNotes\vCACHE--Notes\v  \aExamples\vCACHE--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                     CACHE
  
@@ -3196,9 +3198,9 @@ before switching off.
 .topic CACHE--Notes
 .freeze 3
 \i\aExamples\vCACHE--Examples\v  \aSyntax\vCACHE\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               CACHEддNotes
+                               CACHEО©╫О©╫Notes
  
 \bWhat is cached\p
 
@@ -3224,9 +3226,9 @@ three come from CACHE= in CONFIG.SYS.
 .topic CACHE--Examples
 .freeze 3
 \i\aSyntax\vCACHE\v  \aNotes\vCACHE--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             CACHEддExamples
+                             CACHEО©╫О©╫Examples
  
 To see the report with the hit counts:
 
@@ -3247,7 +3249,7 @@ To stop caching drive A: and keep write-behind on for C:
 .topic CDEX
 .freeze 3
 \i\aNotes\vCDEX--Notes\v  \aExamples\vCDEX--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      CDEX
  
@@ -3268,9 +3270,9 @@ SCSI drivers on and off.  To give an .ISO file a drive letter, see
 .topic CDEX--Notes
 .freeze 3
 \i\aExamples\vCDEX--Examples\v  \aSyntax\vCDEX\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               CDEXддNotes
+                               CDEXО©╫О©╫Notes
  
 \bWhat the lines say\p
 
@@ -3290,9 +3292,9 @@ letter from boot.  There is nothing to load.
 .topic CDEX--Examples
 .freeze 3
 \i\aSyntax\vCDEX\v  \aNotes\vCDEX--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              CDEXддExamples
+                              CDEXО©╫О©╫Examples
  
     cdex
  
@@ -3302,7 +3304,7 @@ letter from boot.  There is nothing to load.
 .topic CHKDSK
 .freeze 3
 \i\aNotes\vCHKDSK--Notes\v  \aExamples\vCHKDSK--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                     CHKDSK
  
@@ -3342,9 +3344,9 @@ CHKDSK at startup on a disk that was not shut down properly.
 .topic CHKDSK--Notes
 .freeze 3
 \i\aExamples\vCHKDSK--Examples\v  \aSyntax\vCHKDSK\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              CHKDSKддNotes
+                              CHKDSKО©╫О©╫Notes
  
 \bWhat it checks\p
 
@@ -3373,9 +3375,9 @@ CHKDSK cannot check a network drive.
 .topic CHKDSK--Examples
 .freeze 3
 \i\aSyntax\vCHKDSK\v  \aNotes\vCHKDSK--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             CHKDSKддExamples
+                             CHKDSKО©╫О©╫Examples
  
 To check drive C and fix what is wrong:
 
@@ -3391,7 +3393,7 @@ To find out whether a file is in one piece:
 .topic CHOICE
 .freeze 3
 \i\aNotes\vCHOICE--Notes\v  \aExamples\vCHOICE--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                     CHOICE
  
@@ -3431,9 +3433,9 @@ for batch files, see <\aBatch Commands\vBatch\v>.
 .topic CHOICE--Notes
 .freeze 3
 \i\aExamples\vCHOICE--Examples\v  \aSyntax\vCHOICE\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              CHOICEддNotes
+                              CHOICEО©╫О©╫Notes
  
 \bThe errorlevel\p
 
@@ -3450,9 +3452,9 @@ A key that is not in the list makes a beep and CHOICE waits again.
 .topic CHOICE--Examples
 .freeze 3
 \i\aSyntax\vCHOICE\v  \aNotes\vCHOICE--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             CHOICEддExamples
+                             CHOICEО©╫О©╫Examples
  
 To ask yes or no:
 
@@ -3470,7 +3472,7 @@ To offer three choices and take the first after ten seconds:
 .topic DEFRAG
 .freeze 3
 \i\aNotes\vDEFRAG--Notes\v  \aExamples\vDEFRAG--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                     DEFRAG
  
@@ -3527,9 +3529,9 @@ errors.  <\aCHKDSK\vCHKDSK\v> reports whether a file is in one piece.
 .topic DEFRAG--Notes
 .freeze 3
 \i\aExamples\vDEFRAG--Examples\v  \aSyntax\vDEFRAG\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              DEFRAGддNotes
+                              DEFRAGО©╫О©╫Notes
  
 \bThe screen\p
 
@@ -3567,9 +3569,9 @@ and do nothing.
 .topic DEFRAG--Examples
 .freeze 3
 \i\aSyntax\vDEFRAG\v  \aNotes\vDEFRAG--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             DEFRAGддExamples
+                             DEFRAGО©╫О©╫Examples
  
 To optimize drive C fully, with the files in each directory in order
 of name:
@@ -3586,7 +3588,7 @@ To unfragment the files on D: without moving them together:
 .topic DISKCOMP
 .freeze 3
 \i\aNotes\vDISKCOMP--Notes\v  \aExamples\vDISKCOMP--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                    DISKCOMP
  
@@ -3624,9 +3626,9 @@ rather than diskettes, see <\aFC\vFC\v>.
 .topic DISKCOMP--Notes
 .freeze 3
 \i\aExamples\vDISKCOMP--Examples\v  \aSyntax\vDISKCOMP\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             DISKCOMPддNotes
+                             DISKCOMPО©╫О©╫Notes
  
 \bWhat counts as the same\p
 
@@ -3650,9 +3652,9 @@ kinds.  With several comparisons, the last one's.
 .topic DISKCOMP--Examples
 .freeze 3
 \i\aSyntax\vDISKCOMP\v  \aNotes\vDISKCOMP--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                            DISKCOMPддExamples
+                            DISKCOMPО©╫О©╫Examples
  
 To compare the diskette in A: with the one in B:
 
@@ -3668,7 +3670,7 @@ To compare two diskettes using one drive:
 .topic DISKCOPY
 .freeze 3
 \i\aNotes\vDISKCOPY--Notes\v  \aExamples\vDISKCOPY--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                    DISKCOPY
  
@@ -3710,9 +3712,9 @@ files rather than a whole diskette, see <\aCOPY\vCOPY\v> and <\aXCOPY\vXCOPY\v>.
 .topic DISKCOPY--Notes
 .freeze 3
 \i\aExamples\vDISKCOPY--Examples\v  \aSyntax\vDISKCOPY\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             DISKCOPYддNotes
+                             DISKCOPYО©╫О©╫Notes
  
 \bWhat it copies\p
 
@@ -3737,9 +3739,9 @@ With several copies, the last one's.
 .topic DISKCOPY--Examples
 .freeze 3
 \i\aSyntax\vDISKCOPY\v  \aNotes\vDISKCOPY--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                            DISKCOPYддExamples
+                            DISKCOPYО©╫О©╫Examples
  
 To copy the diskette in A: to the one in B:
 
@@ -3755,7 +3757,7 @@ To make several copies of one diskette with one drive, checking each:
 .topic DOSSHELL
 .freeze 3
 \i\aNotes\vDOSSHELL--Notes\v  \aExamples\vDOSSHELL--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                    DOSSHELL
  
@@ -3791,9 +3793,9 @@ For the commands the shell runs, see the <\aContents\vContents\v>.
 .topic DOSSHELL--Notes
 .freeze 3
 \i\aExamples\vDOSSHELL--Examples\v  \aSyntax\vDOSSHELL\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             DOSSHELLддNotes
+                             DOSSHELLО©╫О©╫Notes
  
 \bThe screen\p
 
@@ -3818,9 +3820,9 @@ beside DOSSHELL.EXE.
 .topic DOSSHELL--Examples
 .freeze 3
 \i\aSyntax\vDOSSHELL\v  \aNotes\vDOSSHELL--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                            DOSSHELLддExamples
+                            DOSSHELLО©╫О©╫Examples
  
 To start the shell in 50-line text mode:
 
@@ -3836,7 +3838,7 @@ To start it in graphics with 256 colours:
 .topic EDIT
 .freeze 3
 \i\aNotes\vEDIT--Notes\v  \aExamples\vEDIT--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      EDIT
  
@@ -3878,9 +3880,9 @@ To look at a file without changing it, see <\aTYPE\vTYPE\v> and <\aMORE\vMORE\v>
 .topic EDIT--Notes
 .freeze 3
 \i\aExamples\vEDIT--Examples\v  \aSyntax\vEDIT\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               EDITддNotes
+                               EDITО©╫О©╫Notes
  
 \bThe editor\p
 
@@ -3898,9 +3900,9 @@ ends is read, and written back with CR LF.
 .topic EDIT--Examples
 .freeze 3
 \i\aSyntax\vEDIT\v  \aNotes\vEDIT--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              EDITддExamples
+                              EDITО©╫О©╫Examples
  
 To edit a file:
 
@@ -3916,7 +3918,7 @@ To open every .TXT file in the directory, read-only, in 50 lines:
 .topic FC
 .freeze 3
 \i\aNotes\vFC--Notes\v  \aExamples\vFC--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                       FC
  
@@ -3980,9 +3982,9 @@ To compare whole diskettes, see <\aDISKCOMP\vDISKCOMP\v>.
 .topic FC--Notes
 .freeze 3
 \i\aExamples\vFC--Examples\v  \aSyntax\vFC\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                                FCддNotes
+                                FCО©╫О©╫Notes
  
 \bHow a text comparison is shown\p
 
@@ -4001,9 +4003,9 @@ the command line was wrong.
 .topic FC--Examples
 .freeze 3
 \i\aSyntax\vFC\v  \aNotes\vFC--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               FCддExamples
+                               FCО©╫О©╫Examples
  
 To compare two text files, with line numbers:
 
@@ -4023,7 +4025,7 @@ To compare every .C file here with the copy in \\BACKUP:
 .topic FDISK
 .freeze 3
 \i\aNotes\vFDISK--Notes\v  \aExamples\vFDISK--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                     FDISK
  
@@ -4095,9 +4097,9 @@ to boot.
 .topic FDISK--Notes
 .freeze 3
 \i\aExamples\vFDISK--Examples\v  \aSyntax\vFDISK\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               FDISKддNotes
+                               FDISKО©╫О©╫Notes
  
 \bA USB disk\p
 
@@ -4128,9 +4130,9 @@ changes the letters of the ones after it from the next boot on.
 .topic FDISK--Examples
 .freeze 3
 \i\aSyntax\vFDISK\v  \aNotes\vFDISK--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             FDISKддExamples
+                             FDISKО©╫О©╫Examples
  
 To see every disk's partitions:
 
@@ -4150,7 +4152,7 @@ To make the first partition of the first disk the one that boots:
 .topic FIND
 .freeze 3
 \i\aNotes\vFIND--Notes\v  \aExamples\vFIND--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      FIND
  
@@ -4196,9 +4198,9 @@ To compare two files, see <\aFC\vFC\v>.  To sort what FIND finds, see
 .topic FIND--Notes
 .freeze 3
 \i\aExamples\vFIND--Examples\v  \aSyntax\vFIND\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               FINDддNotes
+                               FINDО©╫О©╫Notes
  
 \bHow the output looks\p
 
@@ -4220,9 +4222,9 @@ letters match their capitals too.
 .topic FIND--Examples
 .freeze 3
 \i\aSyntax\vFIND\v  \aNotes\vFIND--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              FINDддExamples
+                              FINDО©╫О©╫Examples
  
 To list the lines of a file that mention a word:
 
@@ -4242,7 +4244,7 @@ To number the lines that do not contain REM:
 .topic FORMAT
 .freeze 3
 \i\aNotes\vFORMAT--Notes\v  \aExamples\vFORMAT--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                     FORMAT
  
@@ -4295,9 +4297,9 @@ To check a disk without losing what is on it, see <\aSCANDISK\vSCANDISK\v>.
 .topic FORMAT--Notes
 .freeze 3
 \i\aExamples\vFORMAT--Examples\v  \aSyntax\vFORMAT\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              FORMATддNotes
+                              FORMATО©╫О©╫Notes
  
 \bA USB disk with no format\p
 
@@ -4334,9 +4336,9 @@ the test that made them.  /C or /U tests those clusters again.
 .topic FORMAT--Examples
 .freeze 3
 \i\aSyntax\vFORMAT\v  \aNotes\vFORMAT--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             FORMATддExamples
+                             FORMATО©╫О©╫Examples
  
 To format the diskette in A: and label it:
 
@@ -4360,7 +4362,7 @@ To format a hard disk partition quickly:
 .topic HELP
 .freeze 3
 \i\aNotes\vHELP--Notes\v  \aExamples\vHELP--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      HELP
  
@@ -4386,9 +4388,9 @@ how this program is used, see <\aHow to Use PM-DOS Help\vHelp on Help\v>.
 .topic HELP--Notes
 .freeze 3
 \i\aExamples\vHELP--Examples\v  \aSyntax\vHELP\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               HELPддNotes
+                               HELPО©╫О©╫Notes
  
 \bWhere the text is\p
 
@@ -4418,9 +4420,9 @@ to a topic.
 .topic HELP--Examples
 .freeze 3
 \i\aSyntax\vHELP\v  \aNotes\vHELP--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              HELPддExamples
+                              HELPО©╫О©╫Examples
  
 To read about COPY:
 
@@ -4436,7 +4438,7 @@ To open at the contents:
 .topic ISAPNP
 .freeze 3
 \i\aNotes\vISAPNP--Notes\v  \aExamples\vISAPNP--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                     ISAPNP
  
@@ -4488,9 +4490,9 @@ To see what the machine is using, see <\aPMD\vPMD\v>.
 .topic ISAPNP--Notes
 .freeze 3
 \i\aExamples\vISAPNP--Examples\v  \aSyntax\vISAPNP\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              ISAPNPддNotes
+                              ISAPNPО©╫О©╫Notes
  
 \bWhy it is needed\p
 
@@ -4517,9 +4519,9 @@ From AUTOEXEC.BAT, before the programs that use the cards.
 .topic ISAPNP--Examples
 .freeze 3
 \i\aSyntax\vISAPNP\v  \aNotes\vISAPNP--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             ISAPNPддExamples
+                             ISAPNPО©╫О©╫Examples
  
 To see the cards:
 
@@ -4539,7 +4541,7 @@ To give a sound card's first device the classic settings:
 .topic KEYB
 .freeze 3
 \i\aNotes\vKEYB--Notes\v  \aExamples\vKEYB--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      KEYB
  
@@ -4592,9 +4594,9 @@ page, see <\aCHCP\vCHCP\v>.  See also <\aInternational Commands\vInternational\v
 .topic KEYB--Notes
 .freeze 3
 \i\aExamples\vKEYB--Examples\v  \aSyntax\vKEYB\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               KEYBддNotes
+                               KEYBО©╫О©╫Notes
  
 \bNothing stays resident\p
 
@@ -4628,9 +4630,9 @@ a KEYBOARD.SYS.
 .topic KEYB--Examples
 .freeze 3
 \i\aSyntax\vKEYB\v  \aNotes\vKEYB--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              KEYBддExamples
+                              KEYBО©╫О©╫Examples
  
 To load the German layout:
 
@@ -4650,7 +4652,7 @@ To load the second Italian layout:
 .topic LABEL
 .freeze 3
 \i\aNotes\vLABEL--Notes\v  \aExamples\vLABEL--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                     LABEL
  
@@ -4681,9 +4683,9 @@ disk is formatted: see <\aFORMAT\vFORMAT\v>.
 .topic LABEL--Notes
 .freeze 3
 \i\aExamples\vLABEL--Examples\v  \aSyntax\vLABEL\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               LABELддNotes
+                               LABELО©╫О©╫Notes
  
 \bWhat a label may hold\p
 
@@ -4699,9 +4701,9 @@ A network drive's label cannot be changed from here.
 .topic LABEL--Examples
 .freeze 3
 \i\aSyntax\vLABEL\v  \aNotes\vLABEL--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             LABELддExamples
+                             LABELО©╫О©╫Examples
  
 To label drive A:
 
@@ -4717,7 +4719,7 @@ To be asked:
 .topic MEM
 .freeze 3
 \i\aNotes\vMEM--Notes\v  \aExamples\vMEM--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      MEM
  
@@ -4750,9 +4752,9 @@ memory up, see <\aDOS\vDOS\v>.  For expanded memory, see <\aEMS=\vEMS=\v>.
 .topic MEM--Notes
 .freeze 3
 \i\aExamples\vMEM--Examples\v  \aSyntax\vMEM\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                                MEMддNotes
+                                MEMО©╫О©╫Notes
  
 \bWhat the numbers mean\p
 
@@ -4773,9 +4775,9 @@ too and never appear in MEM's list.
 .topic MEM--Examples
 .freeze 3
 \i\aSyntax\vMEM\v  \aNotes\vMEM--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              MEMддExamples
+                              MEMО©╫О©╫Examples
  
 To see the summary:
 
@@ -4791,7 +4793,7 @@ To see who has what, a screen at a time:
 .topic MORE
 .freeze 3
 \i\aNotes\vMORE--Notes\v  \aExamples\vMORE--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      MORE
  
@@ -4820,9 +4822,9 @@ To show a file without pausing, see <\aTYPE\vTYPE\v>.
 .topic MORE--Notes
 .freeze 3
 \i\aExamples\vMORE--Examples\v  \aSyntax\vMORE\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               MOREддNotes
+                               MOREО©╫О©╫Notes
  
 \bThe pause\p
 
@@ -4839,9 +4841,9 @@ a file name too; a long name goes in quotes.
 .topic MORE--Examples
 .freeze 3
 \i\aSyntax\vMORE\v  \aNotes\vMORE--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              MOREддExamples
+                              MOREО©╫О©╫Examples
  
 To read a file a screen at a time:
 
@@ -4857,7 +4859,7 @@ To page a long listing:
 .topic MOUNT
 .freeze 3
 \i\aNotes\vMOUNT--Notes\v  \aExamples\vMOUNT--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                     MOUNT
  
@@ -4897,9 +4899,9 @@ For the CD-ROM drives themselves, see <\aCDEX\vCDEX\v>.
 .topic MOUNT--Notes
 .freeze 3
 \i\aExamples\vMOUNT--Examples\v  \aSyntax\vMOUNT\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               MOUNTддNotes
+                               MOUNTО©╫О©╫Notes
  
 \bWhat is in the file decides\p
 
@@ -4922,9 +4924,9 @@ Mounted drives are not there while Windows runs.
 .topic MOUNT--Examples
 .freeze 3
 \i\aSyntax\vMOUNT\v  \aNotes\vMOUNT--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             MOUNTддExamples
+                             MOUNTО©╫О©╫Examples
  
 To read a CD-ROM image as drive E:
 
@@ -4944,7 +4946,7 @@ To let go of E:
 .topic MOVE
 .freeze 3
 \i\aNotes\vMOVE--Notes\v  \aExamples\vMOVE--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      MOVE
  
@@ -4991,9 +4993,9 @@ without moving, see <\aREN\vREN\v>.
 .topic MOVE--Notes
 .freeze 3
 \i\aExamples\vMOVE--Examples\v  \aSyntax\vMOVE\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               MOVEддNotes
+                               MOVEО©╫О©╫Notes
  
 \bOn one drive, nothing is copied\p
 
@@ -5020,9 +5022,9 @@ A directory can be renamed, but not moved to another drive.
 .topic MOVE--Examples
 .freeze 3
 \i\aSyntax\vMOVE\v  \aNotes\vMOVE--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              MOVEддExamples
+                              MOVEО©╫О©╫Examples
  
 To move every .DOC file to \\LETTERS:
 
@@ -5042,7 +5044,7 @@ To rename a directory:
 .topic PMD
 .freeze 3
 \i\aNotes\vPMD--Notes\v  \aExamples\vPMD--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      PMD
  
@@ -5085,9 +5087,9 @@ for the Plug and Play cards, see <\aISAPNP\vISAPNP\v>.
 .topic PMD--Notes
 .freeze 3
 \i\aExamples\vPMD--Examples\v  \aSyntax\vPMD\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                                PMDддNotes
+                                PMDО©╫О©╫Notes
  
 \bThe pages\p
 
@@ -5106,9 +5108,9 @@ memory it has, the drives it mounted, the interrupt lines it keeps.
 .topic PMD--Examples
 .freeze 3
 \i\aSyntax\vPMD\v  \aNotes\vPMD--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              PMDддExamples
+                              PMDО©╫О©╫Examples
  
 To look round the machine:
 
@@ -5125,7 +5127,7 @@ To write the full report to a file for someone else to read:
 .topic SCANDISK
 .freeze 3
 \i\aNotes\vSCANDISK--Notes\v  \aExamples\vSCANDISK--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                    SCANDISK
  
@@ -5194,9 +5196,9 @@ at startup when it was not shut down properly.
 .topic SCANDISK--Notes
 .freeze 3
 \i\aExamples\vSCANDISK--Examples\v  \aSyntax\vSCANDISK\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             SCANDISKддNotes
+                             SCANDISKО©╫О©╫Notes
  
 \bWhat it checks\p
 
@@ -5232,9 +5234,9 @@ compressed drives.
 .topic SCANDISK--Examples
 .freeze 3
 \i\aSyntax\vSCANDISK\v  \aNotes\vSCANDISK--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                            SCANDISKддExamples
+                            SCANDISKО©╫О©╫Examples
  
 To check drive C and be asked about each problem:
 
@@ -5259,7 +5261,7 @@ To find out whether a file is in one piece:
 .topic SHUTDOWN
 .freeze 3
 \i\aNotes\vSHUTDOWN--Notes\v  \aExamples\vSHUTDOWN--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                    SHUTDOWN
  
@@ -5279,9 +5281,9 @@ To write the cache out without switching off, see <\aCACHE\vCACHE\v>.
 .topic SHUTDOWN--Notes
 .freeze 3
 \i\aExamples\vSHUTDOWN--Examples\v  \aSyntax\vSHUTDOWN\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             SHUTDOWNддNotes
+                             SHUTDOWNО©╫О©╫Notes
  
 \bACPI\p
 
@@ -5305,9 +5307,9 @@ machine off.
 .topic SHUTDOWN--Examples
 .freeze 3
 \i\aSyntax\vSHUTDOWN\v  \aNotes\vSHUTDOWN--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                            SHUTDOWNддExamples
+                            SHUTDOWNО©╫О©╫Examples
  
     shutdown
  
@@ -5317,7 +5319,7 @@ machine off.
 .topic SORT
 .freeze 3
 \i\aNotes\vSORT--Notes\v  \aExamples\vSORT--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      SORT
  
@@ -5359,9 +5361,9 @@ a time, see <\aMORE\vMORE\v>.
 .topic SORT--Notes
 .freeze 3
 \i\aExamples\vSORT--Examples\v  \aSyntax\vSORT\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               SORTддNotes
+                               SORTО©╫О©╫Notes
  
 \bThe order\p
 
@@ -5377,9 +5379,9 @@ Up to 8192 lines and 256K of text.
 .topic SORT--Examples
 .freeze 3
 \i\aSyntax\vSORT\v  \aNotes\vSORT--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              SORTддExamples
+                              SORTО©╫О©╫Examples
  
 To sort a file into another:
 
@@ -5399,7 +5401,7 @@ To sort in reverse:
 .topic SYS
 .freeze 3
 \i\aNotes\vSYS--Notes\v  \aExamples\vSYS--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      SYS
  
@@ -5424,9 +5426,9 @@ FORMAT /S formats and puts the system on in one go: see <\aFORMAT\vFORMAT\v>.
 .topic SYS--Notes
 .freeze 3
 \i\aExamples\vSYS--Examples\v  \aSyntax\vSYS\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                                SYSддNotes
+                                SYSО©╫О©╫Notes
  
 \bWhat is copied\p
 
@@ -5454,9 +5456,9 @@ works on a disk that already has files on it.
 .topic SYS--Examples
 .freeze 3
 \i\aSyntax\vSYS\v  \aNotes\vSYS--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              SYSддExamples
+                              SYSО©╫О©╫Examples
  
 To make the diskette in A: boot:
 
@@ -5468,7 +5470,7 @@ To make the diskette in A: boot:
 .topic UNDELETE
 .freeze 3
 \i\aNotes\vUNDELETE--Notes\v  \aExamples\vUNDELETE--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                    UNDELETE
  
@@ -5520,9 +5522,9 @@ for what is never kept.
 .topic UNDELETE--Notes
 .freeze 3
 \i\aExamples\vUNDELETE--Examples\v  \aSyntax\vUNDELETE\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             UNDELETEддNotes
+                             UNDELETEО©╫О©╫Notes
  
 \bHow it works\p
 
@@ -5548,9 +5550,9 @@ Protection does not work while Windows is running.
 .topic UNDELETE--Examples
 .freeze 3
 \i\aSyntax\vUNDELETE\v  \aNotes\vUNDELETE--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                            UNDELETEддExamples
+                            UNDELETEО©╫О©╫Examples
  
 To see what can be brought back from the current directory:
 
@@ -5570,7 +5572,7 @@ To free the space the kept files take on drive C:
 .topic USB
 .freeze 3
 \i\aNotes\vUSB--Notes\v  \aExamples\vUSB--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      USB
  
@@ -5592,9 +5594,9 @@ how many drive letters are kept for USB disks.  <\aFDISK\vFDISK\v> and
 .topic USB--Notes
 .freeze 3
 \i\aExamples\vUSB--Examples\v  \aSyntax\vUSB\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                                USBддNotes
+                                USBО©╫О©╫Notes
  
 \bWhat the lines say\p
 
@@ -5633,9 +5635,9 @@ BIOS drives them, as it did before PM-DOS started.
 .topic USB--Examples
 .freeze 3
 \i\aSyntax\vUSB\v  \aNotes\vUSB--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              USBддExamples
+                              USBО©╫О©╫Examples
  
     usb
  
@@ -5645,7 +5647,7 @@ BIOS drives them, as it did before PM-DOS started.
 .topic XCOPY
 .freeze 3
 \i\aNotes\vXCOPY--Notes\v  \aExamples\vXCOPY--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                     XCOPY
  
@@ -5747,9 +5749,9 @@ For a file or two, see <\aCOPY\vCOPY\v>.  To move rather than copy, see
 .topic XCOPY--Notes
 .freeze 3
 \i\aExamples\vXCOPY--Examples\v  \aSyntax\vXCOPY\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               XCOPYддNotes
+                               XCOPYО©╫О©╫Notes
  
 \bFile or directory?\p
 
@@ -5778,9 +5780,9 @@ or written.
 .topic XCOPY--Examples
 .freeze 3
 \i\aSyntax\vXCOPY\v  \aNotes\vXCOPY--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             XCOPYддExamples
+                             XCOPYО©╫О©╫Examples
  
 To copy a directory and everything under it to another drive:
 
@@ -5818,28 +5820,28 @@ in CONFIG.SYS", so a typing mistake shows.
 
 The statements MS-DOS had:
 
-\i<\aBreak=\vBREAK=\v>                   <\aInstall=\vINSTALL=\v>\p
-\i<\aBuffers=\vBUFFERS=\v>                 <\aInstallhigh=\vINSTALLHIGH=\v>\p
-\i<\aCountry=\vCOUNTRY=\v>                 <\aLastdrive=\vLASTDRIVE=\v>\p
-\i<\aDevice=\vDEVICE=\v>                  <\aNumlock=\vNUMLOCK=\v>\p
-\i<\aDevicehigh=\vDEVICEHIGH=\v>              <\aRem\vREM\v>\p
-\i<\aDos=\vDOS=\v>                     <\aSet=\vSET=\v>\p
-\i<\aDrivparm=\vDRIVPARM=\v>                <\aShell=\vSHELL=\v>\p
-\i<\aFcbs=\vFCBS=\v>                    <\aStacks=\vSTACKS=\v>\p
-\i<\aFiles=\vFILES=\v>                   <\aSwitches=\vSWITCHES=\v>\p
+\i<\aBreak\vBREAK=\v>                    <\aInstall\vINSTALL=\v>\p
+\i<\aBuffers\vBUFFERS=\v>                  <\aInstallhigh\vINSTALLHIGH=\v>\p
+\i<\aCountry\vCOUNTRY=\v>                  <\aLastdrive\vLASTDRIVE=\v>\p
+\i<\aDevice\vDEVICE=\v>                   <\aNumlock\vNUMLOCK=\v>\p
+\i<\aDevicehigh\vDEVICEHIGH=\v>               <\aRem\vREM\v>\p
+\i<\aDos\vDOS=\v>                      <\aSet\vSET=\v>\p
+\i<\aDrivparm\vDRIVPARM=\v>                 <\aShell\vSHELL=\v>\p
+\i<\aFcbs\vFCBS=\v>                     <\aStacks\vSTACKS=\v>\p
+\i<\aFiles\vFILES=\v>                    <\aSwitches\vSWITCHES=\v>\p
 
 The statements that are PM-DOS's own.  On MS-DOS these jobs took a
 driver or a program - EMM386, SMARTDRV, SHARE, MODE - and on PM-DOS
 they are in the kernel, so those programs are not loaded:
 
-\i<\aAutocheck=\vAUTOCHECK=\v>               <\aKeyrate=\vKEYRATE=\v>\p
-\i<\aCache=\vCACHE=\v>                   <\aLfn=\vLFN=\v>\p
-\i<\aCdrom=\vCDROM=\v>                   <\aNulltrap=\vNULLTRAP=\v>\p
-\i<\aDpmi=\vDPMI=\v>                    <\aScsi=\vSCSI=\v>\p
-\i<\aEms=\vEMS=\v>                     <\aShare=\vSHARE=\v>\p
-\i<\aIde32=\vIDE32=\v>                   <\aUndelete=\vUNDELETE=\v>\p
-\i<\aIdecable=\vIDECABLE=\v>                <\aUsb=\vUSB=\v>\p
-\i<\aIdedma=\vIDEDMA=\v>                  <\aWincache=\vWINCACHE=\v>\p
+\i<\aAutocheck\vAUTOCHECK=\v>                <\aKeyrate\vKEYRATE=\v>\p
+\i<\aCache\vCACHE=\v>                    <\aLfn\vLFN=\v>\p
+\i<\aCdrom\vCDROM=\v>                    <\aNulltrap\vNULLTRAP=\v>\p
+\i<\aDpmi\vDPMI=\v>                     <\aScsi\vSCSI=\v>\p
+\i<\aEms\vEMS=\v>                      <\aShare\vSHARE=\v>\p
+\i<\aIde32\vIDE32=\v>                    <\aUndelete\vUNDELETE=\v>\p
+\i<\aIdecable\vIDECABLE=\v>                 <\aUsb\vUSB=\v>\p
+\i<\aIdedma\vIDEDMA=\v>                   <\aWincache\vWINCACHE=\v>\p
 
 The boot menu statements - [menu], MENUITEM, MENUDEFAULT, MENUCOLOR,
 SUBMENU, INCLUDE and COMMENT - are accepted, but there is no menu:
@@ -5911,7 +5913,7 @@ is written.  <\aSHUTDOWN\vSHUTDOWN\v> switches it off.
 PM-DOS can show dates, times and numbers the way a country writes
 them, sort its letters in its order, and take its keyboard.
 
-\i<\aCountry=\vCOUNTRY=\v>\p
+\i<\aCountry\vCOUNTRY=\v>\p
     In CONFIG.SYS: the country, and with it the date order, the
     separators, the currency, and the table of capitals.  The tables
     come from COUNTRY.SYS.
@@ -5954,12 +5956,11 @@ over CONFIG.SYS.
  
                                      
 .context AUTOCHECK=
-.context Autocheck=
-.context AUTOCHECK
+.context Autocheck
 .topic AUTOCHECK=
 .freeze 3
 \i\aNotes\vAUTOCHECK=--Notes\v  \aExamples\vAUTOCHECK=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                   AUTOCHECK=
  
@@ -5992,9 +5993,9 @@ See <\aCHKDSK\vCHKDSK\v> and <\aSCANDISK\vSCANDISK\v>.
 .topic AUTOCHECK=--Notes
 .freeze 3
 \i\aExamples\vAUTOCHECK=--Examples\v  \aSyntax\vAUTOCHECK=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                            AUTOCHECK=ддNotes
+                            AUTOCHECK=О©╫О©╫Notes
  
 \bThe mark\p
 
@@ -6019,20 +6020,19 @@ boot drive.
 .topic AUTOCHECK=--Examples
 .freeze 3
 \i\aSyntax\vAUTOCHECK=\v  \aNotes\vAUTOCHECK=--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                           AUTOCHECK=ддExamples
+                           AUTOCHECK=О©╫О©╫Examples
  
     AUTOCHECK=ASK
  
                                      
 .context BREAK=
-.context Break=
-.context BREAK (CONFIG.SYS)
+.context Break (CONFIG.SYS)
 .topic BREAK=
 .freeze 3
 \i\aExamples\vBREAK=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                     BREAK=
  
@@ -6057,20 +6057,19 @@ The <\aBREAK\vBREAK\v> command changes it at the prompt.
 .topic BREAK=--Examples
 .freeze 3
 \i\aSyntax\vBREAK=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             BREAK=ддExamples
+                             BREAK=О©╫О©╫Examples
  
     BREAK=ON
  
                                      
 .context BUFFERS=
-.context Buffers=
-.context BUFFERS
+.context Buffers
 .topic BUFFERS=
 .freeze 3
 \i\aExamples\vBUFFERS=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                    BUFFERS=
  
@@ -6088,19 +6087,19 @@ cache of its own, set by <\aCACHE=\vCACHE=\v>, and ignores the numbers.
 .topic BUFFERS=--Examples
 .freeze 3
 \i\aSyntax\vBUFFERS=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                            BUFFERS=ддExamples
+                            BUFFERS=О©╫О©╫Examples
  
     BUFFERS=30,8
  
                                      
 .context CACHE=
-.context Cache=
+.context Cache (CONFIG.SYS)
 .topic CACHE=
 .freeze 3
 \i\aNotes\vCACHE=--Notes\v  \aExamples\vCACHE=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                     CACHE=
  
@@ -6145,9 +6144,9 @@ machine runs.  For the cache under Windows, see <\aWINCACHE=\vWINCACHE=\v>.
 .topic CACHE=--Notes
 .freeze 3
 \i\aExamples\vCACHE=--Examples\v  \aSyntax\vCACHE=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              CACHE=ддNotes
+                              CACHE=О©╫О©╫Notes
  
 \bWhat is cached\p
 
@@ -6159,20 +6158,20 @@ read-cached.  Hard disks are read- and write-cached.
 .topic CACHE=--Examples
 .freeze 3
 \i\aSyntax\vCACHE=\v  \aNotes\vCACHE=--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             CACHE=ддExamples
+                             CACHE=О©╫О©╫Examples
  
     CACHE=4M
     CACHE=2048,2048,OFF
  
                                      
 .context CDROM=
-.context Cdrom=
+.context Cdrom
 .topic CDROM=
 .freeze 3
 \i\aNotes\vCDROM=--Notes\v  \aExamples\vCDROM=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                     CDROM=
  
@@ -6199,9 +6198,9 @@ on SCSI cards.
 .topic CDROM=--Notes
 .freeze 3
 \i\aExamples\vCDROM=--Examples\v  \aSyntax\vCDROM=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              CDROM=ддNotes
+                              CDROM=О©╫О©╫Notes
  
 \bUnder Windows\p
 
@@ -6217,21 +6216,19 @@ not there under Windows.
 .topic CDROM=--Examples
 .freeze 3
 \i\aSyntax\vCDROM=\v  \aNotes\vCDROM=--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             CDROM=ддExamples
+                             CDROM=О©╫О©╫Examples
  
     CDROM=R
  
                                      
 .context COUNTRY=
-.context Country=
-.context COUNTRY
 .context Country
 .topic COUNTRY=
 .freeze 3
 \i\aNotes\vCOUNTRY=--Notes\v  \aExamples\vCOUNTRY=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                    COUNTRY=
  
@@ -6267,9 +6264,9 @@ file
 .topic COUNTRY=--Notes
 .freeze 3
 \i\aExamples\vCOUNTRY=--Examples\v  \aSyntax\vCOUNTRY=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             COUNTRY=ддNotes
+                             COUNTRY=О©╫О©╫Notes
  
 \bWhat follows the country\p
 
@@ -6316,9 +6313,9 @@ in the video card.
 .topic COUNTRY=--Examples
 .freeze 3
 \i\aSyntax\vCOUNTRY=\v  \aNotes\vCOUNTRY=--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                            COUNTRY=ддExamples
+                            COUNTRY=О©╫О©╫Examples
  
     COUNTRY=049
     COUNTRY=049,850
@@ -6326,17 +6323,15 @@ in the video card.
  
                                      
 .context DEVICE=
-.context Device=
-.context DEVICE
 .context Device
 .topic DEVICE=
 .freeze 3
 \i\aNotes\vDEVICE=--Notes\v  \aExamples\vDEVICE=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                    DEVICE=
  
-Loads a 16-bit DOS device driver.
+Loads a device driver: a 16-bit DOS one, or a 32-bit PM-DOS one.
 
 \bSyntax\p
 
@@ -6360,9 +6355,9 @@ goes in with <\aINSTALL=\vINSTALL=\v>.
 .topic DEVICE=--Notes
 .freeze 3
 \i\aExamples\vDEVICE=--Examples\v  \aSyntax\vDEVICE=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              DEVICE=ддNotes
+                              DEVICE=О©╫О©╫Notes
  
 \bWhat PM-DOS has already\p
 
@@ -6373,6 +6368,20 @@ SMARTDRV, EMM386, SHARE or a DPMI host.  HIMEM.SYS is not needed.
 \bBlock drivers\p
 
 A block driver's drives get the letters after the last disk.
+
+\b32-bit drivers\p
+
+A 32-bit PM-DOS driver loads with the same line.  The kernel tells
+the two kinds apart by the file, puts a 32-bit driver above the
+first megabyte and takes no conventional memory for it.  NE2000.SYS
+is one: the driver for an NE1000, NE2000, RTL8019 or RTL8029 network
+card.  Without options it looks on the PCI bus and then at the usual
+ISA ports, and finds the card's interrupt line by making the card
+interrupt; /P:300 names the first port in hex and /I:10 the line.
+
+TCPIP.SYS is the TCP/IP stack.  Load it after a card driver: it finds
+the card, asks DHCP for an address, a gateway and a name server, and
+gives programs sockets.  Without a card loaded first it does not load.
 
 \bWindows for Workgroups\p
 
@@ -6393,22 +6402,21 @@ see a program loaded after the shell starts.
 .topic DEVICE=--Examples
 .freeze 3
 \i\aSyntax\vDEVICE=\v  \aNotes\vDEVICE=--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                            DEVICE=ддExamples
+                            DEVICE=О©╫О©╫Examples
  
     DEVICE=C:\\WINDOWS\\IFSHLP.SYS
     DEVICE=C:\\DRIVERS\\ASPI4DOS.SYS
+    DEVICE=C:\\NE2000.SYS /P:300 /I:10
  
                                      
 .context DEVICEHIGH=
-.context Devicehigh=
-.context DEVICEHIGH
 .context Devicehigh
 .topic DEVICEHIGH=
 .freeze 3
 \i\aNotes\vDEVICEHIGH=--Notes\v  \aExamples\vDEVICEHIGH=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                  DEVICEHIGH=
  
@@ -6436,9 +6444,9 @@ is, and <\aLOADHIGH\vLOADHIGH\v> for programs.
 .topic DEVICEHIGH=--Notes
 .freeze 3
 \i\aExamples\vDEVICEHIGH=--Examples\v  \aSyntax\vDEVICEHIGH=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                            DEVICEHIGH=ддNotes
+                            DEVICEHIGH=О©╫О©╫Notes
  
 \bWhen it loads low\p
 
@@ -6450,22 +6458,20 @@ driver loads in conventional memory and works just the same.
 .topic DEVICEHIGH=--Examples
 .freeze 3
 \i\aSyntax\vDEVICEHIGH=\v  \aNotes\vDEVICEHIGH=--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                          DEVICEHIGH=ддExamples
+                          DEVICEHIGH=О©╫О©╫Examples
  
     DOS=UMB
     DEVICEHIGH=C:\\DRIVERS\\ANSI.SYS
  
                                      
 .context DOS=
-.context Dos=
-.context DOS
 .context Dos
 .topic DOS=
 .freeze 3
 \i\aExamples\vDOS=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      DOS=
  
@@ -6499,19 +6505,19 @@ the blocks.  <\aEMS=\vEMS=\v>'s page frame takes 64K of the same room.
 .topic DOS=--Examples
 .freeze 3
 \i\aSyntax\vDOS=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              DOS=ддExamples
+                              DOS=О©╫О©╫Examples
  
     DOS=HIGH,UMB
  
                                      
 .context DPMI=
-.context Dpmi=
+.context Dpmi
 .topic DPMI=
 .freeze 3
 \i\aExamples\vDPMI=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                     DPMI=
  
@@ -6536,20 +6542,19 @@ OFF
 .topic DPMI=--Examples
 .freeze 3
 \i\aSyntax\vDPMI=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             DPMI=ддExamples
+                             DPMI=О©╫О©╫Examples
  
     DPMI=OFF
  
                                      
 .context DRIVPARM=
-.context Drivparm=
-.context DRIVPARM
+.context Drivparm
 .topic DRIVPARM=
 .freeze 3
 
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                   DRIVPARM=
  
@@ -6565,11 +6570,11 @@ asks the drives themselves.  MULTITRACK= is ignored the same way.
  
                                      
 .context EMS=
-.context Ems=
+.context Ems
 .topic EMS=
 .freeze 3
 \i\aNotes\vEMS=--Notes\v  \aExamples\vEMS=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      EMS=
  
@@ -6604,9 +6609,9 @@ memory it shares.
 .topic EMS=--Notes
 .freeze 3
 \i\aExamples\vEMS=--Examples\v  \aSyntax\vEMS=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               EMS=ддNotes
+                               EMS=О©╫О©╫Notes
  
 \bWhat it does not do\p
 
@@ -6619,21 +6624,20 @@ the pages come from extended memory as they are asked for.
 .topic EMS=--Examples
 .freeze 3
 \i\aSyntax\vEMS=\v  \aNotes\vEMS=--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              EMS=ддExamples
+                              EMS=О©╫О©╫Examples
  
     EMS=AUTO
     EMS=D000
  
                                      
 .context FCBS=
-.context Fcbs=
-.context FCBS
+.context Fcbs
 .topic FCBS=
 .freeze 3
 \i\aExamples\vFCBS=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                     FCBS=
  
@@ -6651,21 +6655,19 @@ with file control blocks.  PM-DOS opens as many as are asked for.
 .topic FCBS=--Examples
 .freeze 3
 \i\aSyntax\vFCBS=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             FCBS=ддExamples
+                             FCBS=О©╫О©╫Examples
  
     FCBS=4,0
  
                                      
 .context FILES=
-.context Files=
-.context FILES
 .context Files
 .topic FILES=
 .freeze 3
 \i\aExamples\vFILES=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                     FILES=
  
@@ -6685,19 +6687,19 @@ n
 .topic FILES=--Examples
 .freeze 3
 \i\aSyntax\vFILES=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             FILES=ддExamples
+                             FILES=О©╫О©╫Examples
  
     FILES=40
  
                                      
 .context IDE32=
-.context Ide32=
+.context Ide32
 .topic IDE32=
 .freeze 3
 \i\aNotes\vIDE32=--Notes\v  \aExamples\vIDE32=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                     IDE32=
  
@@ -6728,9 +6730,9 @@ ON
 .topic IDE32=--Notes
 .freeze 3
 \i\aExamples\vIDE32=--Examples\v  \aSyntax\vIDE32=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              IDE32=ддNotes
+                              IDE32=О©╫О©╫Notes
  
 \bIf a disk reads garbage\p
 
@@ -6742,19 +6744,19 @@ IDETEST on the test disk shows what was chosen for each drive.
 .topic IDE32=--Examples
 .freeze 3
 \i\aSyntax\vIDE32=\v  \aNotes\vIDE32=--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             IDE32=ддExamples
+                             IDE32=О©╫О©╫Examples
  
     IDE32=OFF
  
                                      
 .context IDECABLE=
-.context Idecable=
+.context Idecable
 .topic IDECABLE=
 .freeze 3
 \i\aExamples\vIDECABLE=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                   IDECABLE=
  
@@ -6784,19 +6786,19 @@ Put the line above <\aIDEDMA=\vIDEDMA=\v>.
 .topic IDECABLE=--Examples
 .freeze 3
 \i\aSyntax\vIDECABLE=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                           IDECABLE=ддExamples
+                           IDECABLE=О©╫О©╫Examples
  
     IDECABLE=80
  
                                      
 .context IDEDMA=
-.context Idedma=
+.context Idedma
 .topic IDEDMA=
 .freeze 3
 \i\aNotes\vIDEDMA=--Notes\v  \aExamples\vIDEDMA=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                    IDEDMA=
  
@@ -6835,9 +6837,9 @@ See <\aIDECABLE=\vIDECABLE=\v> and <\aIDE32=\vIDE32=\v>.
 .topic IDEDMA=--Notes
 .freeze 3
 \i\aExamples\vIDEDMA=--Examples\v  \aSyntax\vIDEDMA=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              IDEDMA=ддNotes
+                              IDEDMA=О©╫О©╫Notes
  
 \bWhen a transfer fails\p
 
@@ -6849,22 +6851,20 @@ boot.  A CRC error above UDMA2 drops the disk to UDMA2 first.
 .topic IDEDMA=--Examples
 .freeze 3
 \i\aSyntax\vIDEDMA=\v  \aNotes\vIDEDMA=--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                            IDEDMA=ддExamples
+                            IDEDMA=О©╫О©╫Examples
  
     IDEDMA=ON
     IDEDMA=UDMA2
  
                                      
 .context INSTALL=
-.context Install=
-.context INSTALL
 .context Install
 .topic INSTALL=
 .freeze 3
 \i\aNotes\vINSTALL=--Notes\v  \aExamples\vINSTALL=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                    INSTALL=
  
@@ -6893,9 +6893,9 @@ in with <\aDEVICE=\vDEVICE=\v>.
 .topic INSTALL=--Notes
 .freeze 3
 \i\aExamples\vINSTALL=--Examples\v  \aSyntax\vINSTALL=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             INSTALL=ддNotes
+                             INSTALL=О©╫О©╫Notes
  
 \bWhen it runs\p
 
@@ -6914,21 +6914,19 @@ and a VBE driver loaded here gives its modes to 32-bit programs too.
 .topic INSTALL=--Examples
 .freeze 3
 \i\aSyntax\vINSTALL=\v  \aNotes\vINSTALL=--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                            INSTALL=ддExamples
+                            INSTALL=О©╫О©╫Examples
  
     INSTALL=C:\\UTILS\\REDIR.EXE
  
                                      
 .context INSTALLHIGH=
-.context Installhigh=
-.context INSTALLHIGH
 .context Installhigh
 .topic INSTALLHIGH=
 .freeze 3
 \i\aExamples\vINSTALLHIGH=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                  INSTALLHIGH=
  
@@ -6950,20 +6948,20 @@ See <\aINSTALL=\vINSTALL=\v> and <\aDOS=\vDOS=\v>.
 .topic INSTALLHIGH=--Examples
 .freeze 3
 \i\aSyntax\vINSTALLHIGH=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                          INSTALLHIGH=ддExamples
+                          INSTALLHIGH=О©╫О©╫Examples
  
     DOS=UMB
     INSTALLHIGH=C:\\UTILS\\REDIR.EXE
  
                                      
 .context KEYRATE=
-.context Keyrate=
+.context Keyrate
 .topic KEYRATE=
 .freeze 3
 \i\aNotes\vKEYRATE=--Notes\v  \aExamples\vKEYRATE=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                    KEYRATE=
  
@@ -6989,9 +6987,9 @@ delay
 .topic KEYRATE=--Notes
 .freeze 3
 \i\aExamples\vKEYRATE=--Examples\v  \aSyntax\vKEYRATE=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             KEYRATE=ддNotes
+                             KEYRATE=О©╫О©╫Notes
  
 \bDOSBox\p
 
@@ -7002,21 +7000,19 @@ DOSBox 0.74 stops taking keys at KEYRATE=32,1.  Use 31,1 there.
 .topic KEYRATE=--Examples
 .freeze 3
 \i\aSyntax\vKEYRATE=\v  \aNotes\vKEYRATE=--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                            KEYRATE=ддExamples
+                            KEYRATE=О©╫О©╫Examples
  
     KEYRATE=31,1
  
                                      
 .context LASTDRIVE=
-.context Lastdrive=
-.context LASTDRIVE
 .context Lastdrive
 .topic LASTDRIVE=
 .freeze 3
 \i\aNotes\vLASTDRIVE=--Notes\v  \aExamples\vLASTDRIVE=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                   LASTDRIVE=
  
@@ -7041,9 +7037,9 @@ x
 .topic LASTDRIVE=--Notes
 .freeze 3
 \i\aExamples\vLASTDRIVE=--Examples\v  \aSyntax\vLASTDRIVE=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                            LASTDRIVE=ддNotes
+                            LASTDRIVE=О©╫О©╫Notes
  
 \bUnder Windows\p
 
@@ -7055,19 +7051,19 @@ Workgroups connects can only use letters up to LASTDRIVE.
 .topic LASTDRIVE=--Examples
 .freeze 3
 \i\aSyntax\vLASTDRIVE=\v  \aNotes\vLASTDRIVE=--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                           LASTDRIVE=ддExamples
+                           LASTDRIVE=О©╫О©╫Examples
  
     LASTDRIVE=Z
  
                                      
 .context LFN=
-.context Lfn=
+.context Lfn
 .topic LFN=
 .freeze 3
 \i\aExamples\vLFN=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      LFN=
  
@@ -7092,19 +7088,19 @@ OFF
 .topic LFN=--Examples
 .freeze 3
 \i\aSyntax\vLFN=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              LFN=ддExamples
+                              LFN=О©╫О©╫Examples
  
     LFN=OFF
  
                                      
 .context NULLTRAP=
-.context Nulltrap=
+.context Nulltrap
 .topic NULLTRAP=
 .freeze 3
 \i\aExamples\vNULLTRAP=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                   NULLTRAP=
  
@@ -7129,21 +7125,19 @@ OFF
 .topic NULLTRAP=--Examples
 .freeze 3
 \i\aSyntax\vNULLTRAP=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                           NULLTRAP=ддExamples
+                           NULLTRAP=О©╫О©╫Examples
  
     NULLTRAP=OFF
  
                                      
 .context NUMLOCK=
-.context Numlock=
-.context NUMLOCK
 .context Numlock
 .topic NUMLOCK=
 .freeze 3
 \i\aExamples\vNUMLOCK=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                    NUMLOCK=
  
@@ -7160,19 +7154,19 @@ Without the line Num Lock is left as the BIOS set it.
 .topic NUMLOCK=--Examples
 .freeze 3
 \i\aSyntax\vNUMLOCK=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                            NUMLOCK=ддExamples
+                            NUMLOCK=О©╫О©╫Examples
  
     NUMLOCK=OFF
  
                                      
 .context SCSI=
-.context Scsi=
+.context Scsi
 .topic SCSI=
 .freeze 3
 \i\aNotes\vSCSI=--Notes\v  \aExamples\vSCSI=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                     SCSI=
  
@@ -7201,9 +7195,9 @@ OFF
 .topic SCSI=--Notes
 .freeze 3
 \i\aExamples\vSCSI=--Examples\v  \aSyntax\vSCSI=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               SCSI=ддNotes
+                               SCSI=О©╫О©╫Notes
  
 \bOther cards\p
 
@@ -7217,19 +7211,19 @@ drives are used through it.  The card's IRQ must then be 3, 4, 5, 7,
 .topic SCSI=--Examples
 .freeze 3
 \i\aSyntax\vSCSI=\v  \aNotes\vSCSI=--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             SCSI=ддExamples
+                             SCSI=О©╫О©╫Examples
  
     SCSI=OFF
  
                                      
 .context USB=
-.context Usb=
+.context Usb (CONFIG.SYS)
 .topic USB=
 .freeze 3
 \i\aNotes\vUSB=--Notes\v  \aExamples\vUSB=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      USB=
  
@@ -7266,9 +7260,9 @@ OFF
 .topic USB=--Notes
 .freeze 3
 \i\aExamples\vUSB=--Examples\v  \aSyntax\vUSB=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                               USB=ддNotes
+                               USB=О©╫О©╫Notes
  
 \bWhen it takes effect\p
 
@@ -7298,21 +7292,20 @@ PM-DOS comes back.
 .topic USB=--Examples
 .freeze 3
 \i\aSyntax\vUSB=\v  \aNotes\vUSB=--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              USB=ддExamples
+                              USB=О©╫О©╫Examples
  
     USB=ON,2
     USB=OFF
  
                                      
 .context SET=
-.context Set=
-.context SET (CONFIG.SYS)
+.context Set (CONFIG.SYS)
 .topic SET=
 .freeze 3
 \i\aExamples\vSET=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                      SET=
  
@@ -7333,19 +7326,19 @@ The <\aSET\vSET\v> command does the same at the prompt.
 .topic SET=--Examples
 .freeze 3
 \i\aSyntax\vSET=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              SET=ддExamples
+                              SET=О©╫О©╫Examples
  
     SET TEMP=C:\\TEMP
  
                                      
 .context SHARE=
-.context Share=
+.context Share
 .topic SHARE=
 .freeze 3
 \i\aExamples\vSHARE=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                     SHARE=
  
@@ -7375,21 +7368,19 @@ OFF
 .topic SHARE=--Examples
 .freeze 3
 \i\aSyntax\vSHARE=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             SHARE=ддExamples
+                             SHARE=О©╫О©╫Examples
  
     SHARE=100
  
                                      
 .context SHELL=
-.context Shell=
-.context SHELL
 .context Shell
 .topic SHELL=
 .freeze 3
 \i\aNotes\vSHELL=--Notes\v  \aExamples\vSHELL=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                     SHELL=
  
@@ -7422,9 +7413,9 @@ See <\aCMD\vCMD\v> for the switches, and <\aStarting PM-DOS\vStarting\v>.
 .topic SHELL=--Notes
 .freeze 3
 \i\aExamples\vSHELL=--Examples\v  \aSyntax\vSHELL=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                              SHELL=ддNotes
+                              SHELL=О©╫О©╫Notes
  
 \bA system in C:\\DOS\p
 
@@ -7440,20 +7431,19 @@ SYS puts RMDOS.SYS there with them.  Put C:\\DOS in the PATH as well.
 .topic SHELL=--Examples
 .freeze 3
 \i\aSyntax\vSHELL=\v  \aNotes\vSHELL=--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             SHELL=ддExamples
+                             SHELL=О©╫О©╫Examples
  
     SHELL=C:\\DOS\\CMD.EXE /P
  
                                      
 .context STACKS=
-.context Stacks=
-.context STACKS
+.context Stacks
 .topic STACKS=
 .freeze 3
 \i\aExamples\vSTACKS=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                    STACKS=
  
@@ -7471,21 +7461,19 @@ The kernel handles interrupts itself.
 .topic STACKS=--Examples
 .freeze 3
 \i\aSyntax\vSTACKS=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                            STACKS=ддExamples
+                            STACKS=О©╫О©╫Examples
  
     STACKS=9,256
  
                                      
 .context SWITCHES=
-.context Switches=
-.context SWITCHES
 .context Switches
 .topic SWITCHES=
 .freeze 3
 \i\aExamples\vSWITCHES=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                   SWITCHES=
  
@@ -7516,19 +7504,19 @@ See <\aStarting PM-DOS\vStarting\v>.
 .topic SWITCHES=--Examples
 .freeze 3
 \i\aSyntax\vSWITCHES=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                           SWITCHES=ддExamples
+                           SWITCHES=О©╫О©╫Examples
  
     SWITCHES=/F
  
                                      
 .context UNDELETE=
-.context Undelete=
+.context Undelete (CONFIG.SYS)
 .topic UNDELETE=
 .freeze 3
 \i\aExamples\vUNDELETE=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                   UNDELETE=
  
@@ -7558,19 +7546,19 @@ See <\aUNDELETE\vUNDELETE\v> and <\aDEL\vDEL\v>.
 .topic UNDELETE=--Examples
 .freeze 3
 \i\aSyntax\vUNDELETE=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                           UNDELETE=ддExamples
+                           UNDELETE=О©╫О©╫Examples
  
     UNDELETE=OFF
  
                                      
 .context WINCACHE=
-.context Wincache=
+.context Wincache
 .topic WINCACHE=
 .freeze 3
 \i\aNotes\vWINCACHE=--Notes\v  \aExamples\vWINCACHE=--Examples\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
                                   WINCACHE=
  
@@ -7603,9 +7591,9 @@ For the cache the rest of the time, see <\aCACHE=\vCACHE=\v>.
 .topic WINCACHE=--Notes
 .freeze 3
 \i\aExamples\vWINCACHE=--Examples\v  \aSyntax\vWINCACHE=\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                             WINCACHE=ддNotes
+                             WINCACHE=О©╫О©╫Notes
  
 \bWhy a second cache\p
 
@@ -7620,9 +7608,9 @@ over.  Writes always go straight through.
 .topic WINCACHE=--Examples
 .freeze 3
 \i\aSyntax\vWINCACHE=\v  \aNotes\vWINCACHE=--Notes\v\p
-\b\iдддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддддд\p
+\b\iО©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫О©╫\p
  
-                           WINCACHE=ддExamples
+                           WINCACHE=О©╫О©╫Examples
  
     WINCACHE=2M,LOG
  

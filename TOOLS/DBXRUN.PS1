@@ -17,8 +17,16 @@ param(
     [string]$Until = '',                         # end the run once -Lpt has printed this
     [switch]$Sound,                              # a Sound Blaster 16 at 220h, IRQ 7,
                                                  # DMA 1 and 5, heard by nobody
-    [string]$SbType = 'sb16'                     # ...of this kind: sb16vibra is the
+    [string]$SbType = 'sb16',                    # ...of this kind: sb16vibra is the
                                                  # Plug and Play one (ISAPNP.EXE)
+    [switch]$Nic                                 # an NE2000 at 300h, IRQ 10, on
+                                                 # DOSBox-X's own network (slirp):
+                                                 # the gateway is 10.0.2.2 and it
+                                                 # serves DHCP, as QEMU's does.
+                                                 # The vsbuild DOSBox-X at
+                                                 # C:\DOSBox-X has no slirp in it
+                                                 # and puts in no card; the mingw
+                                                 # builds have it
 )
 # DBXRUN.PS1 - boot PM-DOS from a hard-disk image in DOSBox-X with NO
 # window, and let the time limit end the run.
@@ -113,6 +121,12 @@ if ( $Sound ) {
     $lines += '[mixer]', 'nosound=true'
 }
 $lines += '[dos]', 'int33=false'
+# -Nic: the card's station address is fixed so that what NICTEST prints
+# is the same from one run to the next; the first three bytes are the
+# range DOSBox-X's own notes give for private use.
+if ( $Nic ) {
+    $lines += '[ne2000]', 'ne2000=true', 'nicbase=300', 'nicirq=10', 'macaddr=AC:DE:48:50:4D:44', 'backend=slirp'
+}
 if ( $Log.Count -gt 0 -or $E9 ) {
     $lines += '[log]', "logfile=$dir\dosbox.log"
     foreach ( $type in $Log ) { $lines += "$type=true" }
