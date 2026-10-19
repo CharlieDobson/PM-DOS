@@ -193,6 +193,28 @@ dl_leave:
 ;=====================================================================
 dl_excur:
         pushad
+
+        ; THE PER-CALL DRIVER STATE IS A SET OF SINGLE GLOBALS.  dl_prep
+        ; and dl_doinit write them; dl_go and dl_fire read them back
+        ; AFTER this excursion returns - dl_fire reads dl_pktflat for the
+        ; status, dl_go re-reads dl_hdrflat for the interrupt entry.  A
+        ; driver's INIT that makes a DOS call which reaches ANOTHER loaded
+        ; driver nests a whole driver call inside this one: an NDIS MAC's
+        ; INIT doing an IOCTL to the Protocol Manager is exactly that, and
+        ; the nested dl_prep rewrites every one of these.  Park them on
+        ; the stack - one copy per level, so up to DL_LEVELS deep - and
+        ; the nesting is invisible to the level above.  Console output
+        ; during INIT nests too, but goes through the vector stubs rather
+        ; than dl_fire and so never tripped this; an IOCTL has no such
+        ; fast path and is the first call that does.
+        push    dword ptr [dl_entry]
+        push    dword ptr [dl_drvseg]
+        push    dword ptr [dl_hdroff]
+        push    dword ptr [dl_hdrflat]
+        push    dword ptr [dl_pktflat]
+        push    dword ptr [dl_pktoff]
+        push    dword ptr [dl_stktop]
+
         sub     esp,V86C_SIZE
         mov     esi,OFFSET vdm_ctx
         mov     edi,esp
@@ -374,6 +396,17 @@ dlx_out:
         mov     ecx,V86C_SIZE / 4
         rep     movsd
         add     esp,V86C_SIZE
+
+        ; the per-call driver state the level above is owed back, in the
+        ; reverse of the order it was parked
+        pop     dword ptr [dl_stktop]
+        pop     dword ptr [dl_pktoff]
+        pop     dword ptr [dl_pktflat]
+        pop     dword ptr [dl_hdrflat]
+        pop     dword ptr [dl_hdroff]
+        pop     dword ptr [dl_drvseg]
+        pop     dword ptr [dl_entry]
+
         popad
         ret
 
@@ -450,13 +483,30 @@ dlp_bad:
         ret
 
 dl_fire:
+        ; dl_lost is one global, and a nested driver call borrows it: it
+        ; zeroes it, runs, and leaves it set if THAT driver went wrong.
+        ; The level above then reads a 1 it never earned.  Park the
+        ; caller's value, clear it for this call, and give it back once
+        ; this call's own result is in hand.  EDX is preserved because a
+        ; caller is entitled to expect dl_fire to touch only EAX and EDI.
+        push    edx
+        movzx   edx,byte ptr [dl_lost]
+        push    edx
         mov     byte ptr [dl_lost],0
         call    dl_go
         call    dl_leave
+        movzx   eax,byte ptr [dl_lost]  ; this call's own lost-state in AL
+        pop     edx                     ; the caller's, back where it was
+        mov     byte ptr [dl_lost],dl
+        pop     edx
         mov     edi,[dl_pktflat]
+        ; AX = the packet status word on EVERY return, lost or not, so
+        ; dl_crit reads the driver's reason from it as it always has.
+        ; MOVZX leaves the flags alone, so the lost test below still sees
+        ; its own ZF after AX has been reloaded.
+        test    al,al                   ; did THIS call go off the rails?
         movzx   eax,word ptr [edi+REQ_STATUS]
-        cmp     byte ptr [dl_lost],0
-        jne     dlf_err
+        jnz     dlf_err
         test    eax,DEVS_ERROR
         jnz     dlf_err
         clc

@@ -156,8 +156,18 @@ NICI_MAC                EQU     0
 NICI_IRQ                EQU     12
 NICI_NAME               EQU     20
 
+; Stage D - the kernel NIC's raw L2 transport (DRV\NETCORE.C nd_call), the
+; functions the NDIS MAC face drives.  NIC_INFO/NIC_WAKE above are the same
+; call with a different function number.
+NIC_SEND                EQU     1               ; TX one Ethernet frame (card_send)
+NIC_RECV                EQU     2               ; pop one received frame off the queue
+NIC_SERVICE             EQU     4               ; drain the HW ring into the queue
+NIC_MAXFRAME            EQU     1514
+
 ; The stack's functions the bridge drives (INC\SOCKET.H)
 SOCK_IFSTAT            EQU     0               ; the interface and its address
+SOCK_RECV               EQU     7               ; receive (Stage C: trace shows the data)
+SOCK_STATE              EQU     8               ; a socket's state (polled, so not traced)
 SOCK_RESOLVE            EQU     9               ; a name to an address (polled)
 SOCK_PUMP               EQU     11              ; one step of the parked stack
 SOCKIF_LEN             EQU     60
@@ -215,6 +225,90 @@ BR_DATA                 EQU     32              ; the sector payload
 BR_SIZE                 EQU     32 + 512
 PD_USBDRIVE             EQU     82h             ; USB_DRV0: the first USB stick's unit
 
+;---------------------------------------------------------------------
+; Stage D - the WfW 3.11 NDIS 3.0 wrapper (NDIS.386, device 0028h).  This
+; VxD registers with it as a native 32-bit MAC so WfW's own protocols
+; (NetBEUI) bind to the kernel-owned card.  The service numbers, the call
+; form and the structure offsets were recovered by disassembling the
+; in-box NE2000.386/NDIS.386 (there is no DDK here).  A service that takes
+; stack arguments and returns a value is reached by CALLing a thunk whose
+; body is 'int 20h; dd id' - VMM rewrites the thunk to a jump to the
+; service, which returns to the thunk's caller.  8000h is the dynamic-link
+; "call form / do not fault if the device is absent" flag.
+;---------------------------------------------------------------------
+NDIS_DYNLINK            EQU     00288000h       ; (0028h<<16) OR 8000h, ORed with svc
+NDIS_GET_VERSION        EQU     0               ; or eax,300h; clc; ret (presence check)
+NDIS_REGISTER_MAC       EQU     31h             ; (&handle, descriptor) -> a MAC handle
+NDIS_DEREGISTER         EQU     32h             ; undo a failed registration
+NDIS_REGISTER_ADAPTER   EQU     33h             ; (&status,&ctx,h,h2,&chartable,size)
+NDIS_QUERY_PACKET       EQU     1Bh             ; (pkt,0,0,&firstbuf,0)
+NDIS_QUERY_BUFFER       EQU     21h             ; (buf,&vaddr,&len)
+NDIS_NEXT_BUFFER        EQU     27h             ; (buf,&nextbuf)
+NDIS_IND_RECEIVE        EQU     3Dh             ; EthFilterIndicateReceive (8 args)
+NDIS_IND_RECV_DONE      EQU     3Eh             ; EthFilterIndicateReceiveComplete (1 arg)
+
+; NDIS_STATUS values (recovered from the handlers)
+NDIS_SUCCESS            EQU     0
+NDIS_FAILURE            EQU     0C0000001h
+NDIS_RESOURCES          EQU     0C000009Ah
+NDIS_NOT_SUPPORTED      EQU     0C00000BBh
+NDIS_BAD_LENGTH         EQU     0C0010014h
+NDIS_INVALID_OID        EQU     0C0010017h
+NDIS_CLOSING            EQU     0C0010002h
+NDIS_RESET_IN_PROGRESS  EQU     0C001000Dh
+NDIS_UNSUPPORTED_MEDIA  EQU     0C0010019h
+
+; MAC characteristics table (NDIS30_MAC_CHARACTERISTICS, 36h bytes).  Ten
+; handler pointers, then an NDIS_STRING for the MAC's name.
+MACC_MAJOR              EQU     0               ; byte = 3
+MACC_MINOR              EQU     1               ; byte = 0
+MACC_OPENADAPTER        EQU     6
+MACC_CLOSEADAPTER       EQU     0Ah
+MACC_SEND               EQU     0Eh
+MACC_TRANSFERDATA       EQU     12h
+MACC_RESET              EQU     16h
+MACC_REQUEST            EQU     1Ah
+MACC_QUERYSTATS         EQU     1Eh
+MACC_UNLOADMAC          EQU     22h
+MACC_ADDADAPTER         EQU     26h
+MACC_REMOVEADAPTER      EQU     2Ah
+MACC_NAME_LEN           EQU     2Eh             ; word
+MACC_NAME_MAXLEN        EQU     30h             ; word
+MACC_NAME_BUF           EQU     32h             ; dword
+MACC_SIZE               EQU     36h
+
+; NDIS_REQUEST offsets (the struct MacRequest receives at [ebp+0Ch])
+NRQ_TYPE                EQU     10h             ; 0 = QueryInformation, 1 = SetInformation
+NRQ_OID                 EQU     14h
+NRQ_BUFFER              EQU     18h             ; InformationBuffer (flat linear)
+NRQ_BUFLEN              EQU     1Ch             ; InformationBufferLength
+NRQ_WRITTEN             EQU     20h             ; BytesWritten / BytesRead (out)
+NRQ_NEEDED              EQU     24h             ; BytesNeeded (out)
+
+; The OIDs this MAC answers (ndis.h values; NE2000's exact answers are
+; mirrored so a known-good MAC's replies are matched)
+OID_GEN_SUPPORTED_LIST          EQU 00010101h
+OID_GEN_HARDWARE_STATUS         EQU 00010102h
+OID_GEN_MEDIA_SUPPORTED         EQU 00010103h
+OID_GEN_MEDIA_IN_USE            EQU 00010104h
+OID_GEN_MAXIMUM_LOOKAHEAD       EQU 00010105h
+OID_GEN_MAXIMUM_FRAME_SIZE      EQU 00010106h
+OID_GEN_LINK_SPEED              EQU 00010107h
+OID_GEN_TRANSMIT_BUFFER_SPACE   EQU 00010108h
+OID_GEN_RECEIVE_BUFFER_SPACE    EQU 00010109h
+OID_GEN_TRANSMIT_BLOCK_SIZE     EQU 0001010Ah
+OID_GEN_RECEIVE_BLOCK_SIZE      EQU 0001010Bh
+OID_GEN_VENDOR_DESCRIPTION      EQU 0001010Dh
+OID_GEN_CURRENT_PACKET_FILTER   EQU 0001010Eh
+OID_GEN_CURRENT_LOOKAHEAD       EQU 0001010Fh
+OID_GEN_DRIVER_VERSION          EQU 00010110h
+OID_GEN_MAXIMUM_TOTAL_SIZE      EQU 00010111h
+OID_GEN_MAC_OPTIONS             EQU 00010113h
+OID_802_3_PERMANENT_ADDRESS     EQU 01010101h
+OID_802_3_CURRENT_ADDRESS       EQU 01010102h
+OID_802_3_MULTICAST_LIST        EQU 01010103h
+OID_802_3_MAXIMUM_LIST_SIZE     EQU 01010104h
+
 ; The async tick: a SOCK_PUMP every PD_TICKMS, a trace every PD_HEARTBEAT
 ; of them.  55 ms is the kernel's own tick, so the parked stack is driven
 ; at the cadence it was written for.
@@ -235,6 +329,22 @@ PDAPI_REDIR             EQU     1               ; BA2: run one resumable redirec
                                                 ; (REDIR_PENDING = the caller should yield
                                                 ; and call again - RMDOS does, with INT 2Fh
                                                 ; 1680h, so Windows and the tick run between)
+PDAPI_SOCK              EQU     3               ; Stage C: one socket op on the parked
+                                                ; kernel's TCP/IP stack, for WINSOCK.DLL.
+                                                ; Caller BX = the SOCK_* function, CX = the
+                                                ; request length, ES:DX = the request buffer
+                                                ; (INC\SOCKET.H).  Every socket op is instant
+                                                ; (the stack never blocks), so one bridge
+                                                ; window does it; the WAITING is the caller's
+                                                ; (it polls SOCK_STATE / SOCK_RECV and yields
+                                                ; with INT 2Fh 1680h, so Windows and the async
+                                                ; tick advance the parked stack between polls).
+                                                ; Answer: EAX = what the function returns (a
+                                                ; handle, a state, a byte count), CF clear; or
+                                                ; CF set with AX = an error; or AX=0FFFFh + CF
+                                                ; = the tick held the bridge this instant, retry
+PDS_MAXLEN              EQU     0300h           ; the bounce buffer's room (PGO_RES-PGO_BUF)
+PDS_IOHDR               EQU     16              ; SOCK_IO header before the data (SOCKET.H)
 
 ; The low page's layout (offsets from the page base, which the
 ; trampoline keeps in EBP; the page is 4K and zero-filled).  The stub is
@@ -283,7 +393,7 @@ PMDOS_DDB       dd      0                       ; DDB_Next
                 dd      UNDEFINED_INIT_ORDER
                 dd      OFFSET FLAT:pd_control
                 dd      OFFSET FLAT:pd_v86api   ; DDB_V86_API_Proc
-                dd      0                       ; no PM API yet
+                dd      OFFSET FLAT:pd_pmapi    ; DDB_PM_API_Proc (Stage C: WINSOCK.DLL)
                 dd      0, 0
                 dd      0
                 dd      0, 0
@@ -293,6 +403,9 @@ pd_pg           dd      0                       ; the low 1:1 page (trampoline +
 pd_kcr3         dd      0                       ; the parked kernel's CR3
 pd_kentry       dd      0                       ; brg_entry's linear address
 pd_clbuf        dd      0                       ; a call's client buffer, linear
+pd_socklen      dd      0                       ; a PDAPI_SOCK call's request length
+pd_sockfn       dd      0                       ; a PDAPI_SOCK call's SOCK_* function
+pd_sockans      dd      0                       ; a PDAPI_SOCK call's answer (for the trace)
 
 ; The async bridge's state, read and written by the tick and the API.
 pd_busy         db      0                       ; a bridge call is in progress
@@ -361,6 +474,12 @@ pd_blkhdr       db      13, 10, 'PMDOS.386: USB blk drv=', 0
 pd_blklba       db      ' lba=', 0
 pd_blkst        db      ' st=', 0
 pd_blkd0        db      ' d0=', 0
+; Stage C: the socket API path's trace (WINSOCK.DLL over the bridge) -
+; one line per completed socket op, and a receive shows its first bytes
+; as text so a fetch shows "HTTP/..." in the headless log.
+pd_skhdr        db      13, 10, 'PMDOS.386: sock fn=', 0
+pd_skans        db      ' ans=', 0
+pd_skdat        db      ' data=', 0
 
 ; BA2 self-test: the SMB1 peer's address and credentials (the step-6
 ; reference peer smb1peer.pl, reached through the rig's guest-forward at
@@ -387,6 +506,144 @@ pd_rdnm         db      ' name=', 0
 pd_rdat         db      ' attr=', 0
 pd_rdsz         db      ' size=', 0
 pd_rdres        db      ' result=', 0
+
+;---------------------------------------------------------------------
+; Stage D - the NDIS MAC face.  The characteristics tables handed to the
+; NDIS wrapper at registration, the MAC's names, the handle/context NDIS
+; returns, the kernel card's MAC (from NIC_INFO), the one binding, and the
+; OID answer table the Request handler walks.  Data values mirror the
+; in-box NE2000.386 so a known-good MAC's replies are matched.
+;---------------------------------------------------------------------
+pd_macname      db      'PMDOS$'                 ; adapter name (matches PROTOCOL.INI)
+PD_MACNAME_LEN  EQU     $ - pd_macname
+pd_macregname   db      'PMDOS'                  ; MAC-registration name
+PD_MACREGNAME_LEN EQU   $ - pd_macregname
+
+; The MAC-registration (svc 31h) descriptor.  NDIS sizes an allocation
+; from the first two words, copies the block and returns it as the MAC
+; handle; it does not interpret the three identity words, so NE2000's
+; proven values are kept (their individual meaning is not needed here).
+                ALIGN   2
+pd_reg_desc     dw      0, 3                     ; sizing words (-> 5-word block)
+                dw      67B0h, 611Fh, 7154h      ; MAC-level identity (from NE2000)
+                dw      PD_MACREGNAME_LEN, PD_MACREGNAME_LEN
+                dd      OFFSET FLAT:pd_macregname
+
+; The adapter characteristics table (svc 33h), 36h bytes: version, reserved,
+; ten upper-edge handler pointers, then the name as an NDIS_STRING.
+                ALIGN   4
+pd_macchar      db      3, 0                     ; +00 major, +01 minor
+                dd      0                        ; +02 reserved (dword)
+                dd      OFFSET FLAT:mac_open     ; +06
+                dd      OFFSET FLAT:mac_close    ; +0A
+                dd      OFFSET FLAT:mac_send     ; +0E
+                dd      OFFSET FLAT:mac_xfer     ; +12
+                dd      OFFSET FLAT:mac_reset    ; +16
+                dd      OFFSET FLAT:mac_request  ; +1A
+                dd      OFFSET FLAT:mac_qstats   ; +1E
+                dd      OFFSET FLAT:mac_unload   ; +22
+                dd      OFFSET FLAT:mac_addadap  ; +26
+                dd      OFFSET FLAT:mac_remadap  ; +2A
+                dw      PD_MACNAME_LEN, PD_MACNAME_LEN
+                dd      OFFSET FLAT:pd_macname
+
+; MAC runtime state.
+pd_macaddr      db      6 dup(0)                 ; the kernel NIC's MAC (NIC_INFO)
+                db      0, 0
+pd_ndis_ok      db      0                        ; 1 once NDIS accepted the adapter
+                db      0, 0, 0
+pd_ndis_mach    dd      0                        ; svc 31h: the MAC handle
+pd_ndis_ctx     dd      0                        ; svc 33h: NDIS's adapter context (out)
+pd_ndis_status  dd      0                        ; svc 33h: the out status cell
+                ALIGN   4
+pd_adapter      dd      0, 0, 0, 0               ; our MacAdapterContext (svc 33h arg4)
+
+; The one binding (NetBEUI): OpenAdapter fills it and returns its address
+; as the MacBindingHandle.
+pd_bind_used    dd      0                        ; 0 free / 1 open
+pd_bind_nbc     dd      0                        ; the NdisBindingContext NDIS gave
+pd_bind_adap    dd      0                        ; the MacAdapterContext NDIS gave
+
+; Settable per-adapter OID stores, and the constant OID values.
+pd_pktfilter    dd      0                        ; OID_GEN_CURRENT_PACKET_FILTER
+pd_lookahead    dd      0EEh                     ; OID_GEN_CURRENT_LOOKAHEAD (238)
+pd_v_hwstatus   dd      0                        ; NdisHardwareStatusReady
+pd_v_media      dd      0                        ; NdisMedium802_3
+pd_v_maxlook    dd      0EEh                     ; 238
+pd_v_maxframe   dd      05DCh                    ; 1500
+pd_v_linkspeed  dd      0186A0h                  ; 100000 = 10 Mbit (100bps units)
+pd_v_bufspace   dd      04000h                   ; 16K tx/rx buffer space
+pd_v_blocksize  dd      05EAh                    ; 1514 (one frame per block)
+pd_v_drvver     dw      0300h                    ; 3.0
+pd_v_maxtotal   dd      05EAh                    ; 1514
+pd_v_macopts    dd      0Fh                      ; COPY_LOOKAHEAD|RX_SERIALIZED|
+                                                 ;  TRANSFERS_NOT_PEND|NO_LOOPBACK
+pd_v_maxlist    dd      16                       ; OID_802_3_MAXIMUM_LIST_SIZE
+
+; OID_GEN_SUPPORTED_LIST payload.
+                ALIGN   4
+pd_oidlist      dd      OID_GEN_SUPPORTED_LIST, OID_GEN_HARDWARE_STATUS
+                dd      OID_GEN_MEDIA_SUPPORTED, OID_GEN_MEDIA_IN_USE
+                dd      OID_GEN_MAXIMUM_LOOKAHEAD, OID_GEN_MAXIMUM_FRAME_SIZE
+                dd      OID_GEN_LINK_SPEED, OID_GEN_TRANSMIT_BUFFER_SPACE
+                dd      OID_GEN_RECEIVE_BUFFER_SPACE, OID_GEN_TRANSMIT_BLOCK_SIZE
+                dd      OID_GEN_RECEIVE_BLOCK_SIZE, OID_GEN_VENDOR_DESCRIPTION
+                dd      OID_GEN_CURRENT_PACKET_FILTER, OID_GEN_CURRENT_LOOKAHEAD
+                dd      OID_GEN_DRIVER_VERSION, OID_GEN_MAXIMUM_TOTAL_SIZE
+                dd      OID_GEN_MAC_OPTIONS
+                dd      OID_802_3_PERMANENT_ADDRESS, OID_802_3_CURRENT_ADDRESS
+                dd      OID_802_3_MULTICAST_LIST, OID_802_3_MAXIMUM_LIST_SIZE
+PD_OIDLIST_LEN  EQU     $ - pd_oidlist
+pd_vendordesc   db      'PM-DOS bridge NDIS MAC', 0
+PD_VENDORDESC_LEN EQU   $ - pd_vendordesc
+
+; The Query-OID answer table the Request handler walks: {OID, length,
+; source pointer}, terminated by a zero OID.  Lengths and values mirror
+; NE2000's.  The pointer sources are filled in two passes - the ones that
+; need a run-time address (the value cells, the lists) are constants here.
+                ALIGN   4
+pd_oidtab       dd      OID_GEN_SUPPORTED_LIST,        PD_OIDLIST_LEN,    OFFSET FLAT:pd_oidlist
+                dd      OID_GEN_HARDWARE_STATUS,       4,                 OFFSET FLAT:pd_v_hwstatus
+                dd      OID_GEN_MEDIA_SUPPORTED,       4,                 OFFSET FLAT:pd_v_media
+                dd      OID_GEN_MEDIA_IN_USE,          4,                 OFFSET FLAT:pd_v_media
+                dd      OID_GEN_MAXIMUM_LOOKAHEAD,     4,                 OFFSET FLAT:pd_v_maxlook
+                dd      OID_GEN_MAXIMUM_FRAME_SIZE,    4,                 OFFSET FLAT:pd_v_maxframe
+                dd      OID_GEN_LINK_SPEED,            4,                 OFFSET FLAT:pd_v_linkspeed
+                dd      OID_GEN_TRANSMIT_BUFFER_SPACE, 4,                 OFFSET FLAT:pd_v_bufspace
+                dd      OID_GEN_RECEIVE_BUFFER_SPACE,  4,                 OFFSET FLAT:pd_v_bufspace
+                dd      OID_GEN_TRANSMIT_BLOCK_SIZE,   4,                 OFFSET FLAT:pd_v_blocksize
+                dd      OID_GEN_RECEIVE_BLOCK_SIZE,    4,                 OFFSET FLAT:pd_v_blocksize
+                dd      OID_GEN_VENDOR_DESCRIPTION,    PD_VENDORDESC_LEN, OFFSET FLAT:pd_vendordesc
+                dd      OID_GEN_CURRENT_PACKET_FILTER, 4,                 OFFSET FLAT:pd_pktfilter
+                dd      OID_GEN_CURRENT_LOOKAHEAD,     4,                 OFFSET FLAT:pd_lookahead
+                dd      OID_GEN_DRIVER_VERSION,        2,                 OFFSET FLAT:pd_v_drvver
+                dd      OID_GEN_MAXIMUM_TOTAL_SIZE,    4,                 OFFSET FLAT:pd_v_maxtotal
+                dd      OID_GEN_MAC_OPTIONS,           4,                 OFFSET FLAT:pd_v_macopts
+                dd      OID_802_3_PERMANENT_ADDRESS,   6,                 OFFSET FLAT:pd_macaddr
+                dd      OID_802_3_CURRENT_ADDRESS,     6,                 OFFSET FLAT:pd_macaddr
+                dd      OID_802_3_MAXIMUM_LIST_SIZE,   4,                 OFFSET FLAT:pd_v_maxlist
+                dd      OID_802_3_MULTICAST_LIST,      0,                 OFFSET FLAT:pd_macaddr
+                dd      0, 0, 0                   ; end marker
+
+pd_msgndis      db      13, 10, 'PMDOS.386: NDIS present, registering MAC', 0
+pd_msgnondis    db      13, 10, 'PMDOS.386: no NDIS wrapper - MAC face skipped', 13, 10, 0
+pd_msgmach      db      13, 10, 'PMDOS.386: NDIS RegisterMac handle=', 0
+pd_msgreg       db      13, 10, 'PMDOS.386: NDIS RegisterAdapter status=', 0
+pd_msgregok     db      13, 10, 'PMDOS.386: NDIS MAC registered, ctx=', 0
+pd_msgopen      db      13, 10, 'PMDOS.386: NDIS OpenAdapter -> binding up', 0
+pd_msgmoc       db      13, 10, 'PMDOS.386: mac_open CALLED by a protocol', 0
+pd_msgmrc       db      13, 10, 'PMDOS.386: mac_request CALLED (first)', 0
+pd_mr_traced    db      0
+                db      0, 0, 0
+; Stage-D bind diagnostics: the lifecycle handlers ndis.386 drives while it
+; sets up a binding.  Which of these fires tells us how far the handshake got.
+pd_msg_aa       db      13, 10, 'PMDOS.386: mac_addadap args=', 0
+pd_sp           db      ' ', 0
+pd_msg_nm       db      ' name@arg3=', 0
+pd_msg_rst      db      13, 10, 'PMDOS.386: mac_reset CALLED', 0
+pd_msg_cls      db      13, 10, 'PMDOS.386: mac_close CALLED', 0
+pd_msg_qs       db      13, 10, 'PMDOS.386: mac_qstats CALLED', 0
+pd_msg_unl      db      13, 10, 'PMDOS.386: mac_unload CALLED', 0
 _LDATA  ENDS
 
 ;=====================================================================
@@ -879,6 +1136,8 @@ pd_v86api:
         je      pv_redir
         cmp     ax,PDAPI_BLOCK
         je      pv_block
+        cmp     ax,PDAPI_SOCK
+        je      pv_sock
         jmp     pv_fail
 
 pv_nicinfo:
@@ -1059,6 +1318,198 @@ pv_bbusy:
         mov     word ptr [ebp+C_EAX],0FFFFh
         or      word ptr [ebp+C_EFLAGS],1
         jmp     pv_done
+
+;---------------------------------------------------------------------
+; pv_sock (PDAPI_SOCK) - one socket op on the parked kernel's TCP/IP
+; stack for WINSOCK.DLL.  The caller's request block is at ES:DX, BX =
+; the SOCK_* function, CX = the request length.  Copy it into the
+; bounce buffer, bridge {NDTF_STACK, EBX=fn, ECX=len, EDI=PGO_BUF} into
+; the parked stack (every socket op is instant - the stack never
+; blocks), copy the (possibly updated) block back, and hand the caller
+; EAX = the answer with CF = the stack's carry.  The length is bounded
+; to the bounce buffer's room, so a caller cannot make the copy overrun.
+;---------------------------------------------------------------------
+pv_sock:
+        movzx   ecx,word ptr [ebp+C_ECX]        ; caller CX = the request length
+        or      ecx,ecx
+        jz      pv_fail                         ; a zero-length request is a bad call
+        cmp     ecx,PDS_MAXLEN
+        ja      pv_fail                         ; too big for the bounce buffer
+        mov     [pd_socklen],ecx
+        movzx   ebx,word ptr [ebp+C_EBX]        ; caller BX = the SOCK_* function
+        mov     [pd_sockfn],ebx
+        ; a V86 caller's buffer at ES:DX, as a flat linear address
+        movzx   edi,word ptr [ebp+C_ES]
+        shl     edi,4
+        movzx   eax,word ptr [ebp+C_EDX]
+        add     edi,eax
+        mov     [pd_clbuf],edi
+        call    pd_sockop                       ; copy in, bridge, copy back, answer
+        jmp     pv_done
+
+;---------------------------------------------------------------------
+; pd_pmapi - the PM API entry (DDB_PM_API_Proc), for WINSOCK.DLL and
+; any other 16-bit PROTECTED-mode program under enhanced mode.  Reached
+; the same way (INT 2Fh AX=1684h, BX=504Dh hands back the call-in
+; address - a PM caller gets this proc, a V86 caller gets pd_v86api),
+; with EBP -> the caller's Client_Reg_Struc.
+;
+; A PM caller's ES:DX would be a SELECTOR:offset, which is not a linear
+; address, so the PM socket call passes its request buffer a different
+; way: EDX = the buffer's flat LINEAR address, which the DLL gets by
+; allocating the buffer in conventional memory (KERNEL GlobalDosAlloc:
+; its paragraph address << 4 is 1:1 linear in the System VM, the same
+; low memory the bridge already uses).  BX = the SOCK_* function, CX =
+; the length.  Only PDAPI_SOCK is served here (the redirector and block
+; APIs are for RMDOS, which is a V86 caller).
+;---------------------------------------------------------------------
+pd_pmapi:
+        pushad                                  ; pushad leaves EBP = the struct
+        movzx   eax,word ptr [ebp+C_EAX]
+        cmp     ax,PDAPI_SOCK
+        jne     pp_fail
+        movzx   ecx,word ptr [ebp+C_ECX]
+        or      ecx,ecx
+        jz      pp_fail
+        cmp     ecx,PDS_MAXLEN
+        ja      pp_fail
+        mov     [pd_socklen],ecx
+        movzx   ebx,word ptr [ebp+C_EBX]
+        mov     [pd_sockfn],ebx
+        mov     edx,[ebp+C_EDX]                 ; PM: EDX = the buffer's flat linear
+        mov     [pd_clbuf],edx
+        call    pd_sockop
+        popad
+        ret
+pp_fail:
+        or      word ptr [ebp+C_EFLAGS],1       ; caller's CF = 1: it did not
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; pd_sockop - the shared socket-op core for pv_sock (V86) and pd_pmapi
+; (PM).  Assumes pd_clbuf = the caller buffer's flat linear address,
+; pd_socklen = its length, pd_sockfn = the SOCK_* function, EBP = the
+; client struct.  Copies the request into the bounce buffer, bridges
+; one socket op {NDTF_STACK, EBX=fn} into the parked stack, copies the
+; (possibly updated) block back, and sets the caller's EAX and CF.
+; The length is already bounded to the bounce buffer's room.
+;---------------------------------------------------------------------
+pd_sockop:
+        mov     esi,[pd_clbuf]
+        mov     edi,[pd_pg]
+        add     edi,PGO_BUF
+        mov     ecx,[pd_socklen]
+        cld
+        rep     movsb
+        mov     eax,NDTF_STACK
+        xor     edx,edx
+        mov     ebx,[pd_sockfn]
+        mov     ecx,[pd_socklen]
+        mov     edi,PGO_BUF
+        call    pd_bridge_call                  ; -> EAX answer, CF = the stack's carry
+        jnc     pso_ok
+        cmp     eax,0FFFF0000h
+        jae     pso_busy                        ; bridge busy / not ready: tell caller to retry
+        ; a socket error: AX = the error, carry set
+        mov     word ptr [ebp+C_EAX],ax
+        or      word ptr [ebp+C_EFLAGS],1
+        ret
+pso_ok:
+        mov     [pd_sockans],eax
+        mov     esi,[pd_pg]
+        add     esi,PGO_BUF
+        mov     edi,[pd_clbuf]
+        mov     ecx,[pd_socklen]
+        cld
+        rep     movsb
+        mov     eax,[pd_sockans]
+        mov     dword ptr [ebp+C_EAX],eax
+        and     word ptr [ebp+C_EFLAGS],0FFFEh
+        call    pd_sock_trace
+        ret
+pso_busy:
+        mov     word ptr [ebp+C_EAX],0FFFFh
+        or      word ptr [ebp+C_EFLAGS],1
+        ret
+
+;---------------------------------------------------------------------
+; pd_sock_trace - E9 one completed socket op: the function and the
+; answer, and for a receive that returned data, the first bytes of it
+; as text (so a fetch shows "HTTP/..." in the headless log).  The
+; heavily polled ops - SOCK_STATE, and a SOCK_RECV that got nothing -
+; are skipped so polling does not flood the log.  Preserves every
+; register (so EBP, the client struct, is untouched).
+;---------------------------------------------------------------------
+pd_sock_trace:
+        pushad
+        mov     eax,[pd_sockfn]
+        cmp     eax,SOCK_STATE
+        je      pst_done                        ; polled heavily: do not trace
+        cmp     eax,SOCK_RECV
+        jne     pst_show
+        cmp     dword ptr [pd_sockans],0
+        je      pst_done                        ; a receive with no data yet: skip
+pst_show:
+        mov     esi,OFFSET FLAT:pd_skhdr
+        call    pd_e9str
+        mov     eax,[pd_sockfn]
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_skans
+        call    pd_e9str
+        mov     eax,[pd_sockans]
+        call    pd_e9hex
+        cmp     dword ptr [pd_sockfn],SOCK_RECV
+        jne     pst_crlf
+        ; a receive: show up to 24 bytes of the data, as text
+        mov     esi,OFFSET FLAT:pd_skdat
+        call    pd_e9str
+        mov     ecx,[pd_sockans]
+        cmp     ecx,24
+        jbe     pst_len
+        mov     ecx,24
+pst_len:
+        mov     esi,[pd_pg]
+        add     esi,PGO_BUF + PDS_IOHDR         ; the data after the SOCK_IO header
+        call    pd_e9raw
+pst_crlf:
+        mov     esi,OFFSET FLAT:pd_rcrlf
+        call    pd_e9str
+pst_done:
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; pd_e9raw - write ECX bytes at DS:ESI to port E9h as text; a control
+; byte is shown as '.'.  Preserves every register.
+;---------------------------------------------------------------------
+pd_e9raw:
+        push    eax
+        push    ecx
+        push    edx
+        push    esi
+        mov     dx,E9_PORT
+        cld
+        or      ecx,ecx
+        jz      pr_done
+pr_next:
+        lodsb
+        cmp     al,32
+        jb      pr_dot
+        cmp     al,126
+        jbe     pr_put
+pr_dot:
+        mov     al,'.'
+pr_put:
+        out     dx,al
+        dec     ecx
+        jnz     pr_next
+pr_done:
+        pop     esi
+        pop     edx
+        pop     ecx
+        pop     eax
+        ret
 
 pv_fail:
         or      word ptr [ebp+C_EFLAGS],1       ; caller's CF = 1: it did not
@@ -1427,6 +1878,303 @@ pdi_done:
         clc                                      ; serviced: do not reflect
         ret
 
+;=====================================================================
+; STAGE D - the NDIS 3.0 MAC face.  The NDIS wrapper (NDIS.386) calls the
+; handlers below through the characteristics table that the init segment
+; registered.  A wrapper service that returns a value is reached by
+; CALLing one of the thunks: VMM rewrites each 'int 20h; dd id' into a
+; jump to the service, which returns to the thunk's caller (the 8000h bit
+; in the id selects that call form).  The handlers are cdecl - arguments
+; are pushed right to left, the caller clears the stack, the NDIS_STATUS
+; result is returned in EAX - and preserve EBX, ESI, EDI, EBP.
+;=====================================================================
+
+; --- NDIS service thunks (CALL these) ---
+nd_get_version: int     20h
+                dd      NDIS_DYNLINK + NDIS_GET_VERSION
+nd_reg_mac:     int     20h
+                dd      NDIS_DYNLINK + NDIS_REGISTER_MAC
+nd_dereg:       int     20h
+                dd      NDIS_DYNLINK + NDIS_DEREGISTER
+nd_reg_adapter: int     20h
+                dd      NDIS_DYNLINK + NDIS_REGISTER_ADAPTER
+
+;---------------------------------------------------------------------
+; mac_open - MacOpenAdapter.  A protocol (NetBEUI) binds to the adapter.
+;   [ebp+08] &OpenErrorStatus  [ebp+0C] &MacBindingHandle
+;   [ebp+10] &SelectedMediumIndex  [ebp+14] MediumArray  [ebp+18] count
+;   [ebp+1C] NdisBindingContext  [ebp+20] MacAdapterContext
+; Select NdisMedium802_3 (value 0) from the medium array, record the one
+; binding and hand back its record as the MacBindingHandle.
+;---------------------------------------------------------------------
+mac_open:
+        push    ebp
+        mov     ebp,esp
+        push    esi
+        pushad
+        mov     esi,OFFSET FLAT:pd_msgmoc
+        call    pd_e9str
+        popad
+        mov     eax,[ebp+08h]
+        mov     dword ptr [eax],0               ; *OpenErrorStatus = SUCCESS
+        mov     eax,[ebp+14h]                   ; MediumArray
+        mov     edx,[ebp+18h]                   ; count
+        mov     ecx,0FFFFFFFFh                  ; selected index = none
+        xor     esi,esi
+mo_scan:
+        test    edx,edx
+        jz      mo_scandone
+        cmp     dword ptr [eax],0               ; NdisMedium802_3?
+        jne     mo_scannext
+        mov     ecx,esi
+        jmp     mo_scandone
+mo_scannext:
+        add     eax,4
+        inc     esi
+        dec     edx
+        jmp     mo_scan
+mo_scandone:
+        mov     eax,[ebp+10h]
+        mov     [eax],ecx                       ; *SelectedMediumIndex
+        cmp     ecx,0FFFFFFFFh
+        jne     mo_haveidx
+        mov     eax,NDIS_UNSUPPORTED_MEDIA
+        jmp     mo_ret
+mo_haveidx:
+        cmp     dword ptr [pd_bind_used],0
+        jne     mo_busy
+        mov     dword ptr [pd_bind_used],1
+        mov     eax,[ebp+1Ch]
+        mov     [pd_bind_nbc],eax               ; NdisBindingContext
+        mov     eax,[ebp+20h]
+        mov     [pd_bind_adap],eax              ; MacAdapterContext
+        mov     eax,[ebp+0Ch]
+        mov     dword ptr [eax],OFFSET FLAT:pd_bind_used   ; the binding handle
+        mov     esi,OFFSET FLAT:pd_msgopen
+        call    pd_e9str
+        xor     eax,eax                         ; NDIS_SUCCESS
+        jmp     mo_ret
+mo_busy:
+        mov     eax,NDIS_FAILURE
+mo_ret:
+        pop     esi
+        pop     ebp
+        ret
+
+;---------------------------------------------------------------------
+; mac_close - MacCloseAdapter( MacBindingHandle, ... ).  Free the binding.
+;---------------------------------------------------------------------
+mac_close:
+        pushad
+        mov     esi,OFFSET FLAT:pd_msg_cls
+        call    pd_e9str
+        popad
+        mov     dword ptr [pd_bind_used],0
+        xor     eax,eax
+        ret
+
+;---------------------------------------------------------------------
+; mac_reset - MacReset( MacBindingHandle ).  No hardware reset is needed
+; (the kernel owns the card); complete synchronously.
+;---------------------------------------------------------------------
+mac_reset:
+        pushad
+        mov     esi,OFFSET FLAT:pd_msg_rst
+        call    pd_e9str
+        popad
+        xor     eax,eax
+        ret
+
+;---------------------------------------------------------------------
+; mac_send - MacSend( MacBindingHandle, Packet ).  D1a stub: accept and
+; drop (D1b walks the packet into a frame and calls NIC_SEND).
+;---------------------------------------------------------------------
+mac_send:
+        xor     eax,eax
+        ret
+
+;---------------------------------------------------------------------
+; mac_xfer - MacTransferData( ..., &BytesTransferred ).  D1a stub: no
+; frames are indicated yet, so this is never reached; answer 0 bytes.
+;---------------------------------------------------------------------
+mac_xfer:
+        push    ebp
+        mov     ebp,esp
+        mov     eax,[ebp+1Ch]
+        mov     dword ptr [eax],0
+        xor     eax,eax
+        pop     ebp
+        ret
+
+;---------------------------------------------------------------------
+; mac_request - MacRequest( MacBindingHandle, NDIS_REQUEST ).  Answer the
+; generic/802.3 OID queries NetBEUI makes at bind, and store the settable
+; ones.  The query answers come from pd_oidtab {OID, length, source}.
+;---------------------------------------------------------------------
+mac_request:
+        push    ebp
+        mov     ebp,esp
+        push    ebx
+        push    esi
+        push    edi
+        cmp     byte ptr [pd_mr_traced],0
+        jne     mr_notrace
+        mov     byte ptr [pd_mr_traced],1
+        pushad
+        mov     esi,OFFSET FLAT:pd_msgmrc
+        call    pd_e9str
+        popad
+mr_notrace:
+        mov     ebx,[ebp+0Ch]                   ; NDIS_REQUEST
+        cmp     dword ptr [ebx+NRQ_TYPE],0
+        jne     mr_set
+        ; ---- QueryInformation ----
+        mov     eax,[ebx+NRQ_OID]
+        mov     esi,OFFSET FLAT:pd_oidtab
+mr_scan:
+        mov     ecx,[esi]                       ; table OID
+        test    ecx,ecx
+        jz      mr_notsup                       ; end marker
+        cmp     ecx,eax
+        je      mr_found
+        add     esi,12
+        jmp     mr_scan
+mr_found:
+        mov     edi,[esi+4]                     ; length
+        mov     esi,[esi+8]                     ; source pointer
+        mov     eax,[ebx+NRQ_BUFLEN]
+        cmp     edi,eax
+        jbe     mr_fits
+        mov     [ebx+NRQ_NEEDED],edi
+        mov     dword ptr [ebx+NRQ_WRITTEN],0
+        mov     eax,NDIS_BAD_LENGTH
+        jmp     mr_done
+mr_fits:
+        mov     [ebx+NRQ_WRITTEN],edi
+        mov     edx,[ebx+NRQ_BUFFER]            ; destination
+mr_cpy:
+        test    edi,edi
+        jz      mr_cpydone
+        mov     al,[esi]
+        mov     [edx],al
+        inc     esi
+        inc     edx
+        dec     edi
+        jmp     mr_cpy
+mr_cpydone:
+        xor     eax,eax                         ; NDIS_SUCCESS
+        jmp     mr_done
+mr_notsup:
+        mov     dword ptr [ebx+NRQ_WRITTEN],0
+        mov     eax,NDIS_NOT_SUPPORTED
+        jmp     mr_done
+mr_set:
+        ; ---- SetInformation ----  accept the settable OIDs
+        mov     eax,[ebx+NRQ_OID]
+        cmp     dword ptr [ebx+NRQ_BUFLEN],4
+        jb      mr_setbad
+        mov     edx,[ebx+NRQ_BUFFER]
+        cmp     eax,OID_GEN_CURRENT_PACKET_FILTER
+        jne     mr_set1
+        mov     ecx,[edx]
+        mov     [pd_pktfilter],ecx
+        jmp     mr_setok
+mr_set1:
+        cmp     eax,OID_GEN_CURRENT_LOOKAHEAD
+        jne     mr_set2
+        mov     ecx,[edx]
+        mov     [pd_lookahead],ecx
+        jmp     mr_setok
+mr_set2:
+        cmp     eax,OID_802_3_MULTICAST_LIST
+        je      mr_setok                        ; we indicate all; accept
+        cmp     eax,OID_GEN_MAC_OPTIONS
+        je      mr_setok
+mr_setbad:
+        mov     dword ptr [ebx+NRQ_WRITTEN],0
+        mov     eax,NDIS_NOT_SUPPORTED
+        jmp     mr_done
+mr_setok:
+        mov     eax,[ebx+NRQ_BUFLEN]
+        mov     [ebx+NRQ_WRITTEN],eax
+        xor     eax,eax
+mr_done:
+        pop     edi
+        pop     esi
+        pop     ebx
+        pop     ebp
+        ret
+
+;---------------------------------------------------------------------
+; mac_qstats - QueryGlobalStatistics( MacAdapterContext, NDIS_REQUEST ).
+; D1a: statistics are optional; report none.
+;---------------------------------------------------------------------
+mac_qstats:
+        pushad
+        mov     esi,OFFSET FLAT:pd_msg_qs
+        call    pd_e9str
+        popad
+        push    ebp
+        mov     ebp,esp
+        mov     edx,[ebp+0Ch]
+        mov     dword ptr [edx+NRQ_WRITTEN],0
+        mov     eax,NDIS_NOT_SUPPORTED
+        pop     ebp
+        ret
+
+;---------------------------------------------------------------------
+; mac_unload / mac_addadap / mac_remadap - the MAC-driver lifecycle.  We
+; register our single adapter ourselves at Device_Init, so these succeed
+; trivially (AddAdapter is not the registration path here).
+;---------------------------------------------------------------------
+mac_unload:
+        pushad
+        mov     esi,OFFSET FLAT:pd_msg_unl
+        call    pd_e9str
+        popad
+        xor     eax,eax
+        ret
+mac_addadap:
+        pushad                                  ; 20h bytes; orig [esp+4] -> [esp+24h]
+        mov     esi,OFFSET FLAT:pd_msg_aa
+        call    pd_e9str
+        mov     eax,[esp+24h]                   ; arg1 (MacMacContext?)
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_sp
+        call    pd_e9str
+        mov     eax,[esp+28h]                   ; arg2 (ConfigHandle?)
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_sp
+        call    pd_e9str
+        mov     eax,[esp+2Ch]                   ; arg3 (AdapterName?)
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_sp
+        call    pd_e9str
+        mov     eax,[esp+30h]                   ; arg4
+        call    pd_e9hex
+        ; deref arg3 as a possible name/NDIS_STRING: dump the first 3 dwords
+        mov     esi,OFFSET FLAT:pd_msg_nm
+        call    pd_e9str
+        mov     esi,[esp+2Ch]
+        mov     eax,[esi]
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_sp
+        call    pd_e9str
+        mov     esi,[esp+2Ch]
+        mov     eax,[esi+4]
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_sp
+        call    pd_e9str
+        mov     esi,[esp+2Ch]
+        mov     eax,[esi+8]
+        call    pd_e9hex
+        popad
+        xor     eax,eax
+        ret
+mac_remadap:
+        xor     eax,eax
+        ret
+
 _LTEXT  ENDS
 
 ;=====================================================================
@@ -1534,6 +2282,14 @@ pd_devinit:
         lea     esi,[ebp+PGO_BUF+NICI_MAC]
         mov     ecx,6
         call    pd_e9mac
+        ; keep the card's MAC for the NDIS OID answers (the USB probe below
+        ; reuses PGO_BUF, so copy it out now).
+        mov     ebp,[pd_pg]
+        lea     esi,[ebp+PGO_BUF+NICI_MAC]
+        mov     edi,OFFSET FLAT:pd_macaddr
+        mov     ecx,6
+        cld
+        rep     movsb
         mov     esi,OFFSET FLAT:pd_msgname
         call    pd_e9str
         mov     ebp,[pd_pg]
@@ -1671,6 +2427,67 @@ pdv_dischook:
         call    pd_e9str
         ; the hook is already installed (pd_syscrit); the discovery above
         ; has just narrowed its drive mask to what usbm_owns really claims.
+
+        ;=============================================================
+        ; STAGE D, D1 - register with the NDIS 3.0 wrapper (NDIS.386) as a
+        ; native MAC, so WfW's own protocols bind to the kernel-owned card.
+        ; Skipped cleanly when no NDIS wrapper is loaded (a non-net build):
+        ; Get_Version carries 8000h, so an absent device returns CF rather
+        ; than faulting, and Stages A-C are left exactly as before.
+        ;=============================================================
+        call    nd_get_version                  ; NDIS present?
+        jc      pd_nondis                        ; CF = no NDIS wrapper
+        mov     esi,OFFSET FLAT:pd_msgndis
+        call    pd_e9str
+
+        ; NdisRegisterMac( &handle, &descriptor, 0, 0 ) -> the MAC handle
+        push    0
+        push    0
+        push    OFFSET FLAT:pd_reg_desc
+        push    OFFSET FLAT:pd_ndis_mach
+        call    nd_reg_mac
+        add     esp,16
+        mov     esi,OFFSET FLAT:pd_msgmach
+        call    pd_e9str
+        mov     eax,[pd_ndis_mach]
+        call    pd_e9hex
+
+        ; NdisRegisterAdapter( &status, &ctx, machandle, adapterctx,
+        ; &chartable, size ) - status 0 = the adapter is registered
+        push    MACC_SIZE
+        push    OFFSET FLAT:pd_macchar
+        push    OFFSET FLAT:pd_adapter
+        mov     eax,[pd_ndis_mach]
+        push    eax
+        push    OFFSET FLAT:pd_ndis_ctx
+        push    OFFSET FLAT:pd_ndis_status
+        call    nd_reg_adapter
+        add     esp,24
+        mov     esi,OFFSET FLAT:pd_msgreg
+        call    pd_e9str
+        mov     eax,[pd_ndis_status]
+        call    pd_e9hex
+        mov     eax,[pd_ndis_status]
+        test    eax,eax
+        jnz     pd_ndisfail
+        mov     byte ptr [pd_ndis_ok],1
+        mov     esi,OFFSET FLAT:pd_msgregok
+        call    pd_e9str
+        mov     eax,[pd_ndis_ctx]
+        call    pd_e9hex
+        jmp     pd_ndisdone
+pd_ndisfail:
+        ; registration failed: undo the MAC registration (NdisDeregisterMac)
+        push    0
+        mov     eax,[pd_ndis_mach]
+        push    eax
+        call    nd_dereg
+        add     esp,8
+        jmp     pd_ndisdone
+pd_nondis:
+        mov     esi,OFFSET FLAT:pd_msgnondis
+        call    pd_e9str
+pd_ndisdone:
 
         ; Arm the async tick.  From here the parked stack runs on its own,
         ; PD_TICKMS apart, with Windows never paused.

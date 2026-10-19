@@ -34,6 +34,8 @@
 #include "ndrv.h"
 #include "nic.h"
 #include "socket.h"
+#include "tlshs.h"            /* kernel-side TLS: the vendored NSTLS core */
+#include "rng.h"
 
 #define NULL ((void *)0)
 
@@ -120,9 +122,56 @@ typedef struct {
     /* a listening socket keeps the port; children carry the connection */
     u16  listenport;
     u8   listening;
+
+    /* TLS (SOCK_TLS): the handshake and record crypto run kernel-side over
+       the raw TCP stream.  The TLS state rides above tstate: tls_state is
+       TLSX_* while tstate is the TCP connection underneath. */
+    u8   tls;                   /* 1: a TLS socket */
+    u8   tls_state;             /* TLSX_* */
+    u8   tls_eof;               /* the peer sent close_notify */
+    tls_conn *tc;               /* the TLS connection (arena, from tls_new) */
+    nst_rng  *rng;              /* its RNG (arena; must outlive tc) */
+    u8  *trx;                   /* one inbound record, being assembled */
+    u32  trxlen;
+    u8  *tapp;                  /* decrypted plaintext waiting for the app */
+    u32  tapstart, taplen;
+    char host[128];             /* server name: SNI and the cert to match */
 } SOCKET;
 
+/* tls_state */
+#define TLSX_IDLE    0          /* TCP connecting/established, TLS not begun */
+#define TLSX_HS      1          /* the handshake is going */
+#define TLSX_UP      2          /* the handshake is done; plaintext may pass */
+#define TLSX_FAIL    3          /* the handshake failed (cert or protocol) */
+
+#define TLS_REC_MAX  18432           /* largest record body (matches NSTLS REC_MAX) */
+#define TLS_RECCAP   (TLS_REC_MAX + 8)  /* room for one record (header + body) */
+#define TLS_STK_SIZE 32768           /* the crypto's private stack (from the pool) */
+#define TLS_POOL     0x50000UL        /* the TLS heap, grabbed at load (320K) */
+
 static SOCKET sock[SOCK_MAX];
+
+/* the trust bundle (SOCK_SETCA), the crypto's big stack, and a record-sized
+   scratch for SOCK_SEND, all out of the kernel arena */
+static u8  *tls_ca;             /* concatenated DER roots, or NULL */
+static u32  tls_calen;          /* bytes present so far */
+static u32  tls_catotal;        /* bytes the bundle will be */
+static u8  *tls_stk;            /* the crypto stack's base */
+static u32  tls_stktop;         /* ...and its top (ESP starts here) */
+static u8   tls_scratch[TLS_RECCAP];   /* one outbound record */
+
+extern u32 __cdecl tls_run( void *newtop, void *fn, void *arg );
+extern u32 tlsrt_init( u32 want );     /* grab the TLS heap pool; 0 if none */
+extern void *malloc( unsigned bytes ); /* the TLS pool (TLSRT.C), not DOS */
+extern void  free( void *block );
+
+#ifndef TLS_CT_APPLICATION_DATA
+#define TLS_CT_ALERT             21
+#define TLS_CT_APPLICATION_DATA  23
+#endif
+
+static void tls_release( SOCKET *s );
+static void tls_service( void );
 
 /* ---------------------------------------------------------------- */
 /* the interface                                                     */
@@ -1092,6 +1141,7 @@ static void udp_queue( SOCKET *s, u32 src, u16 sport, const u8 *data, u32 dlen )
 static void sock_reset( SOCKET *s, u8 type )
 {
     u8 *rxbuf = s->rxbuf, *txbuf = s->txbuf;
+    tls_release( s );                   /* free any TLS state a prior user left */
     mem_zero( s, sizeof( *s ) );
     s->rxbuf = rxbuf;
     s->txbuf = txbuf;
@@ -1103,6 +1153,24 @@ static void sock_reset( SOCKET *s, u8 type )
 static u32 sock_ss( SOCKET *s )
 {
     if ( s->type == SOCK_DGRAM ) return SS_ESTABLISHED;
+    if ( s->tls ) {
+        /* TLS rides above the TCP state: established means TLS is up, so a
+           caller's connect wait does not finish until the handshake does */
+        if ( s->tls_state == TLSX_FAIL ) return SS_ERROR;
+        if ( s->tls_state == TLSX_UP ) {
+            /* up, but report the close once the peer has ended and there is
+               no plaintext left, so a read-to-end loop stops */
+            u32 left = s->taplen - s->tapstart;
+            if ( left == 0 ) {
+                if ( s->tls_eof ) return SS_CLOSING;
+                if ( s->tstate != T_ESTAB && s->tstate != T_CLOSEWAIT &&
+                     s->trxlen == 0 && s->rxlen == 0 ) return SS_CLOSING;
+            }
+            return SS_ESTABLISHED;
+        }
+        if ( s->tstate == T_CLOSED ) return s->err ? SS_ERROR : SS_CLOSED;
+        return SS_CONNECTING;
+    }
     switch ( s->tstate ) {
     case T_CLOSED:   return s->err ? SS_ERROR : SS_CLOSED;
     case T_LISTEN:   return SS_LISTEN;
@@ -1116,11 +1184,224 @@ static u32 sock_ss( SOCKET *s )
 
 static u32 sock_rxready( SOCKET *s )
 {
+    if ( s->tls )
+        return ( s->tls_state == TLSX_UP ) ? ( s->taplen - s->tapstart ) : 0;
     if ( s->type == SOCK_DGRAM ) {
         if ( s->rxlen > s->rxstart ) return get16( s->rxbuf + s->rxstart );
         return 0;
     }
     return s->rxlen;
+}
+
+/* ---------------------------------------------------------------- */
+/* TLS: the handshake and record crypto, kernel-side                 */
+/* ---------------------------------------------------------------- */
+
+/* Each TLS-core entry runs on tls_stk through tls_run (TLSSTK.ASM): the
+   bridge's scratch stack is far too small for the crypto's call tree.  A
+   small job struct carries the arguments across the stack switch. */
+
+typedef struct { tls_conn *c; int ret; } PUMPJOB;
+static int __cdecl job_pump( void *p )
+{
+    PUMPJOB *j = (PUMPJOB *)p;
+    j->ret = tls_hs_pump( j->c );
+    return j->ret;
+}
+
+typedef struct {
+    tls_conn *c; const u8 *in; int len; u8 *out; int outcap; int ret;
+} ENCJOB;
+static int __cdecl job_encrypt( void *p )
+{
+    ENCJOB *j = (ENCJOB *)p;
+    j->ret = tls_app_encrypt( j->c, j->in, j->len, j->out, j->outcap );
+    return j->ret;
+}
+
+typedef struct {
+    tls_conn *c; const u8 *rec; int reclen; u8 *out; int outcap; int ct; int ret;
+} DECJOB;
+static int __cdecl job_decrypt( void *p )
+{
+    DECJOB *j = (DECJOB *)p;
+    j->ret = tls_app_decrypt( j->c, j->rec, j->reclen, j->out, j->outcap, &j->ct );
+    return j->ret;
+}
+
+static int run_pump( tls_conn *c )
+{
+    PUMPJOB j;
+    j.c = c; j.ret = TLS_HS_ERROR;
+    tls_run( (void *)tls_stktop, (void *)job_pump, &j );
+    return j.ret;
+}
+
+static int run_encrypt( tls_conn *c, const u8 *in, int len, u8 *out, int outcap )
+{
+    ENCJOB j;
+    j.c = c; j.in = in; j.len = len; j.out = out; j.outcap = outcap; j.ret = -1;
+    tls_run( (void *)tls_stktop, (void *)job_encrypt, &j );
+    return j.ret;
+}
+
+static int run_decrypt( tls_conn *c, const u8 *rec, int reclen,
+                        u8 *out, int outcap, int *ct )
+{
+    DECJOB j;
+    j.c = c; j.rec = rec; j.reclen = reclen; j.out = out; j.outcap = outcap;
+    j.ct = 0; j.ret = -1;
+    tls_run( (void *)tls_stktop, (void *)job_decrypt, &j );
+    *ct = j.ct;
+    return j.ret;
+}
+
+/* free a TLS socket's crypto state (on close, or before a slot is reused) */
+static void tls_release( SOCKET *s )
+{
+    if ( s->tc )   { tls_free( s->tc ); s->tc = NULL; }
+    if ( s->rng )  { free( s->rng ); s->rng = NULL; }
+    if ( s->trx )  { free( s->trx ); s->trx = NULL; }
+    if ( s->tapp ) { free( s->tapp ); s->tapp = NULL; }
+    s->trxlen = s->tapstart = s->taplen = 0;
+}
+
+/* pop up to 'want' bytes off the TCP receive ring into a linear buffer */
+static u32 tcp_rx_pop( SOCKET *s, u8 *dst, u32 want )
+{
+    u32 got = s->rxlen < want ? s->rxlen : want;
+    u32 i;
+    for ( i = 0; i < got; i++ ) dst[i] = s->rxbuf[( s->rxstart + i ) % RXCAP];
+    s->rxstart = ( s->rxstart + got ) % RXCAP;
+    s->rxlen -= got;
+    return got;
+}
+
+static u8 tls_feedbuf[1024];        /* handshake bytes, off the scratch stack */
+
+/* begin the TLS handshake once the TCP connection is up */
+static void tls_begin( SOCKET *s )
+{
+    const char *host = s->host[0] ? s->host : NULL;
+
+    if ( tls_stk == NULL ) {
+        tls_stk = (u8 *)malloc( TLS_STK_SIZE );
+        if ( tls_stk == NULL ) { s->tls_state = TLSX_FAIL; s->err = NET_FAIL; return; }
+        tls_stktop = ( (u32)tls_stk + TLS_STK_SIZE ) & ~15u;
+    }
+    s->rng  = (nst_rng *)malloc( sizeof( nst_rng ) );
+    s->trx  = (u8 *)malloc( TLS_RECCAP );
+    s->tapp = (u8 *)malloc( TLS_REC_MAX );
+    if ( s->rng == NULL || s->trx == NULL || s->tapp == NULL ) {
+        s->tls_state = TLSX_FAIL; s->err = NET_FAIL; return;
+    }
+    rng_init( s->rng );
+    rng_stir( s->rng, (const u8 *)&s->iss, 4 );     /* a little extra entropy */
+    s->tc = tls_new( s->rng );
+    if ( s->tc == NULL ) { s->tls_state = TLSX_FAIL; s->err = NET_FAIL; return; }
+    if ( tls_ca && tls_catotal > 0 && tls_calen == tls_catotal ) {
+        /* chain and host verified against the bundle; no wall clock in a
+           driver, so the certificate's dates are not checked */
+        tls_set_verify( s->tc, host, "", tls_ca, (int)tls_calen );
+    }
+    tls_hs_start( s->tc, host );
+    s->trxlen = 0;
+    s->tapstart = s->taplen = 0;
+    s->tls_eof = 0;
+    s->tls_state = TLSX_HS;
+}
+
+/* assemble and decrypt one inbound record into tapp, if tapp is empty */
+static void tls_fill( SOCKET *s )
+{
+    u32 reclen, extra;
+    int ct, plen;
+
+    if ( s->taplen > s->tapstart ) return;          /* app still has plaintext */
+    if ( s->tls_eof ) return;
+
+    if ( s->trxlen < 5 )
+        s->trxlen += tcp_rx_pop( s, s->trx + s->trxlen, 5 - s->trxlen );
+    if ( s->trxlen < 5 ) return;                    /* record header not in yet */
+
+    reclen = 5 + ( ( (u32)s->trx[3] << 8 ) | s->trx[4] );
+    if ( reclen > TLS_RECCAP ) { s->tls_state = TLSX_FAIL; s->err = NET_FAIL; return; }
+    if ( s->trxlen < reclen )
+        s->trxlen += tcp_rx_pop( s, s->trx + s->trxlen, reclen - s->trxlen );
+    if ( s->trxlen < reclen ) return;               /* record body not in yet */
+
+    plen = run_decrypt( s->tc, s->trx, (int)reclen, s->tapp, TLS_REC_MAX, &ct );
+    extra = s->trxlen - reclen;                     /* a following record's start */
+    if ( extra ) mem_copy( s->trx, s->trx + reclen, extra );
+    s->trxlen = extra;
+
+    if ( plen < 0 ) { s->tls_state = TLSX_FAIL; s->err = NET_FAIL; return; }
+    if ( ct == TLS_CT_APPLICATION_DATA ) { s->tapstart = 0; s->taplen = (u32)plen; }
+    else if ( ct == TLS_CT_ALERT ) s->tls_eof = 1;
+    /* else a post-handshake handshake message (a session ticket): drop it */
+}
+
+/* advance one TLS socket: start it, run the handshake, keep records flowing */
+static void tls_drive( SOCKET *s )
+{
+    if ( !s->tls ) return;
+
+    if ( s->tls_state == TLSX_IDLE ) {
+        if ( s->tstate == T_ESTAB ) tls_begin( s );
+        else if ( s->tstate == T_CLOSED && s->err ) s->tls_state = TLSX_FAIL;
+        return;
+    }
+
+    if ( s->tls_state == TLSX_HS ) {
+        unsigned char *out;
+        int st, m;
+
+        /* feed everything the TCP stream has to the handshake */
+        while ( s->rxlen > 0 ) {
+            u32 got = tcp_rx_pop( s, tls_feedbuf, sizeof( tls_feedbuf ) );
+            if ( got == 0 ) break;
+            if ( tls_hs_feed( s->tc, tls_feedbuf, (int)got ) < 0 ) {
+                s->tls_state = TLSX_FAIL; s->err = NET_FAIL; return;
+            }
+        }
+        st = run_pump( s->tc );
+        /* flush whatever the handshake wants to send into the TCP txbuf */
+        while ( ( m = tls_hs_out_ptr( s->tc, &out ) ) > 0 ) {
+            u32 room = tx_free( s );
+            u32 n = (u32)m < room ? (u32)m : room;
+            u32 i;
+            if ( n == 0 ) break;                    /* no room; next pass */
+            for ( i = 0; i < n; i++ )
+                s->txbuf[( s->txstart + s->txlen + i ) % TXCAP] = out[i];
+            s->txlen += n;
+            tls_hs_out_consume( s->tc, (int)n );
+        }
+        if ( s->txlen > 0 ) tcp_send_data( s );
+
+        if ( st == TLS_HS_DONE ) {
+            unsigned char *lp;
+            int lm = tls_hs_leftover( s->tc, &lp );     /* app bytes past Finished */
+            if ( lm > 0 ) {
+                if ( lm > TLS_RECCAP ) lm = TLS_RECCAP;
+                mem_copy( s->trx, lp, (u32)lm );
+                s->trxlen = (u32)lm;
+            }
+            s->tls_state = TLSX_UP;
+        } else if ( st == TLS_HS_ERROR ) {
+            s->tls_state = TLSX_FAIL;
+            s->err = NET_FAIL;
+        }
+        return;
+    }
+
+    if ( s->tls_state == TLSX_UP ) tls_fill( s );       /* keep plaintext ready */
+}
+
+static void tls_service( void )
+{
+    int i;
+    for ( i = 0; i < SOCK_MAX; i++ )
+        if ( sock[i].used && sock[i].tls ) tls_drive( &sock[i] );
 }
 
 /* ---------------------------------------------------------------- */
@@ -1137,6 +1418,7 @@ static void pump( void )
         if ( len == 0 ) break;
         eth_input( rx_frame, len );
     }
+    tls_service();      /* advance any TLS socket over the bytes just taken in */
 }
 
 static void timers( void )
@@ -1181,12 +1463,15 @@ static int do_open( void *buf, u32 len, u32 *answer )
 {
     SOCK_OPENREQ *req = (SOCK_OPENREQ *)buf;
     SOCKET *s;
+    u32 base;
 
     if ( len < sizeof( SOCK_OPENREQ ) ) return ERR_BADLEN;
-    if ( req->type != SOCK_STREAM && req->type != SOCK_DGRAM ) return ERR_BADDATA;
+    base = req->type & 0xFF;
+    if ( base != SOCK_STREAM && base != SOCK_DGRAM ) return ERR_BADDATA;
     s = sock_free_slot();
     if ( s == NULL ) return ERR_GENERAL;
-    sock_reset( s, (u8)req->type );
+    sock_reset( s, (u8)base );
+    if ( ( req->type & SOCK_TLS ) && base == SOCK_STREAM ) s->tls = 1;
     *answer = sock_handle( s );
     return 0;
 }
@@ -1199,6 +1484,8 @@ static int do_close( void *buf, u32 len )
     if ( len < sizeof( SOCK_HANDLE ) ) return ERR_BADLEN;
     s = sock_by_handle( req->handle );
     if ( s == NULL ) return ERR_BADDATA;
+
+    if ( s->tls ) tls_release( s );     /* drop the crypto; the TCP close runs on */
 
     if ( s->type == SOCK_DGRAM || s->tstate == T_CLOSED || s->listening ) {
         s->used = 0;
@@ -1307,6 +1594,26 @@ static int do_send( void *buf, u32 len, u32 *answer )
         return 0;
     }
 
+    if ( s->tls ) {
+        u32 room, maxp, i;
+        int reclen;
+
+        if ( s->tls_state != TLSX_UP || s->tc == NULL ) return ERR_GENERAL;
+        room = tx_free( s );
+        if ( room < 96 ) { *answer = 0; return 0; }  /* no room for a record: try later */
+        maxp = room - 80;                            /* leave space for record overhead */
+        if ( maxp > TLS_APP_MAX ) maxp = TLS_APP_MAX;
+        if ( dlen > maxp ) dlen = maxp;
+        reclen = run_encrypt( s->tc, data, (int)dlen, tls_scratch, (int)sizeof( tls_scratch ) );
+        if ( reclen <= 0 ) return ERR_GENERAL;
+        for ( i = 0; i < (u32)reclen; i++ )
+            s->txbuf[( s->txstart + s->txlen + i ) % TXCAP] = tls_scratch[i];
+        s->txlen += (u32)reclen;
+        tcp_send_data( s );
+        *answer = dlen;
+        return 0;
+    }
+
     if ( s->tstate != T_ESTAB && s->tstate != T_CLOSEWAIT ) return ERR_GENERAL;
     if ( dlen > tx_free( s ) ) dlen = tx_free( s );
     {
@@ -1344,6 +1651,19 @@ static int do_recv( void *buf, u32 len, u32 *answer )
         mem_copy( room, s->rxbuf + s->rxstart + 8, got );
         s->rxstart += 8 + dlen;
         if ( s->rxstart >= s->rxlen ) { s->rxstart = 0; s->rxlen = 0; }
+        io->len = got;
+        *answer = got;
+        return 0;
+    }
+
+    if ( s->tls ) {
+        u32 avail;
+        if ( s->tls_state != TLSX_UP || s->tc == NULL ) { io->len = 0; *answer = 0; return 0; }
+        tls_fill( s );                       /* decrypt one record if none is pending */
+        avail = s->taplen - s->tapstart;
+        got = avail < want ? avail : want;
+        mem_copy( room, s->tapp + s->tapstart, got );
+        s->tapstart += got;
         io->len = got;
         *answer = got;
         return 0;
@@ -1440,6 +1760,46 @@ static int do_ping( void *buf, u32 len, u32 *answer )
     return 0;
 }
 
+static int do_tlshost( void *buf, u32 len )
+{
+    SOCK_TLSHOSTREQ *req = (SOCK_TLSHOSTREQ *)buf;
+    SOCKET *s;
+
+    if ( len < SOCKTLSHOST_LEN ) return ERR_BADLEN;
+    s = sock_by_handle( req->handle );
+    if ( s == NULL ) return ERR_BADDATA;
+    req->name[sizeof( req->name ) - 1] = 0;
+    str_copy( s->host, req->name, sizeof( s->host ) );
+    /* naming a server turns a stream socket into a TLS one, so a caller
+       that learns it wants TLS only at connect (the WfW bridge's port map)
+       can upgrade a plain socket it already opened, before it connects */
+    if ( s->type == SOCK_STREAM && s->tstate == T_CLOSED ) s->tls = 1;
+    return 0;
+}
+
+static int do_setca( void *buf, u32 len )
+{
+    SOCK_CAREQ *req = (SOCK_CAREQ *)buf;
+    const u8 *data = (const u8 *)buf + SOCKCA_HDR;
+
+    if ( len < SOCKCA_HDR ) return ERR_BADLEN;
+    if ( len < SOCKCA_HDR + req->len ) return ERR_BADLEN;
+    if ( req->total == 0 || req->total > 65536 ) return ERR_BADDATA;
+    if ( req->offset + req->len > req->total ) return ERR_BADDATA;
+
+    if ( req->offset == 0 ) {                   /* the first chunk starts fresh */
+        if ( tls_ca ) { free( tls_ca ); tls_ca = NULL; }
+        tls_ca = (u8 *)malloc( req->total );    /* from the TLS pool, not the tight arena */
+        if ( tls_ca == NULL ) return ERR_GENERAL;
+        tls_catotal = req->total;
+        tls_calen = 0;
+    }
+    if ( tls_ca == NULL || req->total != tls_catotal ) return ERR_GENERAL;
+    if ( req->len ) mem_copy( tls_ca + req->offset, data, req->len );
+    if ( req->offset + req->len > tls_calen ) tls_calen = req->offset + req->len;
+    return 0;
+}
+
 /* ---------------------------------------------------------------- */
 /* the four entries the kernel calls                                 */
 /* ---------------------------------------------------------------- */
@@ -1463,6 +1823,8 @@ int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
     case SOCK_STATE:   result = do_state( buf, len, answer ); break;
     case SOCK_RESOLVE: result = do_resolve( buf, len, answer ); break;
     case SOCK_PING:    result = do_ping( buf, len, answer ); break;
+    case SOCK_TLSHOST: result = do_tlshost( buf, len ); if ( !result ) *answer = 0; break;
+    case SOCK_SETCA:   result = do_setca( buf, len ); if ( !result ) *answer = 0; break;
     case SOCK_PUMP:
         /* the bridge's one step: take frames off the card, run the
            protocol over them (pump already ran at the top, but the queue
@@ -1513,6 +1875,12 @@ int __cdecl nd_init( const char *line )
             return 1;
         }
     }
+
+    /* reserve the TLS heap now, while the arena is still plentiful: a TLS
+       socket wants ~200K, and once WfW is up and parks the kernel the arena
+       is nearly gone.  Without it, TLS sockets just fail to open. */
+    if ( tlsrt_init( TLS_POOL ) == 0 )
+        nds_print( "TCP/IP: no memory for TLS; HTTPS sockets will not open\r\n" );
 
     nds_tickhook();
     running = 1;

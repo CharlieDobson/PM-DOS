@@ -39,10 +39,20 @@
 #define SOCK_PUMP      11     /* drain the card + run the stack one step and its
                                  timers; for the WfW bridge, which drives the
                                  parked stack from the forwarded IRQ and tick */
+#define SOCK_TLSHOST   12     /* buf -> SOCK_TLSHOSTREQ; name a TLS socket's
+                                 server, for SNI and certificate matching */
+#define SOCK_SETCA     13     /* buf -> SOCK_CAREQ; hand the stack the CA
+                                 bundle (DISK\CACERT.BND) one chunk at a time */
 
 /* a socket's kind, for SOCK_OPEN */
 #define SOCK_STREAM    1      /* TCP: a connection */
 #define SOCK_DGRAM     2      /* UDP: datagrams */
+
+/* OR this into SOCK_OPEN's type for a TLS stream: the stack runs the TLS 1.2
+   handshake itself (kernel-side, so the crypto is 32-bit correct) once the TCP
+   connection is up, and SOCK_SEND/SOCK_RECV then carry the plaintext.  The
+   caller watches SOCK_STATE: SS_ESTABLISHED means TLS is up, not merely TCP. */
+#define SOCK_TLS       0x0100
 
 /* a socket's state, from SOCK_STATE */
 #define SS_FREE        0      /* not a socket */
@@ -151,6 +161,29 @@ typedef struct {
     u32 seq;                  /* in and out */
 } SOCK_PINGREQ;
 #define SOCKPING_LEN 16
+
+/* SOCK_TLSHOST - the server name of a TLS socket, set after SOCK_OPEN (with
+   SOCK_TLS) and before the connection comes up.  It is sent as SNI and the
+   name the certificate must match.  An empty name skips both. */
+typedef struct {
+    u32  handle;
+    char name[128];           /* in: ASCIIZ server name */
+} SOCK_TLSHOSTREQ;
+#define SOCKTLSHOST_LEN 132
+
+/* SOCK_SETCA - hand the stack the trust bundle (concatenated DER roots, as in
+   DISK\CACERT.BND) one chunk at a time, because the WfW bridge carries only a
+   few hundred bytes per call.  offset 0 starts a fresh bundle of 'total'
+   bytes; each call copies 'len' bytes of it at 'offset'.  Once the whole
+   bundle is in, TLS sockets verify the server chain against it; with no
+   bundle, a TLS socket connects without checking the certificate. */
+typedef struct {
+    u32 offset;               /* in: where this chunk goes in the bundle */
+    u32 total;                /* in: the whole bundle's length */
+    u32 len;                  /* in: bytes of data in this chunk */
+    /* u8 data[len] follows */
+} SOCK_CAREQ;
+#define SOCKCA_HDR   12
 
 /* a handy way to write an address out */
 #define IP_A( ip )   ((u8)( (ip) >> 24 ))

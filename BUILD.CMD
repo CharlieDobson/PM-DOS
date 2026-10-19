@@ -1851,11 +1851,21 @@ rem The stack rides on a loaded card driver (NDS_NICCALL) and answers
 rem the socket functions on 21h/F1h AL=26h (INC\SOCKET.H).  It is a
 rem 32-bit driver like the cards - DRV\NDSTART.ASM in front - but it is
 rem not a card, so it links NDSTART alone, not NETCORE.
+rem It also grows a kernel-side TLS socket (SOCK_TLS): the vendored NSTLS
+rem core (built above in CMD\NET\TLS) links in behind a tiny driver C
+rem runtime (TLSRT, malloc/free over one arena pool - a driver cannot call
+rem DOS like PMCLIB) and a stack switch (TLSSTK) that runs the handshake
+rem crypto on a big private stack, since the WfW bridge's scratch stack is
+rem far too small.  WINSOCK.DLL's port map opens 443 as TLS transparently.
 cd DRV\TCPIP
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=.. tcpip.c || goto :fail
-wlink form raw bin option offset=0x0 name tcpip_0.bin file ..\ndstart.obj,tcpip.obj ^
+wasm -q tlsstk.asm || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC tlsrt.c || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=.. -i=..\..\CMD\NET\TLS tcpip.c || goto :fail
+wlink form raw bin option offset=0x0 name tcpip_0.bin ^
+    file ..\ndstart.obj,tcpip.obj,tlsrt.obj,tlsstk.obj,..\..\CMD\NET\TLS\aes.obj,..\..\CMD\NET\TLS\gcm.obj,..\..\CMD\NET\TLS\sha.obj,..\..\CMD\NET\TLS\sha512.obj,..\..\CMD\NET\TLS\prf.obj,..\..\CMD\NET\TLS\bignum.obj,..\..\CMD\NET\TLS\rsa.obj,..\..\CMD\NET\TLS\ecp256.obj,..\..\CMD\NET\TLS\ecp384.obj,..\..\CMD\NET\TLS\rng.obj,..\..\CMD\NET\TLS\x509.obj,..\..\CMD\NET\TLS\tlsrec.obj,..\..\CMD\NET\TLS\tlshs.obj ^
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
-wlink form raw bin option offset=0x10000000 name tcpip_1.bin file ..\ndstart.obj,tcpip.obj ^
+wlink form raw bin option offset=0x10000000 name tcpip_1.bin ^
+    file ..\ndstart.obj,tcpip.obj,tlsrt.obj,tlsstk.obj,..\..\CMD\NET\TLS\aes.obj,..\..\CMD\NET\TLS\gcm.obj,..\..\CMD\NET\TLS\sha.obj,..\..\CMD\NET\TLS\sha512.obj,..\..\CMD\NET\TLS\prf.obj,..\..\CMD\NET\TLS\bignum.obj,..\..\CMD\NET\TLS\rsa.obj,..\..\CMD\NET\TLS\ecp256.obj,..\..\CMD\NET\TLS\ecp384.obj,..\..\CMD\NET\TLS\rng.obj,..\..\CMD\NET\TLS\x509.obj,..\..\CMD\NET\TLS\tlsrec.obj,..\..\CMD\NET\TLS\tlshs.obj ^
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
 cd ..\..
 TOOLS\D32DRV.EXE BIN\TCPIP.SYS TOOLS\DRVSTUB.BIN DRV\TCPIP\tcpip_0.bin DRV\TCPIP\tcpip_1.bin || goto :fail
