@@ -67,6 +67,11 @@ VXDCALL MACRO   svc
 PMDOS_DEVICE_ID         EQU     504Dh           ; "PM" - this VxD's device ID
 PMDOS_DDK_VERSION       EQU     030Ah
 UNDEFINED_INIT_ORDER    EQU     80000000h
+; The NDIS netcard init-order slot.  ndis.386 inits at 54002000h, the in-box
+; MACs (NE2000.386) at 54004000h, netbeui.386 at 54006000h.  Lower inits
+; earlier, so the bridge MUST register its adapter here - before netbeui.386's
+; Device_Init bind pass - or NetBEUI finds no adapter and nothing binds.
+NETCARD_INIT_ORDER      EQU     54004000h
 
 SYS_CRITICAL_INIT       EQU     0
 DEVICE_INIT             EQU     1
@@ -163,6 +168,7 @@ NIC_SEND                EQU     1               ; TX one Ethernet frame (card_se
 NIC_RECV                EQU     2               ; pop one received frame off the queue
 NIC_SERVICE             EQU     4               ; drain the HW ring into the queue
 NIC_MAXFRAME            EQU     1514
+NIC_HDRLEN              EQU     14              ; dest(6) + source(6) + len/type(2)
 
 ; The stack's functions the bridge drives (INC\SOCKET.H)
 SOCK_IFSTAT            EQU     0               ; the interface and its address
@@ -240,7 +246,10 @@ NDIS_DYNLINK            EQU     00288000h       ; (0028h<<16) OR 8000h, ORed wit
 NDIS_GET_VERSION        EQU     0               ; or eax,300h; clc; ret (presence check)
 NDIS_REGISTER_MAC       EQU     31h             ; (&handle, descriptor) -> a MAC handle
 NDIS_DEREGISTER         EQU     32h             ; undo a failed registration
-NDIS_REGISTER_ADAPTER   EQU     33h             ; (&status,&ctx,h,h2,&chartable,size)
+NDIS_REGISTER_ADAPTER   EQU     33h             ; register MAC characteristics (&status,&ctx,h,h2,&chartable,size) -> ctx = the char handle
+NDIS_REGISTER_ADAP2     EQU     35h             ; register the bindable adapter instance, called from AddAdapter (&out,charh,ctx,cfg,&name,0)
+NDIS_OPEN_CONFIG        EQU     05h             ; NdisOpenConfiguration(&status,&cfgh,ConfigHandle) - open the card's PROTOCOL.INI section
+NDIS_CLOSE_CONFIG       EQU     07h             ; NdisCloseConfiguration(cfgh)
 NDIS_QUERY_PACKET       EQU     1Bh             ; (pkt,0,0,&firstbuf,0)
 NDIS_QUERY_BUFFER       EQU     21h             ; (buf,&vaddr,&len)
 NDIS_NEXT_BUFFER        EQU     27h             ; (buf,&nextbuf)
@@ -371,6 +380,12 @@ PGO_BUF                 EQU     0C00h           ; bounce buffer (0C00h..0EFFh)
 PGO_RES                 EQU     0F00h           ; a buffer that persists between
                                                 ; calls, which the async tick
                                                 ; polls: the BA1 lookup's SOCK_RES
+; The NDIS data path needs full Ethernet frames (up to NIC_MAXFRAME = 1514),
+; far bigger than PGO_BUF.  The low allocation is 2 pages (8K) and contiguous,
+; so the whole second page is 1:1 too; frames live there, reached through
+; pd_bridge_call's page-relative EDI (EDI = PGO_TXBUF -> page+PGO_TXBUF).
+PGO_TXBUF               EQU     1000h           ; mac_send's frame (1514 bytes)
+PGO_RXBUF               EQU     1800h           ; the received frame (1514 bytes)
 PGO_IFS                 EQU     0F90h           ; the tick's own scratch (SOCK_IF,
                                                 ; and SOCK_PUMP's ignored buffer),
                                                 ; kept off PGO_BUF so the tick
@@ -390,7 +405,7 @@ PMDOS_DDB       dd      0                       ; DDB_Next
                 db      0, 1                    ; PMDOS.386 0.1
                 dw      0
                 db      'PMDOS   '
-                dd      UNDEFINED_INIT_ORDER
+                dd      NETCARD_INIT_ORDER      ; init in the netcard slot, before netbeui.386
                 dd      OFFSET FLAT:pd_control
                 dd      OFFSET FLAT:pd_v86api   ; DDB_V86_API_Proc
                 dd      OFFSET FLAT:pd_pmapi    ; DDB_PM_API_Proc (Stage C: WINSOCK.DLL)
@@ -514,8 +529,16 @@ pd_rdres        db      ' result=', 0
 ; OID answer table the Request handler walks.  Data values mirror the
 ; in-box NE2000.386 so a known-good MAC's replies are matched.
 ;---------------------------------------------------------------------
-pd_macname      db      'PMDOS$'                 ; adapter name (matches PROTOCOL.INI)
-PD_MACNAME_LEN  EQU     $ - pd_macname
+; The MAC-characteristics name.  NDIS's svc 33h records it as the NDIS_STRING
+; at chartable+2Eh and hands it back as the AddAdapter name.  ndis.386's
+; protocol manager matches the PROTOCOL.INI logical card name to this: the
+; 'ms$' prefix is stripped from the netcard= logical ('ms$pmdos' -> 'pmdos')
+; and compared to the MAC name, so the MAC name is the bare module name with
+; NO '$' - the '$' belongs on the card section's DriverName, not here (the
+; in-box NE2000.386 registers 'Ne2000', not 'MS2000$').  The trailing NUL is
+; inside the length, as NE2000 does (len counts the NUL).
+pd_macname      db      'PMDOS', 0               ; MAC name = module name, no '$'
+PD_MACNAME_LEN  EQU     $ - pd_macname           ; = 6, the NUL included (NE2000's convention)
 pd_macregname   db      'PMDOS'                  ; MAC-registration name
 PD_MACREGNAME_LEN EQU   $ - pd_macregname
 
@@ -557,6 +580,10 @@ pd_ndis_ctx     dd      0                        ; svc 33h: NDIS's adapter conte
 pd_ndis_status  dd      0                        ; svc 33h: the out status cell
                 ALIGN   4
 pd_adapter      dd      0, 0, 0, 0               ; our MacAdapterContext (svc 33h arg4)
+pd_ndis_adapterobj dd   0                        ; svc 35h: the bindable adapter object (out)
+pd_ndis_aastatus dd     0                        ; svc 35h: saved status (trace + AddAdapter result)
+pd_ndis_cfgh    dd      0                        ; svc 05h: the opened configuration handle (out)
+pd_ndis_cfgstatus dd    0                        ; svc 05h: the open status (out)
 
 ; The one binding (NetBEUI): OpenAdapter fills it and returns its address
 ; as the MacBindingHandle.
@@ -634,12 +661,17 @@ pd_msgopen      db      13, 10, 'PMDOS.386: NDIS OpenAdapter -> binding up', 0
 pd_msgmoc       db      13, 10, 'PMDOS.386: mac_open CALLED by a protocol', 0
 pd_msgmrc       db      13, 10, 'PMDOS.386: mac_request CALLED (first)', 0
 pd_mr_traced    db      0
-                db      0, 0, 0
+pd_ms_traced    db      0                        ; mac_send: trace only the first TX
+                db      0, 0
+pd_msg_tx       db      13, 10, 'PMDOS.386: mac_send TX frame -> NIC_SEND', 0
 ; Stage-D bind diagnostics: the lifecycle handlers ndis.386 drives while it
 ; sets up a binding.  Which of these fires tells us how far the handshake got.
 pd_msg_aa       db      13, 10, 'PMDOS.386: mac_addadap args=', 0
 pd_sp           db      ' ', 0
 pd_msg_nm       db      ' name@arg3=', 0
+pd_msg_aard     db      13, 10, 'PMDOS.386: svc35 NdisRegisterAdapter status=', 0
+pd_msg_cfg      db      13, 10, 'PMDOS.386: NdisOpenConfiguration status=', 0
+pd_msg_cfgh     db      ' cfgh=', 0
 pd_msg_rst      db      13, 10, 'PMDOS.386: mac_reset CALLED', 0
 pd_msg_cls      db      13, 10, 'PMDOS.386: mac_close CALLED', 0
 pd_msg_qs       db      13, 10, 'PMDOS.386: mac_qstats CALLED', 0
@@ -1898,6 +1930,18 @@ nd_dereg:       int     20h
                 dd      NDIS_DYNLINK + NDIS_DEREGISTER
 nd_reg_adapter: int     20h
                 dd      NDIS_DYNLINK + NDIS_REGISTER_ADAPTER
+nd_reg_adap2:   int     20h
+                dd      NDIS_DYNLINK + NDIS_REGISTER_ADAP2
+nd_open_cfg:    int     20h
+                dd      NDIS_DYNLINK + NDIS_OPEN_CONFIG
+nd_close_cfg:   int     20h
+                dd      NDIS_DYNLINK + NDIS_CLOSE_CONFIG
+nd_qpacket:     int     20h                      ; NdisQueryPacket(pkt,0,0,&firstbuf,0)
+                dd      NDIS_DYNLINK + NDIS_QUERY_PACKET
+nd_qbuffer:     int     20h                      ; NdisQueryBuffer(buf,&vaddr,&len)
+                dd      NDIS_DYNLINK + NDIS_QUERY_BUFFER
+nd_nextbuf:     int     20h                      ; NdisGetNextBuffer(buf,&nextbuf)
+                dd      NDIS_DYNLINK + NDIS_NEXT_BUFFER
 
 ;---------------------------------------------------------------------
 ; mac_open - MacOpenAdapter.  A protocol (NetBEUI) binds to the adapter.
@@ -1986,11 +2030,98 @@ mac_reset:
         ret
 
 ;---------------------------------------------------------------------
-; mac_send - MacSend( MacBindingHandle, Packet ).  D1a stub: accept and
-; drop (D1b walks the packet into a frame and calls NIC_SEND).
+; mac_send - MacSend( MacBindingHandle, Packet ).  D1b: walk the NDIS
+; packet's buffer chain into the low-page TX frame, stamp our source MAC
+; into it, and hand the whole Ethernet frame to the parked kernel's NIC
+; driver (NIC_SEND).  The send is synchronous, so return NDIS_SUCCESS.
+;   [ebp+08] MacBindingHandle   [ebp+0C] Packet
 ;---------------------------------------------------------------------
 mac_send:
-        xor     eax,eax
+        push    ebp
+        mov     ebp,esp
+        sub     esp,10h                         ; -4 buf, -8 vaddr, -0Ch len, -10h total
+        push    ebx
+        push    esi
+        push    edi
+        cmp     byte ptr [pd_ms_traced],0
+        jne     mstx_nt
+        mov     byte ptr [pd_ms_traced],1
+        pushad
+        mov     esi,OFFSET FLAT:pd_msg_tx
+        call    pd_e9str
+        popad
+mstx_nt:
+        ; NdisQueryPacket( Packet, 0, 0, &FirstBuffer, 0 )
+        push    0
+        lea     eax,[ebp-4]
+        push    eax
+        push    0
+        push    0
+        mov     eax,[ebp+0Ch]
+        push    eax
+        call    nd_qpacket
+        add     esp,14h
+        mov     dword ptr [ebp-10h],0           ; total = 0
+mstx_loop:
+        mov     esi,[ebp-4]                     ; buf
+        test    esi,esi
+        jz      mstx_send
+        ; NdisQueryBuffer( buf, &vaddr, &len )
+        lea     eax,[ebp-0Ch]
+        push    eax
+        lea     eax,[ebp-8]
+        push    eax
+        push    esi
+        call    nd_qbuffer
+        add     esp,0Ch
+        mov     ecx,[ebp-0Ch]                   ; len
+        mov     eax,[ebp-10h]                   ; total
+        add     eax,ecx
+        cmp     eax,NIC_MAXFRAME
+        ja      mstx_drop                       ; oversized frame: drop it
+        mov     esi,[ebp-8]                     ; src = vaddr
+        mov     edi,[pd_pg]
+        add     edi,PGO_TXBUF
+        add     edi,[ebp-10h]                   ; dst = page + PGO_TXBUF + total
+        cld
+        rep     movsb
+        mov     eax,[ebp-0Ch]
+        add     [ebp-10h],eax                   ; total += len
+        mov     esi,[ebp-4]
+        lea     eax,[ebp-4]                     ; &NextBuffer -> buf
+        push    eax
+        push    esi
+        call    nd_nextbuf
+        add     esp,8
+        jmp     mstx_loop
+mstx_send:
+        mov     ecx,[ebp-10h]                   ; total
+        test    ecx,ecx
+        jz      mstx_drop
+        cmp     ecx,NIC_HDRLEN                  ; a header at least
+        jb      mstx_drop
+        ; stamp our source MAC (the kernel card's, from NIC_INFO) at [6..11]
+        mov     edi,[pd_pg]
+        add     edi,PGO_TXBUF
+        add     edi,6
+        mov     esi,OFFSET FLAT:pd_macaddr
+        mov     ecx,6
+        cld
+        rep     movsb
+        ; NIC_SEND: EDI (page-relative) -> frame of ECX bytes
+        mov     eax,NDTF_NIC
+        xor     edx,edx
+        mov     ebx,NIC_SEND
+        mov     ecx,[ebp-10h]
+        mov     edi,PGO_TXBUF
+        call    pd_bridge_call                  ; TX error just drops the frame
+mstx_drop:
+        xor     eax,eax                         ; NDIS_SUCCESS (packet consumed)
+        pop     edi
+        pop     esi
+        pop     ebx
+        mov     esp,ebp
+        pop     ebp
         ret
 
 ;---------------------------------------------------------------------
@@ -2123,9 +2254,12 @@ mac_qstats:
         ret
 
 ;---------------------------------------------------------------------
-; mac_unload / mac_addadap / mac_remadap - the MAC-driver lifecycle.  We
-; register our single adapter ourselves at Device_Init, so these succeed
-; trivially (AddAdapter is not the registration path here).
+; mac_unload / mac_addadap / mac_remadap - the MAC-driver lifecycle.
+; Device_Init registers the MAC (svc 31h) and its characteristics (svc 33h);
+; ndis.386 then calls mac_addadap, and the bindable adapter instance is
+; created THERE with svc 35h (NdisRegisterAdapter).  Registering only at
+; Device_Init is not enough - without the svc 35h call ndis.386 has no
+; adapter to offer a protocol, so NetBEUI never binds and mac_open never runs.
 ;---------------------------------------------------------------------
 mac_unload:
         pushad
@@ -2134,42 +2268,95 @@ mac_unload:
         popad
         xor     eax,eax
         ret
+; MacAddAdapter( MacMacContext, ConfigHandle, &AdapterName ).
+;   [ebp+08] MacMacContext  [ebp+0C] ConfigHandle  [ebp+10] &AdapterName
 mac_addadap:
-        pushad                                  ; 20h bytes; orig [esp+4] -> [esp+24h]
+        push    ebp
+        mov     ebp,esp
+        pushad
         mov     esi,OFFSET FLAT:pd_msg_aa
         call    pd_e9str
-        mov     eax,[esp+24h]                   ; arg1 (MacMacContext?)
+        mov     eax,[ebp+08h]                   ; MacMacContext
         call    pd_e9hex
         mov     esi,OFFSET FLAT:pd_sp
         call    pd_e9str
-        mov     eax,[esp+28h]                   ; arg2 (ConfigHandle?)
+        mov     eax,[ebp+0Ch]                   ; ConfigHandle
         call    pd_e9hex
         mov     esi,OFFSET FLAT:pd_sp
         call    pd_e9str
-        mov     eax,[esp+2Ch]                   ; arg3 (AdapterName?)
+        mov     eax,[ebp+10h]                   ; &AdapterName
         call    pd_e9hex
-        mov     esi,OFFSET FLAT:pd_sp
-        call    pd_e9str
-        mov     eax,[esp+30h]                   ; arg4
-        call    pd_e9hex
-        ; deref arg3 as a possible name/NDIS_STRING: dump the first 3 dwords
+        ; deref &AdapterName as an NDIS_STRING: len/maxlen word, then buffer
         mov     esi,OFFSET FLAT:pd_msg_nm
         call    pd_e9str
-        mov     esi,[esp+2Ch]
+        mov     esi,[ebp+10h]
         mov     eax,[esi]
         call    pd_e9hex
         mov     esi,OFFSET FLAT:pd_sp
         call    pd_e9str
-        mov     esi,[esp+2Ch]
+        mov     esi,[ebp+10h]
         mov     eax,[esi+4]
         call    pd_e9hex
-        mov     esi,OFFSET FLAT:pd_sp
+        popad
+
+        ; svc 05h/07h - open then close the card's PROTOCOL.INI section with
+        ; the ConfigHandle ndis.386 passed.  A real NIC reads IOBASE/INTERRUPT
+        ; here; the kernel card has none, but the in-box MACs always open the
+        ; configuration in AddAdapter, which is what ties the adapter instance
+        ; to its config section so the protocol manager can bind to it.
+        mov     eax,[ebp+0Ch]                   ; ConfigHandle
+        push    eax
+        push    OFFSET FLAT:pd_ndis_cfgh        ; &cfgHandle (out)
+        push    OFFSET FLAT:pd_ndis_cfgstatus   ; &status (out)
+        call    nd_open_cfg
+        add     esp,0Ch
+        pushad
+        mov     esi,OFFSET FLAT:pd_msg_cfg
         call    pd_e9str
-        mov     esi,[esp+2Ch]
-        mov     eax,[esi+8]
+        mov     eax,[pd_ndis_cfgstatus]
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_msg_cfgh
+        call    pd_e9str
+        mov     eax,[pd_ndis_cfgh]
         call    pd_e9hex
         popad
-        xor     eax,eax
+        cmp     dword ptr [pd_ndis_cfgstatus],0
+        jnz     pd_aa_noclose
+        mov     eax,[pd_ndis_cfgh]
+        push    eax
+        call    nd_close_cfg
+        add     esp,4
+pd_aa_noclose:
+
+        ; svc 35h - register the bindable adapter instance.  The kernel card
+        ; has no PROTOCOL.INI hardware keys to read, so (unlike a real NIC's
+        ; AddAdapter) we skip the config read and register straight away with
+        ; the char handle svc 33h produced, our own context, and the name
+        ; ndis.386 passed; the optional info struct is NULL.
+        ; NdisRegisterAdapter( &out, charhandle, ctx, cfg, &name, 0 )
+        push    0                               ; info struct (optional) = NULL
+        mov     eax,[ebp+10h]                   ; arg5 &AdapterName (NDIS_STRING)
+        push    eax
+        mov     eax,[ebp+0Ch]                   ; arg4 ConfigHandle (svc 35h ignores it)
+        push    eax
+        push    OFFSET FLAT:pd_adapter          ; arg3 MacAdapterContext (nonzero)
+        push    dword ptr [pd_ndis_ctx]         ; arg2 the char handle from svc 33h
+        push    OFFSET FLAT:pd_ndis_adapterobj  ; arg1 out: the registered adapter
+        call    nd_reg_adap2
+        add     esp,18h
+        mov     [pd_ndis_aastatus],eax
+
+        pushad
+        mov     esi,OFFSET FLAT:pd_msg_aard
+        call    pd_e9str
+        mov     eax,[pd_ndis_aastatus]
+        call    pd_e9hex
+        mov     esi,OFFSET FLAT:pd_rcrlf
+        call    pd_e9str
+        popad
+        mov     eax,[pd_ndis_aastatus]          ; AddAdapter returns svc 35h's status
+        mov     esp,ebp
+        pop     ebp
         ret
 mac_remadap:
         xor     eax,eax
@@ -2218,7 +2405,9 @@ pd_devinit:
         ; leading underscore in the DDK, so it is C-callable (args pushed
         ; right to left, the caller clears the stack), not register-based.
         push    GVDA_PAGEALIGN OR GVDA_ZEROINIT ; flags (2nd arg)
-        push    1000h                           ; nBytes (1st arg)
+        push    2000h                           ; nBytes - 2 pages: page 1 is the
+                                                ; stub/cells/bounce, page 2 the NDIS
+                                                ; TX/RX frame buffers (1:1, contiguous)
         VXDCALL S_ALLOC_GV86
         add     esp,8
         or      eax,eax
