@@ -45,6 +45,7 @@
 
 /* filter bits */
 #define FILTER_STATION 0x01
+#define FILTER_MULTI   0x02     /* receive all multicast frames */
 #define FILTER_BCAST   0x04
 
 /* descriptor bits */
@@ -180,7 +181,9 @@ int card_setup( void )
     MMIO32( net_port, EL_UPLISTPTR ) = (u32)&rxd[0];
     MMIO32( net_port, EL_DNLISTPTR ) = 0;
 
-    el_cmd( (u16)( CMD_SETFILTER | FILTER_STATION | FILTER_BCAST ) );
+    /* station, broadcast AND multicast (NetBEUI's functional address
+       03-00-00-00-00-01 is a multicast) */
+    el_cmd( (u16)( CMD_SETFILTER | FILTER_STATION | FILTER_MULTI | FILTER_BCAST ) );
     el_cmd( CMD_RXENABLE );
     el_cmd( CMD_TXENABLE );
     el_cmd( CMD_UPUNSTALL );

@@ -141,6 +141,10 @@ int card_setup( void )
     *(u16 *)( iblock + 0 ) = 0;                  /* MODE: normal, broadcast on */
     *(u16 *)( iblock + 2 ) = TLEN_RLEN;
     net_memcpy( iblock + 4, net_mac, 6 );
+    /* LADRF (the 64-bit multicast hash, init-block offset 12) all ones: take
+       every multicast address.  NetBEUI's functional address
+       03-00-00-00-00-01 is a multicast, not only broadcast */
+    for ( i = 0; i < 8; i++ ) iblock[12 + i] = 0xFF;
     *(u32 *)( iblock + 20 ) = (u32)rxr;          /* RDRA */
     *(u32 *)( iblock + 24 ) = (u32)txr;          /* TDRA */
 

@@ -63,6 +63,7 @@
 #define RXS_LEN        0x07FF
 
 #define FILTER_STATION 0x01
+#define FILTER_MULTI   0x02     /* receive all multicast frames */
 #define FILTER_BCAST   0x04
 
 #define SPIN_CMD    100000L
@@ -191,7 +192,10 @@ int card_setup( void )
     el_cmd( CMD_RXRESET );
     el_cmd( CMD_TXRESET );
     el_cmd( CMD_STATSDIS );
-    el_cmd( (u16)( CMD_SETFILTER | FILTER_STATION | FILTER_BCAST ) );
+    /* station, broadcast AND multicast: the NetBEUI functional address
+       03-00-00-00-00-01 is a multicast, so a card that is to carry NetBEUI
+       must take multicast frames in, not only station-match and broadcast */
+    el_cmd( (u16)( CMD_SETFILTER | FILTER_STATION | FILTER_MULTI | FILTER_BCAST ) );
     el_cmd( CMD_RXENABLE );
     el_cmd( CMD_TXENABLE );
     /* acknowledge everything, then let RX-complete and TX-available

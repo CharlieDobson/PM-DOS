@@ -47,6 +47,7 @@
 #define CTRL_RST    0x04000000L /* reset */
 
 #define RCTL_EN     0x00000002L
+#define RCTL_MPE    0x00000010L /* accept all multicast */
 #define RCTL_BAM    0x00008000L /* accept broadcast */
 #define RCTL_SECRC  0x04000000L /* strip the ethernet CRC */
 #define RCTL_BSIZE  0x00000000L /* 2048-byte buffers */
@@ -158,7 +159,9 @@ int card_setup( void )
     reg_wr( REG_RDH, 0 );
     reg_wr( REG_RDT, RXN - 1 );
     rx_cur = 0;
-    reg_wr( REG_RCTL, RCTL_EN | RCTL_BAM | RCTL_SECRC | RCTL_BSIZE );
+    /* RCTL_MPE accepts all multicast: NetBEUI's functional address
+       03-00-00-00-00-01 is a multicast, not only broadcast */
+    reg_wr( REG_RCTL, RCTL_EN | RCTL_MPE | RCTL_BAM | RCTL_SECRC | RCTL_BSIZE );
 
     for ( i = 0; i < TXN; i++ ) {
         txd[i].addr_lo = (u32)txbuf[i];

@@ -81,9 +81,12 @@ static const PCI_ID eepro_ids[] = {
 };
 
 /* Intel's long-standing default configure block, 22 bytes */
+/* byte 21 has the Multicast-All bit (0x08): take every multicast address.
+   NetBEUI's functional address 03-00-00-00-00-01 is a multicast, so a card
+   that is to carry NetBEUI must accept multicast, not only broadcast. */
 static const u8 config_default[22] = {
     22, 0x08, 0, 0, 0, 0, 0x32, 0x03, 1, 0,
-    0x2E, 0, 0x60, 0, 0xF2, 0x48, 0, 0x40, 0xF2, 0x80, 0x3F, 0x05
+    0x2E, 0, 0x60, 0, 0xF2, 0x48, 0, 0x40, 0xF2, 0x80, 0x3F, 0x0D
 };
 
 static u32 align16( u32 p ) { return ( p + 15 ) & ~15L; }

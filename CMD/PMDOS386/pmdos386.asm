@@ -176,6 +176,7 @@ SOCK_RECV               EQU     7               ; receive (Stage C: trace shows 
 SOCK_STATE              EQU     8               ; a socket's state (polled, so not traced)
 SOCK_RESOLVE            EQU     9               ; a name to an address (polled)
 SOCK_PUMP               EQU     11              ; one step of the parked stack
+SOCK_RXFOREIGN          EQU     14              ; collect one non-IP/ARP frame (NetBEUI)
 SOCKIF_LEN             EQU     60
 SIF_UP                 EQU     26              ; SOCK_IF: 1 once an address is held
 SOCKRES_LEN             EQU     136
@@ -591,6 +592,15 @@ pd_bind_used    dd      0                        ; 0 free / 1 open
 pd_bind_nbc     dd      0                        ; the NdisBindingContext NDIS gave
 pd_bind_adap    dd      0                        ; the MacAdapterContext NDIS gave
 
+; D1c receive: the frame being indicated lives in the low page at PGO_RXBUF.
+pd_rx_status    dd      0                        ; svc 3Dh arg1: protocol's return
+pd_rx_len       dd      0                        ; the current RX frame's whole length
+pd_rx_cnt       dd      0                        ; frames taken this drain (a cap guard)
+pd_rx_any       db      0                        ; 1 if a frame was indicated this drain
+pd_rx_busy      db      0                        ; re-entry guard for pd_rx_pump
+pd_rx_traced    db      0                        ; trace the first indicate only
+pd_rx_xtraced   db      0                        ; trace the first mac_xfer only
+
 ; Settable per-adapter OID stores, and the constant OID values.
 pd_pktfilter    dd      0                        ; OID_GEN_CURRENT_PACKET_FILTER
 pd_lookahead    dd      0EEh                     ; OID_GEN_CURRENT_LOOKAHEAD (238)
@@ -664,6 +674,8 @@ pd_mr_traced    db      0
 pd_ms_traced    db      0                        ; mac_send: trace only the first TX
                 db      0, 0
 pd_msg_tx       db      13, 10, 'PMDOS.386: mac_send TX frame -> NIC_SEND', 0
+pd_msg_rx       db      13, 10, 'PMDOS.386: RX frame -> NetBEUI indicate', 0
+pd_msg_xfer     db      13, 10, 'PMDOS.386: mac_xfer copy to NetBEUI', 0
 ; Stage-D bind diagnostics: the lifecycle handlers ndis.386 drives while it
 ; sets up a binding.  Which of these fires tells us how far the handshake got.
 pd_msg_aa       db      13, 10, 'PMDOS.386: mac_addadap args=', 0
@@ -808,6 +820,7 @@ pd_tick:
         mov     edi,PGO_IFS
         call    pd_bridge_call
         inc     dword ptr [pd_pumps]
+        call    pd_rx_pump                      ; D1c: hand NetBEUI its frames
 
         cmp     byte ptr [pd_ba1],1
 IFDEF BA2_TICKSELFTEST
@@ -1126,6 +1139,7 @@ pd_nicint:
         xor     ecx,ecx
         mov     edi,PGO_IFS
         call    pd_bridge_call
+        call    pd_rx_pump                      ; D1c: hand NetBEUI its frames
         mov     eax,[pd_nich]
         VXDCALL S_VPICD_PHYS_EOI
         popad
@@ -1942,6 +1956,95 @@ nd_qbuffer:     int     20h                      ; NdisQueryBuffer(buf,&vaddr,&l
                 dd      NDIS_DYNLINK + NDIS_QUERY_BUFFER
 nd_nextbuf:     int     20h                      ; NdisGetNextBuffer(buf,&nextbuf)
                 dd      NDIS_DYNLINK + NDIS_NEXT_BUFFER
+nd_ind_recv:    int     20h                      ; EthFilterIndicateReceive (8 args)
+                dd      NDIS_DYNLINK + NDIS_IND_RECEIVE
+nd_ind_done:    int     20h                      ; EthFilterIndicateReceiveComplete (1 arg)
+                dd      NDIS_DYNLINK + NDIS_IND_RECV_DONE
+
+;---------------------------------------------------------------------
+; pd_rx_pump - D1c receive.  The parked stack holds every frame it does
+; not own (NetBEUI and the like) in a ring; take them one at a time into
+; the low page (SOCK_RXFOREIGN -> PGO_RXBUF, EAX = length, 0 = none) and
+; indicate each to the bound protocol, then signal the batch complete.
+; Called from the tick and the card ISR, just after SOCK_PUMP has run the
+; stack over whatever the card delivered.  Runs at interrupt time, which
+; is where a real MAC indicates receives from; ndis.386 serialises.
+;---------------------------------------------------------------------
+pd_rx_pump:
+        cmp     dword ptr [pd_bind_used],0      ; no protocol bound: nothing to do
+        je      prp_ret
+        cmp     byte ptr [pd_rx_busy],0         ; never re-enter
+        jne     prp_ret
+        mov     byte ptr [pd_rx_busy],1
+        mov     byte ptr [pd_rx_any],0
+        mov     dword ptr [pd_rx_cnt],0
+prp_loop:
+        mov     eax,NDTF_STACK
+        xor     edx,edx
+        mov     ebx,SOCK_RXFOREIGN
+        mov     ecx,NIC_MAXFRAME
+        mov     edi,PGO_RXBUF
+        call    pd_bridge_call                  ; -> EAX = frame length, 0 = empty
+        jc      prp_done                        ; bridge not ready / busy
+        test    eax,eax
+        jz      prp_done
+        cmp     eax,NIC_HDRLEN
+        jb      prp_next                        ; a runt: skip, try the next
+        mov     [pd_rx_len],eax
+        mov     byte ptr [pd_rx_any],1
+        call    pd_rx_indicate
+prp_next:
+        inc     dword ptr [pd_rx_cnt]
+        cmp     dword ptr [pd_rx_cnt],32        ; a cap, so one drain can't run away
+        jb      prp_loop
+prp_done:
+        cmp     byte ptr [pd_rx_any],0
+        je      prp_clr
+        push    dword ptr [pd_bind_nbc]         ; EthFilterIndicateReceiveComplete(binding)
+        call    nd_ind_done
+        add     esp,4
+prp_clr:
+        mov     byte ptr [pd_rx_busy],0
+prp_ret:
+        ret
+
+;---------------------------------------------------------------------
+; pd_rx_indicate - hand the frame now in the low page at PGO_RXBUF to the
+; bound protocol through EthFilterIndicateReceive (svc 3Dh).  The whole
+; frame is offered as lookahead, so the protocol can take it directly or
+; call MacTransferData (mac_xfer) to copy it; both read from PGO_RXBUF.
+;   arg1 &status  arg2 NdisBindingContext  arg3 MacReceiveContext
+;   arg4 HeaderBuffer  arg5 HeaderBufferSize  arg6 LookaheadBuffer
+;   arg7 LookaheadBufferSize  arg8 PacketSize
+; ndis.386 forwards args 3..8 to the protocol's receive handler with the
+; protocol's own binding context; the header is the 14-byte Ethernet
+; header, the lookahead and packet size are the bytes after it.
+;---------------------------------------------------------------------
+pd_rx_indicate:
+        pushad
+        cmp     byte ptr [pd_rx_traced],0
+        jne     pri_nt
+        mov     byte ptr [pd_rx_traced],1
+        mov     esi,OFFSET FLAT:pd_msg_rx
+        call    pd_e9str
+pri_nt:
+        mov     esi,[pd_pg]
+        add     esi,PGO_RXBUF                   ; ESI = frame base, linear (1:1 page)
+        mov     ecx,[pd_rx_len]
+        sub     ecx,NIC_HDRLEN                  ; ECX = bytes after the header
+        push    ecx                             ; arg8 PacketSize
+        push    ecx                             ; arg7 LookaheadBufferSize (whole frame)
+        lea     eax,[esi+NIC_HDRLEN]
+        push    eax                             ; arg6 LookaheadBuffer
+        push    NIC_HDRLEN                      ; arg5 HeaderBufferSize
+        push    esi                             ; arg4 HeaderBuffer
+        push    esi                             ; arg3 MacReceiveContext (mac_xfer uses globals)
+        push    dword ptr [pd_bind_nbc]         ; arg2 NdisBindingContext
+        push    OFFSET FLAT:pd_rx_status        ; arg1 &status (out)
+        call    nd_ind_recv                     ; svc 3Dh
+        add     esp,20h
+        popad
+        ret
 
 ;---------------------------------------------------------------------
 ; mac_open - MacOpenAdapter.  A protocol (NetBEUI) binds to the adapter.
@@ -2125,15 +2228,100 @@ mstx_drop:
         ret
 
 ;---------------------------------------------------------------------
-; mac_xfer - MacTransferData( ..., &BytesTransferred ).  D1a stub: no
-; frames are indicated yet, so this is never reached; answer 0 bytes.
+; mac_xfer - MacTransferData.  D1c: the protocol asks for BytesToTransfer
+; bytes of the just-indicated frame, from ByteOffset past the Ethernet
+; header, copied into its packet.  The frame is in the low page at
+; PGO_RXBUF; walk the packet's NDIS buffer chain and copy into it.
+;   [ebp+08] MacBindingHandle   [ebp+0C] MacReceiveContext
+;   [ebp+10] ByteOffset         [ebp+14] BytesToTransfer
+;   [ebp+18] Packet             [ebp+1C] &BytesTransferred
+; Returns NDIS_SUCCESS; *BytesTransferred = the bytes actually copied.
 ;---------------------------------------------------------------------
 mac_xfer:
         push    ebp
         mov     ebp,esp
-        mov     eax,[ebp+1Ch]
-        mov     dword ptr [eax],0
-        xor     eax,eax
+        sub     esp,10h                         ; -4 buf, -8 vaddr, -0Ch buflen, -10h copied
+        push    ebx
+        push    esi
+        push    edi
+        cmp     byte ptr [pd_rx_xtraced],0
+        jne     mx_nt
+        mov     byte ptr [pd_rx_xtraced],1
+        pushad
+        mov     esi,OFFSET FLAT:pd_msg_xfer
+        call    pd_e9str
+        popad
+mx_nt:
+        ; NdisQueryPacket( Packet, 0, 0, &FirstBuffer, 0 )
+        push    0
+        lea     eax,[ebp-4]
+        push    eax
+        push    0
+        push    0
+        mov     eax,[ebp+18h]                   ; Packet
+        push    eax
+        call    nd_qpacket
+        add     esp,14h
+        mov     dword ptr [ebp-10h],0           ; copied = 0
+mx_loop:
+        mov     esi,[ebp-4]                     ; current buffer
+        test    esi,esi
+        jz      mx_fin
+        mov     edx,[ebp+14h]                   ; remaining = BytesToTransfer - copied
+        sub     edx,[ebp-10h]
+        jbe     mx_fin                          ; all the protocol asked for is copied
+        mov     eax,[pd_rx_len]                 ; available = len - header - offset - copied
+        sub     eax,NIC_HDRLEN
+        sub     eax,[ebp+10h]
+        sub     eax,[ebp-10h]
+        jbe     mx_fin                          ; nothing left in the frame
+        cmp     edx,eax
+        jbe     mx_capped
+        mov     edx,eax                         ; cap remaining to what the frame holds
+mx_capped:
+        ; NdisQueryBuffer( buf, &vaddr, &len )
+        lea     eax,[ebp-0Ch]
+        push    eax
+        lea     eax,[ebp-8]
+        push    eax
+        push    esi
+        call    nd_qbuffer
+        add     esp,0Ch
+        mov     ecx,[ebp-0Ch]                   ; this buffer's room
+        test    ecx,ecx
+        jz      mx_next
+        cmp     ecx,edx                         ; copy min( room, remaining )
+        jbe     mx_cok
+        mov     ecx,edx
+mx_cok:
+        mov     esi,[pd_pg]                     ; src = page + PGO_RXBUF + header + offset + copied
+        add     esi,PGO_RXBUF
+        add     esi,NIC_HDRLEN
+        add     esi,[ebp+10h]
+        add     esi,[ebp-10h]
+        mov     edi,[ebp-8]                     ; dst = this buffer's address
+        push    ecx
+        cld
+        rep     movsb
+        pop     ecx
+        add     [ebp-10h],ecx                   ; copied += ecx
+mx_next:
+        mov     esi,[ebp-4]
+        lea     eax,[ebp-4]                     ; &NextBuffer -> buf
+        push    eax
+        push    esi
+        call    nd_nextbuf
+        add     esp,8
+        jmp     mx_loop
+mx_fin:
+        mov     eax,[ebp+1Ch]                   ; *BytesTransferred = copied
+        mov     ecx,[ebp-10h]
+        mov     [eax],ecx
+        xor     eax,eax                         ; NDIS_SUCCESS
+        pop     edi
+        pop     esi
+        pop     ebx
+        mov     esp,ebp
         pop     ebp
         ret
 

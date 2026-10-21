@@ -25,6 +25,7 @@
 
 /* the registers, from the first I/O port */
 #define R_IDR0      0x00        /* the station address, six bytes */
+#define R_MAR0      0x08        /* the multicast hash, eight bytes */
 #define R_TSD0      0x10        /* transmit status/length, four at 4 apart */
 #define R_TSAD0     0x20        /* transmit buffer address, four at 4 apart */
 #define R_RBSTART   0x30        /* the receive ring's address */
@@ -138,9 +139,14 @@ int card_setup( void )
     tx_cur = 0;
     for ( i = 0; i < TXN; i++ ) tx_used[i] = 0;
     outb( net_port + R_CR, CR_TE | CR_RE );
-    /* accept physical-match and broadcast, wrap, no FIFO threshold,
-       unlimited DMA burst, the 8K ring */
-    outl( net_port + R_RCR, 0x0000E78AL );
+    /* accept every multicast address: the NetBEUI functional address
+       03-00-00-00-00-01 is a multicast, so a MAC that is to carry NetBEUI
+       must take multicast frames in, not only physical-match and broadcast */
+    outl( net_port + R_MAR0, 0xFFFFFFFFL );
+    outl( net_port + R_MAR0 + 4, 0xFFFFFFFFL );
+    /* accept physical-match, multicast and broadcast, wrap, no FIFO
+       threshold, unlimited DMA burst, the 8K ring */
+    outl( net_port + R_RCR, 0x0000E78EL );
     outl( net_port + R_TCR, 0x03000700L );      /* standard gap, unlimited DMA */
     outw( net_port + R_CAPR, (u16)( -16 ) );
     outb( net_port + R_9346CR, 0x00 );          /* lock it again */
@@ -201,7 +207,7 @@ static void rx_drain( void )
             outl( net_port + R_RBSTART, (u32)rxbuf );
             outw( net_port + R_CAPR, (u16)( -16 ) );
             outb( net_port + R_CR, CR_TE | CR_RE );
-            outl( net_port + R_RCR, 0x0000E78AL );
+            outl( net_port + R_RCR, 0x0000E78EL );   /* +AM, as card_setup */
             cur_rx = 0;
             break;
         }

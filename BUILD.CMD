@@ -730,6 +730,19 @@ wrc -q -r -bt=windows -i=%WATCOM%\h\win lrgstat.rc -fo=lrgstat.res || goto :fail
 wlink system windows name ..\..\BIN\LRGSTAT.EXE file lrgstat.obj, lrgapi.obj option quiet option stack=12k option heapsize=4k option description 'LRGSTAT - what LRGDISK.386 has in use' option resource=lrgstat.res || goto :fail
 del lrgstat.res
 cd ..\..
+rem PMDOS.386 is the other WfW 3.11 VxD, and the bridge of the whole net:
+rem a native NDIS 3.0 MAC that CR3-switches into the parked PM-DOS kernel
+rem so WfW's NetBEUI binds to the kernel's own NIC driver and real frames
+rem flow (bind + transmit + receive).  Laid out like LRGDISK.386 above -
+rem an LE VxD, the same segment lines, the DDB exported as PMDOS_DDB.  It
+rem is dropped into a WfW \WINDOWS by the headless rig's winbuild.ps1, and
+rem rides the hard-disk images (MKHD) so it can be copied into a real WfW.
+rem NOTE: wasm stamps the .obj with the build time, so two builds of the
+rem same source differ byte-for-byte; the code is identical.
+cd CMD\PMDOS386
+wasm -q pmdos386.asm                            || goto :fail
+wlink format windows vxd name ..\..\BIN\PMDOS.386 file pmdos386.obj option nodefaultlibs option description 'PMDOS.386 - PM-DOS bridge for Windows for Workgroups 3.11' export PMDOS_DDB.1 segment _LTEXT preload nondiscardable segment _LDATA preload nondiscardable segment _ITEXT discardable segment _IDATA discardable || goto :fail
+cd ..\..
 rem FIND is MS-DOS 6.22's, switch for switch and message for message:
 rem batch files test what it prints and the errorlevel it leaves.
 cd CMD\FIND

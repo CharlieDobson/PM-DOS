@@ -144,6 +144,7 @@ void int_back( u32 flags );
 #define DCR_FT1     0x40    /* FIFO threshold 8 words */
 
 #define RCR_AB      0x04    /* take broadcasts */
+#define RCR_AM      0x08    /* take multicast (filtered by the MAR hash) */
 #define RCR_MON     0x20    /* take nothing */
 
 #define TCR_LB      0x02    /* internal loopback */
@@ -405,14 +406,17 @@ static void card_setup( void )
     outb( port + NE_IMR, 0 );
     outb( port + NE_CR, CR_PAGE1 | CR_RD2 | CR_STP );
     for ( i = 0; i < 6; i++ ) outb( port + NE_PAR0 + i, mac[i] );
-    for ( i = 0; i < 8; i++ ) outb( port + NE_MAR0 + i, 0 );
+    /* all-ones multicast hash: take every multicast address.  The NetBEUI
+       functional address 03-00-00-00-00-01 is a multicast, so a card that is
+       to carry NetBEUI must accept multicast, not only broadcast */
+    for ( i = 0; i < 8; i++ ) outb( port + NE_MAR0 + i, 0xFF );
     outb( port + NE_CURR, (u8)( rx_start + 1 ) );
     outb( port + NE_CR, CR_PAGE0 | CR_RD2 | CR_STP );
     outb( port + NE_CR, CR_PAGE0 | CR_RD2 | CR_STA );
     outb( port + NE_ISR, 0xFF );
     outb( port + NE_IMR, (u8)( polled ? 0 : IMR_WANTED ) );
     outb( port + NE_TCR, 0 );
-    outb( port + NE_RCR, RCR_AB );
+    outb( port + NE_RCR, (u8)( RCR_AB | RCR_AM ) );
     running = 1;
 }
 

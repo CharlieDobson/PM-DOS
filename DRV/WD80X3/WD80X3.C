@@ -52,6 +52,7 @@
 #define NE_IMR      0x0F
 #define NE_PAR0     0x01        /* page 1 */
 #define NE_CURR     0x07        /* page 1 */
+#define NE_MAR0     0x08        /* page 1: the multicast hash, eight bytes */
 
 #define CR_STP      0x01
 #define CR_STA      0x02
@@ -72,6 +73,7 @@
 #define DCR_LS      0x08
 #define DCR_FT1     0x40
 #define RCR_AB      0x04
+#define RCR_AM      0x08        /* take multicast (filtered by the MAR hash) */
 #define RCR_MON     0x20
 #define TCR_LB      0x02
 #define RSR_PRX     0x01
@@ -178,13 +180,16 @@ int card_setup( void )
     nic_wr( NE_IMR, 0 );
     nic_wr( NE_CR, CR_PAGE1 | CR_RD2 | CR_STP );
     for ( i = 0; i < 6; i++ ) nic_wr( NE_PAR0 + i, net_mac[i] );
+    /* all-ones multicast hash: take every multicast address (NetBEUI's
+       functional address 03-00-00-00-00-01 is a multicast) */
+    for ( i = 0; i < 8; i++ ) nic_wr( NE_MAR0 + i, 0xFF );
     nic_wr( NE_CURR, (u8)( rx_start + 1 ) );
     nic_wr( NE_CR, CR_PAGE0 | CR_RD2 | CR_STP );
     nic_wr( NE_CR, CR_PAGE0 | CR_RD2 | CR_STA );
     nic_wr( NE_ISR, 0xFF );
     nic_wr( NE_IMR, (u8)( net_flags & NICF_POLLED ? 0 : IMR_WANTED ) );
     nic_wr( NE_TCR, 0 );
-    nic_wr( NE_RCR, RCR_AB );
+    nic_wr( NE_RCR, (u8)( RCR_AB | RCR_AM ) );
     q_cur = rx_start;
     return 0;
 }

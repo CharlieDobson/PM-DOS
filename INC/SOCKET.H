@@ -43,6 +43,9 @@
                                  server, for SNI and certificate matching */
 #define SOCK_SETCA     13     /* buf -> SOCK_CAREQ; hand the stack the CA
                                  bundle (DISK\CACERT.BND) one chunk at a time */
+#define SOCK_RXFOREIGN 14     /* buf <- one frame the stack does not own (not IP,
+                                 not ARP - NetBEUI); answer = its length, 0 none.
+                                 For the WfW bridge to indicate to its protocol */
 
 /* a socket's kind, for SOCK_OPEN */
 #define SOCK_STREAM    1      /* TCP: a connection */

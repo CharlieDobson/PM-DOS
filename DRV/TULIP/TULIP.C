@@ -50,6 +50,7 @@
 #define M_TXON  0x00002000L
 #define M_SF    0x00200000L     /* store and forward */
 #define M_BCAST 0x00000100L     /* keep broadcasts (pass-bad off) */
+#define M_PAM   0x00000080L     /* pass all multicast */
 
 /* a descriptor's status dword (DES0) */
 #define D_OWN   0x80000000L     /* the chip owns it */
@@ -215,7 +216,9 @@ int card_setup( void )
     outl( net_port + CSR13, 0x00000000L );
     outl( net_port + CSR14, 0x00007F3FL );
     outl( net_port + CSR13, 0x00000001L );
-    outl( net_port + CSR6, M_SF | M_BCAST | M_RXON | M_TXON );
+    /* M_PAM passes all multicast: NetBEUI's functional address
+       03-00-00-00-00-01 is a multicast, not only broadcast */
+    outl( net_port + CSR6, M_SF | M_BCAST | M_PAM | M_RXON | M_TXON );
     outl( net_port + CSR5, S_CLEAR );
     outl( net_port + CSR7, (u32)( net_flags & NICF_POLLED ? 0 : ( S_NIS | S_AIS | S_RI | S_RU | S_TI ) ) );
     outl( net_port + CSR2, 0 );                  /* poll the receive ring */

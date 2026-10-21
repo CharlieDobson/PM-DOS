@@ -191,6 +191,16 @@ static volatile u8 pumping;     /* a pump is in progress: a tick stands off */
 static u8   tx_frame[1600];
 static u8   rx_frame[1600];
 
+/* Frames the stack does not own (not IP, not ARP - NetBEUI and the like)
+   are held in a small ring for the WfW bridge to collect through
+   SOCK_RXFOREIGN and indicate to its bound protocol.  Without a bridge
+   nothing drains the ring; it simply drops the oldest and stays small. */
+#define FGN_N    4                      /* a power of two; holds FGN_N-1 frames */
+#define FGN_CAP  1518
+static u8   fgn_buf[FGN_N][FGN_CAP];
+static u16  fgn_len[FGN_N];
+static u8   fgn_head, fgn_tail;         /* head = next to read, tail = next to fill */
+
 /* the one echo and the one name lookup the stack carries at a time */
 static struct {
     u8   active;
@@ -229,6 +239,34 @@ static void mem_zero( void *to, u32 len )
 {
     u8 *dst = (u8 *)to;
     while ( len-- ) *dst++ = 0;
+}
+
+/* the foreign-frame ring (declared up by rx_frame): hold a frame the stack
+   does not own, give the oldest back to the bridge on request */
+static void fgn_put( const u8 *frame, u32 len )
+{
+    u8 next;
+
+    if ( len > FGN_CAP ) return;        /* a foreign frame this large is not ours */
+    next = (u8)( ( fgn_tail + 1 ) & ( FGN_N - 1 ) );
+    if ( next == fgn_head ) {           /* ring full: drop the oldest */
+        fgn_head = (u8)( ( fgn_head + 1 ) & ( FGN_N - 1 ) );
+    }
+    mem_copy( fgn_buf[fgn_tail], frame, len );
+    fgn_len[fgn_tail] = (u16)len;
+    fgn_tail = next;
+}
+
+static u32 fgn_get( u8 *buf, u32 max )
+{
+    u32 len;
+
+    if ( fgn_head == fgn_tail ) return 0;       /* empty */
+    len = fgn_len[fgn_head];
+    if ( len > max ) len = max;
+    mem_copy( buf, fgn_buf[fgn_head], len );
+    fgn_head = (u8)( ( fgn_head + 1 ) & ( FGN_N - 1 ) );
+    return len;
 }
 
 static void str_copy( char *to, const char *from, u32 max )
@@ -586,6 +624,7 @@ static void eth_input( const u8 *frame, u32 len )
     type = get16( frame + 12 );
     if ( type == ETH_ARP ) arp_input( frame, len );
     else if ( type == ETH_IP ) ip_input( frame, len );
+    else fgn_put( frame, len );         /* NetBEUI etc.: hold for the WfW bridge */
 }
 
 /* ---------------------------------------------------------------- */
@@ -1825,6 +1864,13 @@ int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
     case SOCK_PING:    result = do_ping( buf, len, answer ); break;
     case SOCK_TLSHOST: result = do_tlshost( buf, len ); if ( !result ) *answer = 0; break;
     case SOCK_SETCA:   result = do_setca( buf, len ); if ( !result ) *answer = 0; break;
+    case SOCK_RXFOREIGN:
+        /* the WfW bridge collects a frame the stack does not own (NetBEUI)
+           and indicates it to its protocol.  pump() at the top of nd_call
+           has already run eth_input, so the ring holds what just arrived */
+        *answer = fgn_get( buf, len );
+        result = 0;
+        break;
     case SOCK_PUMP:
         /* the bridge's one step: take frames off the card, run the
            protocol over them (pump already ran at the top, but the queue
