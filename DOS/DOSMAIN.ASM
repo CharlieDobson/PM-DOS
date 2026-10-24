@@ -263,6 +263,9 @@ ENDIF
                                         ; the ones not shut down properly:
                                         ; shell_restart runs CHKDSK on those
                                         ; before the shell (VOLFLAG.INC)
+        call    mcf_autoexec            ; and after F8, AUTOEXEC.BAT asked
+                                        ; about: /D or /Y on the shell's
+                                        ; tail (MULTICFG.INC)
 
 ;=====================================================================
 ; shell_restart - (re)load the command interpreter into the shell slot
@@ -662,6 +665,10 @@ kbss_stop:
 ;=====================================================================
         INCLUDE ARENA.INC
         INCLUDE FAT.INC
+        INCLUDE GPT.INC                 ; and its partition tables, which the
+                                        ; USB letters and image mounts read too
+        INCLUDE EXFAT.INC               ; and exFAT, in FAT32's shape, which
+                                        ; FAT.INC's routines branch to
         INCLUDE ISO9660.INC             ; after FAT.INC: the second filesystem,
                                         ; and the first one that is not FAT
         INCLUDE UDF.INC                 ; and after it: the THIRD, which is
@@ -697,6 +704,9 @@ kbss_stop:
                                         ; filesystem and is reached from
                                         ; above
         INCLUDE CONFIG.INC
+        INCLUDE MULTICFG.INC            ; and after it: the [blocks] and the
+                                        ; startup menu, which decide which
+                                        ; of its lines are read
         INCLUDE NLS.INC                 ; and after it: COUNTRY=, which is a
                                         ; CONFIG.SYS statement with a file
                                         ; of tables behind it

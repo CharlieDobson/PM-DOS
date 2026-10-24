@@ -389,7 +389,20 @@ int sys_drive_kind( int drv )
     clear( &regs );
     regs.edx = (u32)drv + 1;
     call21( &regs, 0xF101 );
-    return !CF( regs ) && (regs.eax & 0xFF) != 0 ? DK_FIXED : DK_NONE;
+    /* 0EFh is exFAT, which has no FAT for this program to rearrange */
+    return !CF( regs ) && (regs.eax & 0xFF) != 0 && (regs.eax & 0xFF) != 0xEF ?
+           DK_FIXED : DK_NONE;
+}
+
+/* 1 = the drive is an exFAT volume, which is why DK_NONE */
+int sys_drive_exfat( int drv )
+{
+    REGS regs;
+
+    clear( &regs );
+    regs.edx = (u32)drv + 1;
+    call21( &regs, 0xF101 );
+    return !CF( regs ) && (regs.eax & 0xFF) == 0xEF;
 }
 
 int sys_get_cwd( int drv, char *buf, int max )

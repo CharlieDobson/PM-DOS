@@ -155,10 +155,10 @@ ki_done:
 
 ;---------------------------------------------------------------------
 ; kb_bootkeys - the startup keys as the BIOS left them, into GV_BOOTKEY:
-;               a Shift held down (40:17) and an F5 anywhere in its
-;               ring.  kb_init throws both away, and a Shift held from
-;               power-on may not repeat, so they are noted first.
-;               cfg_keys in CONFIG.INC acts on them.
+;               a Shift held down (40:17), and an F5 or an F8 anywhere
+;               in its ring.  kb_init throws them away, and a Shift
+;               held from power-on may not repeat, so they are noted
+;               first.  cfg_keys in CONFIG.INC acts on them.
 ;---------------------------------------------------------------------
 kb_bootkeys:
         push    ebx
@@ -175,8 +175,12 @@ kbk_next:                               ; its pointers are not sane
         cmp     bx,word ptr ds:[BDA_KBTAIL]
         je      kbk_done
         cmp     word ptr ds:[ebx+BDA_BASE],3F00h        ; F5
-        jne     kbk_step
+        jne     kbk_f8
         or      dl,BOOTK_F5
+kbk_f8:
+        cmp     word ptr ds:[ebx+BDA_BASE],4200h        ; F8
+        jne     kbk_step
+        or      dl,BOOTK_F8
 kbk_step:
         add     ebx,2
         cmp     bx,word ptr ds:[BDA_KBEND]
@@ -437,6 +441,8 @@ kb_grey:
         je      kb_greyent
         cmp     al,35h                  ; and its slash is a slash
         je      kb_greysl
+        cmp     al,37h                  ; Print Screen, which with Ctrl is
+        je      kb_greyprt              ; the BIOS's 7200h
         cmp     al,47h
         jb      kb_clr_e0               ; Print Screen, Break, the Windows
         cmp     al,53h                  ; keys: nothing the ring can carry
@@ -461,6 +467,16 @@ kb_greysl:
         mov     ah,35h
         mov     al,'/'
         jmp     kb_haveasc
+
+; CTRL+PRINT SCREEN IS 7200h, the key DOS's manuals give with ^P for
+; turning the printer echo on and off: the DOS console reads it as ^P
+; (kb_getchar).  Print Screen on its own is the BIOS's INT 05h, and
+; still nothing here.
+kb_greyprt:
+        test    byte ptr [kb_flags],KBF_CTRL
+        jz      kb_clr_e0
+        mov     ax,7200h
+        jmp     kb_store
 
 ;---------------------------------------------------------------------
 ; kb_fkey - F1..F10 (3Bh..44h), shifted into whichever of the four
@@ -659,6 +675,11 @@ kb_num:
         mov     bh,BDAK_NUM
         jmp     short kb_lockx
 kb_scroll:
+        test    ah,ah
+        jnz     kb_scrlock              ; a key coming up is the lock's
+        test    byte ptr [kb_flags],KBF_CTRL OR KBF_E0
+        jnz     kb_break                ; Ctrl and Scroll Lock, or E0 46
+kb_scrlock:
         mov     bl,KBF_SCRLDN
         mov     bh,BDAK_SCROLL
 kb_lockx:
@@ -685,6 +706,50 @@ kb_lock:
 kb_lock_up:
         not     bl
         and     byte ptr [kb_flags],bl
+        jmp     kb_clr_e0
+
+;---------------------------------------------------------------------
+; kb_break - Ctrl-Break.  What the BIOS does, in the BIOS's order: the
+;            ring is emptied, bit 7 of 40:71 is set, INT 1Bh is called,
+;            and 0000h goes in the ring.
+;
+; INT 1Bh IS DOS'S UNLESS A PROGRAM HAS TAKEN IT.  DOS's handler, the
+; one IO.SYS installs, marks the key for the console and no more, and
+; the console reads the mark as a ^C and throws the 0000h away
+; (kb_getchar) - so Ctrl-Break is a ^C that jumps the type-ahead, where
+; a ^C typed behind other keys waits its turn.  The kernel's copy of
+; that handler is GNLS_BRKSTUB (vdm_lolinit), and while the vector
+; points at it the mark is made here instead of by calling it.
+;
+; A DOS BOX'S PROGRAM THAT HOOKS INT 1Bh IS CALLED THROUGH IT, as a
+; Turbo Pascal program's CRT unit expects to be: v86_run or v86_ckkbd
+; makes the call when the box can next take an interrupt (GV_BOX1B).
+; There is a ^C only if that program passes the call on to the
+; handler it found.  With no box running, a vector some box left
+; behind is nobody's, and the mark is made.
+;
+; A box whose INT 09h is its own gets the scan codes instead, and the
+; ROM's handler at the end of its chain does all of this itself, INT
+; 1Bh included.
+;---------------------------------------------------------------------
+kb_break:
+        cmp     byte ptr [kb_forbox],0
+        jne     kb_clr_e0
+        mov     bx,word ptr ds:[BDA_KBSTART]
+        mov     word ptr ds:[BDA_KBHEAD],bx
+        mov     word ptr ds:[BDA_KBTAIL],bx
+        or      byte ptr ds:[BDA_BREAK],80h
+        cmp     dword ptr ds:[1Bh * 4],(DOSDATA_SEG SHL 16) + GNLS_BRKSTUB
+        je      kbb_dos                 ; DOS's own handler
+        cmp     byte ptr ds:[GV_BOX1B],GVB_NONE
+        je      kbb_dos                 ; no box to call into
+        mov     byte ptr ds:[GV_BOX1B],GVB_OWED
+        jmp     short kbb_put
+kbb_dos:
+        mov     byte ptr ds:[DOSDATA + GNLS_BRKFLAG],3
+kbb_put:
+        xor     eax,eax
+        call    kb_put
         jmp     kb_clr_e0
 
 kb_mod:
@@ -1160,30 +1225,74 @@ ks_go:
         ret
 
 ;=====================================================================
-; kb_status - ZF set if the buffer is empty (IOS_CONSTAT).
+; kb_status - ZF set if there is nothing to read (IOS_CONSTAT).
+;
+; The Break key's mark is something to read (kb_getchar), and the 0000h
+; the BIOS leaves in the ring behind it is not: MS-DOS's CON takes it
+; out when asked for status and looks again (mschar.asm, con_rdnd).
 ;=====================================================================
 kb_status:
         push    eax
-        mov     ax,word ptr ds:[BDA_KBHEAD]
-        cmp     ax,word ptr ds:[BDA_KBTAIL]
+        push    ebx
+        pushfd
+        cli                             ; kb_break moves the head as well
+ks_again:
+        cmp     byte ptr ds:[DOSDATA + GNLS_BRKFLAG],0
+        jne     ks_yes                  ; the mark is waiting
+        movzx   ebx,word ptr ds:[BDA_KBHEAD]
+        cmp     bx,word ptr ds:[BDA_KBTAIL]
+        je      ks_no
+        cmp     word ptr ds:[ebx+BDA_BASE],0
+        jne     ks_yes                  ; a key
+        add     ebx,2                   ; a Break's 0000h: gone, and again
+        cmp     bx,word ptr ds:[BDA_KBEND]
+        jb      ks_nowrap
+        movzx   ebx,word ptr ds:[BDA_KBSTART]
+ks_nowrap:
+        mov     word ptr ds:[BDA_KBHEAD],bx
+        jmp     short ks_again
+ks_yes:
+        popfd                           ; the caller's interrupt flag, and
+        or      esp,esp                 ; then ZF clear
+        jmp     short ks_out
+ks_no:
+        popfd
+        cmp     eax,eax                 ; ZF set
+ks_out:
+        pop     ebx
         pop     eax
         ret
 
 ;=====================================================================
 ; kb_getchar - block until a key arrives, then return it in AX
 ;              (AL = ASCII, AH = scan code).  IOS_CONIN.
+;
+; THIS IS THE DOS CONSOLE'S READ, and it reads two keys as MS-DOS's CON
+; does (mschar.asm, chrin).  The Break key is a ^C, AX = 0003h, taken
+; from DOS's INT 1Bh handler's mark (kb_break) before anything in the
+; ring - and the 0000h the BIOS leaves behind it is skipped, so that a
+; program whose own INT 1Bh did not pass the call on gets no ^C at all.
+; And Ctrl+PrtSc, 7200h, is a ^P: the printer echo goes on or off
+; (stat_check in DOS\INT21.INC).
 ;=====================================================================
 kb_getchar:
         push    ebx
         push    ecx
 kg_wait:
         cli
+        cmp     byte ptr ds:[DOSDATA + GNLS_BRKFLAG],0
+        jne     kg_brk
         mov     bx,word ptr ds:[BDA_KBHEAD]
         cmp     bx,word ptr ds:[BDA_KBTAIL]
         jne     kg_have
         sti
         hlt                             ; idle until the next interrupt
         jmp     short kg_wait
+kg_brk:
+        mov     byte ptr ds:[DOSDATA + GNLS_BRKFLAG],0
+        sti
+        mov     eax,3
+        jmp     short kg_notgrey
 kg_have:
         movzx   ebx,bx
         movzx   eax,word ptr ds:[ebx+BDA_BASE]
@@ -1195,6 +1304,16 @@ kg_nowrap:
         mov     word ptr ds:[BDA_KBHEAD],cx
         sti
 
+        ; The word as it was in the ring, before the fold below can
+        ; make a zero of anything else.  Nothing in this decoder or the
+        ; ROM's puts 0000h in the ring but Ctrl-Break.
+        or      ax,ax
+        jz      kg_wait                 ; the Break key's leftover
+        cmp     ax,7200h
+        jne     kg_notbrk
+        mov     al,'P' - '@'            ; Ctrl+PrtSc
+        jmp     short kg_notgrey
+kg_notbrk:
         ; E0h IN THE ASCII BYTE MEANS "THE GREY ONE", and this call is
         ; the classic one.  INT 16h function 00h folds it to a zero and
         ; function 10h does not; the DOS console API has no function

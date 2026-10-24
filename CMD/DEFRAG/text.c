@@ -185,6 +185,7 @@ const char tx_scandisk_failed[] = "%s could not be started (error %u).";
 
 const char tx_bad_drive[] = "Invalid drive specification - %c:";
 const char tx_not_local[] = "Drive %c: is a network drive, a CD-ROM or a SUBST and cannot be optimized.";
+const char tx_exfat[] = "Drive %c: is exFAT, which DEFRAG does not optimize.";
 const char tx_cannot_read[] = "Drive %c: cannot be read, or is not formatted for DOS.";
 const char tx_in_use[] = "Drive %c: is in use and cannot be locked.";
 const char tx_redirected[] =

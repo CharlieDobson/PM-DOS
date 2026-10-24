@@ -28,6 +28,7 @@ const char M_BADPARM[]    = "Invalid parameter - %1";
 const char M_BADDRV[]     = "Invalid drive specification";
 const char M_NONET[]      = "Cannot CHKDSK a network drive";
 const char M_SUBST[]      = "Cannot CHKDSK a SUBSTed or ASSIGNed drive";
+const char M_EXFAT[]      = "CHKDSK does not check exFAT volumes";
 const char M_NOLOCK[]     = "Cannot lock drive %1";
 const char M_NOMEM[]      = "Insufficient memory";
 

@@ -1219,7 +1219,13 @@ GNLS_MAPLEN     EQU     12              ; FAR CALL in the country block, which
 GNLS_KBSTUB     EQU     GNLS_OFF + 1ACh ; five bytes: where INT 09h ends in a
 GNLS_STUBLEN    EQU     5               ; DOS box once KEYB has loaded a layout
                                         ; (IO\KEYBD.INC, kb_hlt)
-GNLS_END        EQU     GNLS_OFF + 1B1h
+GNLS_BRKSTUB    EQU     GNLS_OFF + 1B1h ; seven bytes: DOS's INT 1Bh handler,
+GNLS_BRKLEN     EQU     7               ; "mov cs:[GNLS_BRKFLAG],3 / iret"
+GNLS_BRKFLAG    EQU     GNLS_OFF + 1B8h ; db - 3 when the Break key has been
+                                        ; pressed and the console has not
+                                        ; read it yet: MS-DOS's ALTAH.  See
+                                        ; kb_break in IO\KEYBD.INC
+GNLS_END        EQU     GNLS_OFF + 1B9h
 GNLS_ACCENTS    EQU     26h             ; 80h-A5h, which vdm_nlsacc weighs
 
 V86_TPA         EQU     000059D0h
@@ -1732,6 +1738,7 @@ RSP_JFT         EQU     18h                     ; 20 bytes, FFh = closed
 RSP_ENV         EQU     2Ch                     ; dw - environment segment
 RSP_JFTLEN      EQU     32h                     ; dw - 20
 RSP_JFTPTR      EQU     34h                     ; dd - far pointer to the JFT
+RSP_VERSION     EQU     40h                     ; dw - what 30h tells it (SETVER)
 RSP_DOSCALL     EQU     50h                     ; INT 21h / RETF
 RSP_FCB1        EQU     5Ch
 RSP_FCB2        EQU     6Ch
@@ -2317,6 +2324,8 @@ GV_BOOTTICK     EQU     GV_BASE + 0D4h          ; dd - 40:6C at the message
 GV_BOOTKEY      EQU     GV_BASE + 0D8h          ; db - BOOTK_* bits
 BOOTK_SHIFT     EQU     01h                     ; a Shift key was down
 BOOTK_F5        EQU     02h                     ; an F5 was in the ring
+BOOTK_F8        EQU     04h                     ; an F8 was: confirm each
+                                                ; line (MULTICFG.INC)
 
 ; WHAT A RESTART CALLS FIRST.  PMDOS puts the address of its nd_halt
 ; here (DOS\NDLOAD.INC) before CONFIG.SYS can load a 32-bit driver, and
@@ -2335,6 +2344,17 @@ GV_HALTHOOK     EQU     GV_BASE + 0DCh          ; dd - a routine, or 0
 BRG_SIGVAL      EQU     42475250h               ; 'PRGB' - the bridge is present
 GV_BRGSIG       EQU     GV_BASE + 0E0h          ; dd - BRG_SIGVAL, or 0
 GV_BRGENTRY     EQU     GV_BASE + 0E4h          ; dd - brg_entry (NDLOAD.INC), or 0
+
+; THE BREAK KEY AND A DOS BOX.  PMDOS says here whether a box's program
+; is running (vdm_busy, VDM.INC), because only PMIO's keyboard driver
+; sees the key and only PMDOS knows about the box: GVB_NONE when none
+; is, GVB_BOX when one is, and kb_break makes it GVB_OWED when the
+; box's program has hooked INT 1Bh and is owed a call through it.
+; v86_run and v86_ckkbd make that call and put it back to GVB_BOX.
+GV_BOX1B        EQU     GV_BASE + 0E8h          ; db - GVB_*
+GVB_NONE        EQU     0
+GVB_BOX         EQU     1
+GVB_OWED        EQU     2
 
 ; THE HANG REPORTER'S MAILBOX, in a kernel built with HANG_E9 (BUILD
 ; hang) and in no other.  PMDOS writes it at every INT 21h and PMIO's
@@ -3457,6 +3477,10 @@ BDA_EQUIP       EQU     BDA_BASE + 10h          ; dw - equipment word
 BDA_DSKSTAT     EQU     BDA_BASE + 41h          ; db - last INT 13h status
 BDA_TICKS       EQU     BDA_BASE + 6Ch          ; dd - 18.2 Hz since midnight
 BDA_TICKROLL    EQU     BDA_BASE + 70h          ; db - and its 24-hour flag
+BDA_BREAK       EQU     BDA_BASE + 71h          ; db - bit 7: Ctrl-Break has
+                                                ; been pressed.  Set by the
+                                                ; keyboard, cleared by nobody
+                                                ; but a program that asks
 BDA_WARMBOOT    EQU     BDA_BASE + 72h          ; dw - 1234h makes the next
                                                 ; start a warm one: the BIOS
                                                 ; skips its memory test
@@ -3901,6 +3925,154 @@ PT_HID_FAT16B   EQU     16h
 PT_HID_FAT32    EQU     1Bh
 PT_HID_FAT32L   EQU     1Ch
 PT_HID_FAT16L   EQU     1Eh
+
+; 07h IS THREE FILESYSTEMS - HPFS, NTFS and exFAT all carry it - so the
+; byte alone gives no letter: the volume's own first sector has to say
+; "EXFAT   " at offset 3 as well.  0EEh is the protective entry in front
+; of a GUID partition table, which names no volume at all.
+PT_EXFAT        EQU     07h
+PT_GPT          EQU     0EEh
+
+;---------------------------------------------------------------------
+; THE GUID PARTITION TABLE.  A disk that has one carries a protective
+; MBR whose only entry is PT_GPT, so that a program which knows only
+; the old table sees one partition it does not recognise and leaves
+; the disk alone.  The real table is a header in sector 1 and an array
+; of entries after it, and both are kept twice: the second copy is at
+; the END of the disk, header in the last sector and the array in front
+; of it.  Every LBA in either is 64 bits; this system addresses 32, so a
+; partition past 2TB is one it does not see.  Each copy carries CRC-32s
+; of itself and of its array, which is what says which copy to believe.
+;---------------------------------------------------------------------
+GH_SIG          EQU     00h                     ; 8 bytes - "EFI PART"
+GH_REV          EQU     08h                     ; dd - 00010000h
+GH_HSIZE        EQU     0Ch                     ; dd - 92, the header's length
+GH_HCRC         EQU     10h                     ; dd - CRC-32 of the header,
+                                                ; this field taken as zero
+GH_MYLBA        EQU     18h                     ; dq - where this copy is
+GH_ALTLBA       EQU     20h                     ; dq - where the other one is
+GH_FIRST        EQU     28h                     ; dq - first usable sector
+GH_LAST         EQU     30h                     ; dq - last usable sector
+GH_GUID         EQU     38h                     ; 16 bytes - the disk's own
+GH_ALBA         EQU     48h                     ; dq - where the array starts
+GH_NENT         EQU     50h                     ; dd - entries in the array
+GH_ESIZE        EQU     54h                     ; dd - bytes an entry, 128 << n
+GH_ACRC         EQU     58h                     ; dd - CRC-32 of the array
+GH_LEN          EQU     5Ch                     ; 92
+GPT_SIG1        EQU     20494645h               ; "EFI "
+GPT_SIG2        EQU     54524150h               ; "PART"
+GPT_REV         EQU     00010000h
+
+GE_TYPE         EQU     00h                     ; 16 bytes - what it is; all
+                                                ; zero = an unused slot
+GE_UNIQ         EQU     10h                     ; 16 bytes - which one it is
+GE_START        EQU     20h                     ; dq - first sector
+GE_END          EQU     28h                     ; dq - LAST sector, inclusive
+GE_ATTR         EQU     30h                     ; dq - GEA_* below
+GE_NAME         EQU     38h                     ; 36 UTF-16 characters
+GE_LEN          EQU     80h
+
+; ATTRIBUTES, as bits of the high dword (bit 60 of the 64 is bit 28
+; here) for the ones a Basic Data partition gives meaning to, and of the
+; low dword for the one every partition can carry
+GEA_LEGACY      EQU     00000004h               ; low: BIOS-bootable - the
+                                                ; GPT's "active"
+GEA_READONLY    EQU     10000000h               ; high: bit 60
+GEA_HIDDEN      EQU     40000000h               ; high: bit 62
+GEA_NOLETTER    EQU     80000000h               ; high: bit 63
+
+; The four dwords of the types this system cares about, in the byte
+; order they have on the disk (the first three fields little-endian)
+GPT_BDP0        EQU     0EBD0A0A2h              ; EBD0A0A2-B9E5-4433-87C0-
+GPT_BDP1        EQU     4433B9E5h               ; 68B6B72699C7: Basic Data,
+GPT_BDP2        EQU     0B668C087h              ; which is what FAT and exFAT
+GPT_BDP3        EQU     0C79926B7h              ; volumes are on a GPT disk
+GPT_ESP0        EQU     0C12A7328h              ; C12A7328-F81F-11D2-BA4B-
+GPT_ESP1        EQU     11D2F81Fh               ; 00A0C93EC93B: the EFI system
+GPT_ESP2        EQU     0A0004BBAh              ; partition - FAT, and given
+GPT_ESP3        EQU     3BC93EC9h               ; no letter, as Windows gives none
+GPT_MAXENT      EQU     1024                    ; more slots than this, and the
+                                                ; table is not believed
+
+;---------------------------------------------------------------------
+; exFAT, AS IT IS ON THE DISK.  The boot sector carries no BPB at all -
+; bytes 0Bh to 3Fh are zero, which is what keeps a DOS that knows only
+; FAT from believing it - and its own fields start at 40h.  Every size
+; in it is a power of two given as a shift, every length in sectors of
+; the volume's own size, every cluster number 32 bits.  The boot sector
+; and the eleven after it are a region with a checksum in its twelfth,
+; and the region is there twice.
+;---------------------------------------------------------------------
+XFB_NAME        EQU     03h                     ; 8 bytes - "EXFAT   "
+XFB_PARTOFF     EQU     40h                     ; dq - where the volume starts
+                                                ; on its disk
+XFB_VOLLEN      EQU     48h                     ; dq - sectors in the volume
+XFB_FATOFF      EQU     50h                     ; dd - the FAT, from the start
+XFB_FATLEN      EQU     54h                     ; dd - ...and its sectors
+XFB_HEAP        EQU     58h                     ; dd - where cluster 2 is
+XFB_NCLUS       EQU     5Ch                     ; dd - clusters in the heap
+XFB_ROOT        EQU     60h                     ; dd - the root's first cluster
+XFB_SERIAL      EQU     64h                     ; dd
+XFB_REV         EQU     68h                     ; dw - 0100h
+XFB_FLAGS       EQU     6Ah                     ; dw - XFBF_*, and outside
+                                                ; the checksum, so it can change
+XFB_BPSSH       EQU     6Ch                     ; db - log2 bytes a sector
+XFB_SPCSH       EQU     6Dh                     ; db - log2 sectors a cluster
+XFB_NFATS       EQU     6Eh                     ; db - 1, or 2 for TexFAT
+XFB_DRIVE       EQU     6Fh                     ; db - 80h
+XFB_PCT         EQU     70h                     ; db - percent in use, FFh =
+                                                ; unknown; outside the checksum
+XFBF_ACTIVEFAT  EQU     0001h                   ; TexFAT: the second FAT is live
+XFBF_DIRTY      EQU     0002h                   ; VolumeDirty
+XFB_REGION      EQU     12                      ; sectors in a boot region
+
+; A DIRECTORY ENTRY IS 32 BYTES AND A FILE IS A SET OF THEM: a file
+; entry, then a stream extension that says where the data is and how
+; long, then one name entry for every fifteen characters of the name.
+; The first byte is the type, and its top bit says the entry is in
+; use - which is what a delete clears.
+XFT_END         EQU     00h                     ; the end of the directory
+XFT_INUSE       EQU     80h
+XFT_BITMAP      EQU     81h
+XFT_UPCASE      EQU     82h
+XFT_LABEL       EQU     83h
+XFT_FILE        EQU     85h
+XFT_GUID        EQU     0A0h
+XFT_STREAM      EQU     0C0h
+XFT_NAME        EQU     0C1h
+XFT_SECONDARY   EQU     40h                     ; the category bit
+XFT_BENIGN      EQU     20h                     ; the importance bit
+
+XFE_SECCNT      EQU     01h                     ; db - file: entries after it
+XFE_SETSUM      EQU     02h                     ; dw - file: the set's checksum
+XFE_ATTR        EQU     04h                     ; dw - file: FAT's bits, low byte
+XFE_CRT         EQU     08h                     ; dd - file: created, as FAT's
+                                                ; time and date in one dword
+XFE_MOD         EQU     0Ch                     ; dd - file: last written
+XFE_ACC         EQU     10h                     ; dd - file: last read
+XFE_CRT10       EQU     14h                     ; db - file: tens of ms, 0-199
+XFE_MOD10       EQU     15h
+XFE_CRTUTC      EQU     16h                     ; db - file: the time zone,
+XFE_MODUTC      EQU     17h                     ; bit 7 = it is given
+XFE_ACCUTC      EQU     18h
+XFE_SFLAGS      EQU     01h                     ; db - stream: XFS_*
+XFE_NLEN        EQU     03h                     ; db - stream: name's characters
+XFE_HASH        EQU     04h                     ; dw - stream: the name's hash
+XFE_VDL         EQU     08h                     ; dq - stream: ValidDataLength
+XFE_FIRST       EQU     14h                     ; dd - stream, bitmap, up-case:
+                                                ; the first cluster
+XFE_DLEN        EQU     18h                     ; dq - ...and the length
+XFE_CHARS       EQU     02h                     ; name: 15 UTF-16 characters;
+                                                ; label: 11
+XFE_LCOUNT      EQU     01h                     ; db - label: its characters
+XFE_UPSUM       EQU     04h                     ; dd - up-case: its checksum
+XFS_ALLOC       EQU     01h                     ; AllocationPossible
+XFS_NOFAT       EQU     02h                     ; NoFatChain: the clusters are
+                                                ; one run and the FAT says
+                                                ; nothing about them
+XF_EOC          EQU     0FFFFFFFFh              ; a FAT entry: the chain ends
+XF_BAD          EQU     0FFFFFFF7h              ; ...or the cluster is bad
+XF_NAMEMAX      EQU     255                     ; characters a name may have
 
 ;---------------------------------------------------------------------
 ; BPB field offsets, counted from the start of the boot sector.
@@ -4500,6 +4672,13 @@ ENDIF
 FS_FAT          EQU     0
 FS_ISO          EQU     1
 FS_NET          EQU     2
+FS_EXFAT        EQU     3               ; read in FAT32's shape, DOS\EXFAT.INC
+
+; 21h/F1h AL=1 answers a FAT volume's width, 12, 16 or 32, and 0 for
+; ISO9660 or UDF.  exFAT is none of those - its FAT is 32 bits wide and
+; its allocation is not in it - and a program that took it for FAT32
+; would read a boot sector with no BPB in it as if it had one.
+F1T_EXFAT       EQU     0EFh
 
 ; A CD-ROM logical block.  HERE rather than in ISO9660.INC because
 ; FAT.INC needs it and is included first, and an EQU cannot be used
@@ -4579,7 +4758,18 @@ SFT_SHARE       EQU     60                      ; dd - the open mode byte as
                                                 ; bits and all; SFT_MODE keeps
                                                 ; only the access.  SHARE.INC
                                                 ; reads it and nothing else
-SFT_LEN         EQU     64
+
+; AN exFAT FILE CARRIES TWO THINGS ITS DIRECTORY ENTRY'S FAT SHAPE HAS
+; NO ROOM FOR (DOS\EXFAT.INC).  Its clusters may be one run with nothing
+; in the FAT about them, and the FAT then must not be followed; and its
+; bytes past ValidDataLength are whatever the disk held, which must
+; read as zeroes.  Both are zero for every other file - sft_new clears
+; them - so a walk on FAT is the walk it always was.
+SFT_XRUN        EQU     64                      ; dd - the run, in clusters as
+                                                ; the kernel counts them; 0 =
+                                                ; the FAT says
+SFT_XVDL        EQU     68                      ; dd - ValidDataLength
+SFT_LEN         EQU     72
 
 SFTF_INUSE      EQU     0001h
 SFTF_DEVICE     EQU     0002h                   ; a character device, not a file

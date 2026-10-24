@@ -147,10 +147,23 @@ mn_lshead:
         call    sp1                     ; "Drive  " heading occupies
 
 ;--- FAT or ISO, and read-only or not --------------------------------
-        mov     edx,OFFSET msg_fat
-        test    byte ptr [rep_buf+RP_FLAGS],IMF_ISO
-        jz      mn_lsfs
         mov     edx,OFFSET msg_iso
+        test    byte ptr [rep_buf+RP_FLAGS],IMF_ISO
+        jnz     mn_lsfs
+        ; exFAT IS NOT FAT, whatever the file is called: the kernel says
+        ; which it found when it mounted the file (F1T_EXFAT)
+        mov     edx,OFFSET msg_fat
+        push    ebx
+        movzx   edx,byte ptr [rep_buf+RP_LETTER]
+        inc     edx                     ; F1h speaks 1-based drives
+        mov     eax,0F101h
+        int     21h
+        pop     ebx
+        mov     edx,OFFSET msg_fat
+        jc      mn_lsfs
+        cmp     al,F1T_EXFAT
+        jne     mn_lsfs
+        mov     edx,OFFSET msg_exfat
 mn_lsfs:
         call    puts
         mov     edx,OFFSET msg_rw
@@ -551,6 +564,7 @@ msg_head    db  13,10,'Drive  Type  Mode  Extents      Size  File',13,10
             db  '----------------------------------',13,10,'$'
 msg_fat     db  'FAT   $'
 msg_iso     db  'ISO   $'
+msg_exfat   db  'exFAT $'
 msg_rw      db  'rw   $'
 msg_ro      db  'ro   $'
 msg_kb      db  ' KB  $'

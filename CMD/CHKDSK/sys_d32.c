@@ -212,6 +212,9 @@ int sys_drive_type( int drv )
     if ( !CF( regs ) && (regs.eax & 0xFF) == 0 ) {
         return DRV_REMOTE;
     }
+    if ( !CF( regs ) && (regs.eax & 0xFF) == 0xEF ) {
+        return DRV_EXFAT;                /* F1T_EXFAT: no FAT to check */
+    }
     return DRV_LOCAL;
 }
 

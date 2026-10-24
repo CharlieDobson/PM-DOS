@@ -77,6 +77,7 @@ void  sys_get_country( COUNTRY *ctry );
 int   sys_get_drive( void );
 int   sys_boot_drive( void );
 int   sys_drive_kind( int drv );            /* DK_* */
+int   sys_drive_exfat( int drv );           /* 1 = exFAT, so DK_NONE */
 int   sys_get_cwd( int drv, char *buf, int max );   /* "DIR\SUB", 0 = ok */
 int   sys_chdir( int drv, const char *dir );        /* "" = the root */
 int   sys_get_bpb( int drv, u8 *sector );   /* a boot sector made from the DPB */

@@ -18,6 +18,11 @@
         .8086
 
 RELSEG          EQU     0060h           ; where the copy runs
+GPT_BUF         EQU     0200h           ; where a GPT sector is read: just past
+                                        ; the copy, and behind it
+GPT_ALBA        EQU     0400h           ; dq - the array's sector being read
+GPT_LEFT        EQU     0408h           ; dw - entries not looked at yet
+GPT_ESIZE       EQU     040Ch           ; dw - bytes an entry
 
 _MBR    SEGMENT USE16 PUBLIC 'CODE'
         ASSUME  CS:_MBR, DS:_MBR
@@ -71,11 +76,16 @@ scan:
         je      have
         add     si,16
         loop    scan
-        mov     si,OFFSET msgNoAct
-        jmp     short fatal
+        jmp     gpt_look
 
 ;--- load its boot sector at 0000:7C00 -------------------------------
+; unless it is the protective entry of a GPT disk, marked active for
+; the BIOSes that will not start a disk with no active entry
 have:
+        cmp     byte ptr [si+4],0EEh
+        jne     have_mbr
+        jmp     gpt_disk
+have_mbr:
         mov     di,3                    ; retries
 rdlp:
         push    di
@@ -123,6 +133,87 @@ fatal:
         xor     ax,ax
         int     16h                     ; any key ...
         int     19h                     ; ... and try the next device
+
+;--- no active entry: a GPT disk? ------------------------------------
+; A protective entry (EEh) says the partitions are in the GPT, and the
+; one to start is the first entry with its legacy BIOS bootable bit set
+; (attribute bit 2), which is what FDISK /A sets on a GPT disk.  The
+; GPT is read through the INT 13h extensions, by LBA; a BIOS without
+; them cannot start a GPT disk from here.  The volume boot record that
+; is started finds itself by its own BPB, as it does on an MBR disk.
+gpt_look:
+        cmp     byte ptr [parttab+4],0EEh       ; where the specification
+        mov     si,OFFSET msgNoAct              ; puts the protective entry
+        jne     fatal
+gpt_disk:
+        mov     ah,41h
+        mov     bx,55AAh
+        mov     dl,[bootdrv]
+        int     13h
+        jc      gpt_err
+        cmp     bx,0AA55h               ; and said so
+        jne     gpt_err
+        push    ds
+        pop     es
+        mov     word ptr [dap_lba],1    ; the header
+        call    gpt_read
+        jc      gpt_err
+        cmp     word ptr ds:[GPT_BUF],'FE'      ; "EFI PART"
+        jne     gpt_none
+        mov     si,GPT_BUF + 48h        ; where the array is, how many
+        mov     di,GPT_ALBA             ; entries, and how big each is
+        mov     cx,7
+        rep     movsw
+        cmp     word ptr ds:[GPT_ESIZE],0
+        jne     gpt_sector
+; the two ways out, in the middle where every jump to them reaches
+gpt_none:
+        mov     si,OFFSET msgNoAct
+        jmp     fatal
+gpt_err:
+        mov     si,OFFSET msgDisk
+        jmp     fatal
+gpt_sector:
+        mov     si,GPT_ALBA
+        mov     di,OFFSET dap_lba
+        mov     cx,4
+        rep     movsw
+        call    gpt_read
+        jc      gpt_err
+        mov     si,GPT_BUF
+gpt_entry:
+        cmp     word ptr ds:[GPT_LEFT],0
+        je      gpt_none
+        test    byte ptr [si+30h],4     ; legacy BIOS bootable
+        jnz     gpt_found
+        dec     word ptr ds:[GPT_LEFT]
+        add     si,ds:[GPT_ESIZE]
+        cmp     si,GPT_BUF + 512
+        jb      gpt_entry
+        add     word ptr ds:[GPT_ALBA],1        ; the array's next sector
+        adc     word ptr ds:[GPT_ALBA+2],0
+        jmp     short gpt_sector
+gpt_found:
+        add     si,20h                  ; its first sector, to 0000:7C00 -
+        mov     di,OFFSET dap_lba       ; which is RELSEG:7600h
+        mov     cx,4
+        rep     movsw
+        mov     word ptr [dap_buf],7C00h - RELSEG * 16
+        call    gpt_read
+        jc      gpt_err
+        xor     ax,ax
+        mov     es,ax
+        jmp     rdok
+
+;--- gpt_read - the sector at dap_lba into dap_buf.  CF on failure.
+gpt_read:
+        push    si
+        mov     si,OFFSET dap
+        mov     ah,42h
+        mov     dl,[bootdrv]
+        int     13h
+        pop     si
+        ret
 
 ;---------------------------------------------------------------------
 puts:
@@ -180,9 +271,18 @@ msgDisk     db  13,10,'Disk read error',0
 msgNoSys    db  13,10,'Missing operating system',0
 bootdrv     db  0
 
+; the INT 13h extensions' packet: one sector, to GPT_BUF while the GPT
+; is read, and to 0000:7C00 at the end.  Its LBA's high words stay zero.
+dap         db  10h, 0
+            dw  1
+dap_buf     dw  GPT_BUF, RELSEG
+dap_lba     dw  0, 0, 0, 0
+
 ;---------------------------------------------------------------------
-mbr_code_end:                           ; MKDISK copies 0..1BDh verbatim
-.ERRE   (mbr_code_end - start) LE 1BEh, <MBR code has grown into the partition table>
+mbr_code_end:                           ; MKDISK copies 0..1BDh verbatim,
+                                        ; but FDISK /MBR writes 0..1B7h: 1B8h
+                                        ; on is the disk's identity
+.ERRE   (mbr_code_end - start) LE 1B8h, <MBR code has grown into the disk signature>
 
         ORG     1BEh                    ; placeholder partition table -
 parttab db      64 dup(0)               ; MKDISK writes the real one

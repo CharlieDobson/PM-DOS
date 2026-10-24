@@ -20,6 +20,12 @@ two seconds for the key, then says "Safe mode" and goes straight to
 the prompt.  Use this when a line in either file stops the machine
 from starting.
 
+Press F8 instead to see each line of CONFIG.SYS before it runs.  Y
+runs the line, N skips it, Esc runs the rest without asking, and F5
+skips the rest.  PM-DOS then asks whether to process AUTOEXEC.BAT,
+and with Y its lines are asked about the same way.  To be asked about
+one line only, put a ? after its name: DEVICE?=C:\DOS\ANSI.SYS
+
 
 MS-DOS STATEMENTS
 -----------------
@@ -78,6 +84,10 @@ DEVICEHIGH=file [options]
     It finds the card the line above loaded, asks DHCP for an address,
     a gateway and a name server, and from then on gives programs
     sockets.  Without a card loaded first it says so and does not load.
+    A driver can be an .EXE.  DEVICE=C:\SETVER.EXE loads SETVER's
+    version table, which tells the programs named in it the DOS
+    version they were written for; put it above any driver it names.
+    SETVER at the prompt lists and changes the table.
 
 INSTALL=file [options]
 INSTALLHIGH=file [options]
@@ -105,7 +115,8 @@ SHELL=file [options]
 
 BREAK=ON|OFF
     Sets the Ctrl+Break flag that programs read with INT 21h AX=3300h.
-    PM-DOS doesn't check the flag itself yet.
+    With ON, Ctrl+C is checked for during disk work as well as during
+    screen and keyboard work.
 
 COUNTRY=code[,[page][,file]]
     Sets the country: how dates, times, numbers and money are written,
@@ -157,22 +168,85 @@ COUNTRY=code[,[page][,file]]
         386 Slovenia        852 850    421 Slovakia        852 850
 
 SWITCHES=/F /N
-    /F skips the two-second wait for Shift or F5 at startup.  A key
-    pressed before the wait still counts.
-    /N turns Shift and F5 off, so CONFIG.SYS and AUTOEXEC.BAT always
-    run.
+    /F skips the two-second wait for Shift, F5 or F8 at startup.  A
+    key pressed before the wait still counts.
+    /N turns Shift, F5 and F8 off, so CONFIG.SYS and AUTOEXEC.BAT
+    always run.  The startup menu doesn't offer F5 and F8 either.
     /K, /W and /E are accepted but do nothing.
 
 NUMLOCK=ON|OFF
     Turns Num Lock on or off at startup.  Without this line Num Lock
-    is left as the BIOS set it.
+    is left as the BIOS set it.  In a [menu] block, or above the first
+    block, it takes effect before the startup menu appears.
 
 Accepted and ignored:
-    BUFFERS  FCBS  STACKS  DRIVPARM  MULTITRACK
+    BUFFERS  FCBS  STACKS  DRIVPARM  MULTITRACK  COMMENT
 
-Boot menus ([menu], MENUITEM, MENUDEFAULT, MENUCOLOR, SUBMENU, INCLUDE,
-COMMENT) are accepted, but there is no menu.  Every line in every
-block is used.
+
+MORE THAN ONE CONFIGURATION
+---------------------------
+
+CONFIG.SYS can hold several configurations.  Each is a block of lines
+that starts with its name in brackets, and a [menu] block makes a menu
+at startup to choose one:
+
+    [menu]
+    MENUITEM=NORMAL,Normal start
+    MENUITEM=NOUSB,Leave USB to the BIOS
+    MENUDEFAULT=NORMAL,5
+
+    [common]
+    FILES=40
+
+    [NORMAL]
+    USB=ON
+
+    [NOUSB]
+    USB=OFF
+
+Lines above the first block, and lines in [common] blocks, are used
+by every configuration.  Without a [menu] block only those are used.
+
+On the menu, the arrow keys or a number pick a choice and Enter
+starts it.  F5 starts without CONFIG.SYS and AUTOEXEC.BAT.  F8 turns
+on confirming each line.
+
+These go in the [menu] block:
+
+MENUITEM=block[,text]
+    A choice.  The text is what the menu shows; without it, the block
+    name is.  Up to nine choices.
+
+SUBMENU=block[,text]
+    A choice that opens another menu, written in that block the same
+    way as [menu].  Backspace goes back to the first menu.
+
+MENUDEFAULT=block[,seconds]
+    The choice that starts highlighted.  With seconds (up to 90) the
+    menu waits that long and then takes it; any key stops the count.
+    With 0 the menu isn't shown at all, unless F8 was pressed.
+
+MENUCOLOR=text[,background]
+    The menu's colors, 0 to 15.  The background is black if left out.
+
+NUMLOCK=ON|OFF
+    Num Lock for the menu.
+
+And this goes in any other block:
+
+INCLUDE=block
+    Uses the lines of another block at this point.
+
+The name of the chosen block is put in the CONFIG environment
+variable, so AUTOEXEC.BAT can do something different for each one:
+
+    GOTO %CONFIG%
+    :NORMAL
+    ...
+    GOTO END
+    :NOUSB
+    ...
+    :END
 
 
 PM-DOS STATEMENTS

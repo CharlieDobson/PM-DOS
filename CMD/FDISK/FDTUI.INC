@@ -124,7 +124,8 @@ PV_REPLACE      EQU     1               ; the selected row, somewhere else
 PV_ADD          EQU     2               ; a new span
 PV_OMIT         EQU     3               ; the selected row, gone
 
-IV_MAX          EQU     EBR_MAX + 4     ; spans the gap finder sorts
+IV_MAX          EQU     GPT_MAXP + 4    ; spans the gap finder sorts: a
+                                        ; chain's, or a GPT's entries
 
 ;--- events (FDEVENT.INC) --------------------------------------------
 EV_KEY          EQU     1
@@ -178,9 +179,10 @@ CMD_ABOUT       EQU     14
 CMD_COMMIT      EQU     15
 CMD_UNDO        EQU     16
 CMD_FORMAT      EQU     17
-CMD_SEP         EQU     18              ; a line between menu items
-CMD_MENU0       EQU     19              ; open menu 0..3
-CMD_MENU3       EQU     22
+CMD_CONVERT     EQU     18              ; GPT, or back to MBR
+CMD_SEP         EQU     19              ; a line between menu items
+CMD_MENU0       EQU     20              ; open menu 0..3
+CMD_MENU3       EQU     23
 CMD_DISK0       EQU     32              ; look at disk 0, 1, ...
 
 ;--- the menus (FDDLG.INC) -------------------------------------------
@@ -196,7 +198,7 @@ MI_CMD          EQU     00h             ; dd - CMD_*
 MI_LABEL        EQU     04h             ; dd -> the text, padded to the width
 MI_KEY          EQU     08h             ; dd - the letter that picks it
 MI_LEN          EQU     0Ch
-MU_DISKMAX      EQU     MAX_DISKS + 4
+MU_DISKMAX      EQU     MAX_DISKS + 5
 DM_W            EQU     21              ; a Disk menu item's text
 
 ;--- the boxes (FDDLG.INC) -------------------------------------------
@@ -677,6 +679,11 @@ trg_spt:
         je      trg_log
         mov     ebx,ecx                 ; a primary: past the first track
         mov     edx,dword ptr [dsk_rec+DSK_TOTAL]
+        cmp     byte ptr [gpt_on],0
+        je      trg_lo
+        mov     ebx,[gpt_first]         ; a GPT entry: the usable sectors
+        mov     edx,[gpt_last]
+        inc     edx
         jmp     short trg_lo
 trg_log:
         mov     ebx,[esi+TR_EBR]
@@ -781,6 +788,14 @@ tu_fits:
         jz      tfi_no
         cmp     edx,dword ptr [dsk_rec+DSK_TOTAL]
         ja      tfi_no
+        cmp     byte ptr [gpt_on],0
+        je      tfi_walls
+        cmp     eax,[gpt_first]         ; a GPT entry: the usable sectors,
+        jb      tfi_no                  ; EDX being one past its end
+        mov     eax,[gpt_last]
+        inc     eax
+        cmp     edx,eax
+        ja      tfi_no
         jmp     short tfi_walls
 tfi_log:
         cmp     eax,[esi+TR_EBR]
@@ -836,6 +851,8 @@ mv_snap:
         push    esi
         mov     esi,ecx                 ; ESI = the length
         call    fd_spcyl                ; ECX = a cylinder
+        cmp     byte ptr [gpt_on],0
+        jne     mvs_gpt
         mov     ebx,eax
         add     ebx,esi                 ; EBX = where it would end
         jc      mvs_top
@@ -869,6 +886,28 @@ mvs_done:
         jae     mvs_out
 mvs_none:
         mov     eax,[mv_cur]            ; no room anywhere in it
+        jmp     short mvs_out
+; ON A GPT DISK IT IS THE START that goes to the nearest megabyte, as
+; every GPT tool starts one, and then the whole is held in mv_lo..mv_hi
+mvs_gpt:
+        call    cyl_near
+        cmp     eax,[mv_lo]
+        jae     mvg_lo
+        mov     eax,[mv_lo]
+        call    fd_cylup
+mvg_lo:
+        mov     ebx,eax
+        add     ebx,esi
+        jc      mvg_top
+        cmp     ebx,[mv_hi]
+        jbe     mvs_out
+mvg_top:
+        mov     eax,[mv_hi]
+        sub     eax,esi
+        jc      mvs_none
+        call    fd_cyldn
+        cmp     eax,[mv_lo]
+        jb      mvs_none
 mvs_out:
         pop     esi
         pop     edx
@@ -1611,8 +1650,11 @@ cra_spt:
         mov     eax,[cg_start]
         cmp     dword ptr [cg_kind],TK_LFREE
         je      cra_log
+        cmp     byte ptr [gpt_on],0     ; a GPT disk has no first track
+        jne     cra_up                  ; to keep: a megabyte, always
         cmp     eax,edx                 ; the first track's end stays put
         je      cra_have
+cra_up:
         call    fd_cylup
         jmp     short cra_have
 cra_log:
@@ -1775,6 +1817,8 @@ crb_field:
         mov     dword ptr [dg_pvfn],OFFSET cr_preview
         ; an extended partition can be asked for where there is none yet
         cmp     dword ptr [cg_kind],TK_FREE
+        jne     tu_okcancel
+        cmp     byte ptr [gpt_on],0     ; a GPT has no such thing
         jne     tu_okcancel
         cmp     byte ptr [tu_hascont],0
         jne     tu_okcancel
@@ -2042,12 +2086,15 @@ tfm_none:
         mov     edx,OFFSET msg_qformat
         call    lb_puts
         call    lb_name
-        mov     edx,OFFSET msg_qfmtas
+        mov     al,'?'
+        call    lb_putc
+        call    ln_new
+        mov     edx,OFFSET msg_qfmtfat
         call    lb_puts
         mov     eax,dword ptr [fg_exec+FG_BITS]
         call    lb_num
-        mov     al,'?'
-        call    lb_putc
+        mov     edx,OFFSET msg_qfmtfat2
+        call    lb_puts
         call    ln_new
         mov     edx,OFFSET msg_qfmtlost
         call    lb_puts
@@ -2072,15 +2119,30 @@ tfm_none:
         mov     edx,OFFSET msg_qfmtboot2
         call    lb_puts
 tfm_ask:
-        mov     edx,OFFSET msg_tformat
-        mov     bl,A_DLGERR
-        mov     ecx,1                   ; Enter is No
-        call    tu_ask
-        jc      tfm_out
+        ; THREE BUTTONS, and Enter is the one that formats nothing
+        mov     dword ptr [dg_title],OFFSET msg_tformat
+        mov     byte ptr [dg_attr],A_DLGERR
+        mov     edx,OFFSET msg_bfat
+        call    dg_btn
+        mov     edx,OFFSET msg_bexfat
+        call    dg_btn
+        mov     edx,OFFSET msg_bcancel
+        call    dg_btn
+        mov     dword ptr [dg_focus],2
+        mov     dword ptr [dg_esc],2
+        call    dg_run
+        cmp     eax,2
+        jae     tfm_out
+        mov     [fm_which],eax
         call    tui_selrow
         mov     eax,[esi+TR_START]
         mov     [rs_start],eax
         call    fm_args
+        cmp     dword ptr [fm_which],0
+        je      tfm_go
+        mov     word ptr [fd_args + FD_ARGLEN],'E'      ; exFAT, and its end
+        mov     dword ptr [fd_nargs],2
+tfm_go:
         mov     eax,OFFSET fd_format
         call    tu_write
         jmp     short tfm_out
@@ -2095,6 +2157,93 @@ fm_args:
         call    tui_setdp
         mov     dword ptr [fd_nargs],1
         mov     byte ptr [fd_cmd],FDC_FORMAT
+        ret
+
+;=====================================================================
+; T (Disk > Convert table) - this disk's partitions into a GPT, or a GPT
+;     disk's into a master boot record table (fd_togpt, fd_tombr): the
+;     dry run says whether it can be done, a red question whose Enter
+;     is No, and then staged like every other change to a table.
+;=====================================================================
+tu_convert:
+        pushad
+        cmp     byte ptr [tui_dstate],0
+        je      tcv_ok
+        mov     dword ptr [tu_stat],OFFSET msg_tnoconv
+        jmp     tcv_out
+tcv_ok:
+        mov     eax,OFFSET fd_togpt
+        mov     bl,FDC_TOGPT
+        cmp     byte ptr [gpt_on],0
+        je      tcv_verb
+        mov     eax,OFFSET fd_tombr
+        mov     bl,FDC_TOMBR
+tcv_verb:
+        mov     [cv_verb],eax
+        mov     [cv_cmd],bl
+        call    cv_args
+        mov     eax,[cv_verb]
+        call    tui_dryrun
+        cmp     byte ptr [fd_rc],0
+        jne     tcv_refused
+        call    dg_reset
+        call    ln_new
+        mov     edx,OFFSET msg_qtogpt
+        cmp     dword ptr [cv_verb],OFFSET fd_togpt
+        je      tcv_q1
+        mov     edx,OFFSET msg_qtombr
+tcv_q1:
+        call    lb_puts
+        mov     eax,[tui_disk]
+        call    lb_num
+        mov     edx,OFFSET msg_qtogpt2
+        cmp     dword ptr [cv_verb],OFFSET fd_togpt
+        je      tcv_q2
+        mov     edx,OFFSET msg_qtombr2
+tcv_q2:
+        call    lb_puts
+        call    ln_new
+        mov     edx,OFFSET msg_qtogpt3
+        cmp     dword ptr [cv_verb],OFFSET fd_togpt
+        je      tcv_q3
+        mov     edx,OFFSET msg_qtombr3
+tcv_q3:
+        call    lb_puts
+        cmp     dword ptr [cv_verb],OFFSET fd_togpt
+        jne     tcv_ask
+        call    ln_new
+        mov     edx,OFFSET msg_qtogpt4
+        call    lb_puts
+        call    fd_bootdisk             ; the disk the machine started from
+        jc      tcv_ask
+        call    ln_new
+        mov     edx,OFFSET msg_qtogpt5
+        call    lb_puts
+tcv_ask:
+        mov     edx,OFFSET msg_tconvert
+        mov     bl,A_DLGERR
+        mov     ecx,1                   ; Enter is No
+        call    tu_ask
+        jc      tcv_out
+        mov     dword ptr [rs_start],-1
+        call    cv_args
+        mov     eax,[cv_verb]
+        call    tu_stage
+        jmp     short tcv_out
+tcv_refused:
+        call    tu_captail
+tcv_out:
+        popad
+        ret
+
+cv_args:
+        mov     dword ptr [cap_len],0
+        mov     eax,[tui_disk]
+        mov     edi,OFFSET fd_args
+        call    tui_putdec0
+        mov     dword ptr [fd_nargs],1
+        mov     al,[cv_cmd]
+        mov     [fd_cmd],al
         ret
 
 ;=====================================================================
@@ -2400,14 +2549,29 @@ lbn_out:
         pop     eax
         ret
 
+;--- tr_tname - ESI -> a row: EDX -> what its type is called.  A GPT
+;--- entry, and an exFAT volume behind 07h, have a kind of their own.
+tr_tname:
+        push    eax
+        mov     eax,[esi+TR_RSVD]
+        or      eax,eax
+        jz      ttn_byte
+        call    gpt_kname
+        pop     eax
+        ret
+ttn_byte:
+        mov     eax,[esi+TR_TYPE]
+        call    tn_find
+        pop     eax
+        ret
+
 ;--- lb_what - "FAT16, 40.8 MB" for the selected row -----------------
 lb_what:
         push    eax
         push    edx
         push    esi
         call    tui_selrow
-        mov     eax,[esi+TR_TYPE]
-        call    tn_find
+        call    tr_tname
         call    lb_puts
         call    lb_trim
         mov     edx,OFFSET msg_comma3
@@ -2675,6 +2839,10 @@ tui_load:
         mov     edi,[mbr_buf]
         cmp     word ptr [edi+1FEh],MBR_SIG
         jne     tl_notable
+        call    gpt_check               ; FDGPT.INC
+        jc      tl_gptbad
+        cmp     byte ptr [gpt_on],0
+        jne     tl_gpt
 
         ;--- the four slots
         xor     ebp,ebp
@@ -2710,6 +2878,7 @@ tl_notact:
         mov     [edi+TR_START],eax
         mov     ecx,[esi+PE_SECS]
         mov     [edi+TR_SECS],ecx
+        call    tl_xfname
         push    ebx
         mov     ebx,[tui_disk]
         call    vol_letter
@@ -2757,6 +2926,7 @@ tl_live:
         mov     [edi+TR_START],eax
         mov     ecx,[esi+CH_VSECS]
         mov     [edi+TR_SECS],ecx
+        call    tl_xfname
         push    ebx
         mov     ebx,[tui_disk]
         call    vol_letter
@@ -2816,6 +2986,77 @@ tl_unread:
 tl_notable:
         mov     byte ptr [tui_dstate],3
         jmp     short tl_done
+tl_gptbad:
+        mov     byte ptr [tui_dstate],4
+        jmp     short tl_done
+
+;--- a GPT disk: a primary row for each entry in use, and the first entry
+;--- free is where a new one goes
+tl_gpt:
+        xor     ebp,ebp
+tlg_ent:
+        cmp     ebp,[gpt_cnt]
+        jae     tlg_gaps
+        mov     esi,ebp
+        shl     esi,4
+        add     esi,[gsh_tblp]
+        movzx   eax,byte ptr [esi+PE_TYPE]
+        or      eax,eax
+        jnz     tlg_used
+        cmp     dword ptr [tu_slot],0
+        jne     tlg_next
+        lea     eax,[ebp+1]
+        mov     [tu_slot],eax
+        jmp     short tlg_next
+tlg_used:
+        call    tui_newrow
+        mov     [edi+TR_TYPE],eax
+        lea     eax,[ebp+1]
+        mov     [edi+TR_NUM],eax
+        mov     dword ptr [edi+TR_KIND],TK_PRIMARY
+        mov     eax,[gsh_kindp]
+        movzx   eax,byte ptr [eax+ebp]
+        mov     [edi+TR_RSVD],eax       ; what it is called
+        cmp     byte ptr [esi+PE_BOOT],80h
+        jne     tlg_notact
+        mov     dword ptr [edi+TR_ACT],1
+tlg_notact:
+        mov     eax,[esi+PE_START]
+        mov     [edi+TR_START],eax
+        mov     ecx,[esi+PE_SECS]
+        mov     [edi+TR_SECS],ecx
+        push    ebx
+        mov     ebx,[tui_disk]
+        call    vol_letter
+        pop     ebx
+        jc      tlg_next
+        movzx   eax,al
+        mov     [edi+TR_LETTER],eax
+tlg_next:
+        inc     ebp
+        jmp     tlg_ent
+tlg_gaps:
+        call    tl_topgaps
+        jmp     tl_sorted
+
+;--- tl_xfname - EDI -> a row of type 07h: TR_RSVD says exFAT when the
+;--- volume in it is, since NTFS has the same type byte
+tl_xfname:
+        cmp     dword ptr [edi+TR_TYPE],PT_EXFAT
+        jne     txf_out
+        push    eax
+        push    ebx
+        mov     ebx,[edi+TR_START]
+        call    gpt_fskind
+        cmp     al,GK_EXFAT
+        jne     txf_pop
+        movzx   eax,al
+        mov     [edi+TR_RSVD],eax
+txf_pop:
+        pop     ebx
+        pop     eax
+txf_out:
+        ret
 
 ;--- tui_newrow - EDI -> a fresh, zeroed row; tr_n counted up --------
 tui_newrow:
@@ -2871,12 +3112,22 @@ ttg_next:
         inc     ebp
         jmp     short ttg_one
 ttg_sweep:
+        cmp     byte ptr [gpt_on],0
+        jne     ttg_gpt
         movzx   eax,word ptr [dsk_rec+DSK_SPT]
         or      eax,eax
         jnz     ttg_lo
         inc     eax
 ttg_lo:
         mov     ecx,dword ptr [dsk_rec+DSK_TOTAL]
+        mov     edx,TK_FREE
+        call    iv_sweep
+        popad
+        ret
+ttg_gpt:
+        mov     eax,[gpt_first]
+        mov     ecx,[gpt_last]
+        inc     ecx
         mov     edx,TK_FREE
         call    iv_sweep
         popad
@@ -3086,6 +3337,8 @@ tco_one:
         je      tco_set
         mov     eax,[esi+TR_NUM]
         dec     eax
+        cmp     byte ptr [gpt_on],0
+        jne     tco_pick
         cmp     eax,PART_MAX
         jb      tco_pick
         dec     eax                     ; the logical drives one on, so the
@@ -3127,12 +3380,14 @@ cmd_tbl     dd  tu_ignore               ; CMD_NONE
             dd  tu_commit
             dd  tu_undo
             dd  tu_format
+            dd  tu_convert
 
 key_tbl     db  'Q',CMD_EXIT,    'M',CMD_MOVE,     'S',CMD_SIZE
             db  'C',CMD_CREATE,  'D',CMD_DELETE,   'A',CMD_ACTIVE
             db  'B',CMD_BOOT,    'P',CMD_DETAILS,  'V',CMD_LOG
             db  'R',CMD_REREAD,  'N',CMD_NEXTDISK, '?',CMD_HELP
             db  'W',CMD_COMMIT,  'U',CMD_UNDO,     'F',CMD_FORMAT
+            db  'T',CMD_CONVERT
             db  0
 gkey_tbl    db  SC_DEL,CMD_DELETE,       SC_F1,CMD_HELP
             db  SC_F5,CMD_REREAD,        SC_SHTAB,CMD_PREVDISK
@@ -3203,7 +3458,6 @@ sw_hi       dd  0
 sw_kind     dd  0
 sw_min      dd  0
 cap_len     dd  0
-iv_tbl      dd  IV_MAX * 2 dup(0)
 ts_tmp      db  TR_LEN dup(0)
 st_buf      db  TUI_COLS dup(0)
 vt_buf      db  44 dup(0)
@@ -3217,6 +3471,7 @@ msg_closebox db '[',0C4h,']$'
 msg_tnodisk db  'No disk.$'
 msg_tunread db  'Sector 0 of this disk will not read.$'
 msg_tnotable db 'This disk has no partition table (no AA55 signature).$'
+msg_tgptbad db  'This disk has a GPT, and neither copy of it is whole.$'
 msg_shints  db  'F1 Help  F10 Menus  Tab Disk  M Move  S Resize  C Create  '
             db  'Del Delete  Q Quit$'
 msg_tnokey  db  'Not a key FDISK uses.  F1 lists them.$'
@@ -3302,7 +3557,23 @@ msg_qboot   db  'Replace the boot code on disk $'
 msg_qboot2  db  'The partition table is kept as it is.$'
 msg_qboot3  db  'A boot manager kept in the boot code is lost.$'
 msg_qformat db  'Format $'
-msg_qfmtas  db  ' as FAT$'
+msg_qfmtfat db  'FAT makes it FAT$'
+msg_qfmtfat2 db '.  Other versions of DOS cannot read exFAT.$'
+msg_bfat    db  'FAT$'
+msg_bexfat  db  'exFAT$'
+msg_tconvert db 'Convert Table$'
+msg_qtogpt  db  'Give disk $'
+msg_qtogpt2 db  ' a GPT in place of its partition table?$'
+msg_qtogpt3 db  'The partitions keep their numbers, places and contents.$'
+msg_qtogpt4 db  'Older systems see no partitions on it afterwards.$'
+msg_qtogpt5 db  'It is the startup disk: it then needs boot code that reads a GPT (B).$'
+msg_qtombr  db  'Give disk $'
+msg_qtombr2 db  ' a master boot record table in place of its GPT?$'
+msg_qtombr3 db  'The partitions keep their places and contents, numbered 1 to 4.$'
+msg_tnoconv db  'There is no partition table here to convert.$'
+cv_verb     dd  0                       ; T: the verb, fd_togpt or fd_tombr,
+cv_cmd      db  0                       ; and its fd_cmd
+fm_which    dd  0                       ; F: 0 FAT, 1 exFAT
 msg_qfmtlost db 'Everything stored on $'
 msg_qfmtlost2 db ' will be lost.$'
 msg_qfmtboot db 'PM-DOS was started from $'
@@ -3358,6 +3629,7 @@ msg_tkeys   db  13,10
             db  '    F          Format partition, once nothing is waiting',13,10
             db  '    P,         Enter how far the partition can grow or shrink',13,10
             db  '    B          Write Master Boot Record',13,10
+            db  '    T          Give the disk a GPT, or a master boot record table',13,10
             db  '    W          Commit: write the changes waiting to the disk',13,10
             db  '    U          Undo the last change waiting',13,10
             db  '    V          Show the output of the last change',13,10

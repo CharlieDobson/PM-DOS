@@ -3,13 +3,13 @@
 #topic CMD|Cmd
 Starts another copy of CMD.EXE, the PM-DOS command interpreter.
 
-CMD.EXE is the shell the kernel starts at boot: 32-bit, with long file
+CMD.EXE is the shell the kernel starts at boot.  Fully 32-bit, with long file
 names and DOSKEY built in.  Every command in the [[Contents]] marked as
 internal is part of it.
 
 {b}Syntax{p}
 
-    CMD [/P [/D]] [/C string]
+    CMD [/P [/D]] [/Y] [/C string]
 
 {b}Switches{p}
 
@@ -21,6 +21,11 @@ internal is part of it.
 /D
     With /P: skips AUTOEXEC.BAT.  The kernel adds /D when Shift or F5
     at startup bypasses the startup files.
+
+/Y
+    Steps through the batch file, AUTOEXEC.BAT or the one /C runs:
+    each line is shown with [Y/N]? and runs only on a Y.  The kernel
+    adds /Y when F8 at startup asks for each line to be confirmed.
 
 /C string
     Runs string as a command line and then exits, with the command's
@@ -72,11 +77,9 @@ To start a second shell, work in it, and come back:
 #topic COMMAND|Command
 Starts a copy of COMMAND.COM, the 16-bit command interpreter.
 
-COMMAND.COM is the shell a DOS program gets when it starts a shell of
-its own, because COMSPEC names it: a 32-bit program cannot run inside
-a DOS program, and under Windows nothing 32-bit runs at all.  It has
-the commands of MS-DOS 6.22's COMMAND.COM and behaves as that one does.
-At the prompt, PM-DOS's own shell is [[CMD]].
+COMMAND.COM is the shell a 16-bit DOS program gets when it starts a shell
+of its own for compatibility with previous versions of DOS.  At the prompt,
+PM-DOS's own shell is [[CMD]].
 
 {b}Syntax{p}
 
@@ -117,17 +120,16 @@ For PM-DOS's own shell, see [[CMD]].
 #notes
 {b}What it has{p}
 
-COMMAND.COM's internal commands are MS-DOS 6.22's: BREAK, CALL, CD,
-CHCP, CLS, COPY, CTTY, DATE, DEL, DIR, ECHO, ERASE, EXIT, FOR, GOTO,
-IF, LH, LOADHIGH, MD, PATH, PAUSE, PROMPT, RD, REM, REN, SET, SHIFT,
-TIME, TRUENAME, TYPE, VER, VERIFY and VOL.  Each answers /? with its
-own help.  DOSKEY is not built in, as it is in CMD.EXE.
+COMMAND.COM's internal commands are: BREAK, CALL, CD, CHCP, CLS, COPY,
+CTTY, DATE, DEL, DIR, ECHO, ERASE, EXIT, FOR, GOTO, IF, LH, LOADHIGH,
+MD, PATH, PAUSE, PROMPT, RD, REM, REN, SET, SHIFT, TIME, TRUENAME,
+TYPE, VER, VERIFY and VOL.  Each answers /? with its own help.  DOSKEY
+is not built in, as it is in CMD.EXE.
 
 {b}When it runs{p}
 
 A DOS program that shells out, or a batch file run with COMMAND /C,
-runs COMMAND.COM.  The 32-bit commands in the PM-DOS directory cannot
-be run from inside it; MS-DOS's own 16-bit versions can.
+runs COMMAND.COM.  COMMAND cannot run 32-bit DOS applications.
 #examples
 To run a batch file under the 16-bit shell and see what it prints:
 
@@ -153,7 +155,7 @@ OFF
 
 {b}Related Commands{p}
 
-BREAK= in CONFIG.SYS sets the same flag at boot: see [[BREAK (CONFIG.SYS)|BREAK=]].
+BREAK= in CONFIG.SYS sets the same flag at boot.  See [[BREAK (CONFIG.SYS)|BREAK=]].
 #notes
 {b}What the setting does here{p}
 
@@ -242,9 +244,8 @@ To make a directory, see [[MD]]; to remove one, see [[RD]].
 #notes
 {b}Long names{p}
 
-A directory with a long name can be named in full, in quotes when the
-name has spaces in it, or by its short name.  CD shows the name the
-way the directory has it.
+Use double quotes when specifying long directory names with spaces in
+them, or use the short name.
 
 {b}Each drive remembers{p}
 
@@ -531,11 +532,10 @@ see [[RD]].
 #notes
 {b}Delete protection{p}
 
-With UNDELETE=ON in CONFIG.SYS, which is the setting unless changed,
-a deleted file is kept in a hidden RECYCLED directory on its drive
-until the space is needed, and UNDELETE brings it back.  Files bigger
-than a tenth of the free space, *.TMP and *.$$$ files, and anything
-deleted inside RECYCLED are gone at once.
+With UNDELETE=ON in CONFIG.SYS, which is the default setting, a deleted
+file is kept in a hidden RECYCLED directory on its drive until the space
+is needed, and UNDELETE brings it back.  Files bigger than a tenth of
+the free space are permanently deleted.
 
 {b}Read-only files{p}
 
@@ -638,8 +638,8 @@ for that listing: DIR /-P.
 {b}Long names{p}
 
 A file with a long name is listed with its short name in the first
-columns and the long name after the time.  Names with spaces are
-matched in quotes: DIR "My Letters".
+columns and the long name after the time.  To match names with spaces,
+use quotes: DIR "My Letters".
 
 {b}Sizes{p}
 

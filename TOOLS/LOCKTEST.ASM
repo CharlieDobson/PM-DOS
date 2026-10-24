@@ -32,6 +32,13 @@
 ; which is the BIOS's doing and CONFIG.SYS's (NUMLOCK=) and is not in
 ; the baseline for that reason.
 ;
+; INT 1Bh IS THIS PROGRAM'S FOR THE RUN, and is an IRET.  DOS's own
+; marks the Break key, and DOS reads the mark as a ^C at its next look
+; at the keyboard - which here is the row's own output, and the default
+; INT 23h ended the run there.  MS-DOS does the same; a program that
+; wants Ctrl-Break as a key keeps INT 1Bh, as this one does, and reads
+; the 0000h the BIOS leaves.
+;
 ; Linked with:  wlink form raw bin order clname CODE offset=0x100
 ;=====================================================================
         .386
@@ -62,6 +69,15 @@ ar_next:
         call    put_locks
         call    crlf
 ar_done:
+        mov     ax,351Bh                ; the Break key, as a key
+        int     21h
+        mov     word ptr [old1b],bx
+        mov     word ptr [old1b+2],es
+        push    ds
+        pop     es
+        mov     dx,OFFSET int1b
+        mov     ax,251Bh
+        int     21h
 
         mov     dx,OFFSET msg_plain
         call    puts
@@ -91,6 +107,11 @@ ar_done:
         mov     al,[was17]              ; as they were found
         and     al,70h
         call    set_locks
+        push    ds
+        lds     dx,dword ptr [old1b]
+        mov     ax,251Bh
+        int     21h
+        pop     ds
         mov     ax,4C00h
         int     21h
 
@@ -103,6 +124,9 @@ int9:
         in      al,60h
         pop     ax
         jmp     dword ptr cs:[old9]
+
+int1b:
+        iret
 
 ;---------------------------------------------------------------------
 ; run_rows - the locks off, and then each row of the table that is in
@@ -247,16 +271,51 @@ get97:
         pop     es
         ret
 
+;---------------------------------------------------------------------
+; puts - DX -> a string ending in '$'; putc - DL.  Both through 40h on
+;        handle 1, and not 09h and 02h, which DOS counts: every 64th
+;        character it looks at the keyboard, and that look takes the
+;        Break key's 0000h out of the buffer before INT 16h can show
+;        it, as MS-DOS's CON does.  Where the count fell was wherever
+;        the programs before this one left it.  A write to a file is
+;        not counted, and the baseline's run writes to one.
+;---------------------------------------------------------------------
 puts:
         push    ax
-        mov     ah,09h
+        push    bx
+        push    cx
+        push    di
+        mov     di,dx
+        xor     cx,cx
+ps_len:
+        cmp     byte ptr [di],'$'
+        je      ps_wr
+        inc     di
+        inc     cx
+        jmp     short ps_len
+ps_wr:
+        mov     bx,1
+        mov     ah,40h
         int     21h
+        pop     di
+        pop     cx
+        pop     bx
         pop     ax
         ret
 putc:
         push    ax
-        mov     ah,02h
+        push    bx
+        push    cx
+        push    dx
+        mov     [pcbuf],dl
+        mov     dx,OFFSET pcbuf
+        mov     cx,1
+        mov     bx,1
+        mov     ah,40h
         int     21h
+        pop     dx
+        pop     cx
+        pop     bx
         pop     ax
         ret
 crlf:
@@ -332,7 +391,9 @@ msg_found   db  'as found          $'
 msg_plain   db  'LOCKTEST: the locks at 40:17, the lights at 40:97, and the keys',13,10,'$'
 msg_hooked  db  'with INT 09h hooked, and each key passed on:',13,10,'$'
 old9        dd  0
+old1b       dd  0
 was17       db  0
+pcbuf       db  0                       ; putc's one byte
 pass        db  0
 
 _LT     ENDS

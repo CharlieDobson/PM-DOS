@@ -42,10 +42,11 @@ rem
 rem and, in IMAGES\:
 rem     PMDOS.IMG    the boot disk: a bootable 1.44M floppy with PM-DOS
 rem                  on it and nothing else - the kernel, the shells,
-rem                  the commands, CONFIG.SYS, AUTOEXEC.BAT, the two
-rem                  text files, LRGDISK.386 and LRGSTAT.EXE
+rem                  the commands, CONFIG.SYS, AUTOEXEC.BAT and the two
+rem                  text files
 rem     HELP.IMG     the help disk: HELP.EXE and HELP.HLP, which do not
-rem                  fit on the boot disk
+rem                  fit on the boot disk, and LRGDISK.386 and
+rem                  LRGSTAT.EXE, which stopped fitting on 2026-10-24
 rem     TESTS.IMG    the test disk: every test program, batch file and
 rem                  key file, in \TESTS, and the long-named fixtures
 rem                  in its root.  Not a system disk.  The tests left
@@ -493,6 +494,16 @@ rem not a PM-DOS program and must not look like one to wasm.
 cd CMD\COMMAND
 wasm -q -i=..\..\INC command.asm               || goto :fail
 wlink form raw bin name ..\..\BIN\COMMAND.COM file command.obj order clname CODE offset=0x100 || goto :fail
+cd ..\..
+
+echo === SETVER.EXE (16-bit: the version table's driver and its command) ===
+rem A real-mode .EXE, because the same file is the DEVICE= driver that
+rem holds the table in conventional memory, where RMDOS.SYS reads it
+rem under Windows too.  "system dos" for the MZ header; it has no
+rem fixups, and the device header is the first byte of its image.
+cd CMD\SETVER
+wasm -q setver.asm                              || goto :fail
+wlink system dos name ..\..\BIN\SETVER.EXE file setver.obj || goto :fail
 cd ..\..
 
 echo === external commands ===
@@ -1391,6 +1402,11 @@ rem what every dump of this file assumes - and park_loadrm seeks past
 rem them.  It has to: in the HMA those sixteen bytes are the ROM.
 wlink form raw bin option offset=0x0 name ..\BIN\RMDOS.SYS file rmdos.obj || goto :fail
 cd ..
+rem park_loadrm takes one 64K segment and wants PARK_SLACK's 256 bytes
+rem of it past the image, so a bigger file links and is then refused
+rem at every park with error 0Dh - which is what a trace build that
+rem had grown past it did, silently, until this line (2026-10-23).
+TOOLS\FSIZE.EXE -max 65280 BIN\RMDOS.SYS "the 64K park_loadrm takes, less PARK_SLACK" || goto :fail
 
 echo === RMCD.SYS (the CD-ROM while Windows has the machine) ===
 rem A redirector, as MSCDEX is, loaded by the park after RMDOS's 64K when
@@ -1475,6 +1491,16 @@ rem on.  The answers are the US keyboard's until KEYB has run.
 cd TOOLS
 wasm -q kbltest.asm                             || goto :fail
 wlink form raw bin name ..\BIN\TESTS\KBLTEST.COM file kbltest.obj order clname CODE offset=0x100 || goto :fail
+cd ..
+
+echo === BRKTEST.COM, BRK32.EXE (BREAK, and the Ctrl+C nobody is reading) ===
+rem When a ^C is looked for with BREAK OFF and with it ON, from a DOS
+rem box and from a native program, and Ctrl-Break as the BIOS has it.
+cd TOOLS
+wasm -q brktest.asm                             || goto :fail
+wlink form raw bin name ..\BIN\TESTS\BRKTEST.COM file brktest.obj order clname CODE offset=0x100 || goto :fail
+wasm -q -i=..\INC brk32.asm                     || goto :fail
+wlink form raw bin option offset=0x2000 name ..\BIN\TESTS\BRK32.EXE file brk32.obj || goto :fail
 cd ..
 
 echo === LOCKTEST.COM (Caps, Num and Scroll Lock: the bits, the lights, the keys) ===
@@ -1691,6 +1717,20 @@ rem not a .COM with a PSP in front of it.
 cd TOOLS
 wasm -q -i=..\INC testdev.asm                    || goto :fail
 wlink form raw bin name ..\BIN\TESTS\TESTDEV.SYS file testdev.obj order clname CODE || goto :fail
+cd ..
+
+echo === SVTEST.COM and SVDEV.SYS (what SETVER makes 30h say) ===
+rem SVTEST prints what 30h, 3306h and PSP+40h say; copied as SVKID.COM
+rem with SVKID.COM in SETVER's table it shows the table at work, and
+rem SVTEST /F C:\SVKID.COM shows EXEC's lookup.  SVDEV.SYS prints to
+rem LPT1 what 30h told it during its INIT.  The recipe is in NOTES.TXT
+rem ("SETVER").  Neither is in RUNTESTS: both want a SETVER.EXE with
+rem their names in its table, loaded by CONFIG.SYS.
+cd TOOLS
+wasm -q svtest.asm                               || goto :fail
+wlink form raw bin name ..\BIN\TESTS\SVTEST.COM file svtest.obj order clname CODE offset=0x100 || goto :fail
+wasm -q svdev.asm                                || goto :fail
+wlink form raw bin name ..\BIN\TESTS\SVDEV.SYS file svdev.obj order clname CODE || goto :fail
 cd ..
 
 echo === IOCDEV.SYS (a driver spoken to as WfW speaks to IFSHLP.SYS) ===
@@ -2210,23 +2250,26 @@ rem === PMDOS.IMG - the boot disk ===
 rem PM-DOS and nothing else: BIN\ and the files that ride with it.
 rem -nolfn keeps MKDISK's long-named fixtures off it - they are test
 rem material, and the test disk has them in its root, where LFNTEST.BAT
-rem looks.  LRGDISK.386 and LRGSTAT.EXE ride along because they ship,
-rem though only a hard disk with Windows on it has a use for them.
+rem looks.  LRGDISK.386 and LRGSTAT.EXE, which ship but have a use only
+rem on a hard disk with Windows on it, went to the help disk on
+rem 2026-10-24, when GPT and exFAT in the kernel and FDISK left the boot
+rem disk without room for AUTOEXEC.TXT.
 echo === PMDOS.IMG (the boot disk) ===
 TOOLS\MKDISK.EXE IMAGES\PMDOS.IMG BIN\BOOT.BIN -nolfn BIN\PMIO.SYS BIN\PMDOS.SYS BIN\CMD.EXE BIN\COMMAND.COM ^
     BIN\CHOICE.COM BIN\MORE.COM BIN\SORT.COM BIN\SYS.COM BIN\FORMAT.COM BIN\MEM.EXE ^
     BIN\FDISK.EXE BIN\MOUNT.EXE BIN\CACHE.EXE BIN\UNDELETE.EXE BIN\CDEX.EXE BIN\MOVE.EXE BIN\ATTRIB.EXE BIN\CHKDSK.EXE BIN\LABEL.EXE BIN\XCOPY.EXE BIN\EDIT.EXE ^
     BIN\FC.EXE BIN\FIND.EXE BIN\DISKCOPY.COM BIN\DISKCOMP.COM BIN\ISAPNP.EXE BIN\SHUTDOWN.EXE BIN\PMD.EXE BIN\DOSSHELL.EXE BIN\ACROREAD.EXE BIN\SCANDISK.EXE BIN\DEFRAG.EXE ^
-    BIN\KEYB.COM BIN\COUNTRY.SYS BIN\KEYBOARD.SYS BIN\USB.EXE ^
-    BIN\RMDOS.SYS BIN\RMCD.SYS BIN\LRGDISK.386 BIN\LRGSTAT.EXE README.TXT DISK\CONFIG.SYS DISK\CONFIG.TXT DISK\SCANDISK.INI DISK\AUTOEXEC.BAT DISK\AUTOEXEC.TXT || goto :fail
+    BIN\KEYB.COM BIN\COUNTRY.SYS BIN\KEYBOARD.SYS BIN\USB.EXE BIN\SETVER.EXE ^
+    BIN\RMDOS.SYS BIN\RMCD.SYS README.TXT DISK\CONFIG.SYS DISK\CONFIG.TXT DISK\SCANDISK.INI DISK\AUTOEXEC.BAT DISK\AUTOEXEC.TXT || goto :fail
 
 rem === HELP.IMG - the help disk ===
 rem HELP.EXE and HELP.HLP, which is 200K of text: the boot floppy was
 rem full by the time they were written (64K free), so they travel on
 rem a third disk, as MS-DOS's did.  MKHD.CMD puts both on the hard
-rem disks, where HELP is found along the PATH.
+rem disks, where HELP is found along the PATH.  The two Windows files
+rem joined them here when the boot disk filled (see PMDOS.IMG above).
 echo === HELP.IMG (the help disk) ===
-TOOLS\MKDISK.EXE IMAGES\HELP.IMG BIN\BOOT.BIN -label "PM-DOS HELP" -nolfn BIN\HELP.EXE DISK\HELP.HLP || goto :fail
+TOOLS\MKDISK.EXE IMAGES\HELP.IMG BIN\BOOT.BIN -label "PM-DOS HELP" -nolfn BIN\HELP.EXE DISK\HELP.HLP BIN\LRGDISK.386 BIN\LRGSTAT.EXE || goto :fail
 
 rem === TESTS.IMG - the test disk ===
 rem Everything written to prove one thing about the kernel: BIN\TESTS\
@@ -2251,7 +2294,7 @@ TOOLS\MKDISK.EXE IMAGES\TESTS.IMG BIN\BOOT.BIN -label "PM-DOS TEST" -dir ^
     BIN\TESTS\UDTEST.COM BIN\TESTS\ALLOCTST.COM BIN\TESTS\MCBTEST.COM BIN\TESTS\FCBTEST.COM ^
     BIN\TESTS\BUFTEST.COM BIN\TESTS\UMBTEST.COM BIN\TESTS\EMSTEST.COM BIN\TESTS\EMS4TEST.COM BIN\TESTS\DEVCRIT.EXE ^
     BIN\TESTS\I24TEST.COM BIN\TESTS\VFYTEST.EXE BIN\TESTS\IDETEST.EXE BIN\TESTS\HWPROBE.EXE BIN\TESTS\F32TEST.COM BIN\TESTS\FNDTEST.EXE ^
-    BIN\TESTS\CFGTEST.COM BIN\TESTS\CACHETST.COM BIN\TESTS\VFTEST.COM BIN\TESTS\SHARETST.COM BIN\TESTS\TESTDEV.SYS BIN\TESTS\TESTBLK.SYS BIN\TESTS\IOCDEV.SYS BIN\TESTS\DRVTEST.COM BIN\TESTS\CDSTEST.COM BIN\TESTS\NETTEST.COM BIN\TESTS\NDTEST.SYS BIN\TESTS\NDRVTEST.EXE BIN\TESTS\NICTEST.EXE BIN\TESTS\SOCKTEST.EXE BIN\TESTS\SEEKWR.COM BIN\TESTS\BLKTEST.COM BIN\TESTS\CTRYDMP.COM BIN\TESTS\NLSTEST.COM BIN\TESTS\KBLTEST.COM BIN\TESTS\LOCKTEST.COM ^
+    BIN\TESTS\CFGTEST.COM BIN\TESTS\CACHETST.COM BIN\TESTS\VFTEST.COM BIN\TESTS\SHARETST.COM BIN\TESTS\TESTDEV.SYS BIN\TESTS\TESTBLK.SYS BIN\TESTS\IOCDEV.SYS BIN\TESTS\SVTEST.COM BIN\TESTS\SVDEV.SYS BIN\TESTS\DRVTEST.COM BIN\TESTS\CDSTEST.COM BIN\TESTS\NETTEST.COM BIN\TESTS\NDTEST.SYS BIN\TESTS\NDRVTEST.EXE BIN\TESTS\NICTEST.EXE BIN\TESTS\SOCKTEST.EXE BIN\TESTS\SEEKWR.COM BIN\TESTS\BLKTEST.COM BIN\TESTS\CTRYDMP.COM BIN\TESTS\NLSTEST.COM BIN\TESTS\KBLTEST.COM BIN\TESTS\LOCKTEST.COM BIN\TESTS\BRKTEST.COM BIN\TESTS\BRK32.EXE ^
     BIN\TESTS\CTRYTEST.COM BIN\TESTS\CRASH.EXE BIN\TESTS\R3TEST.EXE BIN\TESTS\MS32TEST.EXE BIN\TESTS\VPICTEST.COM BIN\TESTS\TIMERTST.COM BIN\TESTS\RMIVT.COM BIN\TESTS\IRQXTEST.COM BIN\TESTS\IRQXWAIT.EXE BIN\TESTS\DMATEST.COM BIN\TESTS\DPMIIRQ.COM BIN\TESTS\DPMII32.COM BIN\TESTS\DPMIVEC.COM BIN\TESTS\DPMIV32.COM BIN\TESTS\VDSTEST.COM BIN\TESTS\NICIRQ.COM BIN\TESTS\PCITEST.EXE BIN\TESTS\IRQTEST.EXE BIN\TESTS\FPUTEST.COM BIN\TESTS\FPU32.EXE BIN\TESTS\DPMIFPU.COM BIN\TESTS\DPMIFP32.COM ^
     BIN\TESTS\LPTTEST.COM BIN\TESTS\RMSPEED.COM BIN\TESTS\HNDTEST.COM BIN\TESTS\RMFSTEST.COM BIN\TESTS\WINDRV.EXE BIN\TESTS\VBETEST.EXE ^
     BIN\TESTS\EXECLEAK.EXE BIN\TESTS\SLOTTEST.EXE BIN\TESTS\BIGMEM.EXE BIN\TESTS\LRGTEST.COM BIN\TESTS\ATAPIRD.COM BIN\TESTS\SRSTTEST.COM ^

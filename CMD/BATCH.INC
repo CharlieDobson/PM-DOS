@@ -59,6 +59,11 @@ BF_LEN          EQU     BF_PATH + BF_PATHMAX
 ; "/D" takes the first of those away, as it did for DOS 6's
 ; COMMAND.COM.  The kernel adds it when Shift or F5 at startup asked
 ; for CONFIG.SYS and AUTOEXEC.BAT to be bypassed.
+;
+; "/Y" steps through the batch file: AUTOEXEC.BAT with /P, the one /C
+; names otherwise - DOS 6.2's COMMAND /Y.  The kernel adds it when F8
+; at startup asked for each line to be confirmed and the answer to
+; "Process AUTOEXEC.BAT" was Y (MULTICFG.INC).  See bat_step.
 ;=====================================================================
 cmd_startup:
         mov     esi,SLOT_PSP + PSP_TAIL
@@ -79,6 +84,10 @@ cs_lp:
         jne     cs_notd
         mov     byte ptr [noauto_flag],1
 cs_notd:
+        cmp     al,'Y'
+        jne     cs_noty
+        mov     byte ptr [step_flag],1
+cs_noty:
         cmp     al,'P'
         jne     cs_next
         mov     byte ptr [perm_flag],1
@@ -157,6 +166,7 @@ bat_launch:
         jc      bl_fail
         movzx   eax,ax
         mov     [bl_handle],eax
+        call    own_open                ; for a ^C: see own_add
 
         ; chain unless this is a CALL: the running file is finished
         cmp     byte ptr [call_flag],0
@@ -211,8 +221,7 @@ bl_pcpd:
 bl_named2:
         push    ebx
         mov     ebx,[bl_handle]
-        mov     ah,3Eh
-        int     21h
+        call    own_shut
         pop     ebx
 
         ; which batch class is this?  A .CMD file gets the advanced
@@ -249,8 +258,7 @@ bl_named:
 
 bl_deep:
         mov     ebx,[bl_handle]
-        mov     ah,3Eh
-        int     21h
+        call    own_shut
         mov     edx,OFFSET msg_batdeep
         call    print
         mov     dword ptr [bl_name0],0
@@ -429,6 +437,8 @@ bat_rawline:
         jc      brl_gone
         movzx   ebx,ax
         mov     [brl_hdl],ebx
+        mov     eax,ebx                 ; for a ^C: see own_add
+        call    own_open
         mov     ecx,[esi+BF_POS]
         mov     ax,4200h
         int     21h
@@ -442,8 +452,7 @@ bat_rawline:
         pushfd
         push    eax
         mov     ebx,[brl_hdl]
-        mov     ah,3Eh
-        int     21h
+        call    own_shut
         pop     eax
         popfd
         jc      brl_eof
@@ -495,8 +504,7 @@ brl_lineend:
 
 brl_closeof:
         mov     ebx,[brl_hdl]
-        mov     ah,3Eh
-        int     21h
+        call    own_shut
         jmp     short brl_eof
 brl_gone:
         ; THE FILE HAS GONE since the last line, which reopening every
@@ -540,6 +548,14 @@ bat_getline:
         cmp     byte ptr [esi],':'      ; a label is a destination,
         je      bgl_nothing             ; never a command
 
+        ; /Y: asked about rather than echoed, and run only on a Y
+        cmp     byte ptr [step_flag],0
+        je      bgl_echo
+        call    bat_step
+        jc      bgl_nothing
+        jmp     short bgl_run
+bgl_echo:
+
         ; echo it, unless @ or ECHO OFF says otherwise
         cmp     byte ptr [esi],'@'
         je      bgl_run
@@ -562,6 +578,63 @@ bgl_nothing:
 bgl_eof:
         call    bat_pop
         stc
+        ret
+
+;---------------------------------------------------------------------
+; bat_step - ESI -> a batch line about to run, expanded.  Shows it with
+;            " [Y/N]?" after it, as DOS 6.2's COMMAND /Y did, and waits
+;            for Y or N.  CF set on N: the line is not run.  ESI kept.
+;
+; Every line is asked about, ECHO OFF or not, because the question IS
+; the echo.  An @ in front is not shown - it is about echoing, and this
+; line is not echoed.  The stepping lasts as long as batch files are
+; running from it - a CALLed one is stepped through too - and ends at
+; the next prompt (gl_console).  ^C at the question ends the batch job
+; the way it does anywhere.
+;---------------------------------------------------------------------
+bat_step:
+        push    esi
+        cmp     byte ptr [esi],'@'
+        jne     bst_show
+        inc     esi
+        call    skip_blanks
+bst_show:
+        call    print_asciiz
+        mov     edx,OFFSET msg_stepq
+        call    print
+bst_key:
+        mov     ah,08h
+        int     21h
+        or      al,al
+        jnz     bst_char
+        mov     ah,08h                  ; the second half of a function or
+        int     21h                     ; arrow key, which is not an answer
+        jmp     short bst_key
+bst_char:
+        cmp     al,1Ah                  ; the end of redirected input,
+        jne     bst_yn                  ; which 08h answers for ever: N,
+        mov     al,'N'                  ; or the wait would never end
+        jmp     short bst_say
+bst_yn:
+        call    upcase
+        cmp     al,'Y'
+        je      bst_say
+        cmp     al,'N'
+        jne     bst_key
+bst_say:
+        push    eax
+        mov     dl,al
+        mov     ah,02h
+        int     21h
+        call    put_crlf
+        pop     eax
+        pop     esi
+        cmp     al,'Y'
+        je      bst_yes
+        stc
+        ret
+bst_yes:
+        clc
         ret
 
 ;=====================================================================
@@ -1760,6 +1833,8 @@ ff_file:
         jc      ffl_none
         movzx   ebx,ax
         mov     [ff_hdl],ebx
+        movzx   eax,ax                  ; for a ^C: see own_add
+        call    own_open
         xor     ecx,ecx
         xor     edx,edx
         mov     ax,4202h                ; how long it is
@@ -1779,6 +1854,8 @@ ff_file:
         int     21h
         jc      ffl_nomem
         mov     [ff_blk],eax
+        mov     cl,OWN_BLOCK            ; held while the body runs, so a ^C
+        call    own_add                 ; in the body has to give it back
         mov     edx,eax
         mov     ecx,[ff_size]
         mov     ebx,[ff_hdl]
@@ -1788,20 +1865,21 @@ ff_file:
         mov     esi,[ff_blk]
         mov     byte ptr [esi+eax],0    ; what was read, and not a byte more
         mov     ebx,[ff_hdl]            ; closed BEFORE the body runs: the
-        mov     ah,3Eh                  ; body may want it
-        int     21h
+        call    own_shut                ; body may want it
         mov     dword ptr [ff_hdl],-1
         call    ff_text
 ffl_free:
         mov     edx,[ff_blk]
+        mov     eax,edx
+        mov     cl,OWN_BLOCK
+        call    own_del
         mov     ah,49h
         int     21h
 ffl_close:
         mov     ebx,[ff_hdl]
         cmp     ebx,-1
         je      ffl_out
-        mov     ah,3Eh
-        int     21h
+        call    own_shut
 ffl_out:
         popad
         ret
@@ -2188,6 +2266,7 @@ cmd_ctty:
         jc      ctty_nodev
         movzx   eax,ax
         mov     [ctty_hdl],eax
+        call    own_open                ; for a ^C: see own_add
 
         mov     ebx,eax
         mov     ax,4400h
@@ -2204,8 +2283,7 @@ cmd_ctty:
         call    ctty_force              ; too: a console you cannot be told
                                         ; anything on is half a console
         mov     ebx,[ctty_hdl]
-        mov     ah,3Eh
-        int     21h
+        call    own_shut
 
         mov     esi,OFFSET tok_buf      ; and remember what it is called
         mov     edi,OFFSET ctty_name
@@ -2226,8 +2304,7 @@ ctty_out:
 
 ctty_shut:
         mov     ebx,[ctty_hdl]
-        mov     ah,3Eh
-        int     21h
+        call    own_shut
 ctty_nodev:
         mov     edx,OFFSET msg_noctty
         call    print
@@ -2368,6 +2445,7 @@ fr_lim      dd  0
 errorlevel  db  0                       ; last external command's code
 perm_flag   db  0                       ; started with /P
 noauto_flag db  0                       ; ...and /D: no AUTOEXEC.BAT
+step_flag   db  0                       ; /Y: each batch line asked about
 c_once      db  0                       ; /C: 1 = its command is waiting,
                                         ; 2 = it has run, so leave
 c_line      db  CMDLINE_MAX + 2 dup(0)  ; ...and what it is

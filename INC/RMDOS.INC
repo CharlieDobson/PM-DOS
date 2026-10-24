@@ -324,6 +324,13 @@ RMHF_HIGH       EQU     04h             ; THIS IMAGE IS IN THE HMA.  The gate
                                         ; request to close it is answered
                                         ; "done" without being obeyed.  See
                                         ; the note above RM_ORG.
+RMHF_BREAK      EQU     08h             ; BREAK is ON: RMDOS starts with
+                                        ; extended Ctrl-C checking, as the
+                                        ; kernel had it.  A new bit in the
+                                        ; old byte, so the layout and
+                                        ; RMDOS_VER stay as they were: an
+                                        ; RMDOS that does not know it
+                                        ; starts with BREAK OFF
 
 ;--- RMH_WHY: why the excursion ended --------------------------------
 RMW_EXIT        EQU     0               ; the program called 4Ch, or Windows
@@ -419,6 +426,7 @@ ENDIF
 RL_DATAVER      EQU     0004h           ; dw  1 - DOS 5's DataVersion
 RL_LOL          EQU     0024h           ; the MCB head word, then LL_PTR at +2
 RL_LOLTAIL      EQU     005Ah           ; the list's tail, the kernel's -
+RL_SETVER       EQU     005Dh           ; dd  in it, SETVER's table (0:0 none)
 RL_LOLEND       EQU     006Dh           ; up to here
 RL_UMBWORD      EQU     008Ch           ; dw  DOS 5's UMB_HEAD, the kernel's
 RL_JSHARE       EQU     0090h           ; SHARE's jump table, 15 far pointers,
@@ -439,7 +447,7 @@ RL_USERID       EQU     0124h           ; dw - the one DOSMGR really uses
 RL_CRITPATCH    EQU     0126h           ; dw
 RL_UMBHEAD      EQU     0128h           ; dw
 RL_NLS          EQU     0130h           ; the kernel's country tables, left
-RL_NLSEND       EQU     02E8h           ; alone; 65h's tables point into them
+RL_NLSEND       EQU     02F0h           ; alone; 65h's tables point into them
 RL_NLSUP        EQU     RL_NLS          ; 6502h and 6504h: the upper case
 RL_NLSTERM      EQU     RL_NLS + 82h    ; 6505h: what ends a file name
 RL_NLSCOLL      EQU     RL_NLS + 9Ah    ; 6506h: the collating sequence
@@ -448,6 +456,10 @@ RL_NLSMAP       EQU     RL_NLS + 1A0h   ; the case-map FAR CALL's code, and
                                         ; after it the INT 09h stub KEYB
                                         ; leaves in the chain (GNLS_CASEMAP
                                         ; and GNLS_KBSTUB in PMDOS.INC)
+RL_BRKFLAG      EQU     RL_NLS + 1B8h   ; db  3 once the Break key is down:
+                                        ; the kernel's INT 1Bh handler writes
+                                        ; it, and it stays the handler under
+                                        ; RMDOS (GNLS_BRKFLAG, RMCON.INC)
 RL_FSHARE       EQU     0303h           ; db  SHARE's "installed" flag
 RL_SDA          EQU     0320h           ; the swappable data area: DOS 5's,
 RL_SDALEN       EQU     02E0h           ; to the CDS array.  The first SD_LEN

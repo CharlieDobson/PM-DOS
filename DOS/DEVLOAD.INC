@@ -580,6 +580,8 @@ dl_load:
         mov     edx,[dl_got]
         cmp     edx,[dl_fsize]
         jne     dll_initbad
+        call    dl_mzfix                ; an .EXE: header off, fixups in
+        jc      dll_initbad
 
         ; ...and now the headers inside it.  The chain is the file's
         ; own: each NEXT holds the offset of the one after it and
@@ -614,7 +616,16 @@ dll_hdr:
         mov     byte ptr [dl_isblk],1
 dll_ischar:
 
+        ; WHAT 30h TELLS THE DRIVER WHILE ITS INIT RUNS: SETVER's entry
+        ; for the file's name, which MS-DOS puts in SYSINIT's PSP for the
+        ; same few minutes.  The table has .SYS names in it for this.
+        push    esi
+        mov     esi,OFFSET dl_path
+        call    sv_find
+        mov     word ptr ds:[sv_initver],ax
+        pop     esi
         call    dl_doinit
+        mov     word ptr ds:[sv_initver],0      ; a MOV: CF survives it
         jc      dll_initbad
         call    dl_chain
         jc      dll_full
@@ -680,6 +691,90 @@ dll_fail:
         mov     [dl_err],eax
         popad
         mov     eax,[dl_err]
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; dl_mzfix - the file at [dl_drvseg] has been read in whole, [dl_fsize]
+;            bytes.  If it is an .EXE, apply its fixups for the segment
+;            it sits at and move its image down over the header, leaving
+;            [dl_fsize] the image's length.  A .SYS is left alone.  CF
+;            if the header does not describe the file.  Registers kept.
+;
+; AN .EXE CAN BE A DRIVER, and has been since DOS 5: the device header
+; is the first thing in the image after the MZ header, and DOS loads it
+; the way EXEC loads an overlay - the image only, relocated by the
+; segment it lands at.  SETVER.EXE is the one every CONFIG.SYS of the
+; period names, and it is the same file as the SETVER command.
+;
+; EVERY FIXUP IS CHECKED to land inside the image before it is applied,
+; and the fixup table inside the file: a header is the file's word for
+; it, and the words are added to memory that is about to run.
+;---------------------------------------------------------------------
+dl_mzfix:
+        pushad
+        mov     esi,[dl_drvseg]
+        shl     esi,4                           ; ESI = the file, flat
+        mov     ecx,[dl_fsize]
+        cmp     ecx,EXE_HDRLEN
+        jb      dmz_ok                          ; too short to be an .EXE
+        mov     ax,[esi+EXE_SIG]
+        cmp     ax,EXE_MZ
+        je      dmz_exe
+        cmp     ax,EXE_ZM
+        jne     dmz_ok
+dmz_exe:
+        movzx   eax,word ptr [esi+EXE_CP]       ; pages of 512, the last
+        shl     eax,9                           ; one CBLP long when CBLP
+        movzx   edx,word ptr [esi+EXE_CBLP]     ; is not zero
+        or      edx,edx
+        jz      dmz_full
+        sub     eax,512
+        add     eax,edx
+dmz_full:
+        cmp     eax,ecx                         ; a header that claims more
+        jbe     dmz_inside                      ; than the file holds gets
+        mov     eax,ecx                         ; what there is, as EXEC does
+dmz_inside:
+        movzx   ebx,word ptr [esi+EXE_CPARHDR]
+        shl     ebx,4                           ; EBX = the header's length
+        sub     eax,ebx
+        jbe     dmz_bad                         ; EAX = the image's length
+
+        movzx   ecx,word ptr [esi+EXE_CRLC]
+        jecxz   dmz_move
+        movzx   edx,word ptr [esi+EXE_LFARLC]
+        lea     edi,[edx+ecx*4]
+        cmp     edi,[dl_fsize]
+        ja      dmz_bad                         ; a table off the end
+        add     edx,esi                         ; EDX -> the first fixup
+dmz_fix:
+        movzx   edi,word ptr [edx+2]            ; segment:offset within
+        shl     edi,4                           ; the image
+        movzx   ebp,word ptr [edx]
+        add     edi,ebp
+        lea     ebp,[edi+2]
+        cmp     ebp,eax
+        ja      dmz_bad                         ; a word outside the image
+        add     edi,ebx
+        add     edi,esi
+        mov     bp,word ptr [dl_drvseg]         ; the image's own segment,
+        add     [edi],bp                        ; once it has moved down
+        add     edx,4
+        loop    dmz_fix
+dmz_move:
+        mov     [dl_fsize],eax
+        mov     ecx,eax
+        mov     edi,esi
+        add     esi,ebx
+        cld
+        rep     movsb                           ; down, so forwards is safe
+dmz_ok:
+        popad
+        clc
+        ret
+dmz_bad:
+        popad
         stc
         ret
 
@@ -922,6 +1017,33 @@ dlk_no:
         pop     ecx
         pop     ebx
         stc
+        ret
+
+;---------------------------------------------------------------------
+; dl_iscon - DH = a loaded device's row.  ZF clear if its header says
+;            it is standard output (attribute bit 1): ANSI.SYS, which
+;            a write through 40h then treats as the screen it is.  All
+;            registers preserved.
+;---------------------------------------------------------------------
+dl_iscon:
+        push    eax
+        push    ecx
+        movzx   eax,dh
+        cmp     eax,[dl_count]
+        jae     dlc_no
+        imul    eax,DLE_LEN
+        add     eax,OFFSET dl_tab
+        movzx   ecx,word ptr [eax+DLE_SEG]
+        shl     ecx,4
+        movzx   eax,word ptr [eax+DLE_HDR]
+        add     eax,ecx
+        test    word ptr [eax+4],0002h
+        jmp     short dlc_out
+dlc_no:
+        cmp     eax,eax                 ; ZF: not one
+dlc_out:
+        pop     ecx
+        pop     eax
         ret
 
 ;=====================================================================

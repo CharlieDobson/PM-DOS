@@ -84,6 +84,11 @@ FS_COUNT        EQU     9
 
 NO_SIZE         EQU     0FFh
 
+; what /FS: asked for; 0 = nothing, which keeps what is there
+FSW_FAT         EQU     1               ; FAT12 or FAT16, as the size has it
+FSW_FAT32       EQU     2
+FSW_EXFAT       EQU     3
+
 _FMT    SEGMENT USE32 PUBLIC 'CODE'
         ASSUME  CS:_FMT, DS:_FMT, ES:_FMT, SS:_FMT
         ORG     0
@@ -210,8 +215,27 @@ fm_swb:
         mov     byte ptr [bflag],1
         jmp     fm_sw
 fm_swnb:
+        cmp     al,'A'
+        jne     fm_swna
+        call    fm_cluster              ; /A:size - the cluster
+        jc      fm_badclus
+        jmp     fm_sw
+fm_swna:
         cmp     al,'F'
         jne     fm_badsw
+        ; /FS: names a filesystem, /F: a diskette's size
+        or      ecx,ecx
+        jz      fm_swf
+        mov     al,[esi]
+        call    fm_upcase
+        cmp     al,'S'
+        jne     fm_swf
+        inc     esi
+        dec     ecx
+        call    fm_fstype
+        jc      fm_badfs
+        jmp     fm_sw
+fm_swf:
         call    fm_size
         jc      fm_badsize
         jmp     fm_sw
@@ -223,6 +247,11 @@ fm_argsdone:
         mov     al,[bflag]              ; room for a system, and the
         and     al,[sysit]              ; system: one or the other
         jnz     fm_clash
+        cmp     byte ptr [want_fs],FSW_EXFAT    ; and a system on exFAT is
+        jne     fm_notexsys                     ; one nothing here can boot
+        cmp     byte ptr [sysit],0
+        jne     fm_exsys
+fm_notexsys:
 
 ;--- what is this letter? --------------------------------------------
         movzx   edx,byte ptr [tgt_log]
@@ -262,10 +291,43 @@ fm_fixed:
         inc     dl                      ; F1h speaks 1-based drives
         mov     ax,0F101h
         int     21h
-        jc      fm_freshhd              ; no BPB: a USB disk with none yet?
+        jc      fm_freshhd              ; no BPB: nothing made on it yet?
         mov     [fat_kind],al
 
+;--- the filesystem it is, and the one it is to be -------------------
+; KEPT, the layout and the bad cluster marks with it, when nothing is
+; asked for or what is asked for is what is there.  Anything else is a
+; new volume laid over the partition from nothing, as one with no
+; format at all gets: exFAT for /FS:EXFAT, FAT the right width for
+; /FS:FAT or /FS:FAT32, and either for a cluster /A: asks for.
+        cmp     al,F1T_EXFAT
+        je      fm_isex
+        mov     al,[want_fs]
+        cmp     al,FSW_EXFAT
+        je      fm_newex
+        cmp     dword ptr [want_clus],0
+        jne     fm_newfat
+        or      al,al
+        jz      fm_keep
+        cmp     al,FSW_FAT32
+        je      fm_want32
+        cmp     byte ptr [fat_kind],32  ; FAT asked for: 12 or 16 is that
+        jne     fm_keep
+        jmp     fm_newfat
+fm_want32:
+        cmp     byte ptr [fat_kind],32
+        je      fm_keep
+        jmp     fm_newfat
+fm_isex:
+        mov     al,[want_fs]
+        or      al,al
+        jz      fm_reex
+        cmp     al,FSW_EXFAT
+        je      fm_reex
+        jmp     fm_newfat
+
 ;--- the warning -----------------------------------------------------
+fm_keep:
         mov     edx,OFFSET msg_warn
         call    puts
         mov     ah,01h
@@ -285,11 +347,13 @@ fm_fixed:
 ; A USB disk with no format on it
 ;=====================================================================
 fm_freshhd:
-        ; only a USB letter is made from nothing here: a hard disk's
-        ; partition is FDISK's to lay out, and a diskette has the job
-        ; above
+        ; A PARTITION WITH NOTHING ON IT IS MADE FROM NOTHING HERE, a
+        ; hard disk's as well as a USB disk's.  It used to be the USB
+        ; disk's alone, a hard disk's partition being FDISK's to lay out
+        ; - but a GPT disk gets letters for partitions that are blank,
+        ; whoever made them, and FORMAT is what a letter is given to.
         test    byte ptr [drv_rec+DRV_FLAGS],DRVF_USB
-        jz      fm_notmnt
+        jz      fh_fixed
 
         ; is there a disk in the slot at all?
         movzx   edx,byte ptr [drv_rec+DRV_BIOS]
@@ -316,9 +380,43 @@ fm_freshhd:
         mov     edx,OFFSET msg_isdrv
         jmp     fm_die
 fh_notalias:
+        jmp     short fh_where
+
+;--- a volume with a filesystem, given a new one ---------------------
+; (fm_fixed's decision).  The partition is all of it that is kept.
+fm_reex:
+        ; exFAT AGAIN: the cluster it had, unless /A: says otherwise
+        cmp     dword ptr [want_clus],0
+        jne     fm_newex
+        mov     al,[drv_rec+DRV_BIOS]   ; by the disk's number, and into a
+        mov     [fd_bios],al            ; buffer bigger than a sector: by the
+        mov     ebx,dword ptr [drv_rec+DRV_START] ; a sector may be 4K
+        mov     edi,[fat_work]
+        call    fm_absrd
+        jc      fm_newex
+        mov     esi,[fat_work]
+        mov     cl,[esi+XFB_BPSSH]
+        add     cl,[esi+XFB_SPCSH]
+        cmp     cl,25
+        ja      fm_newex
+        mov     eax,1
+        shl     eax,cl
+        mov     [want_clus],eax
+fm_newex:
+        mov     byte ptr [want_fs],FSW_EXFAT
+        cmp     byte ptr [sysit],0      ; nothing boots from exFAT here
+        jne     fm_exsys
+fm_newfat:
+fh_fixed:
+        ; a disk the kernel reaches by number, and a partition of known
+        ; size: not a file, not a driver's, not a CD
+        test    byte ptr [drv_rec+DRV_FLAGS],DRVF_DRIVER OR DRVF_IMAGE OR DRVF_CDROM
+        jnz     fm_nochange
+        mov     byte ptr [fh_alias],0
 
         ; where the volume is: the failed mount placed the letter on the
         ; disk that is there (usb_locate), and the row says where
+fh_where:
         movzx   edx,byte ptr [tgt_log]
         mov     edi,OFFSET drv_rec
         mov     eax,0F106h
@@ -360,6 +458,8 @@ fh_geoown:
         jne     fm_quit
 
 ;--- the layout, and the sectors that make it a volume ---------------
+        cmp     byte ptr [want_fs],FSW_EXFAT
+        je      fm_exfat
         call    fh_layout
         jc      fm_nofit
         mov     byte ptr [raw_io],1
@@ -379,6 +479,7 @@ fh_geoown:
 fh_nobackup:
         call    fh_fats
         jc      fm_ioerr
+        call    fm_fattype              ; and the partition table says so
 
 ;--- a volume now: the kernel mounts it and the ordinary job goes on -
         mov     dl,[tgt_log]
@@ -428,8 +529,13 @@ fhl_heads:
         mov     [g_heads],eax
         mov     eax,[fh_len]
         mov     [g_totsec],eax
+        cmp     byte ptr [want_fs],FSW_FAT32    ; /FS: decides, if it was
+        je      fhl_32                          ; given; the size if not
+        cmp     byte ptr [want_fs],FSW_FAT
+        je      fhl_16
         cmp     eax,FH_FAT32MIN
         jae     fhl_32
+fhl_16:
 
         ; FAT16, unless the clusters come out too few
         mov     dword ptr [g_rsvd],1
@@ -476,6 +582,8 @@ fhl_32:
         mov     [g_spf],eax
 
 fhl_derive:
+        cmp     dword ptr [g_spc],64    ; 32K is the most FAT clusters are
+        ja      fhl_no                  ; here: /A: may have asked for more
         call    fm_derive               ; rootstart, datastart, totclus
         mov     eax,[g_totclus]
         cmp     byte ptr [fat_kind],12
@@ -506,9 +614,12 @@ fhl_no:
         ret
 
 ;--- fh_spcfor - ESI -> a table of (up to this many sectors, this many
-;--- a cluster) -> ECX for [fh_len]
+;--- a cluster) -> ECX for [fh_len] - or what /A: asked for
 fh_spcfor:
         push    eax
+        mov     ecx,[want_clus]
+        shr     ecx,9
+        jnz     fhs_out
         mov     eax,[fh_len]
 fhs_row:
         mov     ecx,[esi+4]
@@ -520,8 +631,10 @@ fhs_out:
         pop     eax
         ret
 
+; FAT16 past 512MB only when /FS:FAT asks for it; past 1GB that is 32K
+; clusters, which is where FAT16 stops
 fh_tab16    dd  32680, 2, 262144, 4, 524288, 8, 1048576, 16
-            dd  0FFFFFFFFh, 32
+            dd  2097152, 32, 0FFFFFFFFh, 64
 fh_tab32    dd  16777216, 8, 33554432, 16, 67108864, 32
             dd  0FFFFFFFFh, 64
 
@@ -685,6 +798,10 @@ fhf_fail:
 ; A diskette
 ;=====================================================================
 fm_diskette:
+        cmp     byte ptr [want_fs],FSW_FAT32    ; a diskette is FAT12, and
+        jae     fm_fsdisk                       ; /A: has nothing to say
+        cmp     dword ptr [want_clus],0         ; about one
+        jne     fm_fsdisk
         mov     edx,OFFSET msg_insert
         call    puts
 fmd_key:
@@ -1159,8 +1276,8 @@ fm_finish:
         shl     eax,9                   ; * 512 bytes per sector
         mov     [v_cbytes],eax
         mov     eax,[g_totclus]
-        imul    eax,[v_cbytes]
-        call    pdec
+        mul     dword ptr [v_cbytes]   ; 64 bits: a volume past 4G
+        call    pdec64
         mov     edx,OFFSET msg_total
         call    puts
 
@@ -1175,14 +1292,14 @@ fmx_used:
         cmp     dword ptr [v_bad],0
         je      fmx_free
         mov     eax,[v_bad]
-        imul    eax,[v_cbytes]
-        call    pdec
+        mul     dword ptr [v_cbytes]
+        call    pdec64
         mov     edx,OFFSET msg_bad
         call    puts
 fmx_free:
         mov     eax,[v_free]
-        imul    eax,[v_cbytes]
-        call    pdec
+        mul     dword ptr [v_cbytes]
+        call    pdec64
         mov     edx,OFFSET msg_avail
         call    puts
 
@@ -1372,6 +1489,15 @@ fm_badsw:
 fm_badsize:
         mov     edx,OFFSET msg_badsize
         jmp     fm_die
+fm_badfs:
+        mov     edx,OFFSET msg_badfs
+        jmp     fm_die
+fm_badclus:
+        mov     edx,OFFSET msg_badclus
+        jmp     fm_die
+fm_fsdisk:
+        mov     edx,OFFSET msg_fsdisk
+        jmp     fm_die
 fm_nosize:
         mov     edx,OFFSET msg_nosize
         jmp     fm_die
@@ -1544,6 +1670,134 @@ fsz_found:
         pop     edx
         pop     ebx
         clc
+        ret
+
+;---------------------------------------------------------------------
+; fm_fstype - /FS: has been read up to the S: what follows is ":" and a
+;             name, FAT, FAT32 or EXFAT, into [want_fs].  ESI/ECX past
+;             it; CF if it is none of those.
+;---------------------------------------------------------------------
+fm_fstype:
+        or      ecx,ecx
+        jz      fft_bad
+        cmp     byte ptr [esi],':'
+        jne     fft_bad
+        inc     esi
+        dec     ecx
+        mov     edi,OFFSET fs_names
+fft_try:
+        movzx   edx,byte ptr [edi]      ; the name's length, 0 = no more
+        or      edx,edx
+        jz      fft_bad
+        cmp     ecx,edx
+        jb      fft_next
+        push    ecx
+        push    esi
+        push    edi
+        inc     edi
+        mov     ecx,edx
+fft_cmp:
+        mov     al,[esi]
+        call    fm_upcase
+        cmp     al,[edi]
+        jne     fft_miss
+        inc     esi
+        inc     edi
+        loop    fft_cmp
+        pop     edi
+        pop     ebx                     ; the name matched: is it all of the
+        pop     ecx                     ; word, and not the front of one?
+        sub     ecx,edx
+        cmp     ecx,0
+        je      fft_have
+        mov     al,[esi]
+        cmp     al,' '
+        je      fft_have
+        cmp     al,9
+        je      fft_have
+        cmp     al,'/'
+        je      fft_have
+        cmp     al,0Dh
+        je      fft_have
+        mov     esi,ebx                 ; FAT of FAT32: try the next name
+        add     ecx,edx
+        jmp     short fft_next
+fft_miss:
+        pop     edi
+        pop     esi
+        pop     ecx
+fft_next:
+        lea     edi,[edi+edx+2]
+        jmp     fft_try
+fft_have:
+        mov     al,[edi+edx+1]          ; the FSW_* after the name
+        mov     [want_fs],al
+        clc
+        ret
+fft_bad:
+        stc
+        ret
+
+; the names /FS: takes: length, letters, what it means
+fs_names    db  3, 'FAT', FSW_FAT
+            db  5, 'FAT32', FSW_FAT32
+            db  5, 'EXFAT', FSW_EXFAT
+            db  0
+
+;---------------------------------------------------------------------
+; fm_cluster - /A: read up to the A: ":" and a size in bytes, or with K
+;              or M after it, into [want_clus].  A power of two from 512
+;              bytes to 32M.  CF if not.
+;---------------------------------------------------------------------
+fm_cluster:
+        or      ecx,ecx
+        jz      fcl_bad
+        cmp     byte ptr [esi],':'
+        jne     fcl_bad
+        inc     esi
+        dec     ecx
+        xor     ebx,ebx
+        xor     edi,edi
+fcl_dig:
+        call    fsz_digit
+        jc      fcl_num
+        imul    ebx,10
+        add     ebx,eax
+        inc     edi
+        cmp     ebx,1000000000
+        ja      fcl_bad
+        jmp     short fcl_dig
+fcl_num:
+        or      edi,edi
+        jz      fcl_bad
+        or      ecx,ecx
+        jz      fcl_check
+        mov     al,[esi]
+        call    fm_upcase
+        cmp     al,'K'
+        jne     fcl_notk
+        shl     ebx,10
+        jmp     short fcl_unit
+fcl_notk:
+        cmp     al,'M'
+        jne     fcl_check
+        shl     ebx,20
+fcl_unit:
+        inc     esi
+        dec     ecx
+fcl_check:
+        cmp     ebx,512
+        jb      fcl_bad
+        cmp     ebx,32 * 1024 * 1024
+        ja      fcl_bad
+        lea     eax,[ebx-1]
+        test    eax,ebx
+        jnz     fcl_bad
+        mov     [want_clus],ebx
+        clc
+        ret
+fcl_bad:
+        stc
         ret
 
 ; the digit at ESI -> EAX and stepped over, or CF and nothing moved
@@ -2411,6 +2665,377 @@ fm_wipepct:
         popad
         ret
 
+;=====================================================================
+; fm_exfat - an exFAT volume across the partition fh_start / fh_len of
+;            disk fd_bios, from nothing.  The warning has been answered.
+;
+; EVERYTHING GOES BY THE DISK'S NUMBER (raw_io), not by the letter:
+; until the boot sector is down there is no exFAT volume for the letter
+; to be, and what was there a moment ago - FAT, or nothing - is not what
+; is being written.  The kernel is told at the end (F1h AL=2), when
+; there is something to mount.
+;=====================================================================
+fm_exfat:
+        mov     eax,[fh_len]
+        mov     [exf_len],eax
+        mov     eax,[fh_start]
+        mov     [exf_start],eax
+        mov     eax,[want_clus]
+        mov     [exf_cbytes],eax
+        call    exf_layout
+        jc      fm_exnofit
+        call    fm_serial
+        mov     [exf_serial],eax
+        mov     eax,[fat_work]
+        mov     [exf_buf],eax
+        mov     byte ptr [exf_lcount],0
+        mov     byte ptr [raw_io],1
+        mov     dword ptr [v_bad],0
+        call    exf_write
+        jc      fm_ioerr
+
+;--- every cluster past the system files read, the bad ones marked ---
+        cmp     byte ptr [quick],0
+        jne     fmx_label
+        mov     eax,[exf_used]
+        add     eax,2
+        call    exf_clus2sec
+        mov     edx,eax                 ; EDX = the first sector to read
+        mov     eax,[exf_nclus]
+        sub     eax,[exf_used]
+        imul    eax,[exf_spc]
+        mov     [v_total],eax
+        mov     dword ptr [v_done],0
+        mov     byte ptr [v_pct],0FFh
+        mov     dword ptr [v_lastbad],-1
+fmx_vlp:
+        mov     eax,[v_total]
+        sub     eax,[v_done]
+        jz      fmx_vend
+        mov     ecx,CHUNK_SECS
+        cmp     eax,ecx
+        jae     fmx_vhave
+        mov     ecx,eax
+fmx_vhave:
+        mov     ebx,[chunk_buf]
+        call    sec_read
+        jnc     fmx_vgood
+        call    fm_exbadrun             ; sector by sector, marking
+        jc      fm_ioerr
+fmx_vgood:
+        add     edx,ecx
+        add     [v_done],ecx
+        call    fm_percent
+        jmp     fmx_vlp
+fmx_vend:
+        call    fm_wipepct
+
+;--- the label: as typed, case and all, as exFAT keeps it ------------
+fmx_label:
+        mov     edx,OFFSET msg_label
+        call    puts
+        mov     edx,OFFSET lbl_in
+        mov     byte ptr [lbl_in],12
+        mov     ah,0Ah
+        int     21h
+        call    fm_crlf
+        movzx   ecx,byte ptr [lbl_in+1]
+        jecxz   fmx_type
+        cmp     ecx,11
+        jbe     fmx_lcnt
+        mov     ecx,11
+fmx_lcnt:
+        mov     [exf_lcount],cl
+        mov     esi,OFFSET lbl_in + 2
+        mov     edi,OFFSET exf_lchars
+        rep     movsb
+        call    exf_setlabel
+        jc      fm_ioerr
+
+;--- the partition table says exFAT, and the kernel is told ----------
+fmx_type:
+        mov     al,PT_EXFAT
+        call    fm_settype
+        mov     dl,[tgt_log]
+        inc     dl
+        mov     ax,0F102h
+        int     21h
+        jc      fm_ioerr
+
+        mov     edx,OFFSET msg_done
+        call    puts
+        mov     eax,[exf_nclus]
+        mul     dword ptr [exf_cbytes]
+        call    pdec64
+        mov     edx,OFFSET msg_total
+        call    puts
+        cmp     dword ptr [v_bad],0
+        je      fmx_nobad
+        mov     eax,[v_bad]
+        mul     dword ptr [exf_cbytes]
+        call    pdec64
+        mov     edx,OFFSET msg_bad
+        call    puts
+fmx_nobad:
+        mov     eax,[exf_nclus]
+        sub     eax,[exf_used]
+        sub     eax,[v_bad]
+        mul     dword ptr [exf_cbytes]
+        call    pdec64
+        mov     edx,OFFSET msg_avail
+        call    puts
+        mov     eax,[exf_cbytes]
+        call    pdec
+        mov     edx,OFFSET msg_unit
+        call    puts
+        mov     edx,OFFSET msg_serial
+        call    puts
+        mov     eax,[exf_serial]
+        push    eax
+        shr     eax,16
+        call    phex4
+        mov     dl,'-'
+        mov     ah,02h
+        int     21h
+        pop     eax
+        call    phex4
+        call    fm_crlf
+        jmp     fm_exit
+
+fm_exnofit:
+        mov     edx,OFFSET msg_exnofit
+        jmp     fm_die
+fm_exsys:
+        mov     edx,OFFSET msg_exsys
+        jmp     fm_die
+fm_nochange:
+        mov     edx,OFFSET msg_nochange
+        jmp     fm_die
+
+;---------------------------------------------------------------------
+; fm_exbadrun - a chunk of ECX sectors at EDX would not read: each sector
+;               on its own, and the cluster of each one that will not
+;               marked bad.  CF if a mark cannot be written.
+;---------------------------------------------------------------------
+fm_exbadrun:
+        pushad
+        mov     esi,edx
+        mov     edi,ecx
+fxb_lp:
+        or      edi,edi
+        jz      fxb_ok
+        mov     edx,esi
+        mov     ebx,[chunk_buf]
+        mov     ecx,1
+        call    sec_read
+        jnc     fxb_step
+        mov     eax,esi
+        sub     eax,[exf_heap]
+        xor     edx,edx
+        div     dword ptr [exf_spc]
+        add     eax,2                   ; the cluster
+        cmp     eax,[v_lastbad]
+        je      fxb_step
+        mov     [v_lastbad],eax
+        call    exf_markbad
+        jc      fxb_fail
+        inc     dword ptr [v_bad]
+fxb_step:
+        inc     esi
+        dec     edi
+        jmp     fxb_lp
+fxb_ok:
+        popad
+        clc
+        ret
+fxb_fail:
+        popad
+        stc
+        ret
+
+; what EXFMT.INC reads and writes through: the volume's own sectors, the
+; way everything else in this program reaches them
+exf_wr:
+        jmp     sec_write
+exf_rd:
+        jmp     sec_read
+
+;---------------------------------------------------------------------
+; fm_fattype - the partition table, made to say the FAT fh_layout made
+;              (fat_kind): 01h, 04h or 06h, or 0Ch.
+;---------------------------------------------------------------------
+fm_fattype:
+        push    eax
+        mov     al,PT_FAT32L
+        cmp     byte ptr [fat_kind],32
+        je      fft2_set
+        mov     al,PT_FAT12
+        cmp     byte ptr [fat_kind],12
+        je      fft2_set
+        mov     al,PT_FAT16S
+        cmp     dword ptr [fh_len],10000h
+        jb      fft2_set
+        mov     al,PT_FAT16B
+fft2_set:
+        call    fm_settype
+        pop     eax
+        ret
+
+;---------------------------------------------------------------------
+; fm_settype - AL = a partition type: the entry that describes the
+;              volume at fh_start on fd_bios is made that type.  A
+;              primary's is in sector 0, a logical drive's in its own
+;              link of the extended chain.  A GPT disk keeps Basic Data,
+;              which is FAT and exFAT both, and a disk with no table -
+;              the volume at sector 0 - has nothing to say it in.
+;              Failures are quiet: the volume is made, and the type is a
+;              label on it.  Preserves all.
+;---------------------------------------------------------------------
+fm_settype:
+        pushad
+        mov     [st_type],al
+        cmp     dword ptr [fh_start],0
+        je      fst_out
+        xor     ebx,ebx
+        mov     edi,[scratch]
+        call    fm_absrd
+        jc      fst_out
+        mov     esi,[scratch]
+        cmp     word ptr [esi+1FEh],0AA55h
+        jne     fst_out
+        ; the primaries, and the GPT's protective entry among them
+        lea     edx,[esi+PART_OFF]
+        mov     ecx,PART_MAX
+        xor     ebp,ebp                 ; EBP = the extended container
+fst_prim:
+        mov     al,[edx+PE_TYPE]
+        cmp     al,PT_GPT
+        je      fst_out
+        cmp     al,PT_EXTENDED
+        je      fst_ext
+        cmp     al,PT_EXTENDEDL
+        jne     fst_notext
+fst_ext:
+        mov     ebp,[edx+PE_START]
+        jmp     short fst_pnext
+fst_notext:
+        or      al,al
+        jz      fst_pnext
+        mov     eax,[edx+PE_START]
+        cmp     eax,[fh_start]
+        jne     fst_pnext
+        mov     al,[st_type]            ; this one: sector 0 is rewritten
+        mov     [edx+PE_TYPE],al
+        xor     ebx,ebx
+        mov     edi,[scratch]
+        call    fm_abswr
+        jmp     short fst_out
+fst_pnext:
+        add     edx,PE_LEN
+        loop    fst_prim
+        ; the logical drives, link by link: entry 0 counts from the link,
+        ; entry 1 from the container
+        or      ebp,ebp
+        jz      fst_out
+        mov     ebx,ebp
+        mov     ecx,64                  ; a chain no longer than this, or a
+fst_link:                               ; chain that loops ends here
+        mov     edi,[scratch]
+        call    fm_absrd
+        jc      fst_out
+        mov     esi,[scratch]
+        cmp     word ptr [esi+1FEh],0AA55h
+        jne     fst_out
+        mov     eax,[esi+PART_OFF+PE_START]
+        add     eax,ebx
+        cmp     eax,[fh_start]
+        jne     fst_lnext
+        cmp     byte ptr [esi+PART_OFF+PE_TYPE],0
+        je      fst_lnext
+        mov     al,[st_type]
+        mov     [esi+PART_OFF+PE_TYPE],al
+        call    fm_abswr
+        jmp     short fst_out
+fst_lnext:
+        mov     eax,[esi+PART_OFF+PE_LEN+PE_START]
+        or      eax,eax
+        jz      fst_out
+        lea     ebx,[ebp+eax]
+        loop    fst_link
+fst_out:
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; fm_absrd / fm_abswr - one sector of disk fd_bios: EBX = its LBA from
+;                       the start of the DISK, EDI -> 512 bytes.  CF on
+;                       failure.  Preserves all.
+;---------------------------------------------------------------------
+fm_absrd:
+        pushad
+        mov     eax,0F10Dh
+        jmp     short fab_go
+fm_abswr:
+        pushad
+        mov     eax,0F10Eh
+fab_go:
+        movzx   edx,byte ptr [fd_bios]
+        mov     ecx,1
+        int     21h
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; fm_serial - EAX = a serial number out of the clock, as fh_boot takes it
+;---------------------------------------------------------------------
+fm_serial:
+        push    ecx
+        push    edx
+        mov     ah,2Ch
+        int     21h
+        push    ecx
+        shl     ecx,16
+        mov     cx,dx
+        push    ecx
+        mov     ah,2Ah
+        int     21h
+        shl     ecx,16
+        mov     cx,dx
+        pop     eax
+        add     eax,ecx
+        pop     ecx
+        pop     edx
+        pop     ecx
+        ret
+
+; pdec64 - EDX:EAX printed in unsigned decimal
+pdec64:
+        pushad
+        mov     edi,OFFSET dec_buf + 21
+        mov     byte ptr [edi],'$'
+        mov     ebx,10
+        mov     ecx,edx                 ; ECX:EAX = the number
+pd64_div:
+        push    eax                     ; the high half divided first, its
+        mov     eax,ecx                 ; remainder carried into the low
+        xor     edx,edx
+        div     ebx
+        mov     ecx,eax
+        pop     eax
+        div     ebx
+        dec     edi
+        add     dl,'0'
+        mov     [edi],dl
+        mov     edx,eax
+        or      edx,ecx
+        jnz     pd64_div
+        mov     edx,edi
+        call    puts
+        popad
+        ret
+
+        INCLUDE EXFMT.INC
+
 ; puts - the '$' string at EDX
 puts:
         push    eax
@@ -2491,6 +3116,7 @@ boot_sec    dd  0                       ; BSS carve-outs
 fat_work    dd  0
 chunk_buf   dd  0
 scratch     dd  0
+exf_buf     dd  0                       ; EXFMT.INC's work buffer: fat_work
 
 tgt_log     db  0                       ; 0-based logical drive
 fat_kind    db  0                       ; 12, 16 or 32
@@ -2501,6 +3127,10 @@ uncond      db  0                       ; /U
 retest      db  0                       ; /C
 bflag       db  0                       ; /B
 fsize       db  NO_SIZE                 ; /F: - a row of fd_sizes
+want_fs     db  0                       ; /FS: - FSW_*
+st_type     db  0                       ; fm_settype's type
+            db  0,0
+want_clus   dd  0                       ; /A: - bytes a cluster, 0 = the size's
 
 floppy      db  0                       ; the target is a diskette drive
 fd_bios     db  0                       ; ...this one, 0 or 1
@@ -2561,7 +3191,7 @@ bad_tracks  dd  0,0,0,0,0               ; a bit a track, 160 of them
 
 lbl_in      db  12, 0
             db  14 dup(0)
-dec_buf     db  12 dup(0)
+dec_buf     db  24 dup(0)               ; twenty digits and a '$', for pdec64
 drv_rec     db  DRV_LEN dup(0)
 
 ; What a diskette can be.  The order is /F:'s and fd_can's.
@@ -2681,7 +3311,8 @@ msg_bad     db  ' bytes in bad sectors',13,10,'$'
 msg_avail   db  ' bytes available on disk',13,10,'$'
 msg_serial  db  13,10,'Volume Serial Number is ','$'
 msg_usage   db  'Formats a disk for use with PM-DOS.',13,10,13,10
-            db  'FORMAT drive: [/V[:label]] [/Q] [/U] [/F:size] [/B | /S] [/C]',13,10,13,10
+            db  'FORMAT drive: [/V[:label]] [/Q] [/U] [/F:size] [/B | /S] [/C]',13,10
+            db  '              [/FS:type] [/A:size]',13,10,13,10
             db  '  /V[:label]  Specifies the volume label.',13,10
             db  '  /Q          Performs a quick format.',13,10
             db  '  /U          Performs an unconditional format.',13,10
@@ -2689,7 +3320,9 @@ msg_usage   db  'Formats a disk for use with PM-DOS.',13,10,13,10
             db  '              as 160, 180, 320, 360, 720, 1.2, 1.44, 1.68, 2.88).',13,10
             db  '  /B          Allocates space on the formatted disk for system files.',13,10
             db  '  /S          Copies system files to the formatted disk.',13,10
-            db  '  /C          Tests clusters that are currently marked "bad."',13,10,13,10,'$'
+            db  '  /C          Tests clusters that are currently marked "bad."',13,10
+            db  '  /FS:type    Makes the volume FAT, FAT32 or EXFAT.',13,10
+            db  '  /A:size     Sets the cluster size, from 512 to 32M (4K, 32K...).',13,10,13,10,'$'
 msg_sysing  db  'Transferring the system...',13,10,'$'
 msg_nosys   db  'System not transferred (SYS.COM would not run)',13,10,'$'
 fm_comspec  db  'COMSPEC=',0
@@ -2704,6 +3337,13 @@ msg_nosize  db  'Size not supported by drive',13,10,'$'
 msg_clash   db  '/B and /S cannot be used together',13,10,'$'
 msg_iscur   db  'Cannot format the current drive',13,10,'$'
 msg_nofit   db  'No FAT layout fits a volume of this size',13,10,'$'
+msg_exnofit db  'No exFAT layout fits a volume of this size',13,10,'$'
+msg_exsys   db  'An exFAT volume cannot be made bootable',13,10,'$'
+msg_nochange db 'The filesystem on this drive cannot be changed',13,10,'$'
+msg_fsdisk  db  'A diskette can only be FAT',13,10,'$'
+msg_badfs   db  'Invalid file system for /FS (FAT, FAT32 or EXFAT)',13,10,'$'
+msg_badclus db  'Invalid cluster size for /A',13,10,'$'
+msg_unit    db  ' bytes in each allocation unit',13,10,'$'
 msg_notmnt  db  'Invalid media or Track 0 bad - disk unusable',13,10
             db  '(No readable BPB on this volume)',13,10,'$'
 msg_track0  db  13,10,'Track 0 bad - disk unusable',13,10,'$'

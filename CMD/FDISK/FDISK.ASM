@@ -45,6 +45,8 @@ FDC_ACTIVE      EQU     6
 FDC_MBR         EQU     7
 FDC_MENU        EQU     8
 FDC_FORMAT      EQU     9               ; the screen's only: see fd_format
+FDC_TOGPT       EQU     10              ; /GPT: the table made a GPT
+FDC_TOMBR       EQU     11              ; /NOGPT: and back (FDGPT.INC)
 
 ;--- what dk_write does with what it is given ------------------------
 DK_STAGE        EQU     2               ; dk_armed: 0 writes nothing (the
@@ -171,14 +173,43 @@ CHN_LOOP        EQU     2               ; a next pointer that goes nowhere new
 CHN_LONG        EQU     3               ; more links than EBR_MAX
 CHN_RANGE       EQU     4               ; a next pointer outside the container
 
+;--- a GPT disk (FDGPT.INC) ------------------------------------------
+GPT_MAXP        EQU     128             ; entries edited: the array every tool
+                                        ; writes, 16K from sector 2.  More
+                                        ; than EBR_MAX, so the walls and the
+                                        ; screen's spans are counted by this
+GPT_ESIZE       EQU     128             ; bytes an entry
+GPT_ALIGN       EQU     2048            ; a partition on a megabyte, as every
+                                        ; GPT tool puts one
+GPT_PTOTHER     EQU     0DAh            ; the type byte standing for a GPT
+                                        ; type nothing here moves or names
+GPT_BSS_LEN     EQU     SEC_BYTES + GPT_MAXP*GPT_ESIZE + GPT_MAXP*PE_LEN + GPT_MAXP*2
+                                        ; a header, the array, the shadow
+                                        ; table, and a kind and flags each
+GSF_FAR         EQU     01h             ; it lies past 32 bits: shown, never
+                                        ; changed
+GK_BASIC        EQU     1               ; what a GPT entry is called: basic
+GK_FAT12        EQU     2               ; data with nothing in it this
+GK_FAT16        EQU     3               ; recognises, the file systems that
+GK_FAT32        EQU     4               ; are, and the other types (gkn_tbl)
+GK_EXFAT        EQU     5
+GK_NTFS         EQU     6
+GK_ESP          EQU     7
+GK_MSR          EQU     8
+GK_RECOV        EQU     9
+GK_LINUX        EQU     10
+GK_SWAP         EQU     11
+GK_BIOS         EQU     12
+GK_OTHER        EQU     13
+
 ;--- one wall the partition being planned must not run into ----------
 NB_START        EQU     00h             ; dd
 NB_SECS         EQU     04h             ; dd
 NB_LEN          EQU     08h
-NB_MAX          EQU     EBR_MAX + 4     ; every link of a chain, or every
-                                        ; other primary slot, and the one
-                                        ; extra a logical drive always has:
-                                        ; its own boot record
+NB_MAX          EQU     GPT_MAXP + 4    ; every link of a chain, or every
+                                        ; other primary slot or GPT entry,
+                                        ; and the one extra a logical drive
+                                        ; always has: its own boot record
 
 ; TWO SEGMENTS, ONE GROUP, as PMDOS.SYS is laid out: _FDK is the file
 ; and _FDB is the BSS behind it, which the link places after the code
@@ -195,9 +226,10 @@ _FDK    SEGMENT USE32 PUBLIC 'CODE'
         ORG     0
 
 ;--- what the BSS holds; the equates that size it are all above -----
-FD_BSS_LEN      EQU     SEC_BYTES*4 + 65536 + CH_LEN*EBR_MAX
+FD_BSS_LEN      EQU     SEC_BYTES*4 + 65536 + CH_LEN*EBR_MAX + GPT_BSS_LEN
                                         ; four sectors, the 64K the relocator
-                                        ; copies through, and the chain table
+                                        ; copies through, the chain table and
+                                        ; a GPT
 ;--- the changes the screen holds until Commit (FDPEND.INC) ----------
 OV_MAX          EQU     256             ; sectors staged: a table, a chain's
                                         ; records and its volumes' boot
@@ -206,7 +238,7 @@ JN_MAX          EQU     32              ; changes waiting
 JN_LEN          EQU     0D0h            ; one of them; FDPEND.INC lays it
                                         ; out and checks it fits
 PD_BSS_LEN      EQU     OV_MAX*SEC_BYTES + OV_MAX*4 + OV_MAX + JN_MAX*JN_LEN
-TUI_BSS_LEN     EQU     82 + 140*40 + 512*4 + 8192 + 4000 + PD_BSS_LEN
+TUI_BSS_LEN     EQU     82 + 140*40 + 512*4 + 8192 + 4000 + PD_BSS_LEN + NB_MAX*NB_LEN + (GPT_MAXP+4)*8
                                         ; the screen's buffers, as the end of
                                         ; this file lays them out - and the
                                         ; end of this file checks the sum
@@ -232,6 +264,16 @@ fd_entry:
         mov     [eb2_buf],eax           ; the SECOND extended record the
         add     eax,SEC_BYTES           ; chain surgery has open at once
         mov     [chn_tbl],eax
+        add     eax,CH_LEN*EBR_MAX
+        mov     [gpt_hdrp],eax          ; and a GPT disk's table (FDGPT.INC)
+        add     eax,SEC_BYTES
+        mov     [gpt_arrp],eax
+        add     eax,GPT_MAXP*GPT_ESIZE
+        mov     [gsh_tblp],eax
+        add     eax,GPT_MAXP*PE_LEN
+        mov     [gsh_kindp],eax
+        add     eax,GPT_MAXP
+        mov     [gsh_flagp],eax
 
 ;--- critical errors are ours ----------------------------------------
 ; The same argument DRIVES.EXE and FORMAT.COM both make: a program
@@ -277,6 +319,10 @@ fde_nosep:
         je      fd_mbr
         cmp     byte ptr [fd_cmd],FDC_MENU
         je      fd_tui
+        cmp     byte ptr [fd_cmd],FDC_TOGPT
+        je      fd_togpt
+        cmp     byte ptr [fd_cmd],FDC_TOMBR
+        je      fd_tombr
         jmp     fd_usage
 
 ;---------------------------------------------------------------------
@@ -397,6 +443,10 @@ fp_switch:
         je      fp_sw_a
         cmp     al,'I'
         je      fp_sw_i
+        cmp     al,'G'
+        je      fp_sw_g
+        cmp     al,'N'
+        je      fp_sw_n
         ; /? AND /H PRINT THE SAME THING AND ARE NOT ERRORS.  They
         ; used to fall into fp_bad, which prints the usage as well -
         ; so the screen was right and the exit code was 1, and a
@@ -504,6 +554,35 @@ fp_sw_i:
         inc     esi
         dec     ecx
         jmp     fp_next
+; /GPT AND /NOGPT ARE WORDS, as /MBR and /STATUS are, and spelled out in
+; full: a conversion is not a switch to reach by a typing slip.
+fp_sw_g:
+        mov     byte ptr [fd_cmd],FDC_TOGPT
+        mov     edi,OFFSET msg_swgpt
+        jmp     short fp_word
+fp_sw_n:
+        mov     byte ptr [fd_cmd],FDC_TOMBR
+        mov     edi,OFFSET msg_swnogpt
+fp_word:                                ; ESI at the letter, EDI -> the rest
+        inc     esi
+        dec     ecx
+fpw_one:
+        cmp     byte ptr [edi],0
+        je      fpw_done
+        or      ecx,ecx
+        jz      fpw_bad
+        mov     al,[esi]
+        call    fd_upper
+        cmp     al,[edi]
+        jne     fpw_bad
+        inc     esi
+        inc     edi
+        dec     ecx
+        jmp     short fpw_one
+fpw_done:
+        jmp     fp_next
+fpw_bad:
+        jmp     fp_bad
 
 ;--- an argument: text up to the next separator ----------------------
 ; fp_argbad is a trampoline because the switch list above grew past
@@ -597,6 +676,10 @@ fr_alnote:
         cmp     byte ptr [fd_misal],0
         je      fr_nextdisk
         mov     edx,OFFSET msg_alnote
+        cmp     byte ptr [gpt_on],0
+        je      fr_alsay
+        mov     edx,OFFSET msg_galnote
+fr_alsay:
         call    puts
 fr_nextdisk:
         inc     ebx
@@ -683,6 +766,12 @@ fr_table:
         cmp     word ptr [edi+1FEh],MBR_SIG
         jne     ft_notable
         mov     byte ptr [fd_mbrok],1
+        lea     eax,[ebx+80h]
+        mov     [pl_drive],al
+        call    gpt_check
+        jc      ft_gptbad
+        cmp     byte ptr [gpt_on],0
+        jne     ft_gpt
         cmp     byte ptr [mbr_fresh],0
         je      ft_real
         mov     edx,OFFSET msg_fresh    ; a blank disk: the table shown
@@ -721,7 +810,10 @@ ft_bootput:
         call    put2                    ; the type byte...
         call    sp1
         movzx   eax,byte ptr [esi+PE_TYPE]
-        call    typename                ; ...and what it is called
+        push    ebx
+        mov     ebx,[esi+PE_START]
+        call    fd_tname                ; ...and what it is called
+        pop     ebx
 
         mov     eax,[esi+PE_START]
         call    put10
@@ -782,6 +874,15 @@ ft_step:
         popad
         ret
 
+ft_gpt:
+        call    fr_gpt                  ; FDGPT.INC
+        popad
+        ret
+ft_gptbad:
+        mov     edx,OFFSET msg_rgptbad
+        call    puts
+        popad
+        ret
 ft_notable:
         mov     edx,OFFSET msg_notable
         call    puts
@@ -866,7 +967,10 @@ fl_showvol:
         call    put2
         call    sp1
         movzx   eax,byte ptr [esi+CH_TYPE]
-        call    typename
+        push    ebx
+        mov     ebx,[esi+CH_VSTART]
+        call    fd_tname
+        pop     ebx
 
         mov     eax,[esi+CH_VSTART]
         call    put10
@@ -2860,6 +2964,7 @@ fd_plan:
         mov     edi,[mbr_buf]
         cmp     word ptr [edi+1FEh],MBR_SIG
         jne     fdp_notable
+        call    fd_tblcheck
 
         call    fd_entptr
 
@@ -2874,9 +2979,18 @@ fd_plan:
         mov     [pl_nstart],eax
         mov     eax,[esi+PE_SECS]
         mov     [pl_nlen],eax
+        mov     byte ptr [fdp_xf],0
         call    rl_plan
         cmp     dword ptr [pl_status],RL_NOTFAT
-        je      fdp_notfat
+        jne     fdp_isfat
+        ; AN EXFAT VOLUME IS NOT FAT, and is not refused all the same: it
+        ; gets the page, with what its boot sector says and no limits
+        mov     ebx,[pl_ostart]
+        call    gpt_fskind
+        cmp     al,GK_EXFAT
+        jne     fdp_notfat
+        mov     byte ptr [fdp_xf],1
+fdp_isfat:
         cmp     dword ptr [pl_status],RL_CHAIN
         je      fdp_chbad
 
@@ -2905,13 +3019,25 @@ fd_plan:
         mov     ecx,PR_NUMW - 3
         call    pr_spaces
         mov     esi,[pl_ent]
+        cmp     byte ptr [gpt_on],0
+        jne     fdp_tgpt
         movzx   eax,byte ptr [esi+PE_TYPE]
         call    put2
         mov     al,'h'
         call    putc
         call    sp2
         movzx   eax,byte ptr [esi+PE_TYPE]
-        call    typename
+        mov     ebx,[pl_ostart]
+        call    fd_tname
+        jmp     short fdp_typed
+fdp_tgpt:
+        mov     edx,OFFSET msg_lgpt     ; "Type        GPT  FAT16"
+        call    puts
+        call    sp2
+        call    fd_kindof
+        call    gpt_kname
+        call    puts
+fdp_typed:
         call    crlf
         mov     edx,OFFSET msg_lstart
         call    pr_label
@@ -2923,6 +3049,8 @@ fd_plan:
         mov     eax,[pl_olen]
         call    pr_secmb
         call    crlf
+        cmp     byte ptr [fdp_xf],0
+        jne     fdp_exfat
         cmp     byte ptr [pl_cont],0
         jne     fdp_cx
         cmp     byte ptr [pl_raw],0
@@ -3060,6 +3188,43 @@ fdp_grow:
 fdp_done:
         call    crlf
         jmp     fd_done
+
+;--- an exFAT volume ------------------------------------------------
+; ITS BOOT SECTOR, NOT A BPB: the shifts that make a cluster, and how
+; many there are.  Nothing about how far it could go, because nothing
+; here moves or resizes one.
+fdp_exfat:
+        call    crlf
+        mov     edx,OFFSET msg_lfs
+        call    pr_label
+        mov     ecx,PR_NUMW - 5
+        call    pr_spaces
+        mov     edx,OFFSET gkn_tbl + (GK_EXFAT - 1) * 10
+        call    puts
+        call    crlf
+        mov     ebx,[pl_ostart]
+        call    gpt_fskind              ; the boot sector, into sec_buf
+        mov     esi,[sec_buf]
+        mov     cl,[esi+XFB_BPSSH]
+        add     cl,[esi+XFB_SPCSH]
+        cmp     cl,25                   ; 32MB, the most a cluster may be
+        ja      fdx_noclus
+        mov     edx,OFFSET msg_lxclus
+        call    pr_label
+        mov     eax,1
+        shl     eax,cl
+        call    putg
+        call    crlf
+fdx_noclus:
+        mov     edx,OFFSET msg_lclus
+        call    pr_label
+        mov     eax,[esi+XFB_NCLUS]
+        call    putg
+        call    crlf
+        call    crlf
+        mov     edx,OFFSET msg_lxnote
+        call    puts
+        jmp     fdp_done
 
 ;--- one nobody has formatted ----------------------------------------
 ; NOTHING IS STORED IN IT, so the only limits are the room in front of
@@ -3264,8 +3429,12 @@ fd_getdp:
         ; any disk has been read, and "there is no sixth partition" is
         ; a sentence a verb says once it has looked, not a usage
         ; screen about how to type an argument that was typed right.
+        ;
+        ; A GPT DISK NUMBERS ITS ENTRIES ON PAST FOUR, so a number up to
+        ; GPT_MAXP is let through; fd_tblcheck holds an MBR disk to
+        ; EBR_MAX once the table says which it is.
         sub     eax,PART_MAX
-        cmp     eax,EBR_MAX
+        cmp     eax,GPT_MAXP - PART_MAX
         ja      fgd_bad
         mov     [pl_log],eax
         mov     dword ptr [pl_idx],0
@@ -3447,7 +3616,15 @@ rx_table:
         call    fd_putent
 
         ; and the sector it lives in, which for a logical drive is its
-        ; own boot record and not the master one
+        ; own boot record and not the master one - and on a GPT disk is
+        ; the GPT, both copies of it
+        cmp     byte ptr [gpt_on],0
+        je      rx_mbrsec
+        call    gpt_store
+        jc      rx_ioerr
+        mov     dword ptr [pl_status],RL_OK
+        jmp     rx_out
+rx_mbrsec:
         mov     edi,[mbr_buf]
         cmp     dword ptr [pl_sec],0
         je      rx_wrsec
@@ -4561,6 +4738,7 @@ fd_change:
         mov     edi,[mbr_buf]
         cmp     word ptr [edi+1FEh],MBR_SIG
         jne     fdc_notable
+        call    fd_tblcheck
 
         call    fd_entptr
 
@@ -4757,8 +4935,18 @@ fcd_out:
 ;---------------------------------------------------------------------
 ; fd_spcyl - sectors per cylinder of the disk in dsk_rec, in ECX.
 ;            Zero when the geometry says nothing usable.
+;
+; ON A GPT DISK IT IS A MEGABYTE.  This is the unit everything here
+; aligns to - a new partition, a move, a resize, the free space the
+; screen offers, the report's star - and a GPT disk is laid out on
+; megabytes by every tool that makes one, with no cylinder in sight.
 ;---------------------------------------------------------------------
 fd_spcyl:
+        cmp     byte ptr [gpt_on],0
+        je      fsc_chs
+        mov     ecx,GPT_ALIGN
+        ret
+fsc_chs:
         push    eax
         movzx   ecx,word ptr [dsk_rec+DSK_SPT]
         movzx   eax,word ptr [dsk_rec+DSK_HEADS]
@@ -5019,7 +5207,7 @@ fd_loaddisk:
         mov     edi,[mbr_buf]
         cmp     word ptr [edi+1FEh],MBR_SIG
         jne     fdn_notable
-        ret
+        jmp     fd_tblcheck             ; and the GPT, if it is a GPT disk
 fdn_nodisk:
         jmp     fdc_nodisk
 fdn_unread:
@@ -5028,12 +5216,18 @@ fdn_notable:
         jmp     fdc_notable
 
 ;---------------------------------------------------------------------
-; fd_slotptr - ESI -> the entry pl_idx names, inside mbr_buf.
+; fd_slotptr - ESI -> the entry pl_idx names, inside mbr_buf - or, on a
+;              GPT disk, the record in the shadow table (FDGPT.INC).
 ;---------------------------------------------------------------------
 fd_slotptr:
         imul    esi,dword ptr [pl_idx],PE_LEN
+        cmp     byte ptr [gpt_on],0
+        jne     fsp_gpt
         add     esi,[mbr_buf]
         add     esi,PART_OFF
+        ret
+fsp_gpt:
+        add     esi,[gsh_tblp]
         ret
 
 ;--- fd_putnum - the number this partition is called by: 1 to 4 for
@@ -5055,9 +5249,14 @@ fpn_out:
         ret
 
 ;---------------------------------------------------------------------
-; fd_writembr - the table back, once.  CF on failure.
+; fd_writembr - the table back, once.  CF on failure.  A GPT disk's
+;               table is its GPT, both copies.
+; fd_wrsec0   - mbr_buf to sector 0, whatever the disk: /MBR's write
 ;---------------------------------------------------------------------
 fd_writembr:
+        cmp     byte ptr [gpt_on],0
+        jne     gpt_store
+fd_wrsec0:
         push    eax
         push    ebx
         push    ecx
@@ -5100,9 +5299,9 @@ fd_create:
         jb      fdn_usage
         call    fd_getdp
         jc      fdn_usage
+        call    fd_loaddisk             ; first: on a GPT disk 5 is no logical
         cmp     dword ptr [pl_log],0
         jne     fd_crlog
-        call    fd_loaddisk
 
         ; the slot has to be empty.  Overwriting an occupied one would
         ; be a delete nobody asked for, and the entry it overwrote is
@@ -5111,7 +5310,13 @@ fd_create:
         cmp     byte ptr [esi+PE_TYPE],PT_EMPTY
         jne     fdn_taken
 
+        cmp     byte ptr [gpt_on],0
+        jne     fdn_gptgap
         call    fd_gap
+        jmp     short fdn_gapped
+fdn_gptgap:
+        call    gpt_gap
+fdn_gapped:
         jc      fdn_nogap
         call    fd_spcyl
         mov     [gp_spcyl],ecx
@@ -5120,10 +5325,14 @@ fd_create:
         ; sector - which is the one place a partition is allowed to
         ; begin mid-cylinder, because cylinder 0 track 0 belongs to
         ; the master boot record and DOS has started there since 1983.
+        ; A GPT disk has no such place: everything is on a megabyte.
         mov     eax,[gp_start]
+        cmp     byte ptr [gpt_on],0
+        jne     fdn_align
         movzx   ebx,word ptr [dsk_rec+DSK_SPT]
         cmp     eax,ebx
         je      fdn_startok
+fdn_align:
         mov     ecx,[gp_spcyl]
         call    fd_cylup
 fdn_startok:
@@ -5204,15 +5413,15 @@ fdn_havetype:
         call    put1
         mov     edx,OFFSET msg_crmb
         call    puts
-        movzx   eax,byte ptr [cr_type]
-        call    put2
-        call    sp1
-        movzx   eax,byte ptr [cr_type]
-        call    typename
+        mov     al,[cr_type]
+        call    fd_newname
         call    crlf
 
         ; past the CHS line is legal and unbootable, and the user
-        ; decides - the same report rl_plan makes for a move
+        ; decides - the same report rl_plan makes for a move.  A GPT
+        ; disk is reached by LBA or not at all.
+        cmp     byte ptr [gpt_on],0
+        jne     fdn_inreach
         mov     eax,[cr_start]
         add     eax,[cr_len]
         cmp     eax,[phy_chs]
@@ -5262,9 +5471,11 @@ fd_delete:
         jb      fdn_usage
         call    fd_getdp
         jc      fdn_usage
+        call    fd_loaddisk
         cmp     dword ptr [pl_log],0
         jne     fd_dellog
-        call    fd_loaddisk
+        call    fd_gptfar
+        jc      fdn_gptfar
         call    fd_slotptr
         cmp     byte ptr [esi+PE_TYPE],PT_EMPTY
         je      fdn_alreadyempty
@@ -5308,11 +5519,8 @@ fdn_notext:
         call    puts
         mov     edx,OFFSET msg_deltype
         call    puts
-        movzx   eax,byte ptr [esi+PE_TYPE]
-        call    put2
-        call    sp1
-        movzx   eax,byte ptr [esi+PE_TYPE]
-        call    typename
+        mov     al,[esi+PE_TYPE]
+        call    fd_ptname
         call    crlf
 
         ; If the kernel gave it a letter, that letter is about to
@@ -5383,10 +5591,12 @@ fd_active:
         jb      fdn_usage
         call    fd_getdp
         jc      fdn_usage
+        call    fd_loaddisk
         cmp     dword ptr [pl_log],0
         jne     fdn_logactive           ; booting looks in the master boot
                                         ; record, and never finds a chain
-        call    fd_loaddisk
+        call    fd_gptfar
+        jc      fdn_gptfar
         call    fd_slotptr
         cmp     byte ptr [esi+PE_TYPE],PT_EMPTY
         je      fdn_alreadyempty
@@ -5405,6 +5615,8 @@ fd_active:
         mov     edx,OFFSET msg_actrest
         call    puts
 
+        cmp     byte ptr [gpt_on],0     ; a GPT disk is started by LBA
+        jne     fdn_actreach
         mov     eax,[esi+PE_START]
         cmp     eax,[phy_chs]
         jb      fdn_actreach
@@ -5418,14 +5630,23 @@ fdn_actreach:
         call    puts
         jmp     fd_done
 fdn_actgo:
+        ; ON A GPT DISK the flag is each entry's legacy BIOS bootable
+        ; bit, which the shadow table carries as PE_BOOT - one entry has
+        ; it, as one slot does
         mov     esi,[mbr_buf]
         add     esi,PART_OFF
+        mov     edx,PART_MAX
+        cmp     byte ptr [gpt_on],0
+        je      fdn_actall
+        mov     esi,[gsh_tblp]
+        mov     edx,GPT_MAXP
+fdn_actall:
         xor     ecx,ecx
 fdn_actclr:
         mov     byte ptr [esi+PE_BOOT],0
         add     esi,PE_LEN
         inc     ecx
-        cmp     ecx,PART_MAX
+        cmp     ecx,edx
         jb      fdn_actclr
         call    fd_slotptr
         mov     byte ptr [esi+PE_BOOT],80h
@@ -5514,7 +5735,7 @@ fmb_go:
         mov     ecx,MBRW_LEN
         cld
         rep     movsb
-        call    fd_writembr
+        call    fd_wrsec0               ; the record, on a GPT disk too
         jc      fdn_wrerr
         mov     edx,OFFSET msg_mbrdone
         call    puts
@@ -5566,7 +5787,30 @@ fd_format:
         mov     [ff_start],eax
         mov     eax,[esi+PE_SECS]
         mov     [ff_len],eax
+        call    fd_gptfar
+        jc      fdn_gptfar
+
+        ; EXFAT WHEN IT IS ASKED FOR: a second argument, E, which the
+        ; screen's F gives for its exFAT button.  F, or nothing, is FAT.
+        cmp     dword ptr [fd_nargs],2
+        jb      ffm_fat
+        mov     al,[fd_args + FD_ARGLEN]
+        call    fd_upper
+        cmp     al,'E'
+        je      ffm_exfat
+        cmp     al,'F'
+        jne     fdn_usage
+ffm_fat:
+        ; A GPT ENTRY'S TYPE SAYS NOTHING ABOUT FAT, so the width goes by
+        ; the size alone, as it would for a partition made that size
         mov     dl,[esi+PE_TYPE]
+        cmp     byte ptr [gpt_on],0
+        je      ffm_dl
+        mov     eax,[ff_start]
+        mov     edx,[ff_len]
+        call    fd_newtype
+        mov     dl,al
+ffm_dl:
         call    ff_layout
         jc      ffm_small
 
@@ -5603,7 +5847,10 @@ ffm_go:
         mov     eax,[ff_len]
         mov     [pl_nlen],eax
         call    rl_typebyte
+ffm_settype:                            ; AL = the type it should have
         mov     esi,[pl_ent]
+        cmp     byte ptr [gpt_on],0     ; a GPT entry's type is basic data
+        jne     ffm_typed               ; whatever the FAT inside it is
         cmp     al,[esi+PE_TYPE]
         je      ffm_typed
         mov     [esi+PE_TYPE],al
@@ -5624,6 +5871,47 @@ ffm_typed:
         call    puts
         call    fd_rebootnote
         jmp     fd_done
+
+;--- exFAT: INCXFMT.INC lays it out and writes it, through exf_wr ---
+ffm_exfat:
+        mov     eax,[ff_len]
+        mov     [exf_len],eax
+        mov     eax,[ff_start]
+        mov     [exf_start],eax
+        mov     dword ptr [exf_cbytes],0        ; Windows's cluster size
+        call    exf_layout
+        jc      ffm_xsmall
+        mov     edx,OFFSET msg_fmtxwill
+        call    puts
+        mov     eax,[exf_cbytes]
+        shr     eax,10
+        call    put1
+        mov     edx,OFFSET msg_fmtxclus
+        call    puts
+        mov     eax,[exf_nclus]
+        call    put1
+        mov     edx,OFFSET msg_clus2
+        call    puts
+        cmp     byte ptr [dk_armed],0
+        jne     ffm_xgo
+        mov     edx,OFFSET msg_dryrun
+        call    puts
+        jmp     fd_done
+ffm_xgo:
+        mov     edx,OFFSET msg_fmtxdoing
+        call    puts
+        call    ff_serial
+        mov     [exf_serial],eax
+        mov     eax,[cpy_buf]
+        mov     [exf_buf],eax
+        mov     byte ptr [exf_lcount],0
+        call    exf_write
+        jc      fdn_wrerr
+        mov     al,PT_EXFAT
+        jmp     ffm_settype
+ffm_xsmall:
+        mov     edx,OFFSET msg_fmtxsmall
+        jmp     short ffm_say
 ffm_none:
         mov     edx,OFFSET msg_fmtnone
         jmp     short ffm_say
@@ -6046,6 +6334,30 @@ ff_serial:
         pop     ebx
         ret
 
+;--- exf_wr / exf_rd - what INCXFMT.INC writes and reads through: EDX
+;--- = a sector of the volume at ff_start on pl_drive, ECX = how many,
+;--- EBX -> the data.  CF on failure; every register kept.
+exf_wr:
+        pushad
+        mov     edi,ebx
+        mov     ebx,edx
+        add     ebx,[ff_start]
+        mov     al,[pl_drive]
+        call    dk_write
+        popad
+        ret
+exf_rd:
+        pushad
+        mov     edi,ebx
+        mov     ebx,edx
+        add     ebx,[ff_start]
+        mov     al,[pl_drive]
+        call    dk_read
+        popad
+        ret
+
+        INCLUDE EXFMT.INC
+
 ;--- ff_mkfsi - FAT32's FSInfo sector, in sec_buf: every cluster free
 ;--- but the root's, and the next to give out the one after it
 ff_mkfsi:
@@ -6270,6 +6582,8 @@ fd_putent:
 fd_entptr:
         cmp     dword ptr [pl_log],0
         jne     fep_log
+        cmp     byte ptr [gpt_on],0
+        jne     fep_gpt
 
         call    fd_slotptr
         mov     [pl_ent],esi
@@ -6281,6 +6595,26 @@ fd_entptr:
         mov     eax,[phy_total]
         mov     [pl_hi],eax
         call    fd_nbprim
+        ret
+
+; A GPT ENTRY IS A PRIMARY PARTITION with a different region: the usable
+; sectors the header names, which leave both copies of the table out,
+; and every other entry a wall.  Its record is in the shadow table, so
+; the start is absolute and pl_sec is the table, which fd_writembr and
+; rx_table write as the GPT.
+fep_gpt:
+        call    fd_gptfar
+        jc      fdn_gptfar
+        call    fd_slotptr
+        mov     [pl_ent],esi
+        mov     dword ptr [pl_base],0
+        mov     dword ptr [pl_sec],0
+        mov     eax,[gpt_first]
+        mov     [pl_lo],eax
+        mov     eax,[gpt_last]
+        inc     eax
+        mov     [pl_hi],eax
+        call    fd_nbgpt
         ret
 
 fep_log:
@@ -7150,6 +7484,7 @@ fas_bad:
         stc
         ret
 
+        INCLUDE FDGPT.INC
         INCLUDE FDREMAP.INC
         INCLUDE FDTUI.INC
 
@@ -7660,6 +7995,7 @@ pl_status   dd  0
 pl_room     dd  0
 pl_minsz    dd  0                       ; what /P found it could shrink to
 pl_maxsz    dd  0                       ; and grow to; 0 when it did not say
+fdp_xf      db  0                       ; /P: the volume is exFAT
 rl_needcc   dd  0
 rl_maxcc    dd  0
 rl_spc      dd  0                       ; the candidate the limits measure
@@ -7676,6 +8012,7 @@ gp_want     dd  0                       ; 0, or a sector in the free run the
                                         ; screen wants a create to use
 ff_start    dd  0                       ; the partition being formatted
 ff_len      dd  0
+exf_buf     dd  0                       ; EXFMT.INC's work buffer: cpy_buf
 ff_fatend   dd  0                       ; ...where its data area will start
 ff_iter     dd  0                       ; cluster sizes ff_layout may still try
 cr_start    dd  0                       ; what /C would write
@@ -7695,7 +8032,6 @@ chn_ctype   db  0                       ; the container's own type byte
             db  0,0,0
 lg_idx      dd  0                       ; which link in the chain it is
 nb_n        dd  0                       ; how many walls there are
-nb_tbl      db  NB_MAX * NB_LEN dup(0)
 lg_next     dd  0                       ; the record after the one being
                                         ; deleted, 0 when it is the last
 chn_save    db  PE_LEN dup(0)           ; one entry, carried from the record
@@ -7727,7 +8063,7 @@ ctry_buf    db  34 dup(0)               ; 38h's answer
 
 msg_usage   db  'Configures a hard disk for use with PM-DOS.',13,10,13,10
             db  'FDISK [/C d:p n tt] [/D d:p] [/A d:p] [/M d:p n] [/S d:p n]',13,10
-            db  '       [/STATUS] [/L] [/MBR d]',13,10
+            db  '       [/STATUS] [/L] [/MBR d] [/GPT d] [/NOGPT d]',13,10
             db  '  /STATUS      Provide a report of the current layout',13,10
             db  '  /L           Show logical drives in the extended container',13,10
             db  '  /P d:p       Work with partition p on disk d',13,10
@@ -7738,8 +8074,12 @@ msg_usage   db  'Configures a hard disk for use with PM-DOS.',13,10,13,10
             db  '  /C d:p n tt   ...tt as the type byte, in hex',13,10
             db  '  /D d:p       Delete partition',13,10
             db  '  /A d:p       Mark partition as active',13,10
-            db  '  /MBR d       Restore Master Boot Record.',13,10,13,10,'$'
+            db  '  /MBR d       Restore Master Boot Record.',13,10
+            db  '  /GPT d       Give disk d a GPT, keeping its partitions',13,10
+            db  '  /NOGPT d     Give disk d a master boot record table again',13,10,13,10,'$'
 msg_status  db  'TATUS',0               ; what follows /S to make /STATUS
+msg_swgpt   db  'PT',0                  ; ...and /G to make /GPT
+msg_swnogpt db  'OGPT',0                ; ...and /N to make /NOGPT
 msg_disk    db  'Disk $'
 msg_sp2     db  '   $'
 msg_cyls    db  ' cylinders, $'
@@ -7775,6 +8115,9 @@ msg_part    db  ', partition $'
 msg_fat     db  'FAT$'
 ;--- the report's labels: pr_label pads each to PR_LABW --------------
 msg_ltype   db  'Type$'
+msg_lgpt    db  'GPT$'
+msg_lxclus  db  'Bytes per cluster$'
+msg_lxnote  db  '  FDISK does not move or resize an exFAT volume.',13,10,'$'
 msg_lstart  db  'Start sector$'
 msg_lsize   db  'Size$'
 msg_lfs     db  'File system$'
@@ -7960,6 +8303,11 @@ msg_fmtnone db  13,10,'  There is no partition there.',13,10,'$'
 msg_fmtcont db  13,10,'  An extended partition is formatted one logical '
             db  'drive at a time.',13,10,'$'
 msg_fmtsmall db 13,10,'  That partition is too small for a FAT volume.',13,10,'$'
+msg_fmtxwill db 13,10,'  The new volume: exFAT, $'
+msg_fmtxclus db 'K clusters, $'
+msg_fmtxdoing db 13,10,'  writing the FAT, the bitmap, the up-case table, the root directory',13,10
+            db  '  and the boot regions$'
+msg_fmtxsmall db 13,10,'  That partition is too small for an exFAT volume.',13,10,'$'
 
 msg_mbadarg db  13,10,'  That is not a partition this program can name.  '
             db  'A disk and a',13,10,'  partition, written 1:3 - and FDISK '
@@ -7989,6 +8337,10 @@ ov_data     db  OV_MAX * SEC_BYTES dup(?)       ; the changes waiting:
 ov_lba      dd  OV_MAX dup(?)                   ; the sectors staged,
 ov_drv      db  OV_MAX dup(?)                   ; where they go,
 jn_tbl      db  JN_MAX * JN_LEN dup(?)          ; and what made them
+nb_tbl      db  NB_MAX * NB_LEN dup(?)          ; the walls a plan meets, and
+iv_tbl      dd  IV_MAX * 2 dup(?)               ; the spans free space is
+                                                ; found between: big enough
+                                                ; for a GPT's 128 entries
 bss_end     LABEL BYTE
 _FDB    ENDS
 IF (bss_end - bss_start) NE (FD_BSS_LEN + TUI_BSS_LEN)

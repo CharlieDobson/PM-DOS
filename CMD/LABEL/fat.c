@@ -1,10 +1,11 @@
 /*
  * FAT.C - volume geometry, sector I/O, the root directory and the boot
- * sector label field, for FAT12, FAT16 and FAT32.
+ * sector label field, for FAT12, FAT16 and FAT32; and the label entry
+ * of an exFAT volume.
  *
  * Only the root directory, the boot sector (and on FAT32 its backup
  * and the FSInfo sector) and, when a full FAT32 root directory has to
- * grow, two FAT entries are ever written.
+ * grow, two FAT entries are ever written.  On exFAT one root sector is.
  */
 #include "label.h"
 
@@ -174,6 +175,72 @@ void bpb_from_dpb( const u8 *dpb, u8 *sector )
     }
 }
 
+/* exFAT's boot sector names the file system where a BPB would begin */
+static int is_exfat( const u8 *boot )
+{
+    return mem_cmp( boot + 3, "EXFAT   ", 8 ) == 0;
+}
+
+/*
+ * The exFAT boot sector's fields into vol.  Nothing is trusted that
+ * would let a sector number pass 32 bits or a cluster fall outside the
+ * FAT, since every root sector LABEL reads is found through both.
+ */
+static int parse_exfat( const u8 *boot )
+{
+    u32 bshift = boot[0x6C], cshift = boot[0x6D], nfats = boot[0x6E];
+    u32 fatoff = RD32( boot + 0x50 ), fatlen = RD32( boot + 0x54 );
+    u32 heap = RD32( boot + 0x58 ), nclus = RD32( boot + 0x5C );
+    u32 root = RD32( boot + 0x60 );
+    u64 span;
+
+    if ( bshift < 9 || bshift > 12 || cshift > 25 - bshift ) {
+        return -1;
+    }
+    if ( nfats < 1 || nfats > 2 || fatoff < 24 || fatlen == 0 ||
+         fatlen > (0xFFFFFFFFul - fatoff) / nfats ||
+         heap < fatoff + fatlen * nfats ) {
+        return -1;
+    }
+    if ( nclus == 0 || nclus > 0xFFFFFFF5ul ) {
+        return -1;
+    }
+    span = mul32( fatlen, 1ul << bshift );
+    if ( hi32( span ) == 0 && lo32( span ) / 4 < nclus + 2 ) {
+        return -1;
+    }
+    span = mul32( nclus, 1ul << cshift );
+    if ( hi32( span ) || lo32( span ) > 0xFFFFFFFFul - heap ) {
+        return -1;
+    }
+    if ( root < 2 || root > nclus + 1 ) {
+        return -1;
+    }
+
+    vol.exfat = 1;
+    vol.fattype = 0;
+    vol.bps = 1ul << bshift;
+    vol.spc = 1ul << cshift;
+    vol.bpc = vol.bps * vol.spc;
+    vol.rsvd = fatoff;
+    vol.nfats = nfats;
+    vol.fatsz = fatlen;
+    vol.root_ents = 0;
+    vol.root_sec = 0;
+    vol.root_secs = 0;
+    vol.root_clus = root;
+    vol.data_sec = heap;
+    vol.nclus = nclus;
+    vol.maxclus = nclus + 1;
+    vol.mirror = 0;
+    /* with two FATs, bit 0 of VolumeFlags names the one in use */
+    vol.active_fat = nfats == 2 && (RD16( boot + 0x6A ) & 1) ? 1 : 0;
+    vol.fsinfo_sec = 0;
+    vol.has_serial = 1;
+    vol.serial = RD32( boot + 0x64 );
+    return 0;
+}
+
 /* 0 = ok; a read error; or DE_MEDIA when no usable FAT BPB is found */
 int vol_open( int drive )
 {
@@ -189,9 +256,21 @@ int vol_open( int drive )
 
     vol.drive = drive;
     vol.boot_ok = 0;
+    vol.exfat = 0;
     have_dpb = sys_get_bpb( drive, dpb_bpb ) == 0;
     err = sys_read_sec( drive, 0, 1, 512, boot );
-    if ( err != 0 || parse_bpb( boot ) != 0 ) {
+    if ( err == 0 && is_exfat( boot ) ) {
+        /* the DPB of an exFAT volume is one the system made up in
+           FAT32's shape, so it is no fallback; its sector size must
+           still be the volume's, for the reason given below */
+        if ( parse_exfat( boot ) != 0 ||
+             (have_dpb && RD16( dpb_bpb + 11 ) != vol.bps) ) {
+            vol.exfat = 0;
+            rc = DE_MEDIA;
+        } else {
+            vol.boot_ok = 1;
+        }
+    } else if ( err != 0 || parse_bpb( boot ) != 0 ) {
         if ( !have_dpb || parse_bpb( dpb_bpb ) != 0 ) {
             rc = err ? err : DE_MEDIA;
         }
@@ -271,10 +350,12 @@ void write_secs( u32 lba, u32 count, const void *buf, int kind )
 /* FAT32 table entries, through a window onto the FAT in use           */
 /* ------------------------------------------------------------------ */
 
-/* window holding entry clus; *off = its byte offset in the window */
+/* window holding entry clus; *off = its byte offset in the window.
+   exFAT's FAT is read through this too, where clus * 4 can pass 32
+   bits, so the sector is found by dividing first */
 static u8 *fat_window( u32 clus, u32 *off )
 {
-    u32 per = per_xfer(), sec = clus * 4 / vol.bps, first;
+    u32 per = per_xfer(), eps = vol.bps / 4, sec = clus / eps, first;
 
     if ( fwin == NULL ) {
         fwin = (u8 *)xalloc( per * vol.bps );
@@ -288,7 +369,7 @@ static u8 *fat_window( u32 clus, u32 *off )
                    fwin );
         fwin_sec = first;
     }
-    *off = clus * 4 - fwin_sec * vol.bps;
+    *off = (sec - fwin_sec) * vol.bps + clus % eps * 4;
     return fwin;
 }
 
@@ -549,4 +630,132 @@ void boot_set_label( const u8 *label )
         }
     }
     xfree( boot );
+}
+
+/* ------------------------------------------------------------------ */
+/* exFAT                                                               */
+/* ------------------------------------------------------------------ */
+
+/*
+ * exFAT keeps its label in neither the boot sector nor a FAT-style
+ * entry, but in a root directory entry of its own: type 83h, a count,
+ * and up to 11 UTF-16 characters, case kept.  The entry belongs to no
+ * entry set, so no checksum covers it and a change is one sector.
+ * FORMAT always makes the entry; a count of 0 is no label, which is
+ * how the kernel removes one too, and how LABEL does.
+ *
+ * Characters 80h-FFh are stored as 0080h-00FFh, the way the PM-DOS
+ * kernel reads exFAT names; anything past 00FFh shows as "_", as the
+ * kernel shows it.
+ */
+
+#define XF_LABEL    0x83
+#define XF_INUSE    0x80
+#define XF_MAXENTS  65536ul     /* as far into the root as the kernel looks */
+
+typedef struct {
+    u32 lba;                    /* sector holding the entry, 0 = none */
+    u32 off;                    /* the entry's offset in that sector  */
+} XFSLOT;
+
+/* the next cluster of a chain, or 0 at its end or at a link that is no
+   cluster (free, bad, or past the heap) */
+static u32 xf_next( u32 clus )
+{
+    u32 off, next;
+    u8 *win = fat_window( clus, &off );
+
+    next = RD32( win + off );
+    return CLUS_OK( next ) ? next : 0;
+}
+
+/*
+ * Walk the root a sector at a time to its end mark: the first label
+ * entry, and the first unused entry for a label to go in when there is
+ * none.  When a label is found buf holds its sector.
+ */
+static void xf_scan( XFSLOT *label, XFSLOT *spare, u8 *buf )
+{
+    u32 clus = vol.root_clus, sec, off, lba, nents = 0, nclus = 0;
+    u8 type;
+
+    label->lba = 0;
+    spare->lba = 0;
+    fwin_sec = 0xFFFFFFFFul;            /* read the FAT afresh */
+    while ( CLUS_OK( clus ) && nclus++ < vol.nclus ) {
+        for ( sec = 0; sec < vol.spc; sec++ ) {
+            lba = clus_lba( clus ) + sec;
+            read_secs( lba, 1, buf );
+            for ( off = 0; off < vol.bps; off += DE_LEN ) {
+                type = buf[off];
+                if ( type == XF_LABEL ) {
+                    label->lba = lba;
+                    label->off = off;
+                    return;
+                }
+                if ( !(type & XF_INUSE) && spare->lba == 0 ) {
+                    spare->lba = lba;
+                    spare->off = off;
+                }
+                if ( type == 0 || ++nents >= XF_MAXENTS ) {
+                    return;
+                }
+            }
+        }
+        clus = xf_next( clus );
+    }
+}
+
+int xf_get_label( char *name )
+{
+    u8 *buf = (u8 *)xalloc( vol.bps ), *ent;
+    XFSLOT label, spare;
+    u32 count = 0, i, ch;
+
+    xf_scan( &label, &spare, buf );
+    if ( label.lba ) {
+        ent = buf + label.off;
+        count = ent[1] < LABEL_LEN ? ent[1] : LABEL_LEN;
+        for ( i = 0; i < count; i++ ) {
+            ch = RD16( ent + 2 + i * 2 );
+            name[i] = (char)(ch < 0x100 ? ch : '_');
+        }
+    }
+    name[count] = 0;
+    xfree( buf );
+    return count > 0;
+}
+
+int xf_set_label( const u8 *label )
+{
+    u8 *buf = (u8 *)xalloc( vol.bps ), *ent;
+    XFSLOT found, spare, *where;
+    u32 count = 0, i;
+
+    xf_scan( &found, &spare, buf );
+    where = found.lba ? &found : &spare;
+    if ( found.lba == 0 && label == NULL ) {
+        xfree( buf );
+        return 0;                       /* no label, and none to remove */
+    }
+    if ( where->lba == 0 ) {
+        xfree( buf );
+        return -1;
+    }
+    if ( label ) {
+        for ( count = LABEL_LEN; count > 0 && label[count - 1] == ' ';
+              count-- ) {
+        }
+    }
+    read_secs( where->lba, 1, buf );
+    ent = buf + where->off;
+    mem_set( ent, 0, DE_LEN );
+    ent[0] = XF_LABEL;
+    ent[1] = (u8)count;
+    for ( i = 0; i < count; i++ ) {
+        WR16( ent + 2 + i * 2, label[i] );
+    }
+    write_secs( where->lba, 1, buf, WR_DIR );
+    xfree( buf );
+    return 0;
 }

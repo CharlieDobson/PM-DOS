@@ -133,6 +133,22 @@ vfl_setflag:
         push    eax
         mov     byte ptr [crit_busy],1
 
+        ; exFAT KEEPS IT IN THE BOOT SECTOR, as VolumeDirty in the flags
+        ; word - which the boot region's checksum leaves out so that it
+        ; can change.  Only the main region's: the backup's flags are
+        ; the ones the volume was made with.
+        cmp     byte ptr [vol_fs],FS_EXFAT
+        jne     vsf_fat
+        mov     al,[fat_drive]
+        mov     ebx,[fat_partlba]
+        mov     cx,1
+        mov     edi,OFFSET vfl_buf
+        call    disk_read
+        jc      vsf_fail
+        call    vfl_patch
+        mov     ecx,1
+        jmp     short vsf_xwrite
+vsf_fat:
         mov     ebx,[fat_fatlba]                ; a copy-0 LBA, which is
         cmp     ebx,[fatsec_lba]                ; how fatsec_lba is kept
         jne     vsf_read
@@ -156,6 +172,9 @@ vsf_read:
 vsf_write:
         mov     ebx,[fat_fatlba]
         call    fat_wrcopies                    ; EBX = first, ESI = how many
+        jmp     short vsf_copy
+vsf_xwrite:
+        mov     esi,ecx                         ; exFAT: the boot sector, once
 vsf_copy:
         mov     al,[fat_drive]
         mov     cx,1
@@ -190,6 +209,17 @@ vsf_fail:
 ; will not put it in a word.
 ;---------------------------------------------------------------------
 vfl_patch:
+        cmp     byte ptr [vol_fs],FS_EXFAT
+        jne     vpa_fat
+        or      word ptr [edi+XFB_FLAGS],XFBF_DIRTY     ; exFAT: dirty is the
+        cmp     byte ptr [vfl_want],0                   ; bit SET, and while
+        je      vpa_xpct                                ; it is, the
+        and     word ptr [edi+XFB_FLAGS],0FFFFh XOR XFBF_DIRTY ; in use
+        ret                                             ; is no longer known
+vpa_xpct:
+        mov     byte ptr [edi+XFB_PCT],0FFh
+        ret
+vpa_fat:
         cmp     byte ptr [fat_type],16
         jne     vpa_32
         and     word ptr [edi+2],0FFFFh XOR FAT16_CLEAN
@@ -206,6 +236,13 @@ vpa_out:
         ret
 
 vfl_isdirty:
+        cmp     byte ptr [vol_fs],FS_EXFAT
+        jne     vid_fat
+        test    word ptr [edi+XFB_FLAGS],XFBF_DIRTY
+        jz      vid_clean
+        stc
+        ret
+vid_fat:
         cmp     byte ptr [fat_type],16
         jne     vid_32
         test    word ptr [edi+2],FAT16_CLEAN
@@ -289,6 +326,10 @@ vfl_after:
         pushad
         mov     ebx,[fat_fatlba]
         mov     ecx,[fat_nfats]
+        cmp     byte ptr [vol_fs],FS_EXFAT      ; exFAT's is in the boot
+        jne     vaf_copy                        ; sector: one place to look
+        mov     ebx,[fat_partlba]
+        mov     ecx,1
 vaf_copy:
         cmp     ebx,[vsd_lba]
         jb      vaf_next
@@ -307,6 +348,10 @@ vaf_hit:
         mov     byte ptr [crit_busy],1
         mov     ebx,[fat_fatlba]
         call    fat_rdcopy
+        cmp     byte ptr [vol_fs],FS_EXFAT
+        jne     vaf_read
+        mov     ebx,[fat_partlba]
+vaf_read:
         mov     al,[fat_drive]
         mov     cx,1
         mov     edi,OFFSET vfl_buf
@@ -516,6 +561,12 @@ vbs_one:
         jc      vbs_next
         call    vol_select
         jc      vbs_next
+        ; AN exFAT VOLUME LEFT DIRTY IS HELD, AND NOT CHECKED: CHKDSK
+        ; reads FATs and has no idea of a bitmap, so it would refuse at
+        ; every start.  The bit stays set until something that can check
+        ; the volume - Windows's chkdsk - clears it.
+        cmp     byte ptr [vol_fs],FS_EXFAT
+        je      vbs_next
         call    drv_slot
         test    byte ptr [ebx+DRV_FLAGS],DRVF_HOLD
         jz      vbs_next

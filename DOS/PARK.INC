@@ -1107,8 +1107,15 @@ pfh_verb:
         ; got that test wrong would find out by executing the
         ; interrupt vector table.  Being told is better.
         cmp     byte ptr [park_high],0
-        je      pfh_flagout
+        je      pfh_flaglo
         or      al,RMHF_HIGH
+pfh_flaglo:
+        ; And BREAK, so that a DOS box under Windows checks for ^C the
+        ; way the prompt it was started from did.  The setting is not
+        ; brought back: one changed inside Windows was that session's.
+        cmp     byte ptr [break_flag],0
+        je      pfh_flagout
+        or      al,RMHF_BREAK
 pfh_flagout:
         mov     byte ptr [edi + RMH_FLAGS],al
 
@@ -1279,6 +1286,12 @@ pfh_flags:
                                         ; is the BIOS's again down there,
                                         ; and its emulation knows nothing
                                         ; of our letters)
+        ; AN exFAT VOLUME IS NOT THERE EITHER: RMDOS reads FAT and only
+        ; FAT, and would find no BPB in its boot sector.  Better "invalid
+        ; drive" under Windows than a disk that answers every question
+        ; with a critical error.
+        call    pfh_isexfat
+        jnc     pfh_absent
         ; A NET USE LETTER goes over as present-but-net (BA2b): the SMB
         ; redirector still holds the share up above, and RMDOS answers the
         ; letter's INT 2Fh 11xx through the bridge (RMNET2.INC).  It is not
@@ -1334,9 +1347,50 @@ pfh_notdrv:
 pfh_nextrow:
         add     esi,DRV_LEN
         add     ebx,RMD_LEN
-        loop    pfh_one
+        dec     ecx                     ; not LOOP: the body is past its reach
+        jnz     pfh_one
 pfh_done:
         popad
+        ret
+
+;---------------------------------------------------------------------
+; pfh_isexfat - ESI -> a drv_tbl row.  CF clear if its volume is exFAT:
+;               mounted as one now, or - not mounted - typed as one by
+;               the scan.  Preserves all.
+;---------------------------------------------------------------------
+pfh_isexfat:
+        push    eax
+        push    edx
+        mov     eax,esi
+        sub     eax,OFFSET drv_tbl
+        xor     edx,edx
+        push    ecx
+        mov     ecx,DRV_LEN
+        div     ecx                     ; EAX = the letter
+        pop     ecx
+        cmp     al,[cur_vol]
+        jne     pxe_parked
+        cmp     byte ptr [fat_ok],0
+        je      pxe_type
+        cmp     byte ptr [vol_fs],FS_EXFAT
+        jmp     short pxe_ask
+pxe_parked:
+        imul    eax,VOL_STATE_SIZE
+        add     eax,[vol_slotp]
+        cmp     byte ptr [eax],0        ; fat_ok, the first byte of a slot
+        je      pxe_type
+        cmp     byte ptr [eax + (vol_fs - vol_state)],FS_EXFAT
+        jmp     short pxe_ask
+pxe_type:
+        cmp     byte ptr [esi+DRV_TYPE],PT_EXFAT
+pxe_ask:
+        pop     edx
+        pop     eax
+        je      pxe_yes
+        stc
+        ret
+pxe_yes:
+        clc
         ret
 
 ;---------------------------------------------------------------------
@@ -1705,6 +1759,9 @@ IF GNLS_DBCS NE RL_NLSDBCS
 ENDIF
 IF GNLS_CASEMAP NE RL_NLSMAP
         .ERR    <RMDOS's case-map call would not find the kernel's code>
+ENDIF
+IF GNLS_BRKFLAG NE RL_BRKFLAG
+        .ERR    <RMDOS would not find the Break key where the INT 1Bh handler marks it>
 ENDIF
 IF GLOL_FSHARE NE RL_FSHARE
         .ERR    <the kernel and RMDOS keep SHARE's flag in different places>

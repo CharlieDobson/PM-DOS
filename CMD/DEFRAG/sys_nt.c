@@ -263,6 +263,12 @@ int sys_drive_kind( int drv )
     return drv == THE_DRIVE ? DK_FIXED : DK_NONE;
 }
 
+int sys_drive_exfat( int drv )
+{
+    (void)drv;
+    return 0;
+}
+
 int sys_get_cwd( int drv, char *buf, int max )
 {
     (void)drv;

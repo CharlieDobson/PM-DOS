@@ -340,6 +340,9 @@ int sys_drive_type( int drv )
     if ( !CF( regs ) && (regs.eax & 0xFF) == 0 ) {
         return DRV_REMOTE;
     }
+    if ( !CF( regs ) && (regs.eax & 0xFF) == 0xEF ) {
+        return DRV_EXFAT;               /* F1T_EXFAT: no FAT to check */
+    }
     return DRV_LOCAL;
 }
 
@@ -356,7 +359,7 @@ int sys_drive_fixed( int drv )
     clear( &regs );
     regs.edx = (u32)drv + 1;
     call21( &regs, 0xF101 );
-    return !CF( regs ) && (regs.eax & 0xFF) != 0;
+    return !CF( regs ) && (regs.eax & 0xFF) != 0 && (regs.eax & 0xFF) != 0xEF;
 }
 
 int sys_drive_floppy( int drv )

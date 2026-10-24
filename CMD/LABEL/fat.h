@@ -30,6 +30,8 @@ typedef struct {
     int  has_serial;
     u32  serial;
     int  boot_ok;               /* sector 0 holds the BPB in use           */
+    int  exfat;                 /* exFAT: fattype is 0, rsvd is the FAT's  */
+                                /* offset and root_clus the root's cluster */
 } VOLUME;
 
 extern VOLUME vol;
@@ -66,5 +68,9 @@ void root_touch( ROOTDIR *root, u32 idx );         /* entry idx was changed  */
 void root_write( ROOTDIR *root );                  /* changed sectors        */
 
 void boot_set_label( const u8 *label );         /* 11 bytes */
+
+/* exFAT: the label entry in the root, the only place exFAT keeps one */
+int  xf_get_label( char *name );        /* 1 = a label, in name[12]; 0 = none */
+int  xf_set_label( const u8 *label );   /* 11 bytes, NULL = none; -1 = full  */
 
 #endif

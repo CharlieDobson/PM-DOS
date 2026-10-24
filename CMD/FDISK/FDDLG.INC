@@ -466,10 +466,10 @@ mdk_next:
         jmp     mdk_one
 mdk_rest:
         mov     esi,OFFSET mi_diskfix
-        mov     ecx,4 * MI_LEN / 4
+        mov     ecx,5 * MI_LEN / 4
         rep     movsd
         mov     eax,[tui_ndisks]
-        add     eax,4
+        add     eax,5
         mov     dword ptr [mu_tbl + MU_LEN + MU_N],eax
         popad
         ret
@@ -1602,6 +1602,7 @@ mi_diskfix  dd  CMD_SEP, msg_misep, 0
             dd  CMD_NEXTDISK, msg_minext, 'N'
             dd  CMD_REREAD, msg_mireread, 'R'
             dd  CMD_BOOT, msg_miboot, 'B'
+            dd  CMD_CONVERT, msg_miconv, 'T'
 mi_disk     db  MU_DISKMAX * MI_LEN dup(0)
 dm_text     db  MAX_DISKS * (DM_W + 1) dup(0)
 mu_dsk      db  DSK_LEN dup(0)
@@ -1671,6 +1672,7 @@ msg_misep   db  '$'
 msg_minext  db  'Next disk         Tab$'
 msg_mireread db 'Re-read disk       F5$'
 msg_miboot  db  'Write MBR...        B$'
+msg_miconv  db  'Convert table...    T$'
 msg_mdiskn  db  '  Disk $'
 msg_mnone   db  '   (none)$'
 

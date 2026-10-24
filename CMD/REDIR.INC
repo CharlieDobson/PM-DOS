@@ -286,12 +286,16 @@ rda_havein:
         int     21h
         jc      rda_nofile
         movzx   edi,ax                  ; EDI = the source file
+        movzx   eax,ax                  ; every handle here goes on the
+        call    own_open                ; ^C list (own_add, CMD.ASM)
 
         mov     ebx,0
         mov     ah,45h                  ; park the real stdin
         int     21h
         jc      rda_full
         movzx   ebx,ax                  ; EBX = the parked copy
+        movzx   eax,ax
+        call    own_open
 
         push    ebx
         push    ecx
@@ -299,8 +303,7 @@ rda_havein:
         xor     ecx,ecx
         mov     ah,46h                  ; the file becomes handle 0
         int     21h
-        mov     ah,3Eh                  ; the opening handle can go
-        int     21h
+        call    own_shut                ; the opening handle can go
         pop     ecx
         pop     ebx
 rda_indone:
@@ -321,6 +324,8 @@ rda_haveout:
         int     21h
         jc      rda_creat               ; ... or create if new
         movzx   edi,ax
+        movzx   eax,ax
+        call    own_open
         push    ebx
         push    ecx
         movzx   ebx,ax
@@ -338,6 +343,8 @@ rda_creat:
         pop     ecx
         jc      rda_nocreate
         movzx   edi,ax
+        movzx   eax,ax
+        call    own_open
 rda_gotout:
         push    ebx
         mov     ebx,1
@@ -346,6 +353,8 @@ rda_gotout:
         pop     ebx
         jc      rda_full
         movzx   ecx,ax                  ; ECX = the parked copy
+        movzx   eax,ax
+        call    own_open
 
         push    ebx
         push    ecx
@@ -353,8 +362,7 @@ rda_gotout:
         mov     ecx,1
         mov     ah,46h                  ; the file becomes handle 1
         int     21h
-        mov     ah,3Eh
-        int     21h
+        call    own_shut
         pop     ecx
         pop     ebx
 rda_outdone:
@@ -367,8 +375,7 @@ rda_outdone:
 rda_full:
         push    ebx
         mov     ebx,edi                 ; the file we opened but never
-        mov     ah,3Eh                  ; installed
-        int     21h
+        call    own_shut                ; installed
         pop     ebx
         mov     edx,OFFSET msg_handles
         jmp     short rda_err
@@ -409,8 +416,7 @@ redir_restore:
         mov     ecx,1
         mov     ah,46h                  ; ... back over handle 1
         int     21h
-        mov     ah,3Eh                  ; parking slot freed
-        int     21h
+        call    own_shut                ; parking slot freed
         pop     ebx
 rdr_in:
         cmp     ebx,-1
@@ -418,8 +424,7 @@ rdr_in:
         xor     ecx,ecx
         mov     ah,46h
         int     21h
-        mov     ah,3Eh
-        int     21h
+        call    own_shut
 rdr_done:
         pop     ecx
         pop     ebx
@@ -435,6 +440,8 @@ rdr_done:
 exec_pipeline:
         mov     [pip_cur],esi
         mov     byte ptr [pip_toggle],0
+        mov     byte ptr [pip_live],1   ; a ^C deletes the files too:
+                                        ; see cmd_gohome
         mov     dword ptr [rx_pin],0    ; stage 1 keeps the real stdin
 pip_stage:
         mov     esi,[pip_cur]
@@ -487,6 +494,7 @@ pip_done:
         mov     edx,OFFSET pipe2_name
         mov     ah,41h
         int     21h
+        mov     byte ptr [pip_live],0
         ret
 
 ; pip_wname - EDX = the pipe file the CURRENT stage writes into
@@ -503,6 +511,8 @@ pip_wout:
 ;=====================================================================
 rx_flags    db  0
 pip_toggle  db  0
+pip_live    db  0                       ; a pipeline is running: its files
+                                        ; may be on the disk
 rx_inname   db  RXNAME_MAX dup(0)
 rx_outname  db  RXNAME_MAX dup(0)
 rx_pin      dd  0                       ; pipe feed for this stage, or 0

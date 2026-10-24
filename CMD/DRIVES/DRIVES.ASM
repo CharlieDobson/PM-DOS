@@ -196,6 +196,9 @@ dv_isfat:
         mov     edx,OFFSET msg_fat16
         cmp     eax,16
         je      dv_say
+        mov     edx,OFFSET msg_exfat
+        cmp     eax,F1T_EXFAT
+        je      dv_say
         mov     edx,OFFSET msg_fat32
 dv_say:
         call    puts
@@ -310,7 +313,8 @@ tn_tbl:
         db  PT_FAT16L,    'FAT16-LBA$'
         db  PT_FAT32,     'FAT32    $'
         db  PT_FAT32L,    'FAT32-LBA$'
-        db  0FFh
+        db  PT_EXFAT,     'exFAT    $'          ; 07h with exFAT inside: the
+        db  0FFh                                ; scan letters no other 07h
 
 ;=====================================================================
 ; Output helpers.  All through 21h/02h and 21h/09h: this is a program
@@ -454,6 +458,7 @@ msg_mb      db  ' MB  $'
 msg_fat12   db  'FAT12',13,10,'$'
 msg_fat16   db  'FAT16',13,10,'$'
 msg_fat32   db  'FAT32',13,10,'$'
+msg_exfat   db  'exFAT',13,10,'$'
 msg_nomount db  '(will not mount)',13,10,'$'
 msg_unknown db  'unknown  $'
 msg_total   db  ' drive letters assigned',13,10,'$'

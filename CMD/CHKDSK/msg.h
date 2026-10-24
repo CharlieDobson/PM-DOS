@@ -18,6 +18,7 @@ extern const char M_BADPARM[];
 extern const char M_BADDRV[];
 extern const char M_NONET[];
 extern const char M_SUBST[];
+extern const char M_EXFAT[];
 extern const char M_NOLOCK[];
 extern const char M_NOMEM[];
 extern const char M_VOLID[];

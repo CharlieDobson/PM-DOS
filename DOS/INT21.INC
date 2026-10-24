@@ -182,6 +182,14 @@ i21_native:
         call    r3_xlat
         jc      i21_badptr
 i21_flat:
+        cmp     byte ptr ds:[DOS_INDOS],1       ; an outermost call: what the
+        jne     i21_nested                      ; last one left of exFAT's
+        call    xv_newop                        ; pending work is not this one's
+i21_nested:
+        cmp     word ptr [ebp+F_CS],SEL_CODE32  ; a program's call, with
+        je      i21_nobrk                       ; BREAK ON: a ^C first
+        call    brk_call
+i21_nobrk:
         movzx   eax,byte ptr [ebp+F_EAX+1]      ; AH = function
         cmp     eax,71h                         ; long-file-name API
         je      i21_lfn
@@ -639,17 +647,24 @@ abs_stat    db  0
 ; handler that IRETs back simply resumes the interrupted read, the
 ; ^C swallowed.  Input arriving from a FILE is never checked: a
 ; redirected stdin cannot press anything.
+;
+; A ^C NOBODY IS READING is looked for too, by brk_check below, at the
+; times MS-DOS looks: every 64th character to the screen, at 0Bh, and
+; with BREAK ON at the start of every call that is not a character
+; call.  That is what BREAK is.  ^S (hold the screen) and ^P (echo it
+; to the printer) are DOS's at the first two of those, BREAK ON or
+; OFF, and while a console read waits (stat_check).
 ;=====================================================================
 ctrl_break:
         push    eax
-        mov     al,'^'
-        call    dword ptr ds:[IOS_CONOUT]
+        mov     al,'^'                  ; on paper too, with ^P on: MS-DOS
+        call    con_echo                ; prints it through OUTT
         mov     al,'C'
-        call    dword ptr ds:[IOS_CONOUT]
+        call    con_echo
         mov     al,13
-        call    dword ptr ds:[IOS_CONOUT]
+        call    con_echo
         mov     al,10
-        call    dword ptr ds:[IOS_CONOUT]
+        call    con_echo
 
         ; A DOS BOX'S ^C IS THE BOX'S, through its own INT 23h vector -
         ; vdm_ctrlc hands it over and does not come back.  When it
@@ -667,6 +682,321 @@ cb_ours:
 int23_default:
         mov     ax,4C00h                ; terminate the program; never
         int     21h                     ; returns - 4Ch owns the unwind
+
+;---------------------------------------------------------------------
+; brk_check - a ^C waiting at the keyboard is taken and acted on
+;             (ctrl_break).  Anything else waiting stays where it is.
+;             All registers preserved.
+;
+; MS-DOS's DSKSTATCHK, under MS-DOS's rules:
+;
+;   ONLY AT THE OUTERMOST LEVEL, InDOS 1.  A critical-error handler or
+;   an INT 23h handler making calls of its own is not broken into, by
+;   the key that may have started it least of all.
+;
+;   ONLY THE KEY AT THE FRONT.  A ^C typed behind other keys waits its
+;   turn, because taking it out of the middle would change what the
+;   others were typed into.  The Break key is not in the ring at all:
+;   it is the mark DOS's INT 1Bh handler makes (kb_break), which the
+;   console reads before the ring, so it is taken at once, and even
+;   with half an extended key still owed - MS-DOS's CON drops that byte
+;   for a Break too.  No mark, no ^C: a box's program whose own INT 1Bh
+;   kept the key has had it.
+;
+;   THE KEYBOARD, NOT STANDARD INPUT.  A program reading a file
+;   through handle 0 can still be stopped from the keyboard, and that
+;   is the point of looking.
+;
+;   NOT WHILE A DEVICE DRIVER IS AT WORK (dl_depth).  Its DOS calls are
+;   nobody's program's, so there is no INT 23h to give the ^C to: what
+;   would answer is the kernel's default one, ending whatever program
+;   is running, and at boot nothing is.  The key stays in the ring for
+;   whoever reads it next.
+;
+; The ring is read here rather than through PMIO, as CONFIG.INC reads
+; it for the start-up keys, and the key is taken with IOS_CONIN.  Only
+; Ctrl-Break can move the front of the ring in between, and what it
+; leaves is the mark, which IOS_CONIN reads as a ^C too.
+;---------------------------------------------------------------------
+brk_check:
+        cmp     byte ptr ds:[DOS_INDOS],1
+        jne     bk_out
+        cmp     dword ptr [dl_depth],0
+        jne     bk_out
+        push    eax
+        push    ebx
+        cmp     byte ptr ds:[DOSDATA + GNLS_BRKFLAG],0
+        jne     bk_take                 ; the Break key
+        cmp     byte ptr [con_pending],0
+        jne     bk_none                 ; a scan code is owed first
+        movzx   ebx,word ptr ds:[BDA_KBHEAD]
+        cmp     bx,word ptr ds:[BDA_KBTAIL]
+        je      bk_none                 ; nothing typed
+        cmp     byte ptr ds:[ebx+BDA_BASE],3
+        jne     bk_none
+bk_take:
+        mov     byte ptr [con_pending],0
+        call    dword ptr ds:[IOS_CONIN]
+        pop     ebx
+        pop     eax
+        jmp     ctrl_break              ; its RET is ours
+bk_none:
+        pop     ebx
+        pop     eax
+bk_out:
+        ret
+
+;---------------------------------------------------------------------
+; brk_call - BREAK ON: a program's DOS call looks for a ^C before it
+;            starts.  EBP = the call's frame.  All registers preserved.
+;
+; Every call but these, as in MS-DOS's dispatcher: 01h-0Ch look for
+; themselves; 33h is the setting itself, and 50h, 51h, 59h and 62h are
+; answered there before DOS counts itself busy.  00h and 4Ch are left
+; out here as well.  The program is ending, and a ^C now would only
+; end it again, with the wrong exit code.  F0h and up are PM-DOS's own
+; calls, not DOS's.
+;
+; The caller says whether the call is a program's (int21_entry, k21):
+; the kernel's own calls are never broken into, which is MS-DOS's rule
+; by construction, since its own work never comes through INT 21h.
+;---------------------------------------------------------------------
+brk_call:
+        cmp     byte ptr [break_flag],0
+        je      bkc_out
+        push    eax
+        mov     al,byte ptr [ebp+F_EAX+1]
+        cmp     al,0Ch
+        jbe     bkc_skip
+        cmp     al,33h
+        je      bkc_skip
+        cmp     al,4Ch
+        je      bkc_skip
+        cmp     al,50h
+        je      bkc_skip
+        cmp     al,51h
+        je      bkc_skip
+        cmp     al,59h
+        je      bkc_skip
+        cmp     al,62h
+        je      bkc_skip
+        cmp     al,0F0h
+        jae     bkc_skip
+        pop     eax
+        jmp     brk_check
+bkc_skip:
+        pop     eax
+bkc_out:
+        ret
+
+;---------------------------------------------------------------------
+; brk_out  - ECX characters are about to go to the screen through 02h,
+;            09h or a write to CON.  Each 64th looks at the keyboard
+;            (stat_check), BREAK ON or OFF.  All registers preserved.
+; brk_out1 - the same for one character.
+;
+; MS-DOS's OUTT counts the same way (CHARCO), and it is why ^C stops
+; DIR and TYPE with BREAK OFF, and ^S holds them.  A count that crosses
+; a multiple of 64 is a 64th character, however many it crossed.
+;---------------------------------------------------------------------
+brk_out1:
+        push    ecx
+        mov     ecx,1
+        call    brk_out
+        pop     ecx
+        ret
+
+brk_out:
+        push    eax
+        mov     eax,[brk_chars]
+        add     [brk_chars],ecx
+        xor     eax,[brk_chars]
+        test    eax,NOT 63
+        pop     eax
+        jz      bo_out
+        jmp     stat_check
+bo_out:
+        ret
+
+brk_chars   dd  0                       ; characters out, for brk_out
+prn_echo    db  0                       ; ^P: FFh while the printer echoes
+            db  0,0,0                   ; the screen (pe_char)
+
+;---------------------------------------------------------------------
+; stat_check - MS-DOS's STATCHK: brk_check, and then the key at the
+;              front of standard input, if that is the keyboard.  ^S
+;              holds everything until another key is pressed, and ^P
+;              turns the printer echo on or off (pe_char); either is
+;              taken.  Anything else is left.  CF set if a key was taken
+;              here.  All registers preserved.
+;
+; WHERE MS-DOS LOOKS (msctrlc.asm, cpmio.asm, cpmio2.asm): every 64th
+; character to the screen (brk_out), 0Bh, 03h to 05h, and while 01h,
+; 08h, 0Ah or a read of CON in cooked mode waits for a key
+; (dos_conchk).  Not in 06h or 07h, which are how a program reads ^S
+; and ^P as keys, nor in raw mode.
+;
+; THE KEY THAT ENDS THE WAIT IS TAKEN TOO, whatever it is, as MS-DOS
+; takes it - unless it is ^P, which turns the echo over as ever, or ^C,
+; which breaks by brk_check's rules.  An extended key there is taken
+; whole, where MS-DOS's CON would leave its scan code to be read as a
+; character afterwards.
+;
+; STANDARD INPUT, NOT THE KEYBOARD AS SUCH: to a program reading a file
+; through handle 0, ^S and ^P are its data.  stat_key is for a read of
+; the keyboard itself (dos_conchk), whatever handle it came through -
+; MS-DOS makes that CON standard input for the length of the read
+; (ConSwap).  And not with a scan code owed (con_pending): the key at
+; the front is not the one read next, and the scan codes of Alt+Q and
+; Alt+R are ^P's and ^S's - which is why MS-DOS keeps Scan_Flag.
+;
+; ONLY CTRL-BREAK CAN CHANGE THE FRONT between the look and the take:
+; it empties the buffer and makes its mark (kb_break), and IOS_CONIN
+; then gives 03h for the key that was taken.  That is a ^C.
+;---------------------------------------------------------------------
+stat_check:
+        call    brk_check               ; a ^C at the keyboard, first
+        push    eax
+        push    edx
+        mov     edx,[std_inp]
+        test    dword ptr [edx+SFT_FLAGS],SFTF_DEVICE
+        jz      sc_none
+        cmp     dword ptr [edx+SFT_DEVID],DEV_CON
+        jne     sc_none
+        jmp     short sc_look
+stat_key:
+        call    brk_check
+        push    eax
+        push    edx
+sc_look:
+        cmp     byte ptr [con_pending],0
+        jne     sc_none
+        call    con_peek
+        jz      sc_none
+        cmp     al,'S' - '@'
+        je      sc_stop
+        cmp     al,'P' - '@'
+        jne     sc_none
+        call    dword ptr ds:[IOS_CONIN]        ; the ^P
+        cmp     al,3
+        je      sc_go                           ; ...or the Break key
+        not     byte ptr [prn_echo]
+        jmp     short sc_took
+sc_stop:
+        call    dword ptr ds:[IOS_CONIN]        ; the ^S
+        cmp     al,3
+        je      sc_go                           ; ...or the Break key
+        call    dos_conin                       ; and the key that ends
+        cmp     al,'P' - '@'                    ; the wait
+        jne     sc_go
+        not     byte ptr [prn_echo]
+        jmp     short sc_took
+sc_go:
+        cmp     al,3
+        jne     sc_took
+        cmp     byte ptr ds:[DOS_INDOS],1       ; brk_check's rules
+        jne     sc_took
+        cmp     dword ptr [dl_depth],0
+        jne     sc_took
+        pop     edx
+        pop     eax
+        call    ctrl_break
+        stc
+        ret
+sc_took:
+        pop     edx
+        pop     eax
+        stc
+        ret
+sc_none:
+        pop     edx
+        pop     eax
+        clc
+        ret
+
+;---------------------------------------------------------------------
+; con_peek - the key the console will read next, left where it is:
+;            ZF set if there is none, else AL = its character as
+;            IOS_CONIN will give it - 03h for the Break key, 10h for
+;            Ctrl+PrtSc.  EAX only.
+;---------------------------------------------------------------------
+con_peek:
+        call    dword ptr ds:[IOS_CONSTAT]      ; which also puts a Break's
+        jz      cpk_out                         ; leftover out of the way
+        mov     al,3
+        cmp     byte ptr ds:[DOSDATA + GNLS_BRKFLAG],0
+        jne     cpk_have
+        movzx   eax,word ptr ds:[BDA_KBHEAD]
+        mov     ax,word ptr ds:[eax+BDA_BASE]
+        cmp     ax,7200h
+        jne     cpk_have
+        mov     al,'P' - '@'
+cpk_have:
+        or      esp,esp                         ; ZF clear
+cpk_out:
+        ret
+
+;---------------------------------------------------------------------
+; dos_conchk - dos_conin for 01h, 08h, 0Ah and a read of CON in cooked
+;              mode: the next key, with stat_check's ^S, ^P and ^C
+;              taken out of the way first, as MS-DOS's 08h has them
+;              (INTEST, cpmio.asm).  AX = the key.
+;---------------------------------------------------------------------
+dos_conchk:
+        call    dword ptr ds:[IOS_CONSTAT]
+        jnz     dck_key
+        call    dos_idle
+        jmp     short dos_conchk
+dck_key:
+        call    stat_key
+        jc      dos_conchk              ; that one was DOS's
+        call    dword ptr ds:[IOS_CONSTAT]
+        jz      dos_conchk              ; ...and so was the ^C brk_check took
+        jmp     dos_conin
+
+;---------------------------------------------------------------------
+; con_echo - AL to the screen (IOS_CONOUT), and to the printer as well
+;            while ^P has the echo on.  All registers preserved.
+; pe_char  - the printer half alone, for AL just written to the screen
+;            through 01h, 02h, 09h, 0Ah, or a write to CON in cooked
+;            mode.
+;
+; MS-DOS's OUTT and PFLAG (cpmio2.asm): only while standard output is a
+; device, so "DIR > LIST.TXT" is not printed - and "DIR > NUL" is, as
+; MS-DOS has it.  To LPT1, where 05h prints.
+;
+; A PRINTER THAT DOES NOT TAKE THE BYTE TURNS THE ECHO OFF.  MS-DOS asks
+; INT 24h about it, and waits out a time-out on every character until it
+; is answered; PM-DOS has never raised a critical error for a printer,
+; and an echo with nothing on the end of it would make each character
+; to the screen a time-out long.  ^P again tries again.
+;---------------------------------------------------------------------
+con_echo:
+        call    dword ptr ds:[IOS_CONOUT]
+pe_char:
+        cmp     byte ptr [prn_echo],0
+        jne     pe_on
+        ret
+pe_on:
+        push    eax
+        push    edx
+        mov     edx,[std_outp]
+        test    dword ptr [edx+SFT_FLAGS],SFTF_DEVICE
+        jz      pe_out
+        cmp     word ptr ds:[BDA_LPT1],0
+        je      pe_off                  ; no printer port at all
+        call    dev_prep
+        mov     byte ptr ds:[RMR_EAX],al        ; AH = 00h: print AL on LPT1
+        mov     al,17h
+        call    dword ptr ds:[IOS_REALINT]
+        test    byte ptr ds:[RMR_EAX+1],29h     ; time-out, I/O error, no paper
+        jz      pe_out
+pe_off:
+        mov     byte ptr [prn_echo],0
+pe_out:
+        pop     edx
+        pop     eax
+        ret
 
 ; INT 24h and everything that raises one live in CRITERR.INC, next to
 ; the sector I/O that finds the trouble.
@@ -918,7 +1248,8 @@ fn01:
         jc      f01_eof
         mov     [ebp+F_EAX],ax
         call    std_out                 ; echo follows stdout, so a
-        jmp     i21_ok                  ; redirected stdout captures it
+        call    pe_char                 ; redirected stdout captures it
+        jmp     i21_ok
 f01_eof:
         mov     word ptr [ebp+F_EAX],001Ah
         jmp     i21_ok
@@ -927,8 +1258,10 @@ f01_eof:
 ; 02h - console output, DL = char -> AL = char
 ;=====================================================================
 fn02:
+        call    brk_out1                ; every 64th looks at the keyboard
         mov     al,[ebp+F_EDX]
         call    std_out
+        call    pe_char                 ; and ^P prints it as well
         mov     [ebp+F_EAX],al
         jmp     i21_ok
 
@@ -947,25 +1280,31 @@ fn02:
 ;
 ; 03h WAITS, as DOS does, and on a machine with no serial port it waits
 ; for ever - which is authentic and is also why it idles rather than
-; spins while it does it.  There is no ^C check in DOS's 03h either.
+; spins while it does it.  All three look at the keyboard once before
+; they start (stat_check), as MS-DOS's do, so a ^C there breaks; 03h
+; does not look again while it waits, and nor does MS-DOS's.
 ;=====================================================================
 fn03:
+        call    stat_check
+f03_wait:
         mov     edx,DEV_AUX
         call    dev_in
         jnc     f03_have
         call    dos_idle
-        jmp     short fn03
+        jmp     short f03_wait
 f03_have:
         mov     [ebp+F_EAX],al
         jmp     i21_ok
 
 fn04:
+        call    stat_check
         mov     al,[ebp+F_EDX]
         mov     edx,DEV_AUX
         call    dev_out
         jmp     i21_ok
 
 fn05:
+        call    stat_check
         mov     al,[ebp+F_EDX]
         mov     edx,DEV_PRN
         call    dev_out
@@ -1153,7 +1492,9 @@ f09_lp:
         mov     al,[esi]
         cmp     al,'$'
         je      f09_done
+        call    brk_out1                ; the keyboard every 64th, as 02h
         call    dev_out
+        call    pe_char
         inc     esi
         jmp     short f09_lp
 f09_file:
@@ -1166,7 +1507,8 @@ f09_len:
 f09_wr:
         mov     ecx,edi
         sub     ecx,esi
-        call    std_write
+        call    brk_out                 ; redirected, and still looked for:
+        call    std_write               ; the keyboard is not the file
 f09_done:
         mov     byte ptr [ebp+F_EAX],'$'
         jmp     i21_ok
@@ -1196,7 +1538,7 @@ fn0A:
         jne     f0A_file                ; only the console has line editing;
                                         ; every other device is a byte source
 f0A_key:
-        call    dos_conin
+        call    dos_conchk              ; ^S and ^P are DOS's here, as ever
         cmp     al,3                    ; ^C breaks line input too
         jne     f0A_nobrk
         call    ctrl_break
@@ -1212,24 +1554,24 @@ f0A_nobrk:
         jae     f0A_key                 ; line full - swallow it
         mov     [edi+ebx+2],al
         inc     ebx
-        call    dword ptr ds:[IOS_CONOUT]
+        call    con_echo                ; the echo, on paper too with ^P
         jmp     short f0A_key
 f0A_bs:
         or      ebx,ebx
         jz      f0A_key
         dec     ebx
         mov     al,8
-        call    dword ptr ds:[IOS_CONOUT]
+        call    con_echo
         mov     al,' '
-        call    dword ptr ds:[IOS_CONOUT]
+        call    con_echo
         mov     al,8
-        call    dword ptr ds:[IOS_CONOUT]
+        call    con_echo
         jmp     short f0A_key
 f0A_cr:
         mov     byte ptr [edi+ebx+2],13
         mov     [edi+1],bl
         mov     al,13
-        call    dword ptr ds:[IOS_CONOUT]
+        call    con_echo
 f0A_done:
         jmp     i21_ok
 
@@ -1263,8 +1605,15 @@ f0A_feol:
 ;=====================================================================
 ; 0Bh - console status -> AL = FFh if a key is waiting.  A file as
 ;       stdin always has one waiting - until it does not.
+;
+; A ^C at the keyboard is acted on first, BREAK ON or OFF, and ^S and
+; ^P too, as MS-DOS does (STATCHK): calling 0Bh now and then is the way
+; a program that never reads the keyboard lets ^C stop it.  DOSKEY
+; asks 0Bh before every key it reads, which is how ^P works at the
+; prompt.
 ;=====================================================================
 fn0B:
+        call    stat_check
         mov     edx,[std_inp]
         test    dword ptr [edx+SFT_FLAGS],SFTF_DEVICE
         jz      f0B_file
@@ -1964,6 +2313,10 @@ itp_out:
 ; with this one rather than telling a different story; PMDOS.INC has
 ; the argument.
 ;
+; EXCEPT TO A DOS PROGRAM THAT SETVER NAMES, which is told the version
+; SETVER's table gives its file name - read out of its PSP, where
+; vdm_psp put it at load (sv_caller, VDM.INC).  3306h is not lied to.
+;
 ; The OEM byte is the only place identity is asserted at all: this is
 ; how software asks who made the DOS it is running on, which is
 ; precisely why the kernel files did not need IBM's names.
@@ -1985,7 +2338,8 @@ PMDOS_OEM       EQU     03h
 
 fn30:
         mov     al,byte ptr [ebp+F_EAX]
-        mov     word ptr [ebp+F_EAX],DOSVER_MINOR * 256 + DOSVER_MAJOR
+        call    sv_caller                       ; DX = 6.22, or SETVER's
+        mov     word ptr [ebp+F_EAX],dx
         mov     dword ptr [ebp+F_EBX],PMDOS_OEM * 256   ; BH = OEM, BL = serial hi
         cmp     al,1
         jne     f30_oem
@@ -2003,6 +2357,7 @@ f30_oem:
 ;
 ;   AL=00h  get Ctrl-Break checking -> DL (0 off, 1 on)
 ;   AL=01h  set it from DL
+;   AL=02h  set it from DL, and DL = what it was (MS-DOS's scct_3)
 ;   AL=05h  get the boot drive      -> DL (1 = A:)
 ;   AL=06h  get the TRUE version    -> BL = major, BH = minor,
 ;                                      DL = revision, DH = flags
@@ -2029,6 +2384,8 @@ fn33:
         jz      f33_getbrk
         cmp     al,1
         je      f33_setbrk
+        cmp     al,2
+        je      f33_xchgbrk
         cmp     al,5
         je      f33_boot
         cmp     al,6
@@ -2043,6 +2400,12 @@ f33_setbrk:
         mov     al,[ebp+F_EDX]
         and     al,1
         mov     byte ptr [break_flag],al
+        jmp     i21_ok
+f33_xchgbrk:
+        mov     al,[ebp+F_EDX]
+        and     al,1
+        xchg    al,byte ptr [break_flag]
+        mov     [ebp+F_EDX],al
         jmp     i21_ok
 f33_boot:
         mov     al,byte ptr ds:[GV_BOOTDRV]
@@ -2622,6 +2985,8 @@ f69_expl:
 f69_sel:
         call    vol_select
         jc      f69_drive
+        cmp     byte ptr [vol_fs],FS_EXFAT
+        je      f69_exfat
         cmp     byte ptr [vol_fs],FS_FAT
         jne     f66_fn                  ; a CD has no boot sector to ask
         mov     eax,[ebp+F_EDX]
@@ -2655,6 +3020,17 @@ f69_bpb:
         mov     ecx,4 + 11 + 8
         cld
         rep     movsb
+        jmp     i21_ok
+; exFAT HAS THE SAME THREE THINGS, though not in an extended BPB: the
+; serial in its boot sector, the label in the root, and a name of its
+; own for the eight bytes - which is what VOL and DIR print from
+f69_exfat:
+        mov     eax,[ebp+F_EDX]
+        mov     ecx,2 + 4 + 11 + 8
+        call    cbuf_ok
+        jc      buf_deny
+        mov     edi,[ebp+F_EDX]
+        call    xv_info69
         jmp     i21_ok
 f69_drive:
         mov     ax,ERR_BADDRIVE
@@ -2843,6 +3219,14 @@ f39_slotok:
         jc      f39_full
         mov     [mk_clus],eax
 
+        ; AN exFAT DIRECTORY HAS NO "." AND "..": its cluster is empty,
+        ; all of it, and its entry says how long it is (EXFAT.INC)
+        cmp     byte ptr [vol_fs],FS_EXFAT
+        jne     f39_dots
+        call    xv_mkclus
+        jc      f39_deny
+        jmp     f39_entry
+f39_dots:
         ; build "." and ".." in a zeroed cluster image
         push    eax
         mov     edi,OFFSET clus_buf
@@ -2904,6 +3288,7 @@ f39_ddclus:
         jc      f39_deny
 
         ; now the entry in the parent
+f39_entry:
         mov     al,[mk_par_isroot]
         mov     edx,[mk_par_start]
         call    ctx_restore
@@ -3234,7 +3619,14 @@ f3D_notimg:
         mov     [esi+SFT_DIRENT],edi
         mov     dword ptr [esi+SFT_HANDLE],0    ; cur cluster index
         call    sft_setdir
+        call    xv_sftbind              ; an exFAT file's run and valid
+        jc      f3D_big                 ; length; 4G and up is read-only
         clc
+        ret
+f3D_big:
+        mov     dword ptr [esi+SFT_FLAGS],0     ; the slot back, unused
+        mov     ax,ERR_ACCESS
+        stc
         ret
 
 ; A DIRECTORY OF THAT NAME IS NOT "FILE NOT FOUND".  DOS found the
@@ -3890,6 +4282,10 @@ sc_keepdt:
         mov     eax,[edi+SFT_TIME]      ; time and date in one dword
         mov     [esi+DE_TIME],eax
 sc_stamped:
+        push    esi                     ; exFAT: the run and the valid length,
+        mov     esi,edi                 ; which the entry has no room for
+        call    xv_sftclose
+        pop     esi
         call    fat_dirupdate
         call    fat_flush
         mov     esi,edi
@@ -4040,7 +4436,7 @@ f3F_con:
 f3Fd_key:
         cmp     edx,ecx
         jae     f3Fd_done
-        call    dos_conin
+        call    dos_conchk              ; ^S and ^P are DOS's, as in 0Ah
         cmp     al,3                    ; ^C breaks a device read
         jne     f3Fd_nobrk
         call    ctrl_break
@@ -4057,30 +4453,30 @@ f3Fd_nobrk:
                                         ; not the alternative anybody wants
         mov     [edi+edx],al
         inc     edx
-        call    dword ptr ds:[IOS_CONOUT]
+        call    con_echo
         jmp     short f3Fd_key
 f3Fd_bs:
         or      edx,edx
         jz      f3Fd_key
         dec     edx
         mov     al,8
-        call    dword ptr ds:[IOS_CONOUT]
+        call    con_echo
         mov     al,' '
-        call    dword ptr ds:[IOS_CONOUT]
+        call    con_echo
         mov     al,8
-        call    dword ptr ds:[IOS_CONOUT]
+        call    con_echo
         jmp     short f3Fd_key
 f3Fd_cr:
         mov     byte ptr [edi+edx],13
         inc     edx
         mov     al,13
-        call    dword ptr ds:[IOS_CONOUT]
+        call    con_echo
         cmp     edx,ecx
         jae     f3Fd_done
         mov     byte ptr [edi+edx],10
         inc     edx
         mov     al,10
-        call    dword ptr ds:[IOS_CONOUT]
+        call    con_echo
 f3Fd_done:
         mov     [ebp+F_EAX],edx
         jmp     i21_ok
@@ -4124,6 +4520,7 @@ file_chunk:
         push    ecx
         push    edx
         push    edi
+        call    xv_sftrun               ; exFAT: the file's run is the one walked
 
         ; which cluster of the chain does POS sit in?
         mov     eax,[esi+SFT_POS]
@@ -4197,6 +4594,17 @@ fc_lim2:
         rep     movsb
         pop     esi
 
+        ; exFAT: what lies past the file's valid length reads as zeroes,
+        ; whatever the disk holds there
+        push    eax
+        push    ecx
+        mov     edi,[esp+8]
+        mov     eax,ebx
+        mov     ecx,[esi+SFT_POS]
+        call    xv_vdlclip
+        pop     ecx
+        pop     eax
+
         add     [esi+SFT_POS],ebx
         mov     eax,ebx
 fc_out:
@@ -4242,13 +4650,26 @@ fn40:
 ;
 ; EXCEPT THAT A LOADED DRIVER IN COOKED MODE IS NOT GIVEN A ^Z, as DOS
 ; gives it none (WRTDEV): the write ends there and says so in AX.
+;
+; AND THE SCREEN IN COOKED MODE LOOKS AT THE KEYBOARD every 64th
+; character, and goes to the printer too while ^P is on, as 02h does -
+; MS-DOS's WRITECON sends a write to CON through the same OUTT - and in
+; raw mode it does neither, which is what raw mode is for.
         call    sft_dev
         xor     ebx,ebx                 ; EBX = 1: stop at a ^Z
-        cmp     dl,DEV_LOADED
-        jne     f40_noz
+        xor     edi,edi                 ; EDI = 1: the screen, cooked
         test    dword ptr [esi+SFT_FLAGS],SFTF_RAW
         jnz     f40_noz
+        cmp     dl,DEV_CON
+        jne     f40_notcon
+        inc     edi
+f40_notcon:
+        cmp     dl,DEV_LOADED
+        jne     f40_noz
         inc     ebx
+        call    dl_iscon                ; ANSI.SYS is the screen too
+        jz      f40_noz
+        inc     edi
 f40_noz:
         mov     esi,[ebp+F_EDX]
         mov     ecx,[ebp+F_ECX]
@@ -4261,7 +4682,15 @@ f40_lp:
         cmp     al,1Ah
         je      f40_devdone
 f40_put:
+        or      edi,edi
+        jz      f40_out
+        call    brk_out1
         call    dev_out
+        call    pe_char                 ; the screen goes on paper with ^P
+        jmp     short f40_next
+f40_out:
+        call    dev_out
+f40_next:
         inc     esi
         dec     ecx
         jnz     f40_lp
@@ -4351,6 +4780,17 @@ f40_wioerr:
 ; length stays as it was.
 ;---------------------------------------------------------------------
 file_trunc:
+        call    xv_wprep                ; exFAT: past ValidDataLength, zeroes
+        jc      f40_tret
+        call    xv_sftrun               ; ...and the file's run in hand
+        call    f40_trunc
+        pushfd                          ; the volume filling is f40_extend's
+        call    xv_sftback              ; to say
+        call    xv_wpost
+        popfd
+f40_tret:
+        ret
+f40_trunc:
         mov     eax,[esi+SFT_POS]
         cmp     eax,[esi+SFT_SIZE]
         je      f40_setsz
@@ -4477,6 +4917,10 @@ file_wchunk:
         push    ecx
         push    edx
         push    edi
+        call    xv_sftrun               ; exFAT: the run the walk may grow,
+        call    xv_wprep                ; and past ValidDataLength zeroes -
+        jc      fw_ioerr                ; here and not in file_write, because
+                                        ; std_write comes straight here
 
         ; first cluster of a brand-new file?
         cmp     dword ptr [esi+SFT_CLUSTER],0
@@ -4589,6 +5033,8 @@ fw_copy:
         jbe     fw_out
         mov     [esi+SFT_SIZE],ebx
 fw_out:
+        call    xv_sftback              ; what the walk made of the run
+        call    xv_wpost                ; ...and all of it valid
         pop     edi
         pop     edx
         pop     ecx
@@ -4604,6 +5050,7 @@ fw_full:
 fw_ioerr_pop:
         pop     eax
 fw_ioerr:
+        call    xv_sftback
         pop     edi
         pop     edx
         pop     ecx
@@ -5799,6 +6246,7 @@ fn56:
         mov     edi,OFFSET name_buf
         call    fat_search
         jc      f56_nofile
+        call    xv_hold                 ; exFAT: what the 32 bytes cannot carry
 
         ; THE SLOTS THE OLD NAME HOLDS: its long-name chain when it has
         ; one, and the entry after it.  REMEMBERED, NOT ERASED.  This
@@ -5906,6 +6354,24 @@ f56_taken:
         mov     byte ptr [ren_keep],1
 
 f56_here:
+        ; exFAT: THE SET IS REWRITTEN WITH ITS NEW NAME, where it is if it
+        ; fits and elsewhere in the directory if not - xv_modset decides,
+        ; and there is no chain of fragments to count slots in
+        cmp     byte ptr [vol_fs],FS_EXFAT
+        jne     f56_fathere
+        mov     ebx,[mk_slot]
+        call    dir_seek
+        jc      f56_deny
+        cmp     byte ptr [rp_flong],0
+        je      f56_setname             ; an 8.3 name: the entry carries it
+        push    esi
+        mov     esi,[rp_fptr]
+        mov     ecx,[rp_flen]
+        call    xv_pendname
+        pop     esi
+        jc      f56_deny
+        jmp     f56_setname
+f56_fathere:
         cmp     byte ptr [rp_flong],0
         jne     f56_hlong
         ; a short new name: the eleven bytes, in the slot it already has
@@ -5913,7 +6379,7 @@ f56_here:
         mov     ebx,[mk_slot]
         call    dir_seek
         jc      f56_deny
-        jmp     short f56_setname
+        jmp     f56_setname
 
 f56_hlong:
         ; a long one stays put only if its chain fits in the slots the
@@ -7777,6 +8243,23 @@ f71_badh:
 
 ;--- 71A0h volume information -----------------------------------------
 fn71A0:
+        ; AN exFAT VOLUME SAYS SO, as Windows has it say: the root named
+        ; at EDX ("D:\") picks the drive, and a program that asked about
+        ; one gets "exFAT" for its filesystem's name.  Every other answer
+        ; is the "FAT" it always was.
+        call    f7a0_isex               ; CF clear: an exFAT drive
+        jc      f7a0_fat
+        mov     edi,[ebp+F_EDI]
+        cmp     dword ptr [ebp+F_ECX],6
+        jb      f7a0_nofs
+        mov     eax,edi
+        mov     ecx,6
+        call    cbuf_ok
+        jc      buf_deny
+        mov     dword ptr [edi],'AFxe'          ; "exFAT",0
+        mov     word ptr [edi+4],0054h
+        jmp     short f7a0_nofs
+f7a0_fat:
         mov     edi,[ebp+F_EDI]
         cmp     dword ptr [ebp+F_ECX],4
         jb      f7a0_nofs
@@ -7791,6 +8274,36 @@ f7a0_nofs:
         mov     word ptr [ebp+F_EDX],260
         mov     word ptr [ebp+F_EAX],0
         jmp     i21_ok
+
+; f7a0_isex - is the root at [EDX] on an exFAT volume?  CF clear if so.
+;             Only "X:" at the front is looked at; anything else, or a
+;             drive that will not mount, is not.
+f7a0_isex:
+        mov     esi,[ebp+F_EDX]
+        mov     eax,esi
+        mov     ecx,2
+        call    cbuf_ok
+        jc      f7ax_no
+        mov     al,[cur_drive]          ; "\" alone is the default drive's
+        cmp     byte ptr [esi+1],':'
+        jne     f7ax_drv
+        mov     al,[esi]
+        or      al,20h
+        sub     al,'a'
+        cmp     al,MAX_DRIVES
+        jae     f7ax_no
+f7ax_drv:
+        call    net_drive_present
+        jnc     f7ax_no                 ; a share is not a volume here
+        call    vol_select
+        jc      f7ax_no
+        cmp     byte ptr [vol_fs],FS_EXFAT
+        jne     f7ax_no
+        clc
+        ret
+f7ax_no:
+        stc
+        ret
 
 ;--- 71A1h find close -------------------------------------------------
 fn71A1:
@@ -8531,6 +9044,8 @@ sn_stamped:
         mov     [sft_nextstamp],eax
         mov     dword ptr [esi+SFT_FCBLRU],0    ; a handle, until an FCB
                                                 ; says otherwise
+        mov     dword ptr [esi+SFT_XRUN],0      ; a FAT chain and all of it
+        mov     dword ptr [esi+SFT_XVDL],0      ; valid, until exFAT says not
         mov     ax,bx
         pop     ebx
         clc
@@ -8592,7 +9107,13 @@ std_in:
         jne     sin_dev
         pop     edx
 sin_key:
-        call    dos_conin               ; the wait that lets INT 28h out
+        cmp     byte ptr [sin_raw],0
+        jne     sin_rawkey
+        call    dos_conchk              ; the wait that lets INT 28h out,
+        jmp     short sin_got           ; with ^S and ^P DOS's for 01h and
+sin_rawkey:                             ; 08h, and not for 07h
+        call    dos_conin
+sin_got:
         cmp     al,3                    ; ^C from the keyboard breaks,
         jne     sin_ok                  ; unless it is 07h asking
         cmp     byte ptr [sin_raw],0
@@ -10542,6 +11063,10 @@ fF1_sel:
         call    vol_select
         jc      fF1_baddrv
         mov     al,[fat_type]
+        cmp     byte ptr [vol_fs],FS_EXFAT
+        jne     fF1_width
+        mov     al,F1T_EXFAT            ; not a FAT width: see PMDOS.INC
+fF1_width:
         mov     [ebp+F_EAX],al
         jmp     i21_ok
 ;--- AL=2: remount drive DL (0 = default, 1 = A:).  For FORMAT: the

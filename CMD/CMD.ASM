@@ -364,6 +364,8 @@ gl_console:
         int     21h
 
         mov     byte ptr [adv_parse],1  ; the console speaks quotes
+        mov     byte ptr [step_flag],0  ; /Y was for the batch file that
+                                        ; ran before this prompt
 
         ; A MACRO OR A Ctrl+T LEFT COMMANDS WAITING: each gets a prompt
         ; of its own and is shown on it, the way DOSKEY feeds them in.
@@ -407,12 +409,12 @@ gl_term:
 ;
 ; Our own command, batch file or prompt: longjmp back to the main
 ; loop.  The stack is reset wholesale (both interrupt frames and
-; whatever parsing was underway are abandoned - nothing in them owns
-; anything), every batch level is popped (a ^C ends a batch job),
-; and the standard handles are forced back onto CON, because a break
-; in the middle of a redirected command would otherwise leave a FILE
-; installed as stdout.  Forcing CON over the slots also closes -
-; and flushes - that file on the way.
+; whatever parsing was underway are abandoned), what the command had
+; open is given back (own_free), every batch level is popped (a ^C
+; ends a batch job), and the standard handles are forced back onto
+; CON, because a break in the middle of a redirected command would
+; otherwise leave a FILE installed as stdout.  Forcing CON over the
+; slots also closes - and flushes - that file on the way.
 ;=====================================================================
 int23_hand:
         cmp     byte ptr [in_child],0
@@ -438,6 +440,11 @@ cmd_gohome:
         mov     esp,[break_esp]
         sti                             ; the gate cleared IF; nothing
                                         ; below IRETs to restore it
+        call    own_free                ; what the command had open
+        cmp     byte ptr [cp_vfyset],0  ; and VERIFY, if a COPY /V was
+        je      cg_vfyok                ; under way
+        call    cp_vfyback
+cg_vfyok:
         call    bat_popall
         mov     byte ptr [for_busy],0
         mov     byte ptr [call_flag],0
@@ -463,7 +470,141 @@ cmd_gohome:
         mov     ah,3Eh
         int     21h
 cb_prompt:
+        ; A PIPE'S FILES GO TOO, once the console is back over whichever
+        ; of them was standard input or output and so is closed.
+        cmp     byte ptr [pip_live],0
+        je      cb_nopipe
+        mov     byte ptr [pip_live],0
+        mov     edx,OFFSET pipe1_name
+        mov     ah,41h
+        int     21h
+        mov     edx,OFFSET pipe2_name
+        mov     ah,41h
+        int     21h
+cb_nopipe:
         jmp     main_loop
+
+;=====================================================================
+; WHAT A COMMAND HAS OPEN, for the ^C that abandons it.
+;
+; cmd_gohome jumps home from the middle of a command, so the command's
+; own clean-up never runs: a file TYPE or COPY had open, a search DIR
+; had going, the block DIR /O was sorting in, the console a redirection
+; had parked.  None of it comes back - handles are the kernel's slots,
+; shared with every native program, and the heap is this program's
+; until it exits, which the shell does not.  A ^C at the prompt was
+; rare enough that it did not show; with BREAK ON, and with ^C looked
+; for while DIR and TYPE print, it is not rare.  COMMAND.COM keeps a
+; list for the same reason (open_hdls); this one has three kinds.
+;
+; own_add  - EAX = a file handle, a find handle or a block, and CL =
+;            which (OWN_*).  Remembered.  A full table forgets it, and
+;            the leak is then the one there always was.
+; own_del  - the same two registers.  Forgotten: the command is giving
+;            it back itself, now.
+; own_free - give back everything still remembered.
+;
+; All three preserve every register.  Closing all of handles 5 and up
+; instead, as MS-DOS's COMMAND.COM does, would close a parent shell's
+; parked console along with ours - a native program's handles are not
+; its own table's (JFT.INC says so at length).
+;=====================================================================
+OWN_FILE        EQU     1               ; 3Eh gives it back
+OWN_FIND        EQU     2               ; 71A1h
+OWN_BLOCK       EQU     3               ; 49h
+OWN_MAX         EQU     48              ; DIR /S holds a block a level, to
+                                        ; DIR_MAXDEPTH; a redirection two
+                                        ; handles a level; then the command's
+
+own_add:
+        push    ebx
+        xor     ebx,ebx
+oa_scan:
+        cmp     byte ptr [own_kind+ebx],0
+        je      oa_put
+        inc     ebx
+        cmp     ebx,OWN_MAX
+        jb      oa_scan
+        pop     ebx
+        ret
+oa_put:
+        mov     [own_kind+ebx],cl
+        mov     [own_val+ebx*4],eax
+        pop     ebx
+        ret
+
+own_del:
+        push    ebx
+        xor     ebx,ebx
+od_scan:
+        cmp     [own_kind+ebx],cl
+        jne     od_next
+        cmp     [own_val+ebx*4],eax
+        je      od_hit
+od_next:
+        inc     ebx
+        cmp     ebx,OWN_MAX
+        jb      od_scan
+        pop     ebx
+        ret
+od_hit:
+        mov     byte ptr [own_kind+ebx],0
+        pop     ebx
+        ret
+
+;--- own_open - EAX = a file just opened: on the list.  All registers
+;---            preserved.
+;--- own_shut - EBX = a file own_open listed: off the list, and closed.
+;---            AX and the carry as 3Eh leaves them; the rest preserved.
+own_open:
+        push    ecx
+        mov     cl,OWN_FILE
+        call    own_add
+        pop     ecx
+        ret
+
+own_shut:
+        push    eax
+        push    ecx
+        mov     eax,ebx
+        mov     cl,OWN_FILE
+        call    own_del
+        pop     ecx
+        pop     eax
+        mov     ah,3Eh
+        int     21h
+        ret
+
+own_free:
+        pushad
+        xor     esi,esi
+of_lp:
+        movzx   ecx,byte ptr [own_kind+esi]
+        or      ecx,ecx
+        jz      of_next
+        mov     byte ptr [own_kind+esi],0
+        mov     ebx,[own_val+esi*4]
+        cmp     ecx,OWN_FILE
+        jne     of_find
+        mov     ah,3Eh
+        int     21h
+        jmp     short of_next
+of_find:
+        cmp     ecx,OWN_FIND
+        jne     of_block
+        mov     ax,71A1h
+        int     21h
+        jmp     short of_next
+of_block:
+        mov     edx,ebx
+        mov     ah,49h
+        int     21h
+of_next:
+        inc     esi
+        cmp     esi,OWN_MAX
+        jb      of_lp
+        popad
+        ret
 
 ;=====================================================================
 ; int24_hand - the INT 24h handler: Abort, Retry, Fail?
@@ -1408,7 +1549,16 @@ xfind_first:
         mov     edi,OFFSET find_data
         mov     ax,714Eh
         int     21h
-        jnc     xf_out
+        jc      xf_nolfn
+        push    eax                     ; a search a ^C would leave open
+        push    ecx
+        movzx   eax,ax
+        mov     cl,OWN_FIND
+        call    own_add
+        pop     ecx
+        pop     eax
+        jmp     short xf_out
+xf_nolfn:
         cmp     ax,7100h                ; unsupported - not "no files"
         jne     xf_none
         push    edx
@@ -1456,6 +1606,11 @@ xfind_close:
         cmp     bx,XFIND_CLASSIC
         je      xc_out                  ; nothing to give back
         movzx   ebx,bx
+        push    ecx
+        mov     eax,ebx
+        mov     cl,OWN_FIND
+        call    own_del
+        pop     ecx
         mov     ax,71A1h
         int     21h
 xc_out:
@@ -2601,6 +2756,8 @@ tree_walk:
         int     21h
         jc      dw_done                 ; no room to remember them: this
         mov     [ebp],eax               ; branch is as far as the walk goes
+        mov     cl,OWN_BLOCK            ; for a ^C: see own_add
+        call    own_add
         mov     edi,eax
         mov     ecx,[ebp+4]
         call    dir_subfill
@@ -2618,6 +2775,9 @@ dw_each:
         jmp     short dw_each
 dw_free:
         mov     edx,[ebp]
+        mov     eax,edx
+        mov     cl,OWN_BLOCK
+        call    own_del
         mov     ah,49h
         int     21h
 dw_done:
@@ -2908,6 +3068,8 @@ ds_count:
         int     21h
         jc      ds_plain
         mov     [dir_recs],eax
+        mov     cl,OWN_BLOCK            ; for a ^C: see own_add
+        call    own_add
         mov     ecx,[dir_nrec]
         imul    ecx,DR_LEN
         add     ecx,eax
@@ -2957,20 +3119,31 @@ ds_show:
         inc     dword ptr [dir_nrec]
         jmp     short ds_show
 ds_shown:
-        mov     edx,[dir_recs]
-        mov     ah,49h
-        int     21h
+        call    ds_free
         clc
         ret
 
 ; the records were taken and the second pass found nothing after all
 ds_freeplain:
+        call    ds_free
+        jmp     dir_listnone
+
+; ds_free - the records' block back, and off the ^C list.  All
+;           registers preserved.
+ds_free:
+        push    eax
+        push    ecx
         push    edx
         mov     edx,[dir_recs]
+        mov     eax,edx
+        mov     cl,OWN_BLOCK
+        call    own_del
         mov     ah,49h
         int     21h
         pop     edx
-        jmp     dir_listnone
+        pop     ecx
+        pop     eax
+        ret
 
 ; there was no room to collect the directory.  List it unsorted rather
 ; than not at all: what was asked for was to see it.
@@ -3382,6 +3555,8 @@ cmd_type:
         int     21h
         jc      ct_cant
         movzx   ebx,ax
+        movzx   eax,ax                  ; for a ^C: see own_add
+        call    own_open
 ct_lp:
         mov     ecx,COPYBUF_SIZE
         mov     edx,OFFSET copy_buf
@@ -3398,8 +3573,7 @@ ct_lp:
         pop     ebx
         jmp     short ct_lp
 ct_close:
-        mov     ah,3Eh
-        int     21h
+        call    own_shut
 ct_out:
         ret
 ct_cant:
@@ -3573,6 +3747,7 @@ cp_dhave:
         je      cp_novfy
         mov     ax,2E01h
         int     21h
+        mov     byte ptr [cp_vfyset],1  ; a ^C puts it back too (cmd_gohome)
 cp_novfy:
 
 ;--- walk the sources ------------------------------------------------
@@ -3618,6 +3793,7 @@ cp_report:
 ; connect to a COPY they typed an hour ago.
 cp_vfyback:
         push    eax
+        mov     byte ptr [cp_vfyset],0
         mov     al,[cp_oldvfy]
         and     al,1
         mov     ah,2Eh
@@ -4139,6 +4315,8 @@ cpx_go:
         jc      cpx_nosrc
         movzx   eax,ax
         mov     [copy_src],eax
+        mov     cl,OWN_FILE             ; for a ^C: see own_add
+        call    own_add
 
         cmp     byte ptr [cp_opened],0  ; one output, opened once
         jne     cpx_pump
@@ -4319,6 +4497,8 @@ cp_opendst:
         jc      cpo_fail
         movzx   eax,ax
         mov     [copy_dst],eax
+        mov     cl,OWN_FILE
+        call    own_add
         clc
         ret
 cpo_append:
@@ -4328,6 +4508,8 @@ cpo_append:
         jc      cpo_fail
         movzx   eax,ax
         mov     [copy_dst],eax
+        mov     cl,OWN_FILE
+        call    own_add
         mov     ebx,eax
         xor     ecx,ecx
         mov     ax,4202h                ; ...positioned at its end
@@ -4344,13 +4526,18 @@ cpo_fail:
 cp_shutsrc:
         push    eax
         push    ebx
+        push    ecx
         mov     ebx,[copy_src]
         cmp     ebx,-1
         je      cpss_out
+        mov     eax,ebx
+        mov     cl,OWN_FILE
+        call    own_del
         mov     ah,3Eh
         int     21h
         mov     dword ptr [copy_src],-1
 cpss_out:
+        pop     ecx
         pop     ebx
         pop     eax
         ret
@@ -4378,6 +4565,11 @@ cp_shutdst:
         pop     ecx
         mov     ebx,[copy_dst]
 cpsd_close:
+        push    ecx
+        mov     eax,ebx
+        mov     cl,OWN_FILE
+        call    own_del
+        pop     ecx
         mov     ah,3Eh
         int     21h
         mov     dword ptr [copy_dst],-1
@@ -4732,6 +4924,8 @@ rw_count:
         int     21h
         jc      rw_nomem
         mov     [rw_blk],eax
+        mov     cl,OWN_BLOCK            ; for a ^C: see own_add
+        call    own_add
 
         mov     dword ptr [rw_fill],0
         mov     edx,[arg1_ptr]
@@ -4795,6 +4989,9 @@ rw_free:
         mov     edx,[rw_blk]
         or      edx,edx
         jz      rw_out
+        mov     eax,edx
+        mov     cl,OWN_BLOCK
+        call    own_del
         mov     ah,49h
         int     21h
 rw_out:
@@ -5391,15 +5588,41 @@ echo_sprint:
         ret
 
 ;=====================================================================
-; BREAK / VERIFY [ON | OFF] - accepted and remembered, nothing more
+; BREAK [ON | OFF] - the kernel's extended Ctrl-C checking, through
+;                    21h/33h.  It used to be a byte in here that
+;                    nothing read, so BREAK ON said it was on and was
+;                    not.  The answer is shown as the kernel gives it.
 ;=====================================================================
 cmd_break:
+        mov     ax,3300h
+        int     21h
+        mov     [break_flag],dl
         mov     ecx,OFFSET break_flag
         mov     edx,OFFSET msg_breakis
-        jmp     short onoff_common
+        call    onoff_common
+        mov     dl,[break_flag]
+        mov     ax,3301h
+        int     21h
+        ret
+
+;=====================================================================
+; VERIFY [ON | OFF] - the kernel's verify flag, through 54h and 2Eh, as
+;                     BREAK goes through 33h.  It was a byte in here
+;                     that nothing read, while COPY /V and every program
+;                     asking 54h saw the kernel's.
+;=====================================================================
 cmd_verify:
+        mov     ah,54h
+        int     21h
+        mov     [verify_flag],al
         mov     ecx,OFFSET verify_flag
         mov     edx,OFFSET msg_verifyis
+        call    onoff_common
+        mov     al,[verify_flag]
+        mov     ah,2Eh
+        int     21h
+        ret
+
 onoff_common:
         mov     esi,[arg_ptr]
         cmp     byte ptr [esi],0
@@ -6797,12 +7020,15 @@ cn_loadhigh db  'LOADHIGH',0
 ; CMD is not in cmd_table - a shell cannot be an internal command of
 ; itself - so cmd_startup prints this one from its own tail scan.
 hlp_command db  'Starts a new copy of the PM-DOS command interpreter, CMD.EXE.',13,10,13,10
-            db  '  CMD [/P [/D]] [/C string]',13,10,13,10
+            db  '  CMD [/P [/D]] [/Y] [/C string]',13,10,13,10
             db  '  /P   permanent: run AUTOEXEC.BAT at startup and refuse to',13,10
             db  '       EXIT.  This is how the kernel starts the first shell,',13,10
             db  '       and how a SHELL= line in CONFIG.SYS asks for one.',13,10
             db  '  /D   with /P, skip AUTOEXEC.BAT.  The kernel adds it when',13,10
             db  '       Shift or F5 at startup bypasses the startup files.',13,10
+            db  '  /Y   step through the batch file - AUTOEXEC.BAT, or the',13,10
+            db  '       one /C runs - asking before each line.  The kernel',13,10
+            db  '       adds it when F8 at startup confirms each line.',13,10
             db  '  /C   run string as a command line - a batch file runs to',13,10
             db  '       its end - and then exit with its errorlevel.  Anything',13,10
             db  '       after /C is the command, switches and all.',13,10,13,10
@@ -7099,6 +7325,7 @@ msg_curtime db  'Current time is ','$'
 msg_badtime db  'Invalid time',13,10,'$'
 msg_pause   db  'Press any key to continue . . . ','$'
 msg_delq    db  ', Delete (Y/N)? ','$'
+msg_stepq   db  ' [Y/N]?','$'
 msg_echois  db  'ECHO is ','$'
 msg_breakis db  'BREAK is ','$'
 msg_verifyis db 'VERIFY is ','$'
@@ -7144,8 +7371,10 @@ adv_parse   db  1                       ; quotes group arguments: the
                                         ; console and .CMD files yes,
                                         ; .BAT files never
 
-break_esp   dd  0                       ; cmd_break's longjmp target
+break_esp   dd  0                       ; int23_hand's longjmp target
 cb_hdl      dd  0
+own_val     dd  OWN_MAX dup(0)          ; what a command has open - see
+own_kind    db  OWN_MAX dup(0)          ; own_add.  Kind 0: a free row
 in_child    db  0                       ; a 4Bh child is running
             db  0,0,0
 
@@ -7153,8 +7382,8 @@ arg_ptr     dd  0
 arg_raw     dd  0                       ; args before leading blanks are cut
 arg1_ptr    dd  0
 arg2_ptr    dd  0
-copy_src    dd  0
-copy_dst    dd  0
+copy_src    dd  -1                      ; -1: not open (cp_shutsrc)
+copy_dst    dd  -1
 
 ; COPY's working set.  cp_items points into the command line itself,
 ; which cp_parse has cut into ASCIIZ pieces in place.
@@ -7166,6 +7395,7 @@ cp_srcmode  db  CPM_UNSET               ; ...the source being read now
 cp_dmode    db  CPM_UNSET               ; ...and the destination's
 cp_verify   db  0                       ; /V was given
 cp_oldvfy   db  0                       ; and what VERIFY was before it
+cp_vfyset   db  0                       ; ...which has not been put back
 cp_ztail    db  0                       ; a Ctrl-Z ended this source
 cp_zbyte    db  0                       ; and the one written to end the
             db  0                       ; destination

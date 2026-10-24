@@ -298,12 +298,26 @@ ulc_read:
         mov     dword ptr [ebx+DRV_SECS],ebp
         cmp     word ptr [sec_buf+1FEh],MBR_SIG
         jne     ulc_nosig
+        mov     dword ptr [gpt_rdfn],OFFSET gpt_bios
+        call    usb_gpt                 ; a GUID partition table (GPT.INC)
+        jnc     ulc_ok
         mov     esi,OFFSET sec_buf + PART_OFF
         mov     ecx,PART_MAX
 ulc_entry:
         mov     al,[esi+PE_TYPE]
         call    part_isfat
         jnc     ulc_part
+        cmp     al,PT_EXFAT             ; or 07h with exFAT in it
+        jne     ulc_enext
+        push    eax
+        push    edx
+        mov     al,[ebx+DRV_BIOS]
+        mov     edx,dword ptr [esi+PE_START]
+        call    part_exfat
+        pop     edx
+        pop     eax
+        jnc     ulc_part
+ulc_enext:
         add     esi,PE_LEN
         loop    ulc_entry
 ulc_nosig:
@@ -326,6 +340,40 @@ ulc_ok:
 ulc_fail:
         popad
         stc
+        ret
+
+;---------------------------------------------------------------------
+; usb_gpt - sec_buf holds sector 0 of the stick behind the row at EBX,
+;           EBP = the stick's sectors.  CF set if it is not a GPT's
+;           protective MBR, or no copy of the table checks; clear when
+;           it is a GPT disk, with the row placed on its first volume -
+;           or left as the whole disk, if it has none this system reads,
+;           so that the mount says "Invalid media type" about it.
+;---------------------------------------------------------------------
+usb_gpt:
+        call    mbr_hasgpt
+        jc      ugp_out
+        pushad
+        mov     al,[ebx+DRV_BIOS]
+        mov     ecx,ebp
+        call    gpt_open
+        jc      ugp_no
+        push    ebp
+        xor     ebp,ebp
+        call    gpt_next                ; -> AH = type, EDX, ECX
+        pop     ebp
+        jc      ugp_yes
+        mov     [ebx+DRV_TYPE],ah
+        mov     dword ptr [ebx+DRV_START],edx
+        mov     dword ptr [ebx+DRV_SECS],ecx
+ugp_yes:
+        popad
+        clc
+        ret
+ugp_no:
+        popad
+        stc
+ugp_out:
         ret
 
 ;=====================================================================

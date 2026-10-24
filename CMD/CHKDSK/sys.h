@@ -23,6 +23,7 @@
 #define DRV_LOCAL      0
 #define DRV_REMOTE     1        /* network redirector, CD-ROM (MSCDEX) */
 #define DRV_SUBST      2        /* SUBSTed drive                        */
+#define DRV_EXFAT      3        /* exFAT, which only PM-DOS's F101h names */
 
 /* sys_write_sec() kinds (INT 21h/7305h write flags) */
 #define WR_UNKNOWN   0

@@ -110,6 +110,10 @@ dp_draw:
         call    scr_mb
         mov     edx,OFFSET msg_mbunit
         call    scr_puts
+        cmp     byte ptr [gpt_on],0
+        je      dpd_named
+        mov     edx,OFFSET msg_pgpt
+        call    scr_puts
 dpd_named:
         mov     al,' '
         call    scr_putc
@@ -133,12 +137,15 @@ dpd_inside:
         mov     byte ptr [scr_cattr],A_PANE
         mov     edx,OFFSET msg_lgfree
         call    scr_puts
+        cmp     byte ptr [gpt_on],0     ; a GPT disk has no extended
+        jne     dpd_legend              ; partition to explain
         mov     byte ptr [scr_cattr],A_CONT
         mov     al,GL_CONT
         call    scr_putc
         mov     byte ptr [scr_cattr],A_PANE
         mov     edx,OFFSET msg_lgext
         call    scr_puts
+dpd_legend:
         call    br_draw
         popad
         ret
@@ -149,6 +156,9 @@ dpd_state:
         je      dpd_say
         mov     edx,OFFSET msg_tunread
         cmp     byte ptr [tui_dstate],2
+        je      dpd_say
+        mov     edx,OFFSET msg_tgptbad
+        cmp     byte ptr [tui_dstate],4
         je      dpd_say
         mov     edx,OFFSET msg_tnotable
 dpd_say:
@@ -738,8 +748,7 @@ lsr_drive:
 lsr_type:
         mov     ecx,LSC_TYPE
         call    scr_at
-        mov     eax,[esi+TR_TYPE]
-        call    tn_find
+        call    tr_tname
         call    scr_puts
         jmp     short lsr_sizes
 lsr_free:
@@ -930,12 +939,14 @@ ipd_named:
 ipd_type:
         mov     edx,OFFSET msg_itype
         call    ip_line
+        cmp     byte ptr [gpt_on],0     ; a GPT entry has no type byte
+        jne     ipd_tname               ; to show, only its name
         mov     eax,[esi+TR_TYPE]
         call    scr_hex2
         mov     edx,OFFSET msg_hexh
         call    scr_puts
-        mov     eax,[esi+TR_TYPE]
-        call    tn_find
+ipd_tname:
+        call    tr_tname
         call    scr_puts
 ipd_size:
         mov     edx,OFFSET msg_isize
@@ -1401,6 +1412,7 @@ box_double  db  0C9h,0BBh,0C8h,0BCh,0CDh,0BAh
 msg_pdisk   db  ' Disk $'
 msg_dash    db  ' - $'
 msg_mbunit  db  ' MB$'
+msg_pgpt    db  ', GPT$'
 msg_sp1     db  ' $'
 msg_hexh    db  'h $'
 msg_ptab    db  ' Tab: next disk $'

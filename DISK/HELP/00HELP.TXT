@@ -20,35 +20,31 @@ switch means; Notes and Examples are a key away at the top of it.
                                       {*}
 #group About PM-DOS|About PM-DOS
 #nolist
-PM-DOS is a fully 32-bit protected-mode operating system, fully
-backward compatible with 16-bit applications.  The kernel runs above
-the first megabyte and leaves nearly all of the 640K to the programs
-under it: what was written for DOS runs as it did, and so does
-Windows 3.1.  PM-DOS's own commands are 32-bit programs with no such
-limit.
+PM-DOS is a 32-bit protected-mode operating system built on the
+foundation of MS-DOS.  It runs your existing 16-bit DOS programs
+without modification, and adds support for 32-bit programs that
+can use all of the memory installed in your computer, not just
+the first 640K.
+
+PM-DOS also includes features not available in earlier versions
+of DOS.  To learn more about a feature, search its name from the
+search function or from the main help screen.
 
 Key features:
 
-{o} Long file names on FAT12, FAT16 and FAT32 disks.
-{o} A disk cache, file sharing, expanded memory, a DPMI host and a
-  mouse driver, all in the kernel, with nothing to load.
-{o} IDE disks of any size, with UltraDMA up to UDMA6; partitions that
-  FDISK can move and resize.
-{o} CD-ROM drives, IDE and SCSI, with nothing to load.  MOUNT gives a
-  disk image or an .ISO file a drive letter.
-{o} USB keyboards, mice and disks, driven by the kernel.
-{o} ISA Plug and Play cards, set up with ISAPNP.
-{o} Delete protection: a deleted file comes back with UNDELETE until
-  the space is needed.
-{o} Country settings, code pages and keyboard layouts: COUNTRY=, CHCP
-  and KEYB.
-{o} SCANDISK, DEFRAG, DOSSHELL, EDIT, ACROREAD and HELP, all 32-bit;
-  SCANDISK, DEFRAG and ACROREAD have a VBE graphics screen with /G.
-{o} SHUTDOWN, which writes everything out and switches the machine off.
-{o} A shell, CMD.EXE, with DOSKEY built in.  COMMAND.COM is there for
-  the programs that start a shell of their own.
-
-What it needs: a 386 or later, 4MB of memory, and 1.5MB of disk.
+{o} Long File Names.
+{o} FAT16, FAT32, and exFAT file systems.
+{o} Built-in memory managers, disk cache, and drivers for mouse and CD-ROM.
+{o} IDE disks of any size, with UltraDMA up to Ultra-ATA6 (UltraDMA/133).
+{o} FDISK can create, delete, move, and resize partitions on MBR and GPT
+  type disks.
+{o} Mount disk image and ISO files as drives.
+{o} USB keyboards, mice and flash drives.
+{o} Integrated ISA Plug and Play configuration manager.
+{o} Delete protection support.
+{o} Native SCANDISK, DEFRAG, DOSSHELL, EDIT, ACROREAD and HELP.
+{o} ACPI-aware SHUTDOWN.EXE, which flushes the cache and turns off the machine.
+{o} The PM-DOS shell, CMD.EXE, with DOSKEY features built in.
 
 The command reference is the [[Contents]].  [[CONFIG.SYS commands|CONFIG]]
 lists the statements CONFIG.SYS takes, and [[Starting PM-DOS|Starting]]

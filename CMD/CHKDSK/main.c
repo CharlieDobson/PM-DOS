@@ -153,6 +153,10 @@ static void check_drive( void )
         out_line( H_ERR, M_NONET );
         finish( 255 );
     }
+    if ( type == DRV_EXFAT ) {
+        out_line( H_ERR, M_EXFAT );
+        finish( 255 );
+    }
     real = sys_truename_drive( opt.drive );
     if ( type == DRV_SUBST || (real >= 0 && real != opt.drive) ) {
         out_line( H_ERR, M_SUBST );

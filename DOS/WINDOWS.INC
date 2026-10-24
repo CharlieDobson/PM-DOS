@@ -136,6 +136,8 @@ wss_dta:
 
         mov     al,byte ptr ds:[cur_drive]
         mov     byte ptr ds:[SDA_BASE + SDA_DRIVE],al
+        mov     al,byte ptr ds:[break_flag]     ; and BREAK, where MS-DOS
+        mov     byte ptr ds:[SDA_BASE + SDA_BREAK],al   ; keeps it
 
         ; The extended error, and its class, action and locus - which
         ; PM-DOS DERIVES from the code rather than storing, so getting

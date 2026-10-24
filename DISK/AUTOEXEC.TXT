@@ -12,8 +12,7 @@ FDISK, MOUNT, MOVE, ATTRIB, CHKDSK, LABEL, CACHE, UNDELETE, CDEX,
 FC, FIND, DISKCOPY, DISKCOMP, ISAPNP, SHUTDOWN, PMD, DOSSHELL,
 ACROREAD, SCANDISK, DEFRAG and KEYB - the two files of tables KEYB
 and COUNTRY= read,
-KEYBOARD.SYS and COUNTRY.SYS - and LRGDISK.386 with LRGSTAT.EXE,
-which are for a Windows on a hard disk.
+KEYBOARD.SYS and COUNTRY.SYS.
 ONLY PMIO.SYS AND PMDOS.SYS HAVE TO BE IN A ROOT.  On a hard disk
 the rest can go in a directory of its own, with one line in
 CONFIG.SYS to say which - SHELL=C:\DOS\CMD.EXE /P - and that
@@ -27,7 +26,9 @@ HELP.EXE and HELP.HLP, the online help, are on a THIRD DISK,
 HELP.IMG, since 2026-10-11: the help text is 200K and the boot disk
 had 64K left.  Put that disk in B: and run B:\HELP, or copy both
 files to a hard disk; HELP looks for its text beside itself and
-along the PATH.
+along the PATH.  LRGDISK.386 and LRGSTAT.EXE, which are for a
+Windows on a hard disk, moved to that disk on 2026-10-24, when the
+boot disk filled again.
 
 TWO SHELLS, since v0.60.  CMD.EXE is PM-DOS's own - 32-bit, long
 names, DOSKEY built in - and it is the one running this file.

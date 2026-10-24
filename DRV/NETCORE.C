@@ -26,6 +26,7 @@ char net_name[32];
 u32  net_opt_port;
 u32  net_opt_mem;
 u8   net_opt_irq = NIC_NOIRQ;
+u8   net_opt_poll;              /* /POLL: run the card on the clock, no IRQ */
 
 NIC_STATBLOCK net_stats;
 
@@ -281,6 +282,8 @@ static void parse_line( const char *line )
         } else if ( ( p[1] | 0x20 ) == 'i' && p[2] == ':' ) {
             net_opt_irq = (u8)num_after( p + 3, 0, NIC_NOIRQ );
             if ( net_opt_irq > 15 ) net_opt_irq = NIC_NOIRQ;
+        } else if ( ( p[1] | 0x20 ) == 'p' && ( p[2] | 0x20 ) == 'o' ) {
+            net_opt_poll = 1;           /* /POLL - no interrupt, clock only */
         }
     }
 }
@@ -357,6 +360,7 @@ int __cdecl nd_init( const char *line )
        making the card interrupt, which is card_setup's to do while
        net_probing - a card that cannot is left polled */
     if ( net_opt_irq != NIC_NOIRQ ) net_irq = net_opt_irq;
+    if ( net_opt_poll ) net_irq = NIC_NOIRQ;    /* /POLL: force the clock path */
     if ( net_irq != NIC_NOIRQ && !net_probing ) {
         if ( !nds_irqhook( net_irq ) ) net_irq = NIC_NOIRQ;
     }

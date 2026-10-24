@@ -252,6 +252,9 @@ static void pick_drives( void )
         if ( type == DRV_REMOTE ) {
             usage_error( "ScanDisk cannot check a network drive or a CD-ROM", name );
         }
+        if ( type == DRV_EXFAT ) {
+            usage_error( "ScanDisk does not check exFAT drives", name );
+        }
         if ( type == DRV_SUBST || (sys_truename_drive( drives[index] ) >= 0 &&
                                    sys_truename_drive( drives[index] ) != drives[index]) ) {
             usage_error( "ScanDisk cannot check a SUBSTed drive", name );

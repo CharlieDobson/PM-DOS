@@ -15129,6 +15129,797 @@ HD16, PMDOS and HELP images carry it; HD32.IMG and MULTI.IMG do not
 were built before PMDOS.INC changed on 2026-10-13 and no longer match
 what their sources build; left alone.  Still v0.64; not committed.
 
+SETVER: THE VERSION TABLE, IN THE KERNEL, IN RMDOS, AND AS A COMMAND
+(2026-10-23)
+---------------------------------------------------------------------
+MS-DOS 5's design, because it is the cheap one: the table lives in a
+driver, the kernel looks a program up in it once, at EXEC, and keeps
+the answer in the PSP at 40h, and 30h reads it back.  The other way -
+a resident SETVER hooking INT 21h and asking who is calling at every
+30h - puts a V86 hook in front of every DOS call in every box, and
+would still not see what Windows' DOS sessions ask RMDOS.
+
+SETVER.EXE (CMD\SETVER\SETVER.ASM) is one 16-bit .EXE with two jobs,
+as MS-DOS's is.  DEVICE=C:\SETVER.EXE loads the front of it as a
+character driver ("SETVERXX"); INIT points LoL+37h (GLOL_SETVER,
+5Dh of the DOS data) at the table and keeps the driver up to the
+table's last entry - 452 bytes with the default table.  Run at the
+prompt it lists, adds, changes or removes an entry IN THE FILE, which
+takes effect at the next boot.  The command line, the 2.11-9.99 rule,
+the name rules and the exit codes 1-15 are MS-DOS 6.22's; the five
+bytes behind the device header (layout 1.0, table offset, table
+length 2048) are laid out as MS-DOS 5's are, so either SETVER edits
+either file.  The default table is 6.22's 29 entries; the messages
+are written here.  16-bit and not D32 because the driver half has to
+be real-mode code in conventional memory, where RMDOS still reads the
+table after a handover.
+
+THE KERNEL (DOS\VDM.INC, INT21.INC, DEVLOAD.INC).
+  - GLOL_SETVER starts 0:0, not FFFF:FFFF: zero is what MS-DOS's EXEC
+    tests for, and a reader taking FFFF:FFFF for a table walks the HMA.
+  - vdm_psp stamps RSP_VERSION (PSP+40h) with sv_find's answer for
+    vdm_pathp's file name.  sv_find walks the table bounded by its
+    segment, so a table that is not one gives a wrong version and
+    never a fault.
+  - fn30 asks sv_caller: a DOS box (k21u, F_EIP 1) or a DPMI client is
+    told vdm_curpsp's PSP+40h - zero there means 6.22 - and a native
+    program or the kernel is told 6.22.  3306h is not touched.
+  - DEVICE= takes an .EXE driver (dl_mzfix): header off, every fixup
+    checked to land in the image and then applied with the driver's
+    segment, the image moved down.  MS-DOS 6.22's own SETVER.EXE loads
+    through it and works.
+  - A driver's INIT is told the table's entry for its own file name
+    (sv_initver around dl_doinit) - which is what the .SYS names in
+    the default table are for; MS-DOS does it with SYSINIT's PSP.
+
+RMDOS (RMINFO.INC, RMMEM.INC).  fn30 reads rd_psp's 40h, zero meaning
+6.22; 26h and 55h stamp 6.22, as SETMEM does; exec_psp stamps sv_ver's
+answer for the caller's DS:DX.  sv_ver is sv_find in 16 bits, through
+RL_SETVER in the block below 64K - the list of lists' tail, which
+RMDOS leaves as the kernel wrote it, so a SETVER loaded at boot is in
+force under Windows with nothing carried across.  It reads the table a
+BYTE at a time and stops where the next entry would wrap the segment:
+a word read at offset FFFFh faults in real mode and in V86.
+
+AND THE ROOM IT NEEDED.  RMDOS's real ceiling is not 64K.  park_loadrm
+takes one 64K segment and wants PARK_SLACK's 256 bytes of it past the
+image, so the largest RMDOS.SYS that parks is 65,280 bytes - and at
+65,201 there were 79 left, not the 335 the file size suggested.  A
+bigger image links and then fails every park with 0Dh, which the rme9
+trace build had been doing silently; BUILD.CMD now checks it with
+FSIZE.  The room came out of rd_lowkeep: 2,240 bytes that rd_lowsave
+fills and only rd_sysinit and rd_chain read, both before the handover
+is done, when no call can be standing on a stack slot.  It lives in
+the bottom three slots now (RD_KEEPMAP marks them taken until
+rd_sysinit returns; the start-up runs at rd_stktop, the top of the
+last).  RMDOS.SYS 65,201 -> 63,134 with SETVER's 173 bytes in it:
+2,146 to spare.  rmmark, exittrace, stamp and stampfrz fit and park
+again; rme9 is 65,530 and now stops the build at FSIZE; the lpt and
+rme9lpt/rme9com builds still do not link (E3011).
+
+FOUND ON THE WAY: 30h ANSWERS IN BX AND CX, NOT ONLY AX.  SETVER's INIT
+asked 30h for the DOS version while BX held the request packet, wrote
+its break address through the OEM number instead, and DEVLOAD - told
+nothing - kept the driver's whole block: every driver and program
+after it "Not enough memory".  Any INIT that asks 30h has to keep BX.
+
+TESTS.  TOOLS\SVTEST.ASM (SVTEST.COM: one line of 30h, 3306h and
+PSP+40h; with a program named it EXECs it; /F appends to C:\SV.TXT;
+with no environment and no tail, as PARKTEST starts it, it is
+SVTEST /F C:\SVKID.COM) and TOOLS\SVDEV.ASM (SVDEV.SYS: prints to
+LPT1 what 30h told its INIT).  The recipe: a SETVER.EXE given
+SVKID.COM 5.00 and SVDEV.SYS 4.00 (DOSBox-X's own DOS will run SETVER
+to do it), SVKID.COM a copy of SVTEST.COM, CONFIG.SYS with
+DEVICE=C:\SETVER.EXE and DEVICE=C:\SVDEV.SYS, an AUTOEXEC.BAT that
+redirects each run to a file, FATGET.PL to read them.  On DOSBox-X and
+on QEMU alike: SVTEST 6.22/6.22/6.22; SVKID 5.00/6.22/5.00, typed in
+lower case too, nested either way round, and through COMMAND /C;
+SVDEV's INIT 4.00; SETVER's listing has no "not loaded" note, an add
+says it takes effect at restart, /D /Q says nothing; under PARKTEST
+the parked program 6.22 with PSP 0.00 (the park's PSP is not
+stamped) and the child RMDOS EXECs 5.00/6.22/5.00.  Against MS-DOS
+6.22's SETVER.EXE under DOSBox-X's DOS (ver=6.22): 33 command lines,
+the same exit code every time, listings byte for byte the same, and
+each SETVER edits the other's file.  RUNTESTS 486-32, old kernel and
+new on the same disk: the same answers but for RMTEST's free space,
+CACHETST's "a write is owed" and SFTSCAN's addresses (RMDOS is 2K
+smaller; the 3Bh spacing holds).  RMFIND, RMTEST and SFTSCAN differ
+from BASELINE in both runs - the disk has more files - and want the
+full -Update with the CA-bundle debt.  Not run: the 386-4 and other
+rows (Windows Defender quarantined the scratch build's MKDISK.EXE),
+Windows 3.1 on RMDOS, 86Box, real hardware.  A test fault worth
+knowing: SVTEST's first version took "no environment" as its cue to
+start a child, and RMDOS's children have none - an EXEC chain hundreds
+deep that QEMU ran out of memory and DOSBox-X hung or restarted on.
+Not looked into further.
+
+HELP: a SETVER topic in DISK\HELP\21EXTERN.TXT, .EXE drivers under
+DEVICE= in 30CONFIG.TXT and DISK\CONFIG.TXT.  DISK\HELP.HLP was NOT
+regenerated: it has hand edits in it that are not in the .TXT files.
+(Merged into it on 2026-10-24 - see the GPT AND EXFAT entry.)
+
+Files: CMD\SETVER\SETVER.ASM, TOOLS\SVTEST.ASM, TOOLS\SVDEV.ASM (new);
+DOS\VDM.INC, INT21.INC, DEVLOAD.INC, RMDOS.ASM, RMINFO.INC,
+RMMEM.INC; INC\PMDOS.INC (RSP_VERSION), RMDOS.INC (RL_SETVER);
+BUILD.CMD (SETVER.EXE, SVTEST.COM, SVDEV.SYS, the RMDOS FSIZE check,
+SETVER on PMDOS.IMG, both tests on TESTS.IMG), MKHD.CMD (SETVER and
+both tests on HD16 and HD32).  Built from git HEAD plus these:
+PMDOS.SYS 170,908 -> 171,341, RMDOS.SYS 65,201 -> 63,134, SETVER.EXE
+6,754, SVTEST.COM 1,006, SVDEV.SYS 181.  Not in S:\BIN, IMAGES or the
+VM: the kernel has to be built from the whole S: tree, which had the
+GPT/exFAT work half done in it.  Still v0.64; not committed.
+
+GPT AND EXFAT: IN THE KERNEL, FORMAT, FDISK, AND THE BOOT CODE
+(2026-10-24)
+---------------------------------------------------------------------
+Charlie asked for GPT and exFAT "in the kernel and in FDISK & FORMAT".
+All of it is 32-bit sector numbers, as the rest of the kernel is: a
+GPT partition that starts or ends past 2 TB is skipped by the kernel
+and shown, untouched, by FDISK.
+
+GPT IN THE KERNEL (DOS\GPT.INC).  A master boot record with an EEh
+entry sends the disk scan to the GPT: the header at sector 1, checked
+by its CRC and its array's, and the backup at the end of the disk when
+the primary does not check.  Basic data entries get letters, the same
+way primaries do (the first in pass 1, the rest in pass 3); the EFI
+system partition and every other type are left alone, and so are
+entries with attribute bit 62 (hidden) or 63 (no letter).  What is IN
+a basic data partition is read off its first sector: FAT, exFAT, or
+nothing (a letter that says "will not mount", as a blank MBR partition
+gets).  NTFS's sector has no FATs and is told from FAT that way.  A
+hybrid MBR is ignored once the GPT checks.  The same reader serves
+fixed disks, USB sticks and MOUNT's image files.  An MBR 07h partition
+gets a letter only when its sector says EXFAT.
+
+EXFAT IN THE KERNEL (DOS\EXFAT.INC), read and write, presented in
+FAT32's shape the way ISO9660 is: dir_seek makes 32-byte entries out
+of exFAT's entry sets, with the long name in lfn_buf, an 8.3 alias
+made from the name (STEM~N.EXT, N from the slot, so it is unique in
+its directory), and "." and ".." made up for subdirectories.  Writes
+go the other way: fat_dirupdate turns a changed entry back into its
+set - delete, rename, attributes, times, size, a new file - with the
+name hash and set checksum made again every time.  The things exFAT
+has and FAT does not:
+  - NoFatChain files and directories, whose FAT entries are stale.
+    A run is carried with an open file (SFT_XRUN), with the directory
+    entry in hand, and in a per-volume list of directories; fat_next
+    answers from the run before it looks at the FAT.  A run that grows
+    by its next cluster stays a run; anything else turns it into a
+    chain first.
+  - The allocation bitmap, cached a sector at a time; the free count
+    is the bitmap's.
+  - ValidDataLength: reads past it are zeros, and the first write past
+    it fills the gap with zeros before anything else (SFT_XVDL).
+  - Clusters up to 32MB: the kernel's cluster is at most 32K, and a
+    bigger one is that many kernel clusters in a row.
+  - VolumeDirty is the clean-shutdown bit, as FAT's is (VOLFLAG.INC).
+  - The up-case table, read for the first 256 characters; names hash
+    and compare by it.
+  - The label is the root's 83h entry; 69h reads it afresh each time,
+    because LABEL writes it with absolute sector writes.
+Not done: two FATs (TexFAT) mount read-only; a file of 4GB or more
+shows FFFFFFFFh and cannot be written; no exFAT under RMDOS - an exFAT
+letter cannot be read under Windows, RMDOS refuses its BPB; PM-DOS
+does not start from exFAT (FORMAT /S and SYS refuse it).  SFT_LEN went
+from 64 to 72.  21h/F1h AL=1 answers 0EFh for exFAT, 71A0h says
+"exFAT", DRIVES and MOUNT name it.
+
+FORMAT.  /FS:FAT, /FS:FAT32 and /FS:EXFAT lay a hard disk partition
+out afresh for its size, /A:size sets the cluster (to 32K for FAT, 32M
+for exFAT), and a blank partition - GPT or MBR - can be formatted.
+The MBR type byte follows the file system (06/0B/0C/0E <-> 07), in the
+four slots or the extended chain; a GPT entry stays basic data.  exFAT
+is laid out as Windows lays it out (FAT at 128, heap on a cluster
+boundary, 4K/32K/128K clusters by size) by INC\EXFMT.INC, which FDISK
+includes too.  The report counts in 64 bits.
+
+FDISK.  A GPT disk is a disk of up to 128 primary partitions.  The
+engine was not touched: CMD\FDISK\FDGPT.INC makes each GPT entry into
+a sixteen-byte MBR-shaped record (the shadow table), fd_slotptr and
+fd_entptr hand the verbs a pointer into it, and gpt_store turns it
+back into entries and writes both copies - the backup's array and
+header first, then the primary's, each array before its header, so
+that a write cut short leaves one copy that checks and says one thing.
+So /C /D /A /M /S /P and the screen work on GPT as they do on MBR; the
+alignment unit (fd_spcyl) is a megabyte there.  New: /GPT d converts an
+MBR disk (no extended partition, nothing in sectors 1-33 or the last
+33) keeping numbers, places and contents, and /NOGPT d goes back for
+four partitions or fewer; the screen's T does either, staged like any
+change.  F formats FAT or exFAT (a three-button box), /P has an exFAT
+page, and 07h partitions are called exFAT when they are.  FDISK does
+not move or resize exFAT.  nb_tbl and iv_tbl grew to 132 rows and
+moved to the BSS.
+
+THE BOOT CODE (BOOT\MBRBOOT.ASM).  No active slot and an EEh entry in
+slot 1 (or an active EEh entry) means GPT: the code reads the GPT by
+the INT 13h extensions and starts the first entry with the legacy BIOS
+bootable bit (attribute bit 2), which is what FDISK /A sets on a GPT
+disk.  The volume boot record finds itself by its BPB, as it always
+did.  A BIOS without the extensions cannot start a GPT disk.  The code
+must end before 1B8h, where the disk's identity is, and the .ERRE says
+so now (it said 1BEh).
+
+THE TOOLS.  CHKDSK, SCANDISK and DEFRAG refuse exFAT with a sentence
+that says so; SYS says an exFAT drive cannot hold the system.  LABEL
+writes the root's 83h entry on exFAT (CMD\LABEL\FAT.C), keeping the
+case typed.
+
+FOUND ON THE WAY: LABEL COULD NOT LOCK ANY DRIVE.  The native bridge
+flattened EDX for every 440Dh call, and the lock and unlock calls
+(CL = 4Ah, 4Bh, 6Ah, 6Bh) carry permission bits in DX, or nothing - so
+LABEL's DX of 0 came back "access denied" before the kernel could say
+"invalid function", which LABEL takes as "no lock needed".  It said
+"Cannot lock drive" and wrote nothing, on every drive, in 0.64 as
+built.  rpf_genblk in DOS\RING3.INC.
+
+THE BOOT FLOPPY FILLED.  The kernel grew 12.8K and FDISK 10K, and
+PMDOS.IMG had 3.5K free: LRGDISK.386 and LRGSTAT.EXE, which are for a
+Windows on a hard disk, went to HELP.IMG (BUILD.CMD, DISK\AUTOEXEC.TXT).
+32K free on PMDOS.IMG after.
+
+Tested, DOSBox-X headless: GPT disks with a damaged primary, damaged
+array, both damaged, a hybrid MBR, hidden and no-letter entries, NTFS
+and blank partitions; exFAT volumes with 512-byte, 4K, 32K and 128K
+clusters, 4K sectors, chained and fragmented files, NoFatChain growth
+and conversion, VDL, MOUNT of exFAT and GPT images, the LFN API -
+every exFAT volume checked afterwards by TOOLS\EXFATCK.PL, written
+from the specification apart from the kernel, and every GPT by a
+separate checker and by 7-Zip.  FORMAT FAT16 -> exFAT -> exFAT -> FAT
+and blank partitions, type bytes followed.  FDISK on the command line
+(create, delete, active, shrink, move, convert both ways, then a boot
+with CHKDSK clean and the files there) and on the screen (key file:
+details, exFAT format, a resize and a create committed, a refused and
+then a done conversion).  FDTEST, FDLTEST, FDRTEST, FD32TEST and
+FDMTEST on the old FDISK and the new: the same disks (FDLTEST's /MBR
+writes the new boot code) and the same transcripts but for the usage
+lines and the help page's T line.  PM-DOS started from a GPT disk made
+of the test disk's partition with the new MBR code.  RUNTESTS all
+seven rows 89 of 89, after RMTEST, RMFIND, SFTSCAN and CACHETST were
+re-recorded for file sizes, test-file counts and kernel addresses;
+NLSTESTS every row.
+FDISK and MBRBOOT also assemble with MASM 6.13.
+Not tested: USB sticks with GPT or exFAT (QEMU), an exFAT letter
+through a Windows park, a crash with VolumeDirty set, files of 4GB,
+the boot code on 86Box or real hardware, anything on real hardware.
+
+HELP: FDISK, FORMAT, LABEL, CHKDSK, SCANDISK and DEFRAG in
+DISK\HELP\20EXTERN.TXT and 21EXTERN.TXT, worded the plain way
+Charlie's own edits to HELP.HLP are worded; the SETVER entry's text
+(21EXTERN.TXT, 30CONFIG.TXT) reworded the same way.  FDISK's d:p line
+said disks are numbered from 1; they are numbered from 0 (the report,
+fd_getdp, the FD*TEST batches), so that line and two examples had
+been wrong all along.
+
+DISK\HELP.HLP IS CHARLIE'S, hand edits and all.  His editor had saved
+it as UTF-8 (495b1d5 has it so):
+every code page 437 character in it - the rules, the bullets, the
+Help on Help picture, 21,124 of them - had become U+FFFD, which HELP
+shows as three characters, so every rule ran 228 columns wide.  Put
+back by finding each damaged line among the generated ones with its
+high characters masked (the twelve bullet lines he wrote himself by
+rule: FE).  Then a three-way merge - base MKHELP.PL on HEAD's parts,
+his file, MKHELP.PL on the parts now - took in this help and the
+SETVER entry's; the one overlap, DEVICE= Notes, keeps his paragraph
+with .EXE drivers after it.  Checked: each line he added and each
+line the parts added is in the result, nothing else is; MKHELP.PL's
+width and link checks pass; HELP.EXE under PM-DOS (HLPTEST key files)
+draws About PM-DOS, FDISK, FORMAT, SETVER and DEVICE= right.
+HELP.IMG rebuilt, HD16.IMG by FATREPL (read back equal), both copied
+to the 86Box VM.  RUNTESTS does not carry HELP.HLP, so no baseline
+moved.
+
+THEN HIS EDITS WENT INTO THE PARTS, so that the .TXT files are the
+source again and HELP.HLP is MKHELP.PL's output: each of the 103 blocks
+where HELP.HLP and the generated file differed was found in the parts
+by expanding their lines as MKHELP.PL does, and its new lines written
+back in the parts' markup.  The regenerated file is his byte for byte
+but two lines: FCBS= and STACKS=, whose last paragraph he deleted,
+ended with an empty line where MKHELP.PL always writes a line of one
+space - the same on the screen.  From cmd, with Git's perl (not on
+the PATH there):
+    "C:\Program Files\Git\usr\bin\perl.exe" TOOLS/MKHELP.PL DISK/HELP/*.TXT DISK/HELP.HLP
+in forward slashes - the MSYS perl expands the wildcard itself and
+takes the backslashes in it for escapes (DISKHELP*.TXT).
+
+Files: DOS\GPT.INC, DOS\EXFAT.INC, CMD\FDISK\FDGPT.INC, INC\EXFMT.INC,
+TOOLS\MKGPT.PL, MKEXFAT.PL, EXFATCK.PL (new); DOS\FAT.INC, INT21.INC,
+VOLFLAG.INC, PARK.INC, IMAGE.INC, USBDRV.INC, RING3.INC, DOSMAIN.ASM;
+INC\PMDOS.INC; BOOT\MBRBOOT.ASM; CMD\FDISK\FDISK.ASM, FDTUI.INC,
+FDDRAW.INC, FDDLG.INC; CMD\FORMAT\FORMAT.ASM; CMD\LABEL\FAT.C, FAT.H,
+MAIN.C, SYS_NT.C; CMD\CHKDSK, CMD\SCANDISK, CMD\DEFRAG (sys_d32.c,
+sys.h, the messages); CMD\SYS\SYS.ASM; CMD\DRIVES, CMD\MOUNT;
+BUILD.CMD; DISK\AUTOEXEC.TXT; DISK\HELP\20EXTERN.TXT, 21EXTERN.TXT,
+30CONFIG.TXT; DISK\HELP.HLP; BASELINE\ (four tests, every row).  PMDOS.SYS 171,341 -> 184,136,
+FDISK.EXE 62,273 -> 72,599, FORMAT.COM 8,926 -> 12,932, LABEL.EXE
+12,924 -> 14,824, CHKDSK.EXE 28,584 -> 28,680, SCANDISK.EXE 115,400 ->
+115,504, DEFRAG.EXE 74,532 -> 74,732, SYS.COM 1,983 -> 2,050,
+MOUNT.EXE 2,473 -> 2,513, DRIVES.EXE 1,892 -> 1,923; PMIO.SYS and
+MBRBOOT.BIN the same sizes.  S:\BIN, IMAGES\PMDOS.IMG, HELP.IMG and
+TESTS.IMG, HD16.IMG (FATREPL, read back equal) and the 86Box VM's
+HD16, PMDOS, TESTS and HELP images carry it - and the SETVER entry's
+work with it, since one kernel has both; BASELINE\ too.  HD32.IMG and
+MULTI.IMG do not (MKHD makes them).  Still v0.64; not committed.
+
+
+BREAK: EXTENDED CTRL+C CHECKING, AND CTRL-BREAK (2026-10-24)
+---------------------------------------------------------------------
+Charlie asked for BREAK to be "actually functional".  It was a byte:
+CONFIG.SYS's BREAK= and 33h set it and read it back, and nothing
+looked at it.  CMD.EXE's BREAK command did not even set that byte - it
+kept one of its own.  And ^C was looked for only while a program was
+reading the console, so nothing typed could stop DIR, TYPE or COPY.
+The rules now are MS-DOS 6's, out of DOS6SRC (msdisp.asm, msctrlc.asm,
+cpmio2.asm, disk.asm, mschar.asm):
+
+  BREAK OFF - every 64th character through 02h, 09h, or 40h to the
+  console in cooked mode (OUTT's CHARCO count), and 0Bh (STATCHK).
+  BREAK ON - that, and every call but 01h-0Ch, 33h, 50h, 51h, 59h and
+  62h, before it starts (DskStatChk in the dispatcher).  PM-DOS leaves
+  out 00h and 4Ch as well, which MS-DOS does not: the program is ending
+  anyway, and an INT 23h there would only end it again, with exit code
+  0.  And F0h up, which are PM-DOS's own.
+
+THE CHECK (brk_check, INT21.INC) is DSKSTATCHK: only at InDOS 1, only
+the key at the FRONT of the BIOS ring (a ^C behind other keys waits
+its turn), the keyboard and not standard input, and not while a
+DEVICE= driver is at work (dl_depth) - its calls are nobody's, and the
+INT 23h that answered would be the kernel's default, ending whatever
+was running, which at boot is nothing.  A ^C found is taken with
+IOS_CONIN and goes to ctrl_break, the road a ^C in a console read
+takes: a native program's handler runs and the call carries on; a DOS
+box's goes through vdm_ctrlc and the call is made again from the
+start, as DOS makes it - so a 09h string broken at its 64th character
+is printed whole a second time, which is MS-DOS's answer too.  The
+dispatcher's test (brk_call) is in int21_entry for native programs and
+DPMI clients, never for the kernel's own calls (CS = SEL_CODE32), and
+in k21 for a box's (F_EIP = 1), after jft_pre.
+
+CTRL-BREAK DID NOTHING: the decoder took Ctrl+Scroll Lock and E0 46 as
+"not a lock" and dropped them.  kb_break (KEYBD.INC) now does what the
+BIOS does - empties the ring, sets 40:71 bit 7, puts 0000h in it - and
+kb_getchar, the DOS console's read, hands 0000h out as 03h, as MS-DOS's
+CON does with its INT 1Bh handler and ALTAH.  So Ctrl-Break is a ^C
+that jumps the type-ahead.  INT 1Bh is not issued into a box: a box
+program that hooks 1Bh and not 09h sees the 0000h and not the call.
+A box that hooks 09h gets the scan codes, and the ROM's handler at the
+end of its chain does all of it.
+
+40h TO A LOADED CON (ANSI.SYS) counts as the screen: dl_iscon
+(DEVLOAD.INC) reads the header's standard-output bit.  33h AL=02h is
+new in both kernels (set, and return the old value - MS-DOS's scct_3),
+and break_flag is published at SDA 17h (win_sdasync).
+
+RMDOS KEEPS THE SAME RULES: rd_brkcall in its dispatcher, con_outchk
+in 02h, 09h and 40h to CON, con_chkc in 0Bh, and 0000h - the ROM's
+own Ctrl-Break - read as ^C in con_in and con_stat.  It starts with
+the kernel's setting: RMHF_BREAK, a new bit in RMH_FLAGS, so the
+header's layout and RMDOS_VER are unchanged and an RMDOS that does not
+know the bit starts with BREAK OFF.  The setting is not handed back: a
+BREAK changed under Windows was that session's.  rd_brkchk lives in
+the SDA as well now (SD_BREAK, through sda_pull and sda_sync), so that
+DOSMGR swaps it per virtual machine as it swaps MS-DOS's - NOT TESTED
+under Windows.  And 4401h keeps the raw bit for RMDOS's own devices,
+where it kept it only for loaded drivers: 4400h reports what was set,
+a raw CON is not looked through for ^C, and DH <> 0 is refused for
+them as for drivers (MS-DOS refuses it for everything).
+
+CMD.EXE: BREAK goes through 33h.  And its ^C path had to grow up,
+because a ^C now arrives in the middle of its own commands: cmd_gohome
+jumps to the prompt, and whatever the command had open stayed open.
+A native program's handles are the kernel's slots (JFT.INC), so
+closing 5-19 as MS-DOS's COMMAND.COM does would close a parent shell's
+parked console.  own_add, own_del and own_free keep a list instead -
+files, LFN find handles, 48h blocks - at every open, 714Eh, 48h and
+45h park in CMD.ASM, BATCH.INC, REDIR.INC and DOSKEY.INC; cmd_gohome
+gives back what is on it, puts VERIFY back after a COPY /V
+(cp_vfyset), and deletes the pipe files if a pipeline was running
+(pip_live).  Proved in QEMU with FILES=8: four TYPEs stopped by ^C and
+then a TYPE of a small file, which the old CMD.EXE on the new kernel
+could not open (the slots were all taken) and the new one can.
+TRAP: the helper was own_file first, which wasm folds into the equate
+OWN_FILE (wasm-case-folding).
+
+TESTS: TOOLS\BRKTEST.ASM (a DOS box, fourteen cases: 33h 00h/01h/02h;
+BREAK OFF and ON against 19h, 0Bh, 02h, and 40h to NUL, to CON and to
+CON in raw mode; a ^C behind a key; Ctrl-Break's ring, 40:71 and 07h)
+and TOOLS\BRK32.ASM (a native program, five), both in RUNTESTS.  On
+the kernel before this BRKTEST fails 9 and BRK32 4; the cases that
+pass there are the ones about NOT acting.  Keys go in with INT 16h
+AH=05h and 21h/F1h AL=23h, and every case prints only with nothing
+waiting, since its own report would otherwise take the ^C.  BRKTEST
+under PARKTEST runs on RMDOS, where all but the three Ctrl-Break cases
+pass (F1h is the kernel's); COMMAND.COM under PARKTEST showed BREAK ON
+carried across and not carried back.  LOCKTEST's ctrl break and ctrl
+scroll lock rows now read a 0000h, re-recorded; RMFIND, RMTEST and
+SFTSCAN moved for the new files and RMDOS's size.  RUNTESTS 91/91 on
+all seven rows twice, NLSTESTS every row (nls-gr's LOCKTEST and
+LOCKTES2 re-recorded), and the delivered HD16 booted in QEMU runs both.
+
+NOT DONE: INT 1Bh into a box; ^S and ^P on output, which MS-DOS's
+STATCHK also handles and PM-DOS never has; VERIFY in CMD.EXE is still a
+byte of its own, as BREAK was.  (All three were done the same day: the
+entry after this one.)  The help topics (10INTERN.TXT BREAK,
+30CONFIG.TXT BREAK=) still say PM-DOS does not look at the flag: the
+wording is Charlie's to give, and DISK\CONFIG.TXT's line is the only
+text changed.
+
+Files: IO\KEYBD.INC; DOS\INT21.INC, VDM.INC, DEVLOAD.INC, CONFIG.INC,
+PARK.INC, WINDOWS.INC, RMDOS.ASM, RMCON.INC, RMINFO.INC, RMFILE2.INC;
+INC\PMDOS.INC, RMDOS.INC; CMD\CMD.ASM, BATCH.INC, REDIR.INC,
+DOSKEY.INC; TOOLS\BRKTEST.ASM and BRK32.ASM (new), RUNTESTS.PS1;
+BUILD.CMD, MKHD.CMD; DISK\CONFIG.TXT; BASELINE\.  PMIO.SYS 75,195 ->
+75,279, PMDOS.SYS 184,136 -> 184,479, RMDOS.SYS 63,134 -> 63,349,
+CMD.EXE 61,843 -> 62,612.  S:\BIN, IMAGES\PMDOS.IMG and TESTS.IMG
+(BUILD.CMD's own MKDISK lines; each differs from the morning's only in
+these files), HD16.IMG (FATREPL) and the 86Box VM's HD16, PMDOS and
+TESTS carry it; HD32 and MULTI do not.  Still v0.64; not committed.
+
+BREAK, CONTINUED: INT 1Bh IN A BOX, ^S AND ^P, AND VERIFY (2026-10-24)
+---------------------------------------------------------------------
+Charlie asked for the three things the entry above left undone.
+
+DOS'S INT 1Bh, AND A BOX'S OWN.  IO.SYS points INT 1Bh at a handler
+that marks the key and no more (msbio1.asm, cbreak: ALTAH = 3), and
+CON reads the mark as a ^C and throws away the 0000h the BIOS left
+(mschar.asm, chrin and con_rdnd).  So a program that hooks INT 1Bh and
+does not pass the call on gets no ^C at all, which is what Turbo
+Pascal's CRT unit counts on.  PM-DOS now has the same handler, seven
+bytes in the DOS data segment (GNLS_BRKSTUB, which vdm_lolinit writes
+and points INT 1Bh at), with the mark in the byte after it
+(GNLS_BRKFLAG).  It is real-mode code that writes a byte, so it works
+wherever INT 1Bh is called from: the BIOS's INT 09h in a box that
+hooked 09h, a BIOS call, or RMDOS under PARKTEST and Windows.
+  While INT 1Bh is DOS's, kb_break (KEYBD.INC) makes the mark itself.
+When a box's program has hooked it, the program is called instead.
+PMDOS says in GV_BOX1B whether a box is running (vdm_run, vdm_d32,
+vdm_done), kb_break makes it GVB_OWED, and v86_run's entry or
+v86_ckkbd delivers INT 1Bh the way they deliver IRQ 1.  With no box
+running, a vector some box left behind is nobody's, and the mark is
+made.
+  kb_getchar and kb_status (IOS_CONIN, IOS_CONSTAT) read the mark
+before the ring and skip a 0000h, as CON does, and brk_check reads the
+mark where it used to look for a 0000h at the front.  MS-DOS leaves
+the 0000h in the BIOS's buffer until the console's next status check,
+and so does PM-DOS now: BRKTEST's Ctrl-Break cases expect it there.
+0Ch takes the mark with what it flushes, as CON's flush clears ALTAH.
+  LOCKTEST's Ctrl-Break rows used to see their 0000h because nothing
+read the buffer through DOS.  With the mark, DOS's next look at the
+keyboard was a ^C and the default INT 23h ended the run; MS-DOS would
+end it there too.  So LOCKTEST does what a program that wants the key
+does: INT 1Bh is its own (an IRET) for the run.  And it writes through
+40h, which DOS does not count when the output is a file: at every
+64th character through 02h or 09h DOS looks at the keyboard, and the
+look takes the 0000h away before INT 16h can show it - where the count
+fell depended on what the tests before LOCKTEST printed.
+
+^S AND ^P are MS-DOS's STATCHK (msctrlc.asm).  stat_check (INT21.INC)
+is brk_check, and then the key at the front of standard input, if that
+is the keyboard.  ^S holds everything until another key is pressed,
+and that key is taken too, unless it is ^P (which still turns the echo
+over) or ^C (which breaks).  ^P turns the printer echo on or off
+(prn_echo, MS-DOS's PFLAG).  stat_check runs where STATCHK does: at
+every 64th character (brk_out), at 0Bh, at 03h to 05h, and while 01h,
+08h, 0Ah or a cooked read of CON waits for a key.  That last is
+dos_conchk, through stat_key, which skips the standard-input test,
+because MS-DOS makes the CON being read standard input for the read
+(ConSwap).  BREAK ON's check in the dispatcher stays brk_check, ^C
+only, as MS-DOS's DskStatChk is.  Not in 06h or 07h, or in raw mode.
+Not with a scan code owed: the scan codes of Alt+Q and Alt+R are ^P's
+and ^S's (MS-DOS's Scan_Flag).  Ctrl+PrtSc is the BIOS's 7200h now
+(kb_greyprt) and reads as ^P.
+  THE ECHO (pe_char, con_echo): every character to the screen through
+01h, 02h, 09h, 0Ah, a cooked write or read of CON, and the "^C" itself,
+goes to LPT1 as well, while standard output is a device - OUTT's rule,
+so "DIR > LIST.TXT" is not printed.  A printer that does not take a
+byte turns the echo off.  MS-DOS asks INT 24h about it; PM-DOS has
+never raised a critical error for a printer, and without that rule
+every character would wait out a time-out.  An extended key that ends
+a ^S wait is taken whole, where MS-DOS's CON would hand its scan code
+over afterwards.
+  RMDOS has the same rules (RMCON.INC: con_statchk, con_inck,
+con_echo): the mark at RL_BRKFLAG, ^S and ^P from the keyboard, and
+the echo through INT 17h, because RMDOS's own PRN goes nowhere.  The
+echo setting is not carried across the park.
+  CMD.EXE'S LINE EDITOR asks 0Bh before each key, as DOSKEY does
+(template.asm, getkey), waiting in F008h so that it idles.  That is how
+^P works at the prompt.  It also means a ^C at the prompt is now the
+kernel's: "^C" where the cursor is, then cmd_gohome, as under DOSKEY.
+It used to go to the end of the line first.
+
+VERIFY in CMD.EXE goes through 54h and 2Eh, as BREAK goes through 33h.
+
+AND A BUG IN EVERY DOS BOX, FOUND BY THE NEW TESTS: vdm_result handed
+back AX to DX and the carry flag, and 06h's read answers in ZF.  A box
+program polling with "mov dl,0FFh / mov ah,6 / int 21h / jz none" kept
+the ZF it had before the call, and either threw away the key it had
+been given or took a zero for one.  vdm_do21 now copies ZF back for
+06h's read and for 0Ch's road to it, and nowhere else: those are the
+only calls where MS-DOS sets the caller's ZF ($RAW_CON_IO).
+
+REVIEW (defect > effect > fix):
+- stat_check took the key it had looked at with IOS_CONIN, and a
+  Ctrl-Break in between puts its mark in front of the key > the
+  Break's ^C taken as the ^S, and the machine waiting for a key > a
+  03h from the take is a ^C (RMDOS's con_statchk the same).
+- a cooked read of CON through a handle other than 0 looked for ^S
+  and ^P only while standard input was the console > with it
+  redirected, ^S typed into the read was data > stat_key.
+
+TESTS: BRKTEST has twenty-five cases now (INT 1Bh kept, and passed on;
+the BIOS's INT 1Bh with 09h hooked; ^S at 0Bh, through 02h and in 08h;
+^S then ^C; 06h and 07h reading ^S; ^P; Ctrl+PrtSc; Alt+R) and sends
+one line with the echo on, which shows in RUNTESTS's LPT.TXT.  BRK32
+has nine.  On the morning's kernel BRKTEST fails 12 and BRK32 3; on
+this one neither fails, in DOSBox-X and in QEMU.  Under PARKTEST on
+RMDOS everything passes but the six Ctrl-Break cases (21h/F1h is the
+kernel's), and the echo line came out of INT 17h.  With real keys in
+QEMU: ^P at the CMD prompt put "dir", the listing and the next prompt
+on LPT1 and nothing after the second ^P; Ctrl-Break stopped TYPE in
+CMD.EXE, and on RMDOS through the BIOS's own INT 1Bh; ^S held TYPE (two
+screen dumps a second apart differ only in the cursor); VERIFY ON and
+OFF read back through COMMAND /C VERIFY.  TYPE is as fast as before.
+RUNTESTS 91/91 on all seven rows, twice (BRKTEST, BRK32, RMTEST and
+SFTSCAN re-recorded); NLSTESTS every row.
+  LOCKTEST's "caps lock, held" row in the pass with INT 09h hooked
+sometimes shows the light still on, on the 386 row only.  The
+morning's kernel with the old LOCKTEST does it as well (1 run in 8 on
+each side, side by side), so it is older than this and is left as it
+is: a race between the BIOS's own lights and the kernel's.
+
+Files: IO\KEYBD.INC, VM86.INC, IORM.ASM; DOS\INT21.INC, VDM.INC,
+PARK.INC, RMCON.INC, RMFILE2.INC; INC\PMDOS.INC, RMDOS.INC; CMD\CMD.ASM,
+DOSKEY.INC; TOOLS\BRKTEST.ASM, BRK32.ASM, LOCKTEST.ASM; BASELINE\.
+PMIO.SYS 75,279 -> 75,527, PMDOS.SYS 184,479 -> 184,947, RMDOS.SYS
+63,349 -> 63,652, CMD.EXE 62,612 -> 62,687, BRKTEST.COM 2,204 -> 3,818,
+BRK32.EXE 1,150 -> 1,702, LOCKTEST.COM 1,160 -> 1,241.  S:\BIN has
+the seven.  IMAGES\PMDOS.IMG was made with BUILD.CMD's MKDISK line from
+the morning's floppy's own files with the four new ones in their
+place, because S:\BIN's ACROREAD, DOSSHELL, EDIT, FC, ISAPNP, PMD and
+XCOPY are not the builds on it; TESTS.IMG with its own line, which
+changes only the three tests; HD16.IMG by FATREPL, the seven and
+nothing else.  The 86Box VM's HD16, PMDOS and TESTS are those three.
+The floppy and HD16 booted in QEMU: VER 0.64, BRKTEST, BRK32 and
+LOCKTEST from HD16, VERIFY from the floppy.  BASELINE\ has the 28
+re-recorded files.  HD32 and MULTI do not have it.  Still v0.64; not
+committed.
+
+
+MULTI-CONFIG: [MENU], BLOCKS, INCLUDE=, %CONFIG%, AND F8 (2026-10-24)
+---------------------------------------------------------------------
+Charlie asked for multi-config support in CONFIG.SYS and AUTOEXEC.BAT.
+Until now every [block] line was read past and every statement in
+every block carried out, and the help said so.  Now a CONFIG.SYS is
+read the way MS-DOS 6 read one (S:\DOS6SRC, bios\sysinit2.asm,
+menu_check and its helpers, which were the authority for every rule
+below), in a new file, DOS\MULTICFG.INC.
+
+THE BLOCKS.  The lines above the first [name] and the lines of every
+[COMMON] block are every configuration's; a [name] block's lines count
+only when it is the chosen one; without a [MENU] block nothing is
+chosen and only the common lines count, with no CONFIG variable - all
+as DOS.  INCLUDE=name walks that block's lines where the INCLUDE= line
+is, on every walk but the first.  CONFIG=name goes into the master
+environment before the main walk, so it is the first variable and a
+SET CONFIG= line can still change it; the name is as the MENUITEM line
+spelled it.  A [MENU] with nothing valid on it is CONFIG=COMMON, which
+is DOS's answer there too.
+
+DOS DID IT BY REWRITING THE FILE and this does it by reading it.
+menu_check copied the chosen lines into a second image with each
+INCLUDE spliced in, and sysinit read that.  Here cfg_walk is split
+into cfg_lines and cfg_getline; mcf_header, at each [name] line, says
+whether the lines after it count (mcf_on), and mcf_include calls
+cfg_lines on the named block from inside the walk, which comes back at
+the block's end (mcf_stop) or the file's.  Same lines, same order, no
+second 16K buffer, and CONFIG.INC's four walks stay four.  The first
+walk (SWITCHES=) still reads every line wherever it is, as DOS's did.
+
+THE MENU (mcf_choose, mcf_parse, mcf_draw, mcf_pick).  MENUITEM=,
+SUBMENU=, MENUDEFAULT=, MENUCOLOR=, NUMLOCK= and REM in the [MENU]
+block; anything else there is "Unrecognized command" and is passed
+over, and a MENUITEM= whose block is not in the file is reported and
+left off.  Nine choices.  DOS's layout: a title with a double line
+under it, the choices from row 4 at column 5, "Enter a choice: N" two
+rows under the last, "Time remaining: NN" on that row, and the keys
+line at the bottom with F8's [N] or [Y] at its end.  The words are
+mine.  Arrows or a digit move the highlight, Enter takes it, Backspace
+goes back to the top menu, F5 is a safe-mode start (cfg_bypass, shared
+with the startup keys now), F8 turns confirming every line on and off.
+MENUDEFAULT's timeout runs to 90; 0 means the default unseen, unless F8
+was pressed at startup; any key stops the countdown and no later menu
+has one; a timeout that runs out answers every '?' question yes,
+because nobody is there.  NUMLOCK= above the first block is acted on by
+the first walk, before the menu, and the line made a remark (';' over
+its first character in cfg_buf) so that the main walk neither does it
+again nor asks about it - DOS's treatment.  If CONFIG.SYS has said
+anything since the screen was last cleared, "Press any key" before the
+menu clears it.  The menu is drawn through IOS_PUTCELLS (mcf_cells, a
+row, in _KBSS); after the choice the cursor goes under the prompt, the
+keys line goes, and cells still in MENUCOLOR's colour go back to the
+console's: PM-DOS's console writes every character in its own colour,
+where DOS's BIOS teletype kept a cell's, and a coloured screen would
+otherwise turn into a patchwork.
+
+F8 AND '?'.  F8 at "Starting PM-DOS..." (PMIO notes it as BOOTK_F8 if
+the BIOS has it; cfg_keys takes it off the queue like F5) or on the
+menu asks about every statement as it is acted on (mcf_ask, from
+cfg_do_line, so in the walk that acts on it): "NAME=value [Y,N]?", a
+space for SET's '='.  Y runs it, N skips it, Esc answers Y to it and
+everything after, F5 N to it and everything after.  A '?' straight
+after a statement's name (DEVICE?=) asks about that one line only
+(cfg_keyword, which is the keyword parser taken out of cfg_do_line).
+Then mcf_autoexec, from DOSMAIN just before the shell first starts,
+asks "Process AUTOEXEC.BAT [Y,N]?": N or an earlier F5 puts /D on the
+shell's tail, Y puts /Y there (cfg_tailsw).
+
+CMD /Y is DOS 6.2's COMMAND /Y: each batch line, expanded, is shown
+with " [Y/N]?" in place of its echo and runs only on Y (bat_step).  It
+lasts while batch files run - a CALLed one is stepped too - and ends at
+the next prompt.  With /C it steps the batch file /C runs.  The end of
+redirected input answers N: 08h returns 1Ah there for ever and the
+wait would never end.  The 16-bit COMMAND.COM has no /Y.
+
+NOT DOS'S, ON PURPOSE: an INCLUDE that would go round in a circle - a
+block on the include stack, or the chosen block from inside itself -
+is "Invalid parameter in CONFIG.SYS" and skipped; DOS turned each
+INCLUDE line into a REM as it went, which stopped the loop but ran
+some lines twice.  A chain of SUBMENU defaults with timeout 0 stops
+after 16 menus (CONFIG=COMMON) instead of hanging the boot.  The four
+menu statements outside a [MENU] block are accepted without a word, as
+before (cfg_menuonly, which is cfg_ignore that F8 does not ask about).
+
+REVIEW (defect > effect > fix):
+- bat_step waited for Y or N, and 08h at the end of redirected input
+  returns 1Ah for ever > CMD /Y /C X.BAT < EMPTY.TXT spun on the first
+  line > Ctrl-Z answers N.
+- mcf_put and mcf_run write a row into mcf_cells > a screen wider than
+  that would run past it > both clip at SCR_MAXCOLS, and mcf_draw
+  clips the column count it keeps.
+- CONFIG=name built in mcf_env > a block name of any length > the name
+  stops at MCF_NAMEMAX (64), which is what mcf_env has room for.
+- mcf_name/mcf_desc/mcf_kind hold nine > a tenth MENUITEM > not added,
+  as DOS; the include stack holds MCF_INCMAX > deeper INCLUDEs refused.
+  Every name is compared and skipped only as far as a delimiter, and
+  NUL is one, so no walk passes the end of cfg_buf or cfg_line_buf.
+
+TESTS, on QEMU through the monitor (scratchpad rig\qmc.ps1, screen
+dumps read as PNGs): the menu times out onto MENUDEFAULT's choice
+(CONFIG=Beta as spelled, its block, its INCLUDE and [COMMON] run, the
+other block not, GOTO %CONFIG% lands); arrows, a digit, a SUBMENU with
+no countdown after a key, Backspace to the top; MENUCOLOR=15,1 and 14
+drawn and put back; F5 on the menu; F8 on the menu and at startup with
+Y, N, Esc and F5 answers, the AUTOEXEC.BAT question and the stepping
+into a CALLed file, none at the prompt after, CMD /Y /C; DEVICE?= and
+SET?= without F8; INCLUDE of a missing block, of [COMMON], and three
+circles; a menu block with a bad statement and a missing block (the
+pause, then the menu without them); timeout 0; blocks with no [MENU];
+SWITCHES=/N; the delivered HD16 and boot floppy, menu and all.
+RUNTESTS on all seven rows: 90 the same, and RMTEST different only in
+its free clusters (6EC8 -> 6EC4: PMDOS.SYS is four clusters bigger),
+re-recorded from that full run; NLSTESTS every row.  MASM 6.13 is
+clean on all of it; its four complaints about DEVLOAD.INC and
+KEYBD.INC's kb_store jumps were there before this.
+
+The sample CONFIG.SYS asked for a menu with a 5-second wait and a
+[NORMAL] block that included a [BASE] there was none of, which would
+now be shown and complained about.  It has two real choices now,
+NORMAL and NOUSB (USB=OFF).  CONFIG.TXT and the help (a new
+Multiple Configurations topic, INCLUDE=, MENUCOLOR=, MENUDEFAULT=,
+MENUITEM= and SUBMENU= topics, F8 under Starting PM-DOS, /Y under
+CMD, SWITCHES= and NUMLOCK=) say what it does; HELP.HLP regenerated.
+
+Files: DOS\MULTICFG.INC (new), CONFIG.INC, DOSMAIN.ASM; IO\KEYBD.INC;
+INC\PMDOS.INC; CMD\BATCH.INC, CMD.ASM; DISK\CONFIG.SYS, CONFIG.TXT,
+HELP\10INTERN.TXT, HELP\30CONFIG.TXT, HELP.HLP; BASELINE\*\RMTEST.OUT.
+PMIO.SYS 75,527 -> 75,543, PMDOS.SYS 184,947 -> 188,483, CMD.EXE
+62,687 -> 62,998.  S:\BIN has the three.  IMAGES\PMDOS.IMG and
+HELP.IMG were made with BUILD.CMD's MKDISK lines from their own files
+with the changed ones in place; HD16.IMG by FATREPL (its CONFIG.SYS
+was the stock one).  The 86Box VM's three are those.  HD32 and MULTI
+do not have it.  Still v0.64; not committed.
+
+
+v0.65 - GPT AND EXFAT, SETVER, BREAK, A CONFIGURATION MENU; USB,
+        THE NETWORK, DEFRAG AND HELP (2026-10-24)
+---------------------------------------------------------------------
+
+Charlie: "Let's commit everything in PM-DOS so far as new release
+0.65".  INC\PMVER.INC now says 65.  This release is everything since
+the v0.64 tag: the HELP.EXE entry above the v0.64 one (it went into
+git the day after the tag), and the entries from DEFRAG.EXE on
+2026-10-11 down to the multi-config one.  Most of them end "Still
+v0.64"; that is left as written.  This entry is the list.
+
+PROGRAMS
+  - HELP.EXE is MS-DOS 6's HELP made again, reading HELP.HLP, which
+    TOOLS\MKHELP.PL makes from DISK\HELP\*.TXT.  It ships on a disk
+    of its own, HELP.IMG.
+  - DEFRAG.EXE is MS-DOS's DEFRAG with FAT32, long file names and a
+    graphics screen, and moves files in an order a power cut cannot
+    hurt.
+  - SETVER.EXE is MS-DOS 6.22's: a driver on DEVICE= and a command
+    that edits its own table.
+  - FORMAT has /FS:FAT, /FS:FAT32, /FS:EXFAT and /A:size, and formats
+    a blank partition.  FDISK works on GPT disks and converts with
+    /GPT and /NOGPT.  LABEL writes an exFAT label.  CHKDSK, SCANDISK,
+    DEFRAG and SYS refuse exFAT and say so.
+  - CMD.EXE: BREAK and VERIFY go through DOS, a ^C closes what the
+    command had open, and /Y steps through batch files.
+
+THE KERNEL
+  - GPT disks, and exFAT read and written, on hard disks, USB sticks
+    and MOUNT's image files.  The MBR boot code starts a GPT disk.
+  - USB: UHCI and OHCI driven by the kernel, EHCI handed down to
+    them; keyboards, mice and sticks as drives.  QEMU only.
+  - A 32-bit driver on a DEVICE= line (the D32 driver subtype).
+  - The version table: a program is looked up at EXEC and 30h
+    answers from PSP+40h, in the kernel and in RMDOS.  DEVICE= loads
+    .EXE drivers.
+  - BREAK does what MS-DOS 6's does: ^C looked for every 64th
+    character, and before every call with BREAK ON; Ctrl-Break; DOS's
+    own INT 1Bh handler, and a box's own; ^S and ^P with the printer
+    echo.  RMDOS keeps the same rules.
+  - Multi-config CONFIG.SYS: [MENU], [COMMON], INCLUDE=, SUBMENU=,
+    MENUCOLOR=, MENUDEFAULT=, %CONFIG%, F8 and DEVICE?=.
+  - Every number that comes from outside - a disk, a file, a program
+    - is measured before it is used, in the kernel and in the
+    programs (two bounds reviews, 2026-10-14).
+  - Fixed: LABEL could not lock any drive; a DOS box never got ZF
+    back from 06h's read.
+
+THE NETWORK
+  - Nine card drivers: NE2000, WD80X3, RTL8139, PCNET, TULIP, E1000,
+    EEPRO100, EL3C509 (with ISA Plug and Play) and EL3C90X, on a
+    shared base that takes /POLL.
+  - TCPIP.SYS with DHCP and sockets on 21h/F1h AL=26h; FTP, TELNET,
+    WGET and SNTP, and HTTPS with a CA bundle.
+  - NET USE makes an SMB share a drive letter (SMB2/3, and SMB1 with
+    /SMB1); SMBSRV.EXE is an SMB server.
+  - PMDOS.386 lets Windows for Workgroups 3.11 use the kernel's card
+    and stack.  Proved in QEMU; Charlie's 486 is the next test, and
+    the 3C509 diagnostics stay in until it has run.
+
+PMIO.SYS is 75,543 bytes, PMDOS.SYS 188,483, RMDOS.SYS 63,652, RMCD.SYS
+5,778, CMD.EXE 62,998, COMMAND.COM 33,463 and LRGDISK.386 25,949; 180
+files in a build's BIN.
+
+THE STAMP.  The rebuild, in a mirror of the tree, changed four bytes
+in the three files that read the equate (PMDOS.SYS two, CMD.EXE and
+COMMAND.COM one each, 40h to 41h).
+  S:\BIN HAD FALLEN BEHIND THE SOURCES IN 22 MORE FILES, and the
+release carries the build's copies.  A copy into BIN on 2026-10-16
+had put other builds of several programs there: DOSSHELL.EXE and
+HELP.EXE were 129,568 and 42,276 bytes, not the 129,572 and 42,280 the
+2026-10-14 bounds review delivered and this build makes, and HELP.IMG
+had that HELP.EXE too.  ACROREAD, EDIT, FC, ISAPNP, PMD and XCOPY in
+BIN were not the builds on the boot floppy either - the floppy's were
+this build's, byte for byte.  Seven card drivers were built before
+NETCORE.C took /POLL, TESTS\SMBTEST.EXE was 412 bytes smaller than
+this build's, and FTP, NET, SMBSRV, SNTP, TELNET and WGET differed by
+a few bytes.  HD16.IMG had older
+EL3C509.SYS, TCPIP.SYS and TESTS\SOCKTEST.EXE than BIN.  The six big
+16-bit guests in BIN\TESTS (DISKSTAT, REVEAL, MSD, NMAKE, EXEHDR,
+MEM622) are no build's, and stay.
+  DISK\HELP.HLP was made again from the parts: Charlie took the "/G"
+line out of About PM-DOS after the last regeneration.
+  RUNTESTS is 91 x 7 with one baseline moved on every row: "OS
+Version: PM-DOS 0.65" in PMD.OUT.  The mirror had to carry the six
+guests in BIN\TESTS for RMFIND and RMTEST to match: the baselines in
+BASELINE\ were recorded with them on the disk.  NLSTESTS is nine rows
+with nothing moved.
+  S:\BIN, IMAGES\PMDOS.IMG and HELP.IMG (the build's own), HD16.IMG
+(29 files by FATREPL, read back equal, the other 252 untouched) and
+the 86Box VM's three copies carry it.  TESTS.IMG came out byte for
+byte the same.  Booted headless, a copy of the new HD16.IMG (DOSBox-X)
+and the new boot floppy (QEMU) both said "PM-DOS version 0.65" to VER,
+COMMAND /C VER and CMD /C VER.  HD32, HDBIG and MULTI were not
+rebuilt.
+
+NOT RUN: real hardware for any of it.  STILL OPEN: Charlie's 486 with
+the 3C509B and Windows for Workgroups; Quarterdeck's Manifest for
+Windows and Borland's RTM, as under 0.64; the BREAK= help topic still
+says PM-DOS does not look at the flag.
+
 
 v0.61 - THE NUMBER CAUGHT UP (2026-09-30)
 ---------------------------------------------------------------------

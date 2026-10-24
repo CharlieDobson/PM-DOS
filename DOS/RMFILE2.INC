@@ -1178,8 +1178,18 @@ sft_touch:
 stt_out:
         ret
 f40_dev:
+        cmp     byte ptr [si+SFT_DRIVE],DEV_CON
+        jne     f40_devgo
+        test    byte ptr [si+SFT_DEVINFO],DIF_RAW
+        jnz     f40_devgo               ; raw: not looked through
+        call    con_outchk              ; the screen: the keyboard every
+        call    dev_write               ; 64th, as 02h has it (RMCON.INC),
+        call    con_echos               ; and on paper too with ^P
+        jmp     short f40_devok
+f40_devgo:
         call    dev_write
         jc      f40_deverr              ; only a loaded driver can fail
+f40_devok:
         mov     [bp+F_AX],cx
         jmp     i21_ok
 f40_deverr:
@@ -1608,12 +1618,18 @@ f44_get:
 f44_set:
         ; RAW OR COOKED, for a loaded driver: the one bit DOS lets a
         ; program change, and READDEV and WRTDEV's rules turn on it.
-        ; This DOS's own devices go on ignoring it, as they always have.
+        ; This DOS's own devices read and write the same either way,
+        ; but they keep the bit too: 4400h then answers what was set,
+        ; and a write to the console in raw mode is not looked through
+        ; for a ^C (f40_dev), which is MS-DOS's rule.  A file is still
+        ; answered with nothing done.
         mov     bx,[bp+F_BX]
         call    sft_get
         jc      f44_bad
-        call    f44_isdrv
-        jc      f44_setown
+        call    sft_isnet
+        je      f44_setown
+        test    byte ptr [si+SFT_FLAGS],SFF_DEVICE
+        jz      f44_setown
         cmp     byte ptr [bp+F_DX+1],0
         jne     f44_unsup
         and     byte ptr [si+SFT_DEVINFO],NOT DIF_RAW
@@ -3153,7 +3169,13 @@ dr_loop:
         push    cx
         push    di
         push    es
+        test    byte ptr [si+SFT_DEVINFO],DIF_RAW
+        jnz     dr_raw
+        call    con_inck                ; cooked: ^S, ^P and ^C are DOS's,
+        jmp     short dr_got            ; as in 0Ah
+dr_raw:
         call    con_in
+dr_got:
         pop     es
         pop     di
         pop     cx

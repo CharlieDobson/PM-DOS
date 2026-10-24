@@ -14,23 +14,34 @@
  * attribute.  LABEL/32 edits the root directory itself, the same way:
  * every label entry is deleted and the new entry goes in the first
  * free slot, stamped with the current date and time.
+ *
+ * exFAT has a label entry of its own in the root, which LABEL rewrites
+ * in place (FAT.C).  Its label keeps the case it was typed in, as
+ * other systems keep it.
  */
 #include "label.h"
 
 static int     drive;
 static int     locked;
 static char    cmd_label[130];
+static char    old_name[LABEL_LEN + 1];   /* the label found, as shown */
 static ROOTDIR root;
 
 /* characters DOS 5+ refuse in a label, besides control characters */
 static const char bad_chars[] = "*?/\\|.,;:+=[]()&^<>\"";
+
+/* FAT32 and exFAT volumes take the FAT32 form of the lock call */
+static int big_volume( void )
+{
+    return vol.fattype == 32 || vol.exfat;
+}
 
 static void finish( int code )
 {
     out_flush();
     if ( locked ) {
         sys_reset_drive( drive );
-        sys_unlock( drive, vol.fattype == 32 );
+        sys_unlock( drive, big_volume() );
         locked = 0;
     }
     sys_exit( code );
@@ -127,7 +138,7 @@ static void check_drive( void )
 
 /*
  * The 11-byte directory form of a typed label: leading blanks skipped,
- * upper case, blank padded.  As in DOS every character is checked, but
+ * upper case (on exFAT the case typed), blank padded.  As in DOS every character is checked, but
  * only the first 11 are kept.  Returns -1 for an invalid character,
  * 0 for an empty label (ENTER for none), 1 otherwise.
  */
@@ -153,23 +164,43 @@ static int make_label( const char *src, u8 *out )
     mem_set( out, ' ', LABEL_LEN );
     for ( i = 0; src[i] && len < LABEL_LEN; i++ ) {
         ch = (u8)src[i];
-        out[len++] = (u8)(ch >= 0x80 ? sys_upcase( ch ) : ch_upper( ch ));
+        if ( !vol.exfat ) {
+            ch = ch >= 0x80 ? sys_upcase( ch ) : ch_upper( ch );
+        }
+        out[len++] = (u8)ch;
     }
     return len > 0;
 }
 
-/* "Volume in drive C is ..." and the serial number */
-static void show_label( int idx )
+/* the current label into old_name; 1 if there is one */
+static int find_label( void )
 {
-    char drv_buf[4], name[LABEL_LEN + 1], hi_buf[8], lo_buf[8];
+    int idx;
 
-    if ( idx >= 0 ) {
-        mem_cpy( name, root.data + (u32)idx * DE_LEN, LABEL_LEN );
-        if ( (u8)name[0] == E5_ALIAS ) {
-            name[0] = (char)DEL_MARK;
-        }
-        name[LABEL_LEN] = 0;
-        out_msg( H_OUT, M_HASLABEL, drive_letter( drv_buf ), name );
+    old_name[0] = 0;
+    if ( vol.exfat ) {
+        return xf_get_label( old_name );
+    }
+    root_load( &root );
+    idx = root_next_label( &root, 0 );
+    if ( idx < 0 ) {
+        return 0;
+    }
+    mem_cpy( old_name, root.data + (u32)idx * DE_LEN, LABEL_LEN );
+    if ( (u8)old_name[0] == E5_ALIAS ) {
+        old_name[0] = (char)DEL_MARK;
+    }
+    old_name[LABEL_LEN] = 0;
+    return 1;
+}
+
+/* "Volume in drive C is ..." and the serial number */
+static void show_label( int have )
+{
+    char drv_buf[4], hi_buf[8], lo_buf[8];
+
+    if ( have ) {
+        out_msg( H_OUT, M_HASLABEL, drive_letter( drv_buf ), old_name );
     } else {
         out_msg( H_OUT, M_NOLABEL, drive_letter( drv_buf ), NULL );
     }
@@ -232,7 +263,7 @@ static void change_label( const u8 *label )
     u8 *ent;
     int idx, err;
 
-    if ( sys_lock( drive, vol.fattype == 32 ) != 0 ) {
+    if ( sys_lock( drive, big_volume() ) != 0 ) {
         drv_buf[0] = (char)('A' + drive);
         drv_buf[1] = ':';
         drv_buf[2] = 0;
@@ -247,6 +278,13 @@ static void change_label( const u8 *label )
     err = vol_open( drive );
     if ( err != 0 ) {
         disk_error( err, 0 );
+    }
+    if ( vol.exfat ) {
+        if ( xf_set_label( label ) != 0 ) {
+            out_line( H_ERR, M_NOROOM );
+            finish( 1 );
+        }
+        return;
     }
     root_free( &root );
     root_load( &root );
@@ -303,8 +341,7 @@ void label_main( void )
     if ( err != 0 ) {
         disk_error( err, 0 );
     }
-    root_load( &root );
-    old = root_next_label( &root, 0 );
+    old = find_label();
 
     if ( cmd_label[0] ) {
         have = make_label( cmd_label, label );
@@ -317,7 +354,7 @@ void label_main( void )
         show_label( old );
         have = ask_label( label, bad );
     }
-    if ( old >= 0 && !have ) {
+    if ( old && !have ) {
         del = ask_delete();
     }
     out_text( H_OUT, M_CRLF );

@@ -676,7 +676,29 @@ r3_pflags:
         je      rpf_sock
         cmp     ax,27h * 256 + 0F1h
         je      rpf_netuse
+        cmp     ax,0Dh * 256 + 44h
+        je      rpf_genblk
         call    vdm_flags
+        ret
+
+; 44h/0Dh, the generic block IOCTL: 0860h's block is at EDX, but the
+; lock and unlock calls - CL = 4Ah and 4Bh, 6Ah and 6Bh - carry lock
+; permissions in DX or nothing at all.  Flattened as an address, the
+; zero LABEL passes was refused with "access denied" before the kernel
+; could answer "invalid function", which LABEL takes as "no lock is
+; needed"; it reported "Cannot lock drive" and wrote nothing.
+rpf_genblk:
+        mov     bl,P_DX
+        cmp     byte ptr [ebp+F_ECX],4Ah
+        je      rpf_nolock
+        cmp     byte ptr [ebp+F_ECX],4Bh
+        je      rpf_nolock
+        cmp     byte ptr [ebp+F_ECX],6Ah
+        je      rpf_nolock
+        cmp     byte ptr [ebp+F_ECX],6Bh
+        jne     rpf_out
+rpf_nolock:
+        xor     bl,bl
         ret
 
 ; F1h/27h, NET USE: the netuse_req is always handed over through EDI

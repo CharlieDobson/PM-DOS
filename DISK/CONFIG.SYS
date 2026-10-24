@@ -14,9 +14,14 @@ LFN=ON
 DPMI=ON
 NULLTRAP=ON
 
-REM A boot menu, to show that one is accepted
+REM A startup menu: one choice for each block under it.  After five
+REM seconds the default is used.  AUTOEXEC.BAT finds the choice in
+REM %CONFIG%.
 [menu]
-MENUITEM=NORMAL,Normal boot
+MENUITEM=NORMAL,Normal start
+MENUITEM=NOUSB,Leave USB to the BIOS
 MENUDEFAULT=NORMAL,5
 [NORMAL]
-INCLUDE=BASE
+USB=ON
+[NOUSB]
+USB=OFF

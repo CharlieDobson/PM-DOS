@@ -237,10 +237,21 @@ vr_noif:
                                                 ; so in the context's flags
         jmp     short vr_go
 vr_nokey:
-        ; ...and an interrupt from a card the box is driving, the same
-        ; way and through the same table (VPIC.INC, vpc_boxwant)...
+        ; ...and the Break key, for a program that hooked INT 1Bh
+        ; (KEYBD.INC, kb_break) - its handler runs as the BIOS would
+        ; have run it, from inside the keyboard's interrupt...
         cmp     byte ptr ds:[v86_vif],0
         je      vr_go
+        cmp     byte ptr ds:[v86_irqx],0
+        jne     vr_no1b
+        call    v86_brkwant
+        jc      vr_no1b
+        call    v86_intctx
+        mov     byte ptr ds:[v86_vif],0
+        jmp     short vr_go
+vr_no1b:
+        ; ...and an interrupt from a card the box is driving, the same
+        ; way and through the same table (VPIC.INC, vpc_boxwant)...
         call    vpc_boxwant
         jc      vr_noirq
         call    v86_intctx
@@ -1568,6 +1579,25 @@ vkw_no:
         ret
 
 ;---------------------------------------------------------------------
+; v86_brkwant - CF clear and AL = 1Bh if the Break key is owed to the
+;               box's INT 1Bh (kb_break, GV_BOX1B).  Consumes the debt,
+;               so a caller that gets CF clear must deliver.  The caller
+;               has seen to the guest's interrupt flag.
+;---------------------------------------------------------------------
+v86_brkwant:
+        cmp     byte ptr ds:[GV_BOX1B],GVB_OWED
+        jne     vbk_no
+        mov     byte ptr ds:[GV_BOX1B],GVB_BOX
+        cmp     dword ptr ds:[1Bh * 4],0
+        je      vbk_no                  ; nowhere to go: vf_exc says why
+        mov     al,1Bh
+        clc
+        ret
+vbk_no:
+        stc
+        ret
+
+;---------------------------------------------------------------------
 ; v86_ckkbd - EBP -> a fault frame belonging to the guest.  Deliver a
 ;             queued keystroke if there is one.
 ;---------------------------------------------------------------------
@@ -1581,10 +1611,19 @@ v86_ckkbd:
         call    v86_deliver
         jmp     short vck_out           ; and the guest is in an ISR now
 vck_no:
-        ; An interrupt from a card the box is driving, through its own
-        ; table like the keystroke.
+        ; The Break key, owed to a program's INT 1Bh (v86_brkwant).
         cmp     byte ptr ds:[v86_vif],0
         je      vck_out
+        cmp     byte ptr ds:[v86_irqx],0
+        jne     vck_card
+        call    v86_brkwant
+        jc      vck_card
+        movzx   eax,al
+        call    v86_deliver
+        jmp     short vck_out
+vck_card:
+        ; An interrupt from a card the box is driving, through its own
+        ; table like the keystroke.
         call    vpc_boxwant
         jc      vck_mouse
         call    v86_deliver

@@ -1199,6 +1199,15 @@ ims_notiso:
         jc      ims_bad
         mov     dword ptr [sec_lba],-1  ; sec_buf now holds someone else's
                                         ; sector: say so before leaving
+        cmp     dword ptr [sec_buf+3],'AFXE'    ; an exFAT volume has no BPB
+        jne     ims_notex                       ; for bpb_looks to find, and
+        cmp     dword ptr [sec_buf+7],'   T'    ; is a volume all the same
+        jne     ims_notex
+        mov     byte ptr [imm_ptype],PT_EXFAT
+        popad
+        clc
+        ret
+ims_notex:
         call    bpb_looks
         jc      ims_mbr
         popad
@@ -1209,12 +1218,24 @@ ims_notiso:
 ims_mbr:
         cmp     word ptr [sec_buf+510],0AA55h
         jne     ims_bad
+        mov     dword ptr [gpt_rdfn],OFFSET img_gptrd
+        call    ims_gpt                 ; a GPT disk in a file (GPT.INC)
+        jnc     ims_placed
         mov     esi,OFFSET sec_buf + 01BEh
         xor     ecx,ecx
 ims_pscan:
         mov     al,[esi+PE_TYPE]
         call    part_isfat
+        jnc     ims_pfat
+        cmp     al,PT_EXFAT             ; ...or exFAT in an 07h one
+        jne     ims_pnext
+        push    edx
+        mov     al,[imm_unit]
+        mov     edx,dword ptr [esi+PE_START]
+        call    part_exfat
+        pop     edx
         jc      ims_pnext
+ims_pfat:
         mov     eax,dword ptr [esi+PE_START]
         or      eax,eax
         jz      ims_pnext               ; a partition starting at the MBR
@@ -1233,6 +1254,7 @@ ims_pscan:
         mov     eax,ebx
 ims_plen:
         mov     [imm_secs],eax
+ims_placed:
         popad
         clc
         ret
@@ -1246,6 +1268,53 @@ ims_bad:
         popad
         mov     ax,[imm_err]
         stc
+        ret
+
+;--- ims_gpt - the MBR in sec_buf is a GUID partition table's protective
+;--- one: the first volume in the table is the one mounted, as the first
+;--- FAT partition of an MBR is.  CF set if there is no table that checks
+;--- behind it, or nothing in it this system reads.
+ims_gpt:
+        call    mbr_hasgpt
+        jc      igp_out
+        pushad
+        mov     al,[imm_unit]
+        mov     ecx,[imm_secs]          ; the file's size: where the backup is
+        call    gpt_open
+        jc      igp_no
+        xor     ebp,ebp
+        call    gpt_next                ; -> AH = type, EDX = start, ECX
+        jc      igp_no
+        cmp     edx,[imm_secs]
+        jae     igp_no
+        mov     [imm_start],edx
+        mov     [imm_ptype],ah
+        mov     eax,[imm_secs]
+        sub     eax,edx
+        cmp     ecx,eax                 ; clamped to the file, as above
+        jbe     igp_len
+        mov     ecx,eax
+igp_len:
+        mov     [imm_secs],ecx
+        popad
+        clc
+        ret
+igp_no:
+        popad
+        stc
+igp_out:
+        ret
+
+;--- img_gptrd - gpt_rdfn for the file being mounted: sector EBX of
+;--- unit AL into EDI.  img_io keeps every register but AH.
+img_gptrd:
+        push    ecx
+        push    edx
+        mov     cx,1
+        mov     edx,IOS_RDBLK
+        call    img_io
+        pop     edx
+        pop     ecx
         ret
 
 ;--- ims_match5 - five bytes at EDI against five at ESI.  ZF on equal.

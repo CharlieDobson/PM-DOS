@@ -66,6 +66,15 @@ CFG_PASS_INST   EQU     3               ; INSTALL=, after every driver
 ; "Starting PM-DOS..." went up, which is DOS 6's 37 ticks.
 BOOTKEY_WAIT    EQU     37
 
+; mcf_asks (MULTICFG.INC) - which lines are asked about before they are
+; acted on, and what has been answered for good.  Here and not there
+; because cfg_keys, above it in the build, sets them.
+CFGA_EVERY      EQU     01h             ; F8: every line, and AUTOEXEC.BAT
+CFGA_YES        EQU     02h             ; nothing more: Esc, or the menu
+                                        ; timed out with nobody there
+CFGA_NO         EQU     04h             ; nothing more, and none of it
+                                        ; runs: F5 at a question
+
 ;=====================================================================
 ; config_run - find CONFIG.SYS on the boot drive and act on it.
 ;              Its absence is not an error and never was.
@@ -153,7 +162,15 @@ cfg_shut:
         je      cfg_fitted
         mov     esi,OFFSET msgCfgLong
         call    dword ptr ds:[IOS_CONSTR]
+        mov     byte ptr [mcf_said],1   ; read before a menu clears it
 cfg_fitted:
+
+        ; WHICH BLOCKS: the [MENU] block, if there is one, is shown and
+        ; a configuration chosen, and from here on the walks use only
+        ; the lines that configuration has (MULTICFG.INC).  F5 on the
+        ; menu is a safe-mode start like F5 before it.
+        call    mcf_choose
+        jc      cfg_out
 
 IFDEF PMDOS_DEBUG
         mov     esi,OFFSET msgCfgFound
@@ -199,6 +216,12 @@ cfg_none:
 ; next.  Every F5 at the front of the queue is taken off it, because
 ; people press it more than once and the rest would reach the prompt.
 ;
+; F8 IS THE THIRD KEY, and it does not bypass anything: every line of
+; CONFIG.SYS is then asked about before it is acted on, and so is
+; AUTOEXEC.BAT (mcf_ask and mcf_autoexec, MULTICFG.INC).  It is taken
+; off the queue like F5.  Shift or F5 with it still means safe mode,
+; which is DOS 6's order.
+;
 ; SWITCHES=/N turns the keys off.  SWITCHES=/F skips the wait, so only
 ; a key already pressed counts.
 ;=====================================================================
@@ -230,17 +253,45 @@ ck_f5:
         movzx   ebx,word ptr ds:[BDA_KBHEAD]
         cmp     bx,word ptr ds:[BDA_KBTAIL]
         je      ck_decide               ; nothing waiting
+        mov     dh,BOOTK_F5
         cmp     word ptr ds:[ebx+BDA_BASE],3F00h        ; F5
+        je      ck_eat
+        mov     dh,BOOTK_F8
+        cmp     word ptr ds:[ebx+BDA_BASE],4200h        ; F8
         jne     ck_decide
+ck_eat:
         push    edx
         call    dword ptr ds:[IOS_CONIN]        ; take it off the queue
         pop     edx
-        or      dl,BOOTK_F5
+        or      dl,dh
         jmp     short ck_f5
 ck_decide:
-        or      dl,dl
+        test    dl,BOOTK_SHIFT OR BOOTK_F5
+        jnz     ck_bypass
+        test    dl,BOOTK_F8
         jz      ck_normal
 
+        ; F8: every line asked about, and no countdown on the menu -
+        ; the person who pressed it is there
+        mov     esi,OFFSET msgCfgStep
+        call    dword ptr ds:[IOS_CONSTR]
+        or      byte ptr [mcf_asks],CFGA_EVERY
+        mov     byte ptr [mcf_typed],1
+ck_normal:
+        clc
+        ret
+ck_bypass:
+        call    cfg_bypass
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; cfg_bypass - a safe-mode start: Shift or F5 at "Starting PM-DOS...",
+;              or F5 on the startup menu.  Says so, and puts /D on the
+;              shell's tail, which is DOS 6's way of telling the
+;              interpreter to skip AUTOEXEC.BAT.
+;---------------------------------------------------------------------
+cfg_bypass:
         mov     esi,OFFSET msgCfgSafe
         call    dword ptr ds:[IOS_CONSTR]
 
@@ -253,23 +304,29 @@ ck_decide:
         ; checked: CHKDSK at boot may be the very thing that needed a
         ; safe-mode start to get past (VOLFLAG.INC).
         cmp     byte ptr [autoc_mode],AUTOC_ON
-        jne     ck_tail
+        jne     cbp_tail
         mov     byte ptr [autoc_mode],AUTOC_ASK
-ck_tail:
+cbp_tail:
+        mov     byte ptr [mcf_asks],CFGA_YES    ; and nothing more is asked
+        mov     al,'D'
+        ; fall into cfg_tailsw
+
+;---------------------------------------------------------------------
+; cfg_tailsw - AL = a letter: " /letter" onto the end of the shell's
+;              tail - /D to skip AUTOEXEC.BAT, /Y to step through it.
+;              With no room left it is not added, as DOS 6 did.
+;---------------------------------------------------------------------
+cfg_tailsw:
         movzx   ecx,byte ptr [shell_tail]
         cmp     ecx,7Eh - 3             ; no room: DOS 6 gave up here too
-        ja      ck_bypass
+        ja      cts_out
         lea     edi,[shell_tail+ecx+1]
         mov     byte ptr [edi],' '
         mov     byte ptr [edi+1],'/'
-        mov     byte ptr [edi+2],'D'
+        mov     byte ptr [edi+2],al
         mov     byte ptr [edi+3],0Dh
         add     byte ptr [shell_tail],3
-ck_bypass:
-        stc
-        ret
-ck_normal:
-        clc
+cts_out:
         ret
 
 ;---------------------------------------------------------------------
@@ -322,49 +379,87 @@ cup_out:
 
 ;=====================================================================
 ; cfg_walk - one pass over cfg_buf, a line at a time.
+;
+; WHICH LINES COUNT is MULTICFG.INC's business: the lines above the
+; first [block] always do, and after that mcf_header decides at each
+; [block] line.  The first walk, for SWITCHES=, reads them all.
 ;=====================================================================
 cfg_walk:
+        mov     byte ptr [mcf_on],1
+        mov     byte ptr [mcf_seen],0
+        mov     byte ptr [mcf_stop],0
+        mov     dword ptr [mcf_depth],0
         mov     esi,OFFSET cfg_buf
-cfg_line:
-        cmp     byte ptr [esi],0
-        je      cfg_done
+        ; fall into cfg_lines
 
-        ; copy one line out, stopping at CR, LF or Ctrl-Z
-        mov     edi,OFFSET cfg_line_buf
-        xor     ecx,ecx
-cfg_lcp:
-        mov     al,[esi]
-        or      al,al
-        jz      cfg_lend
-        cmp     al,1Ah
-        jz      cfg_done
-        cmp     al,13
-        je      cfg_lterm
-        cmp     al,10
-        je      cfg_lterm
-        cmp     ecx,CFG_LINE_MAX - 1
-        jae     cfg_lskip
-        mov     [edi],al
-        inc     edi
-        inc     ecx
-cfg_lskip:
-        inc     esi
-        jmp     short cfg_lcp
-cfg_lterm:
-        inc     esi                     ; CR, CRLF and bare LF all end it
-        cmp     al,13
-        jne     cfg_lend
-        cmp     byte ptr [esi],10
-        jne     cfg_lend
-        inc     esi
-cfg_lend:
-        mov     byte ptr [edi],0
+;---------------------------------------------------------------------
+; cfg_lines - act on the lines from ESI to the end of the file - or,
+;             inside an INCLUDE, to the end of the included block,
+;             which mcf_header marks with mcf_stop.  mcf_include calls
+;             it for that, so a block can be walked from inside a walk.
+;---------------------------------------------------------------------
+cfg_lines:
+        call    cfg_getline
+        jc      cfg_done
         push    esi
         call    cfg_do_line
         pop     esi
-        jmp     short cfg_line
-
+        cmp     byte ptr [mcf_stop],0
+        je      cfg_lines
 cfg_done:
+        ret
+
+;---------------------------------------------------------------------
+; cfg_getline - ESI -> a line in cfg_buf.  The line into cfg_line_buf,
+;               NUL-terminated and cut at CFG_LINE_MAX, [cfg_lstart] ->
+;               where it began, ESI -> the line after it.  CF set at
+;               the end of the file, with nothing to act on.
+;
+; A COPY, NOT A TRANSLATION: the first CFG_LINE_MAX - 1 characters are
+; the file's as they are, so a place in cfg_line_buf is the same
+; distance from [cfg_lstart] in cfg_buf.  The menu keeps its names
+; and texts by that (MULTICFG.INC).  CR, CRLF and bare LF all end a
+; line.  A Ctrl-Z ends the file, even part-way along a line, which is
+; then not acted on - as it was before this was a routine of its own.
+;---------------------------------------------------------------------
+cfg_getline:
+        mov     [cfg_lstart],esi
+        mov     edi,OFFSET cfg_line_buf
+        xor     ecx,ecx
+        cmp     byte ptr [esi],0
+        je      cgl_eof
+cgl_cp:
+        mov     al,[esi]
+        or      al,al
+        jz      cgl_end
+        cmp     al,1Ah
+        je      cgl_eof
+        cmp     al,13
+        je      cgl_term
+        cmp     al,10
+        je      cgl_term
+        cmp     ecx,CFG_LINE_MAX - 1
+        jae     cgl_skip
+        mov     [edi],al
+        inc     edi
+        inc     ecx
+cgl_skip:
+        inc     esi
+        jmp     short cgl_cp
+cgl_term:
+        inc     esi
+        cmp     al,13
+        jne     cgl_end
+        cmp     byte ptr [esi],10
+        jne     cgl_end
+        inc     esi
+cgl_end:
+        mov     byte ptr [edi],0
+        clc
+        ret
+cgl_eof:
+        mov     byte ptr [edi],0
+        stc
         ret
 
 ;=====================================================================
@@ -377,46 +472,12 @@ cfg_do_line:
         je      cdl_out
         cmp     byte ptr [esi],';'      ; a comment, by convention
         je      cdl_out
-        cmp     byte ptr [esi],'['      ; [menu] / [common] / [block]
-        je      cdl_out                 ; multi-config: every block is
-                                        ; read, none is chosen from
-
-;--- keyword ---------------------------------------------------------
-        mov     edi,OFFSET cfg_key
-        xor     ecx,ecx
-cdl_key:
-        mov     al,[esi]
-        or      al,al
-        jz      cdl_kend
-        cmp     al,'='
-        je      cdl_kend
-        cmp     al,' '
-        je      cdl_kend
-        cmp     al,9
-        je      cdl_kend
-        call    cfg_upcase
-        cmp     ecx,CFG_KEY_MAX - 1
-        jae     cdl_kskip
-        mov     [edi],al
-        inc     edi
-        inc     ecx
-cdl_kskip:
-        inc     esi
-        jmp     short cdl_key
-cdl_kend:
-        mov     byte ptr [edi],0
-        or      ecx,ecx
+        cmp     byte ptr [esi],'['      ; [menu] / [common] / [block]:
+        je      mcf_header              ; which of them count, MULTICFG.INC
+        cmp     byte ptr [mcf_on],0     ; in a block this start does not
+        je      cdl_out                 ; use
+        call    cfg_keyword
         jz      cdl_out
-
-;--- value: past the blanks, past one '=', past the blanks again -----
-        call    cfg_blanks
-        cmp     byte ptr [esi],'='
-        jne     cdl_noeq
-        inc     esi
-        call    cfg_blanks
-cdl_noeq:
-        mov     [cfg_val],esi
-        call    cfg_trim
 
 ;--- dispatch --------------------------------------------------------
         mov     ebx,OFFSET cfg_table
@@ -438,6 +499,19 @@ cdl_miss:
         add     ebx,8
         jmp     short cdl_lp
 cdl_hit:
+        ; INCLUDE= IS ON EVERY WALK BUT THE FIRST: the block it names
+        ; has statements of every phase in it, and each walk wants its
+        ; own of them from there.
+        mov     eax,[ebx+4]
+        cmp     eax,OFFSET mcf_include
+        je      cdl_include
+        ; NUMLOCK= above the first block is acted on by the first walk,
+        ; so that it is set before the menu (MULTICFG.INC)
+        cmp     dword ptr [cfg_pass],CFG_PASS_KEYS
+        jne     cdl_phase
+        cmp     eax,OFFSET cfg_numlock
+        je      mcf_numfirst
+cdl_phase:
         ; ONE WALK PER PHASE, AND THE HANDLER SAYS WHICH PHASE IT IS
         ; IN.  A statement acted on out of order is a statement acted
         ; on before the thing it needs exists - DOS=UMB before a
@@ -446,6 +520,9 @@ cdl_hit:
         call    cfg_phaseof
         cmp     eax,[cfg_pass]
         jne     cdl_out
+        ; F8 at startup, or DEVICE?= - asked first, and an N skips it
+        call    mcf_ask
+        jc      cdl_out
 cdl_go:
 IFDEF PMDOS_DEBUG
         mov     esi,OFFSET msgCfgLine
@@ -466,6 +543,66 @@ cdl_unknown:
         call    cfg_show_line
         mov     esi,OFFSET msgCfgBadCmd
         call    dword ptr ds:[IOS_CONSTR]
+        ret
+
+cdl_include:
+        cmp     dword ptr [cfg_pass],CFG_PASS_KEYS
+        je      cdl_out                 ; the first walk reads every line
+        mov     esi,[cfg_val]           ; anyway
+        jmp     mcf_include
+
+;---------------------------------------------------------------------
+; cfg_keyword - ESI -> the first non-blank of a line in cfg_line_buf.
+;               The statement's name, in capitals, into cfg_key; its
+;               value - past the blanks, one '=' and the blanks again,
+;               with trailing blanks cut off - at [cfg_val].  ZF set if
+;               there is no name.
+;
+; A '?' STRAIGHT AFTER THE NAME - DEVICE?=C:\X.SYS - asks about the
+; line before it is acted on (mcf_ask), as in DOS 6, and sets
+; cfg_qline.  Straight after: "DEVICE ?=" is not that, in DOS either.
+;---------------------------------------------------------------------
+cfg_keyword:
+        mov     byte ptr [cfg_qline],0
+        mov     edi,OFFSET cfg_key
+        xor     ecx,ecx
+ckw_lp:
+        mov     al,[esi]
+        or      al,al
+        jz      ckw_end
+        cmp     al,'='
+        je      ckw_end
+        cmp     al,'?'
+        je      ckw_end
+        cmp     al,' '
+        je      ckw_end
+        cmp     al,9
+        je      ckw_end
+        call    cfg_upcase
+        cmp     ecx,CFG_KEY_MAX - 1
+        jae     ckw_skip
+        mov     [edi],al
+        inc     edi
+        inc     ecx
+ckw_skip:
+        inc     esi
+        jmp     short ckw_lp
+ckw_end:
+        mov     byte ptr [edi],0
+        cmp     byte ptr [esi],'?'
+        jne     ckw_value
+        mov     byte ptr [cfg_qline],1
+        inc     esi
+ckw_value:
+        call    cfg_blanks
+        cmp     byte ptr [esi],'='
+        jne     ckw_noeq
+        inc     esi
+        call    cfg_blanks
+ckw_noeq:
+        mov     [cfg_val],esi
+        call    cfg_trim
+        or      ecx,ecx
         ret
 
 ;---------------------------------------------------------------------
@@ -570,8 +707,11 @@ csh_tend:
         ret
 
 ;---------------------------------------------------------------------
-; BREAK=ON|OFF - remembered; there is no Ctrl-C handler to consult it
-;                yet, so it is a promise rather than a setting.
+; BREAK=ON|OFF - extended Ctrl-C checking at startup: with it on, a
+;                program's every DOS call looks for a ^C (brk_call in
+;                INT21.INC), not only its screen and keyboard calls.
+;                33h reads and sets the same byte, and a Windows
+;                handover passes it on to RMDOS (RMHF_BREAK).
 ;---------------------------------------------------------------------
 cfg_break:
         mov     edi,OFFSET cfgw_on
@@ -686,14 +826,23 @@ csw_out:
 ;               "never" to "real work", and the work is small: fold
 ;               the extended codes to their conventional equivalents
 ;               and refuse the two keys an 84-key board does not have.
-;   the [menu] family - multi-config.  Every block is read and none is
-;               chosen from, which is deliberate and documented.
+;
+; THE [MENU] FAMILY HAS LEFT TOO, and it is the tenth.  MENUITEM=,
+; SUBMENU=, MENUDEFAULT= and MENUCOLOR= sat here while every block was
+; read and none chosen from; they are read in their [MENU] block now
+; (MULTICFG.INC), and INCLUDE= with them.  Outside a menu block the
+; four still mean nothing, so cfg_menuonly accepts them there without
+; a word - and without asking about them, which is the one thing that
+; tells it from cfg_ignore.
 ;---------------------------------------------------------------------
 cfg_ignore:
 IFDEF PMDOS_DEBUG
         mov     esi,OFFSET msgCfgInert
         call    dword ptr ds:[IOS_CONSTR]
 ENDIF
+        ret
+
+cfg_menuonly:
         ret
 
 ;---------------------------------------------------------------------
@@ -2297,8 +2446,11 @@ cfw_off:
 ; Helpers
 ;=====================================================================
 
-; cfg_show_line - echo the offending line before complaining about it
+; cfg_show_line - echo the offending line before complaining about it,
+;                 and note that something was said, for a menu that
+;                 would clear it off the screen (mcf_pause)
 cfg_show_line:
+        mov     byte ptr [mcf_said],1
         push    esi
         mov     esi,OFFSET cfg_line_buf
         call    dword ptr ds:[IOS_CONSTR]
@@ -2443,11 +2595,11 @@ cfg_table:
         dd      OFFSET cfgn_install, OFFSET cfg_install
         dd      OFFSET cfgn_insthigh,OFFSET cfg_insthigh
         dd      OFFSET cfgn_set,     OFFSET cfg_set
-        dd      OFFSET cfgn_include, OFFSET cfg_ignore
-        dd      OFFSET cfgn_menuitem,OFFSET cfg_ignore
-        dd      OFFSET cfgn_menudflt,OFFSET cfg_ignore
-        dd      OFFSET cfgn_menucolr,OFFSET cfg_ignore
-        dd      OFFSET cfgn_submenu, OFFSET cfg_ignore
+        dd      OFFSET cfgn_include, OFFSET mcf_include
+        dd      OFFSET cfgn_menuitem,OFFSET cfg_menuonly
+        dd      OFFSET cfgn_menudflt,OFFSET cfg_menuonly
+        dd      OFFSET cfgn_menucolr,OFFSET cfg_menuonly
+        dd      OFFSET cfgn_submenu, OFFSET cfg_menuonly
         dd      OFFSET cfgn_comment, OFFSET cfg_ignore
         dd      OFFSET cfgn_multitrk,OFFSET cfg_ignore
         dd      0, 0
@@ -2544,6 +2696,9 @@ cfg_idemodes:
 ;=====================================================================
 cfg_name    db  'A:\CONFIG.SYS',0       ; drive letter patched at boot
 cfg_val     dd  0
+cfg_lstart  dd  0                       ; -> the line in cfg_buf being read
+cfg_qline   db  0                       ; its statement's name ended in '?'
+            db  0,0,0
 
 ; CACHE='s three fields, collected before any of them is acted on -
 ; the line can name the ceiling and leave the floor to be derived, and
@@ -2575,6 +2730,7 @@ msgCrLf         db  13,10,0
 msgCfgBadCmd    db  'Unrecognized command in CONFIG.SYS',13,10,0
 msgCfgLong      db  'CONFIG.SYS is too long: only the first 16K was read',13,10,0
 msgCfgSafe      db  'Safe mode: skipping CONFIG.SYS and AUTOEXEC.BAT.',13,10,13,10,0
+msgCfgStep      db  'Step mode: confirm each line of CONFIG.SYS and AUTOEXEC.BAT.',13,10,13,10,0
 msgDevNoFile    db  'Bad or missing device driver',13,10,0
 msgDevNoMem     db  'Not enough memory for device driver',13,10,0
 msgDevUnits     db  'Device driver has no units',13,10,0

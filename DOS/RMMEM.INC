@@ -388,6 +388,8 @@ f26_fits:
         mov     word ptr es:[34h],18h
         mov     ax,[rd_pspnew]
         mov     word ptr es:[36h],ax
+        ; the real version, as SETMEM stamps it: only EXEC gives SETVER's
+        mov     word ptr es:[40h],DOSVER_MINOR * 256 + DOSVER_MAJOR
 
 ;--- ...and where it will go when it ends.  SETMEM, at the bottom of
 ;--- $CREATE_PROCESS_DATA_BLOCK, copies vectors 22h, 23h and 24h out
@@ -1717,6 +1719,15 @@ ENDIF
         mov     ax,[rd_execpsp]
         mov     word ptr es:[36h],ax
 
+        ; THE VERSION 30h WILL TELL IT: SETVER's entry for the file the
+        ; caller's DS:DX names, or 6.22 - see sv_ver below.
+        push    ds
+        mov     si,[bp+F_DX]
+        mov     ds,[bp+F_DS]
+        call    sv_ver
+        pop     ds
+        mov     word ptr es:[40h],ax
+
         ; AND WHERE THE CHILD GOES WHEN IT ENDS.  SETMEM puts the three
         ; vectors into the PSP; EXEC then overwrites the first of them
         ; with the address the parent is to be resumed at, and puts the
@@ -2068,6 +2079,94 @@ psp_unstamp:
         pop     ds
         pop     es
         popa
+        ret
+
+;--- sv_ver - DS:SI -> a program's path.  AX = the version SETVER's ---
+;--- table gives its file name (major in AL), or 6.22.  Everything
+;--- else is preserved.
+;
+; The kernel's sv_find (VDM.INC) in 16 bits, over the same table:
+; SETVER.EXE's, in conventional memory, found through the far pointer
+; at RL_SETVER in the block below 64K - the list of lists' tail, which
+; this DOS leaves as the kernel wrote it, so a SETVER loaded at boot is
+; still in force under Windows.  An entry is a length, the name, then
+; major and minor; a zero length ends the table.
+;
+; BYTES, NEVER A WORD, OUT OF THE TABLE, and the walk stops where the
+; next entry would wrap the segment: a word read at offset FFFFh is a
+; fault in real mode and in V86, and the table is somebody else's data.
+sv_ver:
+        push    bx
+        push    cx
+        push    dx
+        push    si
+        push    di
+        push    es
+        mov     bx,si                   ; the name starts after the last
+svv_scan:                               ; \, / or :
+        lodsb
+        cmp     al,'\'
+        je      svv_mark
+        cmp     al,'/'
+        je      svv_mark
+        cmp     al,':'
+        je      svv_mark
+        or      al,al
+        jnz     svv_scan
+        mov     dx,si
+        sub     dx,bx
+        dec     dx                      ; DX = the name's length
+        jz      svv_none
+        mov     es,word ptr cs:[rd_lowseg]
+        les     di,es:[RL_SETVER]
+        mov     ax,es
+        or      ax,di
+        jz      svv_none                ; 0:0 - no SETVER loaded
+svv_entry:
+        mov     cl,es:[di]
+        xor     ch,ch
+        jcxz    svv_none                ; the end of the table
+        cmp     cx,dx
+        jne     svv_next
+        push    di
+        mov     si,bx
+svv_cmp:
+        inc     di
+        lodsb
+        cmp     al,'a'
+        jb      svv_cased
+        cmp     al,'z'
+        ja      svv_cased
+        sub     al,'a' - 'A'
+svv_cased:
+        cmp     al,es:[di]
+        jne     svv_differ
+        loop    svv_cmp
+        mov     al,es:[di+1]
+        mov     ah,es:[di+2]
+        pop     di
+        jmp     short svv_out
+svv_mark:
+        mov     bx,si
+        jmp     short svv_scan
+svv_differ:
+        pop     di
+svv_next:
+        mov     cl,es:[di]
+        xor     ch,ch
+        add     di,cx
+        jc      svv_none
+        add     di,3
+        jnc     svv_entry
+svv_none:
+        mov     ax,DOSVER_MINOR * 256 + DOSVER_MAJOR
+svv_out:
+        pop     es
+        pop     di
+        pop     si
+        pop     dx
+        pop     cx
+        pop     bx
         ret
 
 ;=====================================================================

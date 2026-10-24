@@ -82,6 +82,12 @@ FL_ZF       EQU 0040h
 RD_STKSIZE  EQU 1024
 RD_STKLVL   EQU 3                       ; nesting levels rd_stkpsp remembers
 RD_STKSLOTS EQU 6                       ; stacks there are - see stk_take
+RD_KEEPSLOTS EQU (RD_KEEPLEN + RD_STKSIZE - 1) / RD_STKSIZE
+RD_KEEPMAP  EQU (1 SHL RD_KEEPSLOTS) - 1 ; the slots rd_lowkeep is in -
+                                        ; see rd_stks, at the end
+IF RD_KEEPSLOTS GE RD_STKSLOTS
+        .ERR    <RMDOS.ASM: rd_lowkeep reaches the slot the start-up runs on>
+ENDIF
 I21_MAX     EQU 6Dh
 
 _RD     SEGMENT USE16 PUBLIC 'CODE'
@@ -227,6 +233,9 @@ ENDIF
         ; The block below 64K, kept so that it can be put back; no
         ; block, or one of a size this image cannot keep, is a header
         ; this image was not built for.  See RMDOS.INC, RMH_LOWSEG.
+        ; What it keeps is in the bottom stack slots, so no call may be
+        ; given one of those until rd_sysinit has read it - see rd_stks.
+        mov     byte ptr [rd_stkmap],RD_KEEPMAP
         call    rd_lowsave
         jnc     rd_lowok
         mov     word ptr [h_why],RMW_NOTOURS
@@ -257,6 +266,7 @@ IFDEF DBG_LPT
         call    rdbg_mark
 ENDIF
         call    rd_sysinit              ; SDA, list of lists, CDS
+        mov     byte ptr [rd_stkmap],0  ; ...and rd_lowkeep is spent
 IFDEF RMDOS_MARK
         mov     al,'6'
         call    rd_vmark
@@ -298,6 +308,12 @@ ENDIF
         mov     [rd_dtaseg],ax
         mov     al,[h_curdrv]
         mov     [rd_drive],al
+        xor     al,al                   ; BREAK as the kernel had it
+        test    byte ptr [h_flags],RMHF_BREAK
+        jz      rd_brkset
+        inc     al
+rd_brkset:
+        mov     [rd_brkchk],al
         call    sda_sync                ; ...and the published copy agrees
 
         test    byte ptr [h_flags],RMHF_VERBOSE
@@ -1319,6 +1335,7 @@ ENDIF
 
         mov     ax,[bp+F_AX]
         call    sda_userax              ; for a redirector - RMNET.INC
+        call    rd_brkcall              ; BREAK ON: a ^C first (RMCON.INC)
         mov     bl,byte ptr [bp+F_AX+1]
         movzx   bx,bl
         cmp     bx,I21_MAX
@@ -1589,7 +1606,8 @@ rd_ncds     db  LASTDRIVE               ; letters there are, LASTDRIVE= as
                                         ; MS-DOS counts it (rd_sysinit)
 rd_lasterr  dw  0
 rd_verify   db  0
-rd_brkchk   db  0
+rd_brkchk   db  0                       ; BREAK: 33h, and RMHF_BREAK at entry
+rd_charco   dw  0                       ; characters out, for con_outchk
 rd_exitcode dw  0
 rd_exitway  db  0
 rd_dtaseg   dw  0
@@ -1599,8 +1617,6 @@ rd_old13    dd  0                       ; ...the vector a reboot would want
 rd_ivt13    dd  0                       ; ...and the table's, when we came
 rd_lowseg   dw  0                       ; the block below 64K - RMH_LOWSEG,
 rd_lowlen   dw  0                       ; once rd_lowsave has accepted it
-rd_lowkeep  db  RD_KEEPLEN dup(0)       ; the kernel's CDS for our volumes,
-                                        ; and NUL's link (rd_lowsave)
 IF RL_NULDEV + 4 GT RD_KEEPLEN
         .ERR    <RMDOS.ASM: NUL's link is past what rd_lowsave keeps>
 ENDIF
@@ -1618,8 +1634,22 @@ rd_stkmap   db  0                       ; a bit per slot, set while a call
 ;--- and there is no other way to tell them apart.  See RMMEM.INC.
 rd_stkpsp   dw  RD_STKLVL dup (0)
 
-rd_stks     db  RD_STKSLOTS * RD_STKSIZE dup(0)     ; slot 0 ends at
-rd_stktop:                                          ; rd_stks + RD_STKSIZE
+;--- THE STACKS, AND rd_lowkeep IN THE BOTTOM OF THEM.  rd_lowkeep is
+;--- the kernel's current directories for our volumes and NUL's link,
+;--- copied out of the block below 64K by rd_lowsave before rd_sysinit
+;--- writes over it - and rd_sysinit and rd_chain are the only readers
+;--- it has, both before the handover is finished.  No call can be
+;--- standing on a slot by then, so its 2K are the slots' 2K: it was a
+;--- buffer of its own until 2026-10-23, and the 2K it took are the
+;--- segment's room for code now (SETVER took the first of it).  The
+;--- start-up runs on rd_stktop, the top of the LAST slot, and the
+;--- slots under rd_lowkeep are marked taken in rd_stkmap until
+;--- rd_sysinit is done, so that not even a call made from an
+;--- interrupt can be given one (rd_entry, RD_KEEPMAP).
+rd_stks:                                ; slot 0 ends at rd_stks + RD_STKSIZE
+rd_lowkeep  db  RD_KEEPLEN dup(0)
+            db  RD_STKSLOTS * RD_STKSIZE - RD_KEEPLEN dup(0)
+rd_stktop:                              ; ...and the last at rd_stktop
 
 _RD     ENDS
         END

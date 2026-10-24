@@ -131,7 +131,7 @@ if ( $All ) {
 # DRVTEST and BLKTEST, which park the kernel themselves and so ask both
 # DOSes about them.  The RAM disk is D: on every row.
 $default = @(
-    'MEM', 'A20TEST', 'ALLOCTST', 'APITEST', 'ARGS', 'BIGMEM', 'BUFTEST', 'CACHETST', 'CDATEST', 'CDXTEST',
+    'MEM', 'A20TEST', 'ALLOCTST', 'APITEST', 'ARGS', 'BIGMEM', 'BRK32', 'BRKTEST', 'BUFTEST', 'CACHETST', 'CDATEST', 'CDXTEST',
     'CFGTEST', 'CTRYDMP', 'CTRYTEST', 'CURTEST', 'DEVCRIT', 'DEVTEST', 'DMATEST', 'DPMIFP32', 'DPMIFPU',
     'DPMII32', 'DPMIIRQ', 'DPMITEST', 'DPMIV32', 'DPMIVEC', 'DRIVES', 'EMSTEST', 'EXECLEAK', 'EXECTST',
     'F32TEST', 'FCBTEST', 'FNDTEST', 'FPU32', 'FPUTEST', 'HELLO', 'HELLOX', 'HNDTEST', 'HOOKTEST',

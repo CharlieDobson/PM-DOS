@@ -128,12 +128,16 @@ sy_up:
         mov     ax,0F101h
         int     21h
         jc      sy_baddrv
-        mov     [src_type],al
+        cmp     al,F1T_EXFAT            ; exFAT on either side: no boot code
+        je      sy_exfat                ; here reads it, and the two would
+        mov     [src_type],al           ; pass the test below as alike
         mov     dl,[tgt_log]
         inc     dl
         mov     ax,0F101h
         int     21h
         jc      sy_baddrv
+        cmp     al,F1T_EXFAT
+        je      sy_exfat
         cmp     al,[src_type]
         jne     sy_mismatch
 
@@ -289,6 +293,9 @@ sy_same:
         jmp     short sy_die
 sy_mismatch:
         mov     edx,OFFSET msg_mismatch
+        jmp     short sy_die
+sy_exfat:
+        mov     edx,OFFSET msg_exfat
         jmp     short sy_die
 sy_noroom:
         mov     edx,OFFSET msg_noroom
@@ -527,6 +534,7 @@ msg_usage   db  'Copies PM-DOS system files and command interpreter to a disk yo
 msg_baddrv  db  'Invalid drive specification',13,10,'$'
 msg_same    db  'Source and target are the same drive',13,10,'$'
 msg_mismatch db 'Source and target filesystems differ',13,10,'$'
+msg_exfat   db  'An exFAT drive cannot hold the system',13,10,'$'
 msg_noroom  db  'No room for system on destination disk',13,10,'$'
 msg_ioerr   db  'Disk error writing the system areas',13,10,'$'
 msg_nofile  db  'Cannot copy the system files',13,10,'$'

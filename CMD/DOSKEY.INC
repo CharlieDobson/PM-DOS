@@ -146,6 +146,7 @@ kyp_none:
 ;               and 0Ah has to be used instead - nothing was read.
 ;=====================================================================
 ky_readline:
+        mov     byte ptr [ky_kbd],1     ; the keys come from the keyboard
         mov     ax,4400h                ; both ends the console?
         xor     ebx,ebx
         int     21h
@@ -153,6 +154,7 @@ ky_readline:
         and     dl,81h                  ; a device, and console input
         cmp     dl,81h
         je      kyr_inok
+        mov     byte ptr [ky_kbd],0     ; ...or out of KYTEST's file
 
         ; ...UNLESS KYTEST IS SET, which is how the editor is tested.
         ; 07h reads a redirected standard input a byte at a time, and a
@@ -335,10 +337,39 @@ ky_extkeys:
 
 ;---------------------------------------------------------------------
 ; ky_getkey - AL = the key; AH = 1 when it is extended and AL is its
-;             scan code.  DOSKEY's getkey, through 07h rather than 08h
-;             because ^C is the editor's to handle.
+;             scan code.  DOSKEY's getkey (template.asm): 0Bh first,
+;             and the key only when 0Bh says one is still there.
+;
+; 0Bh IS WHERE DOS TAKES ^S, ^P AND ^C (stat_check, DOS\INT21.INC), and
+; it is the only reason DOSKEY asks it: ^P at the prompt turns the
+; printer echo on, as it does for COMMAND.COM's own 0Ah, and ^C goes to
+; INT 23h - "^C" where the cursor is, and cmd_gohome.  The key itself
+; comes through 07h, which leaves those three alone; a ^C that arrives
+; between the two calls is the editor's (kyr_break).
+;
+; DOSKEY waits by asking 0Bh over and over, with INT 28h between.  A
+; native program cannot issue that, so this waits in F008h, which idles
+; until a key is there and leaves it there.  Not with KYTEST's file on
+; standard input, where the wait would be for a keyboard nobody is
+; typing at: the keys are read as they come.
 ;---------------------------------------------------------------------
 ky_getkey:
+        cmp     byte ptr [ky_kbd],0
+        je      kyg_read
+kyg_wait:
+        mov     ax,0F009h               ; the shift state as it is, so that
+        int     21h                     ; F008h waits for a key and not for
+        mov     dl,bl                   ; a change in it
+        xor     dh,dh
+        mov     ax,0F008h
+        int     21h
+        cmp     al,1
+        jne     kyg_wait                ; a shift key moved: wait again
+        mov     ah,0Bh
+        int     21h
+        or      al,al
+        jz      kyg_wait                ; DOS took that one
+kyg_read:
         mov     ah,07h
         int     21h
         or      al,al
@@ -2075,6 +2106,8 @@ krs_hi:
         jc      krs_fail
         mov     edi,eax                 ; the new block
         mov     [ky_tmp],eax
+        mov     cl,OWN_BLOCK            ; until it is the pool, a ^C gives
+        call    own_add                 ; it back (own_add, CMD.ASM)
         ; the oldest history goes until macros and history fit
 krs_fit:
         mov     eax,[ky_mused]
@@ -2095,6 +2128,8 @@ krs_copy:
         int     21h
 krs_nold:
         mov     eax,[ky_tmp]
+        mov     cl,OWN_BLOCK
+        call    own_del
         mov     [ky_pool],eax
         mov     eax,[ky_newsize]
         mov     [ky_size],eax
@@ -2149,7 +2184,7 @@ ky_newsize  dd  0
 ky_insdef   db  0                       ; /INSERT: insert unless Ins says not
 ky_ins      db  0                       ; ...and this line's mode
 ky_opts     db  0                       ; DOSKEY's switches, KYO_*
-            db  0
+ky_kbd      db  0                       ; the line is typed, not KYTEST's
 ky_f9buf    db  4 dup(0)
 ky_buf      db  KYQ_LINE + 4 dup(0)     ; the line and the template
 ky_last     db  KYQ_LINE + 4 dup(0)     ; the previous line

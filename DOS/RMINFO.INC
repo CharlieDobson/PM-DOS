@@ -760,10 +760,25 @@ fn35:
 ;       and what everything this is standing in for was written
 ;       against.  BH is the OEM; FFh is "not one of the ones with a
 ;       name", which is the truthful answer.
+;
+;       Except to a program SETVER names: it is told what its PSP says
+;       at 40h, which EXEC stamped from SETVER's table (sv_ver, RMMEM.INC)
+;       or PM-DOS did before the handover.  Zero there is a PSP nobody
+;       stamped, and gets 6.22.
 ;=====================================================================
 fn30:
         mov     al,byte ptr [bp+F_AX]
-        mov     word ptr [bp+F_AX],DOSVER_MINOR * 256 + DOSVER_MAJOR
+        mov     dx,DOSVER_MINOR * 256 + DOSVER_MAJOR
+        mov     cx,[rd_psp]
+        jcxz    f30_ver
+        push    es
+        mov     es,cx
+        mov     cx,es:[40h]
+        pop     es
+        jcxz    f30_ver
+        mov     dx,cx
+f30_ver:
+        mov     word ptr [bp+F_AX],dx
         mov     word ptr [bp+F_BX],0FF00h
         cmp     al,1
         jne     f30_oem
@@ -784,6 +799,8 @@ fn33:
         jz      f33_get
         cmp     al,1
         je      f33_set
+        cmp     al,2
+        je      f33_xchg
         cmp     al,5
         je      f33_boot
         cmp     al,6
@@ -795,7 +812,14 @@ f33_get:
         jmp     i21_ok
 f33_set:
         mov     al,byte ptr [bp+F_DX]
+        and     al,1                    ; on or off, as the kernel keeps it
         mov     [rd_brkchk],al
+        jmp     i21_ok
+f33_xchg:                               ; set, and say what it was
+        mov     al,byte ptr [bp+F_DX]
+        and     al,1
+        xchg    al,[rd_brkchk]
+        mov     byte ptr [bp+F_DX],al
         jmp     i21_ok
 f33_boot:
         mov     al,[h_bootdrv]
@@ -1124,6 +1148,11 @@ sda_sync:
         mov     byte ptr es:[RL_SDA + SD_INDOS],al
         mov     al,byte ptr cs:[rd_errmode]
         mov     byte ptr es:[RL_SDA + SD_ERRMODE],al
+        ; BREAK TOO, which MS-DOS keeps at 17h, so that DOSMGR swaps it
+        ; with the rest: BREAK OFF in one DOS box under Windows is that
+        ; box's, as it is on MS-DOS, and not every box's.
+        mov     al,byte ptr cs:[rd_brkchk]
+        mov     byte ptr es:[RL_SDA + SD_BREAK],al
         pop     es
         pop     ax
         ret
@@ -1158,6 +1187,8 @@ sda_pull:
         mov     byte ptr cs:[rd_indos],al
         mov     al,byte ptr es:[RL_SDA + SD_ERRMODE]
         mov     byte ptr cs:[rd_errmode],al
+        mov     al,byte ptr es:[RL_SDA + SD_BREAK]
+        mov     byte ptr cs:[rd_brkchk],al
         pop     es
         pop     ax
         ret

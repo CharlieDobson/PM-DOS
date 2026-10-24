@@ -1882,6 +1882,11 @@ int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
         *answer = 0;
         result = 0;
         break;
+    case SOCK_NICSTATS:
+        /* hand back the card's own frame/error counts, so a program can
+           see whether frames are leaving and arriving */
+        result = nds_niccall( 0, NIC_STATS, buf, len, answer );
+        break;
     default:           result = ERR_FUNC; break;
     }
 

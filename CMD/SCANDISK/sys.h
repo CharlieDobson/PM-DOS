@@ -23,6 +23,7 @@
 #define DRV_INVALID     (-1)
 #define DRV_LOCAL       0
 #define DRV_REMOTE      1       /* a network drive, a CD-ROM              */
+#define DRV_EXFAT       3       /* exFAT, which only PM-DOS's F101h names */
 #define DRV_SUBST       2       /* SUBSTed                                */
 
 /* sys_write_sec() kinds (INT 21h/7305h write flags) */

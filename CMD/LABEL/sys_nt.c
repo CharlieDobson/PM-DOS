@@ -143,6 +143,10 @@ static int open_image( const char *path )
     if ( SetFilePointer( img, 0, NULL, 0 ) == 0 &&
          ReadFile( img, sec, 512, &got, NULL ) && got == 512 ) {
         img_bps = RD16( sec + 11 );
+        if ( mem_cmp( sec + 3, "EXFAT   ", 8 ) == 0 &&
+             sec[0x6C] >= 9 && sec[0x6C] <= 12 ) {
+            img_bps = 1ul << sec[0x6C];         /* exFAT has no BPB */
+        }
         if ( img_bps < 128 || img_bps > 4096 || (img_bps & (img_bps - 1)) ) {
             img_bps = 512;
         }

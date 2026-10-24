@@ -66,7 +66,7 @@ For the shells, see [[CMD]] and [[COMMAND]].
 
 The shell the kernel starts at boot runs with /P and ignores EXIT.  A
 shell started by typing CMD, or by a program, ends and returns to
-whatever started it.
+the previous command interpreter.
 #topic FOR|For
 Runs a command once for each of a set of files, or for each line of a
 file.
@@ -305,9 +305,9 @@ To change to a directory, see [[CD]]; to remove one, see [[RD]].
 #notes
 {b}Long names{p}
 
-A name longer than eight and three, or with spaces in it, is kept as
-a long name on a FAT disk that has room for one.  Put a name with
-spaces in quotes.
+A name longer than the standard 8 character name and 3 character
+extension will be created as a long directory name.  Use double
+quotes for directories with spaces in them.
 
 {b}One level at a time{p}
 
@@ -351,9 +351,9 @@ PATH is kept in the environment; see [[SET]].
 #notes
 {b}The order{p}
 
-A program typed at the prompt is looked for in the current directory
-first, then in each PATH directory in turn, as a .COM, an .EXE and a
-.BAT in each.  The first one found runs.
+PM-DOS looks for a program typed at the prompt in the current directory
+first, then in each PATH directory in turn, as a .COM, an .EXE and a .BAT
+in each.  The first one found runs.
 
 {b}What the boot disk sets{p}
 

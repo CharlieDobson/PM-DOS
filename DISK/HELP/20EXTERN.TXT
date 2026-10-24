@@ -275,6 +275,11 @@ For a check that asks about each problem, keeps an undo disk and can
 scan the surface, see [[SCANDISK]].  [[AUTOCHECK=]] in CONFIG.SYS runs
 CHKDSK at startup on a disk that was not shut down properly.
 #notes
+{b}exFAT{p}
+
+CHKDSK checks FAT12, FAT16 and FAT32 drives.  exFAT drives are not
+supported.
+
 {b}What it checks{p}
 
 The file allocation tables, the directories, and every file's chain
@@ -404,6 +409,11 @@ drive:
 DEFRAG checks the drive first and offers [[SCANDISK]] when it finds
 errors.  [[CHKDSK]] reports whether a file is in one piece.
 #notes
+{b}exFAT{p}
+
+DEFRAG works on FAT12, FAT16 and FAT32 drives.  exFAT drives are not
+supported.
+
 {b}The screen{p}
 
 A map of the disk, a block for each group of clusters, shows the
@@ -755,6 +765,8 @@ resizes them, and marks one active.
     FDISK /M d:p n
     FDISK /S d:p n
     FDISK /MBR d
+    FDISK /GPT d
+    FDISK /NOGPT d
 
 FDISK on its own shows the disks and their partitions on the screen,
 where they can be chosen and changed with the keyboard or the mouse.
@@ -762,7 +774,8 @@ where they can be chosen and changed with the keyboard or the mouse.
 {b}Parameters{p}
 
 d:p
-    Disk d, partition p: 1:1 is the first partition on the first disk.
+    Disk d, partition p.  Disks are numbered from 0, as the report
+    shows them, so 1:1 is the first partition on the second disk.
 
 n
     A number of sectors, or a size with M after it: 40M.
@@ -799,6 +812,14 @@ tt
     Writes a fresh master boot record on disk d, leaving the partition
     table as it is.
 
+/GPT d
+    Converts disk d to a GUID Partition Table (GPT).  Existing
+    partitions and their files are kept.
+
+/NOGPT d
+    Converts GPT disk d back to an MBR partition table.  The disk can
+    have no more than four partitions.
+
 {b}Related Commands{p}
 
 A new partition needs [[FORMAT]] before it can hold files, and [[SYS]]
@@ -827,6 +848,32 @@ all the same.
 
 Drive letters are given out at boot: a partition made or deleted
 changes the letters of the ones after it from the next boot on.
+
+{b}GPT disks{p}
+
+A GPT disk can hold up to 128 partitions, numbered 1 to 128, and all
+of them are primary partitions.  GPT has no extended partition.  New
+partitions start on a 1MB boundary, and FDISK updates both the
+primary and the backup copy of the partition table.  Other versions
+of DOS cannot see the partitions on a GPT disk.
+
+Partitions past the first 2TB of a disk are shown but cannot be
+changed, and PM-DOS does not give them drive letters.
+
+/A marks the partition the computer starts from.  The boot code that
+/MBR writes can start that partition on a GPT disk if the BIOS
+supports the INT 13h extensions.
+
+To convert a disk to GPT or back from the FDISK screen, press T.  A
+disk with an extended partition cannot be converted to GPT, and a
+partition in the first 34 or the last 33 sectors of the disk has to
+be moved first.
+
+{b}exFAT{p}
+
+To format a partition from the FDISK screen, press F and choose FAT
+or exFAT.  FDISK can show, format and delete exFAT partitions, but
+cannot move or resize them.
 #examples
 To see every disk's partitions:
 
@@ -834,11 +881,15 @@ To see every disk's partitions:
 
 To make a 100MB FAT16 partition in the free space on the second disk:
 
-    fdisk /c 2:1 100m 06
+    fdisk /c 1:1 100m 06
 
 To make the first partition of the first disk the one that boots:
 
-    fdisk /a 1:1
+    fdisk /a 0:1
+
+To convert the second disk to GPT:
+
+    fdisk /gpt 1
 #topic FIND|Find
 Searches files for lines that contain a piece of text.
 
@@ -910,6 +961,7 @@ empty root directory, and on a diskette lays the tracks down.
 {b}Syntax{p}
 
     FORMAT drive: [/V[:label]] [/Q] [/U] [/F:size] [/B | /S] [/C]
+           [/FS:type] [/A:size]
 
 {b}Parameters{p}
 
@@ -943,6 +995,15 @@ drive:
     Tests the clusters an earlier format marked bad instead of
     keeping the marks.
 
+/FS:type
+    Formats the partition as FAT, FAT32 or EXFAT.  FAT gives FAT12 or
+    FAT16, depending on the partition's size.  Hard disk partitions
+    only.
+
+/A:size
+    Sets the cluster size: 512, 1K, 2K and so on, up to 32K for FAT
+    and 32M for exFAT.  Hard disk partitions only.
+
 {b}Related Commands{p}
 
 To put the system on a disk that is formatted already, see [[SYS]].
@@ -968,6 +1029,16 @@ tracks to lay down on an IDE disk.
 Every track is formatted and read back, and then the boot sector,
 tables and root directory are written for the capacity asked for, or
 the drive's own.
+
+{b}exFAT{p}
+
+/FS:EXFAT formats the partition as exFAT.  PM-DOS reads and writes
+exFAT drives, with long file names that keep their case, but cannot
+start from one.  Files of 4GB or more can be read but not written.
+Other versions of DOS cannot read exFAT drives.
+
+To change an exFAT drive back to FAT, use FORMAT /FS:FAT or
+/FS:FAT32.
 
 {b}Bad cluster marks{p}
 

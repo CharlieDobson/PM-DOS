@@ -211,6 +211,24 @@ static void out_mac( const u8 *mac )
     }
 }
 
+/* the card's own frame and error counts, so we can see where a dead DHCP
+   stands: tx counts up if the DISCOVER is leaving, rx if anything arrives */
+static void show_nicstats( void )
+{
+    u32 st[16];
+    int err;
+    mem_zero( st, sizeof( st ) );
+    sk( SOCK_NICSTATS, st, 40, &err );          /* NICS_LEN = 40 */
+    if ( err != 0 ) { out_str( "  (NIC stats unavailable)" ); out_nl(); return; }
+    out_str( "  card counts: tx=" ); out_dec( st[2] );     /* txframes */
+    out_str( " txerr=" ); out_dec( st[6] );                /* txerrors */
+    out_str( " rx=" ); out_dec( st[0] );                   /* rxframes */
+    out_str( " rxerr=" ); out_dec( st[5] );                /* rxerrors */
+    out_str( " rxdrop=" ); out_dec( st[4] );               /* rxdropped */
+    out_str( " irq=" ); out_dec( st[8] );                  /* irqs */
+    out_nl();
+}
+
 static void test_dhcp( void )
 {
     int err;
@@ -222,7 +240,7 @@ static void test_dhcp( void )
     out_nl();
 
     check( "the interface has an address (DHCP)" );
-    if ( !wait_up() ) { out_str( "no address" ); fail(); return; }
+    if ( !wait_up() ) { out_str( "no address" ); fail(); show_nicstats(); return; }
     out_ip( ifs.ip );
     out_str( " mask " );
     out_ip( ifs.mask );

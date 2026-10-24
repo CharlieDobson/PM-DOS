@@ -248,7 +248,7 @@ static int load_drive( int drive )
 
     release_drive();
     if ( sys_drive_kind( drive ) == DK_NONE ) {
-        tell( tx_not_local, 'A' + drive );
+        tell( sys_drive_exfat( drive ) ? tx_exfat : tx_not_local, 'A' + drive );
         return DFE_GENERAL;
     }
     if ( fe_log_drive() == drive ) {
@@ -512,7 +512,7 @@ void defrag_main( void )
     }
 #endif
     if ( opt.drive >= 0 && sys_drive_kind( opt.drive ) == DK_NONE ) {
-        sfmt( line, sizeof( line ), tx_bad_drive, 'A' + opt.drive );
+        sfmt( line, sizeof( line ), sys_drive_exfat( opt.drive ) ? tx_exfat : tx_bad_drive, 'A' + opt.drive );
         say( line );
         say( "\r\n" );
         sys_exit( DFE_GENERAL );

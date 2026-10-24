@@ -1516,6 +1516,10 @@ v_brgentry dd  0                        ; GV_BRGENTRY: brg_entry, for the VxD
                                         ; to call through a CR3 switch while
                                         ; the kernel is parked
 
+        ORG     GV_OFF + 0E8h
+v_box1b    db  GVB_NONE                 ; GV_BOX1B: a DOS box, and a Break
+                                        ; owed to its INT 1Bh (KEYBD.INC)
+
 ;=====================================================================
 ; Pad the stub to exactly RMSTUB_SIZE so IOPM.BIN lands at IO_PM_BASE.
 ;=====================================================================

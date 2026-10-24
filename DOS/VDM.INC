@@ -117,6 +117,14 @@ k21_jft:
         call    jft_pre
         jc      k21_done                ; done there, answer and all
 k21_disp:
+        ; A GUEST'S CALL WITH BREAK ON LOOKS FOR A ^C FIRST, as
+        ; int21_entry has a program's do.  The kernel's own k21 calls
+        ; never do.  This is after jft_pre because a ^C here abandons
+        ; the call (vdm_ctrlc), and what it puts back is jft_post's.
+        cmp     dword ptr [ebp+F_EIP],1
+        jne     k21_nobrk
+        call    brk_call
+k21_nobrk:
 
         ; The SAME dispatch as int21_entry, and it has to be: this is
         ; the door a DOS box comes in through, and any family missing
@@ -237,6 +245,12 @@ vdm_psp:
         mov     [edi+RSP_ENV],ax
         mov     word ptr [edi+RSP_JFTLEN],20
 
+        ; The DOS version this program is told, which 30h reads back
+        ; from here: SETVER's entry for its file name, or the real one.
+        mov     esi,dword ptr ds:[vdm_pathp]
+        call    sv_find
+        mov     [edi+RSP_VERSION],ax
+
         mov     eax,dword ptr ds:[22h*4]        ; the guest's own vectors,
         mov     [edi+RSP_TERM],eax              ; out of the IVT the monitor
         mov     eax,dword ptr ds:[23h*4]        ; reflects through
@@ -295,6 +309,151 @@ vp_notail:
 vp_noenv:
         pop     edi
         popad
+        ret
+
+;=====================================================================
+; sv_find - ESI -> a program's path, flat ASCIIZ.  AX = the version
+;           SETVER's table gives that file name, as 30h answers it
+;           (major in AL, minor in AH), or DOSVER_* when there is no
+;           table or no entry.  Every other register is preserved.
+;
+; THE TABLE IS SETVER.EXE'S, in conventional memory where its INIT left
+; it, and GLOL_SETVER is the far pointer to it - the one MS-DOS 5 keeps
+; at the same offset of its DOS data, so either SETVER.EXE serves
+; either DOS.  An entry is a length byte, that many bytes of name, then
+; the major and the minor version; a length of zero ends the table.
+; The name matched is the last part of the path with its extension,
+; upper-cased, which is how SETVER stores it.  RMDOS.SYS has the same
+; walk in 16 bits (sv_ver, RMMEM.INC) for what runs under Windows.
+;
+; THE WALK STOPS AT THE END OF THE TABLE'S SEGMENT, as a real-mode one
+; would.  Every address it can reach is mapped and readable, so a
+; table that is not one gives a wrong version and never a fault.
+;=====================================================================
+sv_find:
+        push    ebx
+        push    ecx
+        push    edx
+        push    esi
+        push    edi
+        mov     edx,esi                         ; where the name starts:
+        or      esi,esi                         ; after the last \, / or :
+        jz      svf_none
+svf_scan:
+        mov     al,[esi]
+        inc     esi
+        or      al,al
+        jz      svf_based
+        cmp     al,'\'
+        je      svf_mark
+        cmp     al,'/'
+        je      svf_mark
+        cmp     al,':'
+        jne     svf_scan
+svf_mark:
+        mov     edx,esi
+        jmp     short svf_scan
+svf_based:
+        mov     ecx,esi
+        sub     ecx,edx
+        dec     ecx                             ; ECX = the name's length
+        jz      svf_none
+
+        movzx   ebx,word ptr ds:[DOSDATA+GLOL_SETVER]   ; offset...
+        movzx   edi,word ptr ds:[DOSDATA+GLOL_SETVER+2] ; ...and segment
+        mov     eax,edi
+        or      eax,ebx
+        jz      svf_none                        ; 0:0 - no SETVER loaded
+        shl     edi,4
+svf_entry:
+        movzx   eax,byte ptr [edi+ebx]
+        or      eax,eax
+        jz      svf_none                        ; the end of the table
+        cmp     eax,ecx
+        jne     svf_next
+        push    ebx
+        push    ecx
+        mov     esi,edx
+svf_cmp:
+        inc     ebx
+        mov     al,[esi]
+        inc     esi
+        cmp     al,'a'
+        jb      svf_cased
+        cmp     al,'z'
+        ja      svf_cased
+        sub     al,'a' - 'A'
+svf_cased:
+        cmp     al,[edi+ebx]
+        jne     svf_differ
+        loop    svf_cmp
+        mov     ax,[edi+ebx+1]                  ; major, then minor
+        pop     ecx
+        pop     ebx
+        jmp     short svf_out
+svf_differ:
+        pop     ecx
+        pop     ebx
+svf_next:
+        movzx   eax,byte ptr [edi+ebx]          ; the length, the name, and
+        lea     ebx,[ebx+eax+3]                 ; the two version bytes
+        cmp     ebx,0FFFDh                      ; room left in the segment
+        jb      svf_entry                       ; for a length and a version
+svf_none:
+        mov     ax,DOSVER_MINOR * 256 + DOSVER_MAJOR
+svf_out:
+        pop     edi
+        pop     esi
+        pop     edx
+        pop     ecx
+        pop     ebx
+        ret
+
+;=====================================================================
+; sv_caller - for 30h: DX = the version the program making this call is
+;             to be told.  EBP -> its frame.  Every other register is
+;             preserved.
+;
+; A DOS PROGRAM IS TOLD WHAT ITS PSP SAYS, which vdm_psp wrote there
+; when it loaded it - MS-DOS 5's PSP+40h, so a program that moves 50h
+; to another PSP is told that one's.  A zero word is a PSP nothing
+; stamped, and gets the real version.  A driver is told what
+; [sv_initver] says while its INIT runs, which is when SETVER's entries
+; for .SYS files apply (dl_load); outside INIT it has no PSP of its
+; own.  PM-DOS's own programs and the kernel itself always get the
+; real version: SETVER is for programs that were written for some
+; other DOS.
+;
+; Who is calling is read off the frame exactly as i21_return reads it:
+; SEL_PROG_CS a native program, another selector a DPMI client, and
+; SEL_CODE32 the kernel - from a DOS box when k21u marked F_EIP 1.
+;=====================================================================
+sv_caller:
+        mov     dx,DOSVER_MINOR * 256 + DOSVER_MAJOR
+        cmp     word ptr [ebp+F_CS],SEL_PROG_CS
+        je      svc_out
+        cmp     word ptr [ebp+F_CS],SEL_CODE32
+        jne     svc_dos
+        cmp     dword ptr [ebp+F_EIP],1
+        jne     svc_out
+svc_dos:
+        cmp     word ptr ds:[sv_initver],0
+        je      svc_psp
+        mov     dx,word ptr ds:[sv_initver]
+        ret
+svc_psp:
+        push    eax
+        movzx   eax,word ptr ds:[vdm_curpsp]
+        or      eax,eax
+        jz      svc_none                        ; no program: a driver,
+        shl     eax,4                           ; outside its INIT
+        mov     ax,[eax+RSP_VERSION]
+        or      ax,ax
+        jz      svc_none
+        mov     dx,ax
+svc_none:
+        pop     eax
+svc_out:
         ret
 
 ;=====================================================================
@@ -1516,7 +1675,11 @@ vdm_lolinit:
         ; the device headers used to spell there; three are answers
         ; PM-DOS has always known and had nowhere to put.
         mov     word ptr [edi+GLOL_SPECIAL],0
-        mov     dword ptr [edi+GLOL_SETVER],0FFFFFFFFh
+        ; SETVER's table: 0:0 until SETVER.EXE's INIT points it at its
+        ; own copy.  ZERO and not FFFF:FFFF, because zero is what
+        ; MS-DOS's EXEC tests for before it walks the table, and a
+        ; reader that takes FFFF:FFFF for a table walks the HMA.
+        mov     dword ptr [edi+GLOL_SETVER],0
         mov     word ptr [edi+GLOL_CPFIX],0
         mov     word ptr [edi+GLOL_A20PSP],0
 
@@ -1692,6 +1855,23 @@ vli_colput:
         mov     dword ptr ds:[DOSDATA + GNLS_KBSTUB],9090CFF4h
         mov     byte ptr ds:[DOSDATA + GNLS_KBSTUB + 4],90h
 
+        ; AND DOS'S INT 1Bh, which IO.SYS sets as it starts (msbio1.asm,
+        ; cbreak).  The BIOS calls it for the Break key, and all it does
+        ; is mark the key, which the console reads as a ^C (kb_getchar,
+        ; IO\KEYBD.INC).  A DOS box's program that hooks INT 1Bh finds
+        ; this, and the ^C follows only if the program passes the call
+        ; on - which is how a program keeps Ctrl-Break to itself.  Real
+        ; code that writes a byte, so it works wherever INT 1Bh is
+        ; called from: a box, a BIOS call, or RMDOS under Windows.
+        ;
+        ;       mov byte ptr cs:[GNLS_BRKFLAG],3 / iret
+        mov     edi,DOSDATA + GNLS_BRKSTUB
+        mov     byte ptr [edi],2Eh
+        mov     word ptr [edi+1],06C6h
+        mov     word ptr [edi+3],GNLS_BRKFLAG
+        mov     word ptr [edi+5],0CF03h
+        mov     dword ptr ds:[1Bh * 4],(DOSDATA_SEG SHL 16) + GNLS_BRKSTUB
+
         popad
         ret
 IF GNLS_MAPLEN NE 12
@@ -1700,8 +1880,17 @@ ENDIF
 IF GNLS_KBSTUB LT GNLS_CASEMAP + GNLS_MAPLEN
         .ERR    <GNLS: the INT 09h stub is on top of the case map>
 ENDIF
-IF GNLS_END LT GNLS_KBSTUB + GNLS_STUBLEN
-        .ERR    <GNLS: the INT 09h stub runs past the end of the tables>
+IF GNLS_BRKSTUB LT GNLS_KBSTUB + GNLS_STUBLEN
+        .ERR    <GNLS: the INT 1Bh handler is on top of the INT 09h stub>
+ENDIF
+IF GNLS_BRKLEN NE 7
+        .ERR    <vdm_lolinit writes a seven-byte INT 1Bh handler>
+ENDIF
+IF GNLS_BRKFLAG LT GNLS_BRKSTUB + GNLS_BRKLEN
+        .ERR    <GNLS: the Break key's mark is inside the INT 1Bh handler>
+ENDIF
+IF GNLS_END LT GNLS_BRKFLAG + 1
+        .ERR    <GNLS: the INT 1Bh handler runs past the end of the tables>
 ENDIF
 
 ; What 6505h hands back, byte for byte MS-DOS 6's: the table's length,
@@ -1885,6 +2074,7 @@ vdm_run:
         mov     dword ptr ds:[vdm_exit],0
         mov     dword ptr ds:[vdm_extype],VDX_NORMAL
         mov     dword ptr ds:[vdm_busy],1
+        mov     byte ptr ds:[GV_BOX1B],GVB_BOX  ; for the Break key (kb_break)
         call    xms_a20reset                    ; a fresh box, a shut gate
         call    dword ptr ds:[IOS_KBBOX]        ; ...and no scan codes left
                                                 ; over from the last one
@@ -2942,6 +3132,7 @@ vd_nobx:
         ; On the stack rather than in cells: a guest's critical-error
         ; handler makes DOS calls while this one is still open.
         push    dword ptr ds:[vdm_pf]
+        push    dword ptr [vdm_ctx+V86C_EAX]    ; the call itself...
         push    dword ptr [vdm_ctx+V86C_EDX]    ; the guest's own DX...
         push    dword ptr [vdm_ctx+V86C_EBX]    ; ...and BX
         push    edx                             ; and what was passed
@@ -2955,6 +3146,28 @@ vd_nobx:
         pop     edx
         pop     esi                     ; the guest's BX
         pop     edi                     ; the guest's DX
+        pop     eax                     ; the guest's AX
+
+        ; 06h's READ ANSWERS IN ZF as well, set when nothing was there,
+        ; and vdm_result hands back only the carry: the box went on with
+        ; the zero flag it had before the call.  A program polling the
+        ; keyboard with "mov dl,0FFh / mov ah,6 / int 21h / jz none" took
+        ; whatever that was for its answer, and threw away a key it had
+        ; been given.  Only the read, and 0Ch's road to it: MS-DOS sets
+        ; the caller's ZF there and nowhere else ($RAW_CON_IO).
+        cmp     ah,06h
+        je      vd_is06
+        cmp     ax,0C06h
+        jne     vd_zfok
+vd_is06:
+        mov     ecx,edi                 ; the pop below puts ECX back
+        cmp     cl,0FFh                 ; DL = FFh: the read
+        jne     vd_zfok
+        and     dword ptr [vdm_ctx+V86C_FLAGS],NOT FL_ZF
+        test    dword ptr ds:[k21_flg],FL_ZF
+        jz      vd_zfok
+        or      dword ptr [vdm_ctx+V86C_FLAGS],FL_ZF
+vd_zfok:
         pop     ecx                     ; CL = the pointer flags
         test    cl,P_DX
         jz      vd_dxok
@@ -3899,6 +4112,7 @@ vdm_d32:
         mov     ebx,esp                 ; stack, so bridges can nest
         call    d32_swapin
         mov     dword ptr ds:[vdm_busy],0
+        mov     byte ptr ds:[GV_BOX1B],GVB_NONE ; the Break key is the child's
 
         mov     eax,dword ptr ds:[vdm_cenv]     ; fn4B's parameter block:
         mov     dword ptr ds:[d32_pblk],eax     ; the environment and the
@@ -3935,6 +4149,7 @@ vdm_d32back:
         lea     ebx,[esp+8]
         call    d32_swapout
         mov     dword ptr ds:[vdm_busy],1
+        mov     byte ptr ds:[GV_BOX1B],GVB_BOX
         pop     eax
         popfd
         jc      vd32_fail
@@ -5350,6 +5565,7 @@ vdm_done:
         ; which with the flag still set would be a loop rather than an
         ; exit.
         mov     dword ptr ds:[vdm_busy],0
+        mov     byte ptr ds:[GV_BOX1B],GVB_NONE ; and no Break owed to it
 
         ; AND NO SIMULATED INTERRUPT IS STILL IN FLIGHT, whatever the
         ; flag says.  dpmi_simint sets it and dpmi_rmdone clears it,
@@ -5892,6 +6108,9 @@ vdm_lolseg  dw  0                       ; the guest's list of lists, below 1MB
 vdm_jftmade db  0                       ; vdm_psp built a table - see vl_undo
 vdm_curpsp  dw  0                       ; what 51h/62h answer - 50h moves
                                         ; this and not the block we free
+sv_initver  dw  0                       ; 30h's answer while a driver's INIT
+                                        ; runs, 0 the rest of the time -
+                                        ; see sv_caller and dl_load
 vdm_parpsp  dw  0                       ; what goes at PSP+16h
 vdm_envseg  dw  0
 vdm_paras   dw  0

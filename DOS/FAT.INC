@@ -23,6 +23,17 @@
 
 FATBUF_SIZE     EQU     8192            ; whole-FAT cache (FAT12 only)
 
+; What the entry an exFAT volume's dir_seek last made was made from
+; (EXFAT.INC).  Here because de_getclus, below, asks.
+XVK_END         EQU     0               ; the end of the directory
+XVK_FREE        EQU     1               ; a deleted entry
+XVK_SET         EQU     2               ; a file or directory
+XVK_LABEL       EQU     3               ; the volume label
+XVK_DOT         EQU     4               ; "." or "..", made up
+XVK_OTHER       EQU     5               ; anything else, not to be touched
+XVK_NEW         EQU     6               ; entries reserved for a set not
+                                        ; written yet
+
 ; ONE CLUSTER.  32K, because that is the largest cluster MS-DOS itself
 ; can produce and this buffer is the ONLY thing deciding which volumes
 ; will mount: fat_mount refuses a volume whose cluster does not fit,
@@ -553,10 +564,17 @@ ds_primary:
         sub     ebp,80h                         ; the disk's index, kept
         mov     byte ptr [ds_taken+ebp],0FFh    ; in EBP throughout
         mov     dword ptr [ds_extlba+ebp*4],0
+        mov     byte ptr [ds_isgpt+ebp],0
+        mov     dword ptr [gpt_rdfn],OFFSET gpt_bios
 
         xor     ebx,ebx
         call    ds_mbr
         jc      dp_super                        ; no table - superfloppy?
+
+        ; A GUID PARTITION TABLE TAKES THE DISK OVER, protective MBR,
+        ; hybrid entries and all, when a copy of it checks (GPT.INC)
+        call    ds_gptfirst
+        jnc     dp_none
 
         mov     esi,OFFSET sec_buf + PART_OFF
         xor     ecx,ecx                         ; entry index
@@ -578,7 +596,11 @@ dp_notext:
         or      edi,edi                         ; already have one
         jnz     dp_step
         call    part_isfat
+        jnc     dp_take
+        mov     edx,dword ptr [esi+PE_START]    ; 07h, and exFAT inside?
+        call    ds_isexfat
         jc      dp_step
+dp_take:
         mov     bl,cl
         mov     edi,esi
 dp_step:
@@ -665,7 +687,12 @@ dl_next:
 
         mov     al,[sec_buf+PART_OFF+PE_TYPE]
         call    part_isfat
+        jnc     dl_take
+        mov     edx,dword ptr [sec_buf+PART_OFF+PE_START]
+        add     edx,esi                         ; relative to THIS record
+        call    ds_isexfat
         jc      dl_nextlink
+dl_take:
         mov     ah,[sec_buf+PART_OFF+PE_TYPE]
         mov     al,[ds_disk]
         mov     edx,dword ptr [sec_buf+PART_OFF+PE_START]
@@ -700,6 +727,11 @@ ds_restprim:
 
         movzx   ebp,byte ptr [ds_disk]
         sub     ebp,80h
+        cmp     byte ptr [ds_isgpt+ebp],0
+        je      dr_mbr
+        call    ds_gptrest
+        jmp     short dr_done
+dr_mbr:
         mov     bh,[ds_taken+ebp]               ; the one pass 1 claimed
         mov     esi,OFFSET sec_buf + PART_OFF
         xor     ecx,ecx
@@ -708,7 +740,11 @@ dr_scan:
         je      dr_skip
         mov     al,[esi+PE_TYPE]
         call    part_isfat
+        jnc     dr_take
+        mov     edx,dword ptr [esi+PE_START]
+        call    ds_isexfat
         jc      dr_skip
+dr_take:
         mov     ah,[esi+PE_TYPE]
         mov     al,[ds_disk]
         mov     bl,cl
@@ -726,6 +762,124 @@ dr_skip:
 dr_done:
         popad
         ret
+
+;---------------------------------------------------------------------
+; ds_isexfat - AL = an MBR entry's type, EDX = the partition's first
+;              sector on [ds_disk].  CF clear if the type is PT_EXFAT
+;              and the volume really is exFAT.  Everything preserved.
+;---------------------------------------------------------------------
+ds_isexfat:
+        cmp     al,PT_EXFAT
+        jne     dix_no
+        push    eax
+        mov     dword ptr [gpt_rdfn],OFFSET gpt_bios
+        mov     al,[ds_disk]
+        call    part_exfat
+        pop     eax
+        ret
+dix_no:
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; ds_gptopen - the GUID partition table of [ds_disk], if it has one
+;              that checks (gpt_open).  Everything preserved but flags.
+;---------------------------------------------------------------------
+ds_gptopen:
+        push    eax
+        push    ebx
+        push    ecx
+        mov     dword ptr [gpt_rdfn],OFFSET gpt_bios
+        mov     al,[ds_disk]
+        push    eax
+        call    dword ptr ds:[IOS_DRVPARM]      ; EBX = the disk's sectors
+        pop     eax
+        mov     ecx,ebx
+        jnc     dgo_sized
+        xor     ecx,ecx                         ; nobody knows: no backup
+dgo_sized:
+        call    gpt_open
+        pop     ecx
+        pop     ebx
+        pop     eax
+        ret
+
+;---------------------------------------------------------------------
+; ds_gptfirst - pass 1 on a GPT disk.  sec_buf holds [ds_disk]'s MBR and
+;               EBP is the disk's index.  CF set if it is not a GPT disk
+;               after all - no PT_GPT entry, or no copy of the table
+;               checks - and the MBR is to be read as it stands.  Clear
+;               when it is one: the first volume has its letter, and the
+;               rest have to wait for pass 3, like any disk's.
+;
+; NO LOGICAL DRIVES, so pass 2 has nothing here: ds_extlba stays zero.
+;---------------------------------------------------------------------
+ds_gptfirst:
+        call    mbr_hasgpt
+        jc      dgf_out
+        pushad
+        call    ds_gptopen
+        jc      dgf_no
+        mov     byte ptr [ds_isgpt+ebp],1
+        mov     dword ptr [ds_gtaken+ebp*4],-1
+        push    ebp
+        xor     ebp,ebp
+        call    gpt_next                ; -> EBP = the slot, AH EDX ECX
+        mov     ebx,ebp
+        pop     ebp
+        jc      dgf_yes                 ; a GPT disk with nothing for us
+        mov     [ds_gtaken+ebp*4],ebx
+        mov     al,[ds_disk]
+        cmp     ebx,0FEh                ; DRV_PIDX: the slot, as far as a
+        jbe     dgf_pidx                ; byte goes
+        mov     bl,0FEh
+dgf_pidx:
+        call    drv_add
+dgf_yes:
+        popad
+        clc
+        ret
+dgf_no:
+        popad
+        stc
+dgf_out:
+        ret
+
+;---------------------------------------------------------------------
+; ds_gptrest - pass 3 on a GPT disk: every lettered volume but the one
+;              pass 1 took.  EBP = the disk's index.
+;
+; THE TABLE IS OPENED AGAIN, and has to be: pass 1 went on to the other
+; disks, and gpt_* now describe the last one it read.
+;---------------------------------------------------------------------
+ds_gptrest:
+        pushad
+        mov     eax,[ds_gtaken+ebp*4]
+        mov     [dgr_taken],eax
+        call    ds_gptopen
+        jc      dgr_out
+        xor     ebp,ebp
+dgr_lp:
+        call    gpt_next
+        jc      dgr_out
+        cmp     ebp,[dgr_taken]
+        je      dgr_step
+        mov     al,[ds_disk]
+        mov     ebx,ebp
+        cmp     ebx,0FEh
+        jbe     dgr_pidx
+        mov     bl,0FEh
+dgr_pidx:
+        call    drv_add
+        jc      dgr_out                 ; out of letters
+dgr_step:
+        inc     ebp
+        jmp     short dgr_lp
+dgr_out:
+        popad
+        ret
+
+dgr_taken   dd  0
 
 ;---------------------------------------------------------------------
 ; fm_scale - EAX = a count of the volume's LOGICAL sectors -> EAX = the
@@ -823,6 +977,7 @@ bl_no:
 fat_mount:
         pushad
 fm_start:
+        call    xv_release              ; an exFAT volume's table, if it was one
         mov     byte ptr [fat_ok],0
         mov     byte ptr [vol_vf],0             ; until vfl_mounted says so
         mov     dword ptr [sec_lba],-1          ; sec_buf is about to hold
@@ -915,6 +1070,29 @@ fm_placed:
         mov     edi,OFFSET sec_buf
         call    disk_read
         jc      fm_iofail
+
+;--- or no BPB at all, because it is exFAT ---------------------------
+; Its boot sector is zero where a BPB would be, and says so in the
+; name field.  EXFAT.INC lays it out in FAT32's shape.
+        cmp     dword ptr [sec_buf+XFB_NAME],'AFXE'
+        jne     fm_notex
+        cmp     dword ptr [sec_buf+XFB_NAME+4],'   T'
+        jne     fm_notex
+        call    xv_mount
+        jnc     fm_exok
+        cmp     byte ptr [xv_why],0
+        jne     fm_iofail
+        jmp     fm_fail
+fm_exok:
+        mov     dword ptr [sec_lba],-1
+        call    ctx_root
+        mov     dword ptr [cwd_cnt],0
+        mov     dword ptr [cwd_clus],0
+        mov     byte ptr [fat_ok],1
+        popad
+        clc
+        ret
+fm_notex:
 
 ;--- pull the BPB apart ----------------------------------------------
 ; Sector size first.  1024, 2048 and 4096 are LOGICAL sector sizes as
@@ -1344,6 +1522,9 @@ fat_freecount:
         xor     eax,eax
         ret
 fct_fat:
+        cmp     byte ptr [vol_fs],FS_EXFAT
+        je      xv_freecount            ; a bitmap, not a FAT, says
+
         push    ebx
         push    ecx
         push    edx
@@ -1487,6 +1668,7 @@ vol_swap:
         mov     dword ptr [sec_lba],-1
         mov     dword ptr [clusbuf_clus],-1
         mov     dword ptr [dc_curord],-1
+        call    xv_tclear               ; and so does exFAT's run in hand
 vsw_same:
         popad
         ret
@@ -1722,9 +1904,12 @@ fat_next:
         ; between, which is why a CD needs no FAT and why fat_eoc is
         ; set to something a walk can never reach.
         cmp     byte ptr [vol_fs],FS_ISO
-        jne     fn_fat
+        jne     fn_notiso
         inc     eax
         ret
+fn_notiso:
+        cmp     byte ptr [vol_fs],FS_EXFAT
+        je      xv_next                 ; a run first, then the FAT
 fn_fat:
         push    ebx
         push    ecx
@@ -1795,6 +1980,8 @@ fn_out:
 ;               fat_flush makes it durable.
 ;---------------------------------------------------------------------
 fat_setnext:
+        cmp     byte ptr [vol_fs],FS_EXFAT
+        je      xv_setnext
         pushad
 
         mov     ebx,[fat_totclus]       ; the same measure fat_next takes,
@@ -1866,6 +2053,8 @@ fs_out:
 ;             sequential.
 ;---------------------------------------------------------------------
 fat_alloc:
+        cmp     byte ptr [vol_fs],FS_EXFAT
+        je      xv_alloc                ; out of the bitmap
         push    ebx
         push    ecx
         push    edx
@@ -1915,6 +2104,8 @@ fa_have:
 ; fat_freechain - free the chain starting at cluster EAX (0 = no-op).
 ;---------------------------------------------------------------------
 fat_freechain:
+        cmp     byte ptr [vol_fs],FS_EXFAT
+        je      xv_freechain            ; back into the bitmap
         pushad
 ffc_lp:
         cmp     eax,2
@@ -1961,6 +2152,10 @@ ffl_copy:
 
 ffl_sector:
         call    fat_secflush
+        jc      ffl_fail
+        cmp     byte ptr [vol_fs],FS_EXFAT
+        jne     ffl_ok
+        call    xv_bmflush              ; and exFAT's bitmap with it
         jc      ffl_fail
 ffl_ok:
         popad
@@ -2161,6 +2356,11 @@ vol_forget:
         mov     dword ptr [fat_hint],2          ; the free-space hint was a
                                                 ; guess about a FAT that has
                                                 ; since been rewritten
+        cmp     byte ptr [vol_fs],FS_EXFAT
+        jne     vfg_fat
+        call    xv_forget                       ; the bitmap and the runs too
+        jmp     short vfg_done
+vfg_fat:
         cmp     byte ptr [fat_type],12
         jne     vfg_done
         mov     byte ptr [fat12_dirty],0
@@ -2280,6 +2480,21 @@ de_getclus:                             ; ESI -> entry, EAX = cluster
         shl     ebx,16
         or      eax,ebx
         pop     ebx
+        ; AN exFAT FILE'S CLUSTERS MAY BE A RUN THE FAT KNOWS NOTHING OF,
+        ; and whoever takes its first cluster is about to follow it: the
+        ; run goes in hand with it (EXFAT.INC)
+        cmp     byte ptr [vol_fs],FS_EXFAT
+        jne     dgc_out
+        cmp     esi,OFFSET xv_ent
+        jne     dgc_out
+        cmp     byte ptr [xv_ekind],XVK_SET
+        jne     dgc_out
+        push    eax
+        mov     eax,[xv_efirst]
+        mov     [xv_tfirst],eax
+        mov     eax,[xv_erun]
+        mov     [xv_trun],eax
+        pop     eax
 dgc_out:
         ret
 
@@ -2378,6 +2593,10 @@ ctx_restore:
 ;            CF set past the end (or on I/O error).
 ;---------------------------------------------------------------------
 dir_seek:
+        ; exFAT ANSWERS IN FAT'S SHAPE TOO, out of the entry sets it
+        ; reads through dir_rawseek below (EXFAT.INC)
+        cmp     byte ptr [vol_fs],FS_EXFAT
+        je      xv_seek
         push    eax
         push    ebx
         push    ecx
@@ -2395,6 +2614,18 @@ dir_seek:
         pop     eax
         clc
         ret
+
+;---------------------------------------------------------------------
+; dir_rawseek - dir_seek's FAT half on any volume that has clusters:
+;               EBX = a 32-byte slot of the context directory, ESI -> it
+;               as it is on the disk, in sec_buf.  exFAT reads its entries
+;               through this.
+;---------------------------------------------------------------------
+dir_rawseek:
+        push    eax
+        push    ebx
+        push    ecx
+        push    edx
 dsk_fat:
         cmp     byte ptr [dc_isroot],0
         je      dsk_chain
@@ -2516,6 +2747,12 @@ dsk_ioerr:
 ; fat_dirupdate - write the directory sector in sec_buf back to disk.
 ;---------------------------------------------------------------------
 fat_dirupdate:
+        cmp     byte ptr [vol_fs],FS_EXFAT
+        je      xv_update               ; the set the entry was made from
+;---------------------------------------------------------------------
+; dir_rawupdate - fat_dirupdate's FAT half, for exFAT's own entries
+;---------------------------------------------------------------------
+dir_rawupdate:
         pushad
         mov     ebx,[sec_lba]
         cmp     ebx,-1
@@ -2539,6 +2776,8 @@ fdu_fail:
 ;              root, the disk is full, or I/O fails.
 ;---------------------------------------------------------------------
 dir_extend:
+        cmp     byte ptr [vol_fs],FS_EXFAT
+        je      xv_dirext
         pushad
         cmp     byte ptr [dc_isroot],0
         jne     dx_fail                 ; the fixed root cannot grow
@@ -2591,7 +2830,9 @@ lfnw_reset:
 ;             accumulator.  All registers preserved.
 ;---------------------------------------------------------------------
 lfnw_frag:
-        push    eax
+        cmp     byte ptr [vol_fs],FS_EXFAT      ; an exFAT set's own entries
+        je      lw_ret                          ; look like fragments, and are
+        push    eax                             ; not FAT's
         push    ecx
         push    esi
         push    edi
@@ -2650,6 +2891,7 @@ lw_out:
         pop     esi
         pop     ecx
         pop     eax
+lw_ret:
         ret
 
 ; lw_ucs - ECX UCS-2 characters at ESI -> bytes at EDI.  Anything
@@ -2684,8 +2926,11 @@ lfnw_seal:
         ; KERNEL ASKS IS THE SAME ONE - "has this entry a long name?" -
         ; so it is answered in the same place, and everything that
         ; consumes lfn_ok and lfn_buf works on a disc unchanged.
-        cmp     byte ptr [vol_fs],FS_ISO
+        cmp     byte ptr [vol_fs],FS_ISO        ; and exFAT the same: its set
+        je      ls_whole                        ; has the name, xv_alias put
+        cmp     byte ptr [vol_fs],FS_EXFAT      ; it in lfn_buf
         jne     ls_fat
+ls_whole:
         mov     al,byte ptr [iso_lname]
         mov     byte ptr [lfn_ok],al
         jmp     short ls_out
@@ -2731,6 +2976,8 @@ lck_lp:
 lfn_tomb:
         cmp     byte ptr [lfn_ok],0
         je      lt_out
+        cmp     byte ptr [vol_fs],FS_EXFAT      ; the name is in the set, and
+        je      lt_out                          ; goes when the set does
         pushad
         mov     edx,[lfn_first]
 lt_lp:
@@ -2983,6 +3230,8 @@ lfn_storeat:
         jmp     lst_have
 
 lfn_store:
+        cmp     byte ptr [vol_fs],FS_EXFAT
+        je      xv_lfnstore             ; a set reserved, the name kept
         push    ecx
         push    edx
         push    edi
@@ -3328,6 +3577,8 @@ fsr_fret:
 ;                neither offer nor grow one.
 ;=====================================================================
 fat_findfree:
+        cmp     byte ptr [vol_fs],FS_EXFAT
+        je      xv_findfree             ; three entries, for an 8.3 name
         xor     ebx,ebx
 fff_lp:
         call    dir_seek
@@ -3648,7 +3899,39 @@ cwd_clus    dd  0                       ; its start cluster (0 = root)
 cwd_names   db  MAX_DEPTH * 11 dup(0)   ; 352 bytes, a dword multiple
 
 fatsec_buf  db  512 dup(0)
-fat_buf     db  FATBUF_SIZE dup(0)
+
+; FAT12'S WHOLE-FAT CACHE IS exFAT'S STATE, in a volume that is the one
+; and never both: a FAT12 volume reads fat_buf as bytes of its FAT, an
+; exFAT one the named fields below (DOS\EXFAT.INC).  So the block every
+; drive switch copies stays the size it was.
+fat_buf     LABEL BYTE
+xv_nclus    dd  0                       ; the heap's clusters, as the disk
+                                        ; counts them
+xv_bmfirst  dd  0                       ; the allocation bitmap: its first
+xv_bmlen    dd  0                       ; cluster and its bytes
+xv_bmlba    dd  -1                      ; the 512 bytes of it in xv_bmbuf
+xv_bmci     dd  0                       ; a walk of a bitmap that is not one
+xv_bmcp     dd  0                       ; run: how far, and where it got to
+xv_free     dd  -1                      ; free clusters, -1 = not counted
+xv_serial   dd  0
+xv_regp     dd  0                       ; the directories seen (EXFAT.INC):
+xv_regn     dd  0                       ; where, how many,
+xv_regcap   dd  0                       ; and room for how many
+xv_ahint    dd  2                       ; the next cluster to try
+xv_pshift   db  0                       ; log2 of a cluster in 512-byte units
+xv_kshift   db  0                       ; ...less log2 of the kernel's cluster
+xv_ro       db  0                       ; not to be written to at all
+xv_bmdirty  db  0
+xv_bmcont   db  0                       ; the bitmap is one run
+xv_lcount   db  0                       ; the label's characters, 0 = none
+            db  0,0
+xv_label    dw  11 dup(0)
+            dw  0
+xv_upcase   dw  256 dup(0)              ; the volume's up-case table, as far
+                                        ; as the kernel's characters go
+xv_bmbuf    db  512 dup(0)
+xv_state_end LABEL BYTE
+            db  FATBUF_SIZE - (xv_state_end - fat_buf) dup(0)
 vol_state_end:
 
 IF (vol_state_end - vol_state) - VOL_STATE_SIZE
@@ -3681,6 +3964,10 @@ ds_taken    db  MAX_PHYS dup(0)         ; which primary pass 1 claimed
             db  0,0,0,0
 ds_extlba   dd  MAX_PHYS dup(0)         ; and where its extended chain
                                         ; starts, 0 = it has none
+ds_gtaken   dd  MAX_PHYS dup(0)         ; a GPT disk's: the slot pass 1
+                                        ; lettered, -1 for none
+ds_isgpt    db  MAX_PHYS dup(0)         ; its letters come from a GPT
+            db  0,0
 drv_tbl     db  (MAX_DRIVES * DRV_LEN) dup(0)
 
 ; vol_syncdrv's working copies.  Outside vol_state on purpose: the
