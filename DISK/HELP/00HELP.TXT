@@ -35,7 +35,7 @@ Key features:
 {o} Long File Names.
 {o} FAT16, FAT32, and exFAT file systems.
 {o} Built-in memory managers, disk cache, and drivers for mouse and CD-ROM.
-{o} IDE disks of any size, with UltraDMA up to Ultra-ATA6 (UltraDMA/133).
+{o} IDE disks of any size, with UltraDMA up to UltraDMA6 (UltraATA/133).
 {o} FDISK can create, delete, move, and resize partitions on MBR and GPT
   type disks.
 {o} Mount disk image and ISO files as drives.
