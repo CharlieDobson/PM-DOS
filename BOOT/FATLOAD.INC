@@ -50,6 +50,24 @@ FLD_SIZE        EQU     1Ch
 fl_init:
         pushad
         push    es
+
+        ; THE DISK IS READ BY LBA when the BIOS has the INT 13h
+        ; extensions for it (AH=41h answers BX=AA55h): the BIOS's notion
+        ; of the geometry - a translation, a guess from the partition
+        ; table, a USB stick or a Zip disk calling itself something else
+        ; from one machine to the next - then no longer has to match the
+        ; BPB's.  A BIOS without them, and a diskette (41h fails for one),
+        ; is read by CHS as before.  Kept short: in PMIO.SYS this code
+        ; has to fit in front of the stub's fixed entry at RMT_PARK.
+        mov     dl,[fl_drive]
+        mov     ah,41h
+        mov     bx,55AAh
+        int     13h
+        jc      fi_nolba
+        cmp     bx,0AA55h
+        jne     fi_nolba
+        inc     byte ptr [fl_lba]
+fi_nolba:
         mov     ax,FL_BPBSEG
         mov     es,ax
 
@@ -147,6 +165,8 @@ fr_try:
         push    di
         push    eax                     ; INT 13h returns status in AX,
                                         ; which would otherwise eat the LBA
+        cmp     byte ptr [fl_lba],0
+        jne     fr_lba                  ; after the RET below
         movzx   ecx,word ptr [fl_spt]
         xor     edx,edx
         div     ecx                     ; EAX = track, EDX = sector-1
@@ -163,6 +183,7 @@ fr_try:
         or      cl,al
         mov     ax,0201h
         int     13h
+fr_read:
         pop     eax
         pop     di
         jnc     fr_ok
@@ -190,6 +211,18 @@ fr_ok:
         mov     bx,[fl_bxsave]
         clc
         ret
+
+; by LBA: one sector to ES:BX (here, out of the loop, so that LOOP above
+; still reaches fr_one)
+fr_lba:
+        mov     [fl_dapsec],eax
+        mov     [fl_dapoff],bx
+        mov     [fl_dapseg],es
+        mov     si,OFFSET fl_dap
+        mov     dl,[fl_drive]
+        mov     ah,42h
+        int     13h
+        jmp     short fr_read
 
 ;=====================================================================
 ; fl_c2l - EAX = cluster -> EAX = the LBA of its first sector.
@@ -413,7 +446,13 @@ ff_none:
 ;=====================================================================
 fl_drive    db  0
 fl_type     db  0                       ; 12, 16 or 32
-            db  0,0
+fl_lba      db  0                       ; nonzero: read by the INT 13h extensions
+            db  0
+fl_dap      db  10h, 0                  ; their packet: one sector,
+            dw  1                       ; to fl_dapseg:fl_dapoff, from
+fl_dapoff   dw  0                       ; fl_dapsec (the LBA's high
+fl_dapseg   dw  0                       ; dword stays zero)
+fl_dapsec   dd  0, 0
 fl_nameptr  dw  0
 fl_bxsave   dw  0                       ; carries BX across POPAD
 fl_spc      dd  0

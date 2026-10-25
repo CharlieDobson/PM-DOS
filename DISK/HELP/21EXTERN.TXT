@@ -625,6 +625,66 @@ To test the surface of a diskette:
 To find out whether a file is in one piece:
 
     scandisk /fragment c:\data\*.dbf
+#topic SETUP|Setup
+Installs PM-DOS on the hard disk, or makes a startup floppy.
+
+{b}Syntax{p}
+
+    SETUP [/F] [/G]
+
+{b}Switches{p}
+
+/F
+    Makes a floppy disk that starts the computer and runs PM-DOS,
+    instead of installing on the hard disk.  F7 on Setup's first
+    screen does the same.
+
+/G
+    Does not make an Uninstall disk when Setup replaces another DOS.
+
+{b}Related Commands{p}
+
+To divide a hard disk yourself before installing, use [[FDISK]].
+#notes
+{b}Where to run Setup{p}
+
+Setup reads the files it installs from wherever SETUP.EXE is: a Setup
+disk, the CD, a USB stick or a network directory.  Run under MS-DOS,
+Setup replaces that DOS with PM-DOS.  Started by restarting the
+computer from Setup Disk 1, the CD or a USB stick, Setup can also
+prepare and format a new hard disk.
+
+{b}A new hard disk{p}
+
+When the first hard disk has no partitions, Setup makes one partition
+of the free space and restarts the computer.  Setup then starts again
+by itself and formats the drive.  Disks of 512MB and more are
+formatted FAT32.  To divide the disk another way, leave Setup, run
+FDISK, and restart from the Setup disk.
+
+{b}Replacing another DOS{p}
+
+The old DOS commands that PM-DOS replaces are moved to C:\OLD_DOS.1,
+with the old CONFIG.SYS and AUTOEXEC.BAT (as CONFIG.DAT and
+AUTOEXEC.DAT) and the old boot sector.  Lines that load programs
+PM-DOS does the work of, such as HIMEM.SYS, EMM386.EXE and SMARTDRV,
+are made REM lines.  To put the old DOS back, start the computer from
+the Uninstall disk Setup made and press ENTER.
+
+{b}Where the files go{p}
+
+PMIO.SYS, PMDOS.SYS and RMDOS.SYS go in the root of drive C:,
+everything else in C:\DOS or the directory you choose.  CONFIG.SYS
+gets a SHELL= line that names that directory.
+#examples
+To install PM-DOS from the diskette in drive A:
+
+    a:setup
+
+To make a startup floppy:
+
+    setup /f
+
 #topic SETVER|Setver
 Sets the DOS version number reported to a program.
 

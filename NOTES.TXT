@@ -15921,6 +15921,194 @@ Windows and Borland's RTM, as under 0.64; the BREAK= help topic still
 says PM-DOS does not look at the flag.
 
 
+SETUP.EXE - MS-DOS 6.22'S SETUP FOR PM-DOS, AND THE SETUP DISKS
+(2026-10-24)
+---------------------------------------------------------------------
+
+Charlie's specification: one dual-mode SETUP.EXE - a 16-bit half that
+upgrades the DOS it runs on to PM-DOS, a 32-bit half for a machine
+started from a PM-DOS diskette, CD or USB stick that can leave for the
+prompt to change the partitions and partitions a disk that has none,
+as MS-DOS Setup did - with 6.22 Setup's screens; Setup disks with a
+SETUP.INF and tag files named DISK1, DISK2...; images for diskettes,
+for a USB stick or Zip disk, and a CD.  The part that installs the
+network into Windows for Workgroups was in the specification too, and
+Charlie set it aside the same day ("PM-DOS networking is incomplete"):
+none of it is here.
+
+THE SCREENS ARE 6.22'S, MEASURED FROM THE REAL PROGRAM.  6.22's own
+SETUP.EXE was run headless in QEMU (the OEM edition: it needs DOS to
+say 6.22 and refuses a disk with DOS on it) and its screens were read
+back cell by cell; the 6.0 source said the rest.  So: blue, the title
+at row 1 over a double rule as long as itself, body text from column
+10, bullets at 12; the status line at row 24 with a bar at column 57
+whenever the keys end before it; boxes with no shadow, sized and
+placed by 6.0's own rule (top = (25 - lines) / 2, as wide as the
+longest line plus three, every line centred); lists from column 9 to
+70 that UP and DOWN move and nothing else; the settings page with the
+highlight starting on "The settings are correct." and going back
+there; the copy gauge of 58 yellow blocks held at 99% until the end;
+"insert disk n", "remove disks", "Setup Complete".  The sentences are
+new.  Left out: F5 and /B (monochrome; /B is still taken), /E (no
+Windows programs to set up), DriveSpace.  No mouse, for now, and so no
+scroll bar on the lists and no menu bar: keyboard only, as 6.22 was.
+
+THE SAME C IS COMPILED TWICE.  CMD\SETUP\SETUP.H says what each file
+is.  PLAT.H is everything Setup asks of a system; PLAT16.C answers it
+on MS-DOS (Open Watcom large model, with its C library for the start-up
+and the heap; INT 25h/26h for a volume's sectors, DOS's own 440Dh 0840h
+and 0842h to format a diskette so that DOS knows what is on it after),
+PLAT32.C on PM-DOS (21h/F0h for the screen, F1h AL=6/0Ch/0Dh/0Eh for
+drives and raw disks, AL=14h a diskette track at a time, AL=1Bh the
+restart).  BUILD.CMD makes both, links SETUP16.EXE and binds it in front
+of BIN\SETUP.EXE with D32BIND.  Started under the name UNINSTAL.EXE,
+the 16-bit half is Uninstall.
+
+THE DISK.  The 32-bit half puts PM-DOS on the first hard disk - the
+second when the Setup files are in the root of BIOS disk 80h, a USB
+stick or Zip disk the machine started from.  A disk with no table, or
+partitions with no DOS one and room: 6.22's "configure unallocated
+disk space" page, then one partition of the largest free area, from
+the first track boundary to the last whole cylinder but one, written
+inactive with a signed record in its second sector, and a restart.
+Started again, Setup finds its record on the unformatted drive and
+formats without asking, as 6.22 did; the partition is made active at
+the end.  The format is Setup's own: FAT16 with nine reserved sectors
+below 512MB, FAT32 from there, OEM name MSDOS5.0 (MS-DOS rebuilds a
+hard disk's BPB when the name is not a version it knows).  FORMAT is
+not used because it asks on the console and gives FAT16 one reserved
+sector.  With partitions there, Setup offers to install on drive C: or
+to leave for FDISK.  An unformatted DOS partition that is not Setup's
+own is offered for formatting.
+
+ANOTHER DOS ON C: IS UPGRADED, NOT DELETED.  C:\OLD_DOS.n gets the
+boot sector (BOOTSECT.DOS), CONFIG.SYS and AUTOEXEC.BAT as CONFIG.DAT
+and AUTOEXEC.DAT, and every old command a PM-DOS file would hide - the
+same name, or the same name as a .COM, .EXE or .BAT - moved, not
+copied.  IO.SYS and MSDOS.SYS stay where they are.  CONFIG.SYS keeps
+its lines: SHELL= becomes CMD.EXE in the PM-DOS directory; HIMEM,
+EMM386, SMARTDRV, SHARE, the CD-ROM drivers and the rest SETUP.LST
+names become REM lines (EMM386 without NOEMS adds EMS=AUTO); a DEVICE=
+for a program PM-DOS has, SETVER, names PM-DOS's; LFN=, DPMI= and
+NULLTRAP= are added at the top.  AUTOEXEC.BAT: MSCDEX, MOUSE, SMARTDRV
+and the like become REMs, KEYB and COUNTRY= are what was chosen, and
+PATH gets the directory.  Before anything changes, the Upgrade's
+"Y=Install" question, then the Uninstall disk: the OLD DOS's boot code
+round the diskette's BPB, IO.SYS and MSDOS.SYS first, the old
+COMMAND.COM, SETUP.EXE as UNINSTAL.EXE, UNINSTAL.DAT and an AUTOEXEC
+that runs it - so it starts the old DOS, which works on a machine
+PM-DOS cannot run on.  Uninstall puts back the boot sector, the
+commands and the two files, deletes what PM-DOS put there and the
+levels of the directory Setup made.
+
+STAGE 2 ON A DRIVE ANOTHER DOS FORMATTED.  The hard-disk boot reads
+stage 2 from reserved sectors 1-8 (9-16 on FAT32), and a FAT16 drive
+MS-DOS formatted has one reserved sector.  BOOTHD.ASM now reads stage 2
+from where the dword at 1F8h of the boot sector says (S2_FIELD,
+PMDOS.INC), assembled as S2_START16 or S2_START32; on such a drive
+Setup writes stage 2 as PMBOOT.SYS, eight sectors in one piece,
+read-only hidden and system (DEFRAG moves no system file), and points
+the field at it.  The old BPB and OEM name stay.  SYS.ASM reads stage 2
+from where its source's field says, and gives the target the default.
+
+THE BOOT READS BY LBA WHEN THE BIOS CAN.  The first FAT32 install on a
+1GB disk booted at the end of Setup and then not from a copy of the
+same image: QEMU worked out a different geometry once the disk had a
+table, and the boot code read by CHS with the BPB's.  BOOTHD.ASM and
+FATLOAD.INC (stage 2, and IORM for PMDOS.SYS) now use INT 13h AH=42h
+when AH=41h answers BX=AA55h for the drive, and CHS when it does not -
+a diskette, a BIOS without the extensions.  The MBR is unchanged: it
+reads the partition's first sector by CHS from the table, which every
+partition Setup and MKDISK make starts at head 1 sector 1, and it has
+not the room.
+
+RMT_PARK IS 09C0h, NOT 0940h.  The LBA code left IORM's code four
+bytes in front of the park entry, and BUILD debug, ata, fdd, vdm and
+v86 no longer assembled: PMDOS_DEBUG's messages are 44h bytes more.
+The stub is a fixed 4K, but the space it has free is spread over the
+gaps behind its fixed entries, and the park code (85h bytes) had BBh
+spare behind it.  Only PMIO.SYS jumps to RMT_PARK - RMCALL.INC's
+rm_park, in the other half of the same file - and RMDOS is handed the
+unpark address, so moving it moves nothing outside PMIO.SYS.  Now the
+code in front has 132 bytes (64 under PMDOS_DEBUG) and the park code
+59.  Making the stub bigger than 4K is not the way: the BIOS transfer
+buffer (XFER_BUF) starts at 2000h, right after it, and every native
+program is linked to load there (SLOT_IMAGE).
+
+THE SETUP DISKS.  DISK\SETUP.LST is what is installed, where, with
+which flags, and the CONFIG.SYS and AUTOEXEC.BAT rules.  TOOLS\MKSETUP
+reads it with INC\PMVER.INC and the two .DEF files (the country and
+keyboard lists come from those, so they cannot disagree with
+COUNTRY.SYS and KEYBOARD.SYS), packs every file with SZDD (the format
+MS-DOS 5's EXPAND reads; each packed file is unpacked again and
+compared), puts disk 1's start-up files on it as they are, shares the
+rest over 1.44MB disks, and writes SETUP.INF, IMAGES\SETUP\STAGE\ (all
+the disks' files in one directory - a CD or a network directory is
+this) and IMAGES\SETUP\MKIMG.CMD.  That makes DISK1.IMG and DISK2.IMG,
+SETUPUSB.IMG (16MB, 16 heads of 63), SETUPZIP.IMG (the same at 64 heads
+of 32, MKDISK's new -geom) and SETUPCD.ISO, which MKSETUP -iso writes:
+ISO9660 with an El Torito catalog that makes DISK1.IMG drive A:.  A
+disk is known by its tag file, as Charlie asked (6.x looked at the
+volume label, which the diskettes carry as well).  The 32-bit half
+finds SETUP.INF itself - a native program is not told its own path -
+and moves to a source that holds every disk's tag when there is one,
+which is how a start from the CD reads everything from the disc.
+
+TESTS, ON QEMU THROUGH ITS MONITOR (scratchpad rig\srun.ps1, screens
+read back as text and colours): a new install from the diskettes on a
+blank 200MB disk (partition, restart, format, disk 2, the restart into
+PM-DOS from C:\DOS); 1GB, FAT32, Germany and its keyboard and
+C:\PMDOS (COUNTRY=049, KEYB GR, SHELL=, DIR's 1.978.141); the same image
+started again on its own (the LBA boot); a copy of the 86Box machine's
+MS-DOS 5 disk upgraded by the 16-bit half with an unformatted diskette
+for the Uninstall disk, PM-DOS started from it through PMBOOT.SYS, then
+the Uninstall disk started and MS-DOS 5 back - every file, size and
+attribute and the boot sector the same as before; the same upgrade by
+the 32-bit half from Setup Disk 1, the Uninstall disk formatted by the
+kernel in the drive the Setup disks are read from; a reinstall over
+PM-DOS; the CD (no disk prompts); F7 (the startup floppy starts
+PM-DOS); the Zip image at 64 heads of 32; /? and a bad switch on
+MS-DOS 5.  The limits, with ordinary input that reaches them: a
+CONFIG.SYS line of 300 characters (comes back whole), a PATH that the
+directory would take past 127 characters, a 41-character directory
+(Uninstall removes all five levels).  RUNTESTS on all seven rows: 90
+the same, RMTEST different only in its free clusters (6EC4 -> 6E1D,
+SETUP.EXE on the test disk), re-recorded from that run.
+
+FOUND, AND NOT SETUP'S TO MEND:
+  - Started FROM a USB stick with an IDE hard disk in the machine,
+    PM-DOS mounts the IDE disk as its boot volume: ata_slot gives BIOS
+    80h to the first ATA disk found, and the BIOS's 80h was the stick.
+    With no IDE disk the stick starts PM-DOS and Setup runs.  The USB
+    image is right; the kernel needs to tell which BIOS number its
+    disks have.
+  - 21h/7303h's record starts with its version word, two bytes ahead
+    of DOS 7.1's, which starts with its size (PMD's note about it is
+    the same thing).  PLAT32.C reads either.
+  - CMD.EXE keeps about 125 characters of a PATH line in a batch file.
+    A PATH that the PM-DOS directory would take past 127 gets the
+    directory in place of the old DOS directory's entry when that
+    fits; when nothing fits, the line is written whole and its end is
+    lost when it runs.
+
+NOT RUN: real hardware; 86Box; the 16-bit half's F7 (the diskette
+format it shares with the Uninstall disk was run); a 360K or 1.2MB
+drive; an Uninstall disk that fills; Windows 95's MS-DOS (refused, by
+its text MSDOS.SYS) and DoubleSpace (refused, by DBLSPACE.000); PC DOS
+and DR DOS (their system files are known by name, not run).  The help
+has a SETUP topic in 21EXTERN.TXT; HELP.HLP is not regenerated,
+because Charlie's own edits to 00HELP.TXT and 10INTERN.TXT are not in
+it yet.
+
+Files: CMD\SETUP\ (new: SETUP.H, PLAT.H, TYPES.H, TEXT.H, MAIN.C,
+SCR.C, UI.C, TEXT.C, RT.C, INF.C, COPY.C, DISK.C, CFG.C, UNDO.C,
+FLOPPY.C, PLAT16.C, PLAT32.C, DOSINT.ASM); TOOLS\MKSETUP.C (new),
+MKDISK.C (-geom); DISK\SETUP.LST (new), HELP\21EXTERN.TXT;
+BOOT\BOOTHD.ASM, FATLOAD.INC; INC\PMDOS.INC (S2_FIELD); CMD\SYS\SYS.ASM;
+BUILD.CMD.  Still v0.65; not committed.
+
+
+
 v0.61 - THE NUMBER CAUGHT UP (2026-09-30)
 ---------------------------------------------------------------------
 

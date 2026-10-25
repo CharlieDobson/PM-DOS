@@ -183,6 +183,23 @@ sy_span:
         add     edi,0Bh
         rep     movsb
 
+        ; WHERE STAGE 2 IS (S2_FIELD, PMDOS.INC).  On the source it is
+        ; wherever its own field says - a drive SETUP upgraded keeps it
+        ; in PMBOOT.SYS - and a boot sector from before the field has
+        ; zero there, which means the reserved area.  On the target it
+        ; goes in the reserved area, so the copy carries the default.
+        ; A FAT12 floppy's boot sector has no field and no stage 2.
+        cmp     byte ptr [src_type],12
+        je      sy_fielddone
+        mov     edx,[src_sec]
+        mov     eax,[edx+S2_FIELD]
+        mov     [s2_from],eax
+        mov     dword ptr [edx+S2_FIELD],S2_START16
+        cmp     byte ptr [src_type],32
+        jne     sy_fielddone
+        mov     dword ptr [edx+S2_FIELD],S2_START32
+sy_fielddone:
+
         mov     al,[tgt_log]            ; and down it goes
         mov     ebx,[src_sec]
         mov     ecx,1
@@ -208,6 +225,10 @@ sy_nobackup:
         mov     edx,S2_START32
 sy_s2have:
         mov     [s2_lba],edx
+        cmp     dword ptr [s2_from],0   ; the source's own place for it
+        je      sy_s2read
+        mov     edx,[s2_from]
+sy_s2read:
         mov     al,[src_log]
         mov     ebx,[s2_buf]
         mov     ecx,S2_SECTORS
@@ -500,6 +521,7 @@ tgt_sec     dd  0
 s2_buf      dd  0
 copy_buf    dd  0
 s2_lba      dd  0
+s2_from     dd  0                       ; the source's S2_FIELD, 0 = none
 src_hdl     dd  0
 tgt_hdl     dd  0
 src_log     db  0                       ; 0-based logical drives

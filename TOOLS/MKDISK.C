@@ -35,6 +35,11 @@
  *     -frag         deliberately scatter every file across alternate
  *                   clusters, to prove the loader really walks the
  *                   FAT rather than reading straight through
+ *     -geom H S     the disk's geometry, H heads of S sectors (16 and
+ *                   63 unless given): the partition starts on track 1
+ *                   of it, and the BPB and the table's CHS fields carry
+ *                   it.  SETUP's Zip image is -geom 64 32, which is
+ *                   what a BIOS makes of a Zip disk
  *
  * Floppy images take their boot sector from boot.bin.  On floppies,
  * and on bootable hard disks, the first two files IN THE ROOT are
@@ -53,9 +58,11 @@
 #include <ctype.h>
 
 #define SECSIZE     512
-#define SPT         63
-#define HEADS       16
-#define SECPERCYL   (SPT * HEADS)
+/* The hard-disk geometry: 63 sectors a track and 16 heads unless -geom
+   says otherwise (a Zip disk's BIOS calls it 64 heads of 32 sectors) */
+static unsigned SPT = 63;
+static unsigned HEADS = 16;
+#define SECPERCYL   ((unsigned long)SPT * HEADS)
 
 /* Stage 2 placement - must match S2_* in INC\PMDOS.INC */
 #define S2_SECTORS  8
@@ -955,6 +962,16 @@ int main(int argc, char **argv)
         while (first < argc && argv[first][0] == '-') {
             if (!strcmp(argv[first], "-frag"))   { frag = 1; first++; continue; }
             if (!strcmp(argv[first], "-active")) { active = 1; first++; continue; }
+            if (!strcmp(argv[first], "-geom") && first + 2 < argc) {
+                HEADS = (unsigned)atoi(argv[first + 1]);
+                SPT = (unsigned)atoi(argv[first + 2]);
+                if (HEADS < 1 || HEADS > 255 || SPT < 1 || SPT > 63) {
+                    fprintf(stderr, "-geom wants heads 1-255 and sectors 1-63\n");
+                    return 1;
+                }
+                first += 3;
+                continue;
+            }
             if (first + 1 >= argc) break;
             if (!strcmp(argv[first], "-mbr"))      mbrfile = argv[first + 1];
             else if (!strcmp(argv[first], "-vbr")) vbrfile = argv[first + 1];
@@ -979,6 +996,7 @@ int main(int argc, char **argv)
             "                      into that subdirectory of the root\n"
             "       -nolfn         floppy: no long-file-name test set\n"
             "       -mbr <file> -vbr <file> -s2 <file> -frag -spc <n>\n"
+            "       -geom <heads> <spt>\n"
             "                      (hard disks)\n"
             "\n"
             "-spc forces sectors per cluster instead of letting the size\n"

@@ -1,0 +1,190 @@
+; SETUP.LST - what PM-DOS Setup installs, and the Setup disks' own files.
+;
+; TOOLS\MKSETUP.EXE reads this (and INC\PMVER.INC, NLS\COUNTRY.DEF and
+; NLS\KEYBOARD.DEF) and writes SETUP.INF, the files of the Setup disks
+; and IMAGES\SETUP\MKIMG.CMD, which makes the diskette, USB, Zip and CD
+; images.  BUILD.CMD runs both.
+;
+; [files]: one file a line - where it is in the tree, where it goes, and
+; flags:
+;   ROOT    the root of drive C: (only what the boot code and the kernel
+;           look for there)
+;   DOS     the PM-DOS directory, C:\DOS unless the user picks another
+;   SETUP   Setup's own, never installed (the boot code it writes)
+;   S       read-only, hidden and system
+;   F       goes on a startup floppy (F7 at Setup's first screen)
+;   1       on Setup disk 1 as it is, in this order: what disk 1 starts
+;           from, and what Setup needs before it can ask for a disk.
+;           PMIO.SYS and PMDOS.SYS must be the first two.
+;   N       never packed
+; Everything else is packed (SZDD, as EXPAND reads it) when that makes it
+; smaller, and goes on whichever disk has room.
+;
+; The other sections go into SETUP.INF as they are; SETUP.INF's header
+; (CMD\SETUP\INF.C) says what each is for.  %DOSDIR% is the directory
+; the user chose; a line that is %COUNTRY% or %KEYB% becomes the COUNTRY=
+; or KEYB line for the choice, or nothing for the United States.
+
+[setup]
+product=PM-DOS
+dosdir=C:\DOS
+label=PM-DOS
+
+[files]
+BIN\PMIO.SYS        ROOT    SF1
+BIN\PMDOS.SYS       ROOT    SF1
+BIN\CMD.EXE         DOS     F1
+BIN\SETUP.EXE       SETUP   1
+BIN\FDISK.EXE       DOS     F1
+BIN\FORMAT.COM      DOS     F1
+BIN\SYS.COM         DOS     F1
+BIN\BOOT.BIN        SETUP   1
+BIN\BOOT16.BIN      SETUP   1
+BIN\BOOT32.BIN      SETUP   1
+BIN\BOOT2.BIN       SETUP   1
+BIN\MBRBOOT.BIN     SETUP   1
+BIN\RMDOS.SYS       ROOT    S
+BIN\COMMAND.COM     DOS     F
+BIN\RMCD.SYS        DOS
+BIN\CHOICE.COM      DOS     F
+BIN\MORE.COM        DOS     F
+BIN\SORT.COM        DOS     F
+BIN\MEM.EXE         DOS     F
+BIN\ATTRIB.EXE      DOS     F
+BIN\CHKDSK.EXE      DOS     F
+BIN\XCOPY.EXE       DOS     F
+BIN\EDIT.EXE        DOS     F
+BIN\FIND.EXE        DOS     F
+BIN\KEYB.COM        DOS     F
+BIN\COUNTRY.SYS     DOS     F
+BIN\KEYBOARD.SYS    DOS     F
+BIN\MOUNT.EXE       DOS
+BIN\CACHE.EXE       DOS
+BIN\UNDELETE.EXE    DOS
+BIN\CDEX.EXE        DOS
+BIN\MOVE.EXE        DOS
+BIN\LABEL.EXE       DOS
+BIN\FC.EXE          DOS
+BIN\DISKCOPY.COM    DOS
+BIN\DISKCOMP.COM    DOS
+BIN\ISAPNP.EXE      DOS
+BIN\SHUTDOWN.EXE    DOS
+BIN\USB.EXE         DOS
+BIN\SETVER.EXE      DOS
+BIN\PMD.EXE         DOS
+BIN\DOSSHELL.EXE    DOS
+BIN\ACROREAD.EXE    DOS
+BIN\SCANDISK.EXE    DOS
+DISK\SCANDISK.INI   DOS
+BIN\DEFRAG.EXE      DOS
+BIN\HELP.EXE        DOS
+DISK\HELP.HLP       DOS
+README.TXT          DOS
+DISK\CONFIG.TXT     DOS
+DISK\AUTOEXEC.TXT   DOS
+BIN\LRGDISK.386     DOS
+BIN\LRGSTAT.EXE     DOS
+BIN\PMDOS.386       DOS
+BIN\TCPIP.SYS       DOS
+BIN\SMBFS.SYS       DOS
+BIN\NE2000.SYS      DOS
+BIN\RTL8139.SYS     DOS
+BIN\PCNET.SYS       DOS
+BIN\TULIP.SYS       DOS
+BIN\E1000.SYS       DOS
+BIN\EEPRO100.SYS    DOS
+BIN\EL3C509.SYS     DOS
+BIN\EL3C90X.SYS     DOS
+BIN\WD80X3.SYS      DOS
+BIN\NET.EXE         DOS
+BIN\SNTP.EXE        DOS
+BIN\WGET.EXE        DOS
+BIN\FTP.EXE         DOS
+BIN\TELNET.EXE      DOS
+BIN\SMBSRV.EXE      DOS
+DISK\CACERT.BND     DOS
+
+; Setup disk 1's own CONFIG.SYS and AUTOEXEC.BAT: start Setup
+[setup.config]
+FILES=40
+BUFFERS=30,8
+LASTDRIVE=Z
+DOS=HIGH,UMB
+LFN=ON
+
+[setup.autoexec]
+@ECHO OFF
+PROMPT $P$G
+SETUP
+
+; A new system's CONFIG.SYS and AUTOEXEC.BAT
+[config]
+SHELL=%DOSDIR%\CMD.EXE /P
+%COUNTRY%
+BUFFERS=30,8
+FILES=40
+FCBS=4,0
+LASTDRIVE=Z
+STACKS=9,256
+DOS=HIGH,UMB
+SWITCHES=/K
+NUMLOCK=ON
+EMS=AUTO
+LFN=ON
+DPMI=ON
+NULLTRAP=ON
+
+[autoexec]
+@ECHO OFF
+PROMPT $P$G
+PATH %DOSDIR%
+SET TEMP=%DOSDIR%
+%KEYB%
+
+; What an upgrade adds to the CONFIG.SYS it keeps, when not there
+[config.add]
+LFN=ON
+DPMI=ON
+NULLTRAP=ON
+
+; Programs an upgrade turns into REM lines: PM-DOS does their work itself
+; (memory, the disk cache, SHARE, the mouse, the CD-ROM and its driver),
+; or cannot use them (code pages, DoubleSpace and DriveSpace)
+[config.remove]
+HIMEM.SYS
+EMM386.EXE
+EMM386.SYS
+SMARTDRV.EXE
+SMARTDRV.SYS
+QEMM386.SYS
+386MAX.SYS
+DBLSPACE.SYS
+DRVSPACE.SYS
+DISPLAY.SYS
+MOUSE.SYS
+NLSFUNC.EXE
+SHARE.EXE
+OAKCDROM.SYS
+VIDE-CDD.SYS
+ATAPI_CD.SYS
+AOATAPI.SYS
+SBIDE.SYS
+
+[autoexec.remove]
+SMARTDRV
+MSCDEX
+NLSFUNC
+DOSKEY
+MOUSE
+SHARE
+FASTOPEN
+VSAFE
+DBLSPACE
+DRVSPACE
+
+; A startup floppy's CONFIG.SYS (F7)
+[floppy.config]
+FILES=40
+BUFFERS=30,8
+LFN=ON
+%COUNTRY%

@@ -18,6 +18,13 @@
 ; Stage 2 lives in reserved sectors rather than in a file so that
 ; nothing has to be found before the FAT walker exists.
 ;
+; Where exactly is the dword s2field, at S2_FIELD (1F8h): stage 2's first
+; sector counted from the start of the volume, S2_START16 or S2_START32
+; as assembled.  SETUP points it elsewhere on a drive another DOS
+; formatted, which has one reserved sector and so no room: there stage
+; 2 is the file PMBOOT.SYS, in one piece, and s2field is its first
+; sector.  Nothing else here changes - eight sectors, read in order.
+;
 ; Linked with:  wlink form raw bin option offset=0
 ; All data references go through DS = 07C0h.
 ;=====================================================================
@@ -104,9 +111,21 @@ begin:
 drv_ok:
         mov     [bootdrv],dl
 
-;--- read stage 2 out of the reserved area ---------------------------
+        ; By LBA when the BIOS has the INT 13h extensions, so that the
+        ; geometry in the BPB has to match the BIOS's only where it has
+        ; none (FATLOAD.INC says why that matters)
+        mov     ah,41h
+        mov     bx,55AAh
+        int     13h
+        jc      no_lba
+        cmp     bx,0AA55h               ; (FATLOAD decides the same way)
+        jne     no_lba
+        mov     byte ptr [uselba],1
+no_lba:
+
+;--- read stage 2: the reserved area, or where s2field says ----------
         mov     eax,[bpbHidden]
-        add     eax,S2_START
+        add     eax,[s2field]
         mov     bx,OFFSET S2_BASE
         mov     cx,S2_SECTORS
 s1_lp:
@@ -135,6 +154,17 @@ r1_try:
         push    di
         push    eax                     ; INT 13h returns status in AX,
                                         ; which would otherwise eat the LBA
+        cmp     byte ptr [uselba],0
+        je      r1_chs
+        mov     [dapsec],eax            ; one sector to ES:BX, by LBA
+        mov     [dapoff],bx
+        mov     [dapseg],es
+        mov     si,OFFSET dap
+        mov     dl,[bootdrv]
+        mov     ah,42h
+        int     13h
+        jmp     short r1_read
+r1_chs:
         movzx   ecx,word ptr [bpbSecPerTrk]
         xor     edx,edx
         div     ecx                     ; EAX = track, EDX = sector-1
@@ -152,6 +182,7 @@ r1_try:
         or      cl,al
         mov     ax,0201h
         int     13h
+r1_read:
         pop     eax
         pop     di
         jnc     r1_ok
@@ -185,10 +216,19 @@ r1_ok:
 ;---------------------------------------------------------------------
 msgErr      db  13,10,'PM-DOS: disk error',13,10,0
 bootdrv     db  0
+uselba      db  0                       ; 1: the INT 13h extensions
+dap         db  10h, 0                  ; their packet: one sector to
+            dw  1                       ; dapseg:dapoff from dapsec
+dapoff      dw  0
+dapseg      dw  0
+dapsec      dd  0, 0
 
 ;---------------------------------------------------------------------
 boot_end:
-.ERRE   (boot_end - start) LE 1FEh, <stage 1 has overflowed past the signature>
+.ERRE   (boot_end - start) LE S2_FIELD, <stage 1 has grown into s2field>
+
+        ORG     S2_FIELD
+s2field     dd  S2_START                ; see the header
 
         ORG     1FEh
         dw      0AA55h

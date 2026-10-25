@@ -362,7 +362,7 @@ rem each one has to be named here too: a directory missing from this
 rem list is one whose failed assembly links yesterday's object.  (A
 rem failed COMPILE does not need it - wcc386, unlike wasm, returns an
 rem error - but CHKDSK's and LABEL's startup is assembled like the rest.)
-for %%D in (ACROREAD ATTRIB CACHE CDEX CHKDSK CHOICE DEFRAG DISKCOMP DISKCOPY DRIVES EDIT FC FDISK FIND FORMAT HELP ISAPNP KEYB LABEL LFNAPI LRGDISK MEM MORE MOUNT MOVE PMD SCANDISK SHUTDOWN SORT SYS UNDELETE USB XCOPY NET SNTP WGET FTP TELNET) do if exist CMD\%%D\*.obj del /q CMD\%%D\*.obj
+for %%D in (ACROREAD ATTRIB CACHE CDEX CHKDSK CHOICE DEFRAG DISKCOMP DISKCOPY DRIVES EDIT FC FDISK FIND FORMAT HELP ISAPNP KEYB LABEL LFNAPI LRGDISK MEM MORE MOUNT MOVE PMD SCANDISK SETUP SHUTDOWN SORT SYS UNDELETE USB XCOPY NET SNTP WGET FTP TELNET) do if exist CMD\%%D\*.obj del /q CMD\%%D\*.obj
 if exist CMD\NET\TLS\*.obj del /q CMD\NET\TLS\*.obj
 if exist NLS\*.obj del /q NLS\*.obj
 rem ...and the 32-bit drivers under DRV\, the shared base and a
@@ -383,6 +383,8 @@ wcl386 -q -bt=nt -fe=d32bind.exe d32bind.c      || goto :fail
 rem D32DRV makes a 32-bit driver's .SYS out of two links of it and the
 rem real-mode stub in front (INC\NDRV.INC).  Used under "NDTEST.SYS".
 wcl386 -q -bt=nt -fe=d32drv.exe d32drv.c        || goto :fail
+rem MKSETUP makes the Setup disks, at the very end ("the Setup disks").
+wcl386 -q -bt=nt -fe=mksetup.exe mksetup.c      || goto :fail
 cd ..
 
 rem === WHICH VERSION IS THIS? ===
@@ -1080,6 +1082,28 @@ wlink form raw bin option offset=0x2000 name ..\..\BIN\DEFRAG.EXE ^
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
 cd ..\..
 
+echo === SETUP.EXE ===
+rem SETUP is MS-DOS 6.22's Setup for PM-DOS, and it is two programs in one
+rem file: the same C compiled once as a PM-DOS native program (PLAT32.C,
+rem the half a Setup disk starts - it can partition, format and install)
+rem and once as a 16-bit MS-DOS program (PLAT16.C, large model with Open
+rem Watcom's C library - it upgrades the DOS it runs on).  The 16-bit
+rem objects are named *16.OBJ so the two sets do not overwrite each
+rem other, and SETUP16.EXE stays here: D32BIND puts it in front of
+rem BIN\SETUP.EXE with the other stubs below.  CMD\SETUP\SETUP.H says
+rem what each file is; its test mode is SETUPTEST and keys from a
+rem redirected file (SCR.C).
+cd CMD\SETUP
+wasm -q -i=..\..\INC dosint.asm                 || goto :fail
+for %%F in (main scr ui text rt inf copy disk cfg undo floppy plat32) do wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 %%F.c || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\BIN\SETUP.EXE ^
+    file dosint.obj,main.obj,scr.obj,ui.obj,text.obj,rt.obj,inf.obj,copy.obj,disk.obj,cfg.obj,undo.obj,floppy.obj,plat32.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+for %%F in (main scr ui text rt inf copy disk cfg undo floppy plat16) do wcc -q -bt=dos -ml -0 -s -os -w4 -we -fo=%%F16.obj %%F.c || goto :fail
+wlink system dos name SETUP16.EXE option stack=16k ^
+    file main16.obj,scr16.obj,ui16.obj,text16.obj,rt16.obj,inf16.obj,copy16.obj,disk16.obj,cfg16.obj,undo16.obj,floppy16.obj,plat1616.obj || goto :fail
+cd ..\..
+
 echo === the MS-DOS stub, in front of every 32-bit command ===
 rem Every link above wrote a bare D32 image: 'CD' at byte zero.  The
 rem ones that SHIP get TOOLS\D32STUB.EXE put in front, so that real MS-DOS
@@ -1099,6 +1123,10 @@ for %%F in (CMD.EXE CHOICE.COM MORE.COM SORT.COM SYS.COM FORMAT.COM MEM.EXE FDIS
   ATTRIB.EXE CHKDSK.EXE LABEL.EXE XCOPY.EXE EDIT.EXE FC.EXE ISAPNP.EXE PMD.EXE DOSSHELL.EXE ^
   ACROREAD.EXE SCANDISK.EXE DEFRAG.EXE KEYB.COM HELP.EXE USB.EXE ^
   SNTP.EXE WGET.EXE FTP.EXE TELNET.EXE NET.EXE SMBSRV.EXE) do TOOLS\D32BIND.EXE BIN\%%F TOOLS\D32STUB.EXE || goto :fail
+rem SETUP is the one with a 16-bit version of its own: the MS-DOS half
+rem upgrades the DOS it runs on, the PM-DOS half installs from a Setup
+rem disk.  See "SETUP" above.
+TOOLS\D32BIND.EXE BIN\SETUP.EXE CMD\SETUP\SETUP16.EXE || goto :fail
 
 echo === HELLO.COM (a real 16-bit .COM, for the VDM) ===
 rem An ordinary real-mode DOS program.  It is not part of the kernel;
@@ -2309,6 +2337,29 @@ TOOLS\MKDISK.EXE IMAGES\TESTS.IMG BIN\BOOT.BIN -label "PM-DOS TEST" -dir ^
     DISK\DSTEST.BAT DISK\DS1.KEY DISK\DS2.KEY DISK\DS3.KEY DISK\DS4.KEY DISK\DS5.KEY DISK\DS6.KEY DISK\DS7.KEY DISK\DS8.KEY DISK\DS9.KEY ^
     DISK\ATTRTEST.BAT DISK\MVTEST.BAT DISK\HELPTEST.BAT DISK\R3TEST.BAT DISK\D32TEST.BAT DISK\BOXTEST.BAT DISK\WINDOS.BAT DISK\BIG16.BAT ^
     DISK\CCALIVE.BAT DISK\CCFOR.BAT DISK\CCONE.BAT DISK\FDLTEST.BAT DISK\FDRTEST.BAT DISK\FD32TEST.BAT DISK\FDMTEST.BAT || goto :fail
+
+rem === the Setup disks - IMAGES\SETUP ===
+rem What a user installs PM-DOS from.  MKSETUP reads DISK\SETUP.LST (the
+rem files, where they go, Setup's CONFIG.SYS and AUTOEXEC.BAT rules), the
+rem version and the NLS lists, packs the files, shares them out over
+rem 1.44MB disks and writes STAGE\ (every disk's files in one directory,
+rem SETUP.INF among them - a CD or a network directory is that) and
+rem MKIMG.CMD, which makes DISK1.IMG on, SETUPUSB.IMG and SETUPZIP.IMG
+rem (bootable hard-disk images for a USB stick and a Zip disk) and
+rem SETUPCD.ISO (a CD that starts from DISK1.IMG, El Torito).
+rem MKIMG.CMD has no "goto :eof" - NT 3.51 has none - so what it was to
+rem make is deleted first and looked for afterwards.
+echo === the Setup disks (IMAGES\SETUP) ===
+if not exist IMAGES\SETUP\nul mkdir IMAGES\SETUP
+if exist IMAGES\SETUP\*.IMG del /q IMAGES\SETUP\*.IMG
+if exist IMAGES\SETUP\*.ISO del /q IMAGES\SETUP\*.ISO
+if exist IMAGES\SETUP\STAGE\*.* del /q IMAGES\SETUP\STAGE\*.*
+TOOLS\MKSETUP.EXE DISK\SETUP.LST IMAGES\SETUP   || goto :fail
+call IMAGES\SETUP\MKIMG.CMD
+if not exist IMAGES\SETUP\DISK1.IMG goto :fail
+if not exist IMAGES\SETUP\SETUPUSB.IMG goto :fail
+if not exist IMAGES\SETUP\SETUPZIP.IMG goto :fail
+if not exist IMAGES\SETUP\SETUPCD.ISO goto :fail
 
 echo.
 echo Build OK.

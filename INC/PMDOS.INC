@@ -1966,6 +1966,15 @@ S2_SECTORS      EQU     8                       ; 4K of it
 S2_START16      EQU     1                       ; FAT16: reserved sector 1
 S2_START32      EQU     9                       ; FAT32: after FSInfo/backup
 
+; WHERE STAGE 1 FINDS STAGE 2 is the dword at this offset of the volume
+; boot record: stage 2's first sector, counted from the start of the
+; volume.  BOOTHD.ASM assembles it as S2_START16 or S2_START32, and SYS,
+; MKDISK and FORMAT leave it so.  SETUP sets it to a file instead on a
+; drive another DOS formatted with one reserved sector, where stage 2
+; cannot go in the reserved area: PMBOOT.SYS, eight sectors in one
+; piece, read-only, hidden and system (DEFRAG never moves such a file).
+S2_FIELD        EQU     1F8h
+
 ; ALL THREE OF THESE LIVE INSIDE THE TRANSIENT PROGRAM AREA, and that
 ; is deliberate.  They are boot-only: the FAT window and the directory
 ; sector are how PMIO finds PMDOS.SYS, and the E820 table is collected
@@ -2108,11 +2117,14 @@ RMT_PM2RM       EQU     0010h                   ; entry in the RM stub
 ; because RMDOS.SYS is built separately and PMIO may move.
 ;
 ; The offset is where it is because the stub's code and data end at
-; about 08F0h - 0912h under MASM, which keeps long some jumps wasm
-; makes short - and the GDT begins at 0C00h.  An assembler check in
-; IORM.ASM keeps that true rather than trusting this comment.
+; 093Ch since the boot reads by LBA, and at about 0980h with
+; PMDOS_DEBUG; the park code is 85h bytes and has to end before
+; RMT_UNPARK.  Only PMIO.SYS jumps here (rm_park in RMCALL.INC), so
+; moving it moves nothing outside this file's two halves.  Assembler
+; checks in IORM.ASM keep both ends true rather than trusting this
+; comment.
 ;---------------------------------------------------------------------
-RMT_PARK        EQU     0940h                   ; PM -> real, for good
+RMT_PARK        EQU     09C0h                   ; PM -> real, for good
 RMT_UNPARK      EQU     0A80h                   ; real -> PM, from RMDOS
 
 ;---------------------------------------------------------------------
