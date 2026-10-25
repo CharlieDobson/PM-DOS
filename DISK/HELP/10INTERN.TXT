@@ -159,9 +159,8 @@ BREAK= in CONFIG.SYS sets the same flag at boot.  See [[BREAK (CONFIG.SYS)|BREAK
 #notes
 {b}What the setting does here{p}
 
-BREAK sets the flag that programs read with INT 21h AX=3300h, which is
-what MS-DOS does.  PM-DOS itself does not yet look at the flag: Ctrl+C
-stops a command or a batch file whichever way it is set.
+BREAK sets the flag that programs read with INT 21h AX=3300h. Ctrl+C
+stops a command or a batch file during operation.
 #examples
 To turn extended checking on:
 
