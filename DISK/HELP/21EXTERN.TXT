@@ -263,7 +263,8 @@ program that will fit.
 
 /DEBUG or /D
     Lists every block in the DOS arena and in upper memory, with its
-    owner and size.
+    owner and size.  Also lists the 32-bit drivers loaded with
+    DEVICE= and how much memory each one uses.
 
 /FREE or /F
     Lists the free blocks only.
@@ -286,6 +287,13 @@ programs.
 PM-DOS runs above the first megabyte, so nearly all of conventional
 memory is free for DOS programs.  The 32-bit commands run above it
 too and never appear in MEM's list.
+
+{b}32-bit drivers{p}
+
+A 32-bit driver such as RAMDISK.SYS or a network card driver also
+loads above 1MB and takes no conventional memory.  MEM /D shows two
+sizes for each one: the driver itself, and the memory it set aside
+after loading, such as the contents of a RAM disk.
 #examples
 To see the summary:
 
@@ -294,6 +302,144 @@ To see the summary:
 To see who has what, a screen at a time:
 
     mem /d | more
+#topic MODE|Mode
+Sets up the printer ports, the serial ports, the screen and the
+keyboard, and shows how they are set.
+
+{b}Syntax{p}
+
+    MODE [device] [/STATUS]
+    MODE LPTn[:] [COLS=c] [LINES=l] [RETRY=r]
+    MODE LPTn[:]=COMm[:]
+    MODE COMm[:] [BAUD=b] [PARITY=p] [DATA=d] [STOP=s] [RETRY=r]
+    MODE CON[:] [COLS=c] [LINES=n] [RATE=r DELAY=d]
+    MODE display[,n]
+    MODE device CP [/STATUS | SELECT=yyy | REFRESH]
+    MODE device CP PREPARE=((yyy[...]) [drive:][path]filename)
+
+The short forms MS-DOS took also work, with the values in order and
+commas between them: MODE LPT1:132,8,P and MODE COM1:96,N,8,1,P.
+
+{b}Parameters{p}
+
+device
+    LPT1 to LPT3, PRN, COM1 to COM4 or CON.  With none, MODE shows the
+    settings of all of them.
+
+COLS=c (printer)
+    80 or 132 characters to the line.
+
+LINES=l (printer)
+    6 or 8 lines to the inch.
+
+RETRY=r
+    What to do when a printer or a serial port times out.  E, B, R and
+    P all keep sending until the port takes the data; E, B and R also
+    decide what a program asking whether the port is busy is told
+    (error, busy or ready).  CTRL+BREAK stops the waiting.  N or NONE
+    turns retrying off.  This is the default setting.
+
+BAUD=b
+    110, 150, 300, 600, 1200, 2400, 4800, 9600, 19200, 38400, 57600 or
+    115200.  Up to 19200 the first two digits are enough: 96 is 9600.
+
+PARITY=p
+    N (none), E (even), O (odd), M (mark) or S (space).  Default is E.
+
+DATA=d
+    5, 6, 7 or 8 data bits.  Default is 7.
+
+STOP=s
+    1, 1.5 or 2 stop bits.  Default is 1, or 2 at 110 baud.
+
+COLS=c (screen)
+    40 or 80 columns.
+
+LINES=n (screen)
+    25, 43 or 50 lines.  43 needs an EGA or VGA, and 50 a VGA.
+
+RATE=r
+    How fast a held-down key repeats, from 1 to 32.  32 is the fastest.
+
+DELAY=d
+    1 to 4 quarter seconds before a held-down key starts to repeat.
+    RATE and DELAY have to be given together.
+
+display
+    40 or 80 for the columns, or BW40, BW80, CO40, CO80 or MONO for
+    the screen mode.  MONO and the others also choose between a
+    monochrome and a colour adapter when the machine has both.  ,n
+    sets the lines, as LINES= does.
+
+yyy
+    A code page number.
+
+{b}Switches{p}
+
+/STATUS or /STA
+    Shows the settings without changing anything.
+
+{b}Related Commands{p}
+
+To set the keyboard repeat when the machine starts, see [[KEYRATE=]].
+To change the country's code page, see [[CHCP]].
+#notes
+{b}Nothing stays in memory{p}
+
+On MS-DOS, rerouting a printer or setting RETRY= left part of MODE in
+memory.  On PM-DOS the kernel keeps these settings, so MODE loads
+nothing.  The settings last until the machine is restarted.  They do
+not apply in Windows.
+
+{b}Printing to a serial port{p}
+
+After MODE LPT1=COM1, everything sent to LPT1 or PRN goes out on COM1,
+including from DOS programs that use the printer BIOS directly.  Set
+the serial port up first with MODE COM1.  MODE LPT1 on its own sends
+LPT1 back to the printer port.
+
+{b}The screen and ANSI.SYS{p}
+
+When [[ANSI.SYS]] is loaded, MODE changes the screen through it.
+Without it, PM-DOS changes the screen itself, so MODE CON LINES= works
+without ANSI.SYS.
+
+{b}Code pages{p}
+
+PM-DOS has no DISPLAY.SYS or PRINTER.SYS, so the CP options report
+that the device does not support code pages.  CHCP changes the code
+page for the country and the keyboard.
+
+{b}Shifting the screen{p}
+
+MODE display,R and MODE display,L moved the picture on old CGA
+monitors.  PM-DOS cannot do this and always says it is unable to shift
+the screen.
+
+{b}The exit code{p}
+
+0, or 1 when MODE did not accept the command or a setting failed.
+#examples
+To set COM1 to 9600 baud, no parity, 8 data bits and 1 stop bit:
+
+    mode com1:96,n,8,1
+
+To print on a serial printer on COM2:
+
+    mode com2:96,n,8,1,p
+    mode lpt1=com2
+
+To show 50 lines on a VGA screen:
+
+    mode con lines=50
+
+To make a held-down key repeat as fast as it can:
+
+    mode con rate=32 delay=1
+
+To see every setting:
+
+    mode
 #topic MORE|More
 Shows output one screen at a time.
 
@@ -514,6 +660,131 @@ To look round the machine:
 To write the full report to a file for someone else to read:
 
     pmd /p c:\report.txt
+#topic QBASIC|Qbasic|QBasic
+Starts QBasic, for writing and running programs in BASIC.
+
+{b}Syntax{p}
+
+    QBASIC [/B] [/EDITOR] [/G] [/H] [/MBF] [/NOHI]
+           [[/RUN] [drive:][path]filename]
+
+{b}Parameters{p}
+
+[drive:][path]filename
+    The program to load.  .BAS is assumed if no extension is given.
+
+{b}Switches{p}
+
+/EDITOR
+    Starts the PM-DOS Editor instead of QBasic.  Same as EDIT.
+
+/H
+    Uses as many screen lines as the display allows: 43 or 50.
+
+/MBF
+    Makes MKS$, MKD$, CVS and CVD use Microsoft Binary Format, for
+    programs written for older versions of BASIC.
+
+/RUN
+    Runs the program as soon as it is loaded.  A SYSTEM statement in
+    the program returns to DOS.
+
+/B, /G, /NOHI
+    For backwards compatibility only.  Has no effect under PM-DOS.
+
+{b}Related Commands{p}
+
+For editing text files, see [[EDIT]].
+#notes
+{b}Requirements{p}
+
+A math coprocessor is required: a 486DX, or a 386 with a 387.  The
+help file, QBASIC.HLP, is looked for in the same directory as
+QBASIC.EXE, in the PM-DOS directory, in the current directory and on
+the PATH.  Setup puts both files in the PM-DOS directory.
+
+{b}Programs written for MS-DOS{p}
+
+Programs written for QBasic 1.1 run unchanged.  PM-DOS has no real
+mode, so PEEK, POKE and DEF SEG only reach the program's own
+variables, the screen and the BIOS data area, and CALL ABSOLUTE gives
+"Advanced feature unavailable".  Arrays can be larger than 64K.
+#examples
+To start QBasic:
+
+    qbasic
+
+To run a program and return to DOS when it executes SYSTEM:
+
+    qbasic /run games\nibbles
+#topic RAMDISK.SYS|Ramdisk.sys
+Uses part of the computer's memory as a disk drive.
+
+{b}Syntax{p}
+
+    DEVICE=[drive:][path]RAMDISK.SYS [size [sector-size [entries]]] [/E | /A]
+
+{b}Parameters{p}
+
+[drive:][path]
+    Location of the RAMDISK.SYS file.
+
+size
+    Size of the RAM disk in kilobytes, from 4 to 2,096,896.  Default
+    is 64.  A larger size is reduced to 2,096,896.
+
+sector-size
+    128, 256, 512 or 1024.  For backwards compatibility only.  PM-DOS
+    always uses 512-byte sectors.
+
+entries
+    How many files and directories the root directory can hold, from
+    2 to 1024.  Default is 64.  The number is rounded up to a multiple
+    of 16.
+
+{b}Switches{p}
+
+/E
+    For backwards compatibility only.  Has no effect under PM-DOS.
+
+/A
+    For backwards compatibility only.  Has no effect under PM-DOS.
+
+{b}Related Commands{p}
+
+RAMDISK.SYS is loaded with [[DEVICE=]].  Each DEVICE= line makes one
+more RAM disk.
+#notes
+{b}The drive letter{p}
+
+The RAM disk gets the next free drive letter.  RAMDISK.SYS shows the
+letter and the size when CONFIG.SYS runs.
+
+{b}Memory{p}
+
+The RAM disk is made from extended memory, which leaves that much less
+for programs that use XMS.  It uses no conventional memory.
+
+{b}Windows{p}
+
+The RAM disk can still be used while Windows is running.
+
+{b}Deleted files{p}
+
+Files deleted from a RAM disk are kept for [[UNDELETE]] as they are on
+any other disk, and they take up some of its space until they are
+purged.
+
+Everything on a RAM disk is lost when the computer is restarted or
+turned off.  Copy what you want to keep to another disk first.
+#examples
+To make a 4 MB RAM disk:
+
+    device=c:\dos\ramdisk.sys 4096
+
+To make a 1 MB RAM disk whose root directory holds 128 files:
+
+    device=c:\dos\ramdisk.sys 1024 512 128
 #topic SCANDISK|Scandisk|ScanDisk
 Checks a disk for errors and repairs them, and can test the surface.
 
@@ -890,6 +1161,113 @@ works on a disk that already has files on it.
 To make the diskette in A: boot:
 
     sys a:
+#topic TREE|Tree
+Shows the directories of a drive or path as a tree.
+
+{b}Syntax{p}
+
+    TREE [drive:][path] [/F] [/A]
+
+{b}Parameters{p}
+
+[drive:][path]
+    Specifies where the tree starts.  Defaults to the current directory.
+    Put a path with spaces in it in double quotes.
+
+{b}Switches{p}
+
+/F
+    Lists the files in each directory as well.
+
+/A
+    Draws the tree with ASCII characters (+ - \ |) instead of line
+    characters.
+
+{b}Related Commands{p}
+
+To see the files in one directory, see [[DIR]].
+#notes
+{b}What is not shown{p}
+
+Hidden and system files and directories.  A hidden directory can
+still be given as the path.
+
+{b}Names{p}
+
+Long file names are shown in full.  With LFN=OFF in CONFIG.SYS they
+are shown as 8.3 names.
+
+{b}The order{p}
+
+Directories and files are shown in the order the disk holds them,
+not sorted.  Each directory's files come before its subdirectories.
+
+{b}Saving a tree{p}
+
+A tree sent to a file or a printer keeps its line characters.  Use
+/A for a printer or a program that has no line characters.
+#examples
+To see the directories on drive C:
+
+    tree c:\
+
+To print the current directory with all the files below it:
+
+    tree /f /a > prn
+#topic TREEVIEW|TreeView
+Shows how the space on a drive is used, folder by folder.
+
+{b}Syntax{p}
+
+    TREEVIEW [drive:] [/G]
+
+{b}Parameters{p}
+
+drive:
+    The drive to show first.  Defaults to drive C:.
+
+{b}Switches{p}
+
+/G
+    Uses a VGA graphics screen instead of text mode.  The disk is drawn
+    as a pie chart.
+
+{b}Related Commands{p}
+
+To see the directories as a tree, see [[TREE]].
+#notes
+{b}Using TreeView{p}
+
+The left side shows the drive's used and free space, with the folder
+chosen on the right in yellow.  The right side lists the folders with
+their sizes, largest first.
+
+    Up, Down, PgUp, PgDn    Choose a folder.  The mouse works too.
+    Right or +              Opens the folder.
+    Left or -               Closes the folder.
+    Enter                   Opens or closes the folder.
+    F5                      Reads the drive again.
+    Esc                     Leaves TreeView.
+
+The Drive menu lists the drives from C: up.
+
+{b}Sizes{p}
+
+A folder's size counts every file under it, hidden and system files
+included.  Files in the root directory are not in any folder.
+
+{b}Names{p}
+
+Long file names are shown, and cut short with ... when there is not
+room for them.  With LFN=OFF in CONFIG.SYS they are shown as 8.3 names.
+#examples
+To see how drive D: is used:
+
+    treeview d:
+
+To see drive C: on the graphics screen:
+
+    treeview c: /g
 #topic UNDELETE|Undelete
 Restores deleted files.
 
@@ -1010,6 +1388,122 @@ taken the controllers, which is just after CONFIG.SYS.  Until then the
 BIOS drives them, as it did before PM-DOS started.
 #examples
     usb
+#topic XARC|Xarc|XArchive
+Lists, tests and extracts archives, and makes zip and 7z archives, on
+a screen of its own or from the command line.
+
+{b}Syntax{p}
+
+    XARC [[drive:][path]archive] [/G | /T]
+    XARC L archive [/Ppassword]
+    XARC T archive [/Ppassword]
+    XARC X archive [directory] [/Ppassword] [/NOPATHS]
+    XARC A archive name [name...] [/R] [/Xnames] [/NOPATHS] [/Y] [/AC]
+    XARC MEM
+
+{b}Parameters{p}
+
+archive
+    The archive.  On its own it is opened on XARC's screen.  With no
+    archive at all, the screen starts in the current directory.
+
+L
+    Lists what the archive holds.
+
+T
+    Tests the archive: every file in it is unpacked and checked, and
+    nothing is written.
+
+X
+    Extracts the whole archive into directory, or into the current
+    directory.
+
+A
+    Makes a new archive of the files and directories named.  .7Z makes
+    a 7-Zip archive, anything else a zip, and a name with no extension
+    gets .ZIP.  A directory goes in with everything under it.
+
+MEM
+    Shows how much memory XARC can have, which decides how big an
+    archive it can extract.
+
+{b}Switches{p}
+
+/G
+    Uses the VGA graphics screen this time.
+
+/T
+    Uses the text screen this time.
+
+/Ppassword
+    The password for an encrypted archive.  Anyone who sees the command
+    can read it.
+
+/NOPATHS
+    With X, puts every file in the one directory.  With A, stores the
+    files without their directory names.
+
+/R
+    With A, finds files that match a name like *.TXT in subdirectories
+    too.
+
+/Xnames
+    With A, leaves out files that match names, separated by semicolons.
+    /X@file reads the names from a file, one to a line.
+
+/Y
+    With A, replaces an archive of the same name without asking.
+
+/AC
+    With A, clears the Archive attribute of each file stored.
+
+{b}Related Commands{p}
+
+To copy directories without packing them, see [[XCOPY]].
+#notes
+{b}The screen{p}
+
+An archive is listed like a directory.  ENTER opens a folder, or an
+archive inside the archive, and BACKSPACE goes back.  SPACE marks a
+file, F5 extracts what is marked, F3 shows a text file and F7 tests the
+archive.  Go back past the top of the archive and the disk is listed:
+mark files there and F8 packs them.  F1 lists every key, and the mouse
+works the menus, the list and the scroll bar.
+
+{b}What it reads{p}
+
+Zip, 7z, RAR from 2.0 to 5 (multi-volume sets too), cabinet (.CAB)
+files, files packed by COMPRESS.EXE (such as CALC.EX_), and FAT12 and
+FAT16 diskette images.  An encrypted zip, 7z or RAR archive needs its
+password.
+
+{b}Long file names{p}
+
+Names keep their long form on a drive that has long names.  On a drive
+without them, or with LFN=OFF, each name is shortened the way Windows
+95 does it: LONGFI~1.TXT, LONGFI~2.TXT.
+
+{b}Settings{p}
+
+The Options menu's choices are kept in XARCHIVE.INI, beside XARC.EXE.
+
+{b}Memory{p}
+
+A 7z or RAR archive packed with a large dictionary needs that much
+memory in one piece to extract.  XARC MEM shows what this machine can
+give, and Archive Info (F4) shows what an archive needs.
+#examples
+To look through an archive:
+
+    xarc drivers.zip
+
+To extract one into a new directory:
+
+    xarc x drivers.zip c:\drivers
+
+To pack a directory and everything under it:
+
+    xarc a c:\backup\work.7z c:\work
 #topic XCOPY|Xcopy
 Copies files and directories, subdirectories included.
 

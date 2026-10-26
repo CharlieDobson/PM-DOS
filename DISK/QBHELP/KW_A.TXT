@@ -1,0 +1,1106 @@
+#! KW_A.TXT - keyword topics, ABS to EXP.
+#topic ABS Function
+#key ABS Function
+ABS gives a number without its sign: its distance from zero.
+
+{b}ABS{p}(numeric-expression)
+
+    {o} numeric-expression   Any number.
+
+The result has the type of the argument.  The most negative INTEGER
+(-32768) and the most negative LONG (-2147483648) have no positive value
+in their own type, so ABS of either is "Overflow".
+
+Example:
+    PRINT ABS(-7.5); ABS(12)          ' 7.5  12
+    IF ABS(a - b) < .001 THEN PRINT "Close enough"
+
+See Also  [[SGN]]  [[INT]]  [[FIX]]  [[Arithmetic Operators|arith]]
+#topic CALL ABSOLUTE Statement
+#key ABSOLUTE Keyword
+#entry CALL ABSOLUTE Statement
+In QBasic, CALL ABSOLUTE runs machine code that the program has put in
+memory, usually in an INTEGER array.
+
+{b}CALL ABSOLUTE{p} ([argumentlist,] offset%)
+
+    {o} argumentlist   Values for the machine code.  Each goes on the
+                     stack as the offset of the value.
+    {o} offset%        Where the code starts, in the segment DEF SEG set.
+
+The machine code must end with a far return that also removes its
+arguments from the stack.
+
+In this QBasic there is no real mode to run 16-bit machine code in, so
+CALL ABSOLUTE stops with "Advanced feature unavailable".  A program that
+uses CALL ABSOLUTE still loads and can be edited; the error comes only
+when the statement runs.
+
+Example:
+    DIM code%(20)
+    ' ... machine code put into code%() with READ or POKE ...
+    DEF SEG = VARSEG(code%(0))
+    CALL ABSOLUTE(result%, VARPTR(code%(0)))
+    DEF SEG
+
+See Also  [[CALL]]  [[DEF SEG|SEG]]  [[VARPTR]]  [[VARSEG]]  [[QBasic on PM-DOS|pmdos]]
+#topic ASC Function
+#key ASC Function
+ASC gives the code (0 to 255) of the first character of a string.
+
+{b}ASC{p}(stringexpression$)
+
+    {o} stringexpression$   A string of at least one character.
+
+ASC of an empty string is "Illegal function call".  CHR$ works the other
+way round: it makes a character from a code.
+
+Example:
+    PRINT ASC("A"); ASC("a")          ' 65  97
+    k$ = INKEY$
+    IF LEN(k$) = 2 THEN PRINT "Scan code"; ASC(RIGHT$(k$, 1))
+
+See Also  [[CHR$]]  [[INKEY$]]  [[ASCII Character Codes|ascii]]
+#topic ATN Function
+#key ATN Function
+ATN gives the angle whose tangent is the number given.  The angle is in
+radians, from -pi/2 to pi/2.
+
+{b}ATN{p}(numeric-expression)
+
+    {o} numeric-expression   The tangent: any number.
+
+The result is a DOUBLE when the argument is a DOUBLE, otherwise a SINGLE.
+Multiply radians by 180 / pi to get degrees.  4 * ATN(1) is pi.
+
+Example:
+    pi# = 4 * ATN(1#)
+    PRINT ATN(1) * 180 / pi#          ' 45
+
+See Also  [[TAN]]  [[SIN]]  [[COS]]
+#topic BEEP Statement
+#key BEEP Statement
+BEEP sounds the speaker at 800 Hz for a quarter of a second.
+
+{b}BEEP{p}
+
+The program waits until the beep, and any music still playing, is over.
+PRINT CHR$(7) beeps the same way.
+
+Example:
+    IF score > best THEN BEEP: PRINT "New record"
+
+See Also  [[SOUND]]  [[PLAY]]
+#topic BLOAD, BSAVE Statements
+#key BLOAD Statement
+#key BSAVE Statement
+BSAVE writes a block of memory to a file.  BLOAD reads such a file back
+into memory.
+
+{b}BSAVE{p} filespec$, offset%, length&
+{b}BLOAD{p} filespec$ [, offset%]
+
+    {o} filespec$   The file.
+    {o} offset%     Where the block starts, in the segment DEF SEG set:
+                  0 to 65535.
+    {o} length&     The number of bytes to save, 0 to 65535.
+
+BSAVE puts 7 bytes in front of the block: &HFD, then the segment, the
+offset and the length, a word each.  BLOAD without offset% puts the bytes
+back at the segment and offset they were saved from; with offset%, at
+that offset in the DEF SEG segment.
+
+In this QBasic, BLOAD and BSAVE reach only what DEF SEG reaches: the
+program's own variables, the screen at &HB800 and &HA000, and (to read)
+the BIOS data area and the ROMs.
+
+Example:
+    DEF SEG = &HB800                  ' the text screen
+    BSAVE "SCREEN.DAT", 0, 4000       ' 2,000 characters and colours
+    BLOAD "SCREEN.DAT"                ' back where it was saved from
+    DIM a(99)                         ' 100 SINGLEs, 400 bytes
+    DEF SEG = VARSEG(a(0)): BSAVE "A.DAT", VARPTR(a(0)), 400
+    DEF SEG
+
+See Also  [[DEF SEG|SEG]]  [[VARSEG]]  [[VARPTR]]  [[PEEK]]  [[POKE]]
+#topic CALL Statement
+#key CALL Statement
+CALL runs a SUB procedure.  The word CALL may be left out.
+
+{b}CALL{p} name [(argumentlist)]
+name [argumentlist]
+
+    {o} name           The SUB's name.
+    {o} argumentlist   The values for the SUB's parameters, with commas
+                     between them.  A whole array is written with empty
+                     parentheses: list(), not list.
+
+With CALL the arguments go in parentheses; without CALL they do not.
+
+A variable, an array element or an array is passed by reference: what
+the SUB does to its parameter is done to the variable.  Any other
+expression is passed as a copy.  A variable in parentheses, (x), is an
+expression, so the SUB gets a copy of x.
+
+The wrong number of arguments is "Argument-count mismatch".  A variable
+of the wrong type is "Parameter type mismatch"; an expression is
+converted to the parameter's type.
+
+Example:
+    CALL Greet("Ann", 3)
+    Greet "Ann", 3                    ' the same
+    CALL Bump(n)                      ' Bump can change n
+    CALL Bump((n))                    ' n stays as it is
+
+See Also  [[SUB]]  [[DECLARE]]  [[FUNCTION]]  [[SHARED]]  [[CALL ABSOLUTE|ABSOLUTE]]
+#topic CDBL Function
+#key CDBL Function
+CDBL gives a number as a DOUBLE (double precision).
+
+{b}CDBL{p}(numeric-expression)
+
+    {o} numeric-expression   Any number.
+
+CDBL changes the type, not the value.  A SINGLE such as .1 is not exact
+in binary, and CDBL shows the SINGLE's small error: CDBL(.1) is
+.1000000014901161.  Use CDBL to have an expression worked out in double
+precision: CDBL(a%) / 3.
+
+Example:
+    PRINT 2 / 3, CDBL(2) / 3          ' .6666667  .6666666666666666
+
+See Also  [[CSNG]]  [[CINT]]  [[CLNG]]  [[Data Types|types]]
+#topic CHAIN Statement
+#key CHAIN Statement
+CHAIN stops the program that is running and starts another one, read
+from a file.
+
+{b}CHAIN{p} filespec$
+
+    {o} filespec$   The other program's file.  A name without an
+                  extension gets .BAS.
+
+The files stay open, and the variables named in COMMON statements in
+both programs keep their values, matched by position.  All other
+variables start again at 0 or "".  A named COMMON block (/name/) is
+not passed on.
+
+A file that is not there is "File not found", an error of the CHAIN
+statement.  In the editor, the new program takes the old one's place.
+
+Example:
+    PRINT "Loading part 2..."
+    CHAIN "PART2"                     ' PART2.BAS
+
+See Also  [[COMMON]]  [[RUN]]  [[SHELL]]
+#topic CHDIR, MKDIR, RMDIR, FILES Statements
+#key CHDIR Statement
+#key MKDIR Statement
+#key RMDIR Statement
+#key FILES Statement
+CHDIR changes a drive's current directory.  MKDIR makes a directory and
+RMDIR removes an empty one.  FILES lists files on the screen.
+
+{b}CHDIR{p} pathspec$
+{b}MKDIR{p} pathspec$
+{b}RMDIR{p} pathspec$
+{b}FILES{p} [filespec$]
+
+    {o} pathspec$   A directory, with a drive letter if the directory is
+                  not on the current drive.
+    {o} filespec$   The files to list: a name or a path, with * and ?
+                  allowed.  Without filespec$, every file in the
+                  current directory.
+
+CHDIR changes the current directory of the drive named, but does not
+make that drive the current one.
+
+FILES shows the directory, then the names in columns (<DIR> after a
+directory), then the bytes free on the drive.  If nothing matches, the
+error is "File not found".
+
+A directory, or a path to one, that does not exist is "Path not found".
+MKDIR of a directory that exists, or RMDIR of one that still has files
+in it, is "Path/File access error".
+
+Example:
+    MKDIR "C:\WORK"
+    CHDIR "C:\WORK"
+    FILES "*.BAS"
+    CHDIR "C:\"
+    RMDIR "C:\WORK"
+
+See Also  [[KILL]]  [[NAME]]  [[SHELL]]
+#topic CHR$ Function
+#key CHR$ Function
+CHR$ gives a string of one character, the one with the code given.
+
+{b}CHR${p}(code%)
+
+    {o} code%   A character code, 0 to 255.
+
+Any other code is "Illegal function call".  CHR$ gives the characters
+that cannot be typed into a string in quotation marks, such as the
+quotation mark itself, CHR$(34).
+
+Printed on the screen, codes 7, 9 to 13 and 28 to 31 are acted on instead
+of shown: the bell, tab, new line, home, clear, and the cursor moves.
+
+Example:
+    PRINT CHR$(65); CHR$(66)          ' AB
+    PRINT CHR$(34); "quoted"; CHR$(34)
+
+See Also  [[ASC]]  [[STRING$]]  [[ASCII Character Codes|ascii]]
+#topic CINT Function
+#key CINT Function
+CINT rounds a number to the nearest whole number and gives the result as
+an INTEGER.
+
+{b}CINT{p}(numeric-expression)
+
+    {o} numeric-expression   A number that rounds to -32768 to 32767.
+
+A number halfway between two whole numbers goes to the even one: CINT(2.5)
+is 2 and CINT(3.5) is 4.  A number out of range is "Overflow".  INT and
+FIX do not round: they cut the fraction off.
+
+Example:
+    PRINT CINT(2.5); CINT(2.51); CINT(-2.7)     ' 2  3 -3
+
+See Also  [[CLNG]]  [[INT]]  [[FIX]]  [[CSNG]]  [[CDBL]]
+#topic CIRCLE Statement
+#key CIRCLE Statement
+CIRCLE draws a circle or an ellipse, or an arc of one, in a graphics
+mode.
+
+{b}CIRCLE{p} [STEP] (x!,y!), radius! [,[color%] [,[start!] [,[end!] [,aspect!]]]]
+
+    {o} STEP           x! and y! are counted from the last point drawn.
+    {o} x!, y!         The centre.
+    {o} radius!        The radius, in the units of the x axis.
+    {o} color%         The colour.  Left out: the foreground colour.
+    {o} start!, end!   Where an arc starts and ends: angles in radians,
+                     -2*pi to 2*pi, counted anticlockwise from
+                     3 o'clock.  Without them, the whole figure.
+    {o} aspect!        The figure's height over its width.
+
+A negative start! or end! also draws a line from the centre to that end
+of the arc, so two negative angles draw a slice of a pie.  The arc itself
+is drawn as if the angle were positive.
+
+Without aspect!, the figure looks round on a 4:3 screen: the aspect is
+4/3 of the mode's height over its width (.8333 in SCREEN 13).  When
+aspect! is below 1, radius! is the x radius; above 1, the y radius.
+
+After CIRCLE, the last point is the centre.  A negative radius, an angle
+beyond 2*pi, or CIRCLE in SCREEN 0 is "Illegal function call".
+
+Example:
+    SCREEN 12
+    CIRCLE (320, 240), 100, 14                 ' a yellow circle
+    CIRCLE (320, 240), 100, 12, , , .5         ' a flat red ellipse
+    CONST PI = 3.141593
+    CIRCLE (160, 100), 60, 10, -PI / 4, -PI / 2    ' a slice
+
+See Also  [[LINE]]  [[PAINT]]  [[DRAW]]  [[WINDOW]]  [[SCREEN]]
+#topic CLEAR Statement
+#key CLEAR Statement
+CLEAR closes every file and sets every variable back as it was when the
+program started.
+
+{b}CLEAR{p} [,,stack&]
+
+    {o} stack&   In QBasic, the size of the stack, in bytes.
+
+After CLEAR, numbers are 0 and strings are empty; static arrays keep
+their size with every element 0 or "", and dynamic arrays are erased.
+GOSUB return addresses are forgotten as well, so CLEAR belongs in the
+module-level code and not in a subroutine.
+
+In this QBasic, the stack size is accepted and ignored.
+
+Example:
+    CLEAR                             ' a fresh start
+    CLEAR , , 4096                    ' QBasic: a 4K stack
+
+See Also  [[ERASE]]  [[CLOSE]]  [[RUN]]  [[FRE]]
+#topic CLNG Function
+#key CLNG Function
+CLNG rounds a number to the nearest whole number and gives the result as
+a LONG.
+
+{b}CLNG{p}(numeric-expression)
+
+    {o} numeric-expression   A number that rounds to -2147483648 to
+                           2147483647.
+
+A number halfway between two whole numbers goes to the even one: CLNG(2.5)
+is 2 and CLNG(3.5) is 4.  A number out of range is "Overflow".
+
+Example:
+    bytes& = CLNG(kb! * 1024)
+    PRINT CLNG(123456.5)              ' 123456
+
+See Also  [[CINT]]  [[INT]]  [[FIX]]  [[CSNG]]  [[CDBL]]
+#topic CLOSE Statement
+#key CLOSE Statement
+CLOSE ends the use of files and devices opened with OPEN.
+
+{b}CLOSE{p} [#filenumber% [, #filenumber%]...]
+
+    {o} filenumber%   The number the file was opened under.  The # may
+                    be left out.
+
+CLOSE with no numbers closes every open file and device.  What is still
+waiting in a file's buffer is written out first.  Closing a number that
+is not open is not an error, but a number outside 1 to 255 is "Bad file
+name or number".
+
+END, SYSTEM, RESET, CLEAR and RUN close all files too.
+
+Example:
+    OPEN "LOG.TXT" FOR APPEND AS #1
+    PRINT #1, DATE$; " "; TIME$
+    CLOSE #1
+
+See Also  [[OPEN]]  [[RESET]]  [[END]]  [[FREEFILE]]
+#topic CLS Statement
+#key CLS Statement
+CLS clears the screen, or part of it.
+
+{b}CLS{p} [{0 | 1 | 2}]
+
+    {o} 0      The whole screen, text and graphics.
+    {o} 1      The graphics viewport, or the whole picture if VIEW has
+             not set one.  In SCREEN 0, nothing is cleared.
+    {o} 2      The text viewport: VIEW PRINT's rows.
+    {o} none   The graphics viewport if VIEW set one, else the text
+             viewport if VIEW PRINT set one, else the whole screen.
+
+The cleared part takes the background colour.  After CLS 0 or CLS 2,
+the cursor is at the top left of the text viewport.  In a graphics mode,
+CLS 0 or 1 also makes the centre of the viewport the last point drawn.
+Any other number is "Illegal function call".
+
+Example:
+    COLOR 15, 1: CLS                  ' white on blue
+    VIEW PRINT 5 TO 20: CLS 2         ' rows 5 to 20 only
+
+See Also  [[VIEW]]  [[VIEW PRINT|VIEW-PRINT]]  [[COLOR]]  [[SCREEN]]
+#topic COLOR Statement
+#key COLOR Statement
+COLOR sets the colours PRINT and the drawing statements use.  What the
+numbers mean depends on the screen mode.
+
+{b}COLOR{p} [foreground%] [, [background%] [, border%]]    SCREEN 0
+{b}COLOR{p} [background%] [, palette%]                      SCREEN 1
+{b}COLOR{p} [foreground%] [, background&]                   SCREEN 7 to 10
+{b}COLOR{p} [foreground%]                                   SCREEN 12, 13
+
+    {o} foreground%   The colour of text, and of drawing that names no
+                    colour of its own.
+    {o} background%   SCREEN 0: the colour behind the characters printed
+                    from now on, 0 to 7.  SCREEN 1: the colour of the
+                    whole background, 0 to 15.
+    {o} background&   SCREEN 7 to 10: the colour attribute 0 shows, which
+                    is the whole background.
+    {o} border%       SCREEN 0: the colour round the edge, 0 to 15.
+    {o} palette%      SCREEN 1: colours 1 to 3 become green, red and yellow
+                    (0) or cyan, magenta and white (1).
+
+In SCREEN 0, foreground% is 0 to 15; add 16 to make the text blink.  A
+CLS after COLOR fills the screen with the new background.
+
+    0 black     4 red        8 grey          12 light red
+    1 blue      5 magenta    9 light blue    13 light magenta
+    2 green     6 brown     10 light green   14 yellow
+    3 cyan      7 white     11 light cyan    15 bright white
+
+In SCREEN 7 to 13, foreground% is an attribute (0 to 15; 0 to 3 in
+SCREEN 10, 0 to 255 in SCREEN 13), and PALETTE sets the colour each
+attribute shows.  COLOR in SCREEN 2 or 11, or a number out of range, is
+"Illegal function call".
+
+In this QBasic, the border colour is accepted but not shown.
+
+Example:
+    COLOR 14, 1: CLS                  ' yellow on blue
+    PRINT "Warning": COLOR 7, 0
+    COLOR 31: PRINT "Blinking"
+
+See Also  [[PALETTE]]  [[SCREEN]]  [[CLS]]  [[PRINT]]
+#topic COM, ON COM Statements
+#key COM Statement
+#entry ON COM Statement
+ON COM names a subroutine to run when characters arrive at a serial
+port.  COM(n%) turns the trap on or off, or holds the trap.
+
+{b}ON COM{p}(n%) {b}GOSUB{p} line
+{b}COM{p}(n%) {ON | OFF | STOP}
+
+    {o} n%     The port: 1 for COM1, 2 for COM2.
+    {o} line   The label or line number where the subroutine starts.
+             0 removes the subroutine.
+    {o} ON     A character arriving runs the subroutine, between two
+             statements.
+    {o} OFF    Characters arriving are not noticed.
+    {o} STOP   A character arriving is noted, and the subroutine runs
+             at the next COM(n%) ON.
+
+The subroutine ends with RETURN.  While the subroutine runs, the port's
+trap is held as by STOP, so the subroutine does not start again inside
+itself.
+
+In this QBasic, COM events never happen: the statements are accepted,
+but the subroutine is not called.
+
+Example:
+    OPEN "COM1:2400,N,8,1" FOR RANDOM AS #1
+    ON COM(1) GOSUB GotChar
+    COM(1) ON
+
+See Also  [[Event Trapping|events]]  [[OPEN]]  [[GOSUB]]
+#topic COMMON Statement
+#key COMMON Statement
+COMMON names variables that a program hands on to the program it CHAINs
+to.  With SHARED, the module's SUBs and FUNCTIONs can use them too.
+
+{b}COMMON{p} [SHARED] variablelist
+
+    {o} SHARED         Every procedure in the module can use the
+                     variables, as after DIM SHARED.
+    {o} variablelist   Variables, with commas between them, each written
+                     name[()] [AS type].  An array is written with empty
+                     parentheses, and given its size by a DIM after the
+                     COMMON.
+
+Put COMMON at the top of the module, before the program's statements.
+The two programs' COMMON lists are matched by position and type, not by
+name.
+
+A value whose variable in the other program is of another type is not
+passed on.
+
+Example:
+    COMMON SHARED total, names$()
+    DIM names$(50)
+    total = 7
+    ShowTotal                         ' a SUB that reads total
+
+See Also  [[CHAIN]]  [[SHARED]]  [[DIM]]
+#topic CONST Statement
+#key CONST Statement
+CONST gives a name to a value that does not change while the program
+runs.
+
+{b}CONST{p} name = expression [, name = expression]...
+
+    {o} name         The constant's name.  A type suffix (% & ! # $)
+                   sets its type; without one, the value's type does.
+    {o} expression   Numbers, strings, other constants and operators.
+                   Variables and functions are not allowed.
+
+A constant cannot be assigned to.  A CONST in the module-level code can
+be used everywhere in the module, its procedures too; a CONST in a SUB or
+FUNCTION only in that procedure.  DEFtype statements do not change a
+constant's type.
+
+Example:
+    CONST PI = 3.141593, MAXROWS% = 25
+    CONST TITLE$ = "Inventory"
+    CONST AREA = PI * 4
+
+See Also  [[DIM]]  [[Data Types|types]]
+#topic COS Function
+#key COS Function
+COS gives the cosine of an angle in radians.
+
+{b}COS{p}(angle)
+
+    {o} angle   The angle, in radians.
+
+The result is a DOUBLE when the argument is a DOUBLE, otherwise a SINGLE.
+For an angle in degrees, multiply the degrees by pi / 180 first.
+
+Example:
+    CONST PI = 3.141593
+    PRINT COS(0); COS(PI)             ' 1 -1
+    x = cx + r * COS(a): y = cy - r * SIN(a)
+
+See Also  [[SIN]]  [[TAN]]  [[ATN]]
+#topic CSNG Function
+#key CSNG Function
+CSNG gives a number as a SINGLE (single precision).
+
+{b}CSNG{p}(numeric-expression)
+
+    {o} numeric-expression   Any number within the range of a SINGLE.
+
+A DOUBLE is rounded to the 7 or so digits a SINGLE holds.  A DOUBLE
+beyond the range of a SINGLE (about 3.4E+38) is "Overflow".
+
+Example:
+    d# = 1 / 3#
+    PRINT d#, CSNG(d#)                ' .3333333333333333  .3333333
+
+See Also  [[CDBL]]  [[CINT]]  [[CLNG]]  [[Data Types|types]]
+#topic CSRLIN Function
+#key CSRLIN Function
+CSRLIN gives the row the cursor is on, counted from 1 at the top.  POS(0)
+gives its column.
+
+{b}CSRLIN{p}
+
+Example:
+    row = CSRLIN: col = POS(0)
+    LOCATE 25, 1: PRINT "Working...";
+    LOCATE row, col                   ' back where the cursor was
+
+See Also  [[POS]]  [[LOCATE]]
+#topic CVI, CVL, CVS, CVD Functions
+#key CVI Function
+#key CVL Function
+#key CVS Function
+#key CVD Function
+These turn a string of bytes, as MKI$, MKL$, MKS$ or MKD$ made the
+string, back into a number.  They read the numbers kept in random-access
+files.
+
+{b}CVI{p}(2-byte-string$)
+{b}CVL{p}(4-byte-string$)
+{b}CVS{p}(4-byte-string$)
+{b}CVD{p}(8-byte-string$)
+
+CVI gives an INTEGER, CVL a LONG, CVS a SINGLE and CVD a DOUBLE.  A
+string shorter than that is "Illegal function call"; bytes after those
+needed are not used.
+
+CVS and CVD read the IEEE format QBasic keeps numbers in.  For files
+written by GW-BASIC or an older QuickBASIC, use CVSMBF and CVDMBF, or
+start QBasic with /MBF, which makes CVS and CVD read that format.
+
+Example:
+    FIELD #1, 2 AS id$, 8 AS price$
+    GET #1, 5
+    PRINT CVI(id$), CVD(price$)
+
+See Also  [[MKI$]]  [[CVSMBF]]  [[FIELD]]  [[GET]]
+#topic CVSMBF, CVDMBF Functions
+#key CVSMBF Function
+#key CVDMBF Function
+CVSMBF and CVDMBF read numbers kept in Microsoft Binary Format, the
+floating point of GW-BASIC and of QuickBASIC before version 4.0.
+
+{b}CVSMBF{p}(4-byte-string$)
+{b}CVDMBF{p}(8-byte-string$)
+
+CVSMBF gives a SINGLE and CVDMBF a DOUBLE.  A string that is too short is
+"Illegal function call".  They are for reading the random-access files
+that older programs wrote; MKSMBF$ and MKDMBF$ make strings in the same
+format.
+
+Example:
+    FIELD #1, 4 AS amount$
+    GET #1, rec&
+    PRINT CVSMBF(amount$)
+
+See Also  [[MKSMBF$]]  [[CVI]]  [[FIELD]]
+#topic DATA Statement
+#key DATA Statement
+DATA holds numbers and strings for READ to take, one after another.
+
+{b}DATA{p} constant [, constant]...
+
+    {o} constant   A number or a string.  A string needs quotation marks
+                 only if the string holds a comma or a colon, or has
+                 blanks at either end that must be kept.
+
+READ takes the items in order, from the first DATA statement in the
+program to the last; RESTORE starts them again.  The program passes over
+DATA without doing anything, so DATA can go anywhere in the module-level
+code.  A DATA statement ends at a colon that is not in quotation marks.
+
+An empty item reads as 0 or "".  An item read into a numeric variable
+that is not a number is "Syntax error", and a READ after the last item
+is "Out of DATA".
+
+Example:
+    FOR i = 1 TO 3
+        READ who$, age
+        PRINT who$; age
+    NEXT
+    DATA Ann, 34, "Smith, Bob", 51, Cy, 8
+
+See Also  [[READ]]  [[RESTORE]]
+#topic DATE$ Function and Statement
+#key DATE$ Function and Statement
+The DATE$ function gives the computer's date as a string.  The DATE$
+statement sets the date.
+
+{b}DATE${p}
+{b}DATE${p} = stringexpression$
+
+    {o} stringexpression$   The new date, as mm-dd-yy, mm-dd-yyyy,
+                          mm/dd/yy or mm/dd/yyyy.
+
+The function's answer is always mm-dd-yyyy: "10-25-2026".  The year must
+be from 1980 to 2099.  A two-digit year from 80 to 99 means 19yy; in this
+QBasic, one below 80 means 20yy.  A date that is not valid is "Illegal
+function call".
+
+Example:
+    PRINT "Today is "; DATE$
+    yr = VAL(RIGHT$(DATE$, 4))
+    DATE$ = "01-15-2027"
+
+See Also  [[TIME$]]  [[TIMER]]
+#topic DECLARE Statement
+#key DECLARE Statement
+DECLARE names a SUB or FUNCTION and its parameters, so that every call to
+the procedure can be checked against them.
+
+{b}DECLARE{p} {SUB | FUNCTION} name [([parameterlist])]
+
+    {o} name            The procedure's name.  A FUNCTION's type suffix
+                      goes on its name.
+    {o} parameterlist   The parameters, with commas between them, each
+                      written name[()] [AS type].  AS ANY takes an
+                      argument of any type, with no type check.
+
+When QBasic saves a program, QBasic puts a DECLARE for each procedure
+that lacks one at the top of the module, so DECLAREs seldom need typing.
+A DECLARE that does not agree with its procedure is "Argument-count
+mismatch" or "Parameter type mismatch".
+
+Example:
+    DECLARE SUB Box (x%, y%, w%, h%)
+    DECLARE FUNCTION Average! (list!(), n%)
+
+See Also  [[SUB]]  [[FUNCTION]]  [[CALL]]  [[Data Types|types]]
+#topic DEF FN Statement
+#key DEF
+#entry DEF FN Statement
+DEF FN makes a function in the module-level code.  The function's name
+starts with FN.
+
+{b}DEF FN{p}name[(parameterlist)] = expression
+
+{b}DEF FN{p}name[(parameterlist)]
+    [statements]
+    FNname = expression
+    [statements]
+{b}END DEF{p}
+
+    {o} name            The name after FN.  A type suffix on the name
+                      gives the type of the value.
+    {o} parameterlist   Variables, with commas between them, each
+                      written name [AS type].
+    {o} expression      The value the function returns.
+
+The parameters are the function's own and get copies of the arguments.
+Every other variable in a DEF FN is the module's.  In the many-line form
+the value is assigned to FNname, and EXIT DEF returns at once.
+
+A DEF FN must come earlier in the program than the first use of the
+function, or the use is "Function not defined".  DEF FN inside a SUB or
+FUNCTION is "Illegal in procedure".  A FUNCTION procedure does the same
+job with its own variables.
+
+Example:
+    DEF FNarea (r) = 3.141593 * r * r
+    PRINT FNarea(2)                   ' 12.56637
+    DEF FNmax (a, b)
+        IF a > b THEN FNmax = a ELSE FNmax = b
+    END DEF
+
+See Also  [[FUNCTION]]  [[EXIT]]  [[STATIC]]
+#topic DEF SEG Statement
+#key SEG Keyword
+#entry DEF SEG Statement
+DEF SEG sets the segment that PEEK, POKE, BLOAD, BSAVE and CALL ABSOLUTE
+work in.
+
+{b}DEF SEG{p} [= address]
+
+    {o} address   A segment, 0 to 65535 (&HFFFF).  Without an address,
+                the segment is QBasic's own data, where the program's
+                variables are.
+
+The segment stays set until the next DEF SEG.  An address outside -32768
+to 65535 is "Overflow".
+
+In this QBasic there is no real mode, and DEF SEG reaches only the
+program's own variables (the segments VARSEG and SADD give), the screen
+at &HB800 and &HA000, and the BIOS data area at &H40 and the ROMs, which
+can be read but not changed.  Anything else reads as 0 and POKE there
+does nothing.
+
+Example:
+    DEF SEG = &HB800
+    POKE 0, 65: POKE 1, &H1E          ' a yellow A, top left
+    DEF SEG                           ' back to QBasic's data
+
+See Also  [[PEEK]]  [[POKE]]  [[VARSEG]]  [[BLOAD]]  [[QBasic on PM-DOS|pmdos]]
+#topic DEFtype Statements
+#key DEFINT Statement
+#key DEFLNG Statement
+#key DEFSNG Statement
+#key DEFDBL Statement
+#key DEFSTR Statement
+The DEFtype statements give a type, by the first letter of the name, to
+the variables, arrays and functions whose names have no type suffix and
+no AS.
+
+{b}DEFINT{p} letterrange [, letterrange]...
+{b}DEFLNG{p} letterrange [, letterrange]...
+{b}DEFSNG{p} letterrange [, letterrange]...
+{b}DEFDBL{p} letterrange [, letterrange]...
+{b}DEFSTR{p} letterrange [, letterrange]...
+
+    {o} letterrange   A letter, or two letters with a minus between them
+                    (A-Z) for those letters and every one in between.
+
+DEFINT gives INTEGER, DEFLNG LONG, DEFSNG SINGLE, DEFDBL DOUBLE and
+DEFSTR STRING.  Without a DEFtype statement, names are SINGLE.  A suffix
+(% & ! # $) or an AS always counts first.
+
+A DEFtype statement holds from where the statement is to the end of its
+module or procedure.  When a SUB or FUNCTION is made, QBasic copies the
+module's DEFtype statements to the top of the new procedure.
+
+Example:
+    DEFINT A-Z                        ' every name INTEGER...
+    DEFSTR S                          ' ...but those starting with S
+    count = 10: s = "ten"
+
+See Also  [[Data Types|types]]  [[DIM]]
+#topic DIM, REDIM Statements
+#key DIM Statement
+#key REDIM Statement
+DIM declares variables and arrays and gives arrays their size.  REDIM
+gives a dynamic array a new size, and empties the array.
+
+{b}DIM{p} [SHARED] variable[(subscripts)] [AS type] [, variable...]
+{b}REDIM{p} [SHARED] variable(subscripts) [AS type] [, variable...]
+
+    {o} SHARED       In the module-level code: every SUB and FUNCTION of
+                   the module can use the variable too.
+    {o} variable     A name, with a type suffix if wanted.
+    {o} subscripts   One range for each dimension, with commas between,
+                   each [lower TO] upper.  Without lower, the lowest
+                   subscript is 0, or 1 after OPTION BASE 1.
+    {o} AS type      INTEGER, LONG, SINGLE, DOUBLE, STRING, STRING * n
+                   (n characters, always), or a TYPE.
+
+An array whose subscripts are all constants is static: it is made before
+the program starts and keeps its size.  An array with a variable in its
+subscripts, one after $DYNAMIC, or one made by REDIM is dynamic: it is
+made when the statement runs, and ERASE or REDIM can free it.
+
+Every element starts as 0 or "".  An array used without a DIM gets
+subscripts up to 10.  A second DIM of a static array is "Array already
+dimensioned"; of a dynamic one, "Duplicate definition" when the DIM
+runs.  A subscript outside the bounds is "Subscript out of range".  An
+array may have up to 60 dimensions.
+
+In QBasic, an array holds at most 64K; in this QBasic an array can be
+far bigger.
+
+Example:
+    DIM total AS LONG, title AS STRING * 20
+    DIM grid(1 TO 10, 1 TO 10) AS INTEGER
+    DIM SHARED names$(100)
+    n = 50: REDIM scores(1 TO n)
+
+See Also  [[ERASE]]  [[LBOUND]]  [[UBOUND]]  [[OPTION BASE|OPTION]]  [[$DYNAMIC|meta]]  [[TYPE]]
+#topic DO...LOOP Statement
+#key DO
+#key LOOP Keyword
+#key UNTIL Keyword
+#entry DO...LOOP Statement
+DO...LOOP runs a block of statements again and again, while a condition
+is true or until it becomes true.
+
+{b}DO{p} [{WHILE | UNTIL} condition]
+    [statements]
+{b}LOOP{p}
+
+{b}DO{p}
+    [statements]
+{b}LOOP{p} [{WHILE | UNTIL} condition]
+
+    {o} condition   A numeric expression: true if it is not 0, false if
+                  it is 0.
+    {o} WHILE       The block runs again while the condition is true.
+    {o} UNTIL       The block runs again until the condition is true.
+
+With the test after DO, the block may not run at all; with the test after
+LOOP, the block always runs at least once.  With no test, the loop goes
+on until EXIT DO or a GOTO leaves the loop.  Ctrl+Break stops a loop
+that never ends.
+
+Example:
+    DO WHILE NOT EOF(1)
+        LINE INPUT #1, l$: PRINT l$
+    LOOP
+    DO
+        k$ = INKEY$
+    LOOP UNTIL k$ <> ""
+
+See Also  [[WHILE...WEND|WHILE]]  [[FOR...NEXT|FOR]]  [[EXIT]]
+#topic DRAW Statement
+#key DRAW Statement
+DRAW draws lines from a string of short commands, in a graphics mode.
+Each move starts at the last point drawn.
+
+{b}DRAW{p} commandstring$
+
+Moves (n is a distance; 1 if left out):
+    U n    up                     E n    up and right
+    D n    down                   F n    down and right
+    L n    left                   G n    down and left
+    R n    right                  H n    up and left
+    M x,y  to the point (x, y)
+    M +x,y or M -x,y  by x across and y down (a sign on x makes M
+           relative)
+
+Before a move:
+    B      Move without drawing.
+    N      Draw, then come back to where the move started.
+
+Other commands:
+    A n    Turns the moves that follow by n * 90 degrees anticlockwise
+           (n is 0 to 3).
+    TA n   Turns the moves that follow by n degrees, -360 to 360;
+           positive is anticlockwise.
+    C n    Draws in colour n.
+    S n    Scale: a distance of 1 is n/4 pixels (n is 1 to 255; 4 to
+           start with).
+    P p,b  Paints the area round the last point in colour p, up to the
+           border colour b.
+    X s    Runs the commands in another string: "X" + VARPTR$(s$).
+
+A number can also be a variable's value, as "=" + VARPTR$(variable), or
+be joined in with STR$.  Blanks and semicolons between commands do not
+matter, and small letters do as well as capitals.  A, TA and S stay set
+for the DRAW statements that follow.
+
+An unknown command or a number out of range is "Illegal function call",
+as is DRAW in SCREEN 0.
+
+Example:
+    SCREEN 12
+    DRAW "BM100,100 C14 R50 D50 L50 U50"      ' a yellow square
+    DRAW "BM200,100 TA45 R40 TA0"             ' a line at 45 degrees
+    tri$ = "E30 F30 L60"
+    DRAW "BM300,200 X" + VARPTR$(tri$)
+    d = 25: DRAW "R" + STR$(d)
+
+See Also  [[LINE]]  [[PSET]]  [[PAINT]]  [[VARPTR$]]  [[SCREEN]]
+#topic END Statement
+#key END Statement
+END on its own ends the program.  END with a keyword closes a block.
+
+{b}END{p}
+{b}END{p} {DEF | FUNCTION | IF | SELECT | SUB | TYPE}
+
+    {o} DEF        Ends a DEF FN of many lines.
+    {o} FUNCTION   Ends a FUNCTION procedure.
+    {o} IF         Ends a block IF.
+    {o} SELECT     Ends a SELECT CASE.
+    {o} SUB        Ends a SUB procedure.
+    {o} TYPE       Ends a TYPE definition.
+
+END closes every file.  A program that runs past its last statement ends
+in the same way.  In the editor, "Press any key to continue" is shown
+under the program's output, and the variables keep their values for the
+Immediate window.  After QBASIC /RUN, SYSTEM ends the program and QBasic
+together.
+
+Example:
+    INPUT "Again (Y/N)"; a$
+    IF UCASE$(a$) <> "Y" THEN END
+
+See Also  [[SYSTEM]]  [[STOP]]  [[EXIT]]
+#topic ENVIRON Statement, ENVIRON$ Function
+#key ENVIRON Statement
+#key ENVIRON$ Function
+ENVIRON$ reads a variable of the DOS environment, such as PATH.  ENVIRON
+sets or removes one in QBasic's copy of the environment.
+
+{b}ENVIRON${p}(name$)
+{b}ENVIRON${p}(n%)
+{b}ENVIRON{p} stringexpression$
+
+    {o} name$               The variable's name.  Names are matched as
+                          written, so ask for "PATH", not "path".
+    {o} n%                  The n'th entry, 1 to 255, given whole:
+                          "PATH=C:\DOS".
+    {o} stringexpression$   "name=value" (or "name value").  With nothing
+                          after the =, the variable is removed.
+
+ENVIRON$ gives "" for a name that is not set, or for an n past the last
+entry.  An empty name, a name with a blank or = in it, or an n outside
+1 to 255 is "Illegal function call".
+
+The changes last until QBasic ends, and a program started by SHELL gets
+them; the environment of the DOS that started QBasic is not changed.
+
+Example:
+    PRINT ENVIRON$("PATH")
+    ENVIRON "TEMP=C:\TMP"
+    i = 1
+    DO WHILE ENVIRON$(i) <> ""
+        PRINT ENVIRON$(i): i = i + 1
+    LOOP
+
+See Also  [[SHELL]]
+#topic EOF Function
+#key EOF Function
+EOF tells whether a file has been read to its end: -1 (true) at the end,
+0 (false) before the end.
+
+{b}EOF{p}(filenumber%)
+
+    {o} filenumber%   The number of an open file.
+
+A file opened FOR INPUT is at its end when nothing is left to read; a
+Ctrl+Z (CHR$(26)) in it counts as the end too.  A random-access or binary
+file is at its end once a GET has tried to read past the last record or
+byte.  Testing EOF before each INPUT # keeps the program from stopping
+with "Input past end of file".
+
+Example:
+    OPEN "NAMES.TXT" FOR INPUT AS #1
+    DO UNTIL EOF(1)
+        LINE INPUT #1, l$
+        PRINT l$
+    LOOP
+    CLOSE #1
+
+See Also  [[LOF]]  [[LOC]]  [[OPEN]]  [[INPUT]]  [[LINE INPUT|LINE-INPUT]]
+#topic ERASE Statement
+#key ERASE Statement
+ERASE empties arrays.
+
+{b}ERASE{p} arrayname [, arrayname]...
+
+    {o} arrayname   An array's name, without parentheses.
+
+A static array keeps its size, and each element goes back to 0 or "".  A
+dynamic array is freed: DIM or REDIM must give the array a size again,
+and until then using the array is "Subscript out of range".
+
+Example:
+    DIM a(100)
+    REDIM b$(n)
+    ERASE a, b$                       ' a() is zeros, b$() is gone
+
+See Also  [[DIM]]  [[REDIM]]  [[CLEAR]]  [[$DYNAMIC|meta]]
+#topic ERDEV, ERDEV$ Functions
+#key ERDEV Function
+#key ERDEV$ Function
+After a device fails, ERDEV gives a code for the error and ERDEV$ the
+name of the device.
+
+{b}ERDEV{p}
+{b}ERDEV${p}
+
+In QBasic, the low byte of ERDEV is the error number DOS gave for the
+device (the critical-error code), and the high byte holds bits of the
+device's attribute word.  ERDEV$ is a device's name, such as "LPT1", or a
+drive's, such as "A:".  An ON ERROR routine reads them.
+
+In this QBasic, ERDEV is always 0 and ERDEV$ is always "".
+
+Example:
+    PRINT "Error"; ERR; "on "; ERDEV$; ", code"; ERDEV
+
+See Also  [[ERR]]  [[ON ERROR|ON-ERROR]]
+#topic ERR, ERL Functions
+#key ERR Function
+#key ERL Function
+In an error routine, ERR gives the code of the error and ERL the number
+of the line the error happened on.
+
+{b}ERR{p}
+{b}ERL{p}
+
+ERR is 11 for "Division by zero", 53 for "File not found", and so on;
+RESUME sets ERR back to 0.  ERL is the number of the line that failed, or
+of the nearest numbered line above it.  Labels that are words do not
+count, and ERL is 0 if there is no numbered line before the error.
+
+Example:
+    ON ERROR GOTO Handler
+    OPEN "DATA.TXT" FOR INPUT AS #1
+    END
+    Handler:
+    PRINT "Error"; ERR; "in line"; ERL
+    RESUME NEXT
+
+See Also  [[ON ERROR|ON-ERROR]]  [[RESUME]]  [[ERROR]]  [[Run-Time Error Codes|errcodes]]
+#topic ERROR Statement
+#key ERROR Statement
+ERROR makes an error happen, as if a statement had failed: to test an
+error routine, or to report an error of the program's own.
+
+{b}ERROR{p} n%
+
+    {o} n%   The error's code, 1 to 255.
+
+With ON ERROR in force, ERROR goes to the error routine with ERR set to
+n%.  Without ON ERROR, the program stops with the message for n%, or with
+"Unprintable error" for a code QBasic has no message for.  A code of 0,
+or over 255, is "Illegal function call".  Codes QBasic does not use,
+such as 200 and up, are best for the program's own errors.
+
+Example:
+    ON ERROR GOTO Trouble
+    IF qty < 0 THEN ERROR 200
+    END
+    Trouble:
+    IF ERR = 200 THEN PRINT "The quantity is below zero": RESUME NEXT
+
+See Also  [[ERR]]  [[ON ERROR|ON-ERROR]]  [[RESUME]]  [[Run-Time Error Codes|errcodes]]
+#topic EXIT Statement
+#key EXIT Statement
+EXIT leaves a loop, a procedure or a DEF FN at once.
+
+{b}EXIT{p} {DEF | DO | FOR | FUNCTION | SUB}
+
+    {o} DEF        Returns from the DEF FN that is running.
+    {o} DO         Goes on after the LOOP of the innermost DO...LOOP.
+    {o} FOR        Goes on after the NEXT of the innermost FOR...NEXT.
+    {o} FUNCTION   Returns from the FUNCTION that is running.
+    {o} SUB        Returns from the SUB that is running.
+
+A FUNCTION or DEF FN left by EXIT returns the value last assigned to its
+name, or 0 or "" if none was.  EXIT DO outside a DO...LOOP is "EXIT DO
+not within DO...LOOP", and the other forms have messages like that one.
+
+Example:
+    FOR i = 1 TO LEN(s$)
+        IF MID$(s$, i, 1) = " " THEN EXIT FOR
+    NEXT
+    PRINT "First blank at"; i
+
+See Also  [[DO...LOOP|DO]]  [[FOR...NEXT|FOR]]  [[SUB]]  [[FUNCTION]]  [[DEF FN|DEF]]
+#topic EXP Function
+#key EXP Function
+EXP gives e (2.718282) raised to a power.  EXP is the inverse of LOG.
+
+{b}EXP{p}(x)
+
+    {o} x   The power: up to about 88.72 for a SINGLE result, up to
+          709.78 for a DOUBLE.
+
+The result is a DOUBLE when x is a DOUBLE, otherwise a SINGLE.  A power
+too large is "Overflow"; a large negative one gives 0.
+
+Example:
+    PRINT EXP(1)                      ' 2.718282
+    PRINT EXP(1#)                     ' 2.718281828459045
+    growth = start * EXP(rate * years)
+
+See Also  [[LOG]]  [[Arithmetic Operators|arith]]

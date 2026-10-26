@@ -1296,9 +1296,18 @@ vx_nomem:
 ; The drives it does NOT manage are handed back one call at a time,
 ; inside the handler, where the drive number is known.
 ;=====================================================================
+;
+; 14h and 17h are claimed for MODE: a printer sent to a serial port, or
+; a port with RETRY=, is served out of the kernel's table (md_lpt and
+; md_com in INT21.INC) as MS-DOS's resident MODE served it.  A call for
+; a port MODE has not touched is handed straight back to the guest's
+; own vector, so with no settings nothing changes but the route.
+; Claimed always rather than when a setting is made, because a box
+; parked for a child keeps the bits it was started with.
 vdm_traps:
-        mov     byte ptr [vdm_ctx+V86C_TRAP+2],28h      ; 13h and 15h: bits
-                                                        ; 3 and 5 of the byte
+        mov     byte ptr [vdm_ctx+V86C_TRAP+2],0B8h     ; 13h, 14h, 15h and
+                                                        ; 17h: bits 3, 4, 5
+                                                        ; and 7 of the byte
                                                         ; covering 10h-17h
 IFDEF V86_NOMODE
         or      byte ptr [vdm_ctx+V86C_TRAP+2],1        ; ...and 10h, to hold
@@ -2408,11 +2417,50 @@ IFDEF V86_NOMODE
 ENDIF
         cmp     ebx,67h                         ; expanded memory, and the bit
         je      vdm_i67                         ; is only set when there is any
+        cmp     ebx,17h                         ; the printers and serial ports,
+        je      vdm_i17                         ; for MODE's settings
+        cmp     ebx,14h
+        je      vdm_i14
         cmp     ebx,13h                         ; the disk BIOS, served out
         jne     vdm_notours                     ; of the kernel's own block
         jmp     vdm_i13                         ; layer - see INT13.INC
 vdm_notours:
         jmp     vdm_reflect                     ; 22h-2Eh: the guest's own
+
+;---------------------------------------------------------------------
+; INT 17h and INT 14h - a port MODE has routed or given a RETRY= is
+; served by md_lpt / md_com, and every other call goes to the guest's
+; own vector as if nothing had been claimed (see vdm_traps).  EBX is
+; still the vector for vdm_reflect.
+;---------------------------------------------------------------------
+vdm_i17:
+        movzx   edx,word ptr [vdm_ctx+V86C_EDX]
+        cmp     edx,3
+        jae     vdm_reflect
+        cmp     byte ptr [md_route+edx],0
+        jne     vi17_ours
+        cmp     byte ptr [md_lretry+edx],0
+        je      vdm_reflect
+vi17_ours:
+        mov     eax,dword ptr [vdm_ctx+V86C_EAX]
+        call    md_lpt
+        mov     word ptr [vdm_ctx+V86C_EAX],ax
+        jmp     vdm_loop
+
+vdm_i14:
+        movzx   edx,word ptr [vdm_ctx+V86C_EDX]
+        cmp     edx,4
+        jae     vdm_reflect
+        cmp     byte ptr [md_cretry+edx],0
+        je      vdm_reflect
+        mov     eax,dword ptr [vdm_ctx+V86C_EAX]
+        mov     ebx,dword ptr [vdm_ctx+V86C_EBX]
+        mov     ecx,dword ptr [vdm_ctx+V86C_ECX]
+        call    md_com
+        mov     word ptr [vdm_ctx+V86C_EAX],ax
+        mov     word ptr [vdm_ctx+V86C_EBX],bx
+        mov     word ptr [vdm_ctx+V86C_ECX],cx
+        jmp     vdm_loop
 
 ;---------------------------------------------------------------------
 ; INT 15h, the vector PM-DOS claims a PIECE of.  The handler answers CF
@@ -2752,8 +2800,8 @@ d12_arg     dd  0
 dvs_do29:
         pushad
         mov     al,byte ptr [vdm_ctx+V86C_EAX]
-        call    dword ptr ds:[IOS_CONOUT]
-        popad
+        call    con_putraw              ; a console driver that left 29h
+        popad                           ; alone still gets the character
         ret
 
 ;---------------------------------------------------------------------

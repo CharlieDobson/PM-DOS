@@ -5709,7 +5709,13 @@ cmd_prompt:
         mov     byte ptr [edi+5],'T'
         mov     byte ptr [edi+6],'='
         add     edi,7
-        jmp     set_build               ; empty arg deletes = default
+        ; PAST THE '=' ALREADY, so the text goes in as typed.  It went
+        ; in folded, and the $ codes did not care, but ANSI.SYS does:
+        ; $E[1;33M is no colour at all and prints an M.  MS-DOS keeps
+        ; PROMPT text exactly, and so does SET PROMPT=.
+        xor     ecx,ecx
+        mov     bl,1
+        jmp     sb_lp                   ; empty arg deletes = default
 
 cmd_set:
         mov     esi,[arg_ptr]
@@ -6167,8 +6173,17 @@ pp_esc:
         mov     dl,27
         jmp     short pp_ch
 pp_bs:
-        mov     dl,8                    ; the console's own backspace
-        jmp     short pp_ch             ; erases, so $H needs no help
+        ; BACKSPACE, SPACE, BACKSPACE, as MS-DOS's $H prints it.  The
+        ; kernel's console rubs out with a backspace alone, but ANSI.SYS
+        ; - like every console DOS ever had - only moves the cursor
+        mov     dl,8
+        mov     ah,02h
+        int     21h
+        mov     dl,' '
+        mov     ah,02h
+        int     21h
+        mov     dl,8
+        jmp     short pp_ch
 pp_dollar:
         mov     dl,'$'
 pp_ch:

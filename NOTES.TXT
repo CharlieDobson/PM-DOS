@@ -16108,6 +16108,1435 @@ BOOT\BOOTHD.ASM, FATLOAD.INC; INC\PMDOS.INC (S2_FIELD); CMD\SYS\SYS.ASM;
 BUILD.CMD.  Still v0.65; not committed.
 
 
+DELTREE.EXE (2026-10-24)
+---------------------------------------------------------------------
+
+DELTREE for PM-DOS: CMD\DELTREE, C on XCOPY's runtime (DOSINT.ASM,
+RT.C and SYS_D32.C, cut down), 6,240 bytes, 6,368 with the stub
+(13 sectors on the boot floppy).  What it
+does was measured from MS-DOS 6.22's DELTREE under DOSBox-X's own DOS
+(ver=6.22, keys from KEYFEED) and Windows 98's (ver=7.10, lfn=true),
+with DOS6SRC\C6ERS\NEWCMDS\DELTREE.C read for the parts a run could not
+show:
+
+  - each path is a pattern matched against files AND directories,
+    hidden and system ones included.  X deletes X; X\*.* and X\
+    delete what is in X and keep X; "." and ".." as the name mean
+    everything in that directory, shown as ".\SUB".  A path that
+    matches nothing, or a drive that is not there, says nothing and
+    leaves errorlevel 0.
+  - without /Y, 'Delete directory "X" and all its subdirectories? [yn]'
+    or 'Delete file "X"? [yn]' for each match.  Y or N, then Enter;
+    the last letter typed counts, Enter before one does nothing,
+    Ctrl-Z is a no, Ctrl-C ends the program (the kernel's INT 23h -
+    there is no handler, as 6.22 had none).  Keys typed ahead are
+    dropped before each question; a file of answers on standard input
+    is read one answer after another, and its end is a no.
+  - "Deleting X..." before each match goes, asked about or not, and
+    nothing about what is inside it.
+  - "Required parameter missing", "Invalid switch - X": errorlevel 1,
+    before anything is touched.
+  - the name shown is the path's directory part as typed plus the name
+    as the file system holds it, long names and case kept: Windows
+    98's form.  6.22 printed found names in small letters.
+
+ON PURPOSE NOT 6.22'S: switches anywhere on the line (6.22 looked only
+in front of the first path); what cannot be deleted is named - "Access
+denied - X", "Attempt to remove current directory - X", "Path too long
+- X", "Error n deleting X" - with the long form of its path (7160h
+CL=2), and the errorlevel is then 1 where 6.22's was always 0; the
+directories holding it are left with everything else in them gone; a
+read-only file that will not go gets its read-only bit back.  The
+echoed answer has the cursor after it rather than on it: 6.22 wrote
+the letter and a backspace, and PM-DOS's console backspace ERASES the
+cell (IO\CONSOLE.INC co_bs; INT 10h's only moves), which left the
+question with no letter showing.  DELTREE now writes a backspace in
+front of a letter that replaces one, which looks right on either kind
+of console.
+
+HOW IT WALKS.  The matches of a path are listed before any is deleted:
+with UNDELETE=ON the first delete in a root can make \RECYCLED, and a
+search still walking that root would find it and delete the files just
+kept there.  Inside a directory only one search is ever open: the
+files go in one pass, the search carried on past each delete as DEL's
+is, then each subdirectory is found by a fresh search closed before
+the walk goes down - so depth costs no find handles, and one that
+would not go is counted and passed over next time.  The path worked on
+is made of 8.3 aliases, as DEL makes its own.  The delete is the
+ORDINARY one (7141h/41h), not F1h AL=19h as MOVE's and XCOPY's: what
+DELTREE deletes has not been copied anywhere, so with UNDELETE=ON it
+is kept, and UNDELETE X\*.* /S /ALL brings the tree back, directories
+and all.  41h refuses only read-only files on PM-DOS, so that is the
+only bit taken off.  The big buffers come from 48h, not the BSS, which
+D32END writes into the file: 2.3K less on a boot floppy short of room.
+
+TESTS: DISK\DTTEST.BAT (on MULTI.IMG's first volume, found by marker
+as ATTRTEST does; not on C:) - the command line, a tree with read-only,
+hidden and system files and a hidden directory, X\*.* and X\ and ".",
+a read-only file, a wildcard over directories and files, nothing
+matching, every answer from a file, long names and quotes, the current
+directory, /Y after the path, forty files and a tree ten deep,
+UNDELETE /S of a deleted tree - run on DOSBox-X with LFN=ON (all as
+described) and LFN=OFF (the classic calls; T5* no longer takes T5C.TXT,
+as on 6.22, which is DOS's matching).  The keyboard on QEMU through its
+monitor (scratchpad rig\qmc.ps1): y, n, y-Backspace-n (n counts),
+Ctrl-Z, Ctrl-C at the question (^C, the rest kept).  The limits, with
+ordinary input: a tree made as deep as the kernel lets CD and MD go
+(the 64-character path: six levels of 8-character names, and long
+names to the same 8.3 length) and 24 paths on one command line, all
+deleted.  The 260-byte path DELTREE allows is above anything the kernel
+makes; a deeper tree made elsewhere would have what the kernel refuses
+named and left.
+
+REVIEW (defect > effect > fix): the subdirectory pass took every
+search error for "no more", and the file pass never looked at the error
+that ended it > a Fail at a disk error during a search went on to RD
+and the next directories, asking again for each > only "no more files"
+ends a pass; anything else is said (a Fail stops the run) and the
+directory is left.  Every copy into work[], shown[], argbuf[], prefix[]
+and pattern[] is measured first; the find records' name fields are
+NUL-ended at their last byte before they are copied.
+
+FOUND, NOT DELTREE'S:
+  - CMD.EXE's IF EXIST X\NUL is false whether directory X is there or
+    not; MS-DOS batch files use it to test for a directory.  DTTEST
+    lists with DIR /A /B instead.
+  - IF EXIST "A NAME WITH SPACES" ends the condition at the first
+    blank and runs the rest of the name as a command (DIR, here), and
+    MD "A NAME WITH SPACES" says "Unable to create directory".
+  - the console's backspace erases (above).  MS-DOS programs that echo
+    a letter and back up over it lose the letter on PM-DOS's console;
+    a box's programs go through INT 10h and are not affected.
+  - FOR %%N IN (...) DO CALL X.BAT says "Batch files nested too deeply"
+    after about eight turns, as if each CALL stayed open until the FOR
+    ended.  Seen while making a deep tree; not looked into.
+
+NOT RUN: real hardware, 86Box; a file that will not delete for being
+open or a mounted image (the read-only bit put back, by reading only);
+a write-protected disk (a Fail at the critical error ends the run).
+
+Files: CMD\DELTREE\ (new: DOSINT.ASM, MAIN.C, RT.C, RT.H, SYS.H,
+SYS_D32.C, TYPES.H); DISK\DTTEST.BAT (new), HELP\20EXTERN.TXT (a
+DELTREE topic); DISK\SETUP.LST; BUILD.CMD (its section after XCOPY's,
+the clean list, the stub list, PMDOS.IMG, DTTEST on TESTS.IMG);
+MKHD.CMD (HD16 and HD32, DTTEST too).  A full BUILD.CMD in a scratch
+mirror passes.  Delivered in one go with TREE.EXE and ANSI.SYS, written
+the same night, by the ANSI.SYS session (see its entry): S:\BIN, HELP.HLP,
+IMAGES, BASELINE and the VM.  DTTEST on a copy of the delivered HD16.IMG
+with MULTI.IMG gives exactly what it gave in the mirror.  Still v0.65;
+not committed.
+
+
+
+TREE.EXE - MS-DOS 6.22'S TREE, WITH LONG NAMES (2026-10-24)
+---------------------------------------------------------------------
+
+Charlie: "Write TREE.EXE for PM-DOS."  CMD\TREE is a native C program
+put together the way XCOPY is - DOSINT.ASM, RT.C, SYS_D32.C, MSG.C -
+with MAIN.C for the command line, the heading and the directory the
+tree starts from, and WALK.C for the walk and the drawing.
+
+THE MODEL IS 6.22'S TREE.COM, run before a line was written (DOSBox-
+X's own DOS with VER=6.22, the real binary from MSDOS622, a test floppy
+made by IMGMAKE) and read in S:\DOS6SRC\CMD\TREE.  What it does, and
+so what TREE.EXE does:
+
+  - the heading: "Directory PATH listing for Volume " and the label
+    in ELEVEN columns, blanks and all (6.22 read the label with an FCB
+    search and printed the whole field), or "Directory PATH listing"
+    alone; "Volume Serial Number is XXXX-XXXX" when 69h has one; then
+    the drive and the path AS TYPED, in capitals.  No path at all is
+    "C:." and the tree of the drive's current directory - not its
+    full path - and a relative one is "C:A2".  A backslash on the end
+    is dropped unless it is all there is.
+  - the drawing: four columns a level; a subdirectory is a tee (an
+    elbow for the last), three dashes and its name; under a directory
+    with more after it a bar and three blanks, under the last four
+    blanks.  With /F a directory's files come first - a bar in front
+    if it has subdirectories, a blank if not - and then the same line
+    with no name, its trailing blanks kept.  Directory order, not
+    sorted.  /A is + - \ | instead of C3 C4 C0 B3.
+  - left out: hidden and system files and directories (6.22 searched
+    with 10h and 00h), "." and "..".
+  - "No sub-directories exist" when no directory was drawn, after any
+    files.  The message ends CR LF LF - the second line end has no
+    carriage return - and TREE.EXE writes those same bytes, so a tree
+    saved to a file is the same file on both systems.
+  - a path that is not a directory: the heading, then "Invalid path -
+    \PATH" (without its drive), then "No sub-directories exist".
+  - the command line is read in order, and the first thing wrong is
+    the one reported: "Invalid switch - /X", "Too many parameters -
+    B:\", "Invalid drive specification".  A switch counts once - 6.22's
+    parser struck it off its list - so "/F /F" is "Invalid switch -
+    /F", and "/FA" is one bad switch, not two good ones.  The offending
+    text is shown as typed.  /? shows the help and reads no further.
+  - errors go to standard error (the message handler's MSGNUM_PARSE
+    and MSGNUM_EXTERR are STDERR, and "Invalid path" is too).
+    Errorlevel 0, 1 for any error - and for /?, which 6.22 left as 1 -
+    and 3 for ^C.  A directory that cannot be read ends the walk with
+    1 and no message of its own, as 6.22's did.
+
+36 command lines (cmp\mktt.pl in this session's scratchpad: the help,
+every switch error, relative paths, ".", "..", a file, a wildcard, a
+hidden directory, glued and repeated switches, a comma) were run by
+both programs against one floppy image, TREE.EXE in a test build that
+sends its errors to standard output (-dERR_TO_OUT, FIND's trick, as
+neither shell can redirect handle 2).  They are byte for byte the same
+but for four things, none of them TREE.EXE's to change:
+
+  - the help screen, which is in this program's own words;
+  - the errors, which 6.22 takes from COMMAND.COM and DOSBox-X's DOS
+    shows as "Parse Error 3" (invalid switch), "Parse Error 1" (too
+    many parameters) and "Extended Error 15" (invalid drive) - the
+    same errors TREE.EXE names, by number;
+  - a hidden directory and a hidden file, which DOSBox-X's own DOS
+    hands to a search that did not ask for them.  Real DOS does not:
+    MatchAttributes (DOS\DIR2.ASM) refuses an entry with a hidden,
+    system or directory bit the search attribute lacks;
+  - "B:\.." and "B:\*.*", which DOSBox-X lets CHDIR take (the root,
+    and the current directory).  Real DOS refuses both - SkipBack in
+    DOS\MACRO2.ASM will not back up past the root, and $CHDIR in
+    DOS\PATH.ASM refuses meta characters - so 6.22 said "Invalid
+    path", and so does TREE.EXE.
+
+WHAT IS PM-DOS'S.  Long names, by 714Eh, as XCOPY's; with LFN=OFF the
+classic calls and the 8.3 aliases (tested on the same disk: the 8.3
+part of it draws byte for byte as it does with LFN=ON).  A path in
+double quotes may have blanks in it.  A path may be as long as the
+long-name API allows, 260 with the NUL, where 6.22's stopped at 64:
+the walk enters a directory only when its path, a backslash and
+"*.*" still fit, and draws one that does not without entering it and
+says at the end "Some directories are not shown: their path would be
+too long", errorlevel 1.  Tested at the edge: names of 100, 100 and
+50 characters, where the search inside the third is exactly 260
+bytes - it was entered, and the directory below it was drawn and not
+entered.  A 120-entry directory grew the name list twice.
+DISK\TREETEST.BAT, run on a copy of a mirror build's HD16 (CMD /C
+...TREETEST.BAT > C:\TT.OUT, the ERR_TO_OUT TREE.EXE in C:\), showed
+what each of its nine steps says it must, and cleaned up after itself.
+
+ONE SEARCH OPEN AT A TIME.  A directory's subdirectories are read into
+a list and the search closed before anything is drawn, and its files
+come from a second search that ends before the first subdirectory is
+entered - XCOPY's reason: a search held open at every level would use
+up the kernel's thirty-two find handles.  Nothing changes directory;
+every search is by full path, so there is nothing to put back after a
+^C.  The level limit (PATH_MAX / 2, the most a path can hold) also
+bounds the recursion on a disk whose directories loop.
+
+THE BOOT DISKETTE IS FULL, so TREE.EXE keeps its buffers on the heap
+(the D32END link writes the BSS out as zeroes) and is compiled -os,
+not -ox: 8,876 bytes became 6,424, 13 sectors with the stub.  A tree
+is drawn as fast as the disk reads, so nothing is lost by it.
+
+BOUNDS.  Every buffer is a fixed size and every copy into one is
+measured: the command line into 300 bytes; a path off it into 260
+before anything else ("Invalid path" if longer); the drive's current
+directory and the typed path joined into 520 and the result rebuilt
+into 260; a name out of 714Eh's record copied by str_field - at most
+the field's 260 bytes, always NUL-ended - and not by str_cpyn, which
+measures the source first and would read past a field with no NUL in
+it and then leave the last name in place; the drawing line is the
+deepest level's columns, a graphic, three dashes, the longest name and
+CR LF.
+
+NOT RUN: ^C (errorlevel 3); real hardware or 86Box; a CD-ROM or a
+network drive; a name of 255 characters, and a path too long for the
+parser - the shells cut a line at 159 characters (127 typed), so
+neither can be made or typed from them.
+
+Files: CMD\TREE\ (new: DOSINT.ASM, MAIN.C, WALK.C, MSG.C, MSG.H, RT.C,
+RT.H, SYS.H, SYS_D32.C, TREE.H, TYPES.H); DISK\TREETEST.BAT (new),
+HELP\21EXTERN.TXT (a TREE topic); DISK\SETUP.LST; BUILD.CMD (its
+section after DELTREE's, the clean list, the stub list, PMDOS.IMG, and
+TREETEST.BAT on TESTS.IMG); MKHD.CMD (HD16 and HD32, and TREETEST.BAT
+on both).  Still v0.65; not committed.
+
+DELIVERED with ANSI.SYS and DELTREE (see ANSI.SYS's entry below).
+TREETEST.BAT was missing from BUILD.CMD's TESTS.IMG list and went on
+afterwards: IMAGES\TESTS.IMG and the VM's copy now have it (221 files;
+the other 220 the same).  No baseline moved: RUNTESTS's disk is BIN\
+and BIN\TESTS\ only, never TESTS.IMG; seven rows, 91 the same on each.
+
+
+
+ANSI.SYS (2026-10-24)
+---------------------------------------------------------------------
+
+Charlie: "Write an ANSI.SYS driver for PM-DOS."  CMD\ANSI\ANSI.ASM,
+a 16-bit character driver named CON, 8086 code, 3,846 bytes in the file
+(8 sectors on the boot floppy) and 4,474 resident: the key table, the
+parameters of the sequence being read and the driver's own 512-byte
+stack lie over the INIT code past endres and are not in the file.  One
+file is the console under PM-DOS, under Windows through RMDOS, and
+under MS-DOS.
+
+THE MODEL IS MS-DOS'S, quirks included, read in DOS6SRC\DEV\ANSI and
+then measured: ED clears the whole screen and homes the cursor for any
+n; EL ignores its n; a CUP row off the bottom moves nothing while a
+column past the edge is the edge; numbers are one byte and wrap; = and
+? are ignored anywhere; a quoted string is one parameter a character;
+a final byte no sequence uses is printed, and so is whatever follows a
+lone ESC; h and l both set a video mode for 0-6 and 13-19, and 7 is
+wrap; past the last column the line ends at once (an 80-character line
+moves the cursor down, on the last row it scrolls); ESC[6n puts
+ESC[rr;ccR and a CR in front of the keyboard; ESC[k;...p tables up to
+512 bytes, and a meaning that would not fit is ignored; ESC[0q/1q turn
+/X off and on.  The text modes are written directly (the BIOS data area
+read at the start of every request and written back at the end, as the
+kernel's console does, checked against the 32K page); graphics modes
+and /R go through INT 10h as DOS's driver did for everything.  INT 29h,
+INT 2Fh AX=1A00h-1A02h and the generic IOCTL 440Ch 7Fh/5Fh (MODE CON
+LINES=: 25/43/50 on a VGA, 25/43 on an EGA) are there too.  /X /K /R,
+and /S /SCREENSIZE /L accepted as 6.22 accepts them.
+
+UNDER PM-DOS NOTHING IN V86 MAY WAIT: a BIOS that HLTs inside INT 16h
+AH=00h would halt inside the kernel's call and the excursion counts a
+HLT that is not the pad as a lost driver.  So the driver knows PM-DOS
+by 21h/F100h at INIT, and there READ polls AH=01h; the kernel only
+reads it after a non-destructive read has said a key is there.  The
+Break key stays the kernel's (DOS's INT 1Bh mark, kb_break): under
+PM-DOS the driver leaves 1Bh alone and the kernel takes the mark before
+it asks the driver anything; under MS-DOS it hooks 1Bh as DOS's did.
+
+THE KERNEL HAD NEVER USED A LOADED CON.  DEVLOAD.INC found one by name
+and nothing else: standard input and output - the kernel's console -
+went past it, so MS-DOS's own ANSI.SYS would have loaded and done
+nothing.  Now (DEVLOAD.INC, "A LOADED CONSOLE"):
+  - dl_conadopt: the newest character driver named CON that says it is
+    standard output is the console; standard input too if it says so.
+    dl_conprobe asks INT 2Fh AX=1A00h through V86 (INT 2Fh and RETF
+    planted at DL_PROBE) for whether it is an ANSI.SYS.
+  - the standard handles stay DEV_CON, with all of the kernel's cooked
+    and raw handling, line editing, ^C, ^S and ^P; only the bottom
+    changes: con_put/con_putraw, con_wrun, con_kst, con_krd,
+    con_kflush.  With no console driver each is the call it replaced.
+  - CON by name is DEV_CON again (dl_lookup, now newest first as the
+    chain is).
+  - 40h and 09h go to the driver as runs, one WRITE a run through
+    DL_XBUF (dl_write); 06h, INT 29h's stub and raw mode as they are;
+    cooked output turns TAB into spaces from the BIOS's cursor column.
+  - 4400h reports the driver's header, 4402h/4403h/440Ch/4406h go to
+    it; 21h/F000h (CLS) is ESC[2J when it answered 1A00h, so the screen
+    clears in its colours as MS-DOS's CLS does; F007h reads the
+    keyboard itself (EDIT gets F1 even when ANSI.SYS has given F1 a
+    meaning); F008h asks the BIOS first and the driver second, because
+    a driver asked about a key it has a meaning for takes the key.
+  - ONE EXCURSION A REQUEST (dl_then in dl_excur): strategy's RETF
+    lands on the interrupt entry.  Every DEVICE= driver gets this.
+
+FOUND ON THE WAY AND FIXED: CMD.EXE's PROMPT folded its text to upper
+case (it entered SET's copy as if still in the name), so $E[1;33M was
+no colour and printed an M - invisible until something read the
+letters.  $H and DOSKEY's F9 prompt sent a lone backspace, which rubs
+out only on the kernel's console: BS, space, BS now, as MS-DOS's $H.
+COMMAND.COM's CLS asks 1A00h first, as MS-DOS's does.
+
+TESTED.  TOOLS\ANSITEST.ASM (BIN\TESTS\ANSITEST.COM) writes 30 cases
+through 40h, INT 29h and 09h, stuffs keys with INT 16h AH=05h, reads
+back with 06h, and records the screen, the cursor and the input;
+TOOLS\ANSICMP.PL compares two runs.  THE ANSWER is MS-DOS 5's own
+C:\DOS\ANSI.SYS, booted from a copy of the 86Box DOS 5 disk in DOSBox-X
+(6.22's ANSI.SYS refuses DOS 5 - its message loader checks the
+version).  This driver under MS-DOS 5: every case the same but one.
+Under PM-DOS (QEMU, a DOS box): the same but three, each understood:
+  13  ESC[""4m: DOS's driver's count wraps to 255 on an empty string
+      first in a sequence and the next numbers land in stale memory;
+      here the empty string vanishes.  Left so on purpose.
+  16  a TAB after escape sequences: MS-DOS expands from a column count
+      of its own (CARPOS), which counts the sequence's letters, so its
+      tabs drift; the kernel expands from the cursor's real column.
+      Left so on purpose.
+  the IOCTL record's intensity bit: QEMU's VGA BIOS reports background
+      intensity where DOSBox-X's reports blink.
+QEMU, by hand, with ANSI.SYS in CONFIG.SYS: PROMPT
+$e[1;33;44m$p$g$e[0;37;44m, CLS clearing to blue, DIR in colour, F1
+given "VER";13 typing VER at CMD.EXE's prompt, backspace and DOSKEY's
+history, EDIT's own F1 help, COMMAND.COM's coloured prompt and CLS in
+a box.  RUNTESTS, seven rows, no ANSI.SYS: 89 the same on each, RMFIND
+and RMTEST moved by the new files (DELTREE, TREE, ANSI.SYS, ANSITEST),
+LOCKTEST's 386 caps-lock count (the known noise).  RUNTESTS 486-32
+with DEVICE=C:\TESTS\ANSI.SYS: all ran; the 13 outputs that differ
+from the plain row all come from the driver's 4.4K below the programs
+(segments up 119h paragraphs, MEM, the arena's block count), from the
+second CON in LOLTEST's chain, and from one more file in \TESTS.
+
+NOT RUN: a real machine (the 486), 86Box, Windows on screen (PARKTEST
+with ANSI.SYS loaded only), a graphics mode or /R with a screen reader
+on screen, 440Ch 5Fh (no MODE here; 7Fh is in ANSITEST), an EGA, a
+mono card, an 8086.  RMDOS still reads the keyboard through the BIOS,
+so a key's new meaning does not work in a DOS window under Windows
+(the help says so).  Speed on a 486 is not measured: a character
+through 02h is one excursion, a 40h line one.
+
+TRAPS: FATGET.PL turns CRLF into LF, so a binary result is read with a
+raw copy; Bash ate a backslash in "C:\\\r\n" and DIR /W C:\r said "No
+files found", correctly, which cost three boots; the shell hook refuses
+Remove-Item in a command holding "/p"; Defender took the scratch
+mirror's MKDISK.EXE after the first build (a second build kept it).
+
+Files: CMD\ANSI\ANSI.ASM (new); TOOLS\ANSITEST.ASM, ANSICMP.PL (new);
+DOS\DEVLOAD.INC, INT21.INC, VDM.INC; CMD\CMD.ASM, DOSKEY.INC,
+COMMAND\BUILTIN.INC; DISK\HELP\20EXTERN.TXT (an ANSI.SYS topic),
+DISK\CONFIG.TXT, DISK\SETUP.LST; BUILD.CMD (its section after
+SETVER's, ANSITEST after TESTDEV's, the clean list, PMDOS.IMG and
+TESTS.IMG); MKHD.CMD (HD16 and HD32, and ANSITEST.COM on both).  Still
+v0.65; not committed.
+
+DELIVERED the same night, with DELTREE and TREE (one build, one full
+RUNTESTS -Update): S:\BIN PMDOS.SYS 189,659, CMD.EXE 63,034,
+COMMAND.COM 33,472, and new ANSI.SYS, DELTREE.EXE, TREE.EXE,
+TESTS\ANSITEST.COM; DISK\HELP.HLP regenerated (323 topics; it was
+exactly 0.65's parts' output, so nothing of Charlie's was lost);
+IMAGES\PMDOS, HELP, TESTS, HD16 (FATREPL in place: 5 replaced, 6 added)
+and IMAGES\SETUP's five images; BASELINE RMFIND and RMTEST on all seven
+rows (the new files); the VM's PMDOS, HELP, TESTS and HD16.  The boot
+floppy has 9 clusters (4,608 bytes) free.  PMDOS.SYS was built with
+HEAD's DOS\RING3.INC: the XARC session's change to it, in the working
+copy, ships with XARC.
+
+
+
+XARC.EXE - XARCHIVE MADE NATIVE (2026-10-24)
+---------------------------------------------------------------------
+
+Charlie: "Port XARC.EXE to PM-DOS as a native application."  XARC.EXE
+was XArchive's DOS program (S:\CPP\DU32\XARCHIVE\DOSBUILD): C++ on the
+DOSForms toolkit, bound to DOS/32A, 462K.  CMD\XARC is the same program
+in C on the kernel's own interfaces, 300K - the same screens, keys,
+mouse, dialogs and words, the /G graphics screen, and the command line
+(L, T, X, A, MEM, /?).  It lists, tests and extracts zip, 7z, RAR 2-5,
+CAB, SZDD and FAT diskette images, and makes zip and 7z.
+
+THE ARCHIVE CODE IS ONE CODE, NOT A COPY TO DRIFT.  CMD\XARC\ARC is
+XArchive's shared backend byte for byte as S:\CPP\DU32\XARCHIVE has it
+(and the OS/2 port); __PMDOS__ picks the three places PM-DOS answers
+differently - free memory (48h's largest block), whether a destination
+needs 8.3 names (71A0h, and 7100h meaning no long-name API), and the
+country's thousands separator (38h) - all three in PMDOSPLT.C.  The
+DU32 and DU-OS2 copies took the same edits and still build
+byte-identical DOS and OS/2 objects.  A change to one goes to all three.
+
+THE FRONT END IS DOSFORMS IN C: SCR.C (cells through 21h/F0h, the mouse
+through INT 33h), GFX.C (VGA mode 12h through F1h AL=1Fh, the BIOS
+font, the icons, progress bars a pixel at a time), UI.C (popups,
+message boxes, fields, the viewer, INT 24h's box), MENU.C, LIST.C,
+DIRS.C, FILEBOX.C; XARC.C is xarctui.cpp, CLI.C its command line, and
+COMPDLG.C, ARCVIEW.C and ARCICON.C their .cpp files.  Each screen was
+compared with the DOS program's own snapshots (C:\DOSBoxRoot\XA)
+character for character.
+
+ITS OWN C LIBRARY.  The backend wants stdio, malloc, qsort, time and
+_fullpath; LIBC.C and LIBIO.C are those on INT 21h (48h blocks with a
+size head and 4Ah to grow in place, FILE streams with text mode, the
+71xxh calls with the classic ones behind them), and INC\ is their
+headers, so nothing of Watcom's library is linked.  64-bit multiply
+and divide are two #pragma aux helpers.  IMAGE + BSS + D32STACK MUST
+FIT THE FIRST 512K SLOT - a 256K stack did not, and 4Bh said "Bad
+command or file name" (xl_nomem); it is 128K, which is what the DOS
+build asked DOS/32A for.
+
+ON PURPOSE, NOT AS THE DOS PROGRAM:
+  - no banner: a PM-DOS command begins with its work (About still has
+    it);
+  - long names wherever the volume has them; the eight-character cut of
+    a proposed archive name only on a volume without them;
+  - the memory advice (a DOS box, XMS, EMM386) is gone - there is one
+    memory, and XARC MEM shows it; so is MEM's XMS line;
+  - /G is VGA only ("Graphics mode needs a VGA adapter.");
+  - XARC IS NOT TOLD WHERE IT WAS RUN FROM - 4Bh puts no path after a
+    native program's environment - so XARCHIVE.INI goes beside the
+    XARC.EXE found in the current directory, on the PATH, or in the
+    system directory (F1h AL=03h's interpreter), in that order, and
+    still the system directory when none of them has it;
+  - the DOS build's XARC_TEST harness is replaced by the family's test
+    mode: XATEST names a log, the keys come from standard input (SCR.C
+    says how);
+  - an open menu's column is lit, as DOSForms meant;
+  - the command line keeps DOS's "Abort, Retry, Fail?" for an empty
+    drive, as the DOS build did; the screen answers INT 24h itself.
+
+THE KERNEL CHANGE (DOS\RING3.INC).  slot_grow grew a program's slot by
+the whole of what 48h asked for, though the heap's free block at the
+top of the slot already held part of it, and slot_room left that block
+out of 48h's "largest".  A program taking big blocks (a 7z dictionary)
+ran out at about 60% of the machine.  r3h_topfree measures that block;
+slot_grow asks arena_resize only for the rest and slot_room counts it.
+XARC MEM's largest block obtained: 18,432K -> 29,088K on 32MB,
+36,864K -> 61,632K on 64MB; a 34MB-dictionary 7z that the old kernel
+refused on 64MB now tests OK.
+
+THE REVIEW (three readers over the C, findings checked one by one):
+stdout/stderr were binary - CLI output stepped down the screen on bare
+LFs (now text streams, CR LF); fwrite counted bytes whose flush had
+failed, and fflush/fclose forgot an earlier failure; a CR's look-ahead
+byte skipped the CR and Ctrl+Z tests; time_t was signed (2038); a flat
+list (Folder View off) named a folder's files twice when the folder
+and its files were marked, so the table filled and the last entries
+were never extracted; names stored with a leading '\' opened as empty
+folders; FileBox kept 79 characters of a file name; fields held 255 of
+a 259-character path; a 259-character folder made the default archive
+name overwrite the format choice; a full folder list (16,384) or tree
+(1,024 nodes) said nothing and lost the [+]; the viewer's 8,192nd line
+ran into the rest of the file; a refused graphics switch left a blank
+screen behind; the screen grid is now allocated once at its largest,
+so a switch cannot fail on memory.  Not changed: the file picker's
+12-character name column (as DOS); 2GB seeks (Watcom's limit too, and
+the writer stops at 2,000MB).
+
+TESTED (DOSBox-X headless; QEMU for a real PS/2 mouse; scratch rig): 29
+archives of every format tested and extracted, every file compared
+with 7-Zip's extraction (MANY.RAR and MANY5.RAR, which 7-Zip cannot
+read, test OK); the screens against the DOS snapshots; menus, marks,
+the viewer and Find, extract and overwrite prompts, nested archives,
+comments, passwords, compress to zip and 7z (7-Zip agrees), A with /R
+/X /NOPATHS /Y; /G with BMP shots and the switch at run time; the
+mouse by key file and through QEMU; LFN=OFF (~N names); the empty
+drive's box.  RUNTESTS: 90 the same on all seven rows, RMTEST moved by
+XARC.EXE's 293 clusters.  NOT TESTED: real hardware, 86Box, a 43- or
+50-line text mode, an EGA, a disk filling up while extracting.
+
+SEEN, NOT XARC'S: the kernel gives a name that fits 8.3 no long entry,
+whatever its case, so file1.txt comes out FILE1.TXT (COPY does the
+same); DOSBox-X's empty floppy is a read error, not "not ready".
+
+Files: CMD\XARC\ (new: MAIN.C XARC.C CLI.C UI.C MENU.C LIST.C DIRS.C
+FILEBOX.C ARCVIEW.C ARCICON.C COMPDLG.C SCR.C GFX.C LIBC.C LIBIO.C
+PMDOSPLT.C XARC.H XSYS.H DOSINT.ASM, INC\, ARC\); DOS\RING3.INC;
+BUILD.CMD (its section after ACROREAD's, the clean list, D32BIND);
+MKHD.CMD (HD16 and HD32); DISK\SETUP.LST; DISK\HELP\21EXTERN.TXT (an
+XARC topic); S:\CPP\DU32\XARCHIVE and S:\CPP\DU-OS2\XARCHIVE: ARCFILE.C,
+NUMFMT.C, NUMFMT.H.  Not on the boot floppy: 300K against the 4,608
+bytes it has left.  Still v0.65; not committed.
+
+DELIVERED 2026-10-25 (one mirror build, one full RUNTESTS -Update, 91
+the same on all seven rows): S:\BIN PMDOS.SYS 189,763 and XARC.EXE
+301,012 (new); IMAGES\PMDOS (PMDOS.SYS), HELP (HELP.HLP, 326 topics;
+it was exactly the parts' output before the XARC topic went in), HD16
+(FATREPL: PMDOS.SYS and HELP.HLP replaced, XARC.EXE added, 285 others
+untouched) and IMAGES\SETUP's five images (XARC.EX_ on them); BASELINE
+RMTEST on all seven rows (6DE9h -> 6CC3h free clusters: XARC.EXE's
+294); the VM's PMDOS, HELP and HD16.  TESTS.IMG and HD32 unchanged.
+The mirror was built with the pre-RAMDISK copies of repos-cf's six
+kernel files: with HEAD's RING3.INC it makes S:\BIN's 189,659 byte for
+byte, so the kernel shipped is the delivered one plus slot_grow.  A
+copy of the delivered HD16 booted in QEMU runs XARC /?, MEM and the
+screen from its prompt.
+
+
+
+RAMDISK.SYS - THE FIRST 32-BIT DISK DRIVER (2026-10-25)
+---------------------------------------------------------------------
+
+Charlie: "Write a RAMDISK.SYS 32-bit driver for PM-DOS."  DRV\RAMDISK\
+RAMDISK.ASM, 2K: a D32 driver (NDRV.INC) that takes a block of the
+arena at INIT and makes it a drive letter.  The line is RAMDRIVE.SYS's,
+DEVICE=RAMDISK.SYS [size [sector-size [entries]]] [/E | /A]: size in K
+from 4 to 2,096,896 (64 if not given; bigger is cut to the largest
+FAT16 volume), sector size 128/256/512/1024 taken and made 512 (the
+kernel's and RMDOS's sectors are 512), root entries 2-1024 (64),
+rounded to a sector and held to half the disk, /E and /A taken and
+ignored.  It prints "RAM disk E: is 4096K", or its reason and the
+kernel's usual two lines when it refuses: an invalid parameter (the
+word is repeated), not enough memory, no letter left.
+
+THE VOLUME.  A boot sector, ONE FAT (a second copy of a table in memory
+guards against nothing), the root, and the label RAMDISK stamped with
+the time (NDS_STAMP, below).  The clusters are the smallest that make
+a legal volume, FAT12 before FAT16 at each size; 2,096,896K is FAT16
+with 65,523 clusters of 32K.  The data area is not cleared - nothing
+reads a cluster the FAT has not given out.
+
+THE KERNEL HALF: A CLASS OF DRIVER, NOT A RAM DISK.
+  - NDTF_DISK (0010h).  Its table is version NDT_DISKVER (2) and goes
+    on past NDT_CALL with NDT_NUNITS and NDT_UNITS, so a kernel from
+    before disk drivers refuses the file rather than load a driver
+    whose units it would never give a letter.  nd_load takes 1 or 2,
+    and the version and the flag must agree.
+  - INIT is told the room: ECX = letters left for units, EBX = the
+    first (dl_unitroom), so a driver refuses BEFORE it takes memory.
+    Once INIT is CF clear, dl_ndunits reads the units (NDU_* records:
+    the transfer entry, the size, NDUF_MEMORY and where the memory is,
+    the media byte, and NDU_LETTER, written back by the kernel) and
+    checks them against the driver's block before a letter points at
+    one.  A disk driver none of whose units got a letter stays loaded
+    with "Device driver has no units": INIT is over, and a refusal now
+    could not undo what it hooked.
+  - A 32-BIT UNIT IS A dl_units ROW OF ITS OWN KIND (DLK_D32), under the
+    same E0h pseudo numbers and the same DRVF_DRIVER letter, so every
+    "is this a driver's drive?" in FAT.INC, VOLFLAG.INC, FORMAT, FDISK
+    and DRIVES answers right unchanged.  DLU_LEN 8 -> 24.  dl_blkio
+    looks at the kind first and CALLS the unit's NDU_IO with the whole
+    transfer and the caller's own buffer - no packet, no staging, no
+    excursion - after holding the sectors to the unit's size; the
+    status goes into the pushad frame's AH, which popad would have put
+    back as it came in.  dl_stage now runs after the kind test, so a
+    32-bit unit never takes the conventional staging block.  dl_unitfar
+    refuses a 32-bit unit (there is no header to hand RMDOS).
+  - AN NDUF_MEMORY UNIT IS NOT CACHED: its cache_drvst row is cleared,
+    as 4A10h BX=3 would.  Caching memory in memory is a second copy and
+    a copy's worth of time.
+  - NDS_STAMP (NDS_VERSION 4, NDS_LEN 56): now as a directory entry is
+    stamped, date high and time low, from INT21.INC's get_dosdate and
+    get_dostime.  No driver had a clock.
+  - INC\NDRV.H has the three numbers and NO TYPEDEF FOR A UNIT: adding
+    one re-ordered the data Watcom laid out in every module that
+    includes the header - the eight NETCORE cards, TCPIP.SYS and six
+    network programs all came out a byte here and there different for
+    nothing.  The objects' code was identical; the symbol records were
+    not.  With only #defines every one of them is S:\BIN's byte for
+    byte.  A C disk driver would need a C bridge for NDU_IO in
+    NDSTART.ASM as well, and none exists yet.
+
+THE PARK: THE LETTER STAYS WHILE WINDOWS RUNS.  No driver can be called
+down there, but a memory unit's sectors are a block the kernel keeps,
+so RMDOS moves them itself.
+  - PARK.INC gives such a row RMDF_MEM (20h, never with RMDF_DRIVER) and
+    RMD_START = the kernel's address of the row's DLU_SECS and DLU_MEM,
+    side by side (dl_unitmem); a 32-bit unit that is not memory goes
+    over absent.
+  - RMDOS (RMDISK.INC): rd_volinit makes it VF_DRIVER with VOL_UNIT =
+    VU_MEM (FEh; the USB bridge's FFh is VU_USB now); rd_mount reads the
+    two dwords (rd_memdesc, into VOL_MSECS and VOL_MBASE, VOL_LEN 3Ch ->
+    44h) - at the mount and not at rd_volinit, which runs before rx_init
+    has given the mover its descriptor table; rd_raw forks to rd_memraw,
+    which holds the transfer to the kernel's size, not the boot
+    sector's, and moves it in one.
+  - THE MOVER IS rd_mmove: rx_domove in real mode, INT 15h AH=87h ALONE
+    under a monitor.  The first enhanced-mode run triple-faulted inside
+    WIN386 with A20 off (QEMU's log): rx_domove raises the gate for a
+    move and lowers it when it found it low, and in a VM "low" is the
+    HMA as WIN386 shows the VM while the gate lowered is the machine's,
+    through port 92h, which WIN386 does not take over.  RMCACHE.INC's
+    cm_move has always made the same choice for the same reason.
+
+TESTED.  TOOLS\RDTEST.ASM (BIN\TESTS\RDTEST.COM) asks BLKTEST's
+questions of RUNTESTS's RAM disk, the 64K one a bare DEVICE=RAMDISK.SYS
+makes - 64K because with 512K the 4MB 386 had 481K of XMS left and
+EXECLEAK, FPU32, SLOTTEST and VBETEST could not start their native
+children.  It checks the drive by 36h, its geometry, its boot
+sector and its last sector through INT 25h (the one after must be
+refused), BIG.DAT written with VERIFY on and read back, SUB\SMALL.TXT;
+then a park with its own path, and on RMDOS all of it read and RM.DAT
+written and read back; then on the kernel RM.DAT as RMDOS wrote it, and
+the root empty again.  Not the free clusters: with UNDELETE=ON the
+deleted files are kept in \RECYCLED.  /K, /W and /B run the three
+halves one at a time, for Windows.
+  - DOSBox-X, 486/32MB: RDTEST, BLKTEST (the real-mode driver path that
+    dl_blkio reordered), CHKDSK, XCOPY of 80 files and FC.
+  - Pentium/252MB with a 20MB RAM disk first, so the 512K one sits above
+    20MB: RDTEST with RMDOS as built and with RMDOS_I15MOVE (87h
+    forced): both pass, so the descriptor's base 31-24 byte is honoured.
+  - Pentium/3072MB, the limits: 2,096,896K (65,523 clusters of 32K;
+    XCOPY 35 files, FC), 4K (3 clusters; a 12K COPY "Insufficient disk
+    space"), 3K refused, 16K with 2 entries (root cut to 15 sectors, 29
+    clusters).  Boot screen: every line and every refusal as meant.
+  - QEMU, Windows for Workgroups 3.11 in 386 enhanced mode (WINDRV runs
+    a DOS box and exits Windows): RDTEST /K before WIN, RDTEST /W in a
+    DOS box under Windows, RDTEST /B after it - all passed.
+    WINSTART.BAT ran /W too but its "> PRN" never reached the printer;
+    the box's run is the same path and wrote its report to C:.
+  - MASM 6.13: DOSMAIN, RMDOS, RAMDISK and RDTEST clean.
+  The 252MB, 3072MB and Windows runs used RDTEST's first version, on a
+  512K disk; the kernel, RMDOS.SYS and RAMDISK.SYS are the same since.
+
+NOT TESTED: real hardware, 86Box, Windows standard mode, the "no drive
+letter is left" refusal (ND_MAX is 8 drivers, network ones included,
+which runs out before the 16 letters do), and a disk driver that is not
+memory - there is none yet.
+
+FOUND AND FIXED ON THE WAY: DEVLOAD.INC's `jmp short dll_hdr` at
+dll_notblk (the ANSI.SYS work) was 23 bytes too far for MASM - wasm
+stretches it silently, so the kernel is byte-identical with `jmp`.
+DEVLOAD.INC and RMDISK.INC were LF-only in S: (a sed -i somewhere);
+both are CRLF again.
+
+FOUND, NOT RAMDISK'S, NOT FIXED: CMD.EXE's COPY leaves the part it
+wrote when the disk fills; COMMAND.COM 6.0 closes and deletes it
+(DOS6SRC cmd\command\copypr1.asm, CopErr).  And UNDELETE=ON keeps
+deleted files on a RAM disk as on any disk - up to a tenth of it until
+purged.  Whether a RAM disk should be left out is Charlie's call.
+
+Files: DRV\RAMDISK\RAMDISK.ASM (new); TOOLS\RDTEST.ASM (new);
+INC\NDRV.INC, INC\NDRV.H, INC\RMDOS.INC; DOS\NDLOAD.INC, DOS\DEVLOAD.INC,
+DOS\PARK.INC, DOS\RMDISK.INC; BUILD.CMD (a RAMDISK.SYS section after
+SMBFS.SYS's, the clean list, RDTEST after BLKTEST, RAMDISK.SYS on
+PMDOS.IMG, RDTEST.COM on TESTS.IMG); MKHD.CMD (HD16 and HD32); DISK\SETUP.LST; DISK\CONFIG.TXT;
+DISK\HELP\21EXTERN.TXT (a RAMDISK.SYS topic); TOOLS\RUNTESTS.PS1
+(DEVICE=C:\RAMDISK.SYS in its CONFIG.SYS, the file on its disk, RDTEST
+after BLKTEST).  Still v0.65; not committed.
+
+DELIVERED 2026-10-25 (one build of S: in a scratch tree, with the MODE
+session's four unfinished kernel files at their pre-MODE state; one
+full RUNTESTS -All -Update, then a clean run, 92 the same on every row
+but the 386's known LOCKTEST noise, which was not recorded; NLSTESTS
+every row the same): S:\BIN PMDOS.SYS 190,721, RMDOS.SYS 63,989,
+RAMDISK.SYS 2,023 and TESTS\RDTEST.COM 11,504 (both new); DISK\HELP.HLP
+(329 topics, the parts plus RAMDISK.SYS - before that it was exactly the
+parts' output); IMAGES\PMDOS (CONFIG.TXT, the kernel, RMDOS.SYS,
+RAMDISK.SYS added), HELP, TESTS (RDTEST.COM added), HD16 (FATREPL: five
+files, 284 untouched) and IMAGES\SETUP's five images; BASELINE: 13
+answers moved on every row by the new letter E: and 65K less XMS
+(BIGMEM, CDSTEST, DRIVES, LOLTEST, MEM, NDRVTEST, NICTEST, PMD, RMFIND,
+RMTEST, SFTSCAN, XMSREPT, XMSTEST - SFTSCAN by RMDOS.SYS's 337 bytes)
+and RDTEST new; the VM's PMDOS, HELP, TESTS and HD16.  Copies of the new
+HD16 and boot floppy boot to their prompts.  Everything else BUILD.CMD
+makes is S:\BIN's byte for byte.
+
+
+MODE.EXE - MS-DOS 6.22'S MODE, WITH ITS RESIDENT PART IN THE KERNEL
+(2026-10-25)
+---------------------------------------------------------------------
+
+Charlie: "Write MODE for PM-DOS."  CMD\MODE is a native C program in
+the layout TREE and XCOPY have - DOSINT.ASM (the start, the INT 21h
+thunk, and port_in/port_out), RT.C, MSG.C, SYS_D32.C - with SCAN.C for
+the command line, MAIN.C for the first word and the status of
+everything, COM.C, LPT.C, CON.C and CP.C for the four kinds of device.
+18,612 bytes bound; it goes on HELP.IMG, the hard disks and the Setup
+disks, not the boot floppy, which had 4,608 bytes left before
+RAMDISK.SYS.
+
+THE MODEL IS 6.22'S MODE.COM, read in S:\DOS6SRC\CMD\MODE (thirteen
+thousand lines: MODEPARS.ASM's parser, INVOKE.ASM, MODECOM, MODEPRIN,
+MODEVID, MODESCRN, TYPAMAT, MODECP and RESCODE.ASM, the resident part)
+and run: under DOSBox-X's own DOS (VER=6.22), and on real MS-DOS 5 -
+a copy of the 86Box VM's disk booted in DOSBox-X - with SETVER saying
+6.22 to MODE.COM, because 6.22's MODE refuses DOS 5 and only a real
+DOS keeps a TSR resident (DOSBox-X's DOS hung after "Resident portion
+of MODE loaded").  What MODE does, and so what MODE.EXE does:
+
+  - THE COMMAND LINE goes through MS-DOS's own parser's rules (SCAN.C):
+    blanks round an '=' do not count; a comma is a hard delimiter, so
+    "COM1 96,,,,P" has three empty fields; a colon is a delimiter only
+    straight after the device name, found by reading the first word a
+    second time (so "MODE /STA COM1:" is refused, as in 6.22); '/'
+    begins a switch.  The first word picks the form: /STATUS, a
+    display word (40 80 BW40 BW80 CO40 CO80 MONO), the glued printer
+    forms LPT1132 and LPT180, LPTn=COMm, "LPTn," without columns, then
+    COMn, LPTn, PRN and CON with or without a colon, and COM12400
+    (COM1 at 2400).  The whole line is read before anything is done.
+  - THE ERRORS are 6.22's words and blank lines: "Invalid parameter -
+    X" with the piece of the line the parser stopped on (to the end
+    of the line when nothing follows, so a batch file's "MODE XYZ >
+    F" shows "XYZ " with the blank redirection left), "Parameter
+    format not correct - RATE=X", "Invalid number of parameters",
+    "Baud rate required", "Rate and delay must be specified together",
+    "Illegal device name - COM3".  An invalid switch is "Invalid
+    switch - /X", which is what real DOS printed; DOSBox-X's DOS shows
+    "Parse Error 3" because 6.22's MODE has no text of its own for it.
+    Everything goes to standard output.  Errorlevel 1 for any error
+    and 0 otherwise - with 6.22's exceptions: "MODE" alone is 0 after
+    its code page complaints, and so are a printer error, a screen
+    that cannot be shifted and LPTn=COMm to a port that is not there.
+  - COMn: positions (96,N,8,1,P) or keywords (BAUD= PARITY= DATA=
+    STOP= RETRY=), the speed required, everything left out reset to
+    even parity, 7 data bits, 1 stop bit (2 at 110), and "COM1:
+    9600,n,8,1,-" after it.  A stop of 1.5 shows as 2 above 5 data
+    bits, a stop of 2 as 1.5 at 5; 1.5 with no data bits means 5.  The
+    retry is cleared by the positional form without one and kept by
+    the keyword form without RETRY=.
+  - LPTn: every printer command ends the printer's route and says
+    "LPTn: not rerouted" first, even for a port that is not there.
+    COLS= and LINES= go to the printer as DC2/SI and ESC "2"/ESC "0",
+    with the BIOS's time-out cut to 3 for each byte, then "LPTn: set
+    for 132" and "Printer lines per inch set", then the retry line.
+  - LPTn=COMm, MODE LPTn (no route and no retry), CON COLS= LINES=
+    RATE= DELAY=, the display words with ,n lines and ,R / ,L shifts,
+    the code page forms, and the status of one device or of all - in
+    6.22's order (LPT1-3, CON, then COM1 to the number of ports the
+    BIOS lists), with its dashes and blank lines.
+
+WHAT MS-DOS'S MODE LEFT RESIDENT IS THE KERNEL'S.  6.22 hooked INT 17h
+and INT 14h with 464 bytes of RESCODE.ASM for LPTn=COMm and RETRY=.
+On PM-DOS the kernel's own printer and serial devices call the BIOS
+through a FROZEN copy of the vector table (rm_freeze), so a resident
+hook would never see them; the table lives in the kernel instead and
+both sides follow it:
+
+  - 21h/F1h AL=28h, MDF_GET / MDF_ROUTE / MDF_RETRY / MDF_LPTOUT
+    (PMDOS.INC, fF1_mode in INT21.INC): md_route, md_lretry and
+    md_cretry, and one byte to a printer for COLS= and LINES=.
+  - md_lpt and md_com (INT21.INC) are RESCODE.ASM's rules: a printer
+    sent to a serial port answers 01h at once with 80h, sends 00h's
+    byte through md_com (the serial port's own retry with it) and is
+    90h or 09h after it, and answers anything else from the serial
+    port's status - CTS or DSR 90h, else 10h.  Any retry letter keeps
+    sending what times out - E, B, R and P alike, which is why 6.22
+    said "Infinite retry" for all four - and the letter only changes
+    a busy port's status answer: 29h/90h for a printer's E/R, 8E00h/
+    6030h for a serial port's.  The Break key's mark (GNLS_BRKFLAG)
+    ends the trying, as the BIOS's break flag ended 6.22's; the mark
+    is only read, so the console still makes a ^C of it.  It works in
+    a BIOS call too: vdm_lolinit plants DOS's INT 1Bh before the
+    vector table is frozen.
+  - do_prn and do_aux, the kernel's PRN and AUX devices, go through
+    md_lpt and md_com, so "COPY X PRN" and a program printing through
+    DOS follow the route.
+  - A DOS BOX'S OWN INT 17h AND INT 14h are claimed now (vdm_traps,
+    0B8h) and served by the same two routines when the port has a
+    route or a retry (vdm_i17, vdm_i14); every other call goes to the
+    guest's own vector at once.  Claimed always, not when a setting is
+    made, because a box parked for a child keeps the trap bits it was
+    started with.
+  - 21h/F0h AL=0Ch: a text mode the way ANSI.SYS sets one - BL the
+    BIOS mode (0-3, 7), BH the scan lines first (INT 10h 12h/30h), CL
+    the 8x8 font after it, CH bit 7 the equipment word's display bits;
+    BL = FFh sets the bits and nothing else.  The console reads the
+    geometry and the adapter out of the BIOS data area on every call,
+    so 40 columns, 43 and 50 lines and MONO need nothing more.
+  - 21h/F0h AL=0Dh: the keyboard's repeat, IOS_KBRATE, the call
+    KEYRATE= makes (RATE r -> 32 - r, DELAY d -> d - 1 in bits 5-6).
+  PMDOS.SYS grew by 864 bytes, to 191,585.
+
+WHAT IS DIFFERENT FROM 6.22, ON PURPOSE:
+
+  - Nothing goes resident, so "Resident portion of MODE loaded" is
+    never printed.
+  - A serial port is programmed through its UART (the divisor latch
+    and the line control register, through IN and OUT, which the
+    kernel carries out for a native program), not INT 14h.  So 19200
+    works on any machine (6.22 needed a PS/2 BIOS's INT 14h AH=04h and
+    said "Function not supported on this computer" elsewhere), mark
+    and space parity, 5 and 6 data bits and 1.5 stop bits are set as
+    shown (6.22's positional form showed them and set something else),
+    and 38400, 57600 and 115200 are accepted.
+  - LINES= without ANSI.SYS: PM-DOS's console follows any mode, so the
+    kernel sets the lines where 6.22 said "ANSI.SYS must be installed
+    to perform requested function", and MODE CON's status shows the
+    columns and lines whether or not ANSI.SYS is there.  With ANSI.SYS
+    loaded, both go through it (440Ch 7Fh/5Fh) as on MS-DOS.
+  - "Printer error" is a time-out, an I/O error or no paper (29h).
+    6.22 ANDed the status with A9h, which counts "not busy" as an
+    error: an idle printer that took a byte at once was reported as
+    failed (and DOSBox-X's file printer always was).
+  - PAR= is PARITY=.  6.22 accepted PAR= and then looked only for
+    PARITY=, so PAR=N gave even parity.
+  - Shifting the screen (,R ,L ,T) rewrote the BIOS's video parameter
+    table in MODE's resident part; there is none, so every machine is
+    told "Unable to shift screen", which 6.22 told every EGA and VGA.
+  - MONO is allowed on any VGA (a VGA BIOS sets every text mode on any
+    screen); 6.22 read that from INT 10h AH=1Bh, which takes a buffer
+    a native program cannot hand the BIOS.
+  - Network printers (5F02h, INT 2Ah, "NET 042") are left out: PM-DOS
+    redirects drives, not printers.  LPTn=COMm does not write 0001h
+    into an absent printer's BIOS slot for BASIC's sake.
+  - The code page forms are the IOCTLs 6.22 sent (6Ah/6Bh, 4Ah,
+    4Ch/4403h/4Dh); there is no DISPLAY.SYS or PRINTER.SYS to answer
+    them, so the answers are 6.22's without those drivers: "Code page
+    operation not supported on this device", "Device error during
+    select", "Failure to access code page font file".
+
+TESTED (rig in this session's scratchpad: rig\pmrun.ps1 boots a floppy
+of S:'s PMIO.SYS and CMD.EXE with a test PMDOS.SYS and MODE.EXE under
+DOSBox-X, COM1 and LPT1 captured to files; bt\BT.COM is a 16-bit helper
+that prints through INT 17h, asks INT 17h/14h for status and reads the
+UART back): the 6.22 runs replayed in the same order - 69 cases on real
+DOS 5: 57 the same byte for byte with errorlevels, 12 different, every
+one of them listed above; 34 more from the first DOS 5 batch and 126
+from DOSBox-X's DOS, differing only in those and DOSBox-X's quirks.  The
+UART read back right for every format (9600 n81 LCR 03 divisor 12; 110
+e72 1E/1047; M,5,1.5 2C).  LPT1=COM1 sent "ECHO ... > LPT1" and a box's
+INT 17h printing to COM1, and MODE LPT1 brought them back; retry E and
+R gave a box INT 14h status 8E00h and 6030h.  Screens recorded and
+looked at: 43 lines without ANSI.SYS, 50 through ANSI.SYS, MONO, 40
+columns.  ANSI.SYS loaded: every CON and display form through its
+IOCTL.  Ordinary input at the limits: a 115-character word (shown cut
+at 79), twelve code pages in PREP= and the thirteenth refused, a 60-
+character directory in the font file's path, COM4 and LPT3, duplicate
+keywords, every glued form.  RUNTESTS has MODE entries now (before the
+IRQX tests): status, LPT2=COM1, a COM1 retry, LINES=50 and back.
+
+NOT TESTED: real hardware, 86Box, a printer that really times out and
+the Break key ending a retry, a real serial line, a CGA, EGA or MDA
+(the adapter checks were read, not run), a driver that answers the
+code page IOCTLs, Windows (where the kernel's table does not apply).
+
+Files: CMD\MODE\* (new); DOS\INT21.INC (F0h AL=0Ch/0Dh, F1h AL=28h,
+do_prn/do_aux, md_lpt/md_com); DOS\VDM.INC (vdm_traps, vdm_i17,
+vdm_i14); INC\PMDOS.INC (MDF_*, RETRY_*, BDA_LPTTIME, IOS_KBRATE's
+note); DOS\CONFIG.INC (a comment that said PM-DOS has no MODE);
+BUILD.CMD (a MODE section after TREE's, the clean list, the bind list,
+HELP.IMG); MKHD.CMD (HD16 and HD32); DISK\SETUP.LST;
+DISK\HELP\21EXTERN.TXT (a MODE topic); TOOLS\RUNTESTS.PS1 (the MODE
+entries).  Still v0.65; not committed.
+
+DELIVERED 2026-10-25 on top of RAMDISK.SYS's delivery: a fresh mirror
+of S: built clean with BUILD.CMD, and against S:\BIN only MODE.EXE
+(new) and PMDOS.SYS differ.  RUNTESTS -All -Update, then a clean run:
+101 of 101 on all seven rows; what moved is RMTEST (18 clusters fewer
+free) on every row, CACHETST on six, and the nine MODE answers, new.
+The mirror's BIN\TESTS carried S:'s six 16-bit guests and the nine
+bridge tests (BA2API, BRGTEST, CSOCK, SKTEST, TLSTEST, WSK*) that
+BUILD.CMD does not make, as S:'s baselines were recorded with them.
+NLSTESTS: all nine rows the same.  Put: S:\BIN\MODE.EXE and PMDOS.SYS,
+DISK\HELP.HLP (332 topics: the parts with the MODE topic), IMAGES
+PMDOS (PMDOS.SYS), HELP (HELP.HLP, MODE.EXE), HD16 (FATREPL: the three),
+the five Setup images, 76 baselines, and the 86Box VM's PMDOS, HELP,
+TESTS and HD16.  A copy of the new HD16 boots and runs MODE from its
+own disk; a copy of the boot floppy boots to its prompt.
+
+
+MEM /D AND THE 32-BIT DRIVERS (2026-10-25)
+---------------------------------------------------------------------
+
+Charlie: "Add 32-bit drivers to MEM /D display."  MEM /D now ends with
+a table of the drivers DEVICE= loaded above the megabyte (NDRV.INC):
+
+  Driver    Address   Image (bytes)  Allocated (bytes)  Type
+  --------  --------  -------------  -----------------  ------------
+  RTL8139   002740E0          5,040             42,256  network card
+  TCPIP     0027F9D0         91,184            393,216  TCP/IP stack
+  NDTEST    002F5F20            768              4,096  other
+
+Address and Image are the row's ND_BASE and ND_SIZE, so the image is
+the block at the same address in the arena listing above it.  The
+second figure is the one nothing could tell before: what a driver
+takes after it is loaded comes from NDS_ALLOC, owned by 0 like every
+other kernel block, so a 2GB RAM disk showed as a 1,584-byte driver
+and a 2GB block of nobody's.  Type is the first of NDTF_DISK, _REDIR,
+_STACK and _NIC the flags have ("disk", "redirector", "TCP/IP stack",
+"network card"), else "other".  No driver loaded, no table, as for
+upper memory; /F leaves the table out, since a driver is never free.
+A kernel without NDF_MEM gets a "-" in the Allocated column.
+
+THE KERNEL COUNTS BY RETURN ADDRESS.  New 21h/F1h AL=25h function
+NDF_MEM (3): DL = a row -> ECX = the payload bytes that driver holds
+through NDS_ALLOC now, EDX = how many blocks; ERR_BADDRIVE for a row
+there is not.  ndsv_alloc and ndsv_free (NDLOAD.INC) find the driver
+by the address the call came from - nd_whose, the row whose ND_BASE
+.. ND_BASE+ND_SIZE holds it.  A driver's calls come from its own
+image, the C ones through NDSTART.ASM, which is linked into it, so no
+driver changed and none has to say who it is.  nd_count leaves out
+the row being loaded until INIT has said yes, so nd_ininit adds that
+row to the search during INIT, and a row's counts are zeroed when it
+is filled (a driver refused in it may have left some).  The counts
+are nd_mem, beside nd_tab and not in the row, so ND_LEN and NDF_INFO
+stay as every program knows them.  A free that would take a count
+below nothing - a block another driver was given - is left uncounted.
+
+MEM.EXE AND THE BOOT FLOPPY.  PMDOS.IMG was full to its last cluster
+(2848), MEM.EXE went from 7 clusters to 8, and BUILD.CMD stopped at
+"=== PMDOS.IMG === disk full".  MEM now pads its labels at run time
+(print_pad) instead of carrying about 270 blanks as counted runs, and
+its zeroed buffers (blk, numbuf, hexbuf, the driver row and name) are
+a BSS past the image (MEM_BSS in the header): 3,498 bytes bound, 7
+clusters again.  The summary is byte for byte what S:\BIN's MEM prints.
+PMDOS.SYS is 191,861: still 375 clusters, 139 bytes short of the next.
+
+TWO OLD MEM BUGS, fixed on the way.  /F listed none of the DOS chain's
+free blocks: ld_walk skipped exactly the free ones when /F was given.
+And the underline of the DOS-chain heading ran the Area dashes on two
+places into Status ('-' where a blank belonged) and left Status bare.
+
+THE COUNTRY'S SEPARATOR.  At Charlie's word MEM no longer groups
+thousands with a comma of its own: it asks 21h/38h at start-up, as
+CMD.EXE does for DIR, and pdec_cw puts byte 7 of the answer (num_sep)
+between the groups - the comma when the call fails or the byte is 0,
+and a '$', which would end 09h's string, is not taken.  The country
+block is 34 more bytes of BSS.  COUNTRY=049 prints 1.216 and
+2.147.221.504; without COUNTRY= the output is byte for byte the
+comma build's (MEM.OUT the same on all seven rows).
+
+TESTED.  DOSBox-X floppy with NDTEST.SYS and a 512K RAMDISK.SYS (each
+address and size is the arena block's); the same with S:\BIN's
+PMDOS.SYS ("-", NDF_MEM refused); no drivers (no table).  QEMU with
+RTL8139.SYS, TCPIP.SYS and NDTEST.SYS, MEM /D either side of a passing
+SOCKTEST: the C drivers' road through NDSTART.ASM, RTL8139's 42,256 its
+two buffers, TCPIP's 393,216 sixteen 4K socket buffers and its 320K
+pool.  3072MB with ND_MAX drivers - NDTEST, a 2,096,896K RAMDISK
+(2,147,221,504 bytes, which fills the column) and six more - and a
+ninth refused.  NDRVTEST has a new line, "NDF_MEM: that block counted,
+bytes and blocks ... 1000 and 0001 ok", and NDTEST.SYS takes 512 bytes
+and gives them back before the block it keeps, so the line proves the
+free side too: a kernel with the subtraction taken out reads "1200 and
+0002 FAIL".  RUNTESTS on all seven rows in a mirror: 98 the same, and
+three moved - NDRVTEST (the new line), XMSREPT and XMSTEST (the locked
+block 16 bytes higher, because NDTEST.SYS's image is a paragraph
+longer).  NOT TESTED: real hardware, 86Box, SMBFS (a redirector) in
+the table, a driver that frees at CALL time, Windows.
+
+Files: DOS\NDLOAD.INC; INC\NDRV.INC and INC\NDRV.H (NDF_MEM);
+CMD\MEM\MEM.ASM; TOOLS\NDTEST.ASM and TOOLS\NDRVTEST.ASM;
+DISK\HELP\21EXTERN.TXT (MEM's /DEBUG, and a note on 32-bit drivers).
+PMDOS.SYS 191,585 -> 191,861, MEM.EXE 3,179 -> 3,498, NDTEST.SYS
+1,087 -> 1,102.  Still v0.65; not committed.  DELIVERED the same day
+with QBASIC and DEBUG, from one mirror build of the three (see the
+QBASIC entry): S:\BIN's MEM.EXE, TESTS\NDTEST.SYS and NDRVTEST.EXE
+are this work's builds byte for byte, NDRVTEST, XMSREPT and XMSTEST
+re-recorded on all seven rows, HELP.HLP with the MEM text.
+
+
+DEBUG.EXE - MS-DOS 6.22'S DEBUG, AND A DEBUGGER FOR NATIVE PROGRAMS
+(2026-10-25)
+---------------------------------------------------------------------
+
+Charlie: "Let's create a native 32-bit DEBUG application for PM-DOS."
+Asked what it should run, he chose native D32 programs: G, T and P run
+and step a PM-DOS program the kernel holds for DEBUG, and a 16-bit
+.COM or .EXE can be loaded, dumped, unassembled, assembled into,
+patched and written back, but not run.  CMD\DEBUG is C on the runtime
+TREE and MODE have (DOSINT.ASM, RT.C, MSG.C, SYS_D32.C) with MAIN.C
+(the command loop and the parser), MEM.C, REGS.C, CMDS.C (D E F C M
+S H I O N X ?), FILE.C (L W and the start-up load), RUN.C (G T P),
+DIS.C + DISX.INC (the disassembler) and ASM.C (A).
+
+THE KERNEL HALF is 21h/F1h AL=29h, DOS\DBGAPI.INC:
+
+  - DBF_LOAD (BL=0) is 4Bh's own load with one difference: at the
+    point where r3_start would enter the program, dbx_loaded parks it
+    instead.  dbx_park keeps the new program's world (slot, PSP, file
+    handles at that depth) and puts the parent's back exactly as 4Ch
+    would, with the vectors swapped - so DEBUG carries on at its own
+    level and the program waits one level down.  DRX_ registers come
+    back in DEBUG's buffer.  Refused while a program is held, while a
+    nested ring-3 call is open, and at the bottom level.
+  - DBF_GO (BL=1) is dbx_resume + dbx_enter: the held world made live
+    again and an IRETD into the program with DEBUG's registers (EFLAGS
+    masked with DBF_EFLMASK, so IOPL and VM cannot be set from a
+    debugger).  It comes back when the program stops - INT 3, a single
+    step (#DB, DR6 read), any fault r3_fault would have ended it for
+    (#PF with CR2, #GP with its error code), or Ctrl-Break, which
+    dbx_tick turns into TF on the frame the program next returns
+    through - or when it ends (4Ch: dbx_onexit), AL = DBF_STOPPED or
+    DBF_ENDED and the exit code.
+  - DBF_READ / DBF_WRITE (BL=2/3) copy to and from the held slot,
+    refusing the guard page (offsets below 1000h) and anything past
+    the slot's limit.  DBF_KILL (BL=4) ends the held program the way
+    4Ch would (dbx_release).
+  - A held program cannot EXEC at DEBUG's own depth (dbx_mayexec, 4Bh
+    says access denied), and shell_restart forgets a held program.
+    Every hook is a compare against dbx_state and costs nothing when
+    no debugger is running.
+  - TOOLS\DBGTEST.C + DBGTGT.ASM test the interface: 33 checks, load,
+    registers, read/write and the guard page, INT 3, single steps, a
+    null-pointer #PF reported with CR2, the exit code, kill, refusal
+    of a second load.
+
+THE MODEL IS 6.22'S DEBUG.EXE, read in S:\DOS6SRC\CMD\DEBUG and run
+under DOSBox-X's own DOS (VER=6.22) with its commands fed from files.
+The scratchpad's rig\cmpora.ps1 runs a set of cases through both
+DEBUGs and compares them line for line, with the load segments masked
+(6.22's PSP is at 0E18h, DEBUG's work area at 05D2h).  What 6.22 does,
+and so what DEBUG.EXE does:
+
+  - D's lines: two blanks after the address, the dash after byte 7
+    only (a line starting past byte 7 has none), the text column fixed.
+    A bare D carries on from the byte after the last one shown; an
+    offset alone is in DS.
+  - U's lines: the mnemonic, a TAB always (RET has one), the operands
+    padded to 35 bytes - so a line is 62 to 66 bytes with the
+    mnemonic's length.  An 8087 instruction has a TAB in front too and
+    its line is 60.  A byte displacement and 83h's immediate are signed
+    ([BP+DI-02], CMP WORD PTR [BX],-02); AAM and AAD of base 10 are
+    bare.  A prefix is a line of its own, and U shows the instruction
+    after it in the same step (U 100 L 1 on 26 06 is two lines).  A
+    64K range (L 0, or 0 FFFF) shows one instruction.  A bare U
+    carries on, or starts at CS:IP once the registers have been shown
+    (R, or a stop after T, P or G: 6.0's DISPREG leaves DISADD there);
+    an offset alone is in CS.
+  - THE 8087 IN 16-BIT CODE as 6.22 decodes it (DISX.INC,
+    decode_8087): FCOM ST(1), FCOMPP ST(1), the aliases an 8087 obeys
+    (D9 D8+i FSTP, DD C8+i and DF C8+i FXCH, DF C0+i FFREE, DE D0+i
+    FCOMP), FENI and FDISI, and "ESC nn,reg" - a byte register for
+    D8/DA/DC/DE, a word one for the odd opcodes - for everything else,
+    which takes in all the 287 and 387 added.  A native program keeps
+    the 387 decoder.
+  - A carries on where the last A stopped; an offset alone is in CS;
+    a bad line re-prompts at the same address with the caret counted
+    from the address in front of the line.  It takes what 6.22's A
+    took: the 8086 and 8087 sets, prefixes on their own line or in
+    front (REP MOVSB, ES:), FAR [mem] for JMP and CALL, RET n, AAM n,
+    negative immediates, QWORD and TBYTE PTR - and 6.22's choice where
+    there are two encodings: A0h-A3h for AL/AX and a plain address,
+    the AX short forms, 83h for a word immediate a signed byte holds,
+    86h/87h for XCHG with the first register in the reg field.  An
+    8087 instruction is found by trying encodings until the
+    disassembler reads one back as the line, so A and U cannot
+    disagree.
+  - E address alone works a key at a time, as 6.0's ENTERDATA: "XX."
+    and up to two digits, SPACE to the next byte with the field padded
+    to eight, eight bytes a line, "-" back a byte on a new line,
+    BACKSPACE, ENTER to end.  Keys are echoed by DEBUG, from the
+    keyboard and from a file alike; the CR LF of a file is one ENTER.
+  - After a .COM or .EXE is loaded, D, U and A all start at CS:IP; a
+    data file's load leaves them where they were.
+  - RANGES may not run off the end of their segment - except L 0,
+    which is 64K from any offset round the segment, because to 6.0 a
+    length of 0 is a count of 64K its overflow check cannot see.  C's
+    and M's second address, and E's list, are never checked and go
+    round the segment too (CMPSB, MOVSB with 16-bit DI).
+  - L: a .COM or .EXE loads only at CS:100; another address is
+    "^ Error" under its last digit.  A data file loads at the address
+    given.  A .COM gets IP 100, SP FFFE, AX 0 and BX:CX its length; an
+    .EXE (MZ or ZM - one named .EXE without either loads as a .COM, as
+    EXEC would) is relocated, its load module read straight into the
+    work area so that one bigger than the 128K file buffer loads
+    whole, and BX:CX is its length less 512 whatever the header's own
+    length, as 6.0 has it.  DX, BP, SI, DI and the flags stay as they
+    were.  L with no file name says nothing.
+  - W writes BX:CX bytes from CS:100, on through memory past 64K as
+    6.0's RDWR stepped its segment.  No name is a message of its own,
+    a read-only file is Access denied, a full disk deletes the file.
+  - "File not found" and the out-of-memory messages go to standard
+    error, as 6.0's NOTFND and TOOBIG did; everything else to standard
+    output.
+  - The errors: "^ Error" with the caret where the parser stopped, and
+    R's "br", "bf" and "df Error".  Messages are in my words (MSG.C);
+    "Error", "Writing NNNNN bytes" and the shape of every listing are
+    kept as DEBUG always had them.
+
+DELIBERATE DIFFERENCES:
+
+  - G, T and P run only a PM-DOS program.  A 16-bit work area cannot
+    be run: the kernel has no way to enter V86 code for a ring-3
+    debugger, and 6.22's way - an INT 3 planted in the code and a jump
+    to it - is what ring 3 is there to stop.  They say "Only a PM-DOS
+    program can be run".
+  - With a native program: 32-bit registers (R shows EAX..GS and EIP),
+    eight-digit offsets, the 386 and 387 opcodes 6.22's U shows as
+    "DB 0F" and ESC, segment overrides inside the operand (ES:[EBX]),
+    and A with 32-bit addressing ([EBX+ESI*4+10], its SIB byte).
+  - DEBUG works in its own copy of conventional memory, from the load
+    segment to A000h.  The rest of the first megabyte is read through
+    21h/F1h AL=20h and cannot be written: E, F, M, A and L there are
+    "df Error".  6.22 would write over the vector table.  For the same
+    reason the PSP's system bytes (the memory top, the vectors, the
+    version word) are DEBUG's, not DOS's.
+  - At the end of a file of commands DEBUG ends; 6.22 waited for ever.
+    A redirected command's CR is not echoed, so there are no blank
+    lines between commands.  6.22's E, fed from a file, read the LF
+    after a CR as a key of its own and echoed it as an illegal one
+    (21h/01h); DEBUG's E takes CR LF, or LF alone, as one ENTER.  The
+    bytes stored are the same.
+  - After a bad R F entry 6.22's flags become the low bits of the
+    address of its own error message (FLGERR and REPFLG load DX with
+    the message and SAVCHG stores DX in FLSAVE).  DEBUG leaves the
+    flags as they were.  An empty N makes 6.22's W write a file with
+    a garbage name; to DEBUG it is no name.
+  - A reserved 8087 memory form is ESC nn,[mem] at its real length;
+    6.22 read two bytes more and showed them as a second operand.
+  - XA, XD, XM and XS always say there is no expanded memory.
+  - A .HEX file is loaded as it is; the Intel hex records are not
+    converted.  W refuses .EXE and .HEX as 6.22 did.
+  - A has none of the 386's new instructions (MOVZX, BSF, SETcc and the
+    rest); 6.22's had none of them either.
+
+FOUND IN REVIEW AND FIXED:
+
+  - put_tail cleared "125 - len" bytes after the CR: at 126, the most a
+    tail holds, that is 4G of zeroes over the stack (u32), so N with a
+    long argument list or a long command line crashed DEBUG; shorter
+    ones left tail[127] unset.  Now "126 - len".
+  - L could not reload a native program while one was held: the kernel
+    refuses a second load, and load_file let the first go only after.
+    It said "Not enough room to load the file".
+  - M and sector L bought a buffer every command and never freed it
+    (600 M's of 64K was 39MB).  M takes one kept scratch buffer and
+    copies with one write; L reads into 512 bytes on the stack.
+  - load_exe read the relocation table and header fields past what had
+    been read for a short or cut-off file, and cut an .EXE over 128K
+    short without a word; is_d32's "off + 2 <= len" wrapped for an
+    e_lfanew near 4G.
+  - coded_error ignored A's error_jmp, and any cmd_abort out of A -
+    Ctrl+C at A's prompt is one - left error_jmp pointing into a frame
+    that was gone, for the next syntax error to longjmp into.  The
+    command loop clears it before every command.
+  - A dropped a write it could not make without a word, and for a
+    native program wrote 16-bit ModRM encodings: [1234] came out as
+    [ESI], which a 32-bit CPU runs as that.
+  - The native disassembler left out the disp32 of a SIB with no base
+    and never showed a segment override.
+
+TESTED, on the final full BUILD.CMD (DEBUG.EXE 42,252 bound,
+PMDOS.SYS 194,343): DBGTEST (33 checks); native T/P/G/R/U/D/A, breakpoints, the
+exit code, a null-pointer fault, L reloading a held program, W
+refusing it, the native A/U round trip of every addressing form; the
+6.22 cases through cmpora.ps1 - registers, D, errors, H, F, C, S, E,
+the 134-line A case, every one-byte opcode and every 8087 encoding
+(R11OPS identical, all 1,551 lines), positions (PQ1-PQ7), no-name and
+wrap (NN1, NN2, DC1), direct addresses and immediates (AS2) - with the
+differences listed above and none other; a 126- and a 200-character
+tail; 600 M's of 64K on a 32MB machine; a 10-byte .EXE; MSD.EXE
+(155,538 bytes) loading whole; the boot sector by L.  RUNTESTS on all
+seven rows: the differences are baseline drift only (DEBUG.EXE on the
+test disk moves RMTEST's free space, and on some runs CACHETST's
+dirty-element count, the MEM /D work adds an NDRVTEST line, and the
+kernel's data moved the XMS lock address 16 bytes).  LOCKTEST's held
+Caps Lock missed once on 386-4 and matched when run again.
+
+NOT TESTED: Ctrl+Break stopping a running program (dbx_tick); E's
+BACKSPACE and Ctrl+C at the keyboard; a full disk and a read-only
+file under W; the 86Box VM and real hardware.
+
+Files: CMD\DEBUG\ (new); DOS\DBGAPI.INC (new), INT21.INC, RING3.INC,
+DOSMAIN.ASM; INC\PMDOS.INC (DBF_, DBST_, DRX_); TOOLS\DBGTEST.C and
+DBGTGT.ASM (new); BUILD.CMD; MKHD.CMD; DISK\SETUP.LST;
+DISK\HELP\20EXTERN.TXT (the DEBUG topic).  DEBUG.EXE and MODE.EXE go
+on HELP.IMG, the hard disks and the Setup disks; ACROREAD.EXE moved
+from the full boot floppy to HELP.IMG to make room for the kernel.
+Still v0.65; not committed.  NOT DELIVERED by this session: the QBASIC
+session, last to finish, does the one RUNTESTS -Update, regenerates
+HELP.HLP (the DEBUG topic with it) and puts BIN, IMAGES and the 86Box
+VM.
+
+
+QBASIC.EXE - MS-DOS'S QBASIC 1.1, NATIVE (2026-10-25)
+---------------------------------------------------------------------
+
+Charlie: "Let's create a native 32-bit QBASIC application for PM-DOS."
+QBASIC.EXE is QBasic 1.1 as a D32 program: the editor (two windows and
+the Immediate window, menus, dialogs, mouse, scroll bars, syntax
+checking as a line is left, each SUB in a window of its own), the help
+(QBASIC.HLP), and a compiler to bytecode with an interpreter for it.
+The screen, menus, dialogs and messages were taken from the real
+QBasic 1.1 run in QEMU; the help and the text of our own are in our
+own words.
+
+CMD\QBASIC:
+  LEX LIST CSYM CEXPR COMP    a line to tokens, its listing (keyword
+                              case, spacing), names, expressions, the
+                              statements -> bytecode (OP.H, RTFN.H)
+  VM RTLIB QSTR NUM BIGDEC    the interpreter and its library: strings
+  USING FILE CON GFX DRAW     (counted, shared), numbers to and from
+  SND MACH                    text (BIGDEC makes both exact), PRINT
+                              USING, files, the text screen, SCREEN 1
+                              to 13, DRAW PAINT GET PUT, PLAY SOUND,
+                              PEEK POKE and the ports
+  DOC PROG                    the program text: lines, SUBs, load, save
+  MAIN IDE_*.C                the IDE
+  SYS_D32.C DOSINT.ASM        the PM-DOS calls; FPU.ASM, JMP.ASM
+  SYS_NT.C HOST.C MKHOST.CMD  QBHOST.EXE, the interpreter on Windows,
+                              for checking programs against QBasic
+An FPU is required (-fpi87); without one QBASIC says so and stops.
+
+THE IMMEDIATE WINDOW runs a line inside the program: compiled into the
+spare code room after it, its new names in a scope of their own, run
+where the program stopped (or before it starts, or after it ended - the
+variables are kept until the program is changed).  GOTO and RETURN
+there go on with the program; DIM, CONST, SUB, DATA and labels are
+"Illegal in direct mode"; CLEAR ends the program.  25 kinds of line
+were checked against the real QBasic's.
+
+TESTING.  An oracle: 71 programs run in the real QBasic 1.1 (DOSBox-X,
+headless), their results kept; QBHOST matches 65.  The six apart:
+ARITH3 and MATHFN (the last digit of SIN and EXP - DOSBox-X's FPU works
+in 53 bits, a real one in 64), ARRAY2 and MISC3 (arrays over 64K and
+string space are bigger here), GFX7 (no ROM font on Windows), USING4
+(one rounding case of ^^^^ in PRINT USING).  28 more, written for what
+the review changed, match as well but for USING4 and LIMITS's string
+space line.  The same programs on PM-DOS in DOSBox-X, and the IDE
+through its test mode (QBTEST, keys from a file, screen dumps): 11
+scripts.
+
+A REVIEW of all of it, by five readers, found about 75 things; fixed:
+  - a string joined past string space freed both strings twice
+  - nothing checked the VM stack, and deep recursion ran into the heap:
+    now "Out of stack space", which ON ERROR cannot trap, as in QBasic
+  - array elements went to a SUB by address, so a REDIM in it left the
+    SUB writing to freed memory.  QBasic passes a copy and copies it
+    back afterwards, into whatever array is there by then - now the
+    same; and a(i) = f() works out f() before the subscript, as QBasic
+  - CLEAR in a SUB (QBasic: error 5); FIELD variables of a SUB or an
+    array that had gone; the PEEK/POKE map kept pointers to freed
+    blocks (a string SADD had been asked about, then changed)
+  - the compiler: a failed Immediate line left freed lists in the
+    program; CONST folding raised run-time errors; DIM a(n / m) gave
+    "Division by zero"; CONST -2147483648 \ -1 crashed it; more
+  - the IDE: Enter on the Dirs list of Save As saved at once; the first
+    Save of a SUB with an array parameter wrote a broken DECLARE; New
+    then Restart crashed; a message box opened from a message box
+And, each checked against the real QBasic since: OPEN of an open file
+(only OUTPUT and APPEND are refused), NAME of an open file, a second
+FIELD adds to the first, KEY text cut to 15 and F11/F12 kept, KEY LIST,
+VIEW keeps WINDOW, PRINT of a too-big SINGLE is Overflow, No RESUME,
+TRON and TROFF, RUN n, CHAIN keeping the files and the COMMON, SHELL
+seeing ENVIRON's changes, LEN$ and PRINT$ as variable names.
+
+ON PURPOSE (the help says so where a program could notice):
+  - a math coprocessor is required; an array may be over 64K; a string
+    may be 32,767 characters, with no 30K for all of them
+  - no real mode: DEF SEG, PEEK and POKE reach the program's own
+    variables, the screen and the BIOS data area; CALL ABSOLUTE is
+    "Advanced feature unavailable"; INP and OUT go to the ports
+  - /B, /G and /NOHI are taken and change nothing
+  - COM, PEN and STRIG events never come; ERDEV is 0; LOCK, IOCTL and
+    COMn: settings are taken and do nothing
+  - KEY n text is shown and listed, but the key does not type it
+  - ON x GOTO is refused in the Immediate window
+
+Seen on the way, not looked into: in CMD.EXE, a FOR over *.BAS running
+QBASIC /RUN for each file stopped after six of them; the rigs CALL a
+batch file per program instead.
+
+Files: CMD\QBASIC\ (new), TOOLS\MKQBHLP.PL (new), DISK\QBHELP\ (new:
+the help's parts), DISK\QBASIC.HLP (generated); BUILD.CMD (its section,
+the bind and clean lists, HELP.IMG), MKHD.CMD, DISK\SETUP.LST,
+DISK\HELP\21EXTERN.TXT (the QBASIC topic).  QBASIC.EXE and QBASIC.HLP
+go on HELP.IMG, the hard disks and the Setup disks.  Still v0.65; not
+committed.  Delivered together with DEBUG and MEM /D, from one mirror
+build: HELP.HLP regenerated (338 topics, the DEBUG and QBASIC ones
+new); RUNTESTS 101 on each of the seven rows, with RMTEST (free space),
+NDRVTEST (MEM /D's NDF_MEM line), XMSREPT and XMSTEST (the lock
+address, +10h) re-recorded - 28 files - and CACHETST's write count and
+LOCKTEST's "caps lock, held" on 386-4 moving between runs as before
+(LOCKTEST failed 3 runs of 6 today); NLSTESTS all nine.  Into BIN: QBASIC.EXE,
+DEBUG.EXE, MEM.EXE, PMDOS.SYS, TESTS\NDRVTEST.EXE and NDTEST.SYS;
+PMDOS, HELP and TESTS.IMG, HD16 (8 files put by FATREPL), the five
+Setup images, and the four images into the 86Box VM.
+
+
+TREEVIEW.EXE - DISKSTAT MADE NATIVE (2026-10-25)
+---------------------------------------------------------------------
+
+Charlie: "Port Dobson Utilities' DISKSTAT to PM-DOS as TREEVIEW.EXE and
+as a native D32/CD application."  DiskStat's DOS program
+(S:\CPP\DUSOURCE\DISKSTAT: DOSMAIN, SCAN, USAGEBAR and FOLDTREE .CPP on
+the DOSForms toolkit, real-mode 16-bit) is CMD\TREEVIEW: C on the
+kernel's own interfaces, bound with the D32 stub like every shipped
+command.  The same screen - the title with its close box, File / Drive
+/ Help, the usage bar and legend on the left, the folders with Size
+and % Used on the right, the status line - the same keys, the mouse,
+the About box, Retry or Cancel for a drive that cannot be read, and
+/G, where the bar is the Windows DiskStat's 3-D pie.  The screens say
+TreeView where they said DiskStat; the wording is otherwise
+DiskStat's, banner line excepted (a PM-DOS command prints none).
+
+THE TOOLKIT HALF IS XARC'S.  XARC made the same move a day earlier and
+its front end is DOSForms in C, so SCR.C, GFX.C, MENU.C and UI.C are
+XARC's with what TreeView does not use taken out (the progress bar,
+fields, check boxes, the viewer, the change of screen under a running
+program), and LIBC.C, LIBIO.C, XSYS.H and INC\ are XARC's C library
+copied unchanged.  Added to them: a PICTURE - cells whose pixels GFX.C
+takes from a buffer the pie is drawn into a row at a time, numbered so
+a pie drawn again is cells that differ - a menu item that carries a
+number (the Drive menu's drive), a message box given its rectangle
+(DiskStat's About box sets one), and the pointer's cell on request for
+a scroll arrow held down.  Title and status are DiskStat's colours
+(white on blue, light cyan on cyan), not XARC's.
+
+WHAT THE DOS PROGRAM COULD NOT HAVE, AND THIS ONE HAS:
+  - no limits but memory.  DiskStat kept 256 rows and read at most 24
+    subfolders of any folder: the 25th and on were left out of the
+    size altogether.  The rows grow on the heap and every subfolder is
+    read.  Its BuildNodePath also had room for 12 levels and wrote a
+    13th past the end of its table on a folder 13 deep;
+  - long names, from the 71h search, cut with "..." where they meet
+    the Size column (8.3 names with LFN=OFF);
+  - 64-bit sizes: a FAT32 or exFAT drive, and a folder on one, can pass
+    4 GB.  Free space is 7303h before 36h.  Past 9,999.9 MB a size is
+    in GB, past 9,999.9 GB in TB; every number is grouped with the
+    country's separators (21h/38h);
+  - no recursion and one search open at a time: the walk keeps its
+    place in a table, each level holding its folder's subfolder names,
+    read and the search closed before any is gone into - the kernel's
+    32 search handles are for every program at once, and a tree can be
+    deeper than that;
+  - no floating point.  DiskStat drew the pie with sin, cos and sqrt;
+    the kernel has no coprocessor emulator, so the angles are 65,536ths
+    of a turn, sine and cosine a quarter-wave table, and every test
+    against a slice's edge a cross multiplication.  Photographed
+    against the DOS DiskStat /G on the same disk image, with the same
+    folder chosen: the pie is identical to the pixel;
+  - a 40-column screen is made an 80-column one and put back on exit,
+    and a 43- or 50-line screen gives the folder list its rows.
+
+WHERE THE SCREEN DIFFERS, ON PURPOSE.  The Size column starts two
+columns further left, so "1,023 bytes" (eleven characters with the
+comma) leaves a space before the percentage - DiskStat's "1023 bytes"
+already ran into it.  A legend line cuts a long name instead of running
+over the frame.  A folder deep enough to push its name past the Size
+column is drawn at the deepest indent that leaves the name a cell,
+instead of over the columns.  A scroll arrow held down repeats (0.4 s,
+then every tick), as DOSSHELL's does.  The open menu's name is lit, as
+XARC's is.  The Drive menu lists the drives from C: up, as DiskStat did,
+found by 4408h so no drive is spun up to make the menu.
+
+THE TEST.  TVTEST names a log and the keys come from a redirected file
+(XARC's format: FFh FFh the screen, FFh FDh with colours, FFh FEh a
+.BMP, FEh buttons row column the mouse); TVHOLD hands over to the
+keyboard at the end, TVPOLL lets a held arrow read the file.  The real
+DOS DiskStat ran under DOSBox-X's own DOS with KEYFEED keeping each
+screen's characters and colours; eight screens of TreeView (main,
+chosen folder, opened folder, File, Drive and Help menus, About, back)
+match it cell for cell in colour, the differences being the data, the
+Size column and the lit menu name.  Also run on PM-DOS in DOSBox-X: 37
+root folders with scrolling, the scroll bar's arrows and track and a
+click on [+] (key file), a 23-level chain, a long-named folder, LFN=OFF,
+an empty drive A: (Retry, Cancel, "No disk information", then the Drive
+menu), a drive that does not exist, 50 lines, 40 columns, /? and /G
+with the mouse; in QEMU with its real PS/2 mouse, text and /G: the
+arrow held for two seconds (16 rows), a click on [+], the Drive menu,
+the close box.  SCAN.C's number formatting ran on the host against
+64-bit answers (bytes to terabytes, percentages, per_whole over large
+pairs).
+
+NOT TESTED: real hardware, 86Box, a drive over 4 GB in an emulator
+(the arithmetic was tested on the host only), an EGA (/G's refusal
+box), a CD-ROM or network drive, ^C during a long scan.
+
+FOUND IN DISKSTAT ITSELF, NOT FIXED THERE (S:\CPP\DUSOURCE\DISKSTAT\
+SCAN.CPP, which the DOS and Windows builds share): BuildNodePath's
+parts[12][13] is written at parts[12] for a folder 13 levels down, past
+the end of a stack array; and MAX_SUBDIRS (24) leaves a folder's 25th
+subfolder and on out of its size without a word.
+
+Still v0.65; not committed.  TREEVIEW.EXE 74,480 bytes bound.  In
+BUILD.CMD (its section after XARC's, the clean list, the D32BIND list,
+HELP.IMG), MKHD.CMD (both lists), DISK\SETUP.LST, and a TREEVIEW topic
+in DISK\HELP\21EXTERN.TXT; HELP.HLP regenerated (341 topics; the parts
+without the new topic gave the old HELP.HLP byte for byte first).  One
+mirror build reproduced S:\BIN byte for byte plus TREEVIEW.EXE; RUNTESTS
+101 on all seven rows after RMTEST (free space, and the arena line,
+000F on a full run) and CACHETST ("a write is owed") were re-recorded -
+13 files.  Delivered: S:\BIN\TREEVIEW.EXE, HELP.IMG, HD16 (TREEVIEW.EXE
+and HELP.HLP put by FATREPL), the five Setup images, and the four images
+into the 86Box VM.  PMDOS.IMG and TESTS.IMG are unchanged.
+
+
+v0.66 - MODE, DEBUG, QBASIC AND MORE OF DOS 6.22; THE FIRST 32-BIT
+        DISK DRIVER (2026-10-26)
+---------------------------------------------------------------------
+
+Charlie: "Write a summary of change and commit PM-DOS to GitHub under
+new version 0.66".  INC\PMVER.INC now says 66.  This release is
+everything since the v0.65 tag; each piece has an entry above, and
+this one is the list.  The version stamp was changed and committed
+without a new build or a RUNTESTS run, so the binaries in BIN and
+the baselines still belong to 0.65 until the next build.
+
+PROGRAMS
+  - MODE.EXE is MS-DOS 6.22's MODE: devices, code pages, COM and LPT
+    settings, with the resident part in the kernel.
+  - DEBUG.EXE is MS-DOS 6.22's DEBUG, and also a debugger for native
+    programs through the kernel (DOS\DBGAPI.INC).
+  - QBASIC.EXE is QBasic 1.1 made again: the editor, the compiler and
+    the help (DISK\QBASIC.HLP, DISK\QBHELP\, TOOLS\MKQBHLP.PL).
+  - TREE.EXE is 6.22's TREE with long names.  DELTREE.EXE removes a
+    directory and everything under it.
+  - TREEVIEW.EXE is DiskStat made native: folder tree, usage bar and
+    pie chart.
+  - XARC.EXE is XArchive made native, over the shared ARC\ backend.
+  - ANSI.SYS is a console driver for the kernel's loaded console.
+  - RAMDISK.SYS is the first 32-bit disk driver (D32 driver class).
+  - MEM /D lists the 32-bit drivers and what each one holds.
+
+THE KERNEL
+  - 21h/F0h AL=0Ch and 0Dh (text mode, key repeat), 21h/F1h AL=28h
+    (MODE's printer routes), and a DOS box's INT 14h and 17h are
+    claimed always.
+  - 21h/F1h AL=29h: the debugger interface for native programs.
+  - Disk-class 32-bit drivers on DEVICE= (RAMDISK.SYS); RMDOS moves
+    their memory under Windows.
+  - The loaded console that ANSI.SYS plugs into.
+
+TESTS
+  - New: ANSITEST, ANSICMP.PL, DBGTEST, DBGTGT, RDTEST, DTTEST.BAT,
+    TREETEST.BAT.  NDRVTEST, NDTEST and RUNTESTS know the new
+    programs.
+
+Not done: BIN, IMAGES and the VM were last delivered from the 0.65
+version number; the next build brings them to 0.66.
 
 v0.61 - THE NUMBER CAUGHT UP (2026-09-30)
 ---------------------------------------------------------------------

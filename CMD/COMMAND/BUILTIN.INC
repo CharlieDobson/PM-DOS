@@ -247,8 +247,17 @@ need_arg:
 ; already under the cursor; as ESC [2J when it is anything else, which
 ; is what DOS sent - a file or a terminal gets a clear-screen it can
 ; act on, and nobody gets a BIOS call they cannot see.
+;
+; AND AS ESC [2J WHEN ANSI.SYS SAYS IT IS THERE (INT 2Fh AX=1A00h, AL =
+; FFh), which is MS-DOS's first test (tcmd2a.asm): the screen then
+; clears in the colours ANSI.SYS was told to use, as a prompt that set
+; them expects.
 ;---------------------------------------------------------------------
 cmd_cls:
+        mov     ax,1A00h
+        int     2Fh
+        cmp     al,0FFh
+        je      cls_esc
         mov     ax,4400h
         mov     bx,1
         int     21h

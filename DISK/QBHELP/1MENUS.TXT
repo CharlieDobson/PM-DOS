@@ -1,0 +1,256 @@
+#! 1MENUS.TXT - F1 on a menu item (m.*), in a dialog (d.*), or on the
+#! Help button of a message.  These open in a help box 62 columns wide:
+#! keep the lines to 60.
+#topic Menus
+#context m.menus
+Alt lights the menu bar.  A highlighted letter, or Left
+and Right and then Enter, opens a menu; Alt with the letter
+opens it at once.  In a menu, Up and Down move to
+an item, Enter or the item's letter chooses the item, and
+Esc closes the menu.  The mouse can click a menu and drag
+to an item.
+
+A grey item cannot be chosen yet: Cut, for one, needs a
+selection.  "..." after an item means a dialog follows.
+#topic Messages
+#context m.message
+The message says why QBasic stopped, or asks a question.
+Enter chooses the lit button, Tab moves to the next one,
+and Esc closes the box without choosing.
+#topic New Command
+#context m.new
+Clears the program away, the module and all its SUBs and
+FUNCTIONs, so that a new one can be typed.  If the old one
+has changes that are not saved, QBasic asks first.
+#topic Open Command
+#context m.open
+Loads a program from a disk in place of the one in memory.
+The dialog lists the .BAS files of a directory; a name, a
+path or a wildcard can be typed in the File Name box.
+#topic Save Command
+#context m.save
+Writes the program to the file it was loaded from.  A
+program not yet saved is given a name first, as Save As
+does.
+#topic Save As Command
+#context m.saveas
+Writes the program to a file under a name typed in the
+dialog, and from then on the program has that name.
+#topic Print Command
+#context m.print
+Prints the selected text, the window's text (the module or
+one procedure) or the whole program on LPT1.
+#topic Exit Command
+#context m.exit
+Leaves QBasic for DOS.  If the program has changes that are
+not saved, QBasic asks first.
+#topic Cut Command
+#context m.cut
+Takes the selected text out of the program and keeps it on
+the clipboard, from where Paste can put it back.
+Shortcut: Shift+Del.
+#topic Copy Command
+#context m.copy
+Puts a copy of the selected text on the clipboard.  The
+program is not changed.  Shortcut: Ctrl+Ins.
+#topic Paste Command
+#context m.paste
+Puts the clipboard's text in at the cursor, or in place of
+the selected text.  Shortcut: Shift+Ins.
+#topic Clear Command
+#context m.clear
+Deletes the selected text.  The clipboard is not changed.
+Shortcut: Del.
+#topic New SUB Command
+#context m.newsub
+Asks for a name and starts a SUB procedure of that name in
+a window of its own.  Typing SUB and a name on a line of
+the program does the same.
+#topic New FUNCTION Command
+#context m.newfunc
+Asks for a name and starts a FUNCTION procedure of that
+name in a window of its own.  Typing FUNCTION and a name on
+a line of the program does the same.
+#topic SUBs Command
+#context m.subs
+Lists the module and its SUBs and FUNCTIONs.  The one chosen
+is shown in the window; a procedure can be deleted from
+here.  Shortcut: F2.
+#topic Split Command
+#context m.split
+Divides the editing window in two, so that two parts of the
+program - or two procedures - can be seen at once.  Split
+again goes back to one window.  F6 moves between windows.
+#topic Output Screen Command
+#context m.output
+Shows the screen the program writes on.  A key comes back
+to QBasic.  Shortcut: F4.
+#topic Find Command
+#context m.find
+Looks for some text in the program, from the cursor on.  The
+dialog says whether case must match and whether the text
+must be a whole word.
+#topic Repeat Last Find Command
+#context m.repeat
+Looks for the text of the last Find again, from the cursor
+on.  Shortcut: F3.
+#topic Change Command
+#context m.change
+Looks for some text and puts other text in its place, one
+place at a time with a question each time, or everywhere at
+once.
+#topic Start Command
+#context m.start
+Runs the program from its first statement, with every
+variable cleared.  Shortcut: Shift+F5.
+#topic Restart Command
+#context m.restart
+Clears every variable and makes the first statement the
+next to run, without running it.  F8 then steps from the
+start.
+#topic Continue Command
+#context m.continue
+Runs the program on from where it stopped: a STOP, a
+breakpoint, Ctrl+Break, an error, or a step.  A program not
+yet started starts from the beginning.  Shortcut: F5.
+#topic Step Command
+#context m.step
+Runs the next statement and stops.  A statement that calls
+a SUB or FUNCTION steps into the procedure.  Shortcut: F8.
+#topic Procedure Step Command
+#context m.pstep
+Runs the next statement and stops, but runs a procedure
+call to its end in one step.  Shortcut: F10.
+#topic Trace On Command
+#context m.trace
+While Trace On is checked, a running program lights each
+statement in the window as it runs it, slowly.  Choose it
+again to turn the tracing off.
+#topic Toggle Breakpoint Command
+#context m.breakpoint
+Puts a breakpoint on the cursor's line, or takes one away.
+A running program stops before the line's first statement.
+Shortcut: F9.
+#topic Clear All Breakpoints Command
+#context m.clearbp
+Takes away every breakpoint in the program.
+#topic Set Next Statement Command
+#context m.setnext
+Makes the statement on the cursor's line the next one to
+run.  The program must be stopped, and the line must be in
+the procedure it is stopped in.
+#topic Display Command
+#context m.display
+Sets the colours of the program text, of the statement the
+program is stopped at, and of breakpoint lines; whether the
+windows have scroll bars; and how far apart tab stops are.
+#topic Help Path Command
+#context m.helppath
+Says which directory QBASIC.HLP is in, when it is not
+beside QBASIC.EXE, in PM-DOS's own directory, in the
+current directory or on the PATH.
+#topic Syntax Checking Command
+#context m.syntax
+While Syntax Checking is on, each line is checked as the
+cursor leaves it: keywords become capitals and a mistake is
+shown at once.  Turned off, lines are left as typed until
+the program runs.
+#topic Index Command
+#context m.index
+Shows the help Index: every keyword, A to Z.  A letter key
+moves to that letter; Enter or F1 opens the keyword's help.
+#topic Contents Command
+#context m.contents
+Shows the help Contents: the help topics in groups.
+#topic Topic Command
+#context m.topic
+Shows the help on the keyword the cursor is on.  For a name
+of the program's own, help says what the name is.
+Shortcut: F1.
+#topic Using Help Command
+#context m.usinghelp
+Shows how to use the help.  Shortcut: Shift+F1.
+#topic About Command
+#context m.about
+Shows the version of QBasic.
+#topic Open Dialog
+#context d.open
+{b}File Name{p}  The program to load.  A wildcard such as *.BAS
+           fills the Files list instead; a directory or
+           a drive moves there.
+{b}Files{p}      The files that match.  Enter or a double click
+           loads one.
+{b}Dirs/Drives{p}  Another directory or drive to look in.
+
+Tab moves between the parts of the dialog; Esc cancels.
+#topic Save As Dialog
+#context d.saveas
+{b}File Name{p}  The name to save the program under.  .BAS is
+           added when no extension is given.  A path
+           puts the file in another directory.
+
+The directory shown is where the file goes without a path.
+#topic Print Dialog
+#context d.print
+Choose what to print on LPT1:
+
+{b}Selected Text Only{p}  The text selected in the window.
+{b}Current Window{p}      All of the window's text: the module or
+                    the procedure shown.
+{b}Entire Program{p}      The module and every procedure.
+#topic New SUB Dialog
+#context d.newsub
+{b}Name{p}  The SUB's name: a letter, then letters, digits and
+      dots, up to 40 characters.  The new SUB gets a
+      window of its own.
+#topic New FUNCTION Dialog
+#context d.newfunc
+{b}Name{p}  The FUNCTION's name: a letter, then letters, digits
+      and dots, up to 40 characters, with a type suffix if
+      the function returns a string or another type.  The
+      new FUNCTION gets a window of its own.
+#topic SUBs Dialog
+#context d.subs
+The list holds the module first, then its procedures.
+
+{b}Edit in Active{p}  Shows the chosen one in the window.
+{b}Delete{p}          Deletes the chosen procedure from the
+                program, after a question.
+{b}Cancel{p}          Closes the dialog.
+#topic Find Dialog
+#context d.find
+{b}Find What{p}         The text to look for.  It starts as the
+                  word at the cursor or the selection.
+{b}Match Upper/Lowercase{p}  Case must be as typed.
+{b}Whole Word{p}        The text must not be part of a longer
+                  word.
+#topic Change Dialog
+#context d.change
+{b}Find What{p}    The text to look for.
+{b}Change To{p}    What goes in its place.
+{b}Find and Verify{p}  Shows each place in turn and asks
+                 whether to change it.
+{b}Change All{p}   Changes every place without asking.
+#topic Change, Skip Dialog
+#context d.verify
+The found text is selected in the window.
+
+{b}Change{p}  Puts the new text in its place and finds the next.
+{b}Skip{p}    Leaves it and finds the next.
+{b}Cancel{p}  Stops changing.
+#topic Display Dialog
+#context d.display
+{b}Colors{p}  Choose what to colour - Normal Text, Current
+        Statement or Breakpoint Lines - then its foreground
+        and background colours from the lists.
+{b}Scroll Bars{p}  Whether the windows show scroll bars.
+{b}Tab Stops{p}    How many columns apart tab stops are.
+#topic Help Path Dialog
+#context d.helppath
+The directory that holds QBASIC.HLP, for example
+C:\DOS.  Left empty, QBasic looks beside QBASIC.EXE, in
+PM-DOS's own directory, in the current directory, and
+along the PATH.
+#topic About QBasic
+#context d.about
+The version of QBasic for PM-DOS.

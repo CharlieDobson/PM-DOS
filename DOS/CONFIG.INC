@@ -1190,11 +1190,11 @@ cfi_high:
 ; two, which is a conversion and not a decision, so it happens here
 ; and the kernel's side of IOS_KBRATE speaks the hardware's units.
 ;
-; It is a CONFIG.SYS statement because the alternative is MODE CON,
-; and MODE is a program PM-DOS does not have; it goes with LFN=, DPMI=
-; and NULLTRAP= as a machine-wide setting the kernel owns.  Saying
-; nothing leaves the rate the BIOS set, which is the right default: a
-; statement that is absent should change nothing.
+; It is a CONFIG.SYS statement because MODE CON, the other way to set
+; it (21h/F0h AL=0Dh), runs only once the system is up; it goes with
+; LFN=, DPMI= and NULLTRAP= as a machine-wide setting the kernel owns.
+; Saying nothing leaves the rate the BIOS set, which is the right
+; default: a statement that is absent should change nothing.
 ;
 ; RATE=32 DELAY=1 IS THE BYTE ZERO, and it is legal - it is what "as
 ; fast as the keyboard goes, after the shortest pause" comes to.  It

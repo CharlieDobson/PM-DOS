@@ -23,7 +23,7 @@ the two had outgrown one floppy.  That disk has every test program,
 batch file and key file in \TESTS, and the long-named files that
 LFNTEST.BAT works on in its root.
 HELP.EXE and HELP.HLP, the online help, are on a THIRD DISK,
-HELP.IMG, since 2026-10-11: the help text is 200K and the boot disk
+PMDOS2.IMG, since 2026-10-11: the help text is 200K and the boot disk
 had 64K left.  Put that disk in B: and run B:\HELP, or copy both
 files to a hard disk; HELP looks for its text beside itself and
 along the PATH.  LRGDISK.386 and LRGSTAT.EXE, which are for a

@@ -44,6 +44,14 @@ ND_PROBELEN        EQU     D32_DRVSTUB + D32H_SIZE ; what is read to decide:
                                                 ; behind it, or a bare
                                                 ; header and a table
 
+; WHAT A DRIVER HOLDS BESIDE ITS IMAGE, one record a row: nd_mem's row
+; N is nd_tab's row N.  ndsv_alloc and ndsv_free keep it, NDF_MEM reads
+; it.  The kernel's own bookkeeping and not part of the row a program
+; is copied, so ND_LEN stays as every caller of NDF_INFO knows it.
+NM_BYTES        EQU     0               ; dd - the blocks' payload, bytes
+NM_BLOCKS       EQU     4               ; dd - how many blocks
+NM_LEN          EQU     8
+
 ;=====================================================================
 ; nd_load - ESI -> the DEVICE= line.
 ;
@@ -211,6 +219,7 @@ ndl_relocated:
         sub     eax,esi
         cmp     eax,D32H_SIZE
         jb      ndl_badimage
+        mov     ecx,eax                 ; where the table is in the image
         add     eax,NDT_LEN
         jc      ndl_badimage
         cmp     eax,[nd_keep]
@@ -218,7 +227,25 @@ ndl_relocated:
         cmp     dword ptr [ebx+NDT_SIG],NDT_SIGVAL
         jne     ndl_badimage
         cmp     word ptr [ebx+NDT_VER],NDT_VERSION
+        je      ndl_tabv1
+
+        ; A DISK DRIVER'S TABLE is the other version and the longer one,
+        ; and the version and the flag have to agree: the fields after
+        ; NDT_CALL are read once INIT is over, and a table that does not
+        ; have them would be read past its end.
+        cmp     word ptr [ebx+NDT_VER],NDT_DISKVER
         jne     ndl_badimage
+        test    word ptr [ebx+NDT_FLAGS],NDTF_DISK
+        jz      ndl_badimage
+        add     ecx,NDT_DLEN
+        jc      ndl_badimage
+        cmp     ecx,[nd_keep]
+        ja      ndl_badimage
+        jmp     short ndl_tabok
+ndl_tabv1:
+        test    word ptr [ebx+NDT_FLAGS],NDTF_DISK
+        jnz     ndl_badimage
+ndl_tabok:
 
         ; a row, and the block trimmed to what stays
         cmp     dword ptr [nd_count],ND_MAX
@@ -241,6 +268,11 @@ ndl_relocated:
         mov     [edi+ND_FLAGS],eax
         mov     dword ptr [edi+ND_PARKS],0
         mov     dword ptr [edi+ND_UNPARKS],0
+        ; NOTHING ALLOCATED YET.  The counts go with the row, and a
+        ; driver refused in this row before may have left some behind.
+        mov     eax,[nd_count]
+        mov     dword ptr [nd_mem+eax*NM_LEN+NM_BYTES],0
+        mov     dword ptr [nd_mem+eax*NM_LEN+NM_BLOCKS],0
         mov     edx,esi
         mov     ebx,[nd_total]
         call    arena_resize            ; smaller or the same: a refusal
@@ -249,17 +281,40 @@ ndl_relocated:
 
         ; INIT.  The row is filled in first so that the driver can
         ; read where it is; the count is raised afterwards so that a
-        ; driver that refuses was never there.
+        ; driver that refuses was never there.  ECX and EBX are the
+        ; letters a disk driver's units may have (dl_unitroom); every
+        ; driver is told, and only a disk driver reads them.
         mov     ebx,[edi+ND_TABLE]
+        mov     eax,[ebx+NDT_INIT]
+        mov     [nd_callee],eax
+        call    dl_unitroom             ; -> ECX letters left, EBX the next
         mov     esi,OFFSET nds_table
         mov     edx,OFFSET dl_line
         cld
-        call    dword ptr [ebx+NDT_INIT]
+        mov     byte ptr [nd_ininit],1  ; nd_whose looks at this row too
+        call    dword ptr [nd_callee]
+        mov     byte ptr [nd_ininit],0  ; MOV leaves CF alone
         jc      ndl_refused
+        mov     esi,[nd_count]          ; the row again: INIT may have used
+        imul    esi,ND_LEN              ; every register
+        add     esi,OFFSET nd_tab
         inc     dword ptr [nd_count]
+
+        ; A DISK DRIVER'S UNITS, now that it has said what they are.  It
+        ; stays loaded if none of them could have a letter: INIT is over
+        ; and may have hooked things a refusal would have undone, so the
+        ; one safe answer is the message.
+        test    dword ptr [esi+ND_FLAGS],NDTF_DISK
+        jz      ndl_up
+        call    dl_ndunits              ; ESI -> the row
+        jc      ndl_nounits
+ndl_up:
         popad
         clc
         ret
+ndl_nounits:
+        mov     eax,DLERR_NOUNITS
+        jmp     ndl_fail
 
 ndl_refused:
         mov     edx,[nd_blk]
@@ -503,6 +558,8 @@ fF1_ndrv:
         je      fnd_info
         cmp     eax,NDF_CALL
         je      fnd_call
+        cmp     eax,NDF_MEM
+        je      fnd_mem
         jmp     i21_unsup
 
 fnd_count:
@@ -549,6 +606,18 @@ fnd_nobuf:
         jmp     i21_ok
 fnd_said_no:
         jmp     i21_fail                ; AX = the driver's error
+
+; NDF_MEM: what the row's driver holds through NDS_ALLOC, as ndsv_alloc
+; and ndsv_free counted it.  The image itself is ND_SIZE in the row.
+fnd_mem:
+        movzx   edx,byte ptr [ebp+F_EDX]
+        cmp     edx,[nd_count]
+        jae     fnd_norow
+        mov     eax,dword ptr [nd_mem+edx*NM_LEN+NM_BYTES]
+        mov     [ebp+F_ECX],eax
+        mov     eax,dword ptr [nd_mem+edx*NM_LEN+NM_BLOCKS]
+        mov     [ebp+F_EDX],eax
+        jmp     i21_ok
 fnd_norow:
         mov     ax,ERR_BADDRIVE
         jmp     i21_fail
@@ -611,13 +680,16 @@ nds_table:
         dd      OFFSET ndsv_niccount             ; NDS_NICCOUNT
         dd      OFFSET ndsv_niccall              ; NDS_NICCALL
         dd      OFFSET ndsv_sockcall             ; NDS_SOCKCALL
+        dd      OFFSET ndsv_stamp                ; NDS_STAMP
 IF ($ - nds_table) NE NDS_LEN
         .ERR    <nds_table does not match NDS_LEN in NDRV.INC>
 ENDIF
 
 ;--- ndsv_alloc - EBX = bytes -> EAX, CF.  First fit and the kernel's,
 ;--- whatever the running program's strategy is and whoever it is: a
-;--- driver's memory outlives every program.
+;--- driver's memory outlives every program.  The block goes on the
+;--- count of the driver whose code made the call (nd_whose), which is
+;--- what NDF_MEM reads back for MEM /D.
 ndsv_alloc:
         push    ebx
         mov     ebx,[alloc_strat]
@@ -629,13 +701,88 @@ ndsv_alloc:
         pop     ebx
         jc      nda_out
         mov     dword ptr [eax-MCB_LEN+MCB_OWNER],0
+        push    edx
+        push    esi
+        mov     edx,[esp+8]             ; where the call came from
+        call    nd_whose                ; -> ESI = that driver's counts
+        jc      nda_nobody
+        mov     edx,[eax-MCB_LEN+MCB_SIZE]
+        add     [esi+NM_BYTES],edx
+        inc     dword ptr [esi+NM_BLOCKS]
+nda_nobody:
+        pop     esi
+        pop     edx
         clc
 nda_out:
         ret
 
-;--- ndsv_free - EDX = the block
+;--- ndsv_free - EDX = the block, CF if it is not one.  It comes off the
+;--- count of the driver whose code made the call, as ndsv_alloc put it
+;--- on.  A count that would go below nothing is left as it is: that
+;--- driver is freeing a block it was never given.
 ndsv_free:
-        jmp     arena_free
+        push    ecx
+        push    esi
+        mov     ecx,[edx-MCB_LEN+MCB_SIZE]
+        call    arena_free
+        jc      nfr_out
+        push    edx
+        mov     edx,[esp+12]            ; where the call came from
+        call    nd_whose                ; -> ESI = that driver's counts
+        pop     edx
+        jc      nfr_done
+        cmp     dword ptr [esi+NM_BLOCKS],0
+        je      nfr_done
+        cmp     [esi+NM_BYTES],ecx
+        jb      nfr_done
+        sub     [esi+NM_BYTES],ecx
+        dec     dword ptr [esi+NM_BLOCKS]
+nfr_done:
+        clc
+nfr_out:
+        pop     esi
+        pop     ecx
+        ret
+
+;--- nd_whose - EDX = an address in some driver's code -> ESI -> the
+;--- counts (NM_*) of the driver whose image holds it, CF if none does.
+;--- A driver's calls to NDS_ALLOC and NDS_FREE come from its own image,
+;--- the C ones through NDSTART.ASM, which is linked into it; so the
+;--- return address says whose block it is and the services need no
+;--- word from the driver.  During INIT the row being loaded is
+;--- searched as well, since nd_count does not include it until INIT
+;--- has said yes.  Preserves every register but ESI.
+nd_whose:
+        push    eax
+        push    ecx
+        push    edi
+        mov     ecx,[nd_count]
+        movzx   eax,byte ptr [nd_ininit]
+        add     ecx,eax
+        mov     edi,OFFSET nd_tab
+        mov     esi,OFFSET nd_mem
+ndw_next:
+        jecxz   ndw_none
+        mov     eax,edx
+        sub     eax,[edi+ND_BASE]
+        cmp     eax,[edi+ND_SIZE]
+        jb      ndw_found               ; below the base wraps, and fails
+        add     edi,ND_LEN
+        add     esi,NM_LEN
+        dec     ecx
+        jmp     ndw_next
+ndw_found:
+        pop     edi
+        pop     ecx
+        pop     eax
+        clc
+        ret
+ndw_none:
+        pop     edi
+        pop     ecx
+        pop     eax
+        stc
+        ret
 
 ndsv_print:
         jmp     dword ptr ds:[IOS_CONSTR]
@@ -708,6 +855,19 @@ nscl_nostack:
         stc
         ret
 
+;--- ndsv_stamp - -> EAX = now, the date in the high word and the time
+;--- in the low, DOS-packed: what a directory entry would be stamped
+;--- with (INT21.INC's get_dosdate and get_dostime, which ask the BIOS)
+ndsv_stamp:
+        push    edx
+        call    get_dostime
+        movzx   edx,ax
+        call    get_dosdate
+        shl     eax,16
+        or      eax,edx
+        pop     edx
+        ret
+
 ;=====================================================================
 ; Data
 ;=====================================================================
@@ -715,8 +875,13 @@ nd_stubname db  'PMD32DRV'              ; DRVSTUB_NAME: the mark in a
                                         ; real-mode header
 nd_count    dd  0                       ; rows of nd_tab in use
 nd_halted   db  0                       ; nd_halt has run
-            db  0, 0, 0
+nd_ininit   db  0                       ; a driver's INIT is running, in
+                                        ; row nd_count
+            db  0, 0
 nd_tab      db  ND_MAX * ND_LEN dup(0)  ; the drivers, in loading order
+
+nd_mem      db  ND_MAX * NM_LEN dup(0)  ; what each row's driver holds
+                                        ; through NDS_ALLOC: NM_* above
 
 nd_sft      dd  0                       ; the file, while it is open
 nd_fsize    dd  0
@@ -729,7 +894,7 @@ nd_keep     dd  0                       ; the image, on a paragraph
 nd_total    dd  0                       ; ...and the BSS: what stays
 nd_blk     dd  0                       ; the block
 nd_err      dd  0
-nd_callee   dd  0                       ; a CALL entry, while it runs
+nd_callee   dd  0                       ; an entry, while it runs
 
 ; The probe buffer is read into for every DEVICE= line and holds
 ; nothing between them: below the arena, and not in the file.

@@ -60,6 +60,107 @@ To start at page 12 with the text view:
 To print the words of a document:
 
     acroread manual /x > prn
+#topic ANSI.SYS|Ansi.sys
+Lets programs move the cursor, clear the screen, change colours and
+give keys new meanings, by writing escape sequences to the screen.
+
+{b}Syntax{p}
+
+    DEVICE=[drive:][path]ANSI.SYS [/X] [/K] [/R]
+
+{b}Parameters{p}
+
+[drive:][path]
+    Location of the ANSI.SYS file.
+
+{b}Switches{p}
+
+/X
+    Lets the grey keys of a 101-key keyboard be given meanings of
+    their own, apart from the same keys on the numeric keypad.
+
+/K
+    Treats a 101-key keyboard as an 84-key keyboard.  Use it with
+    programs that do not recognise the extra keys.
+
+/R
+    Sends all screen output through the video BIOS.  Use it with
+    screen reader programs.
+
+{b}Related Commands{p}
+
+ANSI.SYS is loaded with [[DEVICE=]].  [[PROMPT]] can send escape
+sequences with $E.
+#notes
+{b}Escape sequences{p}
+
+Each sequence starts with ESC, character 27, followed by a left
+bracket.  Numbers in a sequence are separated by semicolons.  A number
+left out of a cursor movement counts as 1.
+
+    ESC[r;cH    Moves the cursor to row r, column c.  The top left
+                corner is 1;1.  ESC[r;cf does the same.
+    ESC[nA      Moves the cursor up n rows.
+    ESC[nB      Moves the cursor down n rows.
+    ESC[nC      Moves the cursor right n columns.
+    ESC[nD      Moves the cursor left n columns.
+    ESC[s       Saves the cursor position.
+    ESC[u       Moves the cursor back to the saved position.
+    ESC[6n      Reports the cursor position as typed input: ESC[r;cR
+                followed by ENTER.
+    ESC[2J      Clears the screen and moves the cursor to the top left
+                corner.
+    ESC[K       Clears from the cursor to the end of the line.
+    ESC[n;...m  Sets the colours.  See below.
+    ESC[=nh     Sets screen mode n.  See below.
+    ESC[=7h     Text wraps at the end of a line.  This is the default
+                setting.
+    ESC[=7l     Text stops at the end of a line.
+    ESC[k;...p  Gives key k a new meaning.  See below.
+
+{b}Colours{p}
+
+    0  Normal        30  Black text      40  Black background
+    1  Bright        31  Red text        41  Red background
+    4  Underline     32  Green text      42  Green background
+    5  Blinking      33  Yellow text     43  Yellow background
+    7  Reverse       34  Blue text       44  Blue background
+    8  Hidden        35  Magenta text    45  Magenta background
+                     36  Cyan text       46  Cyan background
+                     37  White text      47  White background
+
+On a colour screen underline shows as blue text.
+
+{b}Screen modes{p}
+
+    0   40x25 black and white      13  320x200, 16 colours
+    1   40x25 colour               14  640x200, 16 colours
+    2   80x25 black and white      15  640x350 black and white
+    3   80x25 colour               16  640x350, 16 colours
+    4   320x200, 4 colours         17  640x480, 2 colours
+    5   320x200 black and white    18  640x480, 16 colours
+    6   640x200 black and white    19  320x200, 256 colours
+
+{b}New meanings for keys{p}
+
+In ESC[k;...p, k is the key's character code.  A key with no character
+code is 0 and its scan code: 0;59 is F1.  The rest of the sequence is
+what the key types instead, as character codes or as text in quotes.
+ESC[kp on its own gives the key back its own meaning.  With /X, a grey
+key is 224 and its scan code.
+
+Programs that read the keyboard directly, such as EDIT, are not
+affected by new key meanings.  In DOS windows under Windows, escape
+sequences work but new key meanings do not.
+#examples
+To show the drive and directory in yellow on blue:
+
+    prompt $e[1;33;44m$p$g$e[0;37;44m
+
+To make F10 type DIR and press ENTER, set again each time the prompt
+is shown:
+
+    prompt $e[0;68;"DIR";13p$p$g
 #topic ATTRIB|Attrib
 Shows or changes the attributes of files: read-only, archive, system
 and hidden.
@@ -360,6 +461,133 @@ To ask yes or no:
 To offer three choices and take the first after ten seconds:
 
     choice /c:abc /t:a,10 Which backup
+#topic DEBUG|Debug
+Shows and changes memory, files and disk sectors, unassembles and
+assembles instructions, and runs a PM-DOS program one instruction at a
+time.
+
+{b}Syntax{p}
+
+    DEBUG [[drive:][path]filename [parameters]]
+
+DEBUG's prompt is a hyphen.  Each command is a letter followed by its
+parameters.  Type ? for a list of the commands.
+
+{b}Parameters{p}
+
+[drive:][path]filename
+    The file to load.
+
+parameters
+    The command line for the program.
+
+{b}Commands{p}
+
+    A [address]                        Assemble
+    C range address                    Compare
+    D [range]                          Dump
+    E address [list]                   Enter
+    F range list                       Fill
+    G [=address] [address...]          Go
+    H value value                      Hex add and subtract
+    I port                             Read a port
+    L [address [drive sector count]]   Load
+    M range address                    Move
+    N [pathname] [arglist]             Name
+    O port byte                        Write to a port
+    P [=address] [count]               Proceed
+    Q                                  Quit
+    R [register]                       Register
+    S range list                       Search
+    T [=address] [count]               Trace
+    U [range]                          Unassemble
+    W [address [drive sector count]]   Write
+    XA, XD, XM, XS                     Expanded memory
+
+Numbers are in hexadecimal.  An address is [segment:]offset.  A range
+is an address followed by an end offset, or by L and a length.  A list
+is bytes, or text in quotation marks.
+#notes
+{b}PM-DOS programs and DOS programs{p}
+
+G, T and P run PM-DOS programs.  A DOS program (.COM or .EXE) can be
+loaded, dumped, unassembled, changed and written back, but not run.
+G, T and P on a DOS program report that only a PM-DOS program can be
+run.
+
+{b}32-bit programs{p}
+
+With a PM-DOS program loaded, R shows the 32-bit registers and offsets
+have eight digits.  U shows 386 and 387 instructions, and A takes the
+8086 and 8087 instructions with 32-bit registers and addresses.
+
+{b}What DEBUG can change{p}
+
+A DOS program is loaded into DEBUG's own part of conventional memory.
+The rest of the first megabyte, such as the interrupt vectors and DOS
+itself, can be read but not changed: E, F, M, A and L report df Error
+there.  A PM-DOS program's own memory can be read and changed.
+
+{b}Disk sectors{p}
+
+L and W with a drive, a sector and a count read and write sectors
+directly.  Drive 0 is A:, 1 is B:, 2 is C: and so on.  W does not ask
+before writing over the sectors.
+
+{b}Writing a file{p}
+
+W writes the number of bytes in BX:CX, starting at CS:100, to the file
+named with N.  .EXE and .HEX files cannot be written.  If the disk
+fills up, the new file is deleted.
+
+{b}Expanded memory{p}
+
+XA, XD, XM and XS always report that there is no expanded memory.
+
+{b}.HEX files{p}
+
+A .HEX file is loaded as it is.  The records are not converted the way
+MS-DOS's DEBUG converted them.
+
+{b}Commands from a file{p}
+
+DEBUG < file takes its commands from the file, and ends at the end of
+the file even without a Q.
+
+{b}Stopping{p}
+
+CTRL+C ends the command DEBUG is carrying out and goes back to the
+prompt.  CTRL+BREAK stops a PM-DOS program that DEBUG is running and
+shows its registers.
+
+{b}The exit code{p}
+
+0, or 1 when there is not enough memory for DEBUG to start.
+#examples
+To see the first instructions of a program:
+
+    debug myprog.com
+    -u
+
+To change a byte in a program and save it:
+
+    debug myprog.com
+    -e 105 90
+    -w
+    -q
+
+To step through a PM-DOS program, then run it to the end:
+
+    debug hello.exe
+    -t
+    -p
+    -g
+
+To read the boot sector of drive A: and look at it:
+
+    debug
+    -l 100 0 0 1
+    -d 100 l 200
 #topic DEFRAG|Defrag
 Puts every file on a disk into one piece and moves the files to the
 start of the disk, so they read faster and the free space is in one
@@ -453,6 +681,71 @@ of name:
 To unfragment the files on D: without moving them together:
 
     defrag d: /u
+#topic DELTREE|Deltree
+Deletes a directory along with all of its files and subdirectories.
+
+{b}Syntax{p}
+
+    DELTREE [/Y] [drive:]path [[drive:]path[...]]
+
+{b}Parameters{p}
+
+[drive:]path
+    The directory or file to delete.  Wildcards are allowed, and they
+    match directories as well as files.
+
+{b}Switches{p}
+
+/Y
+    Deletes without asking first.
+
+{b}Related Commands{p}
+
+To remove an empty directory, see [[RD]].  To delete files only, see
+[[DEL]].  To get deleted files back, see [[UNDELETE]].
+#notes
+{b}Asking first{p}
+
+Without /Y, DELTREE asks about each directory or file it finds.  Type
+Y or N, then press Enter.  Ctrl+C stops DELTREE.
+
+{b}Everything goes{p}
+
+Hidden, system and read-only files are deleted along with the rest.
+
+{b}The directory or what is in it{p}
+
+DELTREE \TEMP deletes TEMP itself.  DELTREE \TEMP\*.* deletes
+everything in TEMP and keeps the directory.
+
+{b}Getting it back{p}
+
+With UNDELETE=ON, which is the default setting, deleted files are kept
+the same as the ones DEL deletes.  UNDELETE /S brings back a whole tree
+and makes the directories again.
+
+{b}What is left{p}
+
+A file that cannot be deleted is named, and so is the current
+directory, which is never removed.  The directories holding them stay,
+with everything else in them gone.
+
+{b}The exit code{p}
+
+    0    everything was deleted, or nothing matched
+    1    the command line was wrong, or something could not be deleted
+#examples
+To delete \TEMP and everything in it without being asked:
+
+    deltree /y \temp
+
+To empty \TEMP but keep the directory:
+
+    deltree \temp\*.*
+
+To bring back a tree deleted from \OLD:
+
+    undelete \old\*.* /s /all
 #topic DISKCOMP|Diskcomp
 Compares two diskettes track for track.
 

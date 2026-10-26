@@ -196,6 +196,19 @@ slot_grow:
         mov     esi,[r3_depth]
         cmp     dword ptr [r3_slblk + esi*4],0
         je      slg_no                          ; the shell's: fixed
+        ; THE HEAP'S OWN FREE TOP COUNTS.  48h passes the whole request,
+        ; and a free block at the very end of the heap joins the one a
+        ; grow puts above it (r3h_alloc's walk), so only what is missing
+        ; has to come out of the arena.  Without this a program that took
+        ; a big block and gave it back could not then take a somewhat
+        ; bigger one - the slot had to grow by the new size on top of the
+        ; old - and XARC's probe for its memory budget came out at about
+        ; half of what a 32MB machine could give it.
+        call    r3h_topfree
+        sub     ebx,eax
+        ja      slg_short
+        mov     ebx,1                           ; it fits already but for the
+slg_short:                                      ; rounding: a page will do
         add     ebx,MCB_LEN * 2 + 0FFFh         ; a header for the new block,
         jc      slg_no                          ; one for the remainder
         and     ebx,NOT 0FFFh                   ; EBX = whole pages, at least
@@ -333,8 +346,9 @@ slt_out:
 ;---------------------------------------------------------------------
 ; slot_room - EAX = the most the running program's slot could still
 ;             grow by, in whole pages, less the two headers a grow
-;             costs - which is the largest 48h could then answer.  0
-;             for the shell's slot or none at all.  Everything else
+;             costs, and with the heap's free top block on it (see
+;             slot_grow) - which is the largest 48h could then answer.
+;             0 for the shell's slot or none at all.  Everything else
 ;             preserved.
 ;
 ; 48h's "largest available" has to count it, or a program that asks
@@ -362,6 +376,12 @@ slot_room:
         and     eax,NOT 0FFFh
         sub     eax,MCB_LEN * 2
         jbe     slr_none
+        mov     edx,eax
+        call    r3h_topfree                     ; the grow joins it
+        add     eax,edx
+        jnc     slr_out
+        mov     eax,0FFFFFFF0h
+slr_out:
         pop     esi
         pop     edx
         pop     ebx
@@ -676,6 +696,8 @@ r3_pflags:
         je      rpf_sock
         cmp     ax,27h * 256 + 0F1h
         je      rpf_netuse
+        cmp     ax,29h * 256 + 0F1h
+        je      rpf_dbg
         cmp     ax,0Dh * 256 + 44h
         je      rpf_genblk
         call    vdm_flags
@@ -705,6 +727,30 @@ rpf_nolock:
 ; (its length is fixed), so EDI is always the pointer to flatten.
 rpf_netuse:
         mov     bl,P_DI
+        ret
+
+; F1h/29h, a program under a debugger: DBF_LOAD takes a path in EDX,
+; 4Bh's block in EBX (0 for none, which is not a pointer) and answers
+; into ESI; DBF_GO reads and answers through ESI; DBF_READ answers into
+; EDI and DBF_WRITE reads from ESI.  Their EBX is an offset in the
+; OTHER program's slot - a number, which flattening would ruin.
+rpf_dbg:
+        mov     al,byte ptr [ebp+F_EAX+2]
+        mov     bl,P_SI
+        cmp     al,DBF_GO
+        je      rpf_out
+        cmp     al,DBF_WRITE
+        je      rpf_out
+        mov     bl,P_DI
+        cmp     al,DBF_READ
+        je      rpf_out
+        xor     bl,bl
+        cmp     al,DBF_LOAD
+        jne     rpf_out
+        mov     bl,P_DX OR P_SI
+        cmp     dword ptr [ebp+F_EBX],0
+        je      rpf_out
+        or      bl,P_BX
         ret
 
 ; F1h/26h, the sockets: every function that carries a buffer hands it
@@ -1660,6 +1706,44 @@ rhn_bad:
         stc
         ret
 
+;--- r3h_topfree - EAX = the payload of a free block at the very end of
+;--- the running program's heap, or 0 when the last block is in use or
+;--- a header on the way does not measure up (r3h_span).  slot_grow and
+;--- slot_room want it: a grow puts a free block above this one, and
+;--- r3h_alloc's walk joins the two.  Everything else preserved.
+r3h_topfree:
+        push    ebx
+        push    ecx
+        push    edi
+        xor     ebx,ebx                         ; EBX+1 = the last block, 0 = none
+        mov     ecx,[r3h_lo]
+rtf_walk:
+        cmp     ecx,[r3h_hi]
+        jae     rtf_end
+        mov     edi,[r3_base]
+        add     edi,ecx
+        call    r3h_span                        ; a size the program wrote
+        jc      rtf_none                        ; over promises nothing
+        lea     ebx,[ecx+1]
+        add     ecx,MCB_LEN
+        add     ecx,[edi+MCB_SIZE]
+        jmp     short rtf_walk
+rtf_end:
+        or      ebx,ebx
+        jz      rtf_none
+        mov     edi,[r3_base]
+        cmp     dword ptr [edi+ebx-1+MCB_SIG],SIG_FREE
+        jne     rtf_none
+        mov     eax,[edi+ebx-1+MCB_SIZE]
+        jmp     short rtf_out
+rtf_none:
+        xor     eax,eax
+rtf_out:
+        pop     edi
+        pop     ecx
+        pop     ebx
+        ret
+
 ;--- r3h_free - EDX = the payload offset.  CF if it is not one.
 r3h_free:
         call    r3h_find
@@ -1769,6 +1853,12 @@ pm3_dispatch:
 ;=====================================================================
 r3_fault:
         cli
+        ; A PROGRAM UNDER A DEBUGGER STOPS INSTEAD, and its debugger is
+        ; told (DBGAPI.INC).  dbx_trap comes back to r3f_go with the
+        ; registers as they were if this is not that program.
+        cmp     dword ptr [dbx_state],DBST_RUN
+        je      dbx_trap
+r3f_go:
         mov     [r3_fvec],eax
         mov     [r3_ferr],edx
         mov     [r3_feip],ecx

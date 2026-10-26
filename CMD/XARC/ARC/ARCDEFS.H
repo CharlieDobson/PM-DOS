@@ -1,0 +1,411 @@
+/*===========================================================================
+ * ARCDEFS.H  -  Shared types, limits and result codes for the Win32s
+ *              XArchive extractor.
+ * Target: MSVC 2.2  Win32s
+ *===========================================================================*/
+
+#ifndef ARCDEFS_H
+#define ARCDEFS_H
+
+/*---- Fixed-width integer types ------------------------------------------- *
+ * MSVC 2.2 is a 32-bit compiler; int/long are 32 bits.  We deliberately do
+ * NOT use __int64 (support is unreliable on this toolchain): the 7z format's
+ * 64-bit numbers are read but clamped to 32 bits, with an overflow guard that
+ * rejects anything that would not fit (irrelevant for era-sized archives).
+ *-------------------------------------------------------------------------- */
+typedef unsigned char  Byte;
+typedef unsigned short UInt16;
+typedef unsigned int   UInt32;
+typedef int            Int32;
+
+/*---- Result codes -------------------------------------------------------- */
+#define SZ_OK             0
+#define SZ_ERR_OPEN       1   /* cannot open the archive file            */
+#define SZ_ERR_READ       2   /* read error / truncated file             */
+#define SZ_ERR_SIG        3   /* not a 7z archive (bad signature)        */
+#define SZ_ERR_CRC        4   /* CRC mismatch (header or data)           */
+#define SZ_ERR_FORMAT     5   /* malformed / unexpected header structure */
+#define SZ_ERR_UNSUPPORTED 6  /* feature we do not implement             */
+#define SZ_ERR_MEMORY     7   /* out of memory                           */
+#define SZ_ERR_TOOBIG     8   /* past a STRUCTURAL limit: too many entries,
+                               * too many folders/coders/pack streams, or a
+                               * size the format should never reach.  Nothing
+                               * to do with how much memory there is - that
+                               * is SZ_ERR_NORAM below.                    */
+#define SZ_ERR_WRITE      9   /* cannot create / write an output file    */
+#define SZ_ERR_DATA       10  /* corrupt compressed data                 */
+#define SZ_ERR_CANCEL     11  /* user cancelled                          */
+#define SZ_ERR_NORAM      12  /* needs more RAM in one block than the
+                               * measured budget allows: an LZMA dictionary
+                               * over SZ_MAX_DICT_SIZE, or a whole-stream
+                               * buffer over SZ_MAX_BUFFER_SIZE.  Distinct
+                               * from SZ_ERR_MEMORY only in WHO said no:
+                               * SZ_ERR_MEMORY is "the allocation was tried
+                               * and failed", this is "the budget says do
+                               * not try".  Both mean the user is short of
+                               * memory, and both must be reported that way
+                               * - never as SZ_ERR_TOOBIG, which would send
+                               * them off to shrink an archive instead.   */
+#define SZ_ERR_PASSWORD   13  /* the entry is encrypted and no password has
+                               * been set.  A front end should react by
+                               * PROMPTING, not by reporting a failure: this
+                               * is a request for input, not a dead end.   */
+#define SZ_ERR_BADPASS    14  /* a password was set and it is wrong.  Kept
+                               * separate from SZ_ERR_PASSWORD so the front
+                               * end can say "that password is wrong" and
+                               * re-prompt, and separate from SZ_ERR_CRC so a
+                               * bad password is never reported as a corrupt
+                               * archive.  Note the asymmetry between formats:
+                               * zip AES and RAR5 carry a password CHECK value
+                               * and can say so before decoding a single byte,
+                               * while 7z and RAR3 cannot - there a wrong
+                               * password yields garbage that fails its CRC,
+                               * and the backend infers BADPASS from "it did
+                               * not verify AND a password was in use".  That
+                               * inference can mislabel a genuinely corrupt
+                               * encrypted archive, which is the right way
+                               * round: re-prompting costs the user a moment,
+                               * crying corruption over a typo costs them the
+                               * archive.                                  */
+#define SZ_ERR_VOLUME     15  /* a volume of a MULTI-VOLUME archive is not
+                               * there.  Kept apart from SZ_ERR_READ because
+                               * the two send the user to different places:
+                               * a truncated archive is damaged and probably
+                               * beyond help, while a missing volume is an
+                               * INTACT archive whose other files simply have
+                               * not been copied yet - and saying "corrupt"
+                               * about that would have them delete a set that
+                               * is fine.  The backends only reach for this
+                               * when the format itself says how much should
+                               * be there and the volumes on disk fall short. */
+#define SZ_ERR_NOFILES    16  /* MAKING an archive: nothing was found to put
+                               * in it - the names given matched no file, or
+                               * everything they matched was excluded.  The
+                               * only code that belongs to the writer alone;
+                               * every other failure of a compression job is
+                               * one of the codes above, meaning what it
+                               * means for an extraction.                  */
+
+/*---- Configurable limits (keep memory manageable on era hardware) -------- *
+ * The extractor refuses archives that would exceed these, with a clear
+ * message, rather than attempting an allocation that would thrash or fail.
+ *
+ * Two different kinds of limit live here, and the difference matters:
+ *
+ *   - What must fit in RAM at once: the LZMA dictionary and any whole-file
+ *     buffer.  These are the real memory ceiling; raising them raises what the
+ *     program asks the system for.
+ *   - What merely has to be readable: the 7z folder sizes.  Folders are
+ *     decoded as a stream straight to disk (SzStreamFolder), so their size
+ *     costs no memory - the cap is only a sanity bound against a corrupt
+ *     header, and can be generous.
+ *-------------------------------------------------------------------------- */
+/*---- How many entries we will list ---------------------------------------- *
+ * This was a flat 16384 and it was the wrong shape of limit, for the same
+ * reason the old 32 MB memory ceiling was: nothing about the formats stops at
+ * 16384, and nothing in this program is sized by it any more.  Every backend
+ * grows its entry table to what the archive actually holds; 16384 was only
+ * ever the number at which we refused to try.
+ *
+ * What an entry really costs is MEMORY, and a lot of it, because each entry
+ * record carries a fixed SZ_MAX_NAME name field - about 300 bytes apiece, so
+ * the old cap was really "4.9 MB of entry table".  So the cap is now derived
+ * from the measured budget the same way the dictionary is, and a machine with
+ * room lists an archive with room.
+ *
+ * ARC_MIN_ENTRIES is a floor, so this is never WORSE than the old fixed cap
+ * even on a machine that measures tiny.  ARC_MAX_ENTRIES is the sanity bound
+ * that a corrupt header runs into: an entry count past this is not a large
+ * archive, it is a damaged one, and it must be refused without first trying
+ * to allocate for it.
+ *-------------------------------------------------------------------------- */
+#define ARC_MIN_ENTRIES     16384
+#define ARC_MAX_ENTRIES     1000000UL
+
+UInt32 ArcMaxEntries( void );
+
+/* Verdict on an entry count a header just declared.  SZ_OK to go ahead,
+ * SZ_ERR_NORAM for "plausible, but more than this machine can hold", and
+ * SZ_ERR_TOOBIG for "past anything real" - the two are different problems
+ * and want different messages. */
+int    ArcCheckEntryCount( UInt32 n );
+
+#define SZ_MAX_FILES        ArcMaxEntries()
+#define SZ_MAX_FOLDERS      256                 /* coded folders            */
+#define SZ_MAX_NAME         260                 /* stored path length       */
+
+/* A folder is not one packed stream: a BCJ2 folder consumes four (main, call
+ * and jump inputs plus the raw range-coder stream).  Pack streams therefore
+ * need their own bound rather than borrowing SZ_MAX_FOLDERS. */
+#define SZ_MAX_PACKSTREAMS  1024                /* packed streams total     */
+#define SZ_MAX_CODERS       4                   /* coders in one folder     */
+#define SZ_MAX_FOLDER_STRMS 8                   /* in/out streams per folder*/
+
+/*---- In RAM at once: measured, not assumed -------------------------------- *
+ * These two were fixed 32 MB constants, so a machine with 8 MB thrashed and a
+ * machine with 8 GB was told to go and re-create its archive.  They are now
+ * decided at run time from how much memory the program can actually get:
+ *
+ *   Win32/Win32s  GlobalMemoryStatus (free physical + pagefile, bounded by
+ *                 the free address space).
+ *   DOS           DPMI INT 31h AX=0500h, largest free block, cross-checked by
+ *                 asking the heap for it; if there is no DPMI answer, the
+ *                 heap probe alone decides.
+ *   OS/2          DosQuerySysInfo, free physical memory.
+ *
+ * Measured once on first use and then latched, so nothing is re-probed in the
+ * middle of an extraction.  ArcMemLimitMB reports the figure so a message can
+ * quote the real number instead of a baked-in one.
+ *
+ * There is NO WAY TO SET THIS BY HAND any more (the MemoryLimitMB preference
+ * went on 2026-09-06).  A hand-set cap could only make the measurement worse
+ * in one of two directions: too low and the program refused archives the
+ * machine could have handled, too high and it promised memory that was never
+ * there and failed further in, with a worse message.
+ *
+ * The floor is what the program insists on being allowed to try even on a
+ * machine that reports almost nothing free; the ceiling is 7-Zip's own largest
+ * dictionary, past which no real archive exists.
+ *-------------------------------------------------------------------------- */
+#define ARC_MEM_FLOOR       (4UL * 1024 * 1024)
+#define ARC_MEM_CEILING     (1536UL * 1024 * 1024)
+
+/*---- The floor is a policy, not a promise --------------------------------- *
+ * ARC_MEM_FLOOR says "let us at least TRY for this much", so that a
+ * pessimistic probe does not make us turn away a 4 MB dictionary on a machine
+ * that would have managed it.  It used to be applied unconditionally, which
+ * meant a machine measuring 300 KB was reported as having 4 MB - so every
+ * check in the program passed and the shortage arrived instead as a bare
+ * malloc failure part way through an extraction.  ArcMemBudget now refuses to
+ * lift the budget past what the heap actually produced.
+ *
+ * ARC_MEM_SLACK is what ArcMemNeeded adds to a backend figure to cover what
+ * gets allocated ALONGSIDE the big block - read buffers, the BCJ filter
+ * window, output file buffering, the decoders own structures.  It is measured
+ * rather than chosen: across 33 fixtures the tracking allocator puts the gap
+ * between a backend figure and the real peak at between -3 KB (zip, which
+ * over-counts slightly) and 64 KB (TESTBCJ.7Z, where the x86 filter window is
+ * the difference).  128 KB is twice the worst of those.
+ *
+ * Twice, and not ten times, because this number is not free: it is added to
+ * every estimate, and on a 300 KB machine an over-generous slack refuses zips
+ * that would have extracted perfectly well.  Erring high is still the safe
+ * direction - refusing an archive that might just have fitted beats accepting
+ * one that does not and dying part way through - but only just, and a margin
+ * this size wants re-measuring rather than inflating if a new coder lands.
+ *
+ * The other end - below which nothing can be extracted at all, whatever the
+ * format - is not a constant here on purpose.  It is ASKED FOR at run time,
+ * from the cheapest path in the program: ArcMemStartupOk calls ZipMemNeeded,
+ * which answers the same figure for every zip that ever existed.  Writing it
+ * down as a second constant would have let the two disagree, and they did in
+ * testing: a floor of 176 KB against a real zip cost of 173 KB made the
+ * startup warning say nothing could be extracted on a machine that then
+ * extracted a zip perfectly well.  Three kilobytes, and it made the program
+ * contradict itself in front of the user.
+ *-------------------------------------------------------------------------- */
+#define ARC_MEM_SLACK       (128UL * 1024)
+
+/* The measurement with no policy on it: the largest block malloc really
+ * produced.  This, and not ArcMemLimitMB, is what an "is there enough?"
+ * question must be weighed against - the budget has a floor and a ceiling on
+ * it and both are deliberate departures from what was measured. */
+UInt32 ArcMemLargest( void );
+
+UInt32 ArcMaxDictSize( void );      /* LZMA sliding dictionary               */
+UInt32 ArcMaxBufferSize( void );    /* biggest whole-file buffer: a RAR entry,
+                                       a mounted disk image, the 7z header   */
+UInt32 ArcMemLimitMB( void );       /* the budget in whole MB, for messages  */
+
+/* The workings behind ArcMemLimitMB, in whole MB, for a diagnostics box.
+ * The budget is one number with three quite different causes behind it, and
+ * "1 GB of RAM but it reports 46 MB" cannot be answered without separating
+ * them:
+ *   sysFreeMB - what the SYSTEM claims is free in one block, or 0 if it would
+ *               not say.  Under DOS this is DPMI 0500h, and a figure pinned
+ *               near 64 on a machine with far more is the signature of the
+ *               XMS 2.0 free-memory call, which returns kilobytes in a 16-bit
+ *               register and saturates at 65535 KB.
+ *   largestMB - the largest block malloc actually produced when probed, which
+ *               is bounded above by sysFreeMB.
+ *   budgetMB  - what the program allows itself: three quarters of largestMB,
+ *               clamped to the floor and ceiling above.
+ * Any pointer may be NULL.  Forces the measurement if it has not run. */
+void   ArcMemReport( UInt32 *sysFreeMB, UInt32 *largestMB, UInt32 *budgetMB );
+
+/* The same three in KB.  Required, not convenient: on a machine small enough
+ * to need this screen all three round to 0 MB, and a diagnostic that prints
+ * zero whether the machine is short or the program is broken tells the user
+ * nothing.  sysFreeKB == 0 still means "the system would not say". */
+void   ArcMemReportKB( UInt32 *sysFreeKB, UInt32 *largestKB, UInt32 *budgetKB );
+
+#define SZ_MAX_DICT_SIZE    ArcMaxDictSize()
+#define SZ_MAX_BUFFER_SIZE  ArcMaxBufferSize()
+
+/* Streamed, so these bound the format rather than the memory use */
+#define SZ_MAX_UNPACK_SIZE  (1024UL * 1024 * 1024)  /* 7z folder output */
+#define SZ_MAX_PACK_SIZE    (1024UL * 1024 * 1024)  /* 7z folder input  */
+
+/*---- Filesystem-safe output names ----------------------------------------- *
+ * Implemented in ARCFILE.C, called by every backend's output-path builder.
+ * Rewrites an entry's stored path into one that is safe to create on the
+ * extraction target: separators normalised to '\', characters the filesystem
+ * forbids replaced, "." / ".." components neutralised, DOS device names
+ * (CON, NUL, COM1, ...) disarmed, and, when the target only takes 8.3 names
+ * (the DOS build always; the Win32 build when running on Win32s), every
+ * component reduced to an upper-case 8.3 name the way DOS 7 does it: a name
+ * that already fits keeps itself, and one that has to be cut gets a numeric
+ * tail, so "Long filename 1.txt" and "Long filename 2.txt" become
+ * LONGFI~1.TXT and LONGFI~2.TXT instead of both becoming LONGFILE.TXT.
+ *
+ * The numbering is per destination folder and is remembered for the length of
+ * one extraction, which ArcResetNames clears.  ArcExtractAll and
+ * ArcExtractItems call it; nothing else needs to.
+ *
+ * 'isDir' says whether the LAST component of 'name' is a directory - every
+ * component before it is one by definition, and ArcFsName works that out for
+ * itself.  It matters because a FOLDER THAT HAS TO BE SHORTENED KEEPS NO
+ * EXTENSION.  A DOS software collection is full of folders like
+ *
+ *     3D FloorPlan Designer 2.0 for DOS (1993)(3.5-720k)(5.25-360k)
+ *
+ * where every dot is a version number or a disk capacity and none of them is
+ * an extension.  Splitting on the last one gave 3DFLOO~1.25- - three
+ * characters of a floppy size, presented as a file type.  Such a folder now
+ * becomes 3DFLOO~1, the whole name squeezed into the eight characters there
+ * are.  A folder that ALREADY fits is still left exactly as it is, so a
+ * directory called DATA.OLD stays DATA.OLD; the rule only governs what to
+ * give up when something has to be given up.
+ *
+ * Files are unchanged: an extension is the one part of a file name worth
+ * protecting, so "A Long File Name Here.markdown" still becomes ALONGF~1.MAR.
+ *
+ * The caller has to say, because the archive knows and the name does not: 7z
+ * records directories in an attribute and stores no trailing separator, so
+ * there is nothing in the string to read it from.  Guessing from position -
+ * "a component with something after it is a folder" - is wrong for a stored
+ * directory ENTRY, and the per-extraction registry would then hand the same
+ * folder a different name depending on which entry the archive listed first.
+ *-------------------------------------------------------------------------- */
+void ArcFsName( char *dst, int dstSize, const char *name, int isDir );
+void ArcResetNames( void );
+
+/*---- What ArcFsName decided about the entry it was just given ------------- *
+ * Not every stored name turns into a file.  Two cases produce no output at
+ * all, and neither of them can be reported through 'dst', because a path is
+ * the wrong shape to say "nothing":
+ *
+ *   ARC_NAME_SKIP   this entry, and only this entry, produces nothing.  An
+ *                   entry named "." is the whole current directory said the
+ *                   long way, and every component of it drops out; so does an
+ *                   entry the user skipped at the 8.3 prompt.
+ *   ARC_NAME_ABORT  the user cancelled at the 8.3 prompt.  The extraction
+ *                   stops, and STAYS stopped: every later call reports ABORT
+ *                   without asking again, so a backend part-way through a
+ *                   solid folder unwinds instead of putting the box back up.
+ *
+ * A backend calls this straight after ArcFsName (in practice after its own
+ * BuildOut, which is the only thing that calls ArcFsName) and skips the entry
+ * or returns SZ_ERR_CANCEL.  Reading it is optional in the sense that ignoring
+ * it gives the old behaviour rather than a crash - but every backend in this
+ * tree does read it, and a new one that forgets will recreate the "." bug.
+ *
+ * ArcResetNames clears the abort, so the next extraction starts clean.
+ *-------------------------------------------------------------------------- */
+#define ARC_NAME_OK     0
+#define ARC_NAME_SKIP   1
+#define ARC_NAME_ABORT  2
+
+int ArcNameVerdict( void );
+
+/*---- Letting the user choose the short name ------------------------------- *
+ * Optional.  With no prompt installed - the default - a name that cannot fit
+ * 8.3 is auto-renamed with the ~N tail described above and nothing stops.
+ *
+ * Install one and it is called for each name that has to LOSE something, once
+ * per (destination folder, stored name) however many entries mention it:
+ *
+ *   user      - whatever was passed to ArcSetShortNamePrompt
+ *   parent    - the destination-relative folder the name is going into, ""
+ *               at the top
+ *   stored    - the component exactly as the archive stored it
+ *   suggested - in: the auto-renamed 8.3 name (LONGFI~1.TXT), which is what
+ *               is used if the prompt declines; out: the name to use instead
+ *   size      - the size of that buffer
+ *
+ * Return one of:
+ *
+ *   ARC_SN_AUTO   keep the auto-renamed name that was offered
+ *   ARC_SN_USE    use 'suggested' as the prompt left it
+ *   ARC_SN_SKIP   do not extract this entry at all
+ *   ARC_SN_ABORT  stop the extraction here
+ *
+ * A name that comes back is put through the same 8.3 legalisation and
+ * collision numbering as any other, so a prompt cannot produce a name the
+ * filesystem will not take or one that lands on another entry.
+ *
+ * SKIP and ABORT reach the backend through ArcNameVerdict above.  They were
+ * added because the first version had only "use this" and "keep the auto
+ * name", which left Cancel and Esc meaning "carry on with the automatic name"
+ * - so a tester who pressed Esc to stop watched the whole archive extract
+ * anyway.  There was no way to decline ONE file either.  Cancel now means
+ * cancel, and Skip means skip.
+ *
+ * Only ever called on an 8.3 target: on a long-name volume there is nothing
+ * to choose.
+ *-------------------------------------------------------------------------- */
+#define ARC_SN_AUTO   0
+#define ARC_SN_USE    1
+#define ARC_SN_SKIP   2
+#define ARC_SN_ABORT  3
+
+typedef int (*ArcShortNamePrompt)( void *user, const char *parent,
+                                   const char *stored,
+                                   char *suggested, int size );
+void ArcSetShortNamePrompt( ArcShortNamePrompt fn, void *user );
+
+/*---- Extract with or without the stored folder structure ------------------ *
+ * Off (the default) reproduces the archive's directory tree under the
+ * destination.  On, every file is dropped straight into the destination and
+ * stored directory entries are not created at all - "extract without paths".
+ * ArcFsName reduces a name to its final component, so all five backends
+ * inherit it from the one place they already share; each backend asks
+ * ArcFlattenPaths() before honouring a DIRECTORY entry.
+ *
+ * Flattening makes name collisions much likelier (a\readme + b\readme both
+ * become readme), which the existing overwrite prompt handles.
+ *-------------------------------------------------------------------------- */
+void ArcSetFlattenPaths( int on );
+int  ArcFlattenPaths( void );
+
+/*---- Overwrite confirmation ----------------------------------------------- *
+ * When extraction is about to write over a file that already exists, the
+ * front end can be asked what to do.  It registers a prompt callback once at
+ * startup; the callback returns one of the ARC_OW_* answers.  The two "all"
+ * answers latch for the rest of that extraction operation (the latch resets
+ * on every ArcExtractAll / ArcExtractItems call).  With no callback
+ * registered, existing files are silently overwritten - the old behaviour,
+ * kept for the CLI.
+ *
+ * ArcWantWrite is for the backends: called with the would-be output path
+ * before creating a file, it returns 1 to (over)write and 0 to skip the
+ * entry.  It only prompts when the file exists, and when the answer is to
+ * write it takes the read-only, hidden and system attributes off the old
+ * file first (ClearFileAttr, PLATFORM.H) - so a read-only file is replaced
+ * like any other, with no second question.
+ *
+ * The backends give each file they write the attributes the archive
+ * recorded (SetFileDosAttr) after its time stamp, so a file that comes out
+ * read-only is still one that can be stamped.
+ *-------------------------------------------------------------------------- */
+#define ARC_OW_YES     0   /* overwrite this file            */
+#define ARC_OW_NO      1   /* keep this file                 */
+#define ARC_OW_YESALL  2   /* overwrite this and all further */
+#define ARC_OW_NOALL   3   /* keep this and all further      */
+
+typedef int (*ArcOverwriteFn)( void *user, const char *path );
+
+void ArcSetOverwritePrompt( ArcOverwriteFn fn, void *user );
+int  ArcWantWrite( const char *path );
+
+#endif /* ARCDEFS_H */

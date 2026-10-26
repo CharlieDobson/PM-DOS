@@ -4,16 +4,19 @@ param(
     [string]$Cpu = '486',                        # DOSBox-X cputype: 386, 486, pentium...
     [string]$Name = '',                          # the baseline's name; <cpu>-<MB> if not given
     [string[]]$Cfg = @( 'DOS=HIGH,UMB', 'DEVICE=C:\TESTS\IOCDEV.SYS', 'DEVICE=C:\TESTS\TESTBLK.SYS',
-                        'DEVICE=C:\TESTS\NDTEST.SYS /I:11', 'DEVICE=C:\NE2000.SYS' ),
+                        'DEVICE=C:\TESTS\NDTEST.SYS /I:11', 'DEVICE=C:\NE2000.SYS', 'DEVICE=C:\RAMDISK.SYS' ),
                                                  # CONFIG.SYS - IOCDEV.SYS is
                                                  # what DRVTEST talks to,
                                                  # TESTBLK.SYS's RAM disk (D:)
                                                  # is what BLKTEST writes on,
                                                  # NDTEST.SYS is the 32-bit
                                                  # driver NDRVTEST asks about,
-                                                 # and NE2000.SYS drives the
+                                                 # NE2000.SYS drives the
                                                  # card DBXRUN puts in the
-                                                 # machine, for NICTEST
+                                                 # machine, for NICTEST, and
+                                                 # RAMDISK.SYS's 64K (E:),
+                                                 # made with no parameters,
+                                                 # is what RDTEST writes on
     [int]$Seconds = 240,                         # DOSBox-X's -time-limit
     [string]$Exe = '',                           # DOSBox-X, if DBXRUN.PS1 would pick wrong
     [switch]$Update,                             # keep what this run said as the baseline
@@ -129,7 +132,8 @@ if ( $All ) {
 #   TESTDEV, TESTBLK     drivers, loaded by a CONFIG.SYS that names them
 # IOCDEV.SYS and TESTBLK.SYS ARE loaded by this one's CONFIG.SYS, for
 # DRVTEST and BLKTEST, which park the kernel themselves and so ask both
-# DOSes about them.  The RAM disk is D: on every row.
+# DOSes about them.  The RAM disk is D: on every row; RAMDISK.SYS's,
+# for RDTEST, is E:.
 $default = @(
     'MEM', 'A20TEST', 'ALLOCTST', 'APITEST', 'ARGS', 'BIGMEM', 'BRK32', 'BRKTEST', 'BUFTEST', 'CACHETST', 'CDATEST', 'CDXTEST',
     'CFGTEST', 'CTRYDMP', 'CTRYTEST', 'CURTEST', 'DEVCRIT', 'DEVTEST', 'DMATEST', 'DPMIFP32', 'DPMIFPU',
@@ -138,12 +142,17 @@ $default = @(
     'HWPROBE', 'I13TEST', 'I24TEST', 'IDLETEST /T', 'IRQTEST', 'ISAPNP', 'KBLTEST', 'LFNAPI', 'LOCKTEST', 'LOLTEST', 'LPTTEST',
     'MCBTEST', 'MEMPROBE', 'MS32TEST', 'MSTEST', 'NICIRQ', 'NICTEST', 'NLSTEST', 'PCITEST', 'PEKID', 'PMD /S', 'PROBE13', 'R3TEST',
     'RMFIND', 'RMFSTEST', 'RMIVT', 'RMSPEED', 'RMTEST', 'SFTSCAN',
-    # these four park the kernel too, as SFTSCAN does, so they follow it:
+    # these park the kernel too, as SFTSCAN does, so they follow it:
     # every test before them still runs on a machine that has never
     # been parked
-    'BLKTEST', 'CDSTEST', 'DRVTEST', 'NETTEST', 'NDRVTEST', 'SEEKWR',
+    'BLKTEST', 'RDTEST', 'CDSTEST', 'DRVTEST', 'NETTEST', 'NDRVTEST', 'SEEKWR',
     'SHARETST', 'SLOTTEST', 'TIMERTST', 'TSRTEST', 'UDTEST',
     'UMBTEST', 'VBETEST', 'VDSTEST', 'VFTEST', 'VFYTEST', 'VPICTEST', 'WINTEST', 'XMSREPT', 'XMSTEST',
+    # MODE: the settings the kernel keeps for it, and the screen, each
+    # put back as it was.  LPT2, not LPT1, which carries this list's
+    # progress to the printer.
+    'MODE', 'MODE LPT2=COM1', 'MODE COM1:96,N,8,1,E', 'MODE /STATUS', 'MODE LPT2', 'MODE COM1:96,N,8,1',
+    'MODE CON LINES=50', 'MODE CON', 'MODE CON LINES=25',
     # last, because it leaves a program resident: a handler on the timer
     # and the clock that IRQXWAIT, a native program, waits on
     'IRQXTEST /I', 'IRQXWAIT', 'IRQXTEST /R'
@@ -253,12 +262,12 @@ function New-Disk {
         $files = @( $first | ForEach-Object { "BIN\$_" } ) + $programs
         # ...and the two files of tables, which COUNTRY= and KEYB look
         # for beside the interpreter.
-        $files += 'BIN\RMDOS.SYS', 'BIN\COUNTRY.SYS', 'BIN\KEYBOARD.SYS', 'BIN\NE2000.SYS', "$stage\CONFIG.SYS", "$stage\AUTOEXEC.BAT"
+        $files += 'BIN\RMDOS.SYS', 'BIN\COUNTRY.SYS', 'BIN\KEYBOARD.SYS', 'BIN\NE2000.SYS', 'BIN\RAMDISK.SYS', "$stage\CONFIG.SYS", "$stage\AUTOEXEC.BAT"
     } else {
         # The root has what the boot code reads, the half of the kernel
         # SYS puts beside it, the two files DOS looks for there, and
         # the card driver where $Cfg's DEVICE= line names it.
-        $files = @( 'BIN\PMIO.SYS', 'BIN\PMDOS.SYS', 'BIN\RMDOS.SYS', 'BIN\NE2000.SYS', "$stage\CONFIG.SYS", "$stage\AUTOEXEC.BAT", '-dir', $SysDir,
+        $files = @( 'BIN\PMIO.SYS', 'BIN\PMDOS.SYS', 'BIN\RMDOS.SYS', 'BIN\NE2000.SYS', 'BIN\RAMDISK.SYS', "$stage\CONFIG.SYS", "$stage\AUTOEXEC.BAT", '-dir', $SysDir,
                     'BIN\CMD.EXE', 'BIN\COMMAND.COM' ) + $programs
         $files += 'BIN\COUNTRY.SYS', 'BIN\KEYBOARD.SYS', 'BIN\RMCD.SYS'
     }

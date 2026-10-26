@@ -2473,7 +2473,8 @@ IOS_UMBPROBE    EQU     IOSVC + 6Ch             ; EDI -> UMB_SCAN_PAGES bytes.
 IOS_KBRATE      EQU     IOSVC + 70h             ; AL = the 8042 typematic byte:
                                                 ; rate in bits 4-0, delay in
                                                 ; bits 6-5.  CONFIG.SYS's
-                                                ; KEYRATE= is the only caller
+                                                ; KEYRATE= and MODE CON
+                                                ; (21h/F0h AL=0Dh) call it
 IOS_ATACFG      EQU     IOSVC + 74h             ; AL = 0: DMA policy in AH -
                                                 ; 0 off, 1 auto, 2 the best
                                                 ; mode the drive offers, 3 the
@@ -3508,6 +3509,8 @@ BDA_CURPOS      EQU     BDA_BASE + 50h          ; 8 words - col,row per page
 BDA_CURSHAPE    EQU     BDA_BASE + 60h          ; dw - end,start scan lines
 BDA_VPAGE       EQU     BDA_BASE + 62h          ; db - the displayed page
 BDA_HDCOUNT     EQU     BDA_BASE + 75h          ; db - hard disks the BIOS found
+BDA_LPTTIME     EQU     BDA_BASE + 78h          ; 3 db - LPT1-3's time-outs, in
+                                                ; the BIOS's own loop counts
 BDA_VROWS       EQU     BDA_BASE + 84h          ; db - rows on screen, LESS ONE
 BDA_POINTS      EQU     BDA_BASE + 85h          ; dw - scan lines per character
 
@@ -4636,6 +4639,101 @@ BQK_ANY         EQU     0                       ; a bq_table row: this AH
 BQK_AL          EQU     1                       ; ...with this AL only
 BQK_BL          EQU     2                       ; ...with this BL only
 BQK_ANYAH       EQU     3                       ; the interrupt has no functions
+
+;---------------------------------------------------------------------
+; MODE'S PRINTERS AND SERIAL PORTS - 21h/F1h AL=28h, the function in
+; bits 16-23 of EAX.  What MS-DOS's MODE left resident is the kernel's
+; here: LPTn=COMm sends a printer's output to a serial port, and RETRY=
+; says what happens when a printer or a serial port times out.  The
+; kernel's PRN and AUX devices follow the table, and so does a DOS
+; box's own INT 17h and INT 14h (vdm_i17, vdm_i14 in VDM.INC).
+;
+;   MDF_GET     -> EBX = LPT1-3's routes in bytes 0-2 (0, or the COM
+;               port 1-4), ECX = LPT1-3's RETRY_* in bytes 0-2, EDX =
+;               COM1-4's in bytes 0-3
+;   MDF_ROUTE   BL = 0-2 for LPT1-3, BH = the COM port 1-4, or 0
+;   MDF_RETRY   BL = 0-2 for LPT1-3 or 4-7 for COM1-4, BH = RETRY_*
+;   MDF_LPTOUT  BL = 0-2, BH = a byte for that printer, as it is: no
+;               route, no retry -> AL = the status INT 17h answered
+;
+; CF and AX = ERR_BADDATA for a number out of range.
+;---------------------------------------------------------------------
+MDF_GET         EQU     0
+MDF_ROUTE       EQU     1
+MDF_RETRY       EQU     2
+MDF_LPTOUT      EQU     3
+
+RETRY_NONE      EQU     0                       ; the BIOS's answer, as it is
+RETRY_E         EQU     1                       ; a busy port says so: an error
+RETRY_B         EQU     2                       ; ...says "busy"
+RETRY_R         EQU     3                       ; ...says "ready"
+RETRY_P         EQU     4                       ; output is tried until it goes
+
+;---------------------------------------------------------------------
+; A PROGRAM UNDER A DEBUGGER - 21h/F1h AL=29h, the function in bits
+; 16-23 of EAX (DOS\DBGAPI.INC).  DEBUG.EXE loads a D32 program one
+; level below itself and holds it there: the program has its slot, its
+; PSP and its handles, and does not run until it is told to.
+;
+;   DBF_LOAD   EDX -> path, EBX -> 4Bh's parameter block (or 0), ESI ->
+;              a DRX_LEN record for the registers it will start with
+;   DBF_GO     ESI -> a DRX_LEN record: run with these registers until
+;              the program stops or ends.  AX = DBF_ENDED (4Dh has the
+;              code) or DBF_STOPPED (the record says where and why)
+;   DBF_READ   EBX = an offset in its slot, ECX = bytes, EDI -> where to
+;   DBF_WRITE  EBX = an offset in its slot, ECX = bytes, ESI -> from
+;   DBF_KILL   end it, as 4Ch would, without running it again
+;
+; IT STOPS ON WHAT WOULD HAVE ENDED IT: a fault, INT 3 (a #GP with the
+; vector's error code, 1Ah), a single step (exception 1), and Ctrl-Break
+; while it runs, which sets TF in its frame so that it stops after the
+; instruction it is at.  Only at the top of its own level: a handler
+; the kernel called for it that faults ends it as before.
+;
+; CF and AX = ERR_ACCESS (nothing held, one held already, the shell
+; asking, a buffer outside the caller's slot), ERR_EXEFMT (not a D32
+; program), ERR_NOMEM (too deep), ERR_BADDATA (an offset outside the
+; program's slot or its guard page, registers it could not run with).
+; Native programs only.
+;---------------------------------------------------------------------
+DBF_LOAD        EQU     0
+DBF_GO          EQU     1
+DBF_READ        EQU     2
+DBF_WRITE       EQU     3
+DBF_KILL        EQU     4
+
+DBF_ENDED       EQU     0                       ; DBF_GO's answers: 4Ch's AX=0
+DBF_STOPPED     EQU     1
+
+DBST_NONE       EQU     0               ; the kernel's dbx_state: nothing held
+DBST_HELD       EQU     1               ; ...a program held, its debugger running
+DBST_RUN        EQU     2               ; ...and the program running, for DBF_GO
+
+DRX_EAX         EQU     00h
+DRX_EBX         EQU     04h
+DRX_ECX         EQU     08h
+DRX_EDX         EQU     0Ch
+DRX_ESI         EQU     10h
+DRX_EDI         EQU     14h
+DRX_EBP         EQU     18h
+DRX_ESP         EQU     1Ch
+DRX_EIP         EQU     20h
+DRX_EFL         EQU     24h
+DRX_CS          EQU     28h                     ; dw each, from here
+DRX_DS          EQU     2Ah
+DRX_ES          EQU     2Ch
+DRX_SS          EQU     2Eh
+DRX_FS          EQU     30h
+DRX_GS          EQU     32h
+DRX_VEC         EQU     34h                     ; dd - out: the exception
+DRX_ERR         EQU     38h                     ; dd - out: its error code
+DRX_ADDR        EQU     3Ch                     ; dd - out: 0Eh's address, as
+                                                ;      an offset in the slot
+DRX_DR6         EQU     40h                     ; dd - out: 01h's DR6
+DRX_LIMIT       EQU     44h                     ; dd - out: the slot's size now
+DRX_LEN         EQU     48h
+
+DRX_NOVEC       EQU     0FFFFFFFFh              ; LOAD's: it has not run
 
 ;---------------------------------------------------------------------
 ; How many drive letters exist.  SHARED, and it has to be: COMMAND.COM

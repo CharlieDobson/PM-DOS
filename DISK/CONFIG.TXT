@@ -88,6 +88,17 @@ DEVICEHIGH=file [options]
     version table, which tells the programs named in it the DOS
     version they were written for; put it above any driver it names.
     SETVER at the prompt lists and changes the table.
+    DEVICE=C:\ANSI.SYS makes the screen understand ANSI escape
+    sequences: colours and cursor moves from PROMPT $E[...] and from
+    programs, and new meanings for keys.  /X, /K and /R are as in
+    MS-DOS 6.22.  HELP ANSI.SYS lists the sequences.
+    DEVICE=C:\RAMDISK.SYS 4096 makes a 4 MB RAM disk out of extended
+    memory.  The options are the ones RAMDRIVE.SYS takes in MS-DOS:
+    the size in K, then the sector size and the root directory
+    entries, and /E or /A, which make no difference here.  Each line
+    makes one more RAM disk, and RAMDISK.SYS shows the disk's letter
+    at boot.  The RAM disk can still be used while Windows runs, and
+    what is on it is lost at a restart.  HELP RAMDISK.SYS has the rest.
 
 INSTALL=file [options]
 INSTALLHIGH=file [options]

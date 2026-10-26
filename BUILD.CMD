@@ -44,9 +44,11 @@ rem     PMDOS.IMG    the boot disk: a bootable 1.44M floppy with PM-DOS
 rem                  on it and nothing else - the kernel, the shells,
 rem                  the commands, CONFIG.SYS, AUTOEXEC.BAT and the two
 rem                  text files
-rem     HELP.IMG     the help disk: HELP.EXE and HELP.HLP, which do not
+rem     PMDOS2.IMG   the help disk: HELP.EXE and HELP.HLP, which do not
 rem                  fit on the boot disk, and LRGDISK.386 and
-rem                  LRGSTAT.EXE, which stopped fitting on 2026-10-24
+rem                  LRGSTAT.EXE, which stopped fitting on 2026-10-24,
+rem                  and what came after it: MODE, ACROREAD, DEBUG,
+rem                  QBASIC with QBASIC.HLP, and TREEVIEW
 rem     TESTS.IMG    the test disk: every test program, batch file and
 rem                  key file, in \TESTS, and the long-named fixtures
 rem                  in its root.  Not a system disk.  The tests left
@@ -362,13 +364,13 @@ rem each one has to be named here too: a directory missing from this
 rem list is one whose failed assembly links yesterday's object.  (A
 rem failed COMPILE does not need it - wcc386, unlike wasm, returns an
 rem error - but CHKDSK's and LABEL's startup is assembled like the rest.)
-for %%D in (ACROREAD ATTRIB CACHE CDEX CHKDSK CHOICE DEFRAG DISKCOMP DISKCOPY DRIVES EDIT FC FDISK FIND FORMAT HELP ISAPNP KEYB LABEL LFNAPI LRGDISK MEM MORE MOUNT MOVE PMD SCANDISK SETUP SHUTDOWN SORT SYS UNDELETE USB XCOPY NET SNTP WGET FTP TELNET) do if exist CMD\%%D\*.obj del /q CMD\%%D\*.obj
+for %%D in (ACROREAD ANSI ATTRIB CACHE CDEX CHKDSK CHOICE DEBUG DEFRAG DELTREE DISKCOMP DISKCOPY DRIVES EDIT FC FDISK FIND FORMAT HELP ISAPNP KEYB LABEL LFNAPI LRGDISK MEM MODE MORE MOUNT MOVE PMD QBASIC SCANDISK SETUP SHUTDOWN SORT SYS TREE TREEVIEW UNDELETE USB XARC XCOPY NET SNTP WGET FTP TELNET) do if exist CMD\%%D\*.obj del /q CMD\%%D\*.obj
 if exist CMD\NET\TLS\*.obj del /q CMD\NET\TLS\*.obj
 if exist NLS\*.obj del /q NLS\*.obj
 rem ...and the 32-bit drivers under DRV\, the shared base and a
 rem directory each.
 if exist DRV\*.obj del /q DRV\*.obj
-for %%D in (NE2000 RTL8139 PCNET TULIP EEPRO100 E1000 WD80X3 EL3C501 EL3C509 EL3C90X TCPIP) do if exist DRV\%%D\*.obj del /q DRV\%%D\*.obj
+for %%D in (NE2000 RTL8139 PCNET TULIP EEPRO100 E1000 WD80X3 EL3C501 EL3C509 EL3C90X TCPIP RAMDISK) do if exist DRV\%%D\*.obj del /q DRV\%%D\*.obj
 
 rem FSIZE asserts the sizes the checks below used to test with FOR's
 rem "~z" size modifier.  That modifier is a cmd.exe command EXTENSION:
@@ -506,6 +508,16 @@ rem fixups, and the device header is the first byte of its image.
 cd CMD\SETVER
 wasm -q setver.asm                              || goto :fail
 wlink system dos name ..\..\BIN\SETVER.EXE file setver.obj || goto :fail
+cd ..\..
+
+echo === ANSI.SYS (16-bit: the console driver that reads escape sequences) ===
+rem A real-mode character driver named CON, so that one file is the
+rem console under PM-DOS, under Windows through RMDOS, and under MS-DOS.
+rem Linked at offset 0: a .SYS is a raw image whose header is byte 0.
+rem 8086 code; its tables and stack lie past the end of the file.
+cd CMD\ANSI
+wasm -q ansi.asm                                || goto :fail
+wlink form raw bin name ..\..\BIN\ANSI.SYS file ansi.obj order clname CODE || goto :fail
 cd ..\..
 
 echo === external commands ===
@@ -850,6 +862,80 @@ wlink form raw bin option offset=0x2000 name ..\..\BIN\XCOPY.EXE ^
     file dosint.obj,main.obj,copy.obj,path.obj,msg.obj,rt.obj,sys_d32.obj ^
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
 cd ..\..
+rem DELTREE is XCOPY's kind of C program with XCOPY's runtime, cut down.
+rem It has no ^C handler: the kernel's ends it, as MS-DOS's ended its
+rem DELTREE, and every delete is one call, so a break leaves a smaller
+rem tree and never a damaged one.  It deletes the ordinary way, so with
+rem UNDELETE=ON what it deleted can be brought back.
+cd CMD\DELTREE
+wasm -q -dD32 -i=..\..\INC dosint.asm           || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 main.c    || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 rt.c      || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 sys_d32.c || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\BIN\DELTREE.EXE ^
+    file dosint.obj,main.obj,rt.obj,sys_d32.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+rem TREE is the same again: XCOPY's startup with a ^C handler that only
+rem raises a flag, read after each line drawn.  It is compiled for size
+rem (-os, not -ox) and keeps its buffers on the heap, not in the BSS
+rem that this link writes out as zeroes, because it goes on the boot
+rem diskette, which is full; a tree is drawn as fast as the disk reads.
+cd CMD\TREE
+wasm -q -dD32 -i=..\..\INC dosint.asm           || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 main.c    || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 walk.c    || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 msg.c     || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 rt.c      || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 sys_d32.c || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\BIN\TREE.EXE ^
+    file dosint.obj,main.obj,walk.obj,msg.obj,rt.obj,sys_d32.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+rem MODE is TREE's kind of C program, with no heap and no ^C handler:
+rem the printer and serial ports, the screen and the keyboard.  What
+rem MS-DOS's MODE left resident - LPTn=COMm and RETRY= - is the
+rem kernel's here (21h/F1h AL=28h), and the screen and the keyboard's
+rem repeat are 21h/F0h AL=0Ch and 0Dh.  It goes on the help disk,
+rem because the boot disk is full.
+cd CMD\MODE
+wasm -q -dD32 -i=..\..\INC dosint.asm           || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 main.c    || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 scan.c    || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 com.c     || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 lpt.c     || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 con.c     || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 cp.c      || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 msg.c     || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 rt.c      || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 sys_d32.c || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\BIN\MODE.EXE ^
+    file dosint.obj,main.obj,scan.obj,com.obj,lpt.obj,con.obj,cp.obj,msg.obj,rt.obj,sys_d32.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+rem DEBUG is C with DOSINT.ASM's thunks (INT 21h/25h/26h, IN, OUT, a ^C
+rem handler and a small setjmp for A).  It debugs a native program the
+rem kernel holds one level down (21h/F1h AL=29h); its D/E/F/C/M/S/H and
+rem the 16-bit disassembler match 6.22, and it adds 32-bit registers and
+rem 386 opcodes for a native program.  On the help disk, the boot disk
+rem being full.
+cd CMD\DEBUG
+wasm -q -dD32 -i=..\..\INC dosint.asm           || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 main.c    || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 mem.c     || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 regs.c    || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 cmds.c    || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 file.c    || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 run.c     || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 dis.c     || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 asm.c     || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 rt.c      || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 msg.c     || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 sys_d32.c || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\BIN\DEBUG.EXE ^
+    file dosint.obj,main.obj,mem.obj,regs.obj,cmds.obj,file.obj,run.obj,dis.obj,asm.obj,rt.obj,msg.obj,sys_d32.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
 rem EDIT is C too.  It draws, reads keys and finds the shift state
 rem through 21h/F0h AL=3 to 0Ah, the kernel's console calls for a full-
 rem screen program at ring 3, which has no video memory or BIOS of its
@@ -889,6 +975,25 @@ wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 rt.c      || goto :fail
 wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 sys_d32.c || goto :fail
 wlink form raw bin option offset=0x2000 name ..\..\BIN\HELP.EXE ^
     file dosint.obj,main.obj,hlp.obj,view.obj,scr.obj,ui.obj,dlgs.obj,rt.obj,sys_d32.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+rem QBASIC is C: MS-DOS's QBasic 1.1 - the editor with its menus, help
+rem and Immediate window, and a compiler to bytecode with the interpreter
+rem that runs it - as a native program.  It needs a math coprocessor
+rem (-fpi87); FPU.ASM has its few helpers and JMP.ASM the setjmp that
+rem errors come back through.  The help is DISK\QBASIC.HLP, which
+rem TOOLS\MKQBHLP.PL writes from the parts in DISK\QBHELP (run it by hand
+rem after changing one).  Its test mode is QBTEST and keys from a
+rem redirected file; MKHOST.CMD there builds a Windows twin of the
+rem interpreter for checking programs against real QBasic, and nothing
+rem of that ships.
+cd CMD\QBASIC
+wasm -q -dD32 -i=..\..\INC dosint.asm           || goto :fail
+wasm -q jmp.asm                                 || goto :fail
+wasm -q -fpi87 fpu.asm                          || goto :fail
+for %%M in (main rt mem num bigdec lex list csym cexpr comp vm qstr rtlib con using file gfx draw snd mach doc prog sys_d32 ide_dlgs ide_help ide_scr ide_ui ide_view) do wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -fpi87 %%M.c || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\BIN\QBASIC.EXE ^
+    file dosint.obj,main.obj,rt.obj,mem.obj,num.obj,bigdec.obj,lex.obj,list.obj,csym.obj,cexpr.obj,comp.obj,vm.obj,qstr.obj,rtlib.obj,con.obj,using.obj,file.obj,gfx.obj,draw.obj,snd.obj,mach.obj,doc.obj,prog.obj,sys_d32.obj,ide_dlgs.obj,ide_help.obj,ide_scr.obj,ide_ui.obj,ide_view.obj,jmp.obj,fpu.obj ^
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
 cd ..\..
 rem FC is C, one file and its startup:
@@ -1010,6 +1115,44 @@ wlink form raw bin option offset=0x2000 name ..\..\BIN\ACROREAD.EXE ^
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
 cd ..\..
 
+rem XARC is C: XArchive's DOS program made native - zip, 7z, RAR, CAB,
+rem SZDD and disk images listed, tested and extracted, zip and 7z made,
+rem on its own screen (or /G graphics) or from the command line.  ARC\
+rem is the archive code XArchive's Windows, OS/2 and DOS builds share,
+rem copied as it is from S:\CPP\DU32\XARCHIVE (__PMDOS__ picks the few
+rem lines that are PM-DOS's); keep the two the same.  It is compiled
+rem with the flags the DOS build gives it and goes into objects here,
+rem where the clean list at the top finds them.  INC\ is the C library
+rem headers for XARC's own library (LIBC.C, LIBIO.C): nothing comes from
+rem Watcom's.  Its test mode is XATEST naming a log and keys from a
+rem redirected file (SCR.C says how they are written).
+cd CMD\XARC
+wasm -q -i=..\..\INC dosint.asm                 || goto :fail
+for %%M in (MAIN XARC CLI UI MENU LIST DIRS FILEBOX ARCVIEW ARCICON COMPDLG SCR GFX LIBC LIBIO PMDOSPLT) do wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -d__PMDOS__ -i=INC -i=ARC %%M.C || goto :fail
+for %%M in (ARCFILE ARCPREF SZARC ZIPARC RARARC RAR3DEC RAR5ARC DISKARC LZMADEC CRC32 ARCCRYP AES SHA VOLIO NUMFMT CABARC MSLZARC MSZIPDEC LZXDEC QTMDEC ARCCOMP ZIPWRITE SZWRITE DEFLENC LZMAENC) do wcc386 -q -bt=dos -mf -3r -s -zl -zld -otexan -d__PMDOS__ -dAC_OEM_PASSWORDS -i=INC -i=ARC -fo=%%M.obj ARC\%%M.C || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\BIN\XARC.EXE ^
+    file dosint.obj,MAIN.obj,XARC.obj,CLI.obj,UI.obj,MENU.obj,LIST.obj,DIRS.obj,FILEBOX.obj,ARCVIEW.obj,ARCICON.obj,COMPDLG.obj,SCR.obj,GFX.obj,LIBC.obj,LIBIO.obj,PMDOSPLT.obj ^
+    file ARCFILE.obj,ARCPREF.obj,SZARC.obj,ZIPARC.obj,RARARC.obj,RAR3DEC.obj,RAR5ARC.obj,DISKARC.obj,LZMADEC.obj,CRC32.obj,ARCCRYP.obj,AES.obj,SHA.obj,VOLIO.obj,NUMFMT.obj ^
+    file CABARC.obj,MSLZARC.obj,MSZIPDEC.obj,LZXDEC.obj,QTMDEC.obj,ARCCOMP.obj,ZIPWRITE.obj,SZWRITE.obj,DEFLENC.obj,LZMAENC.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+
+rem TREEVIEW is C: DiskStat, the Dobson Utilities' drive space and
+rem folder-size viewer (S:\CPP\DUSOURCE\DISKSTAT), made native - the
+rem used and free space as a bar (a pie with /G) and the folders with
+rem their sizes.  Its screen, menu and C library come from XARC: SCR,
+rem GFX, MENU and UI are XARC's with what TreeView does not use taken
+rem out, and LIBC.C, LIBIO.C, XSYS.H and INC\ are XARC's files as they
+rem are - keep them the same.  Its test mode is TVTEST naming a log and
+rem keys from a redirected file (SCR.C says how they are written).
+cd CMD\TREEVIEW
+wasm -q -i=..\..\INC dosint.asm                 || goto :fail
+for %%M in (MAIN SCAN FOLDTREE USAGEBAR UI MENU SCR GFX LIBC LIBIO) do wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -i=INC %%M.C || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\BIN\TREEVIEW.EXE ^
+    file dosint.obj,MAIN.obj,SCAN.obj,FOLDTREE.obj,USAGEBAR.obj,UI.obj,MENU.obj,SCR.obj,GFX.obj,LIBC.obj,LIBIO.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+
 rem SCANDISK is C: MS-DOS 6.22's ScanDisk for PM-DOS - the media
 rem descriptor, the FAT copies, the directory tree, lost clusters and
 rem cross-linked files, and a surface scan that moves a file out of a
@@ -1119,9 +1262,9 @@ rem left bare on purpose - they are what proves the kernel still loads
 rem an image with nothing in front of it.  A program with a 16-bit
 rem version of its own names that .EXE to D32BIND in place of the stub.
 for %%F in (CMD.EXE CHOICE.COM MORE.COM SORT.COM SYS.COM FORMAT.COM MEM.EXE FDISK.EXE MOUNT.EXE ^
-  CACHE.EXE UNDELETE.EXE CDEX.EXE SHUTDOWN.EXE FIND.EXE DISKCOPY.COM DISKCOMP.COM MOVE.EXE ^
+  CACHE.EXE UNDELETE.EXE CDEX.EXE SHUTDOWN.EXE FIND.EXE DISKCOPY.COM DISKCOMP.COM MOVE.EXE DELTREE.EXE TREE.EXE MODE.EXE ^
   ATTRIB.EXE CHKDSK.EXE LABEL.EXE XCOPY.EXE EDIT.EXE FC.EXE ISAPNP.EXE PMD.EXE DOSSHELL.EXE ^
-  ACROREAD.EXE SCANDISK.EXE DEFRAG.EXE KEYB.COM HELP.EXE USB.EXE ^
+  ACROREAD.EXE SCANDISK.EXE DEFRAG.EXE XARC.EXE TREEVIEW.EXE KEYB.COM HELP.EXE USB.EXE DEBUG.EXE QBASIC.EXE ^
   SNTP.EXE WGET.EXE FTP.EXE TELNET.EXE NET.EXE SMBSRV.EXE) do TOOLS\D32BIND.EXE BIN\%%F TOOLS\D32STUB.EXE || goto :fail
 rem SETUP is the one with a 16-bit version of its own: the MS-DOS half
 rem upgrades the DOS it runs on, the PM-DOS half installs from a Setup
@@ -1747,6 +1890,16 @@ wasm -q -i=..\INC testdev.asm                    || goto :fail
 wlink form raw bin name ..\BIN\TESTS\TESTDEV.SYS file testdev.obj order clname CODE || goto :fail
 cd ..
 
+echo === ANSITEST.COM (ANSI.SYS's sequences, a case at a time) ===
+rem Writes each case and records the screen, the cursor and the input it
+rem gave back; TOOLS\ANSICMP.PL compares two runs, and the answer is a
+rem run under MS-DOS with Microsoft's ANSI.SYS.  The recipe is in
+rem NOTES.TXT ("ANSI.SYS").  Not in RUNTESTS: it wants ANSI.SYS loaded.
+cd TOOLS
+wasm -q ansitest.asm                             || goto :fail
+wlink form raw bin name ..\BIN\TESTS\ANSITEST.COM file ansitest.obj order clname CODE offset=0x100 || goto :fail
+cd ..
+
 echo === SVTEST.COM and SVDEV.SYS (what SETVER makes 30h say) ===
 rem SVTEST prints what 30h, 3306h and PSP+40h say; copied as SVKID.COM
 rem with SVKID.COM in SETVER's table it shows the table at work, and
@@ -1975,6 +2128,18 @@ wlink form raw bin option offset=0x10000000 name DRV\SMBFS\smbfs_1.bin ^
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
 TOOLS\D32DRV.EXE BIN\SMBFS.SYS TOOLS\DRVSTUB.BIN DRV\SMBFS\smbfs_0.bin DRV\SMBFS\smbfs_1.bin || goto :fail
 
+echo === RAMDISK.SYS (a RAM disk above the megabyte: a 32-bit disk driver) ===
+rem The first NDTF_DISK driver (INC\NDRV.INC): its unit is a drive letter
+rem the kernel reads and writes by calling it, and RMDOS by moving the
+rem memory itself while Windows runs.  RAMDRIVE.SYS's command line.  One
+rem assembly file, linked twice + D32DRV like NDTEST.SYS.
+cd DRV\RAMDISK
+wasm -q -i=..\..\INC ramdisk.asm                 || goto :fail
+wlink form raw bin option offset=0x0 name ramdisk0.bin file ramdisk.obj || goto :fail
+wlink form raw bin option offset=0x10000000 name ramdisk1.bin file ramdisk.obj || goto :fail
+cd ..\..
+TOOLS\D32DRV.EXE BIN\RAMDISK.SYS TOOLS\DRVSTUB.BIN DRV\RAMDISK\RAMDISK0.BIN DRV\RAMDISK\RAMDISK1.BIN || goto :fail
+
 echo === NICTEST.EXE (a card driver, from the wire: DHCP, ARP, a ping) ===
 rem C, with CSTART.ASM as its startup - the first test in TOOLS\ that
 rem is: frames built field by field are easier to keep right in C.
@@ -2044,6 +2209,15 @@ rem read back here.
 cd TOOLS
 wasm -q -i=..\INC blktest.asm                    || goto :fail
 wlink form raw bin name ..\BIN\TESTS\BLKTEST.COM file blktest.obj order clname CODE offset=0x100 || goto :fail
+cd ..
+
+echo === RDTEST.COM (RAMDISK.SYS's drive, written on both DOSes) ===
+rem BLKTEST's questions asked of the 32-bit disk driver: needs RAMDISK.SYS
+rem loaded with its 64K disk.  The kernel calls the driver; RMDOS moves the
+rem disk's memory itself, and each has to read what the other wrote.
+cd TOOLS
+wasm -q -i=..\INC rdtest.asm                     || goto :fail
+wlink form raw bin name ..\BIN\TESTS\RDTEST.COM file rdtest.obj order clname CODE offset=0x100 || goto :fail
 cd ..
 
 echo === CTRYTEST.COM (the block a number is formatted with) ===
@@ -2281,23 +2455,30 @@ rem material, and the test disk has them in its root, where LFNTEST.BAT
 rem looks.  LRGDISK.386 and LRGSTAT.EXE, which ship but have a use only
 rem on a hard disk with Windows on it, went to the help disk on
 rem 2026-10-24, when GPT and exFAT in the kernel and FDISK left the boot
-rem disk without room for AUTOEXEC.TXT.
+rem disk without room for AUTOEXEC.TXT.  ACROREAD.EXE followed them on
+rem 2026-10-25, when the disk was full to its last cluster and the
+rem kernel had to grow again: a PDF reader is not needed to start or
+rem mend a machine.
 echo === PMDOS.IMG (the boot disk) ===
 TOOLS\MKDISK.EXE IMAGES\PMDOS.IMG BIN\BOOT.BIN -nolfn BIN\PMIO.SYS BIN\PMDOS.SYS BIN\CMD.EXE BIN\COMMAND.COM ^
     BIN\CHOICE.COM BIN\MORE.COM BIN\SORT.COM BIN\SYS.COM BIN\FORMAT.COM BIN\MEM.EXE ^
-    BIN\FDISK.EXE BIN\MOUNT.EXE BIN\CACHE.EXE BIN\UNDELETE.EXE BIN\CDEX.EXE BIN\MOVE.EXE BIN\ATTRIB.EXE BIN\CHKDSK.EXE BIN\LABEL.EXE BIN\XCOPY.EXE BIN\EDIT.EXE ^
-    BIN\FC.EXE BIN\FIND.EXE BIN\DISKCOPY.COM BIN\DISKCOMP.COM BIN\ISAPNP.EXE BIN\SHUTDOWN.EXE BIN\PMD.EXE BIN\DOSSHELL.EXE BIN\ACROREAD.EXE BIN\SCANDISK.EXE BIN\DEFRAG.EXE ^
-    BIN\KEYB.COM BIN\COUNTRY.SYS BIN\KEYBOARD.SYS BIN\USB.EXE BIN\SETVER.EXE ^
+    BIN\FDISK.EXE BIN\MOUNT.EXE BIN\CACHE.EXE BIN\UNDELETE.EXE BIN\CDEX.EXE BIN\MOVE.EXE BIN\DELTREE.EXE BIN\TREE.EXE BIN\ATTRIB.EXE BIN\CHKDSK.EXE BIN\LABEL.EXE BIN\XCOPY.EXE BIN\EDIT.EXE ^
+    BIN\FC.EXE BIN\FIND.EXE BIN\DISKCOPY.COM BIN\DISKCOMP.COM BIN\ISAPNP.EXE BIN\SHUTDOWN.EXE BIN\PMD.EXE BIN\DOSSHELL.EXE BIN\SCANDISK.EXE BIN\DEFRAG.EXE ^
+    BIN\KEYB.COM BIN\COUNTRY.SYS BIN\KEYBOARD.SYS BIN\USB.EXE BIN\SETVER.EXE BIN\ANSI.SYS BIN\RAMDISK.SYS ^
     BIN\RMDOS.SYS BIN\RMCD.SYS README.TXT DISK\CONFIG.SYS DISK\CONFIG.TXT DISK\SCANDISK.INI DISK\AUTOEXEC.BAT DISK\AUTOEXEC.TXT || goto :fail
 
-rem === HELP.IMG - the help disk ===
+rem === PMDOS2.IMG - the help disk (HELP.IMG until 2026-10-25) ===
 rem HELP.EXE and HELP.HLP, which is 200K of text: the boot floppy was
 rem full by the time they were written (64K free), so they travel on
 rem a third disk, as MS-DOS's did.  MKHD.CMD puts both on the hard
 rem disks, where HELP is found along the PATH.  The two Windows files
-rem joined them here when the boot disk filled (see PMDOS.IMG above).
-echo === HELP.IMG (the help disk) ===
-TOOLS\MKDISK.EXE IMAGES\HELP.IMG BIN\BOOT.BIN -label "PM-DOS HELP" -nolfn BIN\HELP.EXE DISK\HELP.HLP BIN\LRGDISK.386 BIN\LRGSTAT.EXE || goto :fail
+rem joined them here when the boot disk filled (see PMDOS.IMG above),
+rem MODE.EXE, which was written after it had, and ACROREAD.EXE, which
+rem was moved off it to give the kernel room.  QBASIC.EXE and its
+rem QBASIC.HLP (half a megabyte between them) came after, and
+rem TREEVIEW.EXE last.
+echo === PMDOS2.IMG (the help disk) ===
+TOOLS\MKDISK.EXE IMAGES\PMDOS2.IMG BIN\BOOT.BIN -label "PM-DOS HELP" -nolfn BIN\HELP.EXE DISK\HELP.HLP BIN\LRGDISK.386 BIN\LRGSTAT.EXE BIN\MODE.EXE BIN\ACROREAD.EXE BIN\DEBUG.EXE BIN\QBASIC.EXE DISK\QBASIC.HLP BIN\TREEVIEW.EXE || goto :fail
 
 rem === TESTS.IMG - the test disk ===
 rem Everything written to prove one thing about the kernel: BIN\TESTS\
@@ -2322,7 +2503,7 @@ TOOLS\MKDISK.EXE IMAGES\TESTS.IMG BIN\BOOT.BIN -label "PM-DOS TEST" -dir ^
     BIN\TESTS\UDTEST.COM BIN\TESTS\ALLOCTST.COM BIN\TESTS\MCBTEST.COM BIN\TESTS\FCBTEST.COM ^
     BIN\TESTS\BUFTEST.COM BIN\TESTS\UMBTEST.COM BIN\TESTS\EMSTEST.COM BIN\TESTS\EMS4TEST.COM BIN\TESTS\DEVCRIT.EXE ^
     BIN\TESTS\I24TEST.COM BIN\TESTS\VFYTEST.EXE BIN\TESTS\IDETEST.EXE BIN\TESTS\HWPROBE.EXE BIN\TESTS\F32TEST.COM BIN\TESTS\FNDTEST.EXE ^
-    BIN\TESTS\CFGTEST.COM BIN\TESTS\CACHETST.COM BIN\TESTS\VFTEST.COM BIN\TESTS\SHARETST.COM BIN\TESTS\TESTDEV.SYS BIN\TESTS\TESTBLK.SYS BIN\TESTS\IOCDEV.SYS BIN\TESTS\SVTEST.COM BIN\TESTS\SVDEV.SYS BIN\TESTS\DRVTEST.COM BIN\TESTS\CDSTEST.COM BIN\TESTS\NETTEST.COM BIN\TESTS\NDTEST.SYS BIN\TESTS\NDRVTEST.EXE BIN\TESTS\NICTEST.EXE BIN\TESTS\SOCKTEST.EXE BIN\TESTS\SEEKWR.COM BIN\TESTS\BLKTEST.COM BIN\TESTS\CTRYDMP.COM BIN\TESTS\NLSTEST.COM BIN\TESTS\KBLTEST.COM BIN\TESTS\LOCKTEST.COM BIN\TESTS\BRKTEST.COM BIN\TESTS\BRK32.EXE ^
+    BIN\TESTS\CFGTEST.COM BIN\TESTS\CACHETST.COM BIN\TESTS\VFTEST.COM BIN\TESTS\SHARETST.COM BIN\TESTS\TESTDEV.SYS BIN\TESTS\ANSITEST.COM BIN\TESTS\TESTBLK.SYS BIN\TESTS\IOCDEV.SYS BIN\TESTS\SVTEST.COM BIN\TESTS\SVDEV.SYS BIN\TESTS\DRVTEST.COM BIN\TESTS\CDSTEST.COM BIN\TESTS\NETTEST.COM BIN\TESTS\NDTEST.SYS BIN\TESTS\NDRVTEST.EXE BIN\TESTS\NICTEST.EXE BIN\TESTS\SOCKTEST.EXE BIN\TESTS\SEEKWR.COM BIN\TESTS\BLKTEST.COM BIN\TESTS\RDTEST.COM BIN\TESTS\CTRYDMP.COM BIN\TESTS\NLSTEST.COM BIN\TESTS\KBLTEST.COM BIN\TESTS\LOCKTEST.COM BIN\TESTS\BRKTEST.COM BIN\TESTS\BRK32.EXE ^
     BIN\TESTS\CTRYTEST.COM BIN\TESTS\CRASH.EXE BIN\TESTS\R3TEST.EXE BIN\TESTS\MS32TEST.EXE BIN\TESTS\VPICTEST.COM BIN\TESTS\TIMERTST.COM BIN\TESTS\RMIVT.COM BIN\TESTS\IRQXTEST.COM BIN\TESTS\IRQXWAIT.EXE BIN\TESTS\DMATEST.COM BIN\TESTS\DPMIIRQ.COM BIN\TESTS\DPMII32.COM BIN\TESTS\DPMIVEC.COM BIN\TESTS\DPMIV32.COM BIN\TESTS\VDSTEST.COM BIN\TESTS\NICIRQ.COM BIN\TESTS\PCITEST.EXE BIN\TESTS\IRQTEST.EXE BIN\TESTS\FPUTEST.COM BIN\TESTS\FPU32.EXE BIN\TESTS\DPMIFPU.COM BIN\TESTS\DPMIFP32.COM ^
     BIN\TESTS\LPTTEST.COM BIN\TESTS\RMSPEED.COM BIN\TESTS\HNDTEST.COM BIN\TESTS\RMFSTEST.COM BIN\TESTS\WINDRV.EXE BIN\TESTS\VBETEST.EXE ^
     BIN\TESTS\EXECLEAK.EXE BIN\TESTS\SLOTTEST.EXE BIN\TESTS\BIGMEM.EXE BIN\TESTS\LRGTEST.COM BIN\TESTS\ATAPIRD.COM BIN\TESTS\SRSTTEST.COM ^
@@ -2335,7 +2516,7 @@ TOOLS\MKDISK.EXE IMAGES\TESTS.IMG BIN\BOOT.BIN -label "PM-DOS TEST" -dir ^
     DISK\DIRTEST.BAT DISK\GLUETEST.BAT DISK\FMTTEST.BAT DISK\FMT1.KEY DISK\FMT2.KEY DISK\RENTEST.BAT DISK\FORFTEST.BAT DISK\KEYTEST.BAT DISK\KEYTEST.KEY DISK\C16TEST.BAT DISK\C16SUB.BAT DISK\XCTEST.CMD DISK\XCEL.BAT ^
     DISK\BUSTEST.BAT DISK\FPUTEST.BAT DISK\MSTEST.BAT DISK\EDTEST.BAT DISK\FDM1.KEY DISK\ED1.KEY DISK\ED2.KEY DISK\ED3.KEY DISK\ED4.KEY DISK\ED5.KEY DISK\ED6.KEY DISK\ED7.KEY DISK\ED8.KEY DISK\ED9.KEY DISK\ED10.KEY DISK\ED11.KEY DISK\ED12.KEY DISK\ED13.KEY DISK\ED14.KEY DISK\ED15.KEY DISK\ED16.KEY DISK\ED17.KEY DISK\EDBIN.DAT DISK\EDTABS.DAT DISK\EDLF.DAT DISK\PMDTEST.BAT DISK\PMD1.KEY DISK\PMD2.KEY DISK\PMD3.KEY DISK\PMD4.KEY DISK\PMD5.KEY DISK\HLPTEST.BAT DISK\HL1.KEY DISK\HL2.KEY DISK\HL3.KEY ^
     DISK\DSTEST.BAT DISK\DS1.KEY DISK\DS2.KEY DISK\DS3.KEY DISK\DS4.KEY DISK\DS5.KEY DISK\DS6.KEY DISK\DS7.KEY DISK\DS8.KEY DISK\DS9.KEY ^
-    DISK\ATTRTEST.BAT DISK\MVTEST.BAT DISK\HELPTEST.BAT DISK\R3TEST.BAT DISK\D32TEST.BAT DISK\BOXTEST.BAT DISK\WINDOS.BAT DISK\BIG16.BAT ^
+    DISK\ATTRTEST.BAT DISK\MVTEST.BAT DISK\DTTEST.BAT DISK\TREETEST.BAT DISK\HELPTEST.BAT DISK\R3TEST.BAT DISK\D32TEST.BAT DISK\BOXTEST.BAT DISK\WINDOS.BAT DISK\BIG16.BAT ^
     DISK\CCALIVE.BAT DISK\CCFOR.BAT DISK\CCONE.BAT DISK\FDLTEST.BAT DISK\FDRTEST.BAT DISK\FD32TEST.BAT DISK\FDMTEST.BAT || goto :fail
 
 rem === the Setup disks - IMAGES\SETUP ===

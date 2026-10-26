@@ -10,42 +10,46 @@ menu, or press F1.  To leave, press ALT, F, X.
 
 <\aAbout PM-DOS\vAbout PM-DOS\v>
 
-<\aAcroread\vACROREAD\v>                 <\aEcho\vECHO\v>                     <\aMulti-config\vMultiple Configurations\v>
-<\aAttrib\vATTRIB\v>                   <\aEdit\vEDIT\v>                     <\aNulltrap\vNULLTRAP=\v>
-<\aAutocheck\vAUTOCHECK=\v>                <\aEms\vEMS=\v>                      <\aNumlock\vNUMLOCK=\v>
-<\aBatch\vBatch Commands\v>                    <\aExit\vEXIT\v>                     <\aPath\vPATH\v>
-<\aBreak\vBREAK\v>                    <\aFc\vFC\v>                       <\aPause\vPAUSE\v>
-<\aBreak (CONFIG.SYS)\vBREAK=\v>       <\aFcbs\vFCBS=\v>                     <\aPmd\vPMD\v>
-<\aBuffers\vBUFFERS=\v>                  <\aFdisk\vFDISK\v>                    <\aPrompt\vPROMPT\v>
-<\aCache\vCACHE\v>                    <\aFiles\vFILES=\v>                    <\aRd\vRD\v>
-<\aCache (CONFIG.SYS)\vCACHE=\v>       <\aFind\vFIND\v>                     <\aRem\vREM\v>
-<\aCall\vCALL\v>                     <\aFor\vFOR\v>                      <\aRen\vREN\v>
-<\aCd\vCD\v>                       <\aFormat\vFORMAT\v>                   <\aScandisk\vSCANDISK\v>
-<\aCdex\vCDEX\v>                     <\aGoto\vGOTO\v>                     <\aScsi\vSCSI=\v>
-<\aCdrom\vCDROM=\v>                    <\aHelp\vHELP\v>                     <\aSet\vSET\v>
-<\aChcp\vCHCP\v>                     <\aIde32\vIDE32=\v>                    <\aSet (CONFIG.SYS)\vSET=\v>
-<\aChkdsk\vCHKDSK\v>                   <\aIdecable\vIDECABLE=\v>                 <\aSetver\vSETVER\v>
-<\aChoice\vCHOICE\v>                   <\aIdedma\vIDEDMA=\v>                   <\aShare\vSHARE=\v>
-<\aCls\vCLS\v>                      <\aIf\vIF\v>                       <\aShell\vSHELL=\v>
-<\aCmd\vCMD\v>                      <\aInclude\vINCLUDE=\v>                  <\aShift\vSHIFT\v>
-<\aCommand\vCOMMAND\v>                  <\aInstall\vINSTALL=\v>                  <\aShutdown\vSHUTDOWN\v>
-<\aCONFIG\vCONFIG.SYS Commands\v>                   <\aInstallhigh\vINSTALLHIGH=\v>              <\aSort\vSORT\v>
-<\aCopy\vCOPY\v>                     <\aInternational\vInternational Commands\v>            <\aStacks\vSTACKS=\v>
-<\aCountry\vCOUNTRY=\v>                  <\aIsapnp\vISAPNP\v>                   <\aStarting\vStarting PM-DOS\v>
-<\aCtty\vCTTY\v>                     <\aKeyb\vKEYB\v>                     <\aSubmenu\vSUBMENU=\v>
-<\aDate\vDATE\v>                     <\aKeyrate\vKEYRATE=\v>                  <\aSwitches\vSWITCHES=\v>
-<\aDefrag\vDEFRAG\v>                   <\aLabel\vLABEL\v>                    <\aSys\vSYS\v>
-<\aDel\vDEL\v>                      <\aLastdrive\vLASTDRIVE=\v>                <\aTime\vTIME\v>
-<\aDevice\vDEVICE=\v>                   <\aLfn\vLFN=\v>                      <\aType\vTYPE\v>
-<\aDevicehigh\vDEVICEHIGH=\v>               <\aLoadhigh\vLOADHIGH\v>                 <\aUndelete\vUNDELETE\v>
-<\aDir\vDIR\v>                      <\aMd\vMD\v>                       <\aUndelete (CONFIG.SYS)\vUNDELETE=\v>
-<\aDiskcomp\vDISKCOMP\v>                 <\aMem\vMEM\v>                      <\aUsb\vUSB\v>
-<\aDiskcopy\vDISKCOPY\v>                 <\aMenucolor\vMENUCOLOR=\v>                <\aUsb (CONFIG.SYS)\vUSB=\v>
-<\aDos\vDOS=\v>                      <\aMenudefault\vMENUDEFAULT=\v>              <\aVer\vVER\v>
-<\aDoskey\vDOSKEY\v>                   <\aMenuitem\vMENUITEM=\v>                 <\aVerify\vVERIFY\v>
-<\aDosshell\vDOSSHELL\v>                 <\aMore\vMORE\v>                     <\aVol\vVOL\v>
-<\aDpmi\vDPMI=\v>                     <\aMount\vMOUNT\v>                    <\aWincache\vWINCACHE=\v>
-<\aDrivparm\vDRIVPARM=\v>                 <\aMove\vMOVE\v>                     <\aXcopy\vXCOPY\v>
+<\aAcroread\vACROREAD\v>                 <\aEdit\vEDIT\v>                     <\aPause\vPAUSE\v>
+<\aAnsi.sys\vANSI.SYS\v>                 <\aEms\vEMS=\v>                      <\aPmd\vPMD\v>
+<\aAttrib\vATTRIB\v>                   <\aExit\vEXIT\v>                     <\aPrompt\vPROMPT\v>
+<\aAutocheck\vAUTOCHECK=\v>                <\aFc\vFC\v>                       <\aQbasic\vQBASIC\v>
+<\aBatch\vBatch Commands\v>                    <\aFcbs\vFCBS=\v>                     <\aRamdisk.sys\vRAMDISK.SYS\v>
+<\aBreak\vBREAK\v>                    <\aFdisk\vFDISK\v>                    <\aRd\vRD\v>
+<\aBreak (CONFIG.SYS)\vBREAK=\v>       <\aFiles\vFILES=\v>                    <\aRem\vREM\v>
+<\aBuffers\vBUFFERS=\v>                  <\aFind\vFIND\v>                     <\aRen\vREN\v>
+<\aCache\vCACHE\v>                    <\aFor\vFOR\v>                      <\aScandisk\vSCANDISK\v>
+<\aCache (CONFIG.SYS)\vCACHE=\v>       <\aFormat\vFORMAT\v>                   <\aScsi\vSCSI=\v>
+<\aCall\vCALL\v>                     <\aGoto\vGOTO\v>                     <\aSet\vSET\v>
+<\aCd\vCD\v>                       <\aHelp\vHELP\v>                     <\aSet (CONFIG.SYS)\vSET=\v>
+<\aCdex\vCDEX\v>                     <\aIde32\vIDE32=\v>                    <\aSetup\vSETUP\v>
+<\aCdrom\vCDROM=\v>                    <\aIdecable\vIDECABLE=\v>                 <\aSetver\vSETVER\v>
+<\aChcp\vCHCP\v>                     <\aIdedma\vIDEDMA=\v>                   <\aShare\vSHARE=\v>
+<\aChkdsk\vCHKDSK\v>                   <\aIf\vIF\v>                       <\aShell\vSHELL=\v>
+<\aChoice\vCHOICE\v>                   <\aInclude\vINCLUDE=\v>                  <\aShift\vSHIFT\v>
+<\aCls\vCLS\v>                      <\aInstall\vINSTALL=\v>                  <\aShutdown\vSHUTDOWN\v>
+<\aCmd\vCMD\v>                      <\aInstallhigh\vINSTALLHIGH=\v>              <\aSort\vSORT\v>
+<\aCommand\vCOMMAND\v>                  <\aInternational\vInternational Commands\v>            <\aStacks\vSTACKS=\v>
+<\aCONFIG\vCONFIG.SYS Commands\v>                   <\aIsapnp\vISAPNP\v>                   <\aStarting\vStarting PM-DOS\v>
+<\aCopy\vCOPY\v>                     <\aKeyb\vKEYB\v>                     <\aSubmenu\vSUBMENU=\v>
+<\aCountry\vCOUNTRY=\v>                  <\aKeyrate\vKEYRATE=\v>                  <\aSwitches\vSWITCHES=\v>
+<\aCtty\vCTTY\v>                     <\aLabel\vLABEL\v>                    <\aSys\vSYS\v>
+<\aDate\vDATE\v>                     <\aLastdrive\vLASTDRIVE=\v>                <\aTime\vTIME\v>
+<\aDebug\vDEBUG\v>                    <\aLfn\vLFN=\v>                      <\aTree\vTREE\v>
+<\aDefrag\vDEFRAG\v>                   <\aLoadhigh\vLOADHIGH\v>                 <\aTreeView\vTREEVIEW\v>
+<\aDel\vDEL\v>                      <\aMd\vMD\v>                       <\aType\vTYPE\v>
+<\aDeltree\vDELTREE\v>                  <\aMem\vMEM\v>                      <\aUndelete\vUNDELETE\v>
+<\aDevice\vDEVICE=\v>                   <\aMenucolor\vMENUCOLOR=\v>                <\aUndelete (CONFIG.SYS)\vUNDELETE=\v>
+<\aDevicehigh\vDEVICEHIGH=\v>               <\aMenudefault\vMENUDEFAULT=\v>              <\aUsb\vUSB\v>
+<\aDir\vDIR\v>                      <\aMenuitem\vMENUITEM=\v>                 <\aUsb (CONFIG.SYS)\vUSB=\v>
+<\aDiskcomp\vDISKCOMP\v>                 <\aMode\vMODE\v>                     <\aVer\vVER\v>
+<\aDiskcopy\vDISKCOPY\v>                 <\aMore\vMORE\v>                     <\aVerify\vVERIFY\v>
+<\aDos\vDOS=\v>                      <\aMount\vMOUNT\v>                    <\aVol\vVOL\v>
+<\aDoskey\vDOSKEY\v>                   <\aMove\vMOVE\v>                     <\aWincache\vWINCACHE=\v>
+<\aDosshell\vDOSSHELL\v>                 <\aMulti-config\vMultiple Configurations\v>             <\aXarc\vXARC\v>
+<\aDpmi\vDPMI=\v>                     <\aNulltrap\vNULLTRAP=\v>                 <\aXcopy\vXCOPY\v>
+<\aDrivparm\vDRIVPARM=\v>                 <\aNumlock\vNUMLOCK=\v>
+<\aEcho\vECHO\v>                     <\aPath\vPATH\v>
 
 Every command and every CONFIG.SYS statement PM-DOS has is listed.  A
 command's topic says what it does, how it is written, and what each
@@ -72,7 +76,7 @@ Key features:
 ş Long File Names.
 ş FAT16, FAT32, and exFAT file systems.
 ş Built-in memory managers, disk cache, and drivers for mouse and CD-ROM.
-ş IDE disks of any size, with UltraDMA up to Ultra-ATA6 (UltraDMA/133).
+ş IDE disks of any size, with UltraDMA up to UltraDMA6 (UltraATA/133).
 ş FDISK can create, delete, move, and resize partitions on MBR and GPT
   type disks.
 ş Mount disk image and ISO files as drives.
@@ -730,9 +734,8 @@ BREAK= in CONFIG.SYS sets the same flag at boot.  See <\aBREAK (CONFIG.SYS)\vBRE
  
 \bWhat the setting does here\p
 
-BREAK sets the flag that programs read with INT 21h AX=3300h, which is
-what MS-DOS does.  PM-DOS itself does not yet look at the flag: Ctrl+C
-stops a command or a batch file whichever way it is set.
+BREAK sets the flag that programs read with INT 21h AX=3300h. Ctrl+C
+stops a command or a batch file during operation.
  
                                      
 .context BREAK--Examples
@@ -3036,6 +3039,135 @@ To print the words of a document:
     acroread manual /x > prn
  
                                      
+.context ANSI.SYS
+.context Ansi.sys
+.topic ANSI.SYS
+.freeze 3
+\i\aNotes\vANSI.SYS--Notes\v  \aExamples\vANSI.SYS--Examples\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                                   ANSI.SYS
+ 
+Lets programs move the cursor, clear the screen, change colours and
+give keys new meanings, by writing escape sequences to the screen.
+
+\bSyntax\p
+
+    DEVICE=[drive:][path]ANSI.SYS [/X] [/K] [/R]
+
+\bParameters\p
+
+[drive:][path]
+    Location of the ANSI.SYS file.
+
+\bSwitches\p
+
+/X
+    Lets the grey keys of a 101-key keyboard be given meanings of
+    their own, apart from the same keys on the numeric keypad.
+
+/K
+    Treats a 101-key keyboard as an 84-key keyboard.  Use it with
+    programs that do not recognise the extra keys.
+
+/R
+    Sends all screen output through the video BIOS.  Use it with
+    screen reader programs.
+
+\bRelated Commands\p
+
+ANSI.SYS is loaded with <\aDEVICE=\vDEVICE=\v>.  <\aPROMPT\vPROMPT\v> can send escape
+sequences with $E.
+ 
+                                     
+.context ANSI.SYS--Notes
+.topic ANSI.SYS--Notes
+.freeze 3
+\i\aExamples\vANSI.SYS--Examples\v  \aSyntax\vANSI.SYS\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                             ANSI.SYSÄÄNotes
+ 
+\bEscape sequences\p
+
+Each sequence starts with ESC, character 27, followed by a left
+bracket.  Numbers in a sequence are separated by semicolons.  A number
+left out of a cursor movement counts as 1.
+
+    ESC[r;cH    Moves the cursor to row r, column c.  The top left
+                corner is 1;1.  ESC[r;cf does the same.
+    ESC[nA      Moves the cursor up n rows.
+    ESC[nB      Moves the cursor down n rows.
+    ESC[nC      Moves the cursor right n columns.
+    ESC[nD      Moves the cursor left n columns.
+    ESC[s       Saves the cursor position.
+    ESC[u       Moves the cursor back to the saved position.
+    ESC[6n      Reports the cursor position as typed input: ESC[r;cR
+                followed by ENTER.
+    ESC[2J      Clears the screen and moves the cursor to the top left
+                corner.
+    ESC[K       Clears from the cursor to the end of the line.
+    ESC[n;...m  Sets the colours.  See below.
+    ESC[=nh     Sets screen mode n.  See below.
+    ESC[=7h     Text wraps at the end of a line.  This is the default
+                setting.
+    ESC[=7l     Text stops at the end of a line.
+    ESC[k;...p  Gives key k a new meaning.  See below.
+
+\bColours\p
+
+    0  Normal        30  Black text      40  Black background
+    1  Bright        31  Red text        41  Red background
+    4  Underline     32  Green text      42  Green background
+    5  Blinking      33  Yellow text     43  Yellow background
+    7  Reverse       34  Blue text       44  Blue background
+    8  Hidden        35  Magenta text    45  Magenta background
+                     36  Cyan text       46  Cyan background
+                     37  White text      47  White background
+
+On a colour screen underline shows as blue text.
+
+\bScreen modes\p
+
+    0   40x25 black and white      13  320x200, 16 colours
+    1   40x25 colour               14  640x200, 16 colours
+    2   80x25 black and white      15  640x350 black and white
+    3   80x25 colour               16  640x350, 16 colours
+    4   320x200, 4 colours         17  640x480, 2 colours
+    5   320x200 black and white    18  640x480, 16 colours
+    6   640x200 black and white    19  320x200, 256 colours
+
+\bNew meanings for keys\p
+
+In ESC[k;...p, k is the key's character code.  A key with no character
+code is 0 and its scan code: 0;59 is F1.  The rest of the sequence is
+what the key types instead, as character codes or as text in quotes.
+ESC[kp on its own gives the key back its own meaning.  With /X, a grey
+key is 224 and its scan code.
+
+Programs that read the keyboard directly, such as EDIT, are not
+affected by new key meanings.  In DOS windows under Windows, escape
+sequences work but new key meanings do not.
+ 
+                                     
+.context ANSI.SYS--Examples
+.topic ANSI.SYS--Examples
+.freeze 3
+\i\aSyntax\vANSI.SYS\v  \aNotes\vANSI.SYS--Notes\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                            ANSI.SYSÄÄExamples
+ 
+To show the drive and directory in yellow on blue:
+
+    prompt $e[1;33;44m$p$g$e[0;37;44m
+
+To make F10 type DIR and press ENTER, set again each time the prompt
+is shown:
+
+    prompt $e[0;68;"DIR";13p$p$g
+ 
+                                     
 .context ATTRIB
 .context Attrib
 .topic ATTRIB
@@ -3476,6 +3608,161 @@ To offer three choices and take the first after ten seconds:
     choice /c:abc /t:a,10 Which backup
  
                                      
+.context DEBUG
+.context Debug
+.topic DEBUG
+.freeze 3
+\i\aNotes\vDEBUG--Notes\v  \aExamples\vDEBUG--Examples\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                                    DEBUG
+ 
+Shows and changes memory, files and disk sectors, unassembles and
+assembles instructions, and runs a PM-DOS program one instruction at a
+time.
+
+\bSyntax\p
+
+    DEBUG [[drive:][path]filename [parameters]]
+
+DEBUG's prompt is a hyphen.  Each command is a letter followed by its
+parameters.  Type ? for a list of the commands.
+
+\bParameters\p
+
+[drive:][path]filename
+    The file to load.
+
+parameters
+    The command line for the program.
+
+\bCommands\p
+
+    A [address]                        Assemble
+    C range address                    Compare
+    D [range]                          Dump
+    E address [list]                   Enter
+    F range list                       Fill
+    G [=address] [address...]          Go
+    H value value                      Hex add and subtract
+    I port                             Read a port
+    L [address [drive sector count]]   Load
+    M range address                    Move
+    N [pathname] [arglist]             Name
+    O port byte                        Write to a port
+    P [=address] [count]               Proceed
+    Q                                  Quit
+    R [register]                       Register
+    S range list                       Search
+    T [=address] [count]               Trace
+    U [range]                          Unassemble
+    W [address [drive sector count]]   Write
+    XA, XD, XM, XS                     Expanded memory
+
+Numbers are in hexadecimal.  An address is [segment:]offset.  A range
+is an address followed by an end offset, or by L and a length.  A list
+is bytes, or text in quotation marks.
+ 
+                                     
+.context DEBUG--Notes
+.topic DEBUG--Notes
+.freeze 3
+\i\aExamples\vDEBUG--Examples\v  \aSyntax\vDEBUG\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                               DEBUGÄÄNotes
+ 
+\bPM-DOS programs and DOS programs\p
+
+G, T and P run PM-DOS programs.  A DOS program (.COM or .EXE) can be
+loaded, dumped, unassembled, changed and written back, but not run.
+G, T and P on a DOS program report that only a PM-DOS program can be
+run.
+
+\b32-bit programs\p
+
+With a PM-DOS program loaded, R shows the 32-bit registers and offsets
+have eight digits.  U shows 386 and 387 instructions, and A takes the
+8086 and 8087 instructions with 32-bit registers and addresses.
+
+\bWhat DEBUG can change\p
+
+A DOS program is loaded into DEBUG's own part of conventional memory.
+The rest of the first megabyte, such as the interrupt vectors and DOS
+itself, can be read but not changed: E, F, M, A and L report df Error
+there.  A PM-DOS program's own memory can be read and changed.
+
+\bDisk sectors\p
+
+L and W with a drive, a sector and a count read and write sectors
+directly.  Drive 0 is A:, 1 is B:, 2 is C: and so on.  W does not ask
+before writing over the sectors.
+
+\bWriting a file\p
+
+W writes the number of bytes in BX:CX, starting at CS:100, to the file
+named with N.  .EXE and .HEX files cannot be written.  If the disk
+fills up, the new file is deleted.
+
+\bExpanded memory\p
+
+XA, XD, XM and XS always report that there is no expanded memory.
+
+\b.HEX files\p
+
+A .HEX file is loaded as it is.  The records are not converted the way
+MS-DOS's DEBUG converted them.
+
+\bCommands from a file\p
+
+DEBUG < file takes its commands from the file, and ends at the end of
+the file even without a Q.
+
+\bStopping\p
+
+CTRL+C ends the command DEBUG is carrying out and goes back to the
+prompt.  CTRL+BREAK stops a PM-DOS program that DEBUG is running and
+shows its registers.
+
+\bThe exit code\p
+
+0, or 1 when there is not enough memory for DEBUG to start.
+ 
+                                     
+.context DEBUG--Examples
+.topic DEBUG--Examples
+.freeze 3
+\i\aSyntax\vDEBUG\v  \aNotes\vDEBUG--Notes\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                             DEBUGÄÄExamples
+ 
+To see the first instructions of a program:
+
+    debug myprog.com
+    -u
+
+To change a byte in a program and save it:
+
+    debug myprog.com
+    -e 105 90
+    -w
+    -q
+
+To step through a PM-DOS program, then run it to the end:
+
+    debug hello.exe
+    -t
+    -p
+    -g
+
+To read the boot sector of drive A: and look at it:
+
+    debug
+    -l 100 0 0 1
+    -d 100 l 200
+ 
+                                     
 .context DEFRAG
 .context Defrag
 .topic DEFRAG
@@ -3595,6 +3882,99 @@ of name:
 To unfragment the files on D: without moving them together:
 
     defrag d: /u
+ 
+                                     
+.context DELTREE
+.context Deltree
+.topic DELTREE
+.freeze 3
+\i\aNotes\vDELTREE--Notes\v  \aExamples\vDELTREE--Examples\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                                   DELTREE
+ 
+Deletes a directory along with all of its files and subdirectories.
+
+\bSyntax\p
+
+    DELTREE [/Y] [drive:]path [[drive:]path[...]]
+
+\bParameters\p
+
+[drive:]path
+    The directory or file to delete.  Wildcards are allowed, and they
+    match directories as well as files.
+
+\bSwitches\p
+
+/Y
+    Deletes without asking first.
+
+\bRelated Commands\p
+
+To remove an empty directory, see <\aRD\vRD\v>.  To delete files only, see
+<\aDEL\vDEL\v>.  To get deleted files back, see <\aUNDELETE\vUNDELETE\v>.
+ 
+                                     
+.context DELTREE--Notes
+.topic DELTREE--Notes
+.freeze 3
+\i\aExamples\vDELTREE--Examples\v  \aSyntax\vDELTREE\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                              DELTREEÄÄNotes
+ 
+\bAsking first\p
+
+Without /Y, DELTREE asks about each directory or file it finds.  Type
+Y or N, then press Enter.  Ctrl+C stops DELTREE.
+
+\bEverything goes\p
+
+Hidden, system and read-only files are deleted along with the rest.
+
+\bThe directory or what is in it\p
+
+DELTREE \\TEMP deletes TEMP itself.  DELTREE \\TEMP\\*.* deletes
+everything in TEMP and keeps the directory.
+
+\bGetting it back\p
+
+With UNDELETE=ON, which is the default setting, deleted files are kept
+the same as the ones DEL deletes.  UNDELETE /S brings back a whole tree
+and makes the directories again.
+
+\bWhat is left\p
+
+A file that cannot be deleted is named, and so is the current
+directory, which is never removed.  The directories holding them stay,
+with everything else in them gone.
+
+\bThe exit code\p
+
+    0    everything was deleted, or nothing matched
+    1    the command line was wrong, or something could not be deleted
+ 
+                                     
+.context DELTREE--Examples
+.topic DELTREE--Examples
+.freeze 3
+\i\aSyntax\vDELTREE\v  \aNotes\vDELTREE--Notes\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                            DELTREEÄÄExamples
+ 
+To delete \\TEMP and everything in it without being asked:
+
+    deltree /y \\temp
+
+To empty \\TEMP but keep the directory:
+
+    deltree \\temp\\*.*
+
+To bring back a tree deleted from \\OLD:
+
+    undelete \\old\\*.* /s /all
  
                                      
 .context DISKCOMP
@@ -4816,7 +5196,8 @@ program that will fit.
 
 /DEBUG or /D
     Lists every block in the DOS arena and in upper memory, with its
-    owner and size.
+    owner and size.  Also lists the 32-bit drivers loaded with
+    DEVICE= and how much memory each one uses.
 
 /FREE or /F
     Lists the free blocks only.
@@ -4848,6 +5229,13 @@ programs.
 PM-DOS runs above the first megabyte, so nearly all of conventional
 memory is free for DOS programs.  The 32-bit commands run above it
 too and never appear in MEM's list.
+
+\b32-bit drivers\p
+
+A 32-bit driver such as RAMDISK.SYS or a network card driver also
+loads above 1MB and takes no conventional memory.  MEM /D shows two
+sizes for each one: the driver itself, and the memory it set aside
+after loading, such as the contents of a RAM disk.
  
                                      
 .context MEM--Examples
@@ -4865,6 +5253,172 @@ To see the summary:
 To see who has what, a screen at a time:
 
     mem /d | more
+ 
+                                     
+.context MODE
+.context Mode
+.topic MODE
+.freeze 3
+\i\aNotes\vMODE--Notes\v  \aExamples\vMODE--Examples\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                                     MODE
+ 
+Sets up the printer ports, the serial ports, the screen and the
+keyboard, and shows how they are set.
+
+\bSyntax\p
+
+    MODE [device] [/STATUS]
+    MODE LPTn[:] [COLS=c] [LINES=l] [RETRY=r]
+    MODE LPTn[:]=COMm[:]
+    MODE COMm[:] [BAUD=b] [PARITY=p] [DATA=d] [STOP=s] [RETRY=r]
+    MODE CON[:] [COLS=c] [LINES=n] [RATE=r DELAY=d]
+    MODE display[,n]
+    MODE device CP [/STATUS | SELECT=yyy | REFRESH]
+    MODE device CP PREPARE=((yyy[...]) [drive:][path]filename)
+
+The short forms MS-DOS took also work, with the values in order and
+commas between them: MODE LPT1:132,8,P and MODE COM1:96,N,8,1,P.
+
+\bParameters\p
+
+device
+    LPT1 to LPT3, PRN, COM1 to COM4 or CON.  With none, MODE shows the
+    settings of all of them.
+
+COLS=c (printer)
+    80 or 132 characters to the line.
+
+LINES=l (printer)
+    6 or 8 lines to the inch.
+
+RETRY=r
+    What to do when a printer or a serial port times out.  E, B, R and
+    P all keep sending until the port takes the data; E, B and R also
+    decide what a program asking whether the port is busy is told
+    (error, busy or ready).  CTRL+BREAK stops the waiting.  N or NONE
+    turns retrying off.  This is the default setting.
+
+BAUD=b
+    110, 150, 300, 600, 1200, 2400, 4800, 9600, 19200, 38400, 57600 or
+    115200.  Up to 19200 the first two digits are enough: 96 is 9600.
+
+PARITY=p
+    N (none), E (even), O (odd), M (mark) or S (space).  Default is E.
+
+DATA=d
+    5, 6, 7 or 8 data bits.  Default is 7.
+
+STOP=s
+    1, 1.5 or 2 stop bits.  Default is 1, or 2 at 110 baud.
+
+COLS=c (screen)
+    40 or 80 columns.
+
+LINES=n (screen)
+    25, 43 or 50 lines.  43 needs an EGA or VGA, and 50 a VGA.
+
+RATE=r
+    How fast a held-down key repeats, from 1 to 32.  32 is the fastest.
+
+DELAY=d
+    1 to 4 quarter seconds before a held-down key starts to repeat.
+    RATE and DELAY have to be given together.
+
+display
+    40 or 80 for the columns, or BW40, BW80, CO40, CO80 or MONO for
+    the screen mode.  MONO and the others also choose between a
+    monochrome and a colour adapter when the machine has both.  ,n
+    sets the lines, as LINES= does.
+
+yyy
+    A code page number.
+
+\bSwitches\p
+
+/STATUS or /STA
+    Shows the settings without changing anything.
+
+\bRelated Commands\p
+
+To set the keyboard repeat when the machine starts, see <\aKEYRATE=\vKEYRATE=\v>.
+To change the country's code page, see <\aCHCP\vCHCP\v>.
+ 
+                                     
+.context MODE--Notes
+.topic MODE--Notes
+.freeze 3
+\i\aExamples\vMODE--Examples\v  \aSyntax\vMODE\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                               MODEÄÄNotes
+ 
+\bNothing stays in memory\p
+
+On MS-DOS, rerouting a printer or setting RETRY= left part of MODE in
+memory.  On PM-DOS the kernel keeps these settings, so MODE loads
+nothing.  The settings last until the machine is restarted.  They do
+not apply in Windows.
+
+\bPrinting to a serial port\p
+
+After MODE LPT1=COM1, everything sent to LPT1 or PRN goes out on COM1,
+including from DOS programs that use the printer BIOS directly.  Set
+the serial port up first with MODE COM1.  MODE LPT1 on its own sends
+LPT1 back to the printer port.
+
+\bThe screen and ANSI.SYS\p
+
+When <\aANSI.SYS\vANSI.SYS\v> is loaded, MODE changes the screen through it.
+Without it, PM-DOS changes the screen itself, so MODE CON LINES= works
+without ANSI.SYS.
+
+\bCode pages\p
+
+PM-DOS has no DISPLAY.SYS or PRINTER.SYS, so the CP options report
+that the device does not support code pages.  CHCP changes the code
+page for the country and the keyboard.
+
+\bShifting the screen\p
+
+MODE display,R and MODE display,L moved the picture on old CGA
+monitors.  PM-DOS cannot do this and always says it is unable to shift
+the screen.
+
+\bThe exit code\p
+
+0, or 1 when MODE did not accept the command or a setting failed.
+ 
+                                     
+.context MODE--Examples
+.topic MODE--Examples
+.freeze 3
+\i\aSyntax\vMODE\v  \aNotes\vMODE--Notes\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                              MODEÄÄExamples
+ 
+To set COM1 to 9600 baud, no parity, 8 data bits and 1 stop bit:
+
+    mode com1:96,n,8,1
+
+To print on a serial printer on COM2:
+
+    mode com2:96,n,8,1,p
+    mode lpt1=com2
+
+To show 50 lines on a VGA screen:
+
+    mode con lines=50
+
+To make a held-down key repeat as fast as it can:
+
+    mode con rate=32 delay=1
+
+To see every setting:
+
+    mode
  
                                      
 .context MORE
@@ -5199,6 +5753,188 @@ To write the full report to a file for someone else to read:
     pmd /p c:\\report.txt
  
                                      
+.context QBASIC
+.context Qbasic
+.context QBasic
+.topic QBASIC
+.freeze 3
+\i\aNotes\vQBASIC--Notes\v  \aExamples\vQBASIC--Examples\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                                    QBASIC
+ 
+Starts QBasic, for writing and running programs in BASIC.
+
+\bSyntax\p
+
+    QBASIC [/B] [/EDITOR] [/G] [/H] [/MBF] [/NOHI]
+           [[/RUN] [drive:][path]filename]
+
+\bParameters\p
+
+[drive:][path]filename
+    The program to load.  .BAS is assumed if no extension is given.
+
+\bSwitches\p
+
+/EDITOR
+    Starts the PM-DOS Editor instead of QBasic.  Same as EDIT.
+
+/H
+    Uses as many screen lines as the display allows: 43 or 50.
+
+/MBF
+    Makes MKS$, MKD$, CVS and CVD use Microsoft Binary Format, for
+    programs written for older versions of BASIC.
+
+/RUN
+    Runs the program as soon as it is loaded.  A SYSTEM statement in
+    the program returns to DOS.
+
+/B, /G, /NOHI
+    For backwards compatibility only.  Has no effect under PM-DOS.
+
+\bRelated Commands\p
+
+For editing text files, see <\aEDIT\vEDIT\v>.
+ 
+                                     
+.context QBASIC--Notes
+.topic QBASIC--Notes
+.freeze 3
+\i\aExamples\vQBASIC--Examples\v  \aSyntax\vQBASIC\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                              QBASICÄÄNotes
+ 
+\bRequirements\p
+
+A math coprocessor is required: a 486DX, or a 386 with a 387.  The
+help file, QBASIC.HLP, is looked for in the same directory as
+QBASIC.EXE, in the PM-DOS directory, in the current directory and on
+the PATH.  Setup puts both files in the PM-DOS directory.
+
+\bPrograms written for MS-DOS\p
+
+Programs written for QBasic 1.1 run unchanged.  PM-DOS has no real
+mode, so PEEK, POKE and DEF SEG only reach the program's own
+variables, the screen and the BIOS data area, and CALL ABSOLUTE gives
+"Advanced feature unavailable".  Arrays can be larger than 64K.
+ 
+                                     
+.context QBASIC--Examples
+.topic QBASIC--Examples
+.freeze 3
+\i\aSyntax\vQBASIC\v  \aNotes\vQBASIC--Notes\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                             QBASICÄÄExamples
+ 
+To start QBasic:
+
+    qbasic
+
+To run a program and return to DOS when it executes SYSTEM:
+
+    qbasic /run games\\nibbles
+ 
+                                     
+.context RAMDISK.SYS
+.context Ramdisk.sys
+.topic RAMDISK.SYS
+.freeze 3
+\i\aNotes\vRAMDISK.SYS--Notes\v  \aExamples\vRAMDISK.SYS--Examples\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                                 RAMDISK.SYS
+ 
+Uses part of the computer's memory as a disk drive.
+
+\bSyntax\p
+
+    DEVICE=[drive:][path]RAMDISK.SYS [size [sector-size [entries]]] [/E | /A]
+
+\bParameters\p
+
+[drive:][path]
+    Location of the RAMDISK.SYS file.
+
+size
+    Size of the RAM disk in kilobytes, from 4 to 2,096,896.  Default
+    is 64.  A larger size is reduced to 2,096,896.
+
+sector-size
+    128, 256, 512 or 1024.  For backwards compatibility only.  PM-DOS
+    always uses 512-byte sectors.
+
+entries
+    How many files and directories the root directory can hold, from
+    2 to 1024.  Default is 64.  The number is rounded up to a multiple
+    of 16.
+
+\bSwitches\p
+
+/E
+    For backwards compatibility only.  Has no effect under PM-DOS.
+
+/A
+    For backwards compatibility only.  Has no effect under PM-DOS.
+
+\bRelated Commands\p
+
+RAMDISK.SYS is loaded with <\aDEVICE=\vDEVICE=\v>.  Each DEVICE= line makes one
+more RAM disk.
+ 
+                                     
+.context RAMDISK.SYS--Notes
+.topic RAMDISK.SYS--Notes
+.freeze 3
+\i\aExamples\vRAMDISK.SYS--Examples\v  \aSyntax\vRAMDISK.SYS\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                            RAMDISK.SYSÄÄNotes
+ 
+\bThe drive letter\p
+
+The RAM disk gets the next free drive letter.  RAMDISK.SYS shows the
+letter and the size when CONFIG.SYS runs.
+
+\bMemory\p
+
+The RAM disk is made from extended memory, which leaves that much less
+for programs that use XMS.  It uses no conventional memory.
+
+\bWindows\p
+
+The RAM disk can still be used while Windows is running.
+
+\bDeleted files\p
+
+Files deleted from a RAM disk are kept for <\aUNDELETE\vUNDELETE\v> as they are on
+any other disk, and they take up some of its space until they are
+purged.
+
+Everything on a RAM disk is lost when the computer is restarted or
+turned off.  Copy what you want to keep to another disk first.
+ 
+                                     
+.context RAMDISK.SYS--Examples
+.topic RAMDISK.SYS--Examples
+.freeze 3
+\i\aSyntax\vRAMDISK.SYS\v  \aNotes\vRAMDISK.SYS--Notes\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                          RAMDISK.SYSÄÄExamples
+ 
+To make a 4 MB RAM disk:
+
+    device=c:\\dos\\ramdisk.sys 4096
+
+To make a 1 MB RAM disk whose root directory holds 128 files:
+
+    device=c:\\dos\\ramdisk.sys 1024 512 128
+ 
+                                     
 .context SCANDISK
 .context Scandisk
 .context ScanDisk
@@ -5337,6 +6073,94 @@ To test the surface of a diskette:
 To find out whether a file is in one piece:
 
     scandisk /fragment c:\\data\\*.dbf
+ 
+                                     
+.context SETUP
+.context Setup
+.topic SETUP
+.freeze 3
+\i\aNotes\vSETUP--Notes\v  \aExamples\vSETUP--Examples\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                                    SETUP
+ 
+Installs PM-DOS on the hard disk, or makes a startup floppy.
+
+\bSyntax\p
+
+    SETUP [/F] [/G]
+
+\bSwitches\p
+
+/F
+    Makes a floppy disk that starts the computer and runs PM-DOS,
+    instead of installing on the hard disk.  F7 on Setup's first
+    screen does the same.
+
+/G
+    Does not make an Uninstall disk when Setup replaces another DOS.
+
+\bRelated Commands\p
+
+To divide a hard disk yourself before installing, use <\aFDISK\vFDISK\v>.
+ 
+                                     
+.context SETUP--Notes
+.topic SETUP--Notes
+.freeze 3
+\i\aExamples\vSETUP--Examples\v  \aSyntax\vSETUP\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                               SETUPÄÄNotes
+ 
+\bWhere to run Setup\p
+
+Setup reads the files it installs from wherever SETUP.EXE is: a Setup
+disk, the CD, a USB stick or a network directory.  Run under MS-DOS,
+Setup replaces that DOS with PM-DOS.  Started by restarting the
+computer from Setup Disk 1, the CD or a USB stick, Setup can also
+prepare and format a new hard disk.
+
+\bA new hard disk\p
+
+When the first hard disk has no partitions, Setup makes one partition
+of the free space and restarts the computer.  Setup then starts again
+by itself and formats the drive.  Disks of 512MB and more are
+formatted FAT32.  To divide the disk another way, leave Setup, run
+FDISK, and restart from the Setup disk.
+
+\bReplacing another DOS\p
+
+The old DOS commands that PM-DOS replaces are moved to C:\\OLD_DOS.1,
+with the old CONFIG.SYS and AUTOEXEC.BAT (as CONFIG.DAT and
+AUTOEXEC.DAT) and the old boot sector.  Lines that load programs
+PM-DOS does the work of, such as HIMEM.SYS, EMM386.EXE and SMARTDRV,
+are made REM lines.  To put the old DOS back, start the computer from
+the Uninstall disk Setup made and press ENTER.
+
+\bWhere the files go\p
+
+PMIO.SYS, PMDOS.SYS and RMDOS.SYS go in the root of drive C:,
+everything else in C:\\DOS or the directory you choose.  CONFIG.SYS
+gets a SHELL= line that names that directory.
+ 
+                                     
+.context SETUP--Examples
+.topic SETUP--Examples
+.freeze 3
+\i\aSyntax\vSETUP\v  \aNotes\vSETUP--Notes\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                             SETUPÄÄExamples
+ 
+To install PM-DOS from the diskette in drive A:
+
+    a:setup
+
+To make a startup floppy:
+
+    setup /f
+
  
                                      
 .context SETVER
@@ -5656,6 +6480,169 @@ To make the diskette in A: boot:
     sys a:
  
                                      
+.context TREE
+.context Tree
+.topic TREE
+.freeze 3
+\i\aNotes\vTREE--Notes\v  \aExamples\vTREE--Examples\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                                     TREE
+ 
+Shows the directories of a drive or path as a tree.
+
+\bSyntax\p
+
+    TREE [drive:][path] [/F] [/A]
+
+\bParameters\p
+
+[drive:][path]
+    Specifies where the tree starts.  Defaults to the current directory.
+    Put a path with spaces in it in double quotes.
+
+\bSwitches\p
+
+/F
+    Lists the files in each directory as well.
+
+/A
+    Draws the tree with ASCII characters (+ - \\ |) instead of line
+    characters.
+
+\bRelated Commands\p
+
+To see the files in one directory, see <\aDIR\vDIR\v>.
+ 
+                                     
+.context TREE--Notes
+.topic TREE--Notes
+.freeze 3
+\i\aExamples\vTREE--Examples\v  \aSyntax\vTREE\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                               TREEÄÄNotes
+ 
+\bWhat is not shown\p
+
+Hidden and system files and directories.  A hidden directory can
+still be given as the path.
+
+\bNames\p
+
+Long file names are shown in full.  With LFN=OFF in CONFIG.SYS they
+are shown as 8.3 names.
+
+\bThe order\p
+
+Directories and files are shown in the order the disk holds them,
+not sorted.  Each directory's files come before its subdirectories.
+
+\bSaving a tree\p
+
+A tree sent to a file or a printer keeps its line characters.  Use
+/A for a printer or a program that has no line characters.
+ 
+                                     
+.context TREE--Examples
+.topic TREE--Examples
+.freeze 3
+\i\aSyntax\vTREE\v  \aNotes\vTREE--Notes\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                              TREEÄÄExamples
+ 
+To see the directories on drive C:
+
+    tree c:\\
+
+To print the current directory with all the files below it:
+
+    tree /f /a > prn
+ 
+                                     
+.context TREEVIEW
+.context TreeView
+.topic TREEVIEW
+.freeze 3
+\i\aNotes\vTREEVIEW--Notes\v  \aExamples\vTREEVIEW--Examples\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                                   TREEVIEW
+ 
+Shows how the space on a drive is used, folder by folder.
+
+\bSyntax\p
+
+    TREEVIEW [drive:] [/G]
+
+\bParameters\p
+
+drive:
+    The drive to show first.  Defaults to drive C:.
+
+\bSwitches\p
+
+/G
+    Uses a VGA graphics screen instead of text mode.  The disk is drawn
+    as a pie chart there.
+
+\bRelated Commands\p
+
+To see the directories as a tree, see <\aTREE\vTREE\v>.
+ 
+                                     
+.context TREEVIEW--Notes
+.topic TREEVIEW--Notes
+.freeze 3
+\i\aExamples\vTREEVIEW--Examples\v  \aSyntax\vTREEVIEW\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                             TREEVIEWÄÄNotes
+ 
+\bUsing TreeView\p
+
+The left side shows the drive's used and free space, with the folder
+chosen on the right in yellow.  The right side lists the folders with
+their sizes, largest first.
+
+    Up, Down, PgUp, PgDn    Choose a folder.  The mouse works too.
+    Right or +              Opens the folder.
+    Left or -               Closes the folder.
+    Enter                   Opens or closes the folder.
+    F5                      Reads the drive again.
+    Esc                     Leaves TreeView.
+
+The Drive menu lists the drives from C: up.
+
+\bSizes\p
+
+A folder's size counts every file under it, hidden and system files
+included.  Files in the root directory are not in any folder.
+
+\bNames\p
+
+Long file names are shown, and cut short with ... when there is not
+room for them.  With LFN=OFF in CONFIG.SYS they are shown as 8.3 names.
+ 
+                                     
+.context TREEVIEW--Examples
+.topic TREEVIEW--Examples
+.freeze 3
+\i\aSyntax\vTREEVIEW\v  \aNotes\vTREEVIEW--Notes\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                            TREEVIEWÄÄExamples
+ 
+To see how drive D: is used:
+
+    treeview d:
+
+To see drive C: on the graphics screen:
+
+    treeview c: /g
+ 
+                                     
 .context UNDELETE
 .context Undelete
 .topic UNDELETE
@@ -5830,6 +6817,151 @@ BIOS drives them, as it did before PM-DOS started.
                               USBÄÄExamples
  
     usb
+ 
+                                     
+.context XARC
+.context Xarc
+.context XArchive
+.topic XARC
+.freeze 3
+\i\aNotes\vXARC--Notes\v  \aExamples\vXARC--Examples\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                                     XARC
+ 
+Lists, tests and extracts archives, and makes zip and 7z archives, on
+a screen of its own or from the command line.
+
+\bSyntax\p
+
+    XARC [[drive:][path]archive] [/G | /T]
+    XARC L archive [/Ppassword]
+    XARC T archive [/Ppassword]
+    XARC X archive [directory] [/Ppassword] [/NOPATHS]
+    XARC A archive name [name...] [/R] [/Xnames] [/NOPATHS] [/Y] [/AC]
+    XARC MEM
+
+\bParameters\p
+
+archive
+    The archive.  On its own it is opened on XARC's screen.  With no
+    archive at all, the screen starts in the current directory.
+
+L
+    Lists what the archive holds.
+
+T
+    Tests the archive: every file in it is unpacked and checked, and
+    nothing is written.
+
+X
+    Extracts the whole archive into directory, or into the current
+    directory.
+
+A
+    Makes a new archive of the files and directories named.  .7Z makes
+    a 7-Zip archive, anything else a zip, and a name with no extension
+    gets .ZIP.  A directory goes in with everything under it.
+
+MEM
+    Shows how much memory XARC can have, which decides how big an
+    archive it can extract.
+
+\bSwitches\p
+
+/G
+    Uses the VGA graphics screen this time.
+
+/T
+    Uses the text screen this time.
+
+/Ppassword
+    The password for an encrypted archive.  Anyone who sees the command
+    can read it.
+
+/NOPATHS
+    With X, puts every file in the one directory.  With A, stores the
+    files without their directory names.
+
+/R
+    With A, finds files that match a name like *.TXT in subdirectories
+    too.
+
+/Xnames
+    With A, leaves out files that match names, separated by semicolons.
+    /X@file reads the names from a file, one to a line.
+
+/Y
+    With A, replaces an archive of the same name without asking.
+
+/AC
+    With A, clears the Archive attribute of each file stored.
+
+\bRelated Commands\p
+
+To copy directories without packing them, see <\aXCOPY\vXCOPY\v>.
+ 
+                                     
+.context XARC--Notes
+.topic XARC--Notes
+.freeze 3
+\i\aExamples\vXARC--Examples\v  \aSyntax\vXARC\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                               XARCÄÄNotes
+ 
+\bThe screen\p
+
+An archive is listed like a directory.  ENTER opens a folder, or an
+archive inside the archive, and BACKSPACE goes back.  SPACE marks a
+file, F5 extracts what is marked, F3 shows a text file and F7 tests the
+archive.  Go back past the top of the archive and the disk is listed:
+mark files there and F8 packs them.  F1 lists every key, and the mouse
+works the menus, the list and the scroll bar.
+
+\bWhat it reads\p
+
+Zip, 7z, RAR from 2.0 to 5 (multi-volume sets too), cabinet (.CAB)
+files, files packed by COMPRESS.EXE (such as CALC.EX_), and FAT12 and
+FAT16 diskette images.  An encrypted zip, 7z or RAR archive needs its
+password.
+
+\bLong file names\p
+
+Names keep their long form on a drive that has long names.  On a drive
+without them, or with LFN=OFF, each name is shortened the way Windows
+95 does it: LONGFI~1.TXT, LONGFI~2.TXT.
+
+\bSettings\p
+
+The Options menu's choices are kept in XARCHIVE.INI, beside XARC.EXE.
+
+\bMemory\p
+
+A 7z or RAR archive packed with a large dictionary needs that much
+memory in one piece to extract.  XARC MEM shows what this machine can
+give, and Archive Info (F4) shows what an archive needs.
+ 
+                                     
+.context XARC--Examples
+.topic XARC--Examples
+.freeze 3
+\i\aSyntax\vXARC\v  \aNotes\vXARC--Notes\v\p
+\b\iÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄÄ\p
+ 
+                              XARCÄÄExamples
+ 
+To look through an archive:
+
+    xarc drivers.zip
+
+To extract one into a new directory:
+
+    xarc x drivers.zip c:\\drivers
+
+To pack a directory and everything under it:
+
+    xarc a c:\\backup\\work.7z c:\\work
  
                                      
 .context XCOPY

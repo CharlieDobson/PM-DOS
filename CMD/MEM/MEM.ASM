@@ -2,7 +2,8 @@
 ; MEM.ASM - MEM.EXE, the memory report, an EXTERNAL command
 ;
 ;   MEM             the summary table
-;   MEM /D          plus every block in the DOS arena
+;   MEM /D          plus every block in the DOS arena, and the 32-bit
+;                   drivers DEVICE= loaded
 ;   MEM /F          plus the FREE blocks only
 ;
 ; MEM was an external in MS-DOS and is an external here.  It was
@@ -14,12 +15,16 @@
 ; the kernel has no way to ask.
 ;
 ; What it asks:
+;   21h/38h         the country's thousands separator
 ;   21h/F1h AL=4    extended memory size, as the BIOS reported it
 ;   21h/F1h AL=8    one block of one arena, by index
 ;   21h/F1h AL=9    the EMS page frame and page counts, which it has
 ;                   to ask for rather than call INT 67h: expanded
 ;                   memory is served to V86 guests and this is a
 ;                   native program at ring 3
+;   21h/F1h AL=25h  the 32-bit drivers: NDF_COUNT, NDF_INFO for each
+;                   one's name, image and kind, NDF_MEM for what it
+;                   allocated after it was loaded
 ;
 ; IT USED TO READ THE HEADERS ITSELF, from the pointer 21h/52h hands
 ; out, which is exactly what MEM did under real DOS and worked here for
@@ -33,6 +38,7 @@
 ;=====================================================================
         .386
         INCLUDE PMDOS.INC
+        INCLUDE NDRV.INC                ; the 32-bit drivers' row
 
 ;--- what a block's signature means, as ARENA.INC lays it out --------
 MCB_LEN         EQU     16              ; the header, which is overhead
@@ -43,6 +49,18 @@ SIG_END         EQU     'E'
 BLOCKS_MAX      EQU     2000            ; refuse to loop forever on a
                                         ; corrupted chain
 
+;--- the table's columns ----------------------------------------------
+; The label field is LABEL_W wide (print_pad fills it), and col_kb
+; prints two spaces and a NUM_W number after it, so the columns are
+; provably where the numbers land.
+LABEL_W         EQU     22              ; the row-label field
+NUM_W           EQU     11              ; each number column
+
+; The lines under the table: a label this wide puts a NUM_W number
+; flush with the table's last column, which is where every figure on
+; the screen ends.
+LINE_W          EQU     LABEL_W + 2 * (2 + NUM_W) + 2
+
 _MEM    SEGMENT USE32 PUBLIC 'CODE'
         ASSUME  CS:_MEM, DS:_MEM, ES:_MEM, SS:_MEM
         ORG     0
@@ -50,10 +68,25 @@ _MEM    SEGMENT USE32 PUBLIC 'CODE'
 ;=====================================================================
 ; D32 header
 ;=====================================================================
-        D32_HEAD SLOT_IMAGE,<OFFSET mem_entry>,<0>,4096
+        D32_HEAD SLOT_IMAGE,<OFFSET mem_entry>,<MEM_BSS>,4096
 
 ;=====================================================================
 mem_entry:
+        ; THE COUNTRY'S THOUSANDS SEPARATOR, from 38h, as CMD.EXE asks
+        ; for DIR's numbers: COUNTRY= decides, and without one the
+        ; kernel answers for the United States and the comma stays.
+        mov     edx,OFFSET ctry_buf
+        mov     ax,3800h
+        int     21h
+        jc      me_nosep
+        mov     al,byte ptr [ctry_buf+7]
+        or      al,al
+        jz      me_nosep
+        cmp     al,'$'                  ; 09h would end the number there
+        je      me_nosep
+        mov     [num_sep],al
+me_nosep:
+
         mov     esi,SLOT_PSP + PSP_TAIL
         movzx   ecx,byte ptr [esi]
         inc     esi
@@ -111,7 +144,7 @@ me_argdone:
 
         ; conventional memory - what a 16-bit DOS program can have
         mov     edx,OFFSET msg_row_conv
-        call    print
+        call    row_label
         mov     eax,[c_total]
         shr     eax,10
         call    col_kb
@@ -127,7 +160,7 @@ me_argdone:
         cmp     dword ptr [u_total],0
         je      no_upper
         mov     edx,OFFSET msg_row_upper
-        call    print
+        call    row_label
         mov     eax,[u_total]
         shr     eax,10
         call    col_kb
@@ -143,7 +176,7 @@ no_upper:
         ; the kernel and the two program slots, and the page tables at
         ; the top - OS Reserved: all of it in use
         mov     edx,OFFSET msg_row_sys
-        call    print
+        call    row_label
         mov     eax,[x_osrsv]
         shr     eax,10
         push    eax
@@ -156,7 +189,7 @@ no_upper:
 
         ; the arena, as the block chain actually stands
         mov     edx,OFFSET msg_row_arena
-        call    print
+        call    row_label
         mov     eax,[a_total]
         shr     eax,10
         call    col_kb
@@ -171,7 +204,7 @@ no_upper:
         mov     edx,OFFSET msg_head2
         call    print
         mov     edx,OFFSET msg_row_tot
-        call    print
+        call    row_label
         ; The three rows above, added up - and they have to add up, or
         ; the table is worse than no table at all.
         mov     eax,[a_total]
@@ -248,9 +281,8 @@ no_upper:
         ; The frame is a segment and prints as one - four hex digits,
         ; right-aligned to the same edge as the numbers above it.
         mov     edx,OFFSET msg_emspf
-        call    print
-        mov     edx,OFFSET msg_hexpad
-        call    print
+        mov     ebx,LINE_W + NUM_W - 4
+        call    print_pad
         mov     eax,[e_frame]
         call    puthex16
         call    crlf
@@ -260,6 +292,9 @@ me_noems:
         je      me_done
         call    list_blocks
         call    list_dos
+        cmp     byte ptr [free_only],0
+        jne     me_done                 ; a driver is never free
+        call    list_drv
 me_done:
         mov     ax,4C00h
         int     21h
@@ -460,13 +495,9 @@ ld_lp:
         call    get_block
         jc      ld_out
         cmp     dword ptr [blk+F8_SIG],SIG_USED
-        je      ld_used
+        jne     ld_show                 ; a free block, which /F wants too
         cmp     byte ptr [free_only],0
-        je      ld_show
-        jmp     ld_next                 ; /F wants the free ones...
-ld_used:
-        cmp     byte ptr [free_only],0
-        jne     ld_next                 ; ...and not the others
+        jne     ld_next                 ; /F asked for the free ones only
 ld_show:
         push    ebx
 
@@ -615,6 +646,132 @@ lb_common:
         ret
 
 ;=====================================================================
+; list_drv - the 32-bit drivers DEVICE= loaded, one line each.
+;
+; THEIR MEMORY IS IN THE ARENA LISTING ALREADY, as blocks the kernel
+; owns (owner 0), and nothing there says which driver a block is
+; for.  So each driver is named here with the two figures the kernel
+; keeps for it: the image, which is the block at the same address in
+; the arena listing, and what the driver asked for after it was loaded
+; - a RAM disk's sectors, a card's buffers, a stack's sockets - which
+; is often far the larger.  With no driver loaded nothing is printed,
+; as with upper memory.
+;=====================================================================
+list_drv:
+        mov     eax,(NDF_COUNT SHL 16) OR 0F125h
+        int     21h
+        jc      lv_out                  ; a kernel without the call
+        or      ecx,ecx
+        jz      lv_out
+        mov     [dv_count],ecx
+
+        call    crlf
+        mov     edx,OFFSET msg_vhead1
+        call    print
+        mov     edx,OFFSET msg_vhead2
+        call    print
+
+        xor     ebx,ebx
+lv_lp:
+        cmp     ebx,[dv_count]
+        jae     lv_out
+        cmp     ebx,256
+        jae     lv_out                  ; DL carries the row, and no more
+        push    ebx
+        mov     edx,ebx
+        mov     edi,OFFSET dv_row
+        mov     eax,(NDF_INFO SHL 16) OR 0F125h
+        int     21h
+        jc      lv_gone
+
+        call    lv_name
+        mov     edx,OFFSET msg_2sp
+        call    print
+        mov     eax,dword ptr [dv_row+ND_BASE]
+        call    puthex32
+        mov     edx,OFFSET msg_2sp
+        call    print
+        mov     eax,dword ptr [dv_row+ND_SIZE]
+        mov     ebx,13
+        call    pdec_cw
+        mov     edx,OFFSET msg_2sp
+        call    print
+
+        mov     edx,[esp]               ; the row again
+        mov     eax,(NDF_MEM SHL 16) OR 0F125h
+        int     21h
+        jc      lv_nomem                ; a kernel from before NDF_MEM
+        mov     eax,ecx
+        mov     ebx,17
+        call    pdec_cw
+        jmp     short lv_kind
+lv_nomem:
+        mov     edx,OFFSET msg_vnomem
+        call    print
+lv_kind:
+        mov     edx,OFFSET msg_2sp
+        call    print
+        call    lv_type
+        call    print
+        call    crlf
+        pop     ebx
+        inc     ebx
+        jmp     lv_lp
+lv_gone:
+        pop     ebx
+lv_out:
+        ret
+
+;--- lv_name - the row's name, eight characters.  It comes from the
+;--- driver's own table, so a control character or a '$' (which would
+;--- end the string early for 09h) is shown as '?'.
+lv_name:
+        pushad
+        mov     esi,OFFSET dv_row + ND_NAME
+        mov     edi,OFFSET dv_name
+        mov     ecx,8
+lvn_lp:
+        mov     al,[esi]
+        cmp     al,' '
+        jb      lvn_odd
+        cmp     al,'$'
+        jne     lvn_put
+lvn_odd:
+        mov     al,'?'
+lvn_put:
+        mov     [edi],al
+        inc     esi
+        inc     edi
+        dec     ecx
+        jnz     lvn_lp
+        mov     byte ptr [edi],'$'
+        mov     edx,OFFSET dv_name
+        call    print
+        popad
+        ret
+
+;--- lv_type - EDX -> what kind of driver the row's flags say it is,
+;--- the first of these it has.  A driver with no flag the kernel knows
+;--- of is "other" (NDTEST.SYS is one).
+lv_type:
+        mov     eax,dword ptr [dv_row+ND_FLAGS]
+        mov     edx,OFFSET msg_kdisk
+        test    eax,NDTF_DISK
+        jnz     lvt_out
+        mov     edx,OFFSET msg_kredir
+        test    eax,NDTF_REDIR
+        jnz     lvt_out
+        mov     edx,OFFSET msg_kstack
+        test    eax,NDTF_STACK
+        jnz     lvt_out
+        mov     edx,OFFSET msg_knic
+        test    eax,NDTF_NIC
+        jnz     lvt_out
+        mov     edx,OFFSET msg_kother
+lvt_out:
+        ret
+
+;=====================================================================
 ; Output helpers
 ;=====================================================================
 
@@ -665,15 +822,49 @@ line_num:
         call    crlf
         ret
 line_fig:
-        push    eax
-        call    print
-        pop     eax
+        mov     ebx,LINE_W
+        call    print_pad
         mov     ebx,NUM_W
         call    pdec_cw
         ret
 
+; row_label - the table row's name at EDX, padded to LABEL_W
+row_label:
+        mov     ebx,LABEL_W
+                                        ; and on into print_pad
+; print_pad - EDX -> a '$'-terminated string, printed and then blanks
+;             up to EBX columns.  Everything preserved.
+;
+; THE LABELS ARE STORED BARE AND PADDED HERE.  They used to carry their
+; padding as counted runs of blanks, which kept the columns provable
+; and cost nearly 300 bytes of spaces - the cluster that decided
+; whether MEM.EXE fitted on the boot diskette.  The column is just as
+; provable counted at run time.
+print_pad:
+        pushad
+        call    print
+        mov     edi,edx
+pp_len:
+        cmp     byte ptr [edi],'$'
+        je      pp_got
+        inc     edi
+        jmp     short pp_len
+pp_got:
+        sub     edi,edx                 ; the label's length
+        sub     ebx,edi
+        jle     pp_out
+        mov     edx,OFFSET msg_1sp
+pp_blank:
+        call    print
+        dec     ebx
+        jnz     pp_blank
+pp_out:
+        popad
+        ret
+
 ;---------------------------------------------------------------------
-; pdec_c  - EAX in decimal with thousands commas
+; pdec_c  - EAX in decimal, the thousands grouped with num_sep (the
+;           country's separator, 38h)
 ; pdec_cw - the same, right-aligned in a field EBX wide
 ;
 ; Built backwards into a buffer, which is the only way to know where
@@ -699,7 +890,8 @@ pc_lp:
         cmp     ebp,3
         jne     pc_lp
         dec     edi
-        mov     byte ptr [edi],','
+        mov     dl,[num_sep]            ; the digit is stored: DL is free
+        mov     [edi],dl
         xor     ebp,ebp
         jmp     short pc_lp
 
@@ -749,11 +941,11 @@ ph_dig:
 ;=====================================================================
 want_list   db  0
 free_only   db  0
-            db  0,0
+num_sep     db  ','                     ; the thousands separator, 38h's
+            db  0
 x_memkb     dd  0
 x_osrsv     dd  ARENA_BASE - HMA_BASE   ; OS Reserved: below the arena,
                                         ; and survey adds what is above it
-blk         db  F8_LEN dup(0)       ; one block, as F1h AL=8 answers
 a_total     dd  0
 a_used      dd  0
 a_free      dd  0
@@ -774,23 +966,9 @@ u_largest   dd  0
 ld_region   db  0
             db  0,0,0
 free_only_pad db 0
-numbuf      db  24 dup(0)
-hexbuf      db  12 dup(0)
+dv_count    dd  0                   ; 32-bit drivers loaded
 
-;---------------------------------------------------------------------
-; The table.  Written with counted runs rather than typed spaces so
-; that the columns are provably where the numbers land: the label
-; field is LABEL_W wide, and col_kb prints two spaces and an 11-wide
-; number after it.
-;---------------------------------------------------------------------
-LABEL_W         EQU     22              ; the row-label field
-NUM_W           EQU     11              ; each number column
-
-; The lines under the table: a label this wide puts a NUM_W number
-; flush with the table's last column, which is where every figure on
-; the screen ends.
-LINE_W          EQU     LABEL_W + 2 * (2 + NUM_W) + 2
-
+;--- the table: see LABEL_W at the top --------------------------------
 msg_head1   db  'Memory Type',(LABEL_W - 11 + 2 + NUM_W - 8) dup(' '),'Total KB'
             db  (2 + NUM_W - 7) dup(' '),'Used KB'
             db  (2 + NUM_W - 7) dup(' '),'Free KB',13,10,'$'
@@ -798,21 +976,20 @@ msg_head2   db  16 dup('-'),(LABEL_W - 16 + 2) dup(' '),NUM_W dup('-')
             db  2 dup(' '),NUM_W dup('-')
             db  2 dup(' '),NUM_W dup('-'),13,10,'$'
 
-msg_row_sys   db 'OS Reserved',(LABEL_W - 11) dup(' '),'$'
-msg_row_conv  db 'Conventional',(LABEL_W - 12) dup(' '),'$'
-msg_row_upper db 'Upper',(LABEL_W - 5) dup(' '),'$'
-msg_row_arena db 'XMS pool',(LABEL_W - 8) dup(' '),'$'
-msg_row_tot   db 'Total memory',(LABEL_W - 12) dup(' '),'$'
+msg_row_sys   db 'OS Reserved','$'
+msg_row_conv  db 'Conventional','$'
+msg_row_upper db 'Upper','$'
+msg_row_arena db 'XMS pool','$'
+msg_row_tot   db 'Total memory','$'
 
-msg_xms     db  'Extended memory reported by the BIOS',(LINE_W - 36) dup(' '),'$'
-msg_largest db  'Largest free XMS block',(LINE_W - 22) dup(' '),'$'
-msg_blocks  db  'XMS blocks in use',(LINE_W - 17) dup(' '),'$'
-msg_bfree   db  'XMS blocks free',(LINE_W - 15) dup(' '),'$'
+msg_xms     db  'Extended memory reported by the BIOS','$'
+msg_largest db  'Largest free XMS block','$'
+msg_blocks  db  'XMS blocks in use','$'
+msg_bfree   db  'XMS blocks free','$'
 msg_kb      db  ' KB',13,10,'$'
-msg_ems     db  'Expanded memory (EMS)',(LINE_W - 21) dup(' '),'$'
-msg_emsfr   db  'Free expanded memory',(LINE_W - 20) dup(' '),'$'
-msg_emspf   db  'EMS page frame',(LINE_W - 14) dup(' '),'$'
-msg_hexpad  db  (NUM_W - 4) dup(' '),'$'
+msg_ems     db  'Expanded memory (EMS)','$'
+msg_emsfr   db  'Free expanded memory','$'
+msg_emspf   db  'EMS page frame','$'
 
 ;--- the block list: 8 hex, 2, 15 for the size, 2, 6 for the owner ---
 msg_bhead1  db  'Address',6 dup(' '),'Size (bytes)',3 dup(' '),'Owner'
@@ -823,12 +1000,25 @@ msg_used    db  '  in use',13,10,'$'
 msg_dhead1  db  'Segment',2 dup(' '),'Size (bytes)',2 dup(' '),' Owner'
             db  '  Area          Status',13,10,'$'
 msg_dhead2  db  4 dup('-'),5 dup(' '),12 dup('-'),2 dup(' '),6 dup('-')
-            db  2 dup(' '),12 dup('-'),2 dup('-'),13,10,'$'
+            db  2 dup(' '),12 dup('-'),2 dup(' '),6 dup('-'),13,10,'$'
+;--- the drivers: 8 for the name, 2, 8 hex, 2, 13 and 17 for the two
+;--- sizes (a 32-bit count with its commas is 13), 2, 12 for the type
+msg_vhead1  db  'Driver',4 dup(' '),'Address',3 dup(' '),'Image (bytes)'
+            db  2 dup(' '),'Allocated (bytes)',2 dup(' '),'Type',13,10,'$'
+msg_vhead2  db  8 dup('-'),2 dup(' '),8 dup('-'),2 dup(' '),13 dup('-')
+            db  2 dup(' '),17 dup('-'),2 dup(' '),12 dup('-'),13,10,'$'
+msg_vnomem  db  16 dup(' '),'-','$'
+msg_kdisk   db  'disk','$'
+msg_kredir  db  'redirector','$'
+msg_kstack  db  'TCP/IP stack','$'
+msg_knic    db  'network card','$'
+msg_kother  db  'other','$'
 msg_aconv   db  'conventional','$'
 msg_aupper  db  'upper       ','$'
 msg_dnoown  db  5 dup(' '),'-','$'
 msg_isfree  db  '  free',13,10,'$'
 msg_noowner db  5 dup(' '),'-','$'
+msg_1sp     db  ' ','$'
 msg_2sp     db  '  ','$'
 msg_crlf    db  13,10,'$'
 
@@ -836,8 +1026,22 @@ msg_badsw   db  'Invalid switch',13,10,'$'
 msg_usage   db  'Displays the amount of used and free memory in your system.',13,10,13,10
             db  'MEM [/DEBUG | /FREE]',13,10,13,10
             db  '  /DEBUG or /D     Displays every memory block in both arenas, with',13,10
-            db  '                   its owner and status.',13,10
+            db  '                   its owner and status, and the 32-bit drivers.',13,10
             db  '  /FREE or /F      Displays only the free memory blocks.',13,10,'$'
+
+;---------------------------------------------------------------------
+; The BSS: buffers the loader zeroes past the image, so that they take
+; no room in the file.  MEM_BSS in the header is their length.
+;---------------------------------------------------------------------
+img_end:
+blk         EQU     img_end             ; one block, as F1h AL=8 answers
+numbuf      EQU     blk + F8_LEN        ; 24: a number, built backwards
+hexbuf      EQU     numbuf + 24         ; 12: eight hex digits and a '$'
+dv_row      EQU     hexbuf + 12         ; a 32-bit driver, as NDF_INFO
+                                        ; answers
+dv_name     EQU     dv_row + ND_LEN     ; 12: its name, '$'-ended
+ctry_buf    EQU     dv_name + 12        ; 34: 38h's country block
+MEM_BSS     EQU     F8_LEN + 24 + 12 + ND_LEN + 12 + 34
 
 _MEM    ENDS
         END

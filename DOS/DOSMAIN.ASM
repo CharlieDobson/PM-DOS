@@ -288,6 +288,8 @@ shell_restart:
         call    slot_sweep              ; nor any program's slot: each one
                                         ; is an arena block 4Ch would have
                                         ; freed, and owner 0 is never swept
+        mov     dword ptr ds:[dbx_state],DBST_NONE      ; so no program is
+                                        ; held for a debugger (DBGAPI.INC)
 
         mov     dword ptr ds:[cur_psp],SHELL_PSP
         xor     eax,eax                 ; the boot check's slot, if the
@@ -758,6 +760,8 @@ kbss_stop:
         INCLUDE RING3.INC               ; last: it sorts ring-3 faults into
                                         ; the DPMI host's and its own, and
                                         ; borrows the bridge's pointer table
+        INCLUDE DBGAPI.INC              ; and a debugger's program, which
+                                        ; r3_fault hands to it and 4Bh loads
         INCLUDE FCB.INC                 ; ...and then this one, which asks
                                         ; RING3.INC how big the running
                                         ; program's memory is before it will

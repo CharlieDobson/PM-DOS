@@ -1324,6 +1324,23 @@ pfh_notnet:
         mov     dword ptr [ebx+RMD_START],eax
         jmp     short pfh_nextrow
 pfh_isdrv:
+        ; A 32-BIT DRIVER'S MEMORY UNIT - a RAM disk - goes over as
+        ; memory (RMDF_MEM).  No driver can be called down there, but
+        ; its sectors are a block the kernel keeps through the park, so
+        ; RMDOS moves them itself (RMDISK.INC, rd_memraw).  RMD_START is
+        ; where this kernel keeps the unit's size and address, which
+        ; RMDOS reads; a 32-bit unit that is not memory is not there.
+        push    eax
+        mov     al,[esi+DRV_BIOS]
+        call    dl_unitmem              ; -> EAX, CF if not one
+        jc      pfh_notmem
+        mov     dword ptr [ebx+RMD_START],eax
+        pop     eax
+        or      al,RMDF_MEM
+        mov     [ebx+RMD_FLAGS],al
+        jmp     pfh_nextrow
+pfh_notmem:
+        pop     eax
         push    ecx                     ; the loop's count
         mov     dl,al
         mov     al,[esi+DRV_BIOS]

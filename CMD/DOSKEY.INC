@@ -1093,8 +1093,14 @@ kf9_bs:
         or      ecx,ecx
         jz      kf9_key
         dec     ecx
-        mov     dl,8                    ; the console's backspace blanks
-        mov     ah,02h                  ; as it goes
+        mov     dl,8                    ; back, blank, back: a backspace
+        mov     ah,02h                  ; alone blanks on the kernel's
+        int     21h                     ; console and not on ANSI.SYS
+        mov     dl,' '
+        mov     ah,02h
+        int     21h
+        mov     dl,8
+        mov     ah,02h
         int     21h
         jmp     short kf9_key
 kf9_cr:

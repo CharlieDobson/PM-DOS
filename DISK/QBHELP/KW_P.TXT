@@ -1,0 +1,1507 @@
+#! KW_P.TXT - keyword topics PAINT to WRITE (Part P).  Bullet lists are
+#! aligned as the help window shows them: {o} is one character there.
+#topic PAINT Statement
+#key PAINT Statement
+PAINT fills an area of a graphics screen with a colour or a pattern.  The
+fill starts at a point and spreads out until it meets a border colour.
+
+{b}PAINT{p} [STEP] (x!, y!) [, [paint] [, [bordercolour%] [, background$]]]
+
+    {o} STEP             x! and y! are offsets from the last point drawn.
+    {o} x!, y!           Where the fill starts.
+    {o} paint            A colour number, or a tile string (see below).
+                       Without one, the foreground colour.
+    {o} bordercolour%    The colour that stops the fill.  Without one,
+                       the paint colour.
+    {o} background$      See below.
+
+The fill spreads up, down, left and right, as far as the border colour or
+the edge of the viewport.  The border must be closed: one gap lets the
+paint out over the rest of the screen.  Nothing is painted when the start
+point is outside the viewport or already in the border colour.
+
+A tile string paints a pattern that repeats across and down the area.
+Each byte is one row of the pattern, except in the 16-colour modes:
+    SCREEN 1          a byte is 4 pixels, 2 bits each
+    SCREEN 2, 11      a byte is 8 pixels, 1 bit each
+    SCREEN 7-9, 12    4 bytes are a row of 8 pixels: one byte for each
+                      bit of the colour number, bit 0 first
+    SCREEN 10         2 bytes are a row of 8 pixels, the same way
+    SCREEN 13         a byte is 1 pixel: its colour
+The tile may be up to 64 bytes long.  An empty tile is "Illegal function
+call", and so is PAINT on a text screen.
+
+In QBasic, background$ names a tile row already on the screen that the
+fill may paint over.  This QBasic accepts background$ and does not need it.
+
+Example:
+    SCREEN 12
+    CIRCLE (320, 240), 100, 14
+    PAINT (320, 240), 1, 14                ' blue inside the yellow ring
+    tile$ = CHR$(&HAA) + CHR$(0) + CHR$(0) + CHR$(0)
+    PAINT (5, 5), tile$, 14                ' blue stripes outside it
+
+See Also  [[CIRCLE]]  [[LINE]]  [[DRAW]]  [[COLOR]]  [[SCREEN]]
+#topic PALETTE, PALETTE USING Statements
+#key PALETTE Statement
+#entry PALETTE USING Statement
+PALETTE changes the colour an attribute (a colour number the program draws
+with) shows on the screen.  PALETTE USING changes all of them from an
+array.
+
+{b}PALETTE{p} [attribute%, colour&]
+{b}PALETTE USING{p} arrayname[(index%)]
+
+    {o} attribute%       The colour number to change.
+    {o} colour&          The colour it is to show (see below).  -1 leaves
+                       the attribute as it is.
+    {o} arrayname        An INTEGER or LONG array with a colour for each
+                       attribute, attribute 0 first.
+    {o} index%           The element that holds attribute 0's colour.
+                       Without one, the array's first element.
+
+PALETTE with nothing after it puts back the mode's own colours.
+
+What a colour number means depends on the screen mode:
+    SCREEN 0            0-63, the EGA colours
+    SCREEN 1, 2, 7, 8   0-15, the sixteen standard colours
+    SCREEN 9            0-63, the EGA colours
+    SCREEN 10           0-8
+    SCREEN 11, 12, 13   65536 * blue + 256 * green + red, each 0 to 63
+
+An attribute the mode does not have, or a colour out of range, is
+"Illegal function call".  So is an array too short for every attribute.
+
+In this QBasic, PALETTE in SCREEN 0 checks its numbers and changes nothing,
+and SCREEN 10's nine colours are steady greys (QBasic makes some blink).
+
+Example:
+    SCREEN 13
+    FOR i% = 0 TO 63
+        PALETTE i%, i%                    ' attributes 0-63: reds
+    NEXT i%
+    DIM pal&(255): PALETTE USING pal&(0)  ' every attribute black
+
+See Also  [[COLOR]]  [[SCREEN]]  [[Screen Modes|screenmodes]]
+#topic PCOPY Statement
+#key PCOPY Statement
+PCOPY copies one screen page over another.
+
+{b}PCOPY{p} sourcepage%, destinationpage%
+
+    {o} sourcepage%       The page to copy.
+    {o} destinationpage%  The page that is overwritten.
+
+The pages a mode has are listed under [[Screen Modes|screenmodes]].  A
+page the mode does not have is "Illegal function call".
+
+PCOPY goes with SCREEN's active and visible pages: draw the next picture
+on a hidden page, then copy it to the page on show, and the picture
+changes at once instead of being seen half drawn.
+
+Example:
+    SCREEN 7, , 1, 0                  ' draw on page 1, show page 0
+    LINE (0, 0)-(319, 199), 4, BF
+    PCOPY 1, 0                        ' the red screen appears at once
+
+See Also  [[SCREEN]]  [[CLS]]
+#topic PEEK Function
+#key PEEK Function
+PEEK returns the byte at an address in the segment set by DEF SEG.
+
+{b}PEEK{p}(address)
+
+    {o} address          The offset in the segment, 0 to 65535.
+
+The result is 0 to 255.  A negative address counts back from 65536; one
+outside -32768 to 65535 is "Overflow".
+
+This QBasic has no real-mode memory: PEEK reaches the program's own
+variables, the screen at &HB800 and &HA000, the BIOS data area at &H40 and
+the ROMs.  Any other address reads 0.  See [[QBasic on PM-DOS|pmdos]].
+
+Example:
+    DEF SEG = &H40
+    IF PEEK(&H17) AND 64 THEN PRINT "Caps Lock is on"
+    DEF SEG
+
+See Also  [[POKE]]  [[DEF SEG|SEG]]  [[VARPTR]]  [[VARSEG]]  [[SADD]]
+#topic POKE Statement
+#key POKE Statement
+POKE writes a byte at an address in the segment set by DEF SEG.
+
+{b}POKE{p} address, byte%
+
+    {o} address          The offset in the segment, 0 to 65535.
+    {o} byte%            The value to write.  Only its low 8 bits are
+                       stored.
+
+A POKE in the wrong place can change the program's variables without
+warning.  An address or value outside -32768 to 65535 is "Overflow".
+
+This QBasic has no real-mode memory: POKE reaches the program's own
+variables and the screen at &HB800 (text) and &HA000 (SCREEN 13).  In the
+BIOS data area only the keyboard buffer takes a POKE; anything else is
+ignored.  See [[QBasic on PM-DOS|pmdos]].
+
+Example:
+    DEF SEG = &HB800
+    POKE 0, ASC("A")                  ' an A in the top left corner,
+    POKE 1, &H1E                      ' yellow on blue
+    DEF SEG
+
+See Also  [[PEEK]]  [[DEF SEG|SEG]]  [[VARPTR]]  [[VARSEG]]
+#topic PEN Function, PEN Statements
+#key PEN Function
+#entry PEN Statement
+The PEN function reads a light pen.  PEN ON, PEN OFF and PEN STOP control
+the trapping of the pen by ON PEN GOSUB.
+
+{b}PEN{p}(n%)
+{b}PEN ON{p} | {b}PEN OFF{p} | {b}PEN STOP{p}
+{b}ON PEN GOSUB{p} line
+
+    {o} n%               What PEN returns:
+                         0     -1 if the pen was pressed since the last
+                               PEN(0), else 0
+                         1, 2  x and y where the pen was last pressed
+                         3     -1 if the pen's switch is down, else 0
+                         4, 5  the pen's latest x and y
+                         6, 7  row and column where it was last pressed
+                         8, 9  the pen's latest row and column
+    {o} line             The label or line number of the handler.
+
+n% outside 0-9 is "Illegal function call".
+
+This QBasic has no light pen: PEN(n%) is always 0 and ON PEN never
+happens.
+
+See Also  [[event trapping|events]]  [[ON]]  [[STICK]]
+#topic PLAY Statement, PLAY Function
+#key PLAY Statement
+#entry PLAY Function
+PLAY plays music on the PC speaker from a string of notes and commands.
+The PLAY function returns how many notes are still waiting to be played.
+
+{b}PLAY{p} commandstring$
+{b}PLAY{p}(n)
+{b}PLAY ON{p} | {b}PLAY OFF{p} | {b}PLAY STOP{p}
+{b}ON PLAY{p}(queuelimit%) {b}GOSUB{p} line
+
+    {o} commandstring$   The notes and commands: see [[Music Strings|PLAY-music]].
+    {o} n                Any number; it is not used.
+    {o} queuelimit%      1 to 32.  The handler runs when fewer notes than
+                       this are waiting.
+    {o} line             The label or line number of the handler.
+
+At first PLAY returns only when its music has finished.  After MB in a
+string the music plays in the background while the program goes on, with
+up to 32 notes waiting; PLAY(n) counts them (it is 0 in the foreground).
+ON PLAY lets the program add more notes before the queue runs dry; PLAY
+ON starts that trapping.  See [[event trapping|events]].
+
+Example:
+    PLAY "T160 O3 L8 CDEFGAB > C"
+    PLAY "MB L4 C E G"                ' plays while the program goes on
+    PRINT PLAY(0); "notes waiting"
+
+See Also  [[Music Strings|PLAY-music]]  [[SOUND]]  [[BEEP]]  [[VARPTR$]]
+#topic PLAY Music Strings
+#context PLAY-music
+The commands in a PLAY string.  They may be in upper or lower case, and
+blanks and semicolons between them are ignored.  Octave, length, tempo and
+style carry on from one PLAY to the next.
+
+  {b}Notes{p}
+    A to G        A note in the current octave.  # or + after the letter
+                  makes it sharp, - flat.  A length (1-64) may follow,
+                  then dots.
+    N n           Note n of the whole range, 1 to 84 (seven octaves of
+                  twelve).  N0 is a rest.
+    P n           A rest of length n (1-64).
+    .             After a note or a rest: half as long again.  Each
+                  further dot adds half of what the dot before added.
+
+  {b}Octaves{p}
+    O n           The octave, 0 to 6; 4 at the start.  Middle C is the
+                  first note of octave 3.
+    <  >          One octave down, one octave up.
+
+  {b}Length and tempo{p}
+    L n           The length of the notes that follow: 1 a whole note,
+                  4 a quarter (the start), up to 64.
+    T n           Quarter notes a minute, 32 to 255; 120 at the start.
+
+  {b}Style{p}
+    MN            Each note sounds for 7/8 of its length (the start).
+    ML            Legato: the whole length.
+    MS            Staccato: 3/4 of the length.
+    MF            Foreground: PLAY waits until the music has finished.
+    MB            Background: the program goes on; up to 32 notes wait.
+
+  {b}Variables{p}
+    X + VARPTR$(a$)   Plays the string a$ here.
+    = + VARPTR$(v%)   Any number may be a variable's instead, as in
+                      "T=" + VARPTR$(speed%).
+
+A number out of range, or a letter that is no command, is "Illegal
+function call".
+
+Example:
+    PLAY "T200 L16 O4 CDEC CDEC L8 EFG EFG"
+    tune$ = "L8 GFEDC4"
+    PLAY "O3 X" + VARPTR$(tune$)
+
+See Also  [[PLAY]]  [[SOUND]]  [[VARPTR$]]
+#topic PMAP Function
+#key PMAP Function
+PMAP converts a coordinate between the units WINDOW set (logical) and the
+pixels of the viewport (physical).
+
+{b}PMAP{p}(coordinate#, n%)
+
+    {o} coordinate#      The coordinate to convert.
+    {o} n%               0  logical x to physical x
+                       1  logical y to physical y
+                       2  physical x to logical x
+                       3  physical y to logical y
+
+Physical coordinates count pixels from the viewport's top left corner.
+With no WINDOW set the two kinds are the same.  n% outside 0-3, or PMAP on
+a text screen, is "Illegal function call".
+
+Example:
+    SCREEN 12
+    WINDOW (-10, -10)-(10, 10)
+    PRINT PMAP(0, 0); PMAP(0, 1)      ' where (0, 0) is, in pixels
+
+See Also  [[WINDOW]]  [[VIEW]]  [[POINT]]
+#topic POINT Function
+#key POINT Function
+POINT returns the colour of a pixel, or where the last point drawn is.
+
+{b}POINT{p}(x!, y!)
+{b}POINT{p}(n%)
+
+    {o} x!, y!           The pixel, in the current coordinates (WINDOW's
+                       when one is set).
+    {o} n%               0  the last point's x, in pixels
+                       1  its y, in pixels
+                       2  its x in WINDOW's units
+                       3  its y in WINDOW's units
+
+POINT(x!, y!) is -1 for a pixel outside the viewport.  Pixels are counted
+from the viewport's top left corner; with no WINDOW set, POINT(2) and
+POINT(3) are the same as POINT(0) and POINT(1).  POINT on a text screen is
+"Illegal function call".
+
+Example:
+    SCREEN 13
+    PSET (100, 50), 4
+    PRINT POINT(100, 50)              ' 4
+    PRINT POINT(0); POINT(1)          ' 100  50
+
+See Also  [[PSET]]  [[PMAP]]  [[WINDOW]]  [[VIEW]]
+#topic POS Function
+#key POS Function
+POS returns the column the cursor is in.
+
+{b}POS{p}(n)
+
+    {o} n                Any number; it is not used.
+
+The leftmost column is 1.  [[CSRLIN]] returns the row.
+
+Example:
+    PRINT "Name: ";
+    col% = POS(0)                     ' 7
+
+See Also  [[CSRLIN]]  [[LOCATE]]  [[LPOS]]
+#topic PSET, PRESET Statements
+#key PSET Statement
+#key PRESET Statement
+PSET sets a pixel to a colour.  PRESET does the same, but without a colour
+it uses the background colour, which rubs the pixel out.
+
+{b}PSET{p} [STEP] (x!, y!) [, colour%]
+{b}PRESET{p} [STEP] (x!, y!) [, colour%]
+
+    {o} STEP             x! and y! are offsets from the last point.
+    {o} x!, y!           The pixel, in the current coordinates.
+    {o} colour%          The colour.  Without one, PSET uses the
+                       foreground colour and PRESET the background (0).
+
+The pixel becomes the last point, which STEP, LINE and DRAW start from.
+A pixel outside the viewport is not drawn.  PSET or PRESET on a text
+screen is "Illegal function call".
+
+Example:
+    SCREEN 12
+    FOR x% = 0 TO 639
+        PSET (x%, 240 - 100 * SIN(x% / 50)), 10
+    NEXT x%
+
+See Also  [[POINT]]  [[LINE]]  [[CIRCLE]]  [[COLOR]]  [[SCREEN]]
+#topic PRINT, LPRINT Statements
+#key PRINT Statement
+#key LPRINT Statement
+#key ?
+PRINT writes numbers and strings on the screen, or into a file.  LPRINT
+writes them on the printer.
+
+{b}PRINT{p} [#filenumber%,] [expressionlist] [{; | ,}]
+{b}LPRINT{p} [expressionlist] [{; | ,}]
+
+    {o} filenumber%      A file opened for OUTPUT or APPEND.  Without
+                       one, PRINT writes on the screen.
+    {o} expressionlist   The items to write, with ; or , between them.
+    {o} ;                The next item follows straight on.
+    {o} ,                The next item starts at the next zone of 14
+                       columns.
+
+A number is written with a blank before it (or its minus sign) and a blank
+after it.  A list that ends with ; or , does not end the line; any other
+list does.  PRINT on its own writes an empty line.  An item
+that would run past the end of the line goes whole to the next line,
+unless it is longer than a line.  [[TAB]] and [[SPC]] may be put among the
+items to move along the line.
+
+? may be typed for PRINT; the editor changes it to PRINT.  LPRINT with no
+printer is "Device unavailable".
+
+Example:
+    PRINT "Total:"; 12 * 3
+    PRINT "Name", "Age"
+    OPEN "LOG.TXT" FOR APPEND AS #1
+    PRINT #1, DATE$; " "; TIME$
+    CLOSE #1
+
+See Also  [[PRINT USING|USING]]  [[WRITE]]  [[WIDTH]]  [[LOCATE]]  [[OPEN]]
+#topic PRINT USING, LPRINT USING Statements
+#key USING
+#entry PRINT USING Statement
+#entry LPRINT USING Statement
+PRINT USING writes numbers and strings laid out by a format string.
+LPRINT USING does the same on the printer.
+
+{b}PRINT{p} [#filenumber%,] {b}USING{p} format$; expressionlist [{; | ,}]
+{b}LPRINT USING{p} format$; expressionlist [{; | ,}]
+
+    {o} filenumber%      A file opened for OUTPUT or APPEND.
+    {o} format$          Text with fields in it (see below).
+    {o} expressionlist   The values, with ; or , between them; here the
+                       two mean the same.  A ; or , at the end leaves
+                       the cursor on the line.
+
+Each value takes the format's text up to the next field, then fills the
+field.  When the format runs out it starts again from the left.  After
+the last value, the text up to the next field is written too.
+
+  {b}Number fields{p}
+    #        A digit.
+    .        The decimal point: ##.## writes two decimals, rounded.
+    ,        Before the point: the digits in groups of three, with commas.
+    +        At the start or the end: the number's sign, + or -.
+    -        At the end: a minus after a negative number.
+    $$       A dollar sign just before the first digit.
+    **       The blanks in front of the number filled with asterisks.
+    **$      Both of these.
+    ^^^^     An exponent, E+nn (D+nn for a DOUBLE); ^^^^^ gives E+nnn.
+
+  {b}String fields{p}
+    !        The string's first character.
+    &        The whole string.
+    \   \    As many characters as the field is wide, both backslashes
+             counted; each blank between them adds one.
+
+  {b}Others{p}
+    _        Writes the next character as it is: _# writes #.
+
+A number too big for its field is written whole, with % in front of it.
+A value of the wrong kind for its field is "Type mismatch"; a format with
+no field in it, or a number field over 24 characters, is "Illegal
+function call".
+
+Example:
+    PRINT USING "##.##"; 3.14159              ' 3.14
+    PRINT USING "$$#,###.##"; 1234.5          ' $1,234.50
+    PRINT USING "\  \ is ##"; "Annette"; 7    ' Anne is  7
+
+See Also  [[PRINT]]  [[WRITE]]  [[STR$]]  [[PALETTE USING|PALETTE]]
+#topic RANDOMIZE Statement
+#key RANDOMIZE Statement
+RANDOMIZE starts the random-number generator at a new place, so that RND
+gives a different series of numbers.
+
+{b}RANDOMIZE{p} [seed]
+
+    {o} seed             Any number.  Without one, RANDOMIZE asks for a
+                       seed from -32768 to 32767 on the screen.
+
+Every run starts the generator in the same state, so a program without
+RANDOMIZE gets the same numbers from RND each time.  RANDOMIZE TIMER takes
+the seed from the clock, which differs from run to run.
+
+The seed changes only part of the generator's state, so the same seed
+does not always give the same series.  To repeat a series, use RND(-1)
+before each RANDOMIZE.
+
+Example:
+    RANDOMIZE TIMER
+    die% = INT(RND * 6) + 1
+    PRINT "You threw a"; die%
+
+See Also  [[RND]]  [[TIMER]]
+#topic READ Statement
+#key READ Statement
+READ takes items from the program's DATA statements into variables.
+
+{b}READ{p} variablelist
+
+    {o} variablelist     Variables, separated by commas.  Each takes the
+                       next DATA item.
+
+The items are taken in order, from the first DATA statement in the program
+to the last.  DATA belongs to the module-level code, and a READ in a SUB or
+FUNCTION reads the same items.  [[RESTORE]] sets where reading goes on.
+
+A string variable takes any item, as text.  A numeric variable needs an
+item that is a number (an empty item reads as 0): anything else is
+"Syntax error", shown at the DATA statement.  A number too big for the
+variable is "Overflow".  Reading past the last item is "Out of DATA".
+
+Example:
+    FOR i% = 1 TO 3
+        READ who$, age%
+        PRINT who$; age%
+    NEXT i%
+    DATA Ann, 34, Bob, 27, "Smith, J", 51
+
+See Also  [[DATA]]  [[RESTORE]]
+#topic REM Statement
+#key REM Statement
+REM makes the rest of the line a remark, which QBasic skips when the
+program runs.
+
+{b}REM{p} remark
+{b}'{p} remark
+
+    {o} remark           Any text, up to the end of the line.
+
+An apostrophe (') does the same as REM, and can follow a statement
+directly; after a statement, REM needs a colon before it.  The
+metacommands $DYNAMIC and $STATIC are written in remarks: see
+[[Metacommands|meta]].
+
+Example:
+    REM The area of a circle
+    r = 5                             ' the radius
+    area = 3.141593 * r ^ 2: REM pi r squared
+
+See Also  [[Metacommands|meta]]
+#topic RESET Statement
+#key RESET Statement
+RESET closes every open file and device, and writes out what is waiting
+in their buffers.
+
+{b}RESET{p}
+
+RESET does the same as CLOSE with no file numbers.  The printer that
+LPRINT uses is closed too.
+
+Example:
+    OPEN "A.TXT" FOR OUTPUT AS #1
+    OPEN "B.TXT" FOR OUTPUT AS #2
+    RESET                             ' both files are closed
+
+See Also  [[CLOSE]]  [[OPEN]]  [[END]]
+#topic RESTORE Statement
+#key RESTORE Statement
+RESTORE sets which DATA item the next READ takes.
+
+{b}RESTORE{p} [line]
+
+    {o} line             A line number or label.  The next READ takes the
+                       first item of the first DATA statement at or
+                       after it.  Without one, the first DATA item in
+                       the program.
+
+Example:
+    READ a%, b%
+    RESTORE
+    READ c%                           ' c% is 10, the same as a%
+    DATA 10, 20
+
+See Also  [[READ]]  [[DATA]]
+#topic RESUME Statement
+#key RESUME Statement
+RESUME ends an error handler and says where the program goes on.
+
+{b}RESUME{p} [0]
+{b}RESUME NEXT{p}
+{b}RESUME{p} line
+
+    {o} 0                The same as RESUME alone: the statement that
+                       failed runs again.
+    {o} NEXT             The program goes on with the statement after
+                       the one that failed.
+    {o} line             The program goes on at this line number or
+                       label.
+
+ERR goes back to 0.  RESUME when no error is being handled is "RESUME
+without error".
+
+Example:
+    ON ERROR GOTO NoFile
+    OPEN "DATA.TXT" FOR INPUT AS #1
+    END
+    NoFile:
+    OPEN "DATA.TXT" FOR OUTPUT AS #1: CLOSE #1   ' make an empty one
+    RESUME                                       ' and try again
+
+See Also  [[ON ERROR|ON-ERROR]]  [[ERR]]  [[ERL]]  [[ERROR]]  [[Run-Time Error Codes|errcodes]]
+#topic RND Function
+#key RND Function
+RND returns a random number from 0 up to, but not including, 1.
+
+{b}RND{p}[(n!)]
+
+    {o} n!               Above 0, or left out: the next number of the
+                       series.  0: the last number again.  Below 0: a
+                       number that depends on n! alone, and a new
+                       series that starts from it.
+
+The series is the same in every run unless the program uses RANDOMIZE.
+A whole number from low% to high% is INT(RND * (high% - low% + 1)) + low%.
+
+Example:
+    RANDOMIZE TIMER
+    FOR i% = 1 TO 5
+        PRINT INT(RND * 100) + 1;     ' five numbers from 1 to 100
+    NEXT i%
+
+See Also  [[RANDOMIZE]]  [[INT]]
+#topic RUN Statement
+#key RUN Statement
+RUN starts the program again from the beginning, or loads another program
+and runs that.
+
+{b}RUN{p} [{linenumber | file$}]
+
+    {o} linenumber       The line of the module to start at.
+    {o} file$            The program to load and run.  .BAS is added to
+                       a name that has no extension.
+
+RUN closes every file and clears every variable before it starts.  With
+file$, the program in memory is replaced; QBasic asks first whether to
+save changes to it.  A file$ that is not there is "File not found", and a
+linenumber the module does not have is "Label not defined".
+
+Example:
+    INPUT "Again (Y/N)"; a$
+    IF UCASE$(a$) = "Y" THEN RUN
+    RUN "MENU"                        ' loads and runs MENU.BAS
+
+See Also  [[CHAIN]]  [[END]]  [[SYSTEM]]  [[CLEAR]]
+#topic SADD Function
+#key SADD Function
+SADD returns the offset of the characters of a string variable.
+
+{b}SADD{p}(stringvariable$)
+
+    {o} stringvariable$  A variable-length string.  A fixed-length string
+                       is "Type mismatch": use VARPTR for one.
+
+The characters are in the default data segment, the one DEF SEG sets
+when it is given no segment.  The offset is an INTEGER, so one above
+32767 comes out negative.  It holds only until the string is changed: a
+new value is kept somewhere else.
+
+Example:
+    a$ = "Hello"
+    DEF SEG                           ' the default data segment
+    PRINT CHR$(PEEK(SADD(a$)))        ' H
+
+See Also  [[VARPTR]]  [[VARSEG]]  [[PEEK]]  [[DEF SEG|SEG]]
+#topic SCREEN Statement
+#key SCREEN Statement
+SCREEN sets the screen mode, and which page the program writes on and
+which page is shown.
+
+{b}SCREEN{p} [mode%] [, [colourswitch%] [, [activepage%] [, visualpage%]]]
+
+    {o} mode%            The screen mode: see [[Screen Modes|screenmodes]].
+    {o} colourswitch%    Colour on or off on old CGA monitors.  It
+                       changes nothing on an EGA or VGA.
+    {o} activepage%      The page PRINT and the drawing statements write
+                       on.
+    {o} visualpage%      The page shown.  Without one, the active page.
+
+A different mode clears the screen, sets its text size, and puts back its
+colours and palette; VIEW and WINDOW are turned off and both pages are 0.
+A mode or a page the screen does not have is "Illegal function call".
+
+Drawing on a page that is not shown, and then showing it (or copying it
+with PCOPY), changes the whole picture at once.
+
+SCREEN 3 and 4 (Hercules, Olivetti) are not in this QBasic.
+
+Example:
+    SCREEN 12                         ' 640 x 480, 16 colours
+    CIRCLE (320, 240), 100, 14
+    SLEEP
+    SCREEN 0                          ' back to text
+    WIDTH 80, 25
+
+See Also  [[Screen Modes|screenmodes]]  [[SCREEN function|SCREEN-function]]  [[PCOPY]]
+          [[COLOR]]  [[PALETTE]]  [[WIDTH]]  [[VIEW]]  [[WINDOW]]
+#topic Screen Modes
+#context screenmodes
+#entry Screen Modes
+The modes SCREEN sets.  Attributes are the colour numbers a program draws
+with; colours are how many PALETTE can choose from for them.
+
+  Mode  Pixels    Text columns x rows     Attributes  Colours  Pages
+    0   -         40 or 80 x 25, 43, 50       16          64   0-7
+    1   320x200   40 x 25                      4          16   0
+    2   640x200   80 x 25                      2          16   0
+    7   320x200   40 x 25                     16          16   0-7
+    8   640x200   80 x 25                     16          16   0-3
+    9   640x350   80 x 25 or 43               16          64   0-1
+   10   640x350   80 x 25 or 43                4           9   0-1
+   11   640x480   80 x 30 or 60                2     262,144   0
+   12   640x480   80 x 30 or 60               16     262,144   0
+   13   320x200   40 x 25                    256     262,144   0
+
+SCREEN 0 is text only; with 43 or 50 rows of 80 columns it has pages 0-3.
+SCREEN 10 is for a monochrome monitor.  WIDTH chooses between the numbers
+of rows.  Characters are 8 pixels wide; they are 8 high, but 14 in
+SCREEN 9 and 10 at 25 rows and 16 in SCREEN 11 and 12 at 30 rows.
+
+QBasic needs an EGA for modes 7 to 10 and a VGA for 11 to 13.  This
+QBasic shows every graphics mode through a VGA mode, so it needs a VGA for
+all of them.
+
+See Also  [[SCREEN]]  [[WIDTH]]  [[PALETTE]]  [[COLOR]]  [[PCOPY]]
+#topic SCREEN Function
+#context SCREEN-function
+#entry SCREEN Function
+The SCREEN function returns the code of the character at a place on the
+screen, or its colour.
+
+{b}SCREEN{p}(row%, column% [, colourflag%])
+
+    {o} row%, column%    The place.  The top left corner is 1, 1.
+    {o} colourflag%      Not 0: return the character's colour attribute
+                       instead of its code.
+
+The attribute is the foreground colour + 16 * the background colour, + 128
+when the character blinks.  A place off the screen is "Illegal function
+call".
+
+In a graphics mode this QBasic returns the character PRINT put at the
+place, and 0 for its colour.
+
+Example:
+    CLS
+    PRINT "Hello"
+    PRINT CHR$(SCREEN(1, 1))          ' H
+    PRINT SCREEN(1, 1, 1)             ' 7: grey on black
+
+See Also  [[SCREEN]]  [[CSRLIN]]  [[POS]]  [[COLOR]]
+#topic SEEK Function and Statement
+#key SEEK Function
+#entry SEEK Statement
+The SEEK function returns where in a file the next read or write will
+happen.  The SEEK statement sets the place.
+
+{b}SEEK{p}(filenumber%)
+{b}SEEK{p} [#]filenumber%, position&
+
+    {o} filenumber%      The number of an open file.
+    {o} position&        In a RANDOM file, a record number; in other
+                       files, a byte number.  The first is 1.
+
+The SEEK function returns the next record of a RANDOM file, or the next
+byte of any other.  A position past the end of the file is allowed: a
+write there makes the file longer.  A position below 1 is "Bad record
+number".  A GET or PUT with a record number moves the position too.
+
+Example:
+    OPEN "SCORES.DAT" FOR BINARY AS #1
+    SEEK #1, LOF(1) + 1               ' to the end of the file
+    PUT #1, , total&
+    PRINT SEEK(1)                     ' the byte after total&
+    CLOSE #1
+
+See Also  [[GET]]  [[PUT]]  [[LOC]]  [[LOF]]  [[OPEN]]
+#topic SELECT CASE Statement
+#key SELECT
+#entry SELECT CASE Statement
+#key CASE
+#key IS
+SELECT CASE runs one of several blocks of statements, chosen by the value
+of an expression.
+
+{b}SELECT CASE{p} testexpression
+{b}CASE{p} expressionlist1
+    [statementblock-1]
+[{b}CASE{p} expressionlist2
+    [statementblock-2]]...
+[{b}CASE ELSE{p}
+    [statementblock-n]]
+{b}END SELECT{p}
+
+    {o} testexpression   A number or a string.
+    {o} expressionlist   One or more of these, with commas between:
+                         expression
+                         expression {b}TO{p} expression
+                         {b}IS{p} relational-operator expression
+    {o} statementblock   The statements to run when the list matches.
+
+The CASEs are tried in order.  The first one whose list matches the value
+runs its block, and the program goes on after END SELECT.  CASE ELSE, if
+there is one, comes last and runs when no other CASE matches.
+
+In a TO range the smaller value comes first.  IS takes =, <>, <, <=, >
+or >=.  Strings compare by their character codes.  When the test value is
+an INTEGER or LONG, a CASE value with a fraction is rounded first.
+
+Example:
+    SELECT CASE score%
+        CASE IS < 0, IS > 100: PRINT "Not a score"
+        CASE 90 TO 100: PRINT "A"
+        CASE 50 TO 89: PRINT "Pass"
+        CASE ELSE: PRINT "Fail"
+    END SELECT
+
+See Also  [[IF]]  [[ON...GOTO|ON-GOTO]]  [[Boolean Operators|boolean]]
+#topic SGN Function
+#key SGN Function
+SGN returns the sign of a number: -1 if it is negative, 0 if it is zero,
+1 if it is positive.
+
+{b}SGN{p}(numericexpression)
+
+Example:
+    PRINT SGN(-4.5); SGN(0); SGN(17)  ' -1  0  1
+
+See Also  [[ABS]]
+#topic SHARED Statement
+#key SHARED Statement
+SHARED, in a SUB or FUNCTION, gives the procedure the module-level
+variables of the names it lists.
+
+{b}SHARED{p} variable[()] [AS type] [, variable[()] [AS type]]...
+
+    {o} variable         A module-level variable, or an array with empty
+                       brackets.
+    {o} AS type          The variable's type, as the module declares it.
+
+Without SHARED, a procedure's variables are its own, even when the module
+has one of the same name.  DIM SHARED in the module shares a variable with
+every procedure at once.  SHARED outside a SUB or FUNCTION is an error.
+
+Example:
+    CALL AddUp(5)
+    PRINT total&                      ' 5
+    SUB AddUp (n%)
+    SHARED total&
+    total& = total& + n%
+    END SUB
+
+See Also  [[DIM]]  [[STATIC]]  [[SUB]]  [[FUNCTION]]  [[COMMON]]
+#topic SHELL Statement
+#key SHELL Statement
+SHELL runs a DOS command, or a command prompt, and then comes back to the
+program.
+
+{b}SHELL{p} [commandstring$]
+
+    {o} commandstring$   The command, as it would be typed at the prompt.
+                       Without one, a prompt appears; EXIT at the
+                       prompt comes back.
+
+The program waits until the command has finished.  Its files stay open,
+and the command gets the environment as ENVIRON has left it.
+A command interpreter that cannot be found is "File not found".
+
+SHELL runs the PM-DOS command interpreter that COMSPEC names, or CMD.EXE
+when there is no COMSPEC.
+
+Example:
+    SHELL "DIR *.BAS /W"
+    SHELL                             ' a prompt: type EXIT to come back
+
+See Also  [[RUN]]  [[CHAIN]]  [[ENVIRON$]]
+#topic SIN Function
+#key SIN Function
+SIN returns the sine of an angle.
+
+{b}SIN{p}(angle)
+
+    {o} angle            The angle in radians.  Degrees times 3.141593 /
+                       180 gives radians.
+
+The result is a SINGLE, or a DOUBLE when the angle is one.  This QBasic
+works SIN out on the coprocessor in its full precision.
+
+Example:
+    deg = 30
+    PRINT SIN(deg * 3.141593 / 180)   ' about .5
+
+See Also  [[COS]]  [[TAN]]  [[ATN]]
+#topic SLEEP Statement
+#key SLEEP Statement
+SLEEP stops the program until a key is pressed, a number of seconds has
+gone by, or an event that is being trapped (ON TIMER, ON PLAY) happens.
+
+{b}SLEEP{p} [seconds&]
+
+    {o} seconds&         How long to wait.  Without it, or with 0, SLEEP
+                       waits for a key however long that takes.
+
+The key that ends SLEEP stays in the keyboard buffer, for INKEY$ or INPUT
+to take.
+
+Example:
+    PRINT "Press a key, or wait 5 seconds"
+    SLEEP 5
+    k$ = INKEY$                       ' the key, if one was pressed
+
+See Also  [[INKEY$]]  [[TIMER]]  [[WAIT]]
+#topic SOUND Statement
+#key SOUND Statement
+SOUND makes a tone on the PC speaker.
+
+{b}SOUND{p} frequency, duration
+
+    {o} frequency        The pitch in hertz, 37 to 32767.
+    {o} duration         The length in clock ticks, 0 to 65535.  There
+                       are 18.2 ticks in a second.
+
+The program waits until the tone has finished, unless PLAY "MB" has set
+background music: then the tone joins the queue of notes.  A duration of 0
+ends any sound being made.  A number out of range is "Illegal function
+call".
+
+Example:
+    FOR f% = 200 TO 800 STEP 100
+        SOUND f%, 2
+    NEXT f%
+
+See Also  [[PLAY]]  [[BEEP]]
+#topic SPACE$ Function
+#key SPACE$ Function
+SPACE$ returns a string of blanks.
+
+{b}SPACE${p}(n%)
+
+    {o} n%               How many blanks, 0 to 32767.
+
+Example:
+    PRINT "A"; SPACE$(10); "B"
+
+See Also  [[SPC]]  [[STRING$]]  [[TAB]]
+#topic SPC Function
+#key SPC Function
+SPC, among the items of a PRINT, LPRINT or PRINT #, writes blanks.
+
+{b}SPC{p}(n%)
+
+    {o} n%               How many blanks.  Only the remainder after n% is
+                       divided by the width of the line counts.
+
+SPC counts from where the cursor is; TAB moves to a column.  SPC can be
+used only in PRINT, LPRINT and PRINT #.
+
+Example:
+    PRINT "Left"; SPC(10); "Right"
+
+See Also  [[TAB]]  [[SPACE$]]  [[PRINT]]
+#topic SQR Function
+#key SQR Function
+SQR returns the square root of a number.
+
+{b}SQR{p}(n)
+
+    {o} n                0 or more.  A negative number is "Illegal
+                       function call".
+
+Example:
+    PRINT SQR(2)                      ' 1.414214
+    side = SQR(a ^ 2 + b ^ 2)
+
+See Also  [[Arithmetic Operators|arith]]  [[EXP]]  [[LOG]]
+#topic STATIC Statement
+#key STATIC Statement
+STATIC, in a SUB, FUNCTION or DEF FN, makes variables that belong to the
+procedure alone and keep their values from one call to the next.
+
+{b}STATIC{p} variable[()] [AS type] [, variable[()] [AS type]]...
+
+    {o} variable         A variable, or an array with empty brackets (DIM
+                       gives its size after the STATIC).
+    {o} AS type          The variable's type.
+
+A procedure's other variables start again at 0 or "" on every call.  A
+STATIC variable is the procedure's own even when the module shares one of
+the same name.  STATIC at the end of a SUB or FUNCTION line makes all of
+the procedure's variables keep their values.  STATIC outside a procedure
+is an error.  The $STATIC metacommand is another matter: see
+[[Metacommands|meta]].
+
+Example:
+    SUB Counter
+        STATIC calls%
+        calls% = calls% + 1
+        PRINT "Called"; calls%; "times"
+    END SUB
+
+See Also  [[SHARED]]  [[SUB]]  [[FUNCTION]]  [[DIM]]
+#topic STICK Function
+#key STICK Function
+STICK returns a joystick's position.
+
+{b}STICK{p}(n%)
+
+    {o} n%               0  joystick A's x
+                       1  joystick A's y
+                       2  joystick B's x
+                       3  joystick B's y
+
+STICK(0) reads both joysticks; STICK(1) to STICK(3) return what that
+reading found, so STICK(0) comes first.  The numbers grow as a stick moves
+right or down.  n% outside 0-3 is "Illegal function call".
+
+Example:
+    DO
+        x% = STICK(0): y% = STICK(1)
+        LOCATE 1, 1: PRINT x%, y%
+    LOOP UNTIL INKEY$ <> ""
+
+See Also  [[STRIG]]
+#topic STOP Statement
+#key STOP Statement
+STOP halts the program and goes back to the editor, with the STOP
+statement lit.  F5 goes on from the statement after it.
+
+{b}STOP{p}
+
+STOP is for finding mistakes: while the program is stopped, the Immediate
+window can show and change its variables.  Files stay open.  To end a
+program, use END.
+
+Example:
+    FOR i% = 1 TO 10
+        total = total + i%
+        IF total > 20 THEN STOP       ' look at i% and total here
+    NEXT i%
+
+See Also  [[END]]  [[SYSTEM]]  [[Run and Debug Keys|debugkeys]]
+#topic STR$ Function
+#key STR$ Function
+STR$ returns a number as a string, the way PRINT writes it.
+
+{b}STR${p}(numericexpression)
+
+A number that is not negative gets a blank in front, where a minus sign
+would go.  There is no blank after it.  LTRIM$ takes the front blank off.
+
+Example:
+    a$ = STR$(42)                     ' " 42"
+    PRINT "[" + LTRIM$(STR$(42)) + "]"   ' [42]
+
+See Also  [[VAL]]  [[LTRIM$]]  [[PRINT USING|USING]]  [[HEX$]]
+#topic STRIG Function and Statement
+#key STRIG Function
+#entry STRIG Statement
+The STRIG function reads the joystick buttons.  STRIG ON, OFF and STOP
+control the trapping of a button by ON STRIG GOSUB.
+
+{b}STRIG{p}(n%)
+{b}STRIG{p}(button%) {b}ON{p} | {b}STRIG{p}(button%) {b}OFF{p} | {b}STRIG{p}(button%) {b}STOP{p}
+{b}ON STRIG{p}(button%) {b}GOSUB{p} line
+
+    {o} n%               What STRIG returns, -1 for yes and 0 for no:
+                         0     was A's first button pressed since the
+                               last STRIG(0)?
+                         1     is A's first button down?
+                         2, 3  the same for B's first button
+                         4, 5  the same for A's second button
+                         6, 7  the same for B's second button
+    {o} button%          0, 2, 4 or 6: the button, numbered as above.
+    {o} line             The label or line number of the handler.
+
+n% outside 0-7 is "Illegal function call".
+
+In this QBasic every STRIG(n%) says whether the button is down now, and
+ON STRIG never happens.
+
+Example:
+    DO
+        IF STRIG(1) THEN PRINT "Fire!"
+    LOOP UNTIL INKEY$ <> ""
+
+See Also  [[STICK]]  [[event trapping|events]]  [[ON]]
+#topic STRING$ Function
+#key STRING$ Function
+STRING$ returns a string of one character repeated.
+
+{b}STRING${p}(length%, {code% | string$})
+
+    {o} length%          How many characters, 0 to 32767.
+    {o} code%            The character's code: see [[ASCII Character Codes|ascii]].
+    {o} string$          A string whose first character is repeated.  An
+                       empty one is "Illegal function call".
+
+Example:
+    PRINT STRING$(40, "-")
+    PRINT STRING$(10, 177)
+
+See Also  [[SPACE$]]  [[CHR$]]  [[ASCII Character Codes|ascii]]
+#topic SUB Statement
+#key SUB Statement
+SUB begins a procedure: a block of statements with a name and variables of
+its own, which CALL runs.
+
+{b}SUB{p} name [(parameterlist)] [{b}STATIC{p}]
+    [statementblock]
+    [{b}EXIT SUB{p}]
+    [statementblock]
+{b}END SUB{p}
+
+    {o} name             The procedure's name, with no type suffix.
+    {o} parameterlist    The variables that take the arguments, with
+                       commas between: name[()] [AS type].  Empty
+                       brackets mark an array.
+    {o} STATIC           The procedure's variables keep their values
+                       from one call to the next.
+
+CALL name(arguments) runs the SUB, and so does its name with the arguments
+after it and no brackets.  A variable given as an argument is passed by
+reference: when the SUB changes the parameter, the variable changes.  An
+expression, or a variable in brackets, is passed as a copy.  EXIT SUB
+leaves early.  A SUB can call itself.
+
+The editor keeps each SUB in a window of its own: [[New SUB|m.newsub]] on the
+Edit menu starts one, and [[SUBs|m.subs]] (F2) lists them.  Saving the
+program puts a DECLARE for each SUB at the top of the module.
+
+Example:
+    CALL Box(5, 10)
+    SUB Box (row%, col%)
+        LOCATE row%, col%: PRINT "+--+"
+        LOCATE row% + 1, col%: PRINT "+--+"
+    END SUB
+
+See Also  [[CALL]]  [[FUNCTION]]  [[DECLARE]]  [[SHARED]]  [[STATIC]]  [[EXIT]]
+#topic SWAP Statement
+#key SWAP Statement
+SWAP exchanges the values of two variables.
+
+{b}SWAP{p} variable1, variable2
+
+The two must be of the same type, or it is "Type mismatch".  They may be
+array elements or records.
+
+Example:
+    IF a% > b% THEN SWAP a%, b%       ' now a% <= b%
+
+See Also  [[LET]]
+#topic SYSTEM Statement
+#key SYSTEM Statement
+SYSTEM ends the program and closes its files.  A program started with
+QBASIC /RUN goes back to DOS; one run from the editor goes back to the
+editor.
+
+{b}SYSTEM{p}
+
+Typed in the Immediate window, SYSTEM leaves QBasic.
+
+Example:
+    INPUT "Quit (Y/N)"; a$
+    IF UCASE$(a$) = "Y" THEN SYSTEM
+
+See Also  [[END]]  [[STOP]]  [[QBasic Command Line|cmdline]]
+#topic TAB Function
+#key TAB Function
+TAB, among the items of a PRINT, LPRINT or PRINT #, moves to a column.
+
+{b}TAB{p}(column%)
+
+    {o} column%          The column to move to; the leftmost is 1.
+
+When the cursor is already past the column, TAB goes to that column of
+the next line.  On the screen and the printer, a column beyond the width
+counts as the remainder after it is divided by the width; a column below
+1 counts as 1.  TAB can be used only in PRINT, LPRINT and PRINT #.
+
+Example:
+    PRINT "Name"; TAB(20); "Phone"
+    PRINT "Ann"; TAB(20); "555-0134"
+
+See Also  [[SPC]]  [[PRINT]]  [[LOCATE]]
+#topic TAN Function
+#key TAN Function
+TAN returns the tangent of an angle.
+
+{b}TAN{p}(angle)
+
+    {o} angle            The angle in radians.
+
+The result is a SINGLE, or a DOUBLE when the angle is one.
+
+Example:
+    PRINT TAN(3.141593 / 4)           ' about 1: 45 degrees
+
+See Also  [[SIN]]  [[COS]]  [[ATN]]
+#topic TIME$ Function and Statement
+#key TIME$ Function
+#entry TIME$ Statement
+The TIME$ function returns the time of day.  The TIME$ statement sets the
+computer's clock.
+
+{b}TIME${p}
+{b}TIME${p} = timestring$
+
+    {o} timestring$      The new time: "hh", "hh:mm" or "hh:mm:ss", on a
+                       24-hour clock.
+
+TIME$ returns eight characters, hh:mm:ss, on a 24-hour clock.  A
+timestring$ that is not a time is "Illegal function call".
+
+Example:
+    PRINT "The time is "; TIME$       ' 14:05:09, say
+    TIME$ = "08:30"
+
+See Also  [[DATE$]]  [[TIMER]]
+#topic TIMER Function, ON TIMER
+#key TIMER Function
+#entry TIMER Statement
+The TIMER function returns the number of seconds since midnight.  ON TIMER
+runs a subroutine every so many seconds.
+
+{b}TIMER{p}
+{b}TIMER ON{p} | {b}TIMER OFF{p} | {b}TIMER STOP{p}
+{b}ON TIMER{p}(seconds%) {b}GOSUB{p} line
+
+    {o} seconds%         How often the handler runs: 1 to 86400 seconds.
+    {o} line             The label or line number of the handler, which
+                       ends with RETURN.
+
+TIMER is a SINGLE.  It moves on about 18 times a second and goes back to 0
+at midnight.  The difference between two readings times part of a
+program.
+
+ON TIMER names the handler and TIMER ON starts the trapping.  TIMER OFF
+stops it; after TIMER STOP the handler waits until the next TIMER ON.  See
+[[event trapping|events]].
+
+Example:
+    ON TIMER(1) GOSUB Clock
+    TIMER ON
+    DO: LOOP UNTIL INKEY$ <> ""
+    END
+    Clock: LOCATE 1, 70: PRINT TIME$: RETURN
+
+See Also  [[TIME$]]  [[RANDOMIZE]]  [[SLEEP]]  [[event trapping|events]]
+#topic TRON, TROFF Statements
+#key TRON Statement
+#key TROFF Statement
+TRON turns tracing on: the editor lights each statement as the program
+runs it.  TROFF turns tracing off.
+
+{b}TRON{p}
+{b}TROFF{p}
+
+They do what [[Trace On|m.trace]] on the Debug menu does, from inside the
+program.
+
+Example:
+    TRON
+    FOR i% = 1 TO 3: PRINT i%: NEXT i%
+    TROFF
+
+See Also  [[Trace On|m.trace]]  [[STOP]]
+#topic TYPE Statement
+#key TYPE Statement
+TYPE defines a record type: named elements kept together in one variable.
+
+{b}TYPE{p} usertype
+    elementname {b}AS{p} typename
+    [elementname {b}AS{p} typename]
+    ...
+{b}END TYPE{p}
+
+    {o} usertype         The name of the new type.
+    {o} elementname      The name of an element.
+    {o} typename         INTEGER, LONG, SINGLE, DOUBLE, STRING * n (a
+                       fixed-length string), or a type defined earlier.
+
+DIM name AS usertype makes a variable of the type, and name.elementname
+is one of its elements.  A record has a fixed size, which LEN returns, so
+records suit RANDOM files with GET and PUT.  An element cannot be an
+array or a variable-length string.  TYPE goes in the module-level code,
+not in a procedure.
+
+Example:
+    TYPE Person
+        surname AS STRING * 20
+        age AS INTEGER
+    END TYPE
+    DIM p AS Person
+    p.surname = "Smith": p.age = 42
+
+See Also  [[DIM]]  [[GET]]  [[PUT]]  [[LEN]]  [[Data Types|types]]
+#topic UEVENT Keyword
+#key UEVENT Keyword
+UEVENT belongs to the trapping of events a program defines itself, which
+QBasic does not have.  The words are reserved for ON UEVENT GOSUB and
+UEVENT ON, OFF and STOP.
+
+In this QBasic a statement that starts with UEVENT is "Advanced feature
+unavailable".
+
+See Also  [[event trapping|events]]
+#topic VAL Function
+#key VAL Function
+VAL returns the number at the start of a string.
+
+{b}VAL{p}(stringexpression$)
+
+VAL reads from the left.  Blanks are skipped, even between digits, and
+the reading stops at the first character that cannot be part of the
+number.  A string that does not start with a number gives 0.  &H and &O
+in front read hexadecimal and octal numbers, and an exponent with E or D
+is understood.  A number too big for a DOUBLE is "Overflow".
+
+Example:
+    PRINT VAL("  12.5 kg")            ' 12.5
+    PRINT VAL("1 000")                ' 1000
+    PRINT VAL("&HFF")                 ' 255
+    PRINT VAL("abc")                  ' 0
+
+See Also  [[STR$]]  [[INPUT]]
+#topic VARPTR, VARSEG Functions
+#key VARPTR Function
+#key VARSEG Function
+VARPTR returns the offset of a variable in memory, and VARSEG its segment.
+The two together are its address.
+
+{b}VARPTR{p}(variable)
+{b}VARSEG{p}(variable)
+
+    {o} variable         Any variable, array element or record.
+
+Both are INTEGERs, so a value above 32767 comes out negative.  For a
+variable-length string the address is that of its descriptor: two bytes
+of length, then the offset of the characters (see [[SADD]]).  Arrays and
+strings can move while the program runs, so take an address just before
+it is used.
+
+These addresses are for the program's own PEEK, POKE, BLOAD and BSAVE;
+there is no real-mode memory behind them.  See [[QBasic on PM-DOS|pmdos]].
+
+Example:
+    DIM a%(10)
+    a%(3) = 258
+    DEF SEG = VARSEG(a%(3))
+    PRINT PEEK(VARPTR(a%(3))); PEEK(VARPTR(a%(3)) + 1)   ' 2  1
+    DEF SEG
+
+See Also  [[VARPTR$]]  [[SADD]]  [[PEEK]]  [[POKE]]  [[DEF SEG|SEG]]
+#topic VARPTR$ Function
+#key VARPTR$ Function
+VARPTR$ returns a variable's address as a string of 3 bytes, for DRAW and
+PLAY strings.
+
+{b}VARPTR${p}(variable)
+
+    {o} variable         A string variable, for X in DRAW and PLAY, or a
+                       numeric variable, for a number given as = in the
+                       string.
+
+The first byte gives the variable's type and the other two its address.
+The string means something only to DRAW and PLAY.
+
+Example:
+    side% = 40
+    DRAW "U=" + VARPTR$(side%) + "R=" + VARPTR$(side%)
+    tune$ = "CDE"
+    PLAY "X" + VARPTR$(tune$)
+
+See Also  [[DRAW]]  [[PLAY]]  [[Music Strings|PLAY-music]]  [[VARPTR]]
+#topic VIEW Statement
+#key VIEW Statement
+VIEW sets the viewport: the part of a graphics screen that drawing
+reaches.
+
+{b}VIEW{p} [[SCREEN] (x1!, y1!)-(x2!, y2!) [, [fill%] [, border%]]]
+
+    {o} SCREEN           Points stay in screen coordinates; drawing is
+                       only cut off at the viewport's edges.  Without
+                       SCREEN, (0, 0) is the viewport's top left corner.
+    {o} (x1!, y1!)       One corner, in pixels of the whole screen.
+    {o} (x2!, y2!)       The opposite corner.
+    {o} fill%            A colour to fill the viewport with.
+    {o} border%          A colour for a line round the viewport, just
+                       outside it.
+
+VIEW alone makes the whole screen the viewport again.  A corner off the
+screen, or VIEW on a text screen, is "Illegal function call".  CLS clears
+only the viewport while one is set.  A WINDOW stays when the viewport
+changes, its units fitted to the new one.  [[VIEW PRINT|VIEW-PRINT]] sets
+the area for text.
+
+Example:
+    SCREEN 12
+    VIEW (100, 100)-(539, 379), 1, 15     ' a blue box, a white edge
+    CIRCLE (220, 140), 180, 14            ' cut off at the box's edges
+    VIEW                                  ' the whole screen again
+
+See Also  [[WINDOW]]  [[VIEW PRINT|VIEW-PRINT]]  [[CLS]]  [[PMAP]]  [[SCREEN]]
+#topic VIEW PRINT Statement
+#context VIEW-PRINT
+#entry VIEW PRINT Statement
+VIEW PRINT sets the rows of the screen that text is printed and scrolled
+in.
+
+{b}VIEW PRINT{p} [toprow% {b}TO{p} bottomrow%]
+
+    {o} toprow%          The first row of the area.
+    {o} bottomrow%       The last row of the area.
+
+Rows outside the area stay as they are while the area scrolls.  The cursor
+goes to the start of the top row.  LOCATE can then reach only the rows of
+the area, and CLS clears only the area.  VIEW PRINT alone puts back the
+whole screen, whose bottom row never scrolls.  Rows the screen does not
+have are "Illegal function call".
+
+Example:
+    CLS
+    PRINT "Title line"
+    VIEW PRINT 3 TO 20
+    FOR i% = 1 TO 100: PRINT i%: NEXT i%   ' the title stays put
+    VIEW PRINT
+
+See Also  [[VIEW]]  [[CLS]]  [[LOCATE]]  [[WIDTH]]
+#topic WAIT Statement
+#key WAIT Statement
+WAIT stops the program until an input port shows a bit pattern.
+
+{b}WAIT{p} port%, and% [, xor%]
+
+    {o} port%            The port number, 0 to 65535.
+    {o} and%             The bits to watch, 0 to 255.
+    {o} xor%             Bits to turn over first, 0 to 255, so that WAIT
+                       can wait for a bit to be 0.  Without it, 0.
+
+WAIT reads the port over and over until (INP(port%) XOR xor%) AND and% is
+not 0.  If that never happens the program waits until Ctrl+Break.
+
+The ports are the hardware's, except the keyboard controller's and A20's
+(&H60, &H64 and &H92): see [[INP]].
+
+Example:
+    WAIT &H3DA, 8                     ' until the vertical retrace
+
+See Also  [[INP]]  [[OUT]]
+#topic WHILE...WEND Statement
+#key WHILE
+#entry WHILE...WEND Statement
+#key WEND
+WHILE...WEND runs a block of statements again and again while a condition
+is true.
+
+{b}WHILE{p} condition
+    [statementblock]
+{b}WEND{p}
+
+    {o} condition        A numeric expression; anything but 0 is true.
+
+The condition is tested before each pass, so the block may not run at
+all.  DO...LOOP does the same and more, and EXIT DO can leave it; there
+is no statement to leave a WHILE loop.
+
+Example:
+    n% = 1
+    WHILE n% < 1000
+        n% = n% * 2
+    WEND
+    PRINT n%                          ' 1024
+
+See Also  [[DO]]  [[FOR]]
+#topic WIDTH Statement
+#key WIDTH Statement
+WIDTH sets the columns and rows of the screen, or the line width of a
+file, a device or the printer.
+
+{b}WIDTH{p} [columns%] [, rows%]
+{b}WIDTH{p} {#filenumber% | device$}, columns%
+{b}WIDTH LPRINT{p} columns%
+
+    {o} columns%         On the screen, 40 or 80.  For a file, device or
+                       printer, the line width, 0 to 255; 255 means no
+                       limit.
+    {o} rows%            25, 43 or 50 in SCREEN 0.  For the graphics
+                       modes see [[Screen Modes|screenmodes]].
+    {o} filenumber%      An open file.
+    {o} device$          "SCRN:", or a printer such as "LPT1:".
+
+A new size clears the screen.  In SCREEN 0, 43 rows need an EGA or VGA and
+50 rows a VGA; a graphics mode's columns are fixed.  A size the screen
+cannot have is "Illegal function call".
+
+Example:
+    WIDTH 40                          ' big letters
+    WIDTH 80, 50                      ' 50 rows on a VGA
+    WIDTH LPRINT 132
+
+See Also  [[SCREEN]]  [[Screen Modes|screenmodes]]  [[PRINT]]  [[VIEW PRINT|VIEW-PRINT]]
+#topic WINDOW Statement
+#key WINDOW Statement
+WINDOW gives the graphics viewport coordinates in units of the program's
+choosing.
+
+{b}WINDOW{p} [[SCREEN] (x1!, y1!)-(x2!, y2!)]
+
+    {o} SCREEN           y grows downwards, as on the screen.  Without
+                       SCREEN, y grows upwards, as on a graph.
+    {o} (x1!, y1!)       One corner of the area, in the new units.
+    {o} (x2!, y2!)       The opposite corner.
+
+The area is fitted to the viewport.  PSET, LINE, CIRCLE, PAINT, POINT and
+the other drawing statements then take coordinates in the new units, and
+PMAP converts between them and pixels.  WINDOW alone goes back to pixels.
+Two equal x or y values, or WINDOW on a text screen, are "Illegal function
+call".
+
+Example:
+    SCREEN 12
+    WINDOW (-10, -10)-(10, 10)        ' (0, 0) is in the middle
+    LINE (-10, 0)-(10, 0)             ' the x axis
+    FOR x = -10 TO 10 STEP .05: PSET (x, x * x / 10): NEXT x
+
+See Also  [[VIEW]]  [[PMAP]]  [[POINT]]  [[SCREEN]]
+#topic WRITE Statement
+#key WRITE Statement
+WRITE writes values on the screen or into a file in a form INPUT # reads
+back: commas between them and strings in quotes.
+
+{b}WRITE{p} [#filenumber%,] [expressionlist]
+
+    {o} filenumber%      A file opened for OUTPUT or APPEND.  Without
+                       one, WRITE writes on the screen.
+    {o} expressionlist   The numbers and strings to write, with commas
+                       between them.
+
+Numbers are written without the blanks PRINT puts round them.  The line
+always ends after the last item; WRITE alone writes an empty line.
+
+Example:
+    OPEN "PEOPLE.TXT" FOR OUTPUT AS #1
+    WRITE #1, "Smith, J", 42, 1.5     ' "Smith, J",42,1.5
+    CLOSE #1
+
+See Also  [[PRINT]]  [[INPUT]]  [[OPEN]]

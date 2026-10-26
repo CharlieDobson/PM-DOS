@@ -1,0 +1,537 @@
+#! 2ERRORS.TXT - a topic for each error message, found by the message's
+#! own text: the Help button of the box that shows the error opens it.
+#! Run-time errors end with their ERR code; the others are found before
+#! the program runs, while it is checked.
+#topic Run-Time Error Codes
+#key errcodes
+#entry Run-Time Error Codes
+The numbers ERR returns, and the messages that go with them.  ON ERROR
+GOTO catches every one of them; ERROR n makes one happen.
+
+     1  NEXT without FOR               37  Argument-count mismatch
+     2  Syntax error                   38  Array not defined
+     3  RETURN without GOSUB           40  Variable required
+     4  Out of DATA                    50  FIELD overflow
+     5  Illegal function call          51  Internal error
+     6  Overflow                       52  Bad file name or number
+     7  Out of memory                  53  File not found
+     8  Label not defined              54  Bad file mode
+     9  Subscript out of range         55  File already open
+    10  Duplicate definition           56  FIELD statement active
+    11  Division by zero               57  Device I/O error
+    12  Illegal in direct mode         58  File already exists
+    13  Type mismatch                  59  Bad record length
+    14  Out of string space            61  Disk full
+    16  String formula too complex     62  Input past end of file
+    17  Cannot continue                63  Bad record number
+    18  Function not defined           64  Bad file name
+    19  No RESUME                      67  Too many files
+    20  RESUME without error           68  Device unavailable
+    24  Device timeout                 69  Communication-buffer overflow
+    25  Device fault                   70  Permission denied
+    26  FOR without NEXT               71  Disk not ready
+    27  Out of paper                   72  Disk-media error
+    28  Out of stack space             73  Advanced feature unavailable
+    29  WHILE without WEND             74  Rename across disks
+    30  WEND without WHILE             75  Path/File access error
+    33  Duplicate label                76  Path not found
+    35  Subprogram not defined
+
+Any other number given to ERROR shows "Unprintable error".
+
+See Also  [[ERR]]  [[ERROR]]  [[ON ERROR|ON-ERROR]]  [[RESUME]]
+#topic NEXT without FOR
+#context NEXT without FOR
+A NEXT has no FOR to go back to, or names a different
+variable from the FOR it closes.
+
+ERR code: 1
+#topic Syntax error
+#context Syntax error
+The line is not a statement QBasic can read: a word is
+misspelt, a part is missing, or something is in the wrong
+order.  The cursor is put where the reading stopped.  READ
+gives this error, too, when a DATA item is not a number and
+a number is wanted.
+
+ERR code: 2
+#topic RETURN without GOSUB
+#context RETURN without GOSUB
+A RETURN ran with no GOSUB waiting for it - often because
+the program ran into a subroutine instead of reaching it by
+GOSUB.  An END or a GOTO before the subroutine's label stops
+that.
+
+ERR code: 3
+#topic Out of DATA
+#context Out of DATA
+READ was asked for an item after the last DATA item.
+RESTORE starts the items again.
+
+ERR code: 4
+#topic Illegal function call
+#context Illegal function call
+A value given to a statement or function is outside what it
+takes: a negative square root, MID$ starting at 0, a colour
+that does not exist, a screen position off the screen.
+
+ERR code: 5
+#topic Overflow
+#context Overflow
+A result is too big for its type: more than 32,767 for an
+INTEGER, more than 2,147,483,647 for a LONG, or beyond the
+range of a SINGLE or DOUBLE.  A suffix on a variable, or
+CLNG or CDBL, gives the result a bigger type.
+
+ERR code: 6
+#topic Out of memory
+#context Out of memory
+There is no memory left for the program, its arrays or its
+strings.  Smaller arrays, ERASE for arrays no longer needed,
+or fewer programs loaded in memory leave more.
+
+ERR code: 7
+#topic Label not defined
+#context Label not defined
+A GOTO, GOSUB, RESTORE, RESUME or ON ...  GOTO names a label
+or line number that is not in the program - or not in the
+same procedure, as labels in a SUB or FUNCTION are its own.
+
+ERR code: 8
+#topic Subscript out of range
+#context Subscript out of range
+An array element was used with a subscript outside the
+array's bounds, or an array was used with more subscripts
+than it has dimensions.  An array used without DIM has
+subscripts 0 to 10.
+
+ERR code: 9
+#topic Duplicate definition
+#context Duplicate definition
+A name is declared twice: an array dimensioned again without
+ERASE, a CONST or variable with the name of another, a
+second OPTION BASE, a TYPE element named twice.
+
+ERR code: 10
+#topic Division by zero
+#context Division by zero
+A number was divided by zero (/, \ or MOD), or zero was
+raised to a negative power.
+
+ERR code: 11
+#topic Illegal in direct mode
+#context Illegal in direct mode
+The statement cannot be typed in the Immediate window: it
+declares something (DIM, CONST, DECLARE, SUB, TYPE, DATA...)
+or has a label.  Put it in the program instead.
+
+ERR code: 12
+#topic Type mismatch
+#context Type mismatch
+A string was used where a number belongs, or a number where
+a string belongs: in an assignment, as an argument, or in a
+comparison.
+
+ERR code: 13
+#topic Out of string space
+#context Out of string space
+The strings of the program fill the memory there is for
+them.
+
+ERR code: 14
+#topic String formula too complex
+#context String formula too complex
+A string expression is too long or deep to be worked out.
+Splitting it into steps with variables in between helps.
+
+ERR code: 16
+#topic Cannot continue
+#context Cannot continue
+The program was changed in a way that stops it from going on
+where it stopped.  Start it again with Shift+F5.
+
+ERR code: 17
+#topic Function not defined
+#context Function not defined
+An FN function was used before its DEF FN, or a FUNCTION was
+called that the program does not have.
+
+ERR code: 18
+#topic No RESUME
+#context No RESUME
+An error handler reached the end of the program without a
+RESUME.
+
+ERR code: 19
+#topic RESUME without error
+#context RESUME without error
+RESUME ran when no error was being handled - for instance
+when the program ran into its error handler instead of being
+sent there by an error.
+
+ERR code: 20
+#topic Device timeout
+#context Device timeout
+A device - the printer or a serial port - did not answer in
+time.
+
+ERR code: 24
+#topic Device fault
+#context Device fault
+A device reported a fault, or a serial port lost its
+signals.
+
+ERR code: 25
+#topic FOR without NEXT
+#context FOR without NEXT
+A FOR has no NEXT to close its loop.
+
+ERR code: 26
+#topic Out of paper
+#context Out of paper
+The printer is out of paper or not switched on.
+
+ERR code: 27
+#topic Out of stack space
+#context Out of stack space
+Procedures call each other, or themselves, too deeply, or
+GOSUBs nest without their RETURNs.
+
+ERR code: 28
+#topic WHILE without WEND
+#context WHILE without WEND
+A WHILE has no WEND to close its loop.
+
+ERR code: 29
+#topic WEND without WHILE
+#context WEND without WHILE
+A WEND has no WHILE to go back to.
+
+ERR code: 30
+#topic Duplicate label
+#context Duplicate label
+Two lines in the same module or procedure have the same
+label or line number.
+
+ERR code: 33
+#topic Subprogram not defined
+#context Subprogram not defined
+A CALL names a SUB the program does not have, or a statement
+QBasic does not know is taken for a SUB call.
+
+ERR code: 35
+#topic Argument-count mismatch
+#context Argument-count mismatch
+A SUB or FUNCTION was called with more or fewer arguments
+than it has parameters.
+
+ERR code: 37
+#topic Array not defined
+#context Array not defined
+An array was used that has not been dimensioned, or was
+dimensioned with a different number of subscripts.
+
+ERR code: 38
+#topic Variable required
+#context Variable required
+A statement wants a variable to put its result in - INPUT,
+READ, GET, LSET, SWAP - and was given an expression or a
+constant.
+
+ERR code: 40
+#topic FIELD overflow
+#context FIELD overflow
+A FIELD statement asks for more bytes than the file's record
+length, or GET or PUT went past them.
+
+ERR code: 50
+#topic Internal error
+#context Internal error
+Something went wrong inside QBasic itself.  The program
+cannot go on.
+
+ERR code: 51
+#topic Bad file name or number
+#context Bad file name or number
+A file number is not one an OPEN gave, or is outside 1 to
+255.
+
+ERR code: 52
+#topic File not found
+#context File not found
+The file named in OPEN FOR INPUT, KILL, NAME, CHAIN, RUN or
+FILES is not there.
+
+ERR code: 53
+#topic Bad file mode
+#context Bad file mode
+The statement does not suit the way the file was opened:
+PRINT # on a file opened for INPUT, GET on a sequential
+file, INPUT # on one opened for OUTPUT.
+
+ERR code: 54
+#topic File already open
+#context File already open
+The file is open already: OPEN gave a file number in use, or
+a file that is open was named in KILL or NAME.
+
+ERR code: 55
+#topic FIELD statement active
+#context FIELD statement active
+GET or PUT with a record variable was used on a file that
+has a FIELD.
+
+ERR code: 56
+#topic Device I/O error
+#context Device I/O error
+A device or disk reported an error the program cannot get
+past.
+
+ERR code: 57
+#topic File already exists
+#context File already exists
+NAME was asked to give a file a name another file has.
+
+ERR code: 58
+#topic Bad record length
+#context Bad record length
+A GET or PUT record variable is not the length the file was
+opened with.
+
+ERR code: 59
+#topic Disk full
+#context Disk full
+There is no room left on the disk.
+
+ERR code: 61
+#topic Input past end of file
+#context Input past end of file
+INPUT # or LINE INPUT # read past the end of the file.  EOF
+says when the end is reached.
+
+ERR code: 62
+#topic Bad record number
+#context Bad record number
+The record number of a GET or PUT is 0 or less.
+
+ERR code: 63
+#topic Bad file name
+#context Bad file name
+The file name has characters a file name cannot have, or is
+empty.
+
+ERR code: 64
+#topic Too many files
+#context Too many files
+No more files can be open at once, or the directory is full.
+
+ERR code: 67
+#topic Device unavailable
+#context Device unavailable
+The device named is not there or not on line.
+
+ERR code: 68
+#topic Communication-buffer overflow
+#context Communication-buffer overflow
+A serial port received more than its buffer holds before the
+program read it.
+
+ERR code: 69
+#topic Permission denied
+#context Permission denied
+The disk is write-protected, the file is read-only, or a
+file shared by another program is locked.
+
+ERR code: 70
+#topic Disk not ready
+#context Disk not ready
+The drive has no disk in it, or its door is open.
+
+ERR code: 71
+#topic Disk-media error
+#context Disk-media error
+The disk has a fault where QBasic tried to read or write.
+
+ERR code: 72
+#topic Advanced feature unavailable
+#context Advanced feature unavailable
+The statement asks for something this QBasic does not do.
+On PM-DOS that includes CALL ABSOLUTE, which would run
+real-mode machine code.
+
+ERR code: 73
+#topic Rename across disks
+#context Rename across disks
+NAME can move a file only within one drive.
+
+ERR code: 74
+#topic Path/File access error
+#context Path/File access error
+The path and file could not be reached together: a file
+opened as a directory, or a directory used as a file.
+
+ERR code: 75
+#topic Path not found
+#context Path not found
+A directory in the path given does not exist.
+
+ERR code: 76
+#topic Unprintable error
+#context Unprintable error
+An error happened that has no message: ERROR was given a
+number QBasic does not use.
+#topic Array already dimensioned
+#context Array already dimensioned
+The array has a DIM already, or was used before its DIM.
+ERASE frees a dynamic array so it can be dimensioned again;
+REDIM does both.
+#topic CASE without SELECT
+#context CASE without SELECT
+A CASE is not inside a SELECT CASE block.
+#topic CASE ELSE must be the last CASE
+#context CASE ELSE must be the last CASE
+A CASE came after the CASE ELSE of a SELECT CASE block.
+#topic Block IF without END IF
+#context Block IF without END IF
+An IF ...  THEN that ends its line opens a block, and the
+block has no END IF.
+#topic DO without LOOP
+#context DO without LOOP
+A DO has no LOOP to close it.
+#topic SELECT without END SELECT
+#context SELECT without END SELECT
+A SELECT CASE has no END SELECT.
+#topic SUB without END SUB
+#context SUB without END SUB
+The SUB has no END SUB.
+#topic FUNCTION without END FUNCTION
+#context FUNCTION without END FUNCTION
+The FUNCTION has no END FUNCTION.
+#topic DEF without END DEF
+#context DEF without END DEF
+A DEF FN on more than one line has no END DEF.
+#topic ELSE without IF
+#context ELSE without IF
+An ELSE is not inside an IF block, or follows the block's
+ELSE.
+#topic ELSEIF without IF
+#context ELSEIF without IF
+An ELSEIF is not inside an IF block, or follows the block's
+ELSE.
+#topic END IF without block IF
+#context END IF without block IF
+An END IF has no block IF to close.
+#topic END SELECT without SELECT
+#context END SELECT without SELECT
+An END SELECT has no SELECT CASE to close.
+#topic END SUB without SUB
+#context END SUB without SUB
+An END SUB is outside a SUB.
+#topic END FUNCTION without FUNCTION
+#context END FUNCTION without FUNCTION
+An END FUNCTION is outside a FUNCTION.
+#topic END DEF without DEF
+#context END DEF without DEF
+An END DEF has no DEF FN to close.
+#topic END TYPE without TYPE
+#context END TYPE without TYPE
+An END TYPE has no TYPE to close.
+#topic TYPE without END TYPE
+#context TYPE without END TYPE
+A TYPE has no END TYPE.
+#topic LOOP without DO
+#context LOOP without DO
+A LOOP has no DO to go back to.
+#topic EXIT DO not within DO...LOOP
+#context EXIT DO not within DO...LOOP
+EXIT DO is not inside a DO loop.
+#topic EXIT FOR not within FOR...NEXT
+#context EXIT FOR not within FOR...NEXT
+EXIT FOR is not inside a FOR loop.
+#topic EXIT DEF not within DEF FN
+#context EXIT DEF not within DEF FN
+EXIT DEF is not inside a DEF FN.
+#topic EXIT SUB not within SUB
+#context EXIT SUB not within SUB
+EXIT SUB is in a FUNCTION or a DEF FN, not a SUB.
+#topic EXIT FUNCTION not within FUNCTION
+#context EXIT FUNCTION not within FUNCTION
+EXIT FUNCTION is in a SUB or a DEF FN, not a FUNCTION.
+#topic Element not defined
+#context Element not defined
+The record variable's TYPE has no element of that name.
+#topic Fixed-length string expected
+#context Fixed-length string expected
+Only a fixed-length string (STRING * n) can be used here.
+#topic Fixed-length string not allowed here
+#context Fixed-length string not allowed here
+A fixed-length string cannot be used here - for instance as
+a parameter of a SUB or FUNCTION.
+#topic Illegal in procedure
+#context Illegal in procedure
+The statement belongs in the module, outside every SUB and
+FUNCTION: TYPE, DECLARE, COMMON, DEF FN and OPTION BASE
+among others.
+#topic Illegal outside of SUB, FUNCTION, or DEF FN
+#context Illegal outside of SUB, FUNCTION, or DEF FN
+STATIC as a statement, or EXIT DEF, belongs inside a
+procedure.
+#topic Illegal outside of SUB/FUNCTION
+#context Illegal outside of SUB/FUNCTION
+The statement belongs inside a SUB or FUNCTION: EXIT SUB,
+EXIT FUNCTION, SHARED.
+#topic Invalid constant
+#context Invalid constant
+A CONST, an array bound or a fixed string length was given
+something that is not a constant, or a constant that does
+not fit its type.
+#topic Invalid line number
+#context Invalid line number
+Line numbers are whole numbers from 0 to 65,529.
+#topic Parameter type mismatch
+#context Parameter type mismatch
+A variable passed to a SUB or FUNCTION is not the type of
+the parameter it is passed to.  Put the variable in
+parentheses to pass a copy of its value instead, or make the
+types agree.
+#topic Program too complex
+#context Program too complex
+The program, a statement in the program, or an expression is
+too big for QBasic to hold.
+#topic SUB or FUNCTION expected
+#context SUB or FUNCTION expected
+DECLARE and EXIT need SUB or FUNCTION after them.
+#topic SUB or FUNCTION not allowed here
+#context SUB or FUNCTION not allowed here
+A SUB or FUNCTION starts inside another one, or inside a
+block.
+#topic Statement cannot precede SUB/FUNCTION definition
+#context Statement cannot precede SUB/FUNCTION definition
+Only remarks, blank lines and DEFtype statements may come
+before a SUB or FUNCTION line in its window.
+#topic Statements cannot follow END SUB/FUNCTION
+#context Statements cannot follow END SUB/FUNCTION
+Only remarks and blank lines may come after END SUB or END
+FUNCTION.
+#topic Too many arguments
+#context Too many arguments
+A function was given more arguments than it takes.
+#topic Too many dimensions
+#context Too many dimensions
+An array may have at most 60 dimensions.
+#topic Too many elements
+#context Too many elements
+A TYPE, or a list in a statement, has more parts than QBasic
+allows.
+#topic Type not defined
+#context Type not defined
+AS names a type that has no TYPE statement.
+#topic Wrong number of dimensions
+#context Wrong number of dimensions
+The array was used with a different number of subscripts
+from its DIM.
+#topic Expected
+#context m.expected
+The line ended, or something else came, where QBasic needed
+what the message names after "Expected:".  The cursor is put
+where it was needed.

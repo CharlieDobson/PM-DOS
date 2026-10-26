@@ -1,0 +1,191 @@
+/*
+ * HOST.C - QBHOST.EXE: a QBasic program run from a Windows console, for
+ * checking the interpreter against real QBasic's results.
+ *
+ *   QBHOST [-root dir] [-keys file] [-screen file] [-list] program.bas
+ *
+ * -root    the folder that stands for C:\ (default: the current one)
+ * -keys    the keys a program reads, one a line (SYS_NT.C says how)
+ * -screen  the text screen at the end, written to a file, a row a line
+ * -list    each line as QBasic would show it, instead of running
+ *
+ * A compile error is printed with its procedure, line and column, and
+ * the exit code is 2; a run-time error the program did not trap is
+ * printed and the exit code is 1.
+ *
+ * Not built by BUILD.CMD; MKHOST.CMD builds it.
+ */
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "qb.h"
+
+int opt_mbf;
+int ide_trace;                  /* no IDE here: TRON changes nothing */
+
+void host_set_root( const char *root );
+void host_set_keys( const char *path );
+u16 *host_screen( int *rows, int *cols );
+
+void out_of_memory( void )
+{
+    fprintf( stderr, "qbhost: out of memory\n" );
+    exit( 4 );
+}
+
+static const char *text_name( int text )
+{
+    return text == 0 ? "(module)" : ptext.texts[text]->pname;
+}
+
+static void dump_screen( const char *path )
+{
+    FILE *fp = fopen( path, "w" );
+    int rows, cols, r, c;
+    u16 *cells;
+
+    if ( fp == NULL ) {
+        return;
+    }
+    con_flush();
+    cells = host_screen( &rows, &cols );
+    for ( r = 0; r < rows; r++ ) {
+        for ( c = 0; c < cols; c++ ) {
+            int ch = cells[r * cols + c] & 0xFF;
+            fputc( ch ? ch : ' ', fp );
+        }
+        fputc( '\n', fp );
+    }
+    fclose( fp );
+}
+
+static int list_program( void )
+{
+    int t;
+    u32 l;
+    char out[MAX_LINE + 64];
+    CERR err;
+
+    for ( t = 0; t < ptext.ntexts; t++ ) {
+        DOC *doc = ptext.texts[t];
+        for ( l = 0; l < doc->count; l++ ) {
+            LINE *ln = &doc->lines[l];
+            if ( comp_check_line( &ptext, t, l, ln->text ? ln->text : "", ln->len, out, sizeof( out ), &err ) ) {
+                printf( "%s\n", out );
+            } else {
+                printf( "%.*s    <-- %s at %d\n", ln->len, ln->text ? ln->text : "", err.msg, err.col + 1 );
+            }
+        }
+    }
+    return 0;
+}
+
+int main( int argc, char **argv )
+{
+    const char *file = NULL, *screen_file = NULL;
+    int i, rc, why, list = 0;
+    u32 run_at = 0, n;
+    PROGRAM *prog;
+    CERR err;
+    STMTLOC *loc;
+
+    for ( i = 1; i < argc; i++ ) {
+        if ( strcmp( argv[i], "-root" ) == 0 && i + 1 < argc ) {
+            host_set_root( argv[++i] );
+        } else if ( strcmp( argv[i], "-keys" ) == 0 && i + 1 < argc ) {
+            host_set_keys( argv[++i] );
+        } else if ( strcmp( argv[i], "-screen" ) == 0 && i + 1 < argc ) {
+            screen_file = argv[++i];
+        } else if ( strcmp( argv[i], "-list" ) == 0 ) {
+            list = 1;
+        } else {
+            file = argv[i];
+        }
+    }
+    if ( file == NULL ) {
+        fprintf( stderr, "usage: qbhost [-root dir] [-keys file] [-screen file] [-list] program.bas\n" );
+        return 2;
+    }
+    fp_init();
+    prog_clear();
+    rc = prog_load( file );
+    if ( rc != 0 ) {
+        fprintf( stderr, "qbhost: cannot read %s (%d)\n", file, rc );
+        return 2;
+    }
+    if ( list ) {
+        return list_program();
+    }
+    con_capture_dos();
+    for ( ;; ) {
+        prog = comp_program( &ptext, &err );
+        if ( prog == NULL ) {
+            fprintf( stderr, "%s line %lu col %d: %s\n", text_name( err.text ), (unsigned long)err.line + 1,
+                     err.col + 1, err.msg );
+            return 2;
+        }
+        if ( !vm_begin( prog ) ) {
+            fprintf( stderr, "qbhost: no memory for the run\n" );
+            return 4;
+        }
+        if ( run_at != 0 ) {
+            /* RUN n: from the line's code */
+            vm.pc = prog->code + run_at - 1;
+            for ( n = 0; n < prog->nlocs; n++ ) {
+                if ( prog->locs[n].pc == run_at - 1 ) {
+                    vm.stmt = n;
+                    break;
+                }
+            }
+            run_at = 0;
+        }
+        con_reset();
+        vm_common_give();
+        why = vm_go( GO_RUN );
+        if ( why == RUN_CHAIN && vm.chain_to[0] ) {
+            char next[PATH_MAX];
+            strcpy( next, vm.chain_to );
+            if ( vm.chain_keep ) {
+                vm_common_take();
+            }
+            vm_end();
+            comp_free( prog );
+            prog_clear();
+            if ( prog_load( next ) != 0 ) {
+                fprintf( stderr, "qbhost: cannot read %s\n", next );
+                return 2;
+            }
+            continue;
+        }
+        if ( why == RUN_CHAIN ) {
+            run_at = vm.chain_at;
+            vm_end();
+            comp_free( prog );
+            continue;
+        }
+        break;
+    }
+    rc = 0;
+    if ( why == RUN_ERROR ) {
+        if ( vm.fatal_data != NULL ) {
+            fprintf( stderr, "%s line %lu col %u: %s (%d)\n", text_name( vm.fatal_data->in_text ),
+                     (unsigned long)vm.fatal_data->line + 1, vm.fatal_data->col + 1, err_message( vm.fatal ), vm.fatal );
+        } else {
+            loc = &prog->locs[vm.fatal_stmt];
+            fprintf( stderr, "%s line %lu col %u: %s (%d)\n", text_name( loc->text ), (unsigned long)loc->line + 1,
+                     loc->col + 1, err_message( vm.fatal ), vm.fatal );
+        }
+        rc = 1;
+    } else if ( why == RUN_STOP ) {
+        fprintf( stderr, "qbhost: STOP\n" );
+    } else if ( why == RUN_BREAK ) {
+        fprintf( stderr, "qbhost: Break\n" );
+    }
+    file_flush_all();
+    if ( screen_file != NULL ) {
+        dump_screen( screen_file );
+    }
+    vm_end();
+    comp_free( prog );
+    return rc;
+}

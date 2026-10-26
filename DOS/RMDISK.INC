@@ -29,11 +29,21 @@ VOL_DATALBA     EQU 22h                 ; dd  absolute, cluster 2
 VOL_CLUSTERS    EQU 26h                 ; dd  data clusters; the last is +1
 VOL_ROOTCLUS    EQU 2Ah                 ; dd  FAT32 only
 VOL_FREEHINT    EQU 2Eh                 ; dd  where to start looking
-VOL_DRVHDR      EQU 32h                 ; dd  VF_DRIVER: the driver's header
+VOL_DRVHDR      EQU 32h                 ; dd  VF_DRIVER: the driver's header;
+                                        ;     a memory unit's (VOL_UNIT is
+                                        ;     VU_MEM): where the kernel keeps
+                                        ;     its size and address
 VOL_UNIT        EQU 36h                 ; db  ...and its number for the unit
 VOL_TICK        EQU 38h                 ; dd  VF_FLOPPY: the BIOS tick count
                                         ;     when it was last asked for
-VOL_LEN         EQU 3Ch
+VOL_MSECS       EQU 3Ch                 ; dd  a memory unit: its sectors,
+VOL_MBASE       EQU 40h                 ; dd  and where sector 0 is, flat -
+                                        ;     both read again at each mount
+VOL_LEN         EQU 44h
+
+; VOL_UNIT for a VF_DRIVER volume that has no real driver behind it
+VU_USB          EQU 0FFh                ; a USB disk, through the bridge
+VU_MEM          EQU 0FEh                ; a 32-bit driver's memory unit
 
 VOL_SAME_TICKS  EQU 36                  ; two seconds of them - see rd_getvol
 
@@ -138,9 +148,23 @@ rvi_notdrv:
         ; zeroed as a driver's is), because the bridge addresses the whole
         ; disk and the FAT volume starts at that absolute LBA.
         test    byte ptr [si+RMD_FLAGS],RMDF_USB
+        jz      rvi_notusb
+        or      byte ptr [di+VOL_FLAGS],VF_DRIVER
+        mov     byte ptr [di+VOL_UNIT],VU_USB
+        jmp     short rvi_bios
+rvi_notusb:
+        ; A 32-BIT DRIVER'S MEMORY UNIT (RMDF_MEM): VF_DRIVER again, for
+        ; the same reasons, and VU_MEM so that rd_raw moves its sectors
+        ; out of the kernel's memory (rd_memraw).  RMD_START says where
+        ; the kernel keeps the unit's size and address; they are read at
+        ; each mount (rd_memdesc), because reading them takes the mover
+        ; and the mover is not set up yet (rx_init comes later).
+        test    byte ptr [si+RMD_FLAGS],RMDF_MEM
         jz      rvi_bios
         or      byte ptr [di+VOL_FLAGS],VF_DRIVER
-        mov     byte ptr [di+VOL_UNIT],0FFh
+        mov     byte ptr [di+VOL_UNIT],VU_MEM
+        mov     dword ptr [di+VOL_DRVHDR],eax
+        mov     dword ptr [di+VOL_START],0
 rvi_bios:
         add     si,RMD_LEN
         add     di,VOL_LEN
@@ -470,9 +494,17 @@ rd_mount:
         push    es
 
         ; A DRIVER'S UNIT HAS NO BIOS TO ASK.  The geometry below is the
-        ; CHS path's, which its sectors do not take (rd_drvraw).
+        ; CHS path's, which its sectors do not take (rd_drvraw).  A
+        ; memory unit's size and address come first, since reading its
+        ; boot sector needs them.
         test    byte ptr [si+VOL_FLAGS],VF_DRIVER
-        jnz     rm_geodef
+        jz      rm_notdrv
+        cmp     byte ptr [si+VOL_UNIT],VU_MEM
+        jne     rm_geodef
+        call    rd_memdesc
+        jc      rm_fail
+        jmp     rm_geodef
+rm_notdrv:
 
         ; Do the extensions exist on this drive?  Asked once per mount
         ; rather than once per read, and asked of the BIOS rather than
@@ -715,6 +747,10 @@ rd_xfer:
         mov     [rd_dunit],dl
         mov     dl,[si+VOL_MEDIA]
         mov     [rd_dmedia],dl
+        mov     edx,dword ptr [si+VOL_MSECS]    ; and a memory unit's size
+        mov     dword ptr [rd_msecs],edx        ; and place
+        mov     edx,dword ptr [si+VOL_MBASE]
+        mov     dword ptr [rd_mbase],edx
         movzx   ecx,cx
 IFDEF RMDOS_E9
         call    e9_disk                 ; the request, on port E9h
@@ -797,8 +833,10 @@ ENDIF
 rd_raw:
         test    byte ptr [rd_vflags],VF_DRIVER
         jz      rdr_bios
-        cmp     byte ptr [rd_dunit],0FFh    ; the USB-bridge sentinel (rd_volinit)
+        cmp     byte ptr [rd_dunit],VU_USB  ; the USB-bridge sentinel (rd_volinit)
         je      rd_usbraw               ; RMUSB.INC - sectors through the bridge
+        cmp     byte ptr [rd_dunit],VU_MEM
+        je      rd_memraw               ; below - a RAM disk's, out of memory
         jmp     rd_drvraw               ; RMDEV.INC - a real driver's packets
 rdr_bios:
         push    es
@@ -1414,6 +1452,122 @@ ib_no:
         ret
 
 ;=====================================================================
+; rd_memraw - rd_raw's fork for a 32-bit driver's memory unit (VU_MEM):
+;             EAX = the first sector, ECX = how many, ES:BX = the buffer,
+;             [rd_rw] 0 read / 1 write.  CF on error.  Every register
+;             kept, as rd_raw keeps them.
+;
+; A RAM DISK IS MEMORY, so there is nobody to ask: its sectors are a
+; block the kernel kept through the park, at [rd_mbase], and RMXMS's
+; mover copies between it and the caller's buffer in one move - leaving
+; real mode for the length of it while the machine is ours, and through
+; INT 15h AH=87h under WIN386 - which is how the cache's elements move
+; (RMCACHE.INC).  The sectors are held to the size the kernel gave, and
+; not to the boot sector's, which is only what a program last wrote.
+;=====================================================================
+rd_memraw:
+        push    es
+        pushad
+        mov     edx,eax
+        add     edx,ecx
+        jc      rdm_bad
+        cmp     edx,dword ptr [rd_msecs]
+        ja      rdm_bad
+        shl     eax,9
+        add     eax,dword ptr [rd_mbase]        ; the sectors, flat
+        mov     dx,es
+        movzx   edx,dx
+        shl     edx,4
+        movzx   ebx,bx
+        add     edx,ebx                         ; the buffer, flat
+        shl     ecx,9
+        mov     esi,eax                         ; a read is from the disk,
+        mov     edi,edx
+        cmp     byte ptr [rd_rw],0
+        je      rdm_move
+        xchg    esi,edi                         ; a write to it
+rdm_move:
+        call    rd_mmove
+        jc      rdm_bad
+        popad
+        pop     es
+        clc
+        ret
+rdm_bad:
+        popad
+        pop     es
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; rd_mmove - ESI -> EDI, ECX bytes, flat both; CF if it failed.  The
+;            mover a memory unit's sectors take: RMXMS's own in real
+;            mode, and under a monitor INT 15h AH=87h ALONE.
+;
+; NOT rx_domove UNDER WIN386, which is the lesson of the first run in
+; enhanced mode: rx_domove raises the A20 gate for the move and lowers
+; it again when it found it low, and in a virtual machine "found it
+; low" is the VM's HMA as WIN386 shows it, while the gate it lowers is
+; the machine's - port 92h, which WIN386 does not take over.  Windows'
+; next page-table walk then read memory with bit 20 gone and the
+; machine triple-faulted.  The gate under a monitor is the monitor's,
+; 87h needs it from nobody, and the cache has moved its elements this
+; way since enhanced mode first ran (RMCACHE.INC, cm_move).
+;---------------------------------------------------------------------
+rd_mmove:
+        push    ax
+        smsw    ax
+        test    al,1
+        pop     ax
+        jnz     rmm_v86
+        jmp     rx_domove               ; real mode: ours, gate and all
+rmm_v86:
+        jmp     rx_move15
+
+;---------------------------------------------------------------------
+; rd_memdesc - SI = a memory unit's volume.  Its size and address, out
+;              of the kernel's memory at VOL_DRVHDR (PARK.INC put the
+;              address there) into VOL_MSECS and VOL_MBASE.  CF if they
+;              cannot be read or describe nothing.  Every register kept.
+;
+; NOT BEFORE rx_init, which gives the mover's descriptor table its
+; address: until then a mount has to fail and be tried again later.
+;---------------------------------------------------------------------
+rd_memdesc:
+        pushad
+        cmp     dword ptr [rx_gdtr+2],0
+        je      rmd_bad
+        push    si
+        mov     esi,dword ptr [si+VOL_DRVHDR]
+        xor     edi,edi
+        mov     di,ds
+        shl     edi,4
+        add     edi,OFFSET rd_mdesc
+        mov     ecx,8
+        call    rd_mmove
+        pop     si
+        jc      rmd_bad
+        mov     eax,dword ptr [rd_mdesc]        ; the sectors
+        or      eax,eax
+        jz      rmd_bad
+        cmp     eax,800000h
+        jae     rmd_bad
+        mov     edx,dword ptr [rd_mdesc+4]      ; and where they start
+        mov     ecx,eax
+        shl     ecx,9
+        add     ecx,edx
+        jc      rmd_bad                         ; past the top of memory
+        mov     dword ptr [si+VOL_MSECS],eax
+        mov     dword ptr [si+VOL_MBASE],edx
+        popad
+        clc
+        ret
+rmd_bad:
+        popad
+        stc
+        ret
+
+;=====================================================================
 ; Data
 ;=====================================================================
 ib_lba      dd  0                       ; i25_bios: the next sector,
@@ -1424,6 +1578,9 @@ rd_vols     db  (LASTDRIVE * VOL_LEN) dup(0)
 rd_dhdr     dd  0                       ; rd_xfer's copies of a driver
 rd_dunit    db  0                       ; volume's header, unit and media,
 rd_dmedia   db  0                       ; for rd_drvraw
+rd_msecs    dd  0                       ; ...and a memory unit's size and
+rd_mbase    dd  0                       ; place, for rd_memraw
+rd_mdesc    dd  0, 0                    ; rd_memdesc reads them in here
 rd_bootbuf  db  SECSIZE dup(0)
 rd_dap      db  16 dup(0)
 rd_bios     db  0

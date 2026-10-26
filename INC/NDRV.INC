@@ -71,6 +71,13 @@
 ;           refuses after hooking anything unhooks it first.
 ;           INIT runs once, at CONFIG.SYS time, with interrupts on;
 ;           it is the one entry that may take its time.
+;           A DISK DRIVER (NDTF_DISK) is told ECX = how many drive
+;           letters are left for its units and EBX = the first of them
+;           (0 = A:), the rest following in order, and answers in its
+;           table: NDT_NUNITS, 1 to ECX, and NDT_UNITS.  The kernel reads
+;           them once INIT has come back CF clear and gives each unit
+;           its letter (DEVLOAD.INC, dl_ndunits).  A disk driver with no
+;           letter to have refuses.
 ;   PARK    AL = 0: the machine is about to be handed to real mode.
 ;           AL = 1: it has come back.  Preserve nothing; the kernel
 ;           keeps the registers.
@@ -96,8 +103,18 @@ NDT_HALT        EQU     24              ; dd, or 0
 NDT_CALL        EQU     28              ; dd, or 0
 NDT_LEN         EQU     32
 
+; THE REST OF A DISK DRIVER'S TABLE (NDTF_DISK), which says so by its
+; version: NDT_DISKVER, so that a kernel from before disk drivers
+; refuses the file instead of loading a driver whose units it would
+; never give a letter.  Every other driver's table stops at NDT_LEN.
+NDT_NUNITS      EQU     32              ; dd - how many units, from INIT
+NDT_UNITS       EQU     36              ; dd - -> that many NDU_LEN records,
+                                        ; in the driver's own memory
+NDT_DLEN        EQU     40
+
 NDT_SIGVAL      EQU     5652444Eh       ; 'N','D','R','V' as a dword
 NDT_VERSION     EQU     1
+NDT_DISKVER     EQU     2               ; a table with the disk fields
 
 NDTF_NIC        EQU     0001h           ; a network card: CALL answers
                                         ; the functions in INC\NIC.INC
@@ -118,6 +135,45 @@ NDTF_BLOCK      EQU     0008h           ; NOT a loaded driver: a sentinel the
                                         ; (IOS_BRGBLK -> blk_bridge) for USB-
                                         ; disk sectors while parked.  Handled
                                         ; before the nd_find_flag path
+NDTF_DISK       EQU     0010h           ; a block device: its units are drive
+                                        ; letters, read and written through
+                                        ; NDU_IO.  The table is NDT_DISKVER's
+
+;---------------------------------------------------------------------
+; ONE UNIT of a disk driver - one drive letter - as INIT describes it.
+; The record is the driver's and stays where it is for life: the
+; kernel keeps its address and hands it back with every transfer.
+;
+;   NDU_IO  the transfer.  AL = 0 read, 1 write; EDX -> this record;
+;           EBX = the first sector; ECX = how many, 1 or more; EDI ->
+;           the buffer, ECX * 512 bytes, flat.  CF clear: every sector
+;           moved.  CF set: AH = what went wrong, in INT 13h's numbers
+;           (04h sector not found, 03h write protected, 80h not ready).
+;           The kernel has already checked that the sectors are inside
+;           NDU_SECS.  Called with DS and ES the kernel's, the direction
+;           flag clear and interrupts as the caller had them; it may use
+;           every register but the stack, and it may not wait.
+;
+; A UNIT THAT IS MEMORY (NDUF_MEMORY) still moves its sectors through
+; NDU_IO, but says where they are as well.  While the machine is parked
+; no driver can be called, and RMDOS moves the sectors itself instead
+; (RMDISK.INC, rd_memraw): that is what keeps a RAM disk's letter while
+; Windows runs.  The kernel's cache leaves such a unit alone, since
+; caching memory in memory buys nothing.
+;---------------------------------------------------------------------
+NDU_IO          EQU     0               ; dd - the transfer, above
+NDU_SECS        EQU     4               ; dd - the unit's size, in sectors
+NDU_MEM         EQU     8               ; dd - NDUF_MEMORY: where sector 0
+                                        ; is, sector N at NDU_MEM + N * 512
+NDU_MEDIA       EQU     12              ; db - the media byte its BPB says
+NDU_FLAGS       EQU     13              ; db - NDUF_*
+NDU_LETTER      EQU     14              ; db - the letter it got, 0 = A:;
+                                        ; written by the kernel, FFh before
+                                        ; and for a unit that got none
+                                        ; db - spare, 0
+NDU_LEN         EQU     16
+
+NDUF_MEMORY     EQU     01h             ; one block of memory, for life
 
 ;---------------------------------------------------------------------
 ; THE SERVICES - ESI at INIT, and the address is good for life.  Each
@@ -131,7 +187,9 @@ NDTF_BLOCK      EQU     0008h           ; NOT a loaded driver: a sentinel the
 ;   NDS_ALLOC       EBX = bytes -> EAX = the block, CF if none.  The
 ;                   kernel's block, whoever is running: it is never
 ;                   reclaimed.  INIT and CALL time only - not from an
-;                   interrupt or a tick
+;                   interrupt or a tick.  The block is counted as the
+;                   calling driver's (NDF_MEM): the call has to come
+;                   from code in its own image
 ;   NDS_FREE        EDX = a block from NDS_ALLOC
 ;   NDS_PRINT       ESI -> ASCIIZ, to the console (IOS_CONSTR).  INIT
 ;                   and CALL time only
@@ -165,6 +223,12 @@ NDTF_BLOCK      EQU     0008h           ; NOT a loaded driver: a sentinel the
 ;                   calls from inside the kernel, the path 21h/F1h AL=26h
 ;                   takes for a program - the buffer is the caller's own
 ;                   kernel memory, so it is not checked
+;   NDS_STAMP       -> EAX = now, as a directory entry is stamped: the
+;                   date in the high word and the time in the low, both
+;                   packed as DOS packs them (the clock's, through the
+;                   BIOS).  For a disk driver that writes a directory of
+;                   its own, as RAMDISK.SYS does its label.  INIT and CALL
+;                   time only.  Since NDS_VERSION 4
 ;---------------------------------------------------------------------
 NDS_VER         EQU     0
 NDS_ALLOC       EQU     4
@@ -179,9 +243,10 @@ NDS_TICKUNHOOK  EQU     36
 NDS_NICCOUNT    EQU     40
 NDS_NICCALL     EQU     44
 NDS_SOCKCALL    EQU     48
-NDS_LEN         EQU     52
+NDS_STAMP       EQU     52
+NDS_LEN         EQU     56
 
-NDS_VERSION     EQU     3
+NDS_VERSION     EQU     4
 
 ;---------------------------------------------------------------------
 ; THE KERNEL'S ROW for a loaded driver - EDI at INIT and CALL, and what
@@ -214,7 +279,15 @@ ND_MAX          EQU     8               ; drivers, in total
 ;               buffer of ECX bytes (0: none) -> what the driver's CALL
 ;               entry answers.  CF and AX = ERR_BADDRIVE for a row
 ;               there is not, ERR_FUNC for a driver with no CALL entry
+;   NDF_MEM     DL = a row -> ECX = the bytes that row's driver holds
+;               through NDS_ALLOC now (the blocks' payload, headers not
+;               counted), EDX = how many blocks.  Its image is ND_SIZE
+;               and not in these.  The kernel counts a block against
+;               the driver whose code called NDS_ALLOC, and takes it
+;               off when that driver gives it back.  CF and AX =
+;               ERR_BADDRIVE for a row there is not.  For MEM /D
 ;---------------------------------------------------------------------
 NDF_COUNT       EQU     0
 NDF_INFO        EQU     1
 NDF_CALL        EQU     2
+NDF_MEM         EQU     3

@@ -310,6 +310,14 @@ RMDF_USB        EQU     10h             ; a USB disk the kernel keeps alive acro
                                         ; because it is the driver-unit field only
                                         ; when RMDF_DRIVER is set, and a USB row is
                                         ; never a driver row (checked DRIVER first)
+RMDF_MEM        EQU     20h             ; a 32-bit driver's memory unit - a RAM
+                                        ; disk: RMD_START is the flat address of
+                                        ; two dwords in the kernel, the unit's
+                                        ; size in sectors and where sector 0 is,
+                                        ; and RMDOS moves the sectors itself
+                                        ; (RMDISK.INC, rd_memraw).  Never with
+                                        ; RMDF_DRIVER, so bit 5 is free here as
+                                        ; bit 4 is for RMDF_USB.  Since RAMDISK.SYS
 
 ;--- RMH_FLAGS -------------------------------------------------------
 RMHF_A20        EQU     01h             ; the gate was open when we parked, and

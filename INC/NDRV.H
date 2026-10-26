@@ -41,6 +41,19 @@ typedef struct {
 #define NDTF_NIC     0x0001              /* CALL answers INC\NIC.H */
 #define NDTF_STACK   0x0002              /* CALL answers INC\SOCKET.H */
 #define NDTF_REDIR   0x0004              /* CALL answers INC\REDIR.H */
+#define NDTF_DISK    0x0010              /* units are drive letters */
+#define NDT_DISKVER  2                   /* the version a disk driver's
+                                            table carries */
+#define NDUF_MEMORY  0x01                /* a unit that is memory */
+
+/* A DISK DRIVER's table goes on past ND_TABLE with a unit count and a
+   pointer to its units, and each unit is an NDU_* record (NDRV.INC).
+   Not declared here: the unit's transfer entry has a register contract
+   NDSTART.ASM has no C bridge for, and RAMDISK.SYS, the one disk driver
+   so far, is assembly.  NOR IS A TYPEDEF ADDED FOR IT BEFORE ONE IS
+   NEEDED: a new type in this header re-orders the data Watcom lays out
+   in every module that includes it, and every card driver and network
+   program changes by a byte here and there for nothing */
 
 typedef struct {
     u32  sig;
@@ -69,6 +82,8 @@ typedef struct {
 #define NDF_COUNT    0                   /* -> ECX = loaded, EAX = ND_MAX */
 #define NDF_INFO     1                   /* EDI -> an ND_ROW */
 #define NDF_CALL     2                   /* EBX = fn, EDI -> ECX bytes */
+#define NDF_MEM      3                   /* -> ECX = bytes NDS_ALLOC'd,
+                                            EDX = blocks */
 
 /* the errors a CALL entry answers with (PMDOS.INC's ERR_*) */
 #define ERR_FUNC     1

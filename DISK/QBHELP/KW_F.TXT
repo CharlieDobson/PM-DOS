@@ -1,0 +1,1315 @@
+#! KW_F.TXT - keyword topics, FIELD to OPTION BASE (Part F).
+#topic FIELD Statement
+#key FIELD Statement
+FIELD divides the record buffer of a file opened FOR RANDOM into string
+variables.  GET fills them from the file and PUT writes what they hold.
+
+{b}FIELD{p} [#]filenumber%, width% {b}AS{p} var$ [, width% {b}AS{p} var$]...
+
+    {o} filenumber%   The number of a file open FOR RANDOM.
+    {o} width%        How many bytes of the record the variable takes.
+    {o} var$          The string variable that stands for those bytes.
+
+The fields follow one another from the start of the record.  Their widths
+added up must not pass the record length (LEN = in OPEN), or the error is
+"FIELD overflow".  A file not open FOR RANDOM gives "Bad file mode".
+
+Text goes into a field variable with LSET or RSET, which keep its width
+and fill the buffer too.  A LET or INPUT into the variable changes the
+variable but not the buffer.  Numbers go in as MKI$, MKL$, MKS$ or MKD$
+strings and come out with CVI, CVL, CVS or CVD.  A record variable (see
+TYPE) with GET and PUT does the same work with less code.
+
+A second FIELD for the same file adds to the first: the variables of
+both stand for parts of the one record.
+
+Example:
+    OPEN "PHONES.DAT" FOR RANDOM AS #1 LEN = 30
+    FIELD #1, 20 AS person$, 10 AS phone$
+    LSET person$ = "Ann Smith"
+    LSET phone$ = "555-0123"
+    PUT #1, 1
+    CLOSE #1
+
+See Also  [[GET, PUT|GET]]  [[LSET]]  [[MKI$]]  [[CVI]]  [[OPEN]]  [[TYPE]]
+#topic FILEATTR Function
+#key FILEATTR Function
+FILEATTR tells how a file was opened, or gives the DOS handle behind its
+file number.
+
+{b}FILEATTR{p}(filenumber%, attribute%)
+
+    {o} filenumber%   The number of an open file.
+    {o} attribute%    1 for the mode, 2 for the DOS file handle.
+
+For attribute% 1 the answer is:
+
+    1  INPUT      2  OUTPUT     4  RANDOM     8  APPEND    32  BINARY
+
+Any other attribute% gives "Illegal function call", and a number with no
+file open on it gives "Bad file name or number".  For attribute% 2, the
+screen and keyboard devices (SCRN:, KYBD:, CONS:) give 0.
+
+Example:
+    OPEN "LOG.TXT" FOR APPEND AS #2
+    IF FILEATTR(2, 1) = 8 THEN PRINT "Adding to the end"
+
+See Also  [[OPEN]]  [[FREEFILE]]
+#topic FIX Function
+#key FIX Function
+FIX drops the fraction from a number, so the result moves toward zero.
+
+{b}FIX{p}(numeric-expression)
+
+FIX(2.8) is 2 and FIX(-2.8) is -2.  INT goes down instead: INT(-2.8) is
+-3.  CINT rounds to the nearest whole number.  The result has the type of
+the argument.
+
+Example:
+    PRINT FIX(7.9), FIX(-7.9)        ' 7  -7
+    PRINT INT(7.9), INT(-7.9)        ' 7  -8
+
+See Also  [[INT]]  [[CINT]]  [[CLNG]]
+#topic FOR...NEXT Statement
+#key FOR
+#entry FOR...NEXT Statement
+#key NEXT Statement
+#key TO Keyword
+#key STEP Keyword
+FOR...NEXT runs a group of statements a set number of times, stepping a
+counter from a first value to a last one.
+
+{b}FOR{p} counter = start {b}TO{p} end [{b}STEP{p} increment]
+    [statements]
+{b}NEXT{p} [counter [, counter]...]
+
+    {o} counter      A numeric variable; not an array element or a
+                   record's element.
+    {o} start, end   The first value, and the value the counter must not
+                   pass.
+    {o} increment    Added at each NEXT; 1 when STEP is left out.  A
+                   negative increment counts down.
+
+end and increment are worked out once, when FOR starts.  The test comes
+first: when start is already past end, the statements do not run at all.
+After the last pass the counter holds the first value past end.  With
+STEP 0 the loop never ends, unless start is past end.
+
+NEXT alone closes the nearest FOR; NEXT j, i closes two loops at once.
+EXIT FOR leaves early.  A counter that would step outside its type gives
+"Overflow", so FOR i% = 1 TO 32767 fails at its last NEXT.
+
+TO also marks a range in DIM, SELECT CASE and LOCK.  STEP also makes a
+point relative to the last one in the graphics statements.
+
+Example:
+    FOR i = 10 TO 1 STEP -3
+        PRINT i;
+    NEXT i                           ' 10  7  4  1
+
+See Also  [[DO...LOOP|DO]]  [[WHILE...WEND|WHILE]]  [[EXIT]]
+#topic FRE Function
+#key FRE Function
+FRE tells how much memory is left.
+
+{b}FRE{p}(numeric-expression)
+{b}FRE{p}(stringexpression$)
+
+    {o} -1          The memory free for arrays and everything else.
+    {o} -2          The stack space not in use.
+    {o} any other   The string space free.  A string argument gives the
+                  same.
+
+QBasic keeps strings in one 64K segment, and FRE counts what is left of
+that.  FRE here counts the same way - at most 65,535 bytes, less the text
+the program holds - but strings are not kept in one segment, so they can
+go past that figure.  FRE(-1) can be far larger than under MS-DOS.
+
+Example:
+    PRINT "Memory free:"; FRE(-1)
+    PRINT "String space:"; FRE("")
+
+See Also  [[CLEAR]]  [[ERASE]]  [[QBasic Limits|limits]]
+#topic FREEFILE Function
+#key FREEFILE Function
+FREEFILE gives the lowest file number that no open file is using.
+
+{b}FREEFILE{p}
+
+File numbers run from 1 to 255.  When all of them are in use the error
+is "Too many files".  FREEFILE only finds the number; nothing is open on
+it until OPEN uses it, so two FREEFILEs before an OPEN give the same
+number.
+
+Example:
+    handle% = FREEFILE
+    OPEN "NOTES.TXT" FOR INPUT AS #handle%
+    LINE INPUT #handle%, first$
+    CLOSE #handle%
+
+See Also  [[OPEN]]  [[CLOSE]]  [[FILEATTR]]
+#topic FUNCTION Statement
+#key FUNCTION Statement
+FUNCTION starts a procedure that works out a value and hands it back, for
+use in expressions.  END FUNCTION closes the procedure.
+
+{b}FUNCTION{p} name [(parameterlist)] [{b}STATIC{p}]
+    [statements]
+    name = expression
+    [statements]
+{b}END FUNCTION{p}
+
+    {o} name            The function's name.  A type suffix (% & ! # $)
+                      or the DEFtype in force gives the type of its
+                      value.
+    {o} parameterlist   The variables that take the arguments, with
+                      commas between them, each one
+                          variable[( )] [{b}AS{p} type]
+                      ( ) marks an array.  type is INTEGER, LONG,
+                      SINGLE, DOUBLE, STRING or the name of a TYPE.
+    {o} STATIC          The function's variables keep their values from
+                      one call to the next.
+
+The value handed back is the last one assigned to name; with none, 0 or
+"".  EXIT FUNCTION leaves at once.  A function is called by using its name
+in an expression, with the arguments in parentheses.
+
+Arguments are passed by reference: a variable given as an argument
+changes when the function changes the parameter.  Put the variable in
+parentheses, as in Area((side)), to pass a copy.  Without STATIC the
+function's own variables start at 0 or "" on every call, and the module's
+variables are reached only if they are SHARED.  A function may call
+itself; too deep a recursion gives "Out of stack space".
+
+The editor keeps each procedure in a text of its own: Edit > New FUNCTION,
+or a FUNCTION line typed in the module, starts one, and View > SUBs (F2)
+moves between them.  Saving puts a DECLARE for each procedure at the top
+of the module.
+
+Example:
+    FUNCTION Larger (first, second)
+        Larger = first
+        IF second > first THEN Larger = second
+    END FUNCTION
+
+See Also  [[SUB]]  [[DECLARE]]  [[DEF FN|DEF]]  [[SHARED]]  [[STATIC]]  [[EXIT]]
+#topic GET, PUT Statements (File I/O)
+#key GET Statement (File I/O)
+#key PUT Statement (File I/O)
+GET reads a record from a RANDOM file, or bytes from a BINARY file, into
+the FIELD buffer or a variable.  PUT writes one.  For the graphics GET
+and PUT, see [[GET, PUT (Graphics)|GET-graphics]].
+
+{b}GET{p} [#]filenumber% [, [position&] [, variable]]
+{b}PUT{p} [#]filenumber% [, [position&] [, variable]]
+
+    {o} filenumber%   The number of a file open FOR RANDOM or BINARY.
+    {o} position&     RANDOM: the record number.  BINARY: the byte
+                    position.  Both count from 1.  Left out, the
+                    record after the last one read or written, or the
+                    current byte.
+    {o} variable      The variable to read into or write from.  Left out
+                    (RANDOM only), the FIELD buffer is used.
+
+In a RANDOM file the variable must fit in the record (LEN = in OPEN), or
+the error is "Bad record length".  A variable-length string is put as
+two bytes of length and then the text, so the record needs two bytes
+more than the text.  PUT of a variable writes only the variable's bytes;
+the rest of the record stays as it was.
+
+In a BINARY file, GET into a string reads as many bytes as the string
+already holds, and PUT writes the string's text alone.  A variable of any
+other type moves the bytes the variable takes in memory: 2 for INTEGER,
+4 for LONG and SINGLE, 8 for DOUBLE, a record's whole size.
+
+A GET past the end of the file gives zeros, and EOF becomes true.  A
+position below 1 gives "Bad record number"; a file in another mode gives
+"Bad file mode".
+
+Example:
+    DIM block AS STRING * 16
+    OPEN "DATA.BIN" FOR BINARY AS #1
+    GET #1, 1, block                 ' the first 16 bytes
+    PUT #1, LOF(1) + 1, block        ' copied onto the end
+    CLOSE #1
+
+See Also  [[FIELD]]  [[OPEN]]  [[SEEK]]  [[LOC]]  [[EOF]]  [[TYPE]]
+#topic GET, PUT Statements (Graphics)
+#context GET-graphics
+#entry GET Statement (Graphics)
+#entry PUT Statement (Graphics)
+GET copies a rectangle of a graphics screen into an array.  PUT draws the
+copy back anywhere on the screen.  For GET and PUT with files, see
+[[GET, PUT (File I/O)|GET]].
+
+{b}GET{p} [{b}STEP{p}](x1!,y1!)-[{b}STEP{p}](x2!,y2!), arrayname[(index%)]
+{b}PUT{p} [{b}STEP{p}](x1!,y1!), arrayname[(index%)] [,action]
+
+    {o} x1!,y1!,x2!,y2!   Opposite corners of the rectangle; for PUT,
+                        the top left corner.  STEP makes a point
+                        relative to the last point drawn.
+    {o} arrayname         A numeric array big enough for the picture.
+    {o} index%            The element the picture starts at; the first
+                        element when left out.
+    {o} action            How PUT mixes the picture with the screen:
+                          PSET    the picture as it was got
+                          PRESET  the picture, colours inverted
+                          AND     screen AND picture, bit by bit
+                          OR      screen OR picture
+                          XOR     screen XOR picture (the default)
+
+The picture is kept as two INTEGERs, the width in bits and the height,
+then the rows of pixels.  The bytes needed are
+
+    4 + INT((width * bits + 7) / 8) * planes * height
+
+with width and height in pixels, and bits and planes by screen mode:
+
+    SCREEN 1         2 bits, 1 plane     SCREEN 7, 8, 9, 12   1 bit, 4 planes
+    SCREEN 2, 11     1 bit, 1 plane      SCREEN 13            8 bits, 1 plane
+
+SCREEN 10 here takes 2 bits in 1 plane; QBasic takes 1 bit in 2 planes.
+
+A second PUT with XOR puts the screen back as it was, which is how a
+shape is moved without spoiling what is behind it.  A rectangle not
+wholly on the screen, or an array too small, gives "Illegal function
+call", and so does either statement in SCREEN 0.  PUT leaves out the
+pixels outside a VIEW.
+
+Example:
+    SCREEN 13
+    CIRCLE (4, 4), 3, 14
+    DIM ball%(33)                    ' 4 + 8 * 8 bytes, 2 to an element
+    GET (0, 0)-(7, 7), ball%
+    PUT (150, 90), ball%, PSET
+
+See Also  [[SCREEN]]  [[DIM]]  [[BSAVE]]  [[VIEW]]
+#topic GOSUB...RETURN Statements
+#key GOSUB
+#entry GOSUB...RETURN Statements
+#key RETURN Statement
+GOSUB jumps to a subroutine: a group of lines in the same module or
+procedure.  RETURN goes back to the statement after the GOSUB.
+
+{b}GOSUB{p} {label | linenumber}
+{b}RETURN{p} [{label | linenumber}]
+
+    {o} label, linenumber   Where the subroutine starts; for RETURN,
+                          where to go instead of back.
+
+GOSUBs may nest, and each RETURN goes back to the latest one.  A RETURN
+with no GOSUB to go back to gives "RETURN without GOSUB".  RETURN with a
+label forgets the way back and goes to the label.
+
+A GOSUB in a SUB or FUNCTION reaches only labels in that procedure.
+SUB and FUNCTION procedures, with variables and arguments of their own,
+are usually the better choice.  The subroutines run by ON KEY, ON TIMER
+and the other events also end with RETURN.
+
+Example:
+    INPUT "Radius"; radius
+    GOSUB ShowArea
+    END
+    ShowArea:
+        PRINT "Area:"; 3.14159 * radius ^ 2
+        RETURN
+
+See Also  [[ON...GOSUB|ON-GOTO]]  [[GOTO]]  [[SUB]]  [[FUNCTION]]  [[Event Trapping|events]]
+#topic GOTO Statement
+#key GOTO Statement
+GOTO carries on with the program at a label or a line number, without
+coming back.
+
+{b}GOTO{p} {label | linenumber}
+
+The label must be in the same module or procedure as the GOTO, so GOTO
+cannot go into or out of a SUB or FUNCTION.  A label is a name and a
+colon, first on its line; a line number is 0 to 65,529.
+
+DO...LOOP, IF...THEN...ELSE and SELECT CASE cover most uses of GOTO, and
+read more clearly.
+
+Example:
+    count = 0
+    Again:
+    count = count + 1
+    IF count < 3 THEN GOTO Again
+    PRINT count                      ' 3
+
+See Also  [[GOSUB]]  [[ON...GOTO|ON-GOTO]]  [[IF]]  [[DO...LOOP|DO]]
+#topic HEX$, OCT$ Functions
+#key HEX$ Function
+#key OCT$ Function
+HEX$ writes a whole number in hexadecimal digits, OCT$ in octal digits.
+
+{b}HEX${p}(numeric-expression&)
+{b}OCT${p}(numeric-expression&)
+
+The argument is rounded to a whole number first; one outside the range
+of a LONG gives "Overflow".  A negative number is written in two's
+complement: 16 bits of it when the argument is an INTEGER, 32 bits
+otherwise.  So HEX$(-1) is "FFFF" and HEX$(-1&) is "FFFFFFFF".  There is
+no leading blank and no &H.
+
+To read the digits back, put &H or &O in front and use VAL.
+
+Example:
+    PRINT HEX$(255), OCT$(8)         ' FF  10
+    PRINT VAL("&H" + HEX$(4096))     ' 4096
+
+See Also  [[VAL]]  [[STR$]]
+#topic IF...THEN...ELSE Statement
+#key IF
+#entry IF...THEN...ELSE Statement
+#key THEN Keyword
+#key ELSE Keyword
+#key ELSEIF Keyword
+IF runs statements only when a condition is true, and others when the
+condition is false.
+
+On one line:
+
+{b}IF{p} condition {b}THEN{p} statements [{b}ELSE{p} statements]
+{b}IF{p} condition {b}GOTO{p} label [{b}ELSE{p} statements]
+
+As a block:
+
+{b}IF{p} condition1 {b}THEN{p}
+    [statements]
+[{b}ELSEIF{p} condition2 {b}THEN{p}
+    [statements]]...
+[{b}ELSE{p}
+    [statements]]
+{b}END IF{p}
+
+    {o} condition    A numeric expression; any value but 0 is true.  A
+                   comparison gives -1 for true and 0 for false.
+    {o} statements   On one line, statements with colons between them.
+                   A line number alone after THEN or ELSE is a GOTO.
+
+In a block IF nothing follows THEN on its line but a comment.  The
+statements under the first true condition run and the rest are skipped;
+ELSE takes the case where none is true.  Every block needs its END IF.
+A string as the condition gives "Type mismatch": compare strings with =,
+<> and the rest instead.
+
+Example:
+    IF temp < 0 THEN
+        PRINT "Freezing"
+    ELSEIF temp < 20 THEN
+        PRINT "Cool"
+    END IF
+    IF temp > 30 THEN PRINT "Hot" ELSE PRINT "Not hot"
+
+See Also  [[SELECT CASE|SELECT]]  [[ON...GOTO|ON-GOTO]]  [[Boolean Operators|boolean]]
+#topic INKEY$ Function
+#key INKEY$ Function
+INKEY$ reads one key from the keyboard, without waiting and without
+showing the key.
+
+{b}INKEY${p}
+
+The result is "" when no key is waiting, one character for an ordinary
+key, and two characters - CHR$(0) and the scan code - for a key that has
+no character: a function key, an arrow key, Home and the like.  Ctrl+Break
+still stops the program.
+
+Example:
+    PRINT "Press Esc to stop."
+    DO
+        key$ = INKEY$
+        IF LEN(key$) = 2 THEN PRINT "Scan code"; ASC(RIGHT$(key$, 1))
+    LOOP UNTIL key$ = CHR$(27)
+
+See Also  [[INPUT$]]  [[INPUT]]  [[Scan Codes|scancodes]]  [[ON KEY|ON-KEY]]  [[SLEEP]]
+#topic INP Function
+#key INP Function
+INP reads a byte from an I/O port.
+
+{b}INP{p}(port&)
+
+    {o} port&   A port number, 0 to 65,535.
+
+A port outside that range gives "Illegal function call".  The result is
+0 to 255.
+
+The read goes to the hardware, except for three ports that belong to
+PM-DOS: 60h gives the scan code of the last key, 64h a keyboard status
+whose bit 0 says a key is waiting, and 92h gives 2.  The VGA colour
+ports 3C7h to 3C9h read the program's own palette.
+
+Example:
+    PRINT "Last scan code:"; INP(&H60)
+
+See Also  [[OUT]]  [[WAIT]]  [[PEEK]]
+#topic OUT Statement
+#key OUT Statement
+OUT writes a byte to an I/O port.
+
+{b}OUT{p} port&, data%
+
+    {o} port&   A port number, 0 to 65,535.
+    {o} data%   The byte, 0 to 255.
+
+Either one out of range gives "Illegal function call".  A byte sent to
+the wrong port can hang the machine or upset a device.
+
+OUT to 60h, 64h and 92h (the keyboard controller and the A20 gate) is
+ignored: those belong to PM-DOS.  The VGA colour ports 3C7h, 3C8h and
+3C9h set the program's own palette.
+
+Example:
+    SCREEN 13
+    OUT &H3C8, 1                     ' colour 1 becomes
+    OUT &H3C9, 63: OUT &H3C9, 0: OUT &H3C9, 0    ' red 63, green 0, blue 0
+    LINE (0, 0)-(319, 199), 1, BF
+
+See Also  [[INP]]  [[WAIT]]  [[PALETTE]]  [[POKE]]
+#topic INPUT Statement
+#key INPUT Statement
+INPUT reads values typed at the keyboard, or read from a file, into
+variables.  For a whole line of text, see [[LINE INPUT|LINE-INPUT]].
+
+{b}INPUT{p} [;] ["prompt"{; | ,}] variablelist
+{b}INPUT{p} #filenumber%, variablelist
+
+    {o} ;              Straight after INPUT: the cursor stays on the line
+                     when Enter is pressed.
+    {o} "prompt"       A string constant written first.  A ; after the
+                     prompt adds a question mark, a , does not.  With
+                     no prompt, "? " is written.
+    {o} variablelist   Variables with commas between them.  The values
+                     typed have commas between them too.
+    {o} filenumber%    The number of a file open FOR INPUT.
+
+The line typed is checked before anything is stored.  The wrong number
+of values, or text where a number belongs, writes "Redo from start" and
+asks again; a number too big for its variable writes "Overflow" first.
+Enter alone gives every variable 0 or "".  A string typed in quotes may
+hold commas.  Left, Right, Home, End, Ins, Del and Backspace edit the
+line, Esc empties the line, and the line holds at most 255 characters.
+
+From a file, values end at a comma or a line end, and a number also ends
+at a blank.  Blanks before a value are skipped.  Reading past the end
+gives "Input past end of file".  WRITE # writes values in the form that
+INPUT # reads back best.
+
+Example:
+    INPUT "Name and age"; person$, age
+    PRINT person$; " is"; age
+
+See Also  [[LINE INPUT|LINE-INPUT]]  [[INPUT$]]  [[INKEY$]]  [[WRITE]]  [[OPEN]]
+#topic LINE INPUT Statement
+#context LINE-INPUT
+#entry LINE INPUT Statement
+LINE INPUT reads a whole line - commas, quotes and all - into a string
+variable.
+
+{b}LINE INPUT{p} [;] ["prompt"{; | ,}] stringvariable$
+{b}LINE INPUT{p} #filenumber%, stringvariable$
+
+    {o} ;                  Straight after LINE INPUT: the cursor stays on
+                         the line when Enter is pressed.
+    {o} "prompt"           A string constant written first.  No question
+                         mark is added.
+    {o} stringvariable$    Gets the line, without its carriage return.
+    {o} filenumber%        The number of a file open FOR INPUT.
+
+From the keyboard the line holds at most 255 characters.  From a file a
+line ends at a carriage return, and a line feed straight after that is
+dropped; a line feed on its own stays in the text.  A Ctrl+Z ends the
+file.  Reading past the end gives "Input past end of file".
+
+Example:
+    OPEN "README.TXT" FOR INPUT AS #1
+    DO UNTIL EOF(1)
+        LINE INPUT #1, text$
+        PRINT text$
+    LOOP
+    CLOSE #1
+
+See Also  [[INPUT]]  [[INPUT$]]  [[EOF]]  [[OPEN]]
+#topic INPUT$ Function
+#key INPUT$ Function
+INPUT$ reads a set number of characters from the keyboard or a file.
+
+{b}INPUT${p}(n& [, [#]filenumber%])
+
+    {o} n&            How many characters, 1 to 32,767.
+    {o} filenumber%   The number of an open file.  Left out, INPUT$
+                    reads the keyboard.
+
+From the keyboard INPUT$ waits for n& keys and does not show them.  Every
+key counts, Enter too, which suits a one-key answer.  A key such as an
+arrow gives CHR$(0), and its scan code as the next character.
+
+From a file every byte counts, line ends and commas included; a RANDOM
+or BINARY file is read from its current position.
+
+n& out of range gives "Illegal function call", and reading past the end
+of a file gives "Input past end of file".
+
+Example:
+    PRINT "Continue (Y/N)?"
+    answer$ = UCASE$(INPUT$(1))
+    OPEN "PICTURE.BIN" FOR BINARY AS #1
+    header$ = INPUT$(4, #1)
+
+See Also  [[INKEY$]]  [[INPUT]]  [[LINE INPUT|LINE-INPUT]]  [[GET, PUT|GET]]
+#topic INSTR Function
+#key INSTR Function
+INSTR finds where one string first appears inside another.
+
+{b}INSTR{p}([start%,] string$, find$)
+
+    {o} start%    Where to start looking; 1 when left out.
+    {o} string$   The string to search.
+    {o} find$     The string to look for.
+
+The result is the position of the first character of the match, or 0
+when there is none.  Capitals and small letters differ.  An empty find$
+gives start% (0 when start% is past the end of string$).  A start% below
+1 or above 32,767 gives "Illegal function call".
+
+Example:
+    path$ = "C:\GAMES\SNAKE.BAS"
+    slash% = INSTR(path$, "\")
+    PRINT INSTR(slash% + 1, path$, "\")      ' 9
+
+See Also  [[MID$]]  [[LEFT$]]  [[LEN]]  [[UCASE$]]
+#topic INT Function
+#key INT Function
+INT rounds a number down: the result is the largest whole number that is
+not more than the argument.
+
+{b}INT{p}(numeric-expression)
+
+INT(2.8) is 2 and INT(-2.2) is -3.  FIX cuts toward zero instead, and
+CINT rounds to the nearest.  The result has the type of the argument.
+
+INT(x + .5) rounds x to the nearest whole number, and INT(x * 100 + .5)
+/ 100 to two decimal places.
+
+Example:
+    PRINT INT(9.99), INT(-0.5)       ' 9  -1
+    PRINT INT(3.14159 * 100 + .5) / 100      ' 3.14
+
+See Also  [[FIX]]  [[CINT]]  [[CLNG]]
+#topic IOCTL Statement, IOCTL$ Function
+#key IOCTL Statement
+#key IOCTL$ Function
+IOCTL sends a control string to a device driver that is open as a file;
+IOCTL$ reads one back from the driver.
+
+{b}IOCTL{p} [#]filenumber%, string$
+{b}IOCTL${p}([#]filenumber%)
+
+    {o} filenumber%   The number of a device opened with OPEN.
+    {o} string$       The control string.  What it means is up to the
+                    driver.
+
+Only drivers made to take control strings answer.  In this QBasic none
+do: IOCTL and IOCTL$ check the file number, then give "Illegal function
+call".
+
+See Also  [[OPEN]]
+#topic KEY Statement
+#key KEY Statement
+#key LIST Keyword
+KEY gives the function keys text, and shows, hides or lists that text on
+the screen.  For trapping keys, see [[KEY(n), ON KEY|ON-KEY]].
+
+{b}KEY{p} n%, string$
+{b}KEY ON{p}
+{b}KEY OFF{p}
+{b}KEY LIST{p}
+
+    {o} n%        1 to 10 for F1 to F10, 30 and 31 for F11 and F12; or
+                15 to 25 for a key to trap (see below).
+    {o} string$   For a function key, up to 15 characters.
+
+KEY ON shows the first six characters of each of F1 to F10 on the bottom
+row, and LOCATE cannot reach that row while they are shown.  KEY OFF
+takes the row away.  KEY LIST writes the text of F1 to F12 down the
+screen.  A longer string$ is cut to 15 characters; an n% out of range
+gives "Illegal function call".
+
+For n% 15 to 25, string$ is CHR$(flags) + CHR$(scancode): the shift keys
+that must be down, and the scan code of the key.  The flags add up from
+1, 2 or 3 for Shift, 4 for Ctrl, 8 for Alt, 32 for Num Lock, 64 for Caps
+Lock and 128 for a grey key of a 101-key keyboard.  KEY(n) and ON KEY(n)
+then trap that key.  With Caps Lock or Num Lock on, the key is trapped
+only if the flags include 64 or 32.
+
+In QBasic a function key given text types the text when pressed.  This
+QBasic shows and lists the text but does not type the text.
+
+Example:
+    KEY 1, "Help"
+    KEY 2, "Save"
+    KEY ON
+    KEY 15, CHR$(4) + CHR$(&H1F)     ' Ctrl+S, for KEY(15)
+
+See Also  [[KEY(n), ON KEY|ON-KEY]]  [[INKEY$]]  [[Scan Codes|scancodes]]
+#topic KEY(n), ON KEY Statements
+#context ON-KEY
+#entry KEY(n) Statement
+#entry ON KEY(n) Statement
+ON KEY(n) names a subroutine to run when a key is pressed.  KEY(n) turns
+the trapping of that key on or off, or holds it.
+
+{b}ON KEY{p}(n%) {b}GOSUB{p} {label | linenumber}
+{b}KEY{p}(n%) {{b}ON{p} | {b}OFF{p} | {b}STOP{p}}
+
+    {o} n%      The key:
+                1 to 10    F1 to F10
+                11 to 14   Up, Left, Right, Down
+                15 to 25   keys defined with KEY n%, string$
+                30, 31     F11, F12
+                0          every one of the above (KEY(0) only)
+    {o} label   The first line of the subroutine, in the module's code.
+
+Nothing happens until KEY(n) ON.  The subroutine ends with RETURN, which
+goes back to where the program was.  ON KEY(n) GOSUB 0 ends the trapping.
+KEY(n) OFF stops the trapping; KEY(n) STOP remembers a press and runs the
+subroutine at the next KEY(n) ON.  See [[Event Trapping|events]].
+
+Example:
+    ON KEY(10) GOSUB Finish
+    KEY(10) ON
+    PRINT "Counting.  F10 stops."
+    DO: total& = total& + 1: LOOP
+    Finish: PRINT total&: END
+
+See Also  [[KEY]]  [[Event Trapping|events]]  [[RETURN]]
+#topic KILL Statement
+#key KILL Statement
+KILL deletes files from a disk.
+
+{b}KILL{p} filespec$
+
+    {o} filespec$   The file to delete, with drive and path if needed.
+                  * and ? in the name delete every file that matches.
+
+Directories are left alone; RMDIR removes those.  No file matching gives
+"File not found", and a file the program has open gives "File already
+open".  There is no undo.
+
+Example:
+    KILL "*.BAK"
+    KILL "C:\TEMP\OLD.TXT"
+
+See Also  [[NAME]]  [[FILES]]  [[RMDIR]]
+#topic LBOUND, UBOUND Functions
+#key LBOUND Function
+#key UBOUND Function
+LBOUND gives the lowest subscript a dimension of an array allows, UBOUND
+the highest.
+
+{b}LBOUND{p}(array[, dimension%])
+{b}UBOUND{p}(array[, dimension%])
+
+    {o} array        The array's name, without parentheses.
+    {o} dimension%   Which dimension: 1 for the first, and so on; 1 when
+                   left out.
+
+A dimension the array does not have, or an array not dimensioned (a
+dynamic array after ERASE, say), gives "Subscript out of range".  They
+are how a SUB or FUNCTION finds the size of an array passed to it.
+
+Example:
+    DIM board(1 TO 8, 0 TO 7)
+    PRINT LBOUND(board), UBOUND(board)       ' 1  8
+    PRINT LBOUND(board, 2), UBOUND(board, 2) ' 0  7
+
+See Also  [[DIM]]  [[OPTION BASE|OPTION]]  [[ERASE]]
+#topic LCASE$, UCASE$ Functions
+#key LCASE$ Function
+#key UCASE$ Function
+LCASE$ gives a copy of a string in small letters, UCASE$ in capitals.
+
+{b}LCASE${p}(stringexpression$)
+{b}UCASE${p}(stringexpression$)
+
+Only the letters A to Z change; digits, punctuation and accented letters
+stay as they are.  Comparing the UCASE$ of two strings ignores case.
+
+Example:
+    INPUT "Again (yes/no)"; reply$
+    IF UCASE$(LEFT$(reply$, 1)) = "Y" THEN RUN
+
+See Also  [[LEFT$]]  [[INSTR]]
+#topic LEFT$, RIGHT$ Functions
+#key LEFT$ Function
+#key RIGHT$ Function
+LEFT$ gives the first characters of a string, RIGHT$ the last ones.
+
+{b}LEFT${p}(stringexpression$, n%)
+{b}RIGHT${p}(stringexpression$, n%)
+
+    {o} n%   How many characters, 0 to 32,767.  0 gives "", and more than
+           the string holds gives the whole string.
+
+A negative n% gives "Illegal function call".
+
+Example:
+    file$ = "REPORT.TXT"
+    PRINT LEFT$(file$, 6), RIGHT$(file$, 3)  ' REPORT  TXT
+
+See Also  [[MID$]]  [[LEN]]  [[INSTR]]  [[LTRIM$]]
+#topic LEN Function
+#key LEN Function
+LEN gives the number of characters in a string, or the number of bytes a
+variable takes.
+
+{b}LEN{p}(stringexpression$)
+{b}LEN{p}(variable)
+
+    {o} stringexpression$   Any string: LEN gives its length.
+    {o} variable            A variable of another type: 2 for INTEGER, 4
+                          for LONG and SINGLE, 8 for DOUBLE, and the
+                          size of a record or a fixed-length string.
+
+LEN(variable) is the usual way to give OPEN the record length of a record
+variable.
+
+Example:
+    PRINT LEN("QBasic")              ' 6
+    DIM stock AS STRING * 12
+    PRINT LEN(stock)                 ' 12
+
+See Also  [[OPEN]]  [[TYPE]]  [[Data Types|types]]
+#topic LET Statement
+#key LET Statement
+LET gives a variable a value.  The word LET may be left out.
+
+[{b}LET{p}] variable = expression
+
+    {o} variable     A variable, an array element or a record's element.
+    {o} expression   A value that suits the variable: a number for a
+                   numeric variable, a string for a string one.
+
+A number is converted to the variable's type, and rounded when it goes
+into an INTEGER or LONG; one too big for the type gives "Overflow".  A
+string into a numeric variable, or a number into a string variable, gives
+"Type mismatch".  A whole record can be assigned from another variable of
+the same TYPE.
+
+Example:
+    LET total = 0
+    total = total + 2.5
+    count% = 7.6                     ' 8
+
+See Also  [[LSET]]  [[MID$]]  [[SWAP]]  [[Data Types|types]]
+#topic LINE Statement
+#key LINE Statement
+LINE draws a straight line, or a box, on a graphics screen.  LINE INPUT
+is another statement: see [[LINE INPUT|LINE-INPUT]].
+
+{b}LINE{p} [[{b}STEP{p}](x1!,y1!)]-[{b}STEP{p}](x2!,y2!) [,[color%] [,[{b}B{p} | {b}BF{p}] [,style%]]]
+
+    {o} STEP         Makes a point relative: the first to the last point
+                   drawn, the second to the first.
+    {o} x1!,y1!      Where the line starts; left out, at the last point
+                   drawn.
+    {o} x2!,y2!      Where the line ends.
+    {o} color%       The colour; the foreground colour when left out.
+    {o} B            Draws a box with the two points as opposite corners.
+    {o} BF           Draws the box filled.
+    {o} style%       A 16-bit pattern for the line, top bit first and
+                   over again: a 1 bit draws a pixel, a 0 bit leaves
+                   the pixel as it was.  BF draws no pattern.
+
+The end point becomes the last point drawn, for STEP and for the next
+LINE that leaves out its first point.  WINDOW and VIEW, when set, change
+the coordinates, and a line is cut off at the edge of the VIEW.  LINE in
+SCREEN 0 gives "Illegal function call".
+
+Example:
+    SCREEN 12
+    LINE (0, 0)-(639, 479), 14
+    LINE (100, 100)-STEP(200, 150), 4, BF
+    LINE -(100, 100), 15
+    LINE (50, 400)-(590, 400), 7, , &HF0F0
+
+See Also  [[PSET]]  [[CIRCLE]]  [[DRAW]]  [[SCREEN]]  [[WINDOW]]  [[VIEW]]
+#topic LOC Function
+#key LOC Function
+LOC tells where in an open file the last read or write was.
+
+{b}LOC{p}(filenumber%)
+
+    {o} filenumber%   The number of an open file.
+
+What the number means depends on how the file was opened:
+
+    RANDOM       the number of the last record read or written
+    BINARY       the position of the last byte read or written
+    sequential   the position in the file, in blocks of 128 bytes
+
+Example:
+    OPEN "SCORES.DAT" FOR RANDOM AS #1 LEN = 4
+    GET #1, 10
+    PRINT LOC(1)                     ' 10
+
+See Also  [[SEEK]]  [[LOF]]  [[EOF]]  [[GET, PUT|GET]]
+#topic LOCATE Statement
+#key LOCATE Statement
+LOCATE moves the text cursor, and sets whether the cursor shows and what
+shape it has.
+
+{b}LOCATE{p} [row%] [,[column%] [,[cursor%] [,[start%] [,stop%]]]]
+
+    {o} row%, column%   Where the next PRINT goes.  Row 1 is the top
+                      line and column 1 the left edge.
+    {o} cursor%         1 shows the cursor while the program runs, 0
+                      hides the cursor.
+    {o} start%, stop%   The first and last scan lines of the cursor, 0
+                      to 31; stop% is start% when left out.
+
+Only what is given changes.  The row must be on the screen, inside the
+VIEW PRINT area when one is set, and not the bottom row while KEY ON
+shows the function keys there.  The column must be inside the width of
+the screen.  A value out of range gives "Illegal function call".
+
+Example:
+    CLS
+    LOCATE 12, 36: PRINT "Centre"
+    LOCATE 24, 1, 1                  ' row 24, cursor showing
+
+See Also  [[CSRLIN]]  [[POS]]  [[VIEW PRINT|VIEW-PRINT]]  [[WIDTH]]  [[KEY]]
+#topic LOCK, UNLOCK Statements
+#key LOCK Statement
+#key UNLOCK Statement
+LOCK keeps other programs on a network from using all or part of an open
+file; UNLOCK lets them use it again.
+
+{b}LOCK{p} [#]filenumber% [, {record& | [start&] {b}TO{p} end&}]
+{b}UNLOCK{p} [#]filenumber% [, {record& | [start&] {b}TO{p} end&}]
+
+    {o} filenumber%    The number of an open file.
+    {o} record&        One record (RANDOM) or byte (BINARY).
+    {o} start&, end&   The first and last record or byte; start& is 1
+                     when left out.
+
+With nothing after the file number the whole file is locked.  An UNLOCK
+must name the same records as a LOCK before it, and every lock should be
+undone before the file is closed.  A sequential file is always locked
+whole.
+
+Under MS-DOS, LOCK needs SHARE.EXE.  In this QBasic, LOCK and UNLOCK
+check the file number and do nothing else.
+
+Example:
+    OPEN "STOCK.DAT" FOR RANDOM SHARED AS #1 LEN = 40
+    LOCK #1, 5
+    GET #1, 5
+    PUT #1, 5
+    UNLOCK #1, 5
+
+See Also  [[OPEN]]
+#topic LOF Function
+#key LOF Function
+LOF gives the length of an open file in bytes.
+
+{b}LOF{p}(filenumber%)
+
+    {o} filenumber%   The number of an open file.
+
+For a RANDOM file, LOF divided by the record length is the number of
+records.  A device (SCRN:, LPT1: and the rest) gives 0 here.
+
+Example:
+    OPEN "PEOPLE.DAT" FOR RANDOM AS #1 LEN = 32
+    PRINT "Records:"; LOF(1) \ 32
+
+See Also  [[LOC]]  [[EOF]]  [[OPEN]]
+#topic LOG Function
+#key LOG Function
+LOG gives the natural logarithm of a number: the power that e
+(2.718282...) must be raised to, to make the number.
+
+{b}LOG{p}(numeric-expression)
+
+The argument must be above 0, or the error is "Illegal function call".
+The result is SINGLE unless the argument is DOUBLE.  For a logarithm to
+base 10, divide by LOG(10).
+
+Example:
+    INPUT "A number above 0"; value
+    PRINT "Natural log:"; LOG(value)
+    PRINT "Log to base 10:"; LOG(value) / LOG(10)
+
+See Also  [[EXP]]
+#topic LPOS Function
+#key LPOS Function
+LPOS gives the column the printer prints at next, as LPRINT has counted
+it.
+
+{b}LPOS{p}(n%)
+
+    {o} n%   The printer: 0 or 1 for LPT1, 2 for LPT2, 3 for LPT3.
+
+The count starts at 1 and goes back to 1 after each carriage return or
+line feed sent.  This QBasic has one printer, PRN, and gives its column
+whatever n% is.
+
+Example:
+    FOR i = 1 TO 50
+        LPRINT i;
+        IF LPOS(1) > 70 THEN LPRINT
+    NEXT i
+
+See Also  [[LPRINT]]  [[POS]]  [[WIDTH]]
+#topic LSET, RSET Statements
+#key LSET Statement
+#key RSET Statement
+LSET puts a string into a string variable against its left end, RSET
+against its right end, without changing the variable's length.
+
+{b}LSET{p} stringvariable$ = stringexpression$
+{b}RSET{p} stringvariable$ = stringexpression$
+{b}LSET{p} recordvariable1 = recordvariable2
+
+A shorter string is filled out with blanks (on the right by LSET, on the
+left by RSET); a longer one is cut off on the right.  An empty variable
+stays empty.  This is how text goes into the variables FIELD names.
+
+LSET also copies one record variable into another of a different TYPE,
+byte for byte: what does not fit is dropped, and any room left over is
+filled with blanks.
+
+Example:
+    title$ = SPACE$(10)
+    RSET title$ = "Total"
+    PRINT "["; title$; "]"           ' [     Total]
+
+See Also  [[FIELD]]  [[MID$]]  [[LET]]  [[SPACE$]]
+#topic LTRIM$, RTRIM$ Functions
+#key LTRIM$ Function
+#key RTRIM$ Function
+LTRIM$ takes the blanks off the start of a string, RTRIM$ off the end.
+
+{b}LTRIM${p}(stringexpression$)
+{b}RTRIM${p}(stringexpression$)
+
+Only blanks, CHR$(32), are taken; tabs stay.  LTRIM$ suits STR$ of a
+number, which starts with a blank; RTRIM$ suits fixed-length strings and
+FIELD variables, which are often filled out with blanks.
+
+Example:
+    PRINT "["; LTRIM$(STR$(42)); "]"         ' [42]
+    PRINT "["; RTRIM$("Done   "); "]"        ' [Done]
+
+See Also  [[STR$]]  [[LEFT$]]  [[MID$]]
+#topic MID$ Function and Statement
+#key MID$ Function and Statement
+MID$ as a function gives part of a string.  MID$ as a statement puts
+characters into a string variable in place of the ones there.
+
+{b}MID${p}(stringexpression$, start% [, length%])
+{b}MID${p}(stringvariable$, start% [, length%]) = stringexpression$
+
+    {o} start%    The first character to take or replace; 1 is the
+                first character of the string.
+    {o} length%   How many characters.  Left out: all the rest (the
+                function), or all of stringexpression$ (the
+                statement).
+
+The function gives "" when start% is past the end, and stops at the end
+of the string when length% runs beyond.  A start% below 1, or a negative
+length%, gives "Illegal function call".
+
+The statement never changes the variable's length: what does not fit is
+dropped.  start% must be inside the variable's text.
+
+Example:
+    word$ = "basic"
+    PRINT MID$(word$, 2, 3)          ' asi
+    MID$(word$, 1, 1) = "B"
+    PRINT word$                      ' Basic
+
+See Also  [[LEFT$]]  [[RIGHT$]]  [[INSTR]]  [[LEN]]
+#topic MKI$, MKL$, MKS$, MKD$ Functions
+#key MKI$ Function
+#key MKL$ Function
+#key MKS$ Function
+#key MKD$ Function
+These make a string of the bytes that hold a number, so that the number
+can go into a FIELD variable of a random-access file.  CVI, CVL, CVS and
+CVD turn the string back into the number.
+
+{b}MKI${p}(integer-expression%)
+{b}MKL${p}(long-expression&)
+{b}MKS${p}(single-expression!)
+{b}MKD${p}(double-expression#)
+
+    MKI$  2 bytes      MKL$  4 bytes      MKS$  4 bytes      MKD$  8 bytes
+
+The bytes are the number's own, lowest first; MKS$ and MKD$ are IEEE
+floating point.  With QBASIC /MBF, MKS$ and MKD$ make Microsoft Binary
+Format, as MKSMBF$ and MKDMBF$ do.  STR$ is different: it writes the
+number in digits.
+
+Example:
+    OPEN "PRICES.DAT" FOR RANDOM AS #1 LEN = 10
+    FIELD #1, 2 AS qty$, 8 AS price$
+    LSET qty$ = MKI$(12)
+    LSET price$ = MKD$(4.99#)
+    PUT #1, 1
+
+See Also  [[CVI]]  [[MKSMBF$]]  [[FIELD]]  [[STR$]]
+#topic MKSMBF$, MKDMBF$ Functions
+#key MKSMBF$ Function
+#key MKDMBF$ Function
+MKSMBF$ and MKDMBF$ make the 4 or 8 bytes of a number in Microsoft Binary
+Format, the floating point of GW-BASIC and of QuickBASIC before 4.0, for
+files that those programs read.
+
+{b}MKSMBF${p}(single-expression!)
+{b}MKDMBF${p}(double-expression#)
+
+A number too big for the format gives "Overflow"; one too small for it
+becomes 0.  CVSMBF and CVDMBF read the bytes back.  QBASIC /MBF makes MKS$
+and MKD$ work the same way.
+
+Example:
+    OPEN "OLDDATA.DAT" FOR RANDOM AS #1 LEN = 4
+    FIELD #1, 4 AS amount$
+    LSET amount$ = MKSMBF$(19.95)
+    PUT #1, 1
+
+See Also  [[CVSMBF]]  [[MKS$]]  [[FIELD]]
+#topic NAME Statement
+#key NAME Statement
+NAME gives a file a new name, or moves the file to another directory on
+the same drive.
+
+{b}NAME{p} oldspec$ {b}AS{p} newspec$
+
+    {o} oldspec$   The file as it is now.
+    {o} newspec$   The new name, with a path to move the file.
+
+A newspec$ that already exists gives "File already exists", an oldspec$
+that does not exist gives "File not found", an oldspec$ that is open gives
+"File already open", and a newspec$ on another drive gives "Rename
+across disks".
+
+Example:
+    NAME "REPORT.TXT" AS "REPORT.OLD"
+    NAME "C:\TEMP\LIST.TXT" AS "C:\DOCS\LIST.TXT"
+
+See Also  [[KILL]]  [[FILES]]
+#topic ON Keyword
+#key ON Keyword
+ON starts several statements, and in others turns something on.
+
+Statements that start with ON:
+
+    {o} [[ON ERROR GOTO|ON-ERROR]]           where to go when an error happens
+    {o} [[ON n GOTO, ON n GOSUB|ON-GOTO]]   one of a list of labels, by number
+    {o} [[ON KEY(n) GOSUB|ON-KEY]]         a subroutine for a key
+    {o} [[ON TIMER(n) GOSUB|TIMER]]       a subroutine every n seconds
+    {o} [[ON PLAY(n) GOSUB|events]]        a subroutine when the music runs low
+    {o} [[ON COM(n) GOSUB|COM]]         a subroutine for a serial port
+    {o} [[ON PEN GOSUB|PEN]]            a subroutine for the light pen
+    {o} [[ON STRIG(n) GOSUB|STRIG]]       a subroutine for a joystick button
+
+ON after an event - KEY(n) ON, TIMER ON, PLAY ON and the rest - starts
+the trapping: see [[Event Trapping|events]].  KEY ON shows the function
+keys' text: see [[KEY]].
+#topic ON ERROR Statement
+#context ON-ERROR
+#entry ON ERROR Statement
+ON ERROR GOTO names an error handler: lines the program goes to when a
+run-time error happens, instead of stopping.
+
+{b}ON ERROR GOTO{p} {label | linenumber}
+{b}ON ERROR GOTO 0{p}
+
+    {o} label   The handler's first line, in the module's code (not in a
+              SUB or FUNCTION).
+    {o} 0       Turns error handling off: the next error stops the
+              program with its message.
+
+In the handler, ERR gives the error's code and ERL its line number.  The
+handler ends with RESUME, which goes back to the statement that failed;
+RESUME NEXT, which goes on after that statement; or RESUME label.  An
+error in a SUB or FUNCTION goes to the module's handler too, and RESUME
+and RESUME NEXT go back into the procedure.
+
+ON ERROR GOTO 0 in the handler stops the program with the error being
+handled, and so does a second error in the handler.  A handler that runs
+on to the end of the program stops it with "No RESUME"; an END in the
+handler ends the program quietly.
+
+Example:
+    ON ERROR GOTO NoFile
+    OPEN "SETTINGS.INI" FOR INPUT AS #1
+    END
+    NoFile:
+    PRINT "No settings: error"; ERR
+    RESUME NEXT
+
+See Also  [[RESUME]]  [[ERR]]  [[ERROR]]  [[Error Codes|errcodes]]
+#topic ON...GOSUB, ON...GOTO Statements
+#context ON-GOTO
+#entry ON...GOSUB Statement
+#entry ON...GOTO Statement
+ON...GOTO jumps to one of a list of labels, picked by a number.
+ON...GOSUB calls one of them as a subroutine.
+
+{b}ON{p} expression {b}GOTO{p} labellist
+{b}ON{p} expression {b}GOSUB{p} labellist
+
+    {o} expression   Rounded to a whole number: 1 picks the first label,
+                   2 the second, and so on.
+    {o} labellist    Labels or line numbers, with commas between them.
+
+A value of 0, or one beyond the end of the list, goes on to the next
+statement.  A negative value, or one above 255, gives "Illegal function
+call".  After ON...GOSUB, RETURN comes back to the statement after the
+ON.  SELECT CASE does the same work and is easier to read.
+
+Example:
+    FOR pick% = 0 TO 2
+        ON pick% GOSUB First, Second
+    NEXT pick%
+    END
+    First: PRINT "one": RETURN
+    Second: PRINT "two": RETURN
+
+See Also  [[GOSUB]]  [[GOTO]]  [[SELECT CASE|SELECT]]
+#topic Event Trapping
+#context events
+#key OFF Keyword
+#entry Event Trapping
+A program can have a subroutine run when something happens - a key
+pressed, time passing, the music running low - without looking for the
+event itself.  ON event GOSUB names the subroutine, and event ON starts
+the trapping.
+
+    Event      Named with                Happens when
+    KEY(n)     ON KEY(n) GOSUB label     key n is pressed
+    TIMER      ON TIMER(n) GOSUB label   every n seconds (1 to 86,400)
+    PLAY       ON PLAY(n) GOSUB label    fewer than n notes are left to
+                                         play in the background (1 to 32)
+    COM(n)     ON COM(n) GOSUB label     serial port n receives data
+    PEN        ON PEN GOSUB label        the light pen is pressed
+    STRIG(n)   ON STRIG(n) GOSUB label   a joystick button is pressed
+
+Then, for each event (KEY(1) ON, TIMER OFF, PLAY STOP and so on):
+
+    {o} event ON     Trapping on: the subroutine runs as soon as the
+                   event happens, between one statement and the next.
+    {o} event OFF    Trapping off: the event is ignored and forgotten.
+    {o} event STOP   The event is remembered but not acted on; the
+                   subroutine runs when event ON comes again.
+
+The subroutine ends with RETURN, which goes back to the statement the
+program was at.  While the subroutine runs, its own event is held as if
+stopped, and dealt with after the RETURN.  ON event GOSUB 0 ends the
+trapping.  The labels must be in the module's code.
+
+In this QBasic COM, PEN and STRIG events never happen; the statements are
+taken and do nothing.
+
+Example:
+    ON TIMER(1) GOSUB Tick
+    TIMER ON
+    DO: LOOP UNTIL INKEY$ <> ""
+    END
+    Tick: LOCATE 1, 70: PRINT TIME$: RETURN
+
+See Also  [[ON KEY|ON-KEY]]  [[TIMER]]  [[PLAY]]  [[COM]]  [[PEN]]  [[STRIG]]  [[RETURN]]
+#topic OPEN Statement
+#key OPEN Statement
+#key ACCESS Keyword
+#key APPEND Keyword
+#key BINARY Keyword
+#key OUTPUT Keyword
+#key RANDOM Keyword
+OPEN opens a file or a device under a number, which the other file
+statements then use.
+
+{b}OPEN{p} file$ [{b}FOR{p} mode] [{b}ACCESS{p} access] [lock] {b}AS{p} [#]filenumber% [{b}LEN{p}=reclen%]
+{b}OPEN{p} mode$, [#]filenumber%, file$ [, reclen%]
+
+    {o} file$         The file, with drive and path if needed, or a
+                    device: SCRN:, KYBD:, CONS:, LPT1: to LPT3:, COM1:
+                    to COM4:.
+    {o} mode          INPUT    read text from the start
+                    OUTPUT   write text to a new, empty file
+                    APPEND   write text on the end of the file
+                    RANDOM   read and write records (the default)
+                    BINARY   read and write bytes anywhere
+    {o} access        READ, WRITE or READ WRITE: what this program will
+                    do with the file.
+    {o} lock          SHARED, LOCK READ, LOCK WRITE or LOCK READ WRITE:
+                    what other programs may do with the file meanwhile.
+    {o} filenumber%   1 to 255, and not in use already (see FREEFILE).
+    {o} reclen%       For RANDOM, the record length: 1 to 32,767 bytes,
+                    128 when left out.
+    {o} mode$         In the second form: "I", "O", "A", "R" or "B".
+
+OUTPUT empties a file that is there; APPEND, RANDOM and BINARY make a
+file that is not, and INPUT of a missing file gives "File not found".  A
+file that is open already may be opened again, under another number, FOR
+INPUT, RANDOM or BINARY; FOR OUTPUT or APPEND it gives "File already
+open".
+
+Other errors: a number in use, "File already open"; a number out of
+range, "Bad file name or number"; * or ? in the name, "Bad file name"; a
+bad LEN, "Bad record length"; KYBD: for output or SCRN: for input, "Bad
+file mode"; a printer or port that is not there, "Device unavailable".
+
+In this QBasic the access and lock are taken and ignored, LEN does not
+set the buffer size of a sequential file, and the settings after COMn:
+(speed, parity and the rest) are not applied: the DOS device is opened
+as it stands.
+
+Example:
+    OPEN "SCORES.TXT" FOR OUTPUT AS #1
+    WRITE #1, "Ann", 120
+    CLOSE #1
+    OPEN "SCORES.TXT" FOR APPEND AS #1
+    WRITE #1, "Bob", 95
+    CLOSE #1
+
+See Also  [[CLOSE]]  [[FREEFILE]]  [[INPUT]]  [[PRINT]]  [[GET, PUT|GET]]  [[FIELD]]  [[AS]]
+#topic AS Keyword
+#key AS Keyword
+AS comes before what a statement is being given: a type, a file number,
+a variable or a new name.
+
+    {o} A variable's type:          [[DIM]]  [[REDIM]]  [[COMMON]]  [[SHARED]]  [[STATIC]]
+    {o} A parameter's type:         [[SUB]]  [[FUNCTION]]  [[DECLARE]]  [[DEF FN|DEF]]
+    {o} A record element's type:    [[TYPE]]
+    {o} The number of a file:       [[OPEN]]
+    {o} A variable for part of a
+        random-access record:     [[FIELD]]
+    {o} A file's new name:          [[NAME]]
+
+The types are INTEGER, LONG, SINGLE, DOUBLE, STRING, STRING * n for a
+fixed length, and the name of a TYPE; DECLARE also takes ANY.  See
+[[Data Types|types]].
+#topic OPTION BASE Statement
+#key OPTION
+#entry OPTION BASE Statement
+#key BASE Keyword
+OPTION BASE sets the lowest subscript of the arrays that do not give
+their own.
+
+{b}OPTION BASE{p} {0 | 1}
+
+Without OPTION BASE the lowest subscript is 0.  The statement goes in
+the module's code before any array is dimensioned, and only once: a
+second one gives "Duplicate definition".  An array whose bounds are given
+as lower TO upper is not affected.
+
+Example:
+    OPTION BASE 1
+    DIM month$(12)                   ' month$(1) to month$(12)
+    PRINT LBOUND(month$)             ' 1
+
+See Also  [[DIM]]  [[LBOUND]]  [[REDIM]]

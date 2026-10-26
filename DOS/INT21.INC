@@ -822,6 +822,12 @@ brk_chars   dd  0                       ; characters out, for brk_out
 prn_echo    db  0                       ; ^P: FFh while the printer echoes
             db  0,0,0                   ; the screen (pe_char)
 
+; MODE's settings (fF1_mode).  A dword each, so that MDF_GET hands each
+; table over in one register; LPT4 does not exist and its byte stays 0.
+md_route    db  0,0,0,0                 ; LPT1-3: 0, or the COM port 1-4
+md_lretry   db  0,0,0,0                 ; LPT1-3: RETRY_*
+md_cretry   db  0,0,0,0                 ; COM1-4: RETRY_*
+
 ;---------------------------------------------------------------------
 ; stat_check - MS-DOS's STATCHK: brk_check, and then the key at the
 ;              front of standard input, if that is the keyboard.  ^S
@@ -877,13 +883,13 @@ sc_look:
         je      sc_stop
         cmp     al,'P' - '@'
         jne     sc_none
-        call    dword ptr ds:[IOS_CONIN]        ; the ^P
+        call    con_krd                         ; the ^P
         cmp     al,3
         je      sc_go                           ; ...or the Break key
         not     byte ptr [prn_echo]
         jmp     short sc_took
 sc_stop:
-        call    dword ptr ds:[IOS_CONIN]        ; the ^S
+        call    con_krd                         ; the ^S
         cmp     al,3
         je      sc_go                           ; ...or the Break key
         call    dos_conin                       ; and the key that ends
@@ -921,6 +927,12 @@ sc_none:
 ;            Ctrl+PrtSc.  EAX only.
 ;---------------------------------------------------------------------
 con_peek:
+        cmp     byte ptr [dl_conin],0           ; a console driver has the
+        je      cpk_kbd                         ; keys, but the Break key's
+        cmp     byte ptr ds:[DOSDATA + GNLS_BRKFLAG],0  ; mark is the
+        jne     cpk_kbd                         ; kernel's (con_kst)
+        jmp     con_kst                         ; its RET is ours
+cpk_kbd:
         call    dword ptr ds:[IOS_CONSTAT]      ; which also puts a Break's
         jz      cpk_out                         ; leftover out of the way
         mov     al,3
@@ -943,14 +955,14 @@ cpk_out:
 ;              (INTEST, cpmio.asm).  AX = the key.
 ;---------------------------------------------------------------------
 dos_conchk:
-        call    dword ptr ds:[IOS_CONSTAT]
+        call    con_kst
         jnz     dck_key
         call    dos_idle
         jmp     short dos_conchk
 dck_key:
         call    stat_key
         jc      dos_conchk              ; that one was DOS's
-        call    dword ptr ds:[IOS_CONSTAT]
+        call    con_kst
         jz      dos_conchk              ; ...and so was the ^C brk_check took
         jmp     dos_conin
 
@@ -972,7 +984,7 @@ dck_key:
 ; to the screen a time-out long.  ^P again tries again.
 ;---------------------------------------------------------------------
 con_echo:
-        call    dword ptr ds:[IOS_CONOUT]
+        call    con_put
 pe_char:
         cmp     byte ptr [prn_echo],0
         jne     pe_on
@@ -1375,7 +1387,16 @@ fn06:
         mov     al,[ebp+F_EDX]
         cmp     al,0FFh
         je      f06_in
+        mov     edx,[std_outp]          ; the console takes it as it is,
+        test    dword ptr [edx+SFT_FLAGS],SFTF_DEVICE   ; as MS-DOS's RAWOUT
+        jz      f06_out                 ; gives it: a TAB to ANSI.SYS is
+        cmp     dword ptr [edx+SFT_DEVID],DEV_CON       ; its shape
+        jne     f06_out
+        call    con_putraw
+        jmp     short f06_said
+f06_out:
         call    std_out
+f06_said:
         mov     [ebp+F_EAX],al
         jmp     i21_ok
 f06_in:
@@ -1386,9 +1407,9 @@ f06_in:
         jne     f06_other
         cmp     byte ptr [con_pending],0        ; the half of an extended
         jne     f06_pend                        ; key that is still owed
-        call    dword ptr ds:[IOS_CONSTAT]
+        call    con_kst
         jz      f06_none
-        call    dword ptr ds:[IOS_CONIN]
+        call    con_krd
         or      al,al
         jnz     f06_got
         mov     [con_pending],ah
@@ -1488,6 +1509,21 @@ fn09:
         test    dword ptr [edx+SFT_FLAGS],SFTF_DEVICE
         jz      f09_file
         mov     edx,dword ptr [edx+SFT_DEVID]
+        cmp     dl,DEV_CON              ; to a console driver, the string
+        jne     f09_lp                  ; as one run (con_wrun)
+        cmp     dword ptr [dl_conrow],-1
+        je      f09_lp
+        mov     edi,esi
+f09_dlen:
+        cmp     byte ptr [edi],'$'
+        je      f09_drun
+        inc     edi
+        jmp     short f09_dlen
+f09_drun:
+        mov     ecx,edi
+        sub     ecx,esi
+        call    con_wrun
+        jmp     short f09_done
 f09_lp:
         mov     al,[esi]
         cmp     al,'$'
@@ -1621,7 +1657,7 @@ fn0B:
         jne     f0B_dead                ; NUL and a silent port: nothing, and
         cmp     byte ptr [con_pending],0        ; there never will be
         jne     f0B_yes                 ; a scan code owed IS a key waiting
-        call    dword ptr ds:[IOS_CONSTAT]
+        call    con_kst
         mov     al,0
         jz      f0B_none
 f0B_yes:
@@ -1652,11 +1688,7 @@ fn0C:
         jne     f0C_empty               ; only the keyboard has a buffer
         mov     byte ptr [con_pending],0        ; including a half-collected
                                                 ; extended key
-f0C_drain:
-        call    dword ptr ds:[IOS_CONSTAT]
-        jz      f0C_empty
-        call    dword ptr ds:[IOS_CONIN]
-        jmp     short f0C_drain
+        call    con_kflush              ; and what a console driver owes
 f0C_empty:
         mov     al,[ebp+F_EAX]          ; the sub-function
         cmp     al,01h
@@ -3703,7 +3735,11 @@ oc_llen     dd  0                       ; open_core's search found them
 
 ;---------------------------------------------------------------------
 ; dos_conin - wait for a key, letting the idle hook run.  AX = the key,
-;             exactly as IOS_CONIN would have returned it.
+;             exactly as IOS_CONIN would have returned it - through a
+;             console driver when there is one (con_krd, DEVLOAD.INC).
+; kbd_conin - the same from the keyboard itself, with its scan codes,
+;             for 21h/F007h: a full-screen program reads the BIOS's
+;             keys, under MS-DOS as here, and never ANSI.SYS's meanings
 ;---------------------------------------------------------------------
 dos_conin:
 IFDEF EXIT_TRACE
@@ -3713,11 +3749,19 @@ IFDEF EXIT_TRACE
         XTMARK32 69,051h                ; 'Q': back from Windows, and a
 dci_noxt:                               ; key is waited for - the prompt
 ENDIF
-        call    dword ptr ds:[IOS_CONSTAT]
+        call    con_kst
         jnz     dci_have
         call    dos_idle
         jmp     short dos_conin
 dci_have:
+        jmp     con_krd
+
+kbd_conin:
+        call    dword ptr ds:[IOS_CONSTAT]
+        jnz     kci_have
+        call    dos_idle
+        jmp     short kbd_conin
+kci_have:
         call    dword ptr ds:[IOS_CONIN]
         ret
 
@@ -3991,31 +4035,185 @@ do_nul:
 do_loaded:
         jmp     dl_out                  ; DH is its row; its RET is ours
 do_con:
-        jmp     dword ptr ds:[IOS_CONOUT]
+        jmp     con_put                 ; the screen, or ANSI.SYS's
 
 do_prn:                                 ; INT 17h AH=00h - print AL on DX
         push    eax
+        push    ebx
+        push    ecx
         push    edx
-        call    dev_prep
-        mov     byte ptr ds:[RMR_EAX],al
-        mov     byte ptr ds:[RMR_EDX],dh        ; the unit becomes the port
-        mov     al,17h
-        call    dword ptr ds:[IOS_REALINT]
+        mov     ah,00h
+        movzx   edx,dh                  ; the unit becomes the port
+        call    md_lpt                  ; MODE's route and RETRY= with it
         pop     edx
+        pop     ecx
+        pop     ebx
         pop     eax
         ret
 
 do_aux:                                 ; INT 14h AH=01h - send AL on DX
         push    eax
+        push    ebx
+        push    ecx
         push    edx
+        mov     ah,01h
+        movzx   edx,dh
+        call    md_com
+        pop     edx
+        pop     ecx
+        pop     ebx
+        pop     eax
+        ret
+
+;---------------------------------------------------------------------
+; md_lpt - INT 17h, under MODE's settings (fF1_mode).  AX = the call's
+;          AX (AH the function, AL the byte), EDX = the port, 0 for
+;          LPT1.  -> AX as the call answers it.  EBX, ECX and EDX are
+;          used; the rest preserved.
+; md_com - INT 14h the same way.  EAX, EBX, ECX = the call's registers,
+;          EDX = the port -> EAX, EBX, ECX as it answers.
+;
+; MS-DOS'S MODE LEFT A RESIDENT PART ON INT 17h AND INT 14h, AND THESE
+; ARE ITS RULES (rescode.asm): the kernel's PRN and AUX devices come
+; here, and so does a DOS box's own INT 17h and INT 14h (vdm_i17,
+; vdm_i14), so a printer goes where MODE said whoever is printing.
+;
+; A PRINTER SENT TO A SERIAL PORT (MODE LPTn=COMm): 01h, initialise,
+; is "not busy" at once.  00h sends the byte through md_com, the serial
+; port's own RETRY= and all, and is 90h ("not busy, selected") or 09h
+; (time-out, I/O error) after it.  Anything else asks the serial port
+; for its status: CTS or DSR is 90h, neither is 10h ("busy").
+;
+; RETRY= ON A PRINTER: every call but the status is tried again for as
+; long as it times out - for E, B, R and P alike, which is why MODE
+; says "Infinite retry" for each of them - and the letter only changes
+; what 02h answers for a printer that is busy: 29h for E, 90h for R,
+; the BIOS's own answer for B and P.  ON A SERIAL PORT the same, with
+; 03h the status call: 8E00h for E, 6030h for R.
+;
+; THE BREAK KEY ends the trying, where MS-DOS's ended it with the
+; BIOS's break flag: a printer that is never switched on must not take
+; the machine with it.  The mark is only read here, and the console
+; still finds it and makes a ^C of it.  The answer is then AH = FFh
+; for a printer, which is what MS-DOS's gives, and the time-out itself
+; for a serial port.
+;---------------------------------------------------------------------
+md_lpt:
+        cmp     edx,3
+        jae     md_int17
+        cmp     byte ptr [md_route+edx],0
+        jne     mdl_route
+        movzx   ebx,byte ptr [md_lretry+edx]
+        or      ebx,ebx
+        jz      md_int17
+        mov     ecx,eax                 ; the call, for every try
+mdl_try:
+        mov     eax,ecx
+        call    md_int17
+        cmp     ch,02h
+        je      mdl_status
+        test    ah,01h                  ; timed out?
+        jz      mdl_out
+        cmp     byte ptr ds:[DOSDATA + GNLS_BRKFLAG],0
+        je      mdl_try
+        mov     ah,0FFh
+mdl_out:
+        ret
+mdl_status:
+        test    ah,80h                  ; not busy: as it is
+        jnz     mdl_out
+        cmp     bl,RETRY_E
+        je      mdl_ste
+        cmp     bl,RETRY_R
+        jne     mdl_out
+        mov     ah,90h
+        ret
+mdl_ste:
+        mov     ah,29h
+        ret
+
+mdl_route:
+        movzx   edx,byte ptr [md_route+edx]
+        dec     edx                     ; COM1 is port 0
+        cmp     ah,01h
+        je      mdr_init
+        push    eax
+        cmp     ah,00h
+        jne     mdr_status
+        mov     ah,01h                  ; the byte, by the serial port
+        call    md_com
+        test    ah,80h
+        pop     eax
+        mov     ah,90h
+        jz      mdl_out
+        mov     ah,09h
+        ret
+mdr_status:
+        mov     ah,03h
+        call    md_com
+        test    al,30h                  ; DSR or CTS
+        pop     eax
+        mov     ah,90h
+        jnz     mdl_out
+        mov     ah,10h
+        ret
+mdr_init:
+        mov     ah,80h
+        ret
+
+md_com:
+        cmp     edx,4
+        jae     md_int14
+        cmp     byte ptr [md_cretry+edx],0
+        je      md_int14
+        push    ecx
+        push    ebx
+        push    eax                     ; the call, for every try
+mdc_try:
+        mov     eax,[esp]
+        mov     ebx,[esp+4]
+        mov     ecx,[esp+8]
+        call    md_int14
+        cmp     byte ptr [esp+1],03h    ; the call's AH: the status?
+        je      mdc_status
+        test    ah,80h                  ; timed out?
+        jz      mdc_out
+        cmp     byte ptr ds:[DOSDATA + GNLS_BRKFLAG],0
+        je      mdc_try
+mdc_out:
+        add     esp,12
+        ret
+mdc_status:
+        cmp     byte ptr [md_cretry+edx],RETRY_E
+        je      mdc_ste
+        cmp     byte ptr [md_cretry+edx],RETRY_R
+        jne     mdc_out
+        mov     ax,6030h                ; both registers empty, DSR, CTS
+        jmp     short mdc_out
+mdc_ste:
+        mov     ax,8E00h                ; time-out, framing, parity, overrun
+        jmp     short mdc_out
+
+;--- the BIOS calls themselves: AX (and BX, CX) and the port in DX ----
+md_int17:
         call    dev_prep
-        mov     byte ptr ds:[RMR_EAX],al
-        mov     byte ptr ds:[RMR_EAX+1],01h
-        mov     byte ptr ds:[RMR_EDX],dh
+        mov     word ptr ds:[RMR_EAX],ax
+        mov     word ptr ds:[RMR_EDX],dx
+        mov     al,17h
+        call    dword ptr ds:[IOS_REALINT]
+        mov     ax,word ptr ds:[RMR_EAX]
+        ret
+md_int14:
+        call    dev_prep
+        mov     word ptr ds:[RMR_EAX],ax
+        mov     word ptr ds:[RMR_EBX],bx
+        mov     word ptr ds:[RMR_ECX],cx
+        mov     word ptr ds:[RMR_EDX],dx
         mov     al,14h
         call    dword ptr ds:[IOS_REALINT]
-        pop     edx
-        pop     eax
+        mov     ax,word ptr ds:[RMR_EAX]
+        mov     bx,word ptr ds:[RMR_EBX]
+        mov     cx,word ptr ds:[RMR_ECX]
         ret
 
 ;---------------------------------------------------------------------
@@ -4675,6 +4873,23 @@ f40_noz:
         mov     ecx,[ebp+F_ECX]
         or      ecx,ecx
         jz      f40_devdone
+        ; A CONSOLE DRIVER GETS THE WRITE AS RUNS, and in raw mode as it
+        ; is - TABs and all, as MS-DOS hands a raw write to the driver
+        ; whole.  One request a run instead of one a byte (dl_write).
+        cmp     dl,DEV_CON
+        jne     f40_lp
+        cmp     dword ptr [dl_conrow],-1
+        je      f40_lp
+        or      edi,edi
+        jz      f40_rawrun
+        call    con_wrun
+        jmp     short f40_conran
+f40_rawrun:
+        mov     eax,[dl_conrow]
+        call    dl_write
+f40_conran:
+        xor     ecx,ecx
+        jmp     short f40_devdone
 f40_lp:
         mov     al,[esi]
         or      ebx,ebx
@@ -5196,6 +5411,16 @@ f44_get:
         jmp     short f44_raw
 f44_con:
         mov     dx,80D3h                ; CON, in and out
+        cmp     dword ptr [dl_conrow],-1
+        je      f44_raw
+        push    edx                     ; ...or as ANSI.SYS's header has it
+        mov     edx,eax                 ; when that is the console
+        call    con_devid
+        call    dl_devinfo
+        mov     eax,edx
+        pop     edx
+        jc      f44_raw
+        mov     dx,ax
         jmp     short f44_raw
 f44_nul:
         mov     dx,80C4h                ; the bit bucket
@@ -5254,7 +5479,7 @@ f44_inown:
         cmp     dl,DEV_CON
         jne     f44_ready               ; NUL is always ready to say "end",
                                         ; and a port is asked when read
-        call    dword ptr ds:[IOS_CONSTAT]
+        call    con_kst
         jz      f44_notready
         jmp     short f44_ready
 f44_infile:
@@ -5310,6 +5535,7 @@ f44_io:
         test    dword ptr [esi+SFT_FLAGS],SFTF_DEVICE
         jz      f44_iofunc
         call    sft_dev
+        call    con_devid               ; the console: its driver's, if any
         cmp     dl,DEV_LOADED
         jne     f44_iofunc
         pop     ecx
@@ -5340,6 +5566,7 @@ f44_genchar:
         test    dword ptr [esi+SFT_FLAGS],SFTF_DEVICE
         jz      f44_unsup
         call    sft_dev
+        call    con_devid               ; MODE CON LINES= is ANSI.SYS's
         cmp     dl,DEV_LOADED
         jne     f44_unsup
         mov     eax,[ebp+F_EDX]
@@ -6536,6 +6763,11 @@ ren_keep    db  0                       ; a change of case: keep the alias
 fn4B:
         cmp     byte ptr [ebp+F_EAX],0
         jne     f4B_badfn
+        mov     byte ptr [dbx_loading],0        ; an EXEC, not a DBF_LOAD
+        call    dbx_mayexec                     ; ...and not from a debugger
+        jc      f4B_held                        ; holding a program a level
+                                                ; down (DBGAPI.INC)
+f4B_body:                                       ; DBF_LOAD comes in here
 
         ; EVERYTHING WRITTEN SO FAR GOES OUT BEFORE A PROGRAM STARTS.
         ; The lazy write cache commits when a program ends, and a batch
@@ -6606,6 +6838,11 @@ f4B_noenv:
         ; the D32 path deliberately - see exec_kind.
         mov     edx,OFFSET exec_path
         call    exec_kind
+        cmp     byte ptr [dbx_loading],0        ; a debugger can hold only a
+        je      f4B_kindok                      ; D32 program: a DOS box's
+        cmp     eax,EK_16BIT                    ; would run to its end in
+        je      f4B_notd32                      ; vdm_exec
+f4B_kindok:
         cmp     eax,EK_16BIT
         je      f4B_vdm
 
@@ -6725,6 +6962,8 @@ f4B_noenv:
         lldt    ax
 
         mov     eax,[exec_entry]
+        cmp     byte ptr [dbx_loading],0
+        jne     dbx_loaded              ; DBF_LOAD: held, not started
         jmp     r3_start                ; and away, at ring 3
 
 ;--- the load failed with the child's slot already half written -------
@@ -6783,9 +7022,17 @@ f4B_lf_done:
 ; there is no other program's memory to load into, and no way to jump
 ; to an entry point in a slot that is not yours.  A sixteen-bit guest
 ; has neither restriction, which is why the same two functions are
-; ordinary work over there and impossible here.
+; ordinary work over there and impossible here.  A debugger's "load
+; and do not start" is 21h/F1h AL=29h, where the kernel does the
+; jumping for it (DBGAPI.INC).
 f4B_badfn:
         mov     ax,ERR_FUNC
+        jmp     i21_fail
+f4B_held:
+        mov     ax,ERR_ACCESS
+        jmp     i21_fail
+f4B_notd32:
+        mov     ax,ERR_EXEFMT
         jmp     i21_fail
 f4B_noroom:
         ; No room for the child's slot - and r3_esp0 has already been
@@ -7392,6 +7639,10 @@ fn4C:
         ; shell back its EXEC.
         cmp     dword ptr ds:[vdm_busy],0
         jne     f4C_vdm
+
+        ; A program under a debugger, or a debugger with a program held
+        ; - which ends first, and without running again (DBGAPI.INC).
+        call    dbx_onexit
 
         mov     al,[ebp+F_EAX]
         mov     [exit_code],al
@@ -9242,6 +9493,8 @@ sw_done:
 ;       AL = 4 to 9: cells, cursor shape, keys and the shift state for a
 ;       full-screen native program - see fF0_put
 ;       AL = 0Ah: 25 or 43/50 text lines - see fF0_lines
+;       AL = 0Ch: a text mode, MODE's way - see fF0_mode
+;       AL = 0Dh: the keyboard's repeat rate - see fF0_kbrate
 ;=====================================================================
 ;=====================================================================
 ; 73h - the FAT32 extended calls.  Only 7303h, get extended free
@@ -9858,9 +10111,13 @@ fnF0:
         je      fF0_lines
         cmp     al,0Bh
         je      fF0_mouse
+        cmp     al,0Ch
+        je      fF0_mode
+        cmp     al,0Dh
+        je      fF0_kbrate
         jmp     i21_unsup
 fF0_cls:
-        call    dword ptr ds:[IOS_CLS]
+        call    con_cls                 ; ESC[2J, to an ANSI.SYS
         jmp     i21_ok
 fF0_get:
         call    dword ptr ds:[IOS_GETCUR]
@@ -9952,13 +10209,20 @@ fF0_shape:
         call    dword ptr ds:[IOS_CURSHAPE]
         jmp     i21_ok
 fF0_key:
-        call    dos_conin
+        call    kbd_conin
         mov     [ebp+F_EAX],ax
         mov     ax,word ptr ds:[BDA_KBFLAG]
         mov     [ebp+F_EBX],ax
         jmp     i21_ok
 fF0_wait:
+        ; THE KEYBOARD FIRST, AND THEN A CONSOLE DRIVER'S OWN: the rest
+        ; of a key ANSI.SYS has given a meaning to is a key waiting for
+        ; DOSKEY's 07h, and is nowhere in the BIOS's buffer.  Asked in
+        ; that order because a driver asked about a key it has a meaning
+        ; for takes the key, which F007h after this would then wait for.
         call    dword ptr ds:[IOS_CONSTAT]
+        jnz     fw_key
+        call    con_kst
         jnz     fw_key
         mov     al,byte ptr ds:[BDA_KBFLAG]
         xor     al,[ebp+F_EDX]
@@ -10021,6 +10285,85 @@ fF0_mouse:
         mov     ecx,[ebp+F_ECX]
         mov     edx,[ebp+F_EDX]
         call    dword ptr ds:[IOS_MSINJECT]
+        jmp     i21_ok
+
+;---------------------------------------------------------------------
+; AL = 0Ch  BL = a BIOS text mode: 0, 1, 2, 3 or 7
+;           BH = the scan lines to choose first: 0 leaves them, 1 to 3
+;                are 200, 350 and 400 (INT 10h AH=12h BL=30h)
+;           CL = 1 for the 8x8 font after the mode (43 or 50 lines)
+;           CH bit 7 set: bits 4-5 of the equipment word from CH's
+;           BL = FFh: the equipment bits and nothing else
+;           -> DH = rows, DL = columns, as the screen now is.
+;
+; MODE's call.  MODE CO80, MODE MONO and MODE CON LINES= are a mode set
+; and a font, in the order ANSI.SYS does them (gen_set, CMD\ANSI); the
+; equipment bits are how a machine with a colour and a monochrome card
+; is told which one to use, and MODE CON COLS= sets them even when
+; ANSI.SYS changes the mode.  MODE decides what the adapter can do;
+; this does it.  Text modes only, because the console writes characters.
+;---------------------------------------------------------------------
+fF0_mode:
+        mov     ebx,[ebp+F_EBX]
+        cmp     bl,0FFh
+        je      fmo_mode
+        cmp     bl,3
+        jbe     fmo_mode
+        cmp     bl,7
+        jne     fmo_bad
+fmo_mode:
+        cmp     bh,3
+        ja      fmo_bad
+        mov     ecx,[ebp+F_ECX]
+        test    ch,80h
+        jz      fmo_scan
+        and     ch,30h
+        and     byte ptr ds:[BDA_EQUIP],0CFh
+        or      byte ptr ds:[BDA_EQUIP],ch
+fmo_scan:
+        cmp     bl,0FFh
+        je      fmo_size
+        or      bh,bh
+        jz      fmo_set
+        mov     ah,12h                  ; INT 10h/12h, BL = 30h: the scan
+        call    rtc_prep                ; lines the next mode set uses
+        dec     bh
+        mov     byte ptr ds:[RMR_EAX],bh
+        mov     byte ptr ds:[RMR_EBX],30h
+        mov     al,10h
+        call    dword ptr ds:[IOS_REALINT]
+fmo_set:
+        mov     ah,00h
+        call    rtc_prep
+        mov     al,[ebp+F_EBX]
+        mov     byte ptr ds:[RMR_EAX],al
+        mov     al,10h
+        call    dword ptr ds:[IOS_REALINT]
+        cmp     byte ptr [ebp+F_ECX],1
+        jne     fmo_size
+        mov     ah,11h                  ; INT 10h/1112h, BL = 0
+        call    rtc_prep
+        mov     byte ptr ds:[RMR_EAX],12h
+        mov     al,10h
+        call    dword ptr ds:[IOS_REALINT]
+fmo_size:
+        call    dword ptr ds:[IOS_SCRSIZE]
+        mov     [ebp+F_EDX],dx
+        jmp     i21_ok
+fmo_bad:
+        mov     ax,ERR_BADDATA
+        jmp     i21_fail
+
+;---------------------------------------------------------------------
+; AL = 0Dh  BL = the keyboard's repeat as the 8042 takes it: bits 0-4
+;           the rate (0 fastest), bits 5-6 the delay.  MODE CON RATE=
+;           DELAY=, converted by MODE as KEYRATE= is by CONFIG.INC.
+;---------------------------------------------------------------------
+fF0_kbrate:
+        mov     al,[ebp+F_EBX]
+        test    al,80h
+        jnz     fmo_bad
+        call    dword ptr ds:[IOS_KBRATE]
         jmp     i21_ok
 
 ;=====================================================================
@@ -10123,6 +10466,14 @@ fF0_mouse:
 ;                 a name looked up, an echo sent.  CF and AX =
 ;                 ERR_GENERAL if no stack is loaded.  Native programs
 ;                 only (DRV\TCPIP, DOS\NDLOAD.INC fF1_sock)
+;       AL = 27h: NET USE (DOS\NETFS.INC fF1_netuse)
+;       AL = 28h: bits 16-23 of EAX = an MDF_* function - MODE's
+;                 printer routes and RETRY= settings, and a byte to a
+;                 printer for MODE LPTn COLS= (fF1_mode)
+;       AL = 29h: bits 16-23 of EAX = a DBF_* function - a D32 program
+;                 held one level down for a debugger: loaded, run until
+;                 it stops, read and written, ended.  Native programs
+;                 only (DOS\DBGAPI.INC)
 ;
 ; 30h has to keep lying about being DOS 5 so that ordinary programs
 ; recognise us, which leaves nothing there to report what the kernel
@@ -10215,6 +10566,10 @@ fnF1:
         je      fF1_sock
         cmp     al,27h
         je      fF1_netuse
+        cmp     al,28h
+        je      fF1_mode
+        cmp     al,29h
+        je      fF1_dbg
         jmp     i21_unsup
 
 ;--- AL=24h: THE USB BUS, for USB.EXE.  Bits 16-23 of EAX say which:
@@ -10580,6 +10935,75 @@ bq_table:
         db      15h, 0D8h, BQK_AL, 00h  ; EISA: what is in a slot
         db      17h, 02h, BQK_ANY,   0  ; a printer's status
         db      0
+
+;--- AL=28h: MODE'S PRINTERS AND SERIAL PORTS - the MDF_* functions in
+;--- PMDOS.INC.  The table is md_route/md_lretry/md_cretry, which do_prn,
+;--- do_aux and a box's INT 17h and INT 14h read (vdm_i17, vdm_i14).
+fF1_mode:
+        movzx   eax,byte ptr [ebp+F_EAX+2]
+        mov     ebx,[ebp+F_EBX]
+        cmp     eax,MDF_GET
+        je      fmd_get
+        cmp     eax,MDF_ROUTE
+        je      fmd_route
+        cmp     eax,MDF_RETRY
+        je      fmd_retry
+        cmp     eax,MDF_LPTOUT
+        je      fmd_out
+        jmp     i21_unsup
+fmd_get:
+        mov     eax,dword ptr [md_route]        ; the fourth byte is always 0
+        mov     [ebp+F_EBX],eax
+        mov     eax,dword ptr [md_lretry]
+        mov     [ebp+F_ECX],eax
+        mov     eax,dword ptr [md_cretry]
+        mov     [ebp+F_EDX],eax
+        jmp     i21_ok
+fmd_route:
+        cmp     bl,2
+        ja      fmd_bad
+        cmp     bh,4
+        ja      fmd_bad
+        movzx   eax,bl
+        mov     [md_route+eax],bh
+        jmp     i21_ok
+fmd_retry:
+        cmp     bh,RETRY_P
+        ja      fmd_bad
+        movzx   eax,bl
+        cmp     eax,2
+        jbe     fmr_lpt
+        sub     eax,4
+        jb      fmd_bad
+        cmp     eax,3
+        ja      fmd_bad
+        mov     [md_cretry+eax],bh
+        jmp     i21_ok
+fmr_lpt:
+        mov     [md_lretry+eax],bh
+        jmp     i21_ok
+        ; THE PRINTER'S TIME-OUT IS CUT TO 3 FOR THE BYTE, as MS-DOS's
+        ; MODE cut it, so that one with nothing attached says so in a
+        ; moment and not after the BIOS's whole wait for each byte.
+fmd_out:
+        cmp     bl,2
+        ja      fmd_bad
+        movzx   edx,bl
+        mov     cl,byte ptr ds:[BDA_LPTTIME+edx]
+        cmp     cl,3
+        jbe     fmt_send
+        mov     byte ptr ds:[BDA_LPTTIME+edx],3
+fmt_send:
+        mov     al,bh                   ; INT 17h AH=00h, BH on port BL
+        mov     ah,00h
+        call    md_int17
+        mov     byte ptr ds:[BDA_LPTTIME+edx],cl
+        movzx   eax,ah
+        mov     [ebp+F_EAX],eax
+        jmp     i21_ok
+fmd_bad:
+        mov     ax,ERR_BADDATA
+        jmp     i21_fail
 
 ;--- AL=18h: DELETE PROTECTION'S STATE.  EAX = UNDF_* bits, ECX = the
 ;--- share of the free space kept files may hold.  UNDELETE.EXE asks,

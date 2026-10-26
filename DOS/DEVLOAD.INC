@@ -45,12 +45,30 @@ DLE_LEN         EQU     12
 ; Block drivers.  A unit is a DRIVE LETTER, and the table below is what
 ; turns the pseudo BIOS drive number in drv_tbl back into "unit U of
 ; the driver in dl_tab row T".
+;
+; A 32-BIT DRIVER'S UNIT (NDRV.INC, NDTF_DISK) is a row here too, with
+; the same pseudo number and the same DRVF_DRIVER letter, so that
+; everything that asks "is this a driver's drive?" gets the right answer
+; without being told there are two kinds.  Only the transfer, and the
+; park, look at the kind: such a unit is called, not sent packets.
 DL_UNIT_BASE    EQU     0E0h            ; pseudo BIOS drive numbers for them
 DLU_MAX         EQU     16              ; driver units, in total
-DLU_TAB         EQU     0               ; dd - which dl_tab row
+DLU_TAB         EQU     0               ; dd - which dl_tab row, or for a
+                                        ; 32-bit unit which nd_tab row
 DLU_UNIT        EQU     4               ; db - which unit of that driver
 DLU_MEDIA       EQU     5               ; db - its media descriptor
-DLU_LEN         EQU     8
+DLU_KIND        EQU     6               ; db - DLK_*
+                                        ; db - spare
+DLU_IO          EQU     8               ; dd - DLK_D32: the driver's NDU_IO
+DLU_REC         EQU     12              ; dd - DLK_D32: its NDU record
+DLU_SECS        EQU     16              ; dd - DLK_D32: the unit's size, and
+DLU_MEM         EQU     20              ; dd - where its sectors are, for an
+                                        ; NDUF_MEMORY unit, else 0.  These
+                                        ; two are side by side on purpose:
+                                        ; RMDOS reads them as one (PARK.INC)
+DLU_LEN         EQU     24
+DLK_RM          EQU     0               ; a real-mode driver's, by packets
+DLK_D32         EQU     1               ; a 32-bit driver's, by a call
 DL_IOSECS       EQU     16              ; the staging buffer, in sectors
 
 DL_PATH_MAX     EQU     80
@@ -61,6 +79,7 @@ DLX_NV86        EQU     10              ; DOS calls a driver's excursion
 ; driver has to be able to reach it with a segment and an offset:
 ;
 ;   0000  the return pad - one HLT
+;   0004  INT 2Fh and RETF, for dl_conprobe
 ;   0010  the INIT command line, where the packet's ARG pointer aims
 ;   0090  level 0: packet (20h), then 100h of stack
 ;   01B0  level 1, and so on
@@ -73,6 +92,7 @@ DLX_NV86        EQU     10              ; DOS calls a driver's excursion
 ; still costs only 1.2K.
 DL_LEVELS       EQU     4
 DL_PAD          EQU     0000h           ; where the HLT lives
+DL_PROBE        EQU     0004h           ; INT 2Fh and RETF, for dl_conprobe
 DL_ARG          EQU     0010h
 DL_ARG_MAX      EQU     0080h
 DL_BASE         EQU     0090h
@@ -239,18 +259,42 @@ dl_excur:
         mov     [edi+V86C_EIP],eax
         mov     eax,[dl_pktoff]
         mov     [edi+V86C_EBX],eax
+        mov     eax,[dl_inax]           ; 0, but for dl_conprobe's INT 2Fh
+        mov     [edi+V86C_EAX],eax
+        mov     dword ptr [dl_inax],0
         mov     dword ptr [edi+V86C_FLAGS],EFL_IF       ; V86_UFLAGS is a MASK, not
                                                 ; a value: as a value it sets DF
 
         ; The far return address, on the driver's own stack.  RETF
         ; pops the offset first, so the pad's offset goes lower.
+        ;
+        ; AND BENEATH IT, WHEN dl_go ASKS, THE INTERRUPT ENTRY: the
+        ; strategy routine's RETF lands on it, and the interrupt
+        ; routine's RETF on the pad.  One trip into V86 for a request
+        ; instead of two, which matters once a loaded console is
+        ; spoken to for every character on the screen.  The interrupt
+        ; routine starts with whatever registers strategy left, which
+        ; is no more than DOS ever promised it.
         mov     eax,[dl_stktop]
         sub     eax,4
+        cmp     dword ptr [dl_then],-1
+        je      dlx_onefar
+        sub     eax,4
+dlx_onefar:
         mov     [edi+V86C_ESP],eax
         mov     esi,[dl_seg]
         and     esi,0FFFFh
         shl     esi,4
         add     esi,eax
+        cmp     dword ptr [dl_then],-1
+        je      dlx_pad
+        mov     eax,[dl_then]
+        mov     word ptr [esi],ax
+        mov     eax,[dl_drvseg]
+        mov     word ptr [esi+2],ax
+        add     esi,4
+        mov     dword ptr [dl_then],-1  ; spent: a nested call has its own
+dlx_pad:
         mov     word ptr [esi],DL_PAD
         mov     eax,[dl_seg]
         mov     [esi+2],ax
@@ -391,6 +435,8 @@ dlx_noems:
 dlx_lost:
         mov     byte ptr [dl_lost],1
 dlx_out:
+        mov     eax,dword ptr [vdm_ctx+V86C_EAX]        ; for dl_conprobe
+        mov     [dl_outax],eax
         mov     esi,esp                 ; and the parked context back
         mov     edi,OFFSET vdm_ctx
         mov     ecx,V86C_SIZE / 4
@@ -419,20 +465,19 @@ dlx_out:
 ; saves ES:BX in the first and does the work in the second, and a DOS
 ; that called only the second would break all of them - so both are
 ; called, in that order, exactly as they have been since 2.0.
+;
+; IN ONE EXCURSION since ANSI.SYS (dl_then, in dl_excur): strategy
+; returns into interrupt.  A strategy routine that goes wrong is lost
+; before interrupt runs, as it was when they were two.
 ;=====================================================================
 dl_go:
         pushad
         mov     esi,[dl_hdrflat]
         movzx   eax,word ptr [esi+DEVH_STRAT]
         mov     [dl_entry],eax
-        call    dl_excur
-        cmp     byte ptr [dl_lost],0
-        jne     dlg_out
-        mov     esi,[dl_hdrflat]
         movzx   eax,word ptr [esi+DEVH_INTR]
-        mov     [dl_entry],eax
+        mov     [dl_then],eax
         call    dl_excur
-dlg_out:
         popad
         ret
 
@@ -631,7 +676,10 @@ dll_ischar:
         jc      dll_full
 
         cmp     byte ptr [dl_isblk],0
-        je      dll_notblk
+        jne     dll_isblk
+        call    dl_conadopt             ; ANSI.SYS: the console from now on
+        jmp     short dll_notblk
+dll_isblk:
         mov     esi,[dl_pktflat]        ; INIT's answers are still in it
         call    dl_blkinit
         jc      dll_nounits
@@ -642,7 +690,7 @@ dll_notblk:
         je      dll_keep
         movzx   eax,ax
         mov     [dl_hdroff],eax
-        jmp     short dll_hdr
+        jmp     dll_hdr                 ; near: MASM will not stretch a short one
 
 ;--- what INIT asked to keep, and not a paragraph more ---------------
 dll_keep:
@@ -981,16 +1029,23 @@ dlc_full:
 ; dev_find asks this BEFORE it reads its own table, and that order is
 ; the whole point of loading a driver: ANSI.SYS is a CON driver, and a
 ; CON that loses to the built-in console is a CON that does nothing.
+;
+; NEWEST FIRST, as the chain is (dl_chain), so a second driver of one
+; name shadows the first.  And the driver the console was handed to
+; (dl_conadopt) is DEV_CON itself: CON opened by name is the console,
+; with the console's line editing and ^C, whose characters happen to
+; go through a driver - not a device that merely shares its name.
 ;=====================================================================
 dl_lookup:
         push    ebx
         push    ecx
         push    esi
         push    edi
-        xor     ebx,ebx
+        mov     ebx,[dl_count]
 dlk_try:
-        cmp     ebx,[dl_count]
-        jae     dlk_no
+        or      ebx,ebx
+        jz      dlk_no
+        dec     ebx
         mov     eax,ebx
         imul    eax,DLE_LEN
         add     eax,OFFSET dl_tab
@@ -998,13 +1053,14 @@ dlk_try:
         mov     edi,OFFSET dev_name
         mov     ecx,8
         repe    cmpsb
-        je      dlk_hit
-        inc     ebx
-        jmp     short dlk_try
-dlk_hit:
+        jne     dlk_try
+        mov     eax,DEV_CON
+        cmp     ebx,[dl_conrow]
+        je      dlk_have
         mov     eax,ebx
         imul    eax,DEV_UNIT
         add     eax,DEV_LOADED
+dlk_have:
         pop     edi
         pop     esi
         pop     ecx
@@ -1171,6 +1227,443 @@ dlin_none:
         pop     ebx
         stc
         ret
+
+;=====================================================================
+; A LOADED CONSOLE (2026-10-24): ANSI.SYS, and any driver like it
+;
+; Until now a driver named CON was found by name and nothing else: a
+; program that opened "CON" got it, and standard input and output - the
+; handles DOS hands every program, which are the kernel's console -
+; never went near it.  So ANSI.SYS loaded and did nothing, and nobody
+; had ever noticed, because nobody had loaded one.
+;
+; MS-DOS makes the newest driver that calls itself the console THE
+; console (SYSINIT, sysconf.asm: the ISCIN bit puts it in the list of
+; lists, and CON is opened by name for the standard handles).  Here the
+; standard handles stay the kernel's console - its cooked and raw
+; modes, line editing, ^C, ^S and ^P are DOS's and not a driver's, in
+; MS-DOS as here - and what changes is the bottom of it: the character
+; that reaches the screen, and the key that comes from the keyboard,
+; go through the driver.  con_put, con_wrun, con_kst, con_krd and
+; con_kflush are that bottom; everything above them is as it was.
+;
+; ONLY WITH ONE LOADED.  With no console driver every one of them is
+; the call it replaced, so a machine without ANSI.SYS runs what it ran.
+;
+; NOT THE KERNEL'S OWN WORDS: a critical error's question, a CONFIG.SYS
+; complaint, a crash report still go straight to the screen through
+; IOS_CONOUT, as they must when the machine is in trouble.  And not a
+; full-screen program's keys (21h/F007h), which want the scan codes the
+; BIOS gives and a driver does not.  Under Windows RMDOS writes through
+; the driver too (drv_coninit, RMDEV.INC) but reads the BIOS.
+;=====================================================================
+
+;---------------------------------------------------------------------
+; dl_conadopt - the header at [dl_hdrflat] is a character driver, just
+;               chained as the newest row.  Named CON and standard
+;               output: it is the console from now on, and its keyboard
+;               too if it says it is standard input.  The newest wins,
+;               as DOS's does.  All registers preserved.
+;---------------------------------------------------------------------
+dl_conadopt:
+        pushad
+        mov     esi,[dl_hdrflat]
+        test    word ptr [esi+DEVH_ATTR],0002h
+        jz      dca_out
+        mov     edx,[dl_count]
+        dec     edx                     ; the row dl_chain gave it
+        mov     esi,edx
+        imul    esi,DLE_LEN
+        add     esi,OFFSET dl_tab
+        mov     edi,OFFSET dlc_conname
+        mov     ecx,8
+        repe    cmpsb                   ; the row's name, folded by dl_chain
+        jne     dca_out
+        mov     [dl_conrow],edx
+        mov     esi,[dl_hdrflat]
+        mov     al,byte ptr [esi+DEVH_ATTR]
+        and     al,1
+        mov     [dl_conin],al
+        call    dl_conprobe
+dca_out:
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; dl_conprobe - INT 2Fh AX=1A00h, which is how MS-DOS's COMMAND.COM
+;               asks whether ANSI.SYS is there before a CLS: AL = FFh
+;               means a screen that ESC[2J clears in its own colours.
+;               -> [dl_conansi].  All registers preserved.
+;
+; THROUGH THE REAL-MODE VECTOR TABLE, where the driver's INIT put its
+; handler, so the question is asked in V86: INT 2Fh and a RETF planted
+; in the scratch block and run as an excursion, on one of its levels'
+; stacks, with DEVLOAD's call state kept round it as aspi_run keeps it
+; - dl_load is in the middle of a driver and still needs all of it.
+;---------------------------------------------------------------------
+dl_conprobe:
+        pushad
+        push    dword ptr [dl_drvseg]
+        push    dword ptr [dl_entry]
+        push    dword ptr [dl_pktoff]
+        push    dword ptr [dl_pktflat]
+        push    dword ptr [dl_stktop]
+        push    dword ptr [dl_hdrflat]
+        movzx   ecx,byte ptr [dl_lost]
+        push    ecx
+        mov     byte ptr [dl_conansi],0
+        call    dl_enter                ; -> EBX = the level's packet offset
+        jc      dcp_back
+        movzx   edi,word ptr [dl_seg]
+        shl     edi,4
+        mov     dword ptr [edi+DL_PROBE],00CB2FCDh      ; INT 2Fh / RETF
+        mov     eax,[dl_seg]
+        mov     [dl_drvseg],eax
+        mov     dword ptr [dl_entry],DL_PROBE
+        mov     [dl_pktoff],ebx
+        lea     eax,[ebx+DL_STK]
+        mov     [dl_stktop],eax
+        mov     dword ptr [dl_inax],1A00h
+        mov     byte ptr [dl_lost],0
+        call    dl_excur
+        call    dl_leave
+        cmp     byte ptr [dl_lost],0
+        jne     dcp_back
+        cmp     byte ptr [dl_outax],0FFh
+        jne     dcp_back
+        mov     byte ptr [dl_conansi],1
+dcp_back:
+        pop     ecx
+        mov     byte ptr [dl_lost],cl
+        pop     dword ptr [dl_hdrflat]
+        pop     dword ptr [dl_stktop]
+        pop     dword ptr [dl_pktflat]
+        pop     dword ptr [dl_pktoff]
+        pop     dword ptr [dl_entry]
+        pop     dword ptr [dl_drvseg]
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; dl_write - ECX bytes at ESI to loaded device row EAX, in as few WRITE
+;            requests as DL_XBUF holds.  No error return, as dl_out has
+;            none: the driver's error goes to INT 24h, and Retry sends
+;            the same piece again.  All registers preserved.
+;
+; A REQUEST FOR A RUN, NOT FOR A BYTE.  Each request is a trip into V86
+; and back, and a console driver is spoken to for everything on the
+; screen; a line DIR writes with 40h is one request, not eighty.  The
+; source may be anywhere - a native program's buffer is above the
+; megabyte - so the bytes go by way of DL_XBUF, as dl_ioctl's do.
+;---------------------------------------------------------------------
+dl_write:
+        pushad
+        mov     edx,eax                 ; the row
+        mov     ebp,ecx                 ; what is left
+dlw_piece:
+        or      ebp,ebp
+        jz      dlw_out
+        mov     ecx,ebp
+        cmp     ecx,DL_XBUFLEN
+        jbe     dlw_size
+        mov     ecx,DL_XBUFLEN
+dlw_size:
+        push    ecx                     ; this piece
+dlw_try:
+        mov     ecx,[esp]
+        push    esi
+        movzx   edi,word ptr [dl_seg]
+        shl     edi,4
+        add     edi,DL_XBUF
+        cld
+        rep     movsb
+        pop     esi
+        mov     eax,edx
+        mov     ecx,DEVC_WRITE
+        call    dl_prep                 ; -> EDI = the packet
+        jc      dlw_drop
+        mov     word ptr [edi+REQC_BUFOFF],DL_XBUF
+        mov     eax,[dl_seg]
+        mov     word ptr [edi+REQC_BUFSEG],ax
+        mov     eax,[esp]
+        mov     word ptr [edi+REQC_COUNT],ax
+        call    dl_fire
+        jnc     dlw_next
+        call    dl_crit                 ; -> AL = the answer
+        cmp     al,CERR_RETRY
+        je      dlw_try
+dlw_drop:
+        pop     ecx                     ; Ignore or Fail: the rest goes
+        jmp     short dlw_out           ; nowhere, as a byte to dl_out does
+dlw_next:
+        pop     ecx
+        add     esi,ecx
+        sub     ebp,ecx
+        jmp     short dlw_piece
+dlw_out:
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; dl_peek - EAX = a loaded driver's row.  Its non-destructive read: CF
+;           clear and AL = the byte the next read will give, CF set if
+;           there is none (the busy bit) or the driver failed it.  Every
+;           other register preserved.
+;---------------------------------------------------------------------
+dl_peek:
+        push    ebx
+        push    ecx
+        push    edi
+        mov     ecx,DEVC_PEEK
+        call    dl_prep
+        jc      dpk_none
+        mov     byte ptr [edi+REQ_LEN],REQC_MEDIA + 1
+        call    dl_fire                 ; -> AX = the status
+        jc      dpk_none
+        test    eax,DEVS_BUSY
+        jnz     dpk_none
+        mov     al,[edi+REQC_MEDIA]
+        pop     edi
+        pop     ecx
+        pop     ebx
+        clc
+        ret
+dpk_none:
+        pop     edi
+        pop     ecx
+        pop     ebx
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; con_put    - AL to the console, as DOS's cooked output puts it there:
+;              a TAB is spaces to the next eighth column, which DOS does
+;              and not the driver.  All registers preserved.
+; con_putraw - AL to the console as it is (06h, INT 29h, raw mode).
+;---------------------------------------------------------------------
+con_put:
+        cmp     dword ptr [dl_conrow],-1
+        jne     cp_drv
+        jmp     dword ptr ds:[IOS_CONOUT]
+cp_drv:
+        cmp     al,9
+        jne     con_putraw
+        pushad
+        call    con_tabsp               ; -> ECX = the spaces
+        mov     esi,OFFSET dlc_spaces
+        mov     eax,[dl_conrow]
+        call    dl_write
+        popad
+        ret
+con_putraw:
+        cmp     dword ptr [dl_conrow],-1
+        jne     cpr_drv
+        jmp     dword ptr ds:[IOS_CONOUT]
+cpr_drv:
+        push    edx
+        mov     dh,byte ptr [dl_conrow]
+        call    dl_out
+        pop     edx
+        ret
+
+;--- con_tabsp - ECX = the spaces from the cursor to the next tab stop,
+;--- by the BIOS data area's column for the page on show: the driver
+;--- keeps it, and nothing else knows where the cursor is
+con_tabsp:
+        push    eax
+        movzx   eax,byte ptr ds:[BDA_VPAGE]
+        and     eax,7
+        movzx   eax,byte ptr ds:[BDA_CURPOS + eax*2]
+        and     eax,7
+        mov     ecx,8
+        sub     ecx,eax
+        pop     eax
+        ret
+
+;---------------------------------------------------------------------
+; con_wrun - ECX bytes at ESI to the console as a cooked write: TABs as
+;            spaces, the keyboard looked at every 64th character
+;            (brk_out, which may break), and each byte to the printer
+;            while ^P has the echo on.  Through the driver, a run at a
+;            time.  All registers preserved.
+;---------------------------------------------------------------------
+con_wrun:
+        pushad
+cwr_lp:
+        jecxz   cwr_out
+        mov     edi,esi                 ; the run up to the next TAB
+        xor     edx,edx
+cwr_scan:
+        cmp     edx,ecx
+        jae     cwr_run
+        cmp     byte ptr [edi+edx],9
+        je      cwr_run
+        inc     edx
+        jmp     short cwr_scan
+cwr_run:
+        or      edx,edx
+        jz      cwr_tab
+        push    ecx
+        mov     ecx,edx
+        call    brk_out
+        mov     eax,[dl_conrow]
+        call    dl_write
+        call    cwr_echo
+        pop     ecx
+        add     esi,edx
+        sub     ecx,edx
+        jmp     short cwr_lp
+cwr_tab:
+        call    brk_out1
+        mov     al,9
+        call    con_put
+        call    pe_char
+        inc     esi
+        dec     ecx
+        jmp     short cwr_lp
+cwr_out:
+        popad
+        ret
+
+;--- cwr_echo - the ECX bytes at ESI to the printer, if ^P has it on
+cwr_echo:
+        cmp     byte ptr [prn_echo],0
+        je      cwe_out
+        pushad
+cwe_lp:
+        mov     al,[esi]
+        call    pe_char
+        inc     esi
+        loop    cwe_lp
+        popad
+cwe_out:
+        ret
+
+;---------------------------------------------------------------------
+; con_kst - ZF set if the console has no key to give; ZF clear and AL
+;           = the key's first byte if it has.  EAX may change, nothing
+;           else does.
+; con_krd - the next key -> AX, AL its character and AH its scan code
+;           (0 from a driver) - IOS_CONIN's answer, and as with it a key
+;           with no character is AL = 0 and the scan code in AH: a
+;           driver gives those as two bytes and both are read.
+;
+; THE BREAK KEY IS THE KERNEL'S, driver or none: DOS's INT 1Bh mark
+; (kb_break) comes before anything a driver has to give, and IOS_CONIN
+; takes it, as MS-DOS's CON took its own.
+;
+; Under PM-DOS a driver is read only once it has said a key is there,
+; because nothing in V86 may wait for one - see ANSI.ASM.
+;---------------------------------------------------------------------
+con_kst:
+        cmp     byte ptr [dl_conin],0
+        je      cks_kbd
+        cmp     byte ptr ds:[DOSDATA + GNLS_BRKFLAG],0
+        jne     cks_kbd
+        mov     eax,[dl_conrow]
+        call    dl_peek
+        jc      cks_none
+        or      esp,esp                 ; ZF clear
+        ret
+cks_none:
+        cmp     eax,eax                 ; ZF set
+        ret
+cks_kbd:
+        jmp     dword ptr ds:[IOS_CONSTAT]
+
+con_krd:
+        cmp     byte ptr [dl_conin],0
+        je      ckr_kbd
+        push    edx
+ckr_wait:
+        cmp     byte ptr ds:[DOSDATA + GNLS_BRKFLAG],0
+        jne     ckr_brk                 ; the mark, even one made while
+        call    con_kst                 ; this waited
+        jnz     ckr_read
+        call    dos_idle
+        jmp     short ckr_wait
+ckr_brk:
+        pop     edx
+        jmp     dword ptr ds:[IOS_CONIN]
+ckr_read:
+        mov     dh,byte ptr [dl_conrow]
+        call    dl_in                   ; -> AL, AH = 0
+        jc      ckr_none
+        or      al,al
+        jnz     ckr_out
+        push    eax
+        call    dl_in                   ; the scan code
+        mov     dl,al
+        pop     eax
+        jc      ckr_out
+        mov     ah,dl
+ckr_out:
+        pop     edx
+        ret
+ckr_none:
+        xor     eax,eax
+        pop     edx
+        ret
+ckr_kbd:
+        jmp     dword ptr ds:[IOS_CONIN]
+
+;--- con_kflush - nothing left to read: the driver's own flush, which
+;--- empties what it owes and the BIOS's buffer both
+con_kflush:
+        cmp     byte ptr [dl_conin],0
+        je      ckf_kbd
+        pushad
+        mov     edx,[dl_conrow]
+        shl     edx,8                   ; the id dl_short wants: row * 256
+        add     edx,DEV_LOADED
+        mov     ecx,DEVC_INFLUSH
+        call    dl_short
+        popad
+        ret
+ckf_kbd:
+        push    eax
+ckf_lp:
+        call    dword ptr ds:[IOS_CONSTAT]
+        jz      ckf_out
+        call    dword ptr ds:[IOS_CONIN]
+        jmp     short ckf_lp
+ckf_out:
+        pop     eax
+        ret
+
+;--- con_cls - the screen cleared for 21h/F000h: by ESC[2J when the
+;--- console is an ANSI.SYS, so that it clears in ANSI.SYS's colours as
+;--- MS-DOS's CLS does, and by the kernel's console otherwise
+con_cls:
+        cmp     byte ptr [dl_conansi],0
+        je      ccl_kbd
+        pushad
+        mov     esi,OFFSET dlc_cls
+        mov     ecx,4
+        mov     eax,[dl_conrow]
+        call    dl_write
+        popad
+        ret
+ccl_kbd:
+        jmp     dword ptr ds:[IOS_CLS]
+
+;--- con_devid - EDX = a device id.  If it is the console and a driver is
+;--- the console, EDX = that driver's id instead, for the calls that are
+;--- the driver's to answer (44h's IOCTLs).  Everything else kept.
+con_devid:
+        cmp     dl,DEV_CON
+        jne     cdi_out
+        cmp     dword ptr [dl_conrow],-1
+        je      cdi_out
+        mov     edx,[dl_conrow]
+        shl     edx,8
+        add     edx,DEV_LOADED
+cdi_out:
+        ret
+
+dlc_conname db  'CON     '
+dlc_cls     db  1Bh,'[2J'
+dlc_spaces  db  8 dup (' ')
 
 ;=====================================================================
 ; THE REST OF WHAT DOS SENDS A CHARACTER DRIVER (2026-10-06): IOCTL
@@ -1505,6 +1998,8 @@ dl_unitfar:
         jae     duf_no
         imul    edx,eax,DLU_LEN
         add     edx,OFFSET dl_units
+        cmp     byte ptr [edx+DLU_KIND],DLK_RM
+        jne     duf_no                  ; a 32-bit driver's has no header
         mov     cl,[edx+DLU_UNIT]
         mov     eax,[edx+DLU_TAB]       ; the dl_tab row
         cmp     eax,[dl_count]
@@ -1520,6 +2015,33 @@ dl_unitfar:
         ret
 duf_no:
         pop     edx
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; dl_unitmem - AL = a driver unit's pseudo BIOS number -> EAX = where
+;              this kernel keeps its size and address, CF if it is not
+;              a 32-bit driver's memory unit (NDUF_MEMORY).  For PARK.INC
+;              too: RMDOS reads the two dwords there, DLU_SECS and then
+;              DLU_MEM, and moves the unit's sectors itself while no
+;              driver can be called.
+;---------------------------------------------------------------------
+dl_unitmem:
+        movzx   eax,al
+        sub     eax,DL_UNIT_BASE
+        jb      dum_no
+        cmp     eax,[dl_nunits]
+        jae     dum_no
+        imul    eax,DLU_LEN
+        add     eax,OFFSET dl_units
+        cmp     byte ptr [eax+DLU_KIND],DLK_D32
+        jne     dum_no
+        cmp     dword ptr [eax+DLU_MEM],0
+        je      dum_no
+        add     eax,DLU_SECS
+        clc
+        ret
+dum_no:
         stc
         ret
 
@@ -1544,6 +2066,14 @@ dl_pktflat  dd  0
 dl_pktoff   dd  0
 dl_stktop   dd  0
 dl_entry    dd  0
+dl_then     dd  -1                      ; the interrupt entry strategy's RETF
+                                        ; lands on, or -1 (dl_excur)
+dl_inax     dd  0                       ; EAX for the next excursion
+dl_outax    dd  0                       ; ...and as the last one left it
+dl_conrow   dd  -1                      ; the console's dl_tab row, or -1
+dl_conin    db  0                       ; 1: and it reads the keyboard
+dl_conansi  db  0                       ; 1: and answers INT 2Fh AX=1A00h
+            db  0,0
 dl_sft      dd  0
 dl_fsize    dd  0
 dl_got      dd  0
@@ -1568,6 +2098,9 @@ dl_nunits   dd  0                       ; driver units that got a letter
 dl_bunits   dd  0                       ; units the driver being loaded has
 dl_bpbtab   dd  0                       ; its BPB array, flat
 dl_bpb      dd  0                       ; and the one unit being looked at
+dl_ndrec    dd  0                       ; a 32-bit disk driver's records,
+dl_ndrow    dd  0                       ; its nd_tab row, and how many of
+dl_ndgot    dd  0                       ; its units got a letter
 dl_stgseg   dd  0                       ; the staging block, or 0
 dl_iorow    dd  0                       ; the transfer in progress
 dl_iocnt    dd  0
@@ -1675,6 +2208,7 @@ dbi_size:
         dec     eax                     ; dl_chain has already added ours
         mov     [edi+DLU_TAB],eax
         mov     [edi+DLU_UNIT],bl
+        mov     byte ptr [edi+DLU_KIND],DLK_RM
         mov     eax,[dl_bpb]
         mov     al,[eax+DBPB_MEDIA]
         mov     [edi+DLU_MEDIA],al
@@ -1709,6 +2243,171 @@ dbi_done:
         clc
         ret
 dbi_none:
+        popad
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; dl_unitroom - ECX = how many more driver units can have a letter, and
+;               EBX = the letter the next one gets (0 = A:).  The fewer
+;               of the rows left in dl_units and the letters left in
+;               drv_tbl.  What a 32-bit disk driver is told at INIT
+;               (NDLOAD.INC), so that it can refuse before it has taken
+;               memory for a unit nobody could reach.
+;---------------------------------------------------------------------
+dl_unitroom:
+        push    eax
+        mov     ecx,DLU_MAX
+        sub     ecx,[dl_nunits]
+        movzx   ebx,byte ptr [drv_count]
+        mov     eax,MAX_DRIVES
+        sub     eax,ebx
+        jae     dur_some
+        xor     eax,eax
+dur_some:
+        cmp     ecx,eax
+        jbe     dur_out
+        mov     ecx,eax
+dur_out:
+        pop     eax
+        ret
+
+;---------------------------------------------------------------------
+; dl_ndunits - a 32-bit disk driver's INIT has come back CF clear
+;              (NDLOAD.INC).  ESI -> its row in nd_tab.  Give each unit
+;              its table names a drive letter.  CF if none got one.
+;
+; WHAT THE DRIVER WROTE IS CHECKED BEFORE A LETTER POINTS AT IT.  The
+; records have to be inside the driver's own block, each transfer
+; routine inside it too, and a memory unit's sectors have to end before
+; the address space does.  A unit that fails is left without a letter
+; and its NDU_LETTER says FFh; the ones beside it are still given one.
+;
+; THE SIZE IS THE DRIVER'S, in DRV_SECS, so that fat_mount believes a
+; boot sector only as far as the unit really reaches (fat_partsecs) -
+; the same thing a partition's length does for a hard disk.
+;
+; AND A MEMORY UNIT IS NOT CACHED: its cache_drvst row is cleared, the
+; same thing INT 2Fh 4A10h BX=3 does when told to stop caching a drive.
+; The kernel's cache would hold a second copy of sectors that are
+; already memory and spend the time copying them there.
+;---------------------------------------------------------------------
+dl_ndunits:
+        pushad
+        mov     ebx,[esi+ND_TABLE]
+        mov     ecx,[ebx+NDT_NUNITS]
+        or      ecx,ecx
+        jz      dnu_none
+        cmp     ecx,DLU_MAX
+        ja      dnu_none
+        mov     [dl_bunits],ecx
+        mov     edi,[ebx+NDT_UNITS]
+        mov     [dl_ndrec],edi
+        mov     eax,edi
+        sub     eax,[esi+ND_BASE]
+        jb      dnu_none
+.ERRNZ  NDU_LEN - 16, <dl_ndunits multiplies by NDU_LEN with a shift>
+        shl     ecx,4
+        add     eax,ecx
+        jc      dnu_none
+        cmp     eax,[esi+ND_SIZE]
+        ja      dnu_none
+
+        mov     eax,esi                 ; which nd_tab row, for DLU_TAB
+        sub     eax,OFFSET nd_tab
+        xor     edx,edx
+        mov     ecx,ND_LEN
+        div     ecx
+        mov     [dl_ndrow],eax
+        mov     dword ptr [dl_ndgot],0
+
+        xor     ebp,ebp                 ; the unit, the driver's number
+dnu_unit:
+        cmp     ebp,[dl_bunits]
+        jae     dnu_done
+        cmp     dword ptr [dl_nunits],DLU_MAX
+        jae     dnu_done
+        mov     edi,ebp
+        shl     edi,4
+        add     edi,[dl_ndrec]          ; EDI -> this unit's record
+        mov     byte ptr [edi+NDU_LETTER],0FFh
+
+        mov     eax,[edi+NDU_IO]        ; its transfer, inside the block
+        sub     eax,[esi+ND_BASE]
+        jb      dnu_next
+        cmp     eax,[esi+ND_SIZE]
+        jae     dnu_next
+        mov     ecx,[edi+NDU_SECS]      ; and something to transfer
+        or      ecx,ecx
+        jz      dnu_next
+        xor     edx,edx                 ; EDX = DLU_MEM
+        test    byte ptr [edi+NDU_FLAGS],NDUF_MEMORY
+        jz      dnu_row
+        cmp     ecx,800000h
+        jae     dnu_next                ; 4GB of sectors, or more
+        mov     edx,ecx
+        shl     edx,9
+        add     edx,[edi+NDU_MEM]
+        jc      dnu_next                ; past the top of the address space
+        mov     edx,[edi+NDU_MEM]
+        or      edx,edx
+        jz      dnu_next                ; and memory at nought is not memory
+
+dnu_row:
+        mov     eax,[dl_nunits]
+        imul    eax,DLU_LEN
+        add     eax,OFFSET dl_units     ; EAX -> the dl_units row
+        mov     [eax+DLU_SECS],ecx
+        mov     [eax+DLU_MEM],edx
+        mov     edx,[dl_ndrow]
+        mov     [eax+DLU_TAB],edx
+        mov     edx,ebp
+        mov     [eax+DLU_UNIT],dl
+        mov     dl,[edi+NDU_MEDIA]
+        mov     [eax+DLU_MEDIA],dl
+        mov     byte ptr [eax+DLU_KIND],DLK_D32
+        mov     edx,[edi+NDU_IO]
+        mov     [eax+DLU_IO],edx
+        mov     [eax+DLU_REC],edi
+
+        push    ebx                     ; and a letter, ECX sectors long
+        mov     eax,[dl_nunits]
+        add     eax,DL_UNIT_BASE        ; AL = the pseudo number, AH = no
+        xor     edx,edx                 ; partition type
+        mov     bl,0FFh
+        call    drv_add
+        pop     ebx
+        jc      dnu_done                ; out of letters
+        movzx   eax,byte ptr [drv_count]        ; the row it just took
+        dec     eax
+        mov     [edi+NDU_LETTER],al
+        imul    eax,DRV_LEN
+        add     eax,OFFSET drv_tbl
+        or      byte ptr [eax+DRV_FLAGS],DRVF_DRIVER
+
+        test    byte ptr [edi+NDU_FLAGS],NDUF_MEMORY
+        jz      dnu_counted
+        push    ebx
+        mov     eax,[dl_nunits]
+        add     eax,DL_UNIT_BASE
+        call    cache_unitof            ; -> EBX = its cache_drvst row
+        jc      dnu_nocache
+        mov     byte ptr [cache_drvst+ebx],0
+dnu_nocache:
+        pop     ebx
+dnu_counted:
+        inc     dword ptr [dl_nunits]
+        inc     dword ptr [dl_ndgot]
+dnu_next:
+        inc     ebp
+        jmp     dnu_unit
+dnu_done:
+        cmp     dword ptr [dl_ndgot],0
+        je      dnu_none
+        popad
+        clc
+        ret
+dnu_none:
         popad
         stc
         ret
@@ -1768,9 +2467,6 @@ dl_blkio:
         jne     dbio_dir
         mov     byte ptr [dl_iowr],1
 dbio_dir:
-        call    dl_stage
-        jc      dbio_fail
-
         movzx   eax,al
         sub     eax,DL_UNIT_BASE
         cmp     eax,[dl_nunits]
@@ -1778,6 +2474,11 @@ dbio_dir:
         imul    eax,DLU_LEN
         add     eax,OFFSET dl_units
         mov     [dl_iorow],eax
+        cmp     byte ptr [eax+DLU_KIND],DLK_D32
+        je      dbio_d32
+
+        call    dl_stage                ; a real-mode driver's, so the
+        jc      dbio_fail               ; buffer it can reach
 
         movzx   ecx,cx
         mov     [dl_iocnt],ecx
@@ -1874,6 +2575,38 @@ dbio_done:
 dbio_toobig:
         call    dl_leave                ; dl_prep took a level: give it back
 dbio_fail:
+        popad
+        stc
+        ret
+
+; A 32-BIT DRIVER'S UNIT IS CALLED, NOT SENT PACKETS.  It runs where
+; the kernel does, so the whole transfer goes in one call, straight
+; between its sectors and the caller's buffer - no staging, no chunks,
+; and no excursion.  The sectors are checked against the unit's size
+; here, so that a driver is never asked for one it does not have, and
+; the status it answers is the one the caller sees: the pushad frame's
+; AH, which the popad would otherwise put back as it came in.
+dbio_d32:
+        mov     esi,eax                 ; ESI -> the row
+        movzx   ecx,cx
+        jecxz   dbio_done
+        mov     eax,ebx
+        add     eax,ecx
+        jc      dbio_nosec
+        cmp     eax,[esi+DLU_SECS]
+        ja      dbio_nosec
+        mov     al,[dl_iowr]
+        mov     edx,[esi+DLU_REC]
+        cld
+        call    dword ptr [esi+DLU_IO]
+        jc      dbio_status
+        popad
+        clc
+        ret
+dbio_nosec:
+        mov     ah,04h                  ; sector not found
+dbio_status:
+        mov     byte ptr [esp+29],ah    ; the frame's EAX is at ESP+28
         popad
         stc
         ret

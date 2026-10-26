@@ -10,7 +10,8 @@
 ;
 ;   INIT    prints a line through NDS_PRINT - a service call made at
 ;           CONFIG.SYS time - keeps the line it was given, takes a
-;           block through NDS_ALLOC and writes a pattern in it, hooks
+;           block through NDS_ALLOC and gives it back through NDS_FREE,
+;           takes another and writes a pattern in it, hooks
 ;           the clock, and hooks the interrupt line a /I:n on its
 ;           line names: one with nothing on it, so that the count
 ;           stays at nought and the hook itself is what is tested.
@@ -77,6 +78,18 @@ nil_lend:
         ; /I:n on it, if there is one
         call    nd_findirq
         mov     esi,[services]
+
+        ; A BLOCK GIVEN BACK AT ONCE, before the one that is kept.  The
+        ; kernel counts what a driver holds (NDF_MEM) by both calls, so
+        ; NDRVTEST seeing one block of 4096 bytes says the free was
+        ; taken off as well as the allocations put on; and first fit
+        ; puts the kept block where this one was.
+        mov     ebx,512
+        call    dword ptr [esi+NDS_ALLOC]
+        jc      nil_nofree
+        mov     edx,eax
+        call    dword ptr [esi+NDS_FREE]
+nil_nofree:
 
         ; a block, and a pattern in it that is read back at once
         mov     ebx,4096

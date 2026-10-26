@@ -1,0 +1,441 @@
+#! 0GENERAL.TXT - the Contents, the Index, Using Help, Getting Started
+#! and the reference topics that are not one keyword's: data types,
+#! operators, keys, codes, limits.
+#topic Contents
+#context contents
+
+  {ul}Getting Started{-x19}{ur} {ul}Keys{-x28}{ur}
+  {bl} [[Getting Started|survival]]                {bl} {bl} [[Shortcut Keys|keys]]                {bl}
+  {bl} [[Using Help|usinghelp]]                     {bl} {bl} [[Editing Keys|editkeys]]                 {bl}
+  {bl} [[Menus and Commands|m.menus]]             {bl} {bl} [[Run and Debug Keys|debugkeys]]           {bl}
+  {bl} [[Syntax Conventions|syntax]]             {bl} {bl} [[Help Keys|helpkeys]]                    {bl}
+  {ll}{-x34}{lr} {ll}{-x32}{lr}
+  {ul}The Language{-x22}{ur} {ul}Reference{-x23}{ur}
+  {bl} [[Keywords by Task|tasks]]               {bl} {bl} [[ASCII Character Codes|ascii]]        {bl}
+  {bl} [[Data Types|types]]                     {bl} {bl} [[Keyboard Scan Codes|scancodes]]          {bl}
+  {bl} [[Arithmetic Operators|arith]]           {bl} {bl} [[Run-Time Error Codes|errcodes]]         {bl}
+  {bl} [[Boolean Operators|boolean]]              {bl} {bl} [[QBasic Command Line|cmdline]]          {bl}
+  {bl} [[Metacommands|meta]]                   {bl} {bl} [[QBasic Limits|limits]]                {bl}
+  {bl} [[Index of Keywords|index]]              {bl} {bl} [[QBasic on PM-DOS|pmdos]]             {bl}
+  {ll}{-x34}{lr} {ll}{-x32}{lr}
+
+Tab moves to the next link and Enter follows it; a double click with the
+mouse does the same.  F1 on a keyword in the program opens its help.
+#topic Index
+#context index
+Every keyword, A to Z.  A letter key moves to that letter; Tab moves from
+keyword to keyword, and Enter or F1 opens the one at the cursor.
+#index
+#topic Using Help
+#context usinghelp
+#entry Using Help
+{b}Getting help{p}
+    F1          Help on the keyword at the cursor, in the window above
+                the program.  The keys stay with the program.
+    Shift+F1    This topic.
+    F1          In a menu or a dialog: what the item does.
+    Help menu   The Index, the Contents, and help on the keyword.
+
+{b}In the help window{p}
+    Tab         The next link; Shift+Tab the one before.
+    Enter       Follows the link at the cursor.  F1 does the same.
+    Alt+F1      Back to the topic shown before.  The Back link at the
+                top of the window does the same.
+    Ctrl+F1     The next topic in the help file.
+    A letter    In the Index: to that letter's keywords.
+    Esc         Closes the help window.
+    F6          Moves to the next window, leaving the help open.
+
+A link is shown between arrows: [[Contents|contents]].  With a mouse, a
+double click on a link follows it; the scroll bar moves through the topic.
+QBASIC.HLP must be beside QBASIC.EXE, in PM-DOS's own directory, in the
+current directory, on the PATH, or where Options > Help Path says.
+#topic Getting Started
+#context survival
+#entry Getting Started
+{b}Typing a program{p}
+Type the program in the big window, one statement to a line.  When the
+cursor leaves a line, QBasic checks the line and puts its keywords in
+capitals.  A mistake is reported at once, with the cursor on it.
+
+{b}Running it{p}
+Shift+F5 runs the program from the start.  Its output goes on the
+output screen; at the end, a key brings QBasic back.  Ctrl+Break stops a
+program that runs on.  F4 shows the output screen again.
+
+{b}Finding mistakes{p}
+F8 runs one statement at a time; F9 sets a breakpoint where the program
+should stop; F5 runs on.  The Immediate window at the bottom (F6 moves
+there) runs a line as soon as Enter is pressed - PRINT x shows a
+variable of a stopped program.
+
+{b}Saving it{p}
+Alt, F, S saves the program; Alt, F, A saves it under a new name.  Alt,
+F, O loads one.
+
+{b}Leaving{p}
+Alt, F, X goes back to DOS.  QBasic asks first if there are changes not
+yet saved.
+
+See Also  [[Using Help|usinghelp]]  [[Shortcut Keys|keys]]  [[Keywords by Task|tasks]]  [[Index|index]]
+#topic Names in a Program
+#context names
+The word at the cursor is not a QBasic keyword.  It is a name the program
+gives something: a variable, an array, a constant, a label, a SUB or
+FUNCTION, or a TYPE or one of its elements.  Help is for keywords only.
+
+See Also  [[Data Types|types]]  [[DIM]]  [[CONST]]  [[SUB]]  [[TYPE]]
+#topic No Help
+#context notfound
+There is no help on that word.  The [[Index|index]] lists every keyword.
+#topic Syntax Conventions
+#context syntax
+#entry Syntax Conventions
+How the syntax of a statement is written in this help:
+
+    {b}KEYWORD{p}       A word to type as shown (in any case).
+    name          Something to put in its place: a variable, a number,
+                  an expression.
+    [ item ]      The item may be left out.
+    { a | b }     Either a or b.
+    item, ...     The item may be repeated, with commas between.
+    name%         The suffix says the type wanted: % INTEGER, & LONG,
+                  ! SINGLE, # DOUBLE, $ STRING.  A name with no suffix
+                  takes a number of any type.
+
+Punctuation - commas, parentheses, semicolons - is typed as shown.
+#topic Keywords by Task
+#context tasks
+#entry Keywords by Task
+{b}Program flow{p}
+    [[DO]]  [[FOR]]  [[WHILE]]  [[IF]]  [[SELECT]]  [[GOTO]]  [[GOSUB]]  [[ON...GOTO|ON-GOTO]]
+    [[EXIT]]  [[END]]  [[STOP]]  [[SYSTEM]]  [[SLEEP]]
+
+{b}Procedures{p}
+    [[SUB]]  [[FUNCTION]]  [[CALL]]  [[DECLARE]]  [[DEF FN|DEF]]  [[SHARED]]  [[STATIC]]
+    [[COMMON]]  [[CHAIN]]  [[RUN]]
+
+{b}Variables and data{p}
+    [[DIM]]  [[REDIM]]  [[ERASE]]  [[CONST]]  [[LET]]  [[SWAP]]  [[TYPE]]  [[DEFINT]]
+    [[OPTION BASE|OPTION]]  [[LBOUND]]  [[UBOUND]]  [[DATA]]  [[READ]]  [[RESTORE]]  [[CLEAR]]
+
+{b}Strings{p}
+    [[LEFT$]]  [[RIGHT$]]  [[MID$]]  [[LEN]]  [[INSTR]]  [[LCASE$]]  [[UCASE$]]  [[LTRIM$]]
+    [[RTRIM$]]  [[SPACE$]]  [[STRING$]]  [[CHR$]]  [[ASC]]  [[STR$]]  [[VAL]]  [[HEX$]]
+    [[OCT$]]  [[LSET]]  [[RSET]]
+
+{b}Numbers{p}
+    [[ABS]]  [[SGN]]  [[INT]]  [[FIX]]  [[CINT]]  [[CLNG]]  [[CSNG]]  [[CDBL]]  [[SQR]]  [[EXP]]
+    [[LOG]]  [[SIN]]  [[COS]]  [[TAN]]  [[ATN]]  [[RND]]  [[RANDOMIZE]]  [[MOD|arith]]
+
+{b}Text on the screen{p}
+    [[PRINT]]  [[PRINT USING|USING]]  [[WRITE]]  [[CLS]]  [[LOCATE]]  [[COLOR]]  [[CSRLIN]]
+    [[POS]]  [[SPC]]  [[TAB]]  [[WIDTH]]  [[VIEW PRINT|VIEW-PRINT]]  [[SCREEN function|SCREEN-function]]  [[PCOPY]]
+
+{b}The keyboard{p}
+    [[INPUT]]  [[LINE INPUT|LINE-INPUT]]  [[INKEY$]]  [[INPUT$]]  [[KEY]]  [[ON KEY|ON-KEY]]
+
+{b}Graphics{p}
+    [[SCREEN]]  [[PSET]]  [[PRESET]]  [[LINE]]  [[CIRCLE]]  [[DRAW]]  [[PAINT]]  [[POINT]]
+    [[VIEW]]  [[WINDOW]]  [[PMAP]]  [[PALETTE]]  [[GET, PUT graphics|GET-graphics]]
+
+{b}Sound{p}
+    [[BEEP]]  [[SOUND]]  [[PLAY]]
+
+{b}Files{p}
+    [[OPEN]]  [[CLOSE]]  [[GET]]  [[PUT]]  [[FIELD]]  [[SEEK]]  [[EOF]]  [[LOC]]  [[LOF]]
+    [[FREEFILE]]  [[FILEATTR]]  [[LOCK]]  [[RESET]]
+
+{b}Disks and DOS{p}
+    [[CHDIR]]  [[MKDIR]]  [[RMDIR]]  [[FILES]]  [[KILL]]  [[NAME]]  [[SHELL]]  [[ENVIRON$]]
+    [[DATE$]]  [[TIME$]]  [[TIMER]]
+
+{b}Errors and events{p}
+    [[ON ERROR|ON-ERROR]]  [[RESUME]]  [[ERR]]  [[ERL]]  [[ERROR]]  [[ERDEV]]  [[event trapping|events]]
+    [[COM]]  [[PEN]]  [[STRIG]]  [[STICK]]
+
+{b}Memory and ports{p}
+    [[PEEK]]  [[POKE]]  [[DEF SEG|SEG]]  [[VARPTR]]  [[VARSEG]]  [[SADD]]  [[VARPTR$]]
+    [[BLOAD]]  [[BSAVE]]  [[INP]]  [[OUT]]  [[WAIT]]  [[FRE]]  [[CALL ABSOLUTE|ABSOLUTE]]
+
+{b}Finding mistakes{p}
+    [[TRON]]  [[TROFF]]  [[REM]]
+#topic Data Types
+#context types
+#key INTEGER Keyword
+#key LONG Keyword
+#key SINGLE Keyword
+#key DOUBLE Keyword
+#key STRING Keyword
+#key ANY Keyword
+#entry Data Types
+Each variable holds one type of value.  The type comes from the name's
+suffix, from AS in a declaration, or from a DEFtype statement; without
+any of these the type is SINGLE.
+
+  Type      Suffix  Bytes  Holds
+  INTEGER     %       2    whole numbers from -32,768 to 32,767
+  LONG        &       4    whole numbers from -2,147,483,648 to
+                           2,147,483,647
+  SINGLE      !       4    numbers to about 7 digits, up to 3.402823E+38
+  DOUBLE      #       8    numbers to about 15 digits, up to
+                           1.797693134862315D+308
+  STRING      $      ---   text of 0 to 32,767 characters
+  STRING * n          n    text of exactly n characters (in a TYPE, a
+                           DIM, COMMON or SHARED)
+
+A TYPE statement makes a record type of these.  ANY, in a DECLARE, lets a
+parameter take an argument of any type without checking.
+
+    DIM count AS INTEGER, total AS DOUBLE
+    DIM name AS STRING * 20
+    total# = 1.5D+100
+
+See Also  [[DIM]]  [[TYPE]]  [[DEFINT]]  [[CONST]]  [[DECLARE]]
+#topic Arithmetic Operators
+#context arith
+#key MOD Operator
+#entry Arithmetic Operators
+#entry Relational Operators
+From the first done to the last:
+
+    ^           Raises to a power: 2 ^ 10 is 1024.
+    -           Negation: -x.
+    *  /        Multiplication and division.
+    \           Integer division: both sides are rounded to whole
+                numbers first, and the result has its fraction cut off.
+    MOD         The remainder of an integer division: 7 MOD 3 is 1.
+    +  -        Addition and subtraction.  + also joins strings.
+    =  <>  <  >  <=  >=
+                Comparisons: -1 for true, 0 for false.  Strings compare
+                character by character, by their codes.
+    NOT, AND, OR, XOR, EQV, IMP
+                The [[Boolean Operators|boolean]], last of all.
+
+Parentheses change the order.  Operators of the same rank go from left to
+right.  A result is given the most precise type of its operands; / and ^
+give at least a SINGLE.  "Division by zero" and "Overflow" are the errors
+to expect.
+#topic Boolean Operators
+#context boolean
+#key AND Operator
+#key OR Operator
+#key XOR Operator
+#key EQV Operator
+#key IMP Operator
+#key NOT Operator
+#entry Boolean Operators
+#entry Logical Operators
+They work on whole numbers bit by bit (16 bits for an INTEGER, 32 for a
+LONG; other numbers are rounded first).  A comparison gives -1 (every bit
+set) for true and 0 for false, so they join comparisons as well:
+
+    NOT x       Each bit turned over: NOT 0 is -1.
+    x AND y     Bits set in both.
+    x OR y      Bits set in either.
+    x XOR y     Bits set in one but not the other.
+    x EQV y     Bits that are the same in both.
+    x IMP y     Bits that are set in y, or clear in x.
+
+NOT is done first, then AND, OR, XOR, EQV and IMP, all after the
+comparisons.  Both sides are always worked out.
+
+    IF age >= 18 AND member THEN PRINT "Welcome"
+    flags = flags OR 4
+    IF (flags AND 4) = 0 THEN PRINT "bit 2 is clear"
+
+See Also  [[Arithmetic Operators|arith]]  [[IF]]
+#topic Metacommands
+#context meta
+#key $DYNAMIC Metacommand
+#key $STATIC Metacommand
+#entry Metacommands
+A metacommand is written in a remark (REM or ') and changes how the lines
+after it are read:
+
+    {b}REM $DYNAMIC{p}  or  {b}' $DYNAMIC{p}
+    {b}REM $STATIC{p}   or  {b}' $STATIC{p}
+
+$DYNAMIC: arrays dimensioned after it are made when their DIM runs, and
+ERASE frees them.  $STATIC (the default): arrays dimensioned with
+constant bounds are made before the program starts, and ERASE only sets
+their elements to zero.  An array whose DIM has a variable bound is
+always dynamic.
+
+See Also  [[DIM]]  [[REDIM]]  [[ERASE]]  [[REM]]
+#topic Shortcut Keys
+#context keys
+#entry Shortcut Keys
+    Shift+F5     Runs the program from the start
+    F5           Runs on from where the program stopped
+    F8           Runs the next statement (into procedures)
+    F10          Runs the next statement (procedure calls whole)
+    F9           Sets or clears a breakpoint
+    F7           Runs on to the cursor's line
+    F4           Shows the output screen
+    Ctrl+Break   Stops the running program
+    F2           The list of SUBs and FUNCTIONs
+    Shift+F2     The next procedure; Ctrl+F2 the one before
+    F6           The next window; Shift+F6 the one before
+    Ctrl+F10     The window to the full screen, and back
+    Alt+Plus     A bigger window; Alt+Minus a smaller one
+    F3           Finds the same text again
+    F1           Help on the keyword at the cursor
+    Shift+F1     How the help works
+    Alt          The menu bar
+
+See Also  [[Editing Keys|editkeys]]  [[Run and Debug Keys|debugkeys]]  [[Help Keys|helpkeys]]
+#topic Editing Keys
+#context editkeys
+#entry Editing Keys
+{b}Moving{p}
+    Arrow keys            A character or a line
+    Ctrl+Left, Ctrl+Right A word
+    Home                  The first character of the line's text;
+                          again for column 1
+    End                   The end of the line
+    Ctrl+Home, Ctrl+End   The top or the bottom of the window's text
+    PgUp, PgDn            A window's worth up or down
+    Ctrl+PgUp, Ctrl+PgDn  A window's width left or right
+    Ctrl+Up, Ctrl+Down    Scrolls a line without moving the cursor
+
+{b}Selecting and the clipboard{p}
+    Shift with a moving key   Selects text
+    Shift+Del                 Cuts the selection
+    Ctrl+Ins                  Copies the selection
+    Shift+Ins                 Pastes
+    Del                       Deletes the selection, or a character
+
+{b}Typing{p}
+    Ins (or Ctrl+V)  Inserting or typing over
+    Backspace        Deletes the character before the cursor
+    Ctrl+T           Deletes the rest of the word
+    Ctrl+Y           Cuts the line
+    Ctrl+N           Breaks the line at the cursor; the cursor stays
+    Tab, Shift+Tab   Indents and takes back the indent, of the line or
+                     of each selected line
+    Ctrl+P, then a key   Types the key's character, a control code too
+
+The WordStar keys work too: Ctrl+Q then S, D, R or C moves; Ctrl+Q then
+F finds and A changes; Ctrl+Q then Y cuts to the end of the line.
+#topic Run and Debug Keys
+#context debugkeys
+#entry Run and Debug Keys
+    Shift+F5     Runs the program from the start
+    F5           Runs on from where the program stopped
+    F8           Runs one statement, stepping into a procedure call
+    F10          Runs one statement; a procedure call runs whole
+    F7           Runs on to the line the cursor is on
+    F9           Sets or clears a breakpoint on the cursor's line
+    Ctrl+Break   Stops the program at the statement it is running
+    F4           Shows the output screen; a key comes back
+    F6           Moves to the Immediate window, where a line runs when
+                 Enter is pressed - in the stopped program, so its
+                 variables can be read and changed
+
+Run > Restart makes the first statement the next.  Debug > Set Next
+Statement makes the cursor's statement the next, in the procedure the
+program is stopped in.  Debug > Trace On lights each statement as the
+program runs it.
+#topic Help Keys
+#context helpkeys
+#entry Help Keys
+    F1          Help on the keyword at the cursor; in the help, follows
+                the link at the cursor
+    Shift+F1    How the help works
+    Alt+F1      The topic shown before (up to 20 back)
+    Ctrl+F1     The next topic in the help file
+    Tab         The next link; Shift+Tab the one before
+    Enter       Follows the link at the cursor
+    Esc         Closes the help window
+#topic QBasic Command Line
+#context cmdline
+#entry QBasic Command Line
+{b}QBASIC{p} [/B] [/EDITOR] [/G] [/H] [/MBF] [/NOHI] [[/RUN] [path]file]
+
+    {o} /B        For a monochrome screen (accepted; Options > Display
+                sets the colours).
+    {o} /EDITOR   Starts the PM-DOS Editor (EDIT) instead.
+    {o} /G        Writes the screen straight to the CGA memory
+                (accepted; the screen is always written fast).
+    {o} /H        As many lines as the display gives: 43 on EGA, 50 on
+                VGA.
+    {o} /MBF      MKS$, MKD$, CVS and CVD read and write Microsoft Binary
+                Format, as programs from older BASICs expect.
+    {o} /NOHI     For a display without bright colours (accepted).
+    {o} file      The program to load.  .BAS is assumed.
+    {o} /RUN      Runs the program as soon as it is loaded.  A SYSTEM in
+                the program then goes back to DOS.
+
+QBasic needs a math coprocessor: a 486DX, or a 386 with a 387.
+#topic QBasic Limits
+#context limits
+#entry QBasic Limits
+    Names                   40 characters
+    Program lines           255 characters
+    Line numbers            0 to 65,529
+    Strings                 32,767 characters
+    Array dimensions        60
+    An array                256 megabytes (on PM-DOS no 64K limit)
+    Procedures              512 SUBs and FUNCTIONs
+    Open files              255 at once, numbers 1 to 255
+    Nested blocks           64 (IF, FOR, DO, SELECT... inside each other)
+    Records (FIELD, TYPE)   32,767 bytes
+    INTEGER                 -32,768 to 32,767
+    LONG                    -2,147,483,648 to 2,147,483,647
+    SINGLE                  about 7 digits, to 3.402823E+38
+    DOUBLE                  about 15 digits, to 1.797693134862315D+308
+#topic QBasic on PM-DOS
+#context pmdos
+#entry PM-DOS, QBasic on
+This QBasic is a native 32-bit program for PM-DOS.  It runs the programs
+QBasic 1.1 runs, with these differences:
+
+    {o} It needs a math coprocessor (a 486DX, or a 386 with a 387), and
+      works in the coprocessor's full precision.  The last digit of a
+      SIN or EXP can differ from Microsoft's.
+    {o} Arrays may be bigger than 64K.
+    {o} There is no real mode.  DEF SEG, PEEK and POKE reach the
+      program's own variables, the output screen (B800 and A000), the
+      BIOS data area (0040) and the ROMs; other addresses read 0.
+    {o} CALL ABSOLUTE gives "Advanced feature unavailable".
+    {o} SHELL starts the PM-DOS command interpreter.
+    {o} A line typed in the Immediate window while the program is stopped
+      runs in the stopped program; a change to the program's text means
+      starting again.
+    {o} Long file names can be used wherever a file is named.
+#topic ASCII Character Codes
+#context ascii
+#entry ASCII Character Codes
+The 256 characters of the display, with the code CHR$ takes and ASC
+gives.  0 to 31 are control codes when printed: 7 beeps, 8 backspaces,
+9 tabs, 10 and 13 end lines.  Codes 9, 10 and 13 show blank here.
+
+#ascii
+
+See Also  [[CHR$]]  [[ASC]]  [[Keyboard Scan Codes|scancodes]]
+#topic Keyboard Scan Codes
+#context scancodes
+#entry Keyboard Scan Codes
+The codes ON KEY and INP(&H60) see for each key (decimal):
+
+    Esc  1        F1  59     Q  16    A  30    Z  44    Home   71
+    1    2        F2  60     W  17    S  31    X  45    Up     72
+    2    3        F3  61     E  18    D  32    C  46    PgUp   73
+    3    4        F4  62     R  19    F  33    V  47    Grey - 74
+    4    5        F5  63     T  20    G  34    B  48    Left   75
+    5    6        F6  64     Y  21    H  35    N  49    Pad 5  76
+    6    7        F7  65     U  22    J  36    M  50    Right  77
+    7    8        F8  66     I  23    K  37    ,  51    Grey + 78
+    8    9        F9  67     O  24    L  38    .  52    End    79
+    9    10       F10 68     P  25    ;  39    /  53    Down   80
+    0    11       F11 87     [  26    '  40    Space 57 PgDn   81
+    -    12       F12 88     ]  27    `  41    Caps  58 Ins    82
+    =    13       Enter 28   \  43    Ctrl  29 Alt   56 Del    83
+    Backspace 14  Tab 15     L.Shift 42  R.Shift 54  Num Lock 69
+    Scroll Lock 70
+
+INKEY$ gives an extended key - an arrow, a function key - as two
+characters, CHR$(0) and then the scan code.
+
+See Also  [[INKEY$]]  [[ON KEY|ON-KEY]]  [[INP]]

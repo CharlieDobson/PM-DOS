@@ -5,7 +5,8 @@
 ; megabyte (21h/F1h AL=25h, INC\NDRV.INC) and then asks NDTEST.SYS,
 ; which has to be one of them, for its report (TOOLS\NDTEST.INC):
 ; whether the loader relocated it, what INIT was given, whether the
-; block it took holds its pattern, whether the clock reaches it,
+; block it took holds its pattern and is counted as its own (NDF_MEM,
+; what MEM /D shows), whether the clock reaches it,
 ; whether the line it hooked is the kernel's now - and then parks the
 ; kernel, with a 16-bit program on the other side, and asks again to
 ; see that PARK was called on the way down and on the way back.
@@ -178,8 +179,43 @@ nt_block:
         cmp     dword ptr [report+NDTR_BLOCKOK],1
         jne     nt_blockbad
         call    ok
-        jmp     short nt_clock
+        jmp     short nt_mem
 nt_blockbad:
+        call    fail
+
+;--- the same block, as the kernel counted it against NDTEST: one, of
+;--- the 4096 bytes INIT asked for (first fit can hand over a block up
+;--- to a header and a paragraph larger) - and not the 512 bytes INIT
+;--- took first and gave back - and a row there is not refused
+nt_mem:
+        mov     edx,OFFSET msg_mem
+        call    puts
+        mov     eax,(NDF_MEM SHL 16) OR 0F125h
+        xor     edx,edx
+        int     21h
+        jc      nt_membad
+        mov     ebx,edx
+        mov     eax,ecx
+        call    put4
+        mov     edx,OFFSET msg_and
+        call    puts
+        mov     eax,ebx
+        call    put4
+        cmp     ecx,4096
+        jb      nt_membad
+        cmp     ecx,4096 + 31
+        ja      nt_membad
+        cmp     ebx,1
+        jne     nt_membad
+        mov     eax,(NDF_MEM SHL 16) OR 0F125h
+        mov     edx,ND_MAX
+        int     21h
+        jnc     nt_membad
+        cmp     ax,ERR_BADDRIVE
+        jne     nt_membad
+        call    ok
+        jmp     short nt_clock
+nt_membad:
         call    fail
 
 ;--- the clock: hooked, and ticking between two reports -------------------
@@ -506,6 +542,7 @@ msg_hdr     db  '  the header base and entry, after the relocation ...... $'
 msg_init    db  '  INIT was given the services and its row .............. $'
 msg_line    db  '  the DEVICE= line: $'
 msg_block   db  '  NDS_ALLOC: a block, and its pattern read back ........ $'
+msg_mem     db  '  NDF_MEM: that block counted, bytes and blocks ........ $'
 msg_clock   db  '  the clock hooked, and ticking ........................ $'
 msg_irq     db  '  the line hooked, quiet, and open at the 8259 ......... $'
 msg_badfn   db  '  NDF_CALL: an unknown function, refused ............... $'
