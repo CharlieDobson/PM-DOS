@@ -1242,7 +1242,10 @@ static void bar_paint( const char *status, const char *message )
         ui_text( &bar, 8, 12, 13, C_LABEL, message );
         return;
     }
-    str_cpyn( text, status, sizeof( text ) );
+    if ( !str_cpyn( text, status, sizeof( text ) ) ) {
+        mem_cpy( text, status, sizeof( text ) - 1 );
+        text[sizeof( text ) - 1] = 0;
+    }
     for ( len = (int)str_len( text ); len > 0 && ui_width( 13, text ) > NAME_W; ) {
         text[--len] = 0;
     }

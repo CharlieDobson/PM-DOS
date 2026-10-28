@@ -791,6 +791,7 @@ static int expand_file2( const char *file1, char *file2 )
 
     if ( (dst = str_chr( file2, '*' )) != NULL ) {
         if ( dst < dot2 ) {             /* in the name */
+            if ( str_len( dot2 ) >= sizeof( ext ) ) return FALSE;
             str_cpy( ext, dot2 );
             src = file1 + (dst - file2);
             for ( ; src < dot1; src++, dst++ ) *dst = *src;
@@ -828,7 +829,9 @@ static int expand_file2( const char *file1, char *file2 )
 
 static void parse_file_names( char *file1, char *file2 )
 {
-    char final1[MAXFNAME + 4], final2[MAXFNAME + 4], inter2[MAXFNAME + 4];
+    /* room past the typed path for a found 8.3 name, or for the second
+       name's * and ? filled in */
+    char final1[MAXFNAME + 14], final2[MAXFNAME + 14], inter2[MAXFNAME + 14];
     char *fname1, *fname2;
     int wild2;
 
@@ -913,12 +916,16 @@ static void split_args( void )
     }
 }
 
-/* the digits at p, as a number; 0 if there are none */
+/* the digits at p, as a number; 0 if there are none, and past 32767
+   it goes no higher */
 static int to_int( const char *p )
 {
     int val = 0;
 
-    while ( *p >= '0' && *p <= '9' ) val = val * 10 + (*p++ - '0');
+    while ( *p >= '0' && *p <= '9' ) {
+        if ( val <= 32767 ) val = val * 10 + (*p - '0');
+        p++;
+    }
     return val;
 }
 
@@ -1023,6 +1030,10 @@ void __cdecl dos_entry( void )
         ctSync = 2;
     }
     if ( cLine == -1 ) cLine = 100;
+    if ( cLine < 1 || cLine > 32767 ) {
+        fc_say( "Invalid switch", NULL, NULL );
+        fc_exit( 1 );
+    }
 
     if ( !fBinary && !fLine ) {
         extension( n[0], ext );

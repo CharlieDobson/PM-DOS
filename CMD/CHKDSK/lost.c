@@ -63,8 +63,8 @@ static u32 chain_length( u32 clus )
     return len;
 }
 
-/* next FILEnnnn.CHK name not already present in the root */
-static void next_name( DIRBUF *root, u8 *name, u32 *seq )
+/* next FILEnnnn.CHK name not already present in the root; -1 if none */
+static int next_name( DIRBUF *root, u8 *name, u32 *seq )
 {
     u32 i, num;
     int used;
@@ -90,9 +90,10 @@ static void next_name( DIRBUF *root, u8 *name, u32 *seq )
         }
         if ( !used ) {
             (*seq)++;
-            return;
+            return 0;
         }
     }
+    return -1;
 }
 
 /* free slot in the root: deleted, or the end marker (DOS CHAINREC) */
@@ -103,6 +104,14 @@ static u32 free_slot( DIRBUF *root, u32 *pos )
     for ( ;; ) {
         for ( i = *pos; i < root->nent; i++ ) {
             u8 ch = root->data[i * DE_LEN];
+            if ( ch == 0 && i + 1 == root->nent && !root->fixed_root &&
+                 root->clus.count != 0 &&
+                 CLUS_OK( fat_get( root->clus.items[root->clus.count - 1] ) ) ) {
+                /* an end mark in the last entry loaded, with the chain
+                   going on past the 2 MB limit: the entry after it is
+                   on disk, not here, and cannot be made the end mark */
+                break;
+            }
             if ( ch == DEL_MARK || ch == 0 ) {
                 *pos = i + 1;
                 return i;
@@ -134,14 +143,24 @@ static void recover( u32 chains, u32 lost )
         if ( (vol.map[clus] & (MF_HEAD | MF_LOST)) != (MF_HEAD | MF_LOST) ) {
             continue;
         }
+        if ( next_name( &root, name, &seq ) != 0 ) {
+            out_blank();
+            out_line( H_OUT, M_CREAT );
+            break;
+        }
         slot = free_slot( &root, &pos );
         if ( slot == 0xFFFFFFFFul ) {
             out_blank();
             out_line( H_OUT, M_CREAT );
             break;
         }
-        next_name( &root, name, &seq );
         ent = root.data + slot * DE_LEN;
+        /* the end mark moves down one, past the new entry; it goes to
+           disk first, so old data after the new entry is never live */
+        if ( ent[0] == 0 && slot + 1 < root.nent && ent[DE_LEN] != 0 ) {
+            mem_set( ent + DE_LEN, 0, DE_LEN );
+            dir_fix( &root, slot + 1 );
+        }
         mem_set( ent, 0, DE_LEN );
         mem_cpy( ent, name, 11 );
         entry_stamp( ent );

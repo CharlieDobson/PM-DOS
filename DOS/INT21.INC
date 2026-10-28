@@ -11400,6 +11400,8 @@ fF1_bus:
         mov     edx,[ebp+F_ESI]
         cmp     ah,BUS_PNPSET
         jne     fbs_go
+        cmp     dword ptr [ebp+F_ECX],256
+        ja      buf_deny                ; more pairs than a card has registers
 fbs_buf:
         push    eax
         mov     eax,edx

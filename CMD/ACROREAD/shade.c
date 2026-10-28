@@ -82,7 +82,7 @@ SHADE *shade_load( OBJ *shading, const RMAT *ctm, DICT *res )
     ARR *coords, *domain;
     RMAT inv;
     REAL x0, y0, x1, y1, dx, dy, den;
-    fx comps[MAX_COMPS], tee, lo = 0, hi = FX_ONE, px0, py0, px1, py1, scale;
+    fx comps[MAX_COMPS], tee[MAX_COMPS], lo = 0, hi = FX_ONE, px0, py0, px1, py1, scale;
     FMAT flat;
     int index, type;
 
@@ -103,11 +103,13 @@ SHADE *shade_load( OBJ *shading, const RMAT *ctm, DICT *res )
         lo = obj_fx( arr_get( domain, 0 ) );
         hi = obj_fx( arr_get( domain, 1 ) );
     }
+    /* the one input, and room for a function that asks for more */
+    mem_set( tee, 0, sizeof( tee ) );
     for ( index = 0; index < 256; index++ ) {
         mem_set( comps, 0, sizeof( comps ) );
         if ( fn ) {
-            tee = lo + mul_div( hi - lo, index, 255 );
-            func_eval( fn, &tee, comps );
+            tee[0] = lo + mul_div( hi - lo, index, 255 );
+            func_eval( fn, tee, comps );
         }
         shade->ramp[index] = cs_rgb( cs, comps );
     }

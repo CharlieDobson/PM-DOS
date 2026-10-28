@@ -431,8 +431,9 @@ usbm_cdbclear:
 ;            SCR_CDB with usbm_cdblen bytes, EDI = the data buffer, ECX
 ;            = its length, DL = 0 host to device, 1 device to host, 2
 ;            no data.  -> AL = MR_*.  On MR_CHECK the sense key and
-;            code are in UN_SENSE and UN_ASC.  Everything else
-;            preserved.
+;            code are in UN_SENSE and UN_ASC.  usbm_moved = the data
+;            bytes that moved; on MR_OK a short answer is made up to
+;            ECX with zeros.  Everything else preserved.
 ;=====================================================================
 usbm_cmd:
         pushad
@@ -480,6 +481,7 @@ ucm_flags:
 
         ; the data, in pieces the pool can carry, through the bounce
         ; buffer when the caller's buffer is not where the bus thinks
+        mov     dword ptr [usbm_moved],0
         cmp     byte ptr [usbm_dir],2
         je      ucm_csw
         cmp     dword ptr [usbm_len],0
@@ -497,9 +499,10 @@ ucm_piece:
         ; across the band?  Then at most a bounce buffer's worth
         mov     eax,edi
         cmp     eax,MSC_BAND_LO
-        jb      ucm_direct
+        jb      ucm_below
         cmp     eax,MSC_BAND_HI
         jae     ucm_direct
+ucm_inband:
         cmp     ebp,1000h
         jbe     ucm_bounce
         mov     ebp,1000h
@@ -521,23 +524,29 @@ ucm_bin:
         mov     ecx,ebp
         mov     dl,byte ptr [usbm_dir]
         call    usbm_xfer
+        mov     edx,ecx                 ; EDX = what moved
         pop     ecx
         pop     edi
-        cmp     al,XS_DONE
-        jne     ucm_dataerr
+        call    usbm_tally
         cmp     byte ptr [usbm_dir],1
         jne     ucm_bounced
         push    esi
         push    ecx
         mov     esi,dword ptr [usb_scr]
         add     esi,SCR_BOUNCE
-        mov     ecx,ebp
-        rep     movsb                   ; in: and back out of it (EDI moves)
-        pop     ecx
+        mov     ecx,edx
+        rep     movsb                   ; in: what came, back out of it
+        pop     ecx                     ; (EDI moves)
         pop     esi
+        cmp     al,XS_DONE
+        jne     ucm_dataerr
+        cmp     edx,ebp
+        jb      ucm_csw                 ; short: the device has no more
         sub     ecx,ebp
         jmp     ucm_data
 ucm_bounced:
+        cmp     al,XS_DONE
+        jne     ucm_dataerr
         add     edi,ebp
         sub     ecx,ebp
         jmp     ucm_data
@@ -546,12 +555,28 @@ ucm_direct:
         mov     ecx,ebp
         mov     dl,byte ptr [usbm_dir]
         call    usbm_xfer
+        mov     edx,ecx                 ; EDX = what moved
         pop     ecx
+        call    usbm_tally
         cmp     al,XS_DONE
         jne     ucm_dataerr
+        cmp     edx,ebp
+        jb      ucm_csw                 ; short: the device has no more
         add     edi,ebp
         sub     ecx,ebp
         jmp     ucm_data
+ucm_below:
+        ; below it but running into it: direct up to the last whole
+        ; sector short of it, and the bounce buffer across it
+        add     eax,ebp
+        cmp     eax,MSC_BAND_LO
+        jbe     ucm_direct
+        mov     eax,MSC_BAND_LO
+        sub     eax,edi
+        and     eax,0FFFFFE00h
+        jz      ucm_inband
+        mov     ebp,eax
+        jmp     ucm_direct
 
 ucm_dataerr:
         ; a stall on the data pipe is the device's way of ending the
@@ -613,6 +638,18 @@ ucm_check:
         mov     al,MR_CHECK
         ret
 ucm_good:
+        ; a short answer: the rest of the buffer zeros, not whatever
+        ; was there before
+        cmp     byte ptr [usbm_dir],1
+        jne     ucm_ok
+        mov     ecx,dword ptr [usbm_len]
+        mov     edi,dword ptr [usbm_moved]
+        sub     ecx,edi
+        jbe     ucm_ok
+        add     edi,dword ptr [usbm_buf]
+        xor     al,al
+        rep     stosb
+ucm_ok:
         popad
         mov     al,MR_OK
         ret
@@ -628,6 +665,16 @@ ucm_broken:
 ucm_gone:
         popad
         mov     al,MR_GONE
+        ret
+
+;--- usbm_tally - EDX = what a piece moved, EBP = what it asked for:
+;--- EDX held to that, and added to usbm_moved
+usbm_tally:
+        cmp     edx,ebp
+        jbe     umt_add
+        mov     edx,ebp
+umt_add:
+        add     dword ptr [usbm_moved],edx
         ret
 
 ;---------------------------------------------------------------------
@@ -1008,10 +1055,12 @@ urw_sense:
         je      urw_illegal
         jmp     urw_general
 urw_next:
-        add     dword ptr [usbm_lba],ebp
-        sub     dword ptr [usbm_count],ebp
         mov     eax,ebp
         shl     eax,9
+        cmp     dword ptr [usbm_moved],eax
+        jne     urw_general             ; not every sector came, or went
+        add     dword ptr [usbm_lba],ebp
+        sub     dword ptr [usbm_count],ebp
         add     dword ptr [usbm_rwbuf],eax
         jmp     urw_lp
 urw_done:
@@ -1235,6 +1284,8 @@ usbm_adopted db 0                       ; the same bits: that drive was a
             db  0
 usbm_buf    dd  0
 usbm_len    dd  0
+usbm_moved  dd  0                       ; of usbm_len, what the device took
+                                        ; or gave
 usbm_tag    dd  0
 usbm_lba    dd  0
 usbm_count  dd  0

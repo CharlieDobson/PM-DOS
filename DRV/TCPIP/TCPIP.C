@@ -605,6 +605,7 @@ static void ip_input( const u8 *frame, u32 len )
     total = get16( ih + 2 );
     if ( total < ihl || total > len - ETH_HDR ) total = len - ETH_HDR;
     plen = total - ihl;
+    if ( get16( ih + 6 ) & 0x3FFF ) return;    /* a fragment: not reassembled */
     src = get32( ih + 12 );
     dst = get32( ih + 16 );
     l4 = ih + ihl;
@@ -700,7 +701,7 @@ static void dhcp_input( const u8 *uh, u32 len )
         olen = b[n + 1];
         if ( n + 2 + olen > blen ) break;
         switch ( opt ) {
-        case 53: type = b[n + 2]; break;
+        case 53: if ( olen >= 1 ) type = b[n + 2]; break;
         case 1:  if ( olen >= 4 ) if_mask = get32( b + n + 2 ); break;
         case 3:  if ( olen >= 4 ) if_gw = get32( b + n + 2 ); break;
         case 6:  if ( olen >= 4 ) if_dns = get32( b + n + 2 ); break;
@@ -943,6 +944,7 @@ static SOCKET *tcp_match( u32 src, u16 sport, u32 dst, u16 dport )
 }
 
 static SOCKET *sock_free_slot( void );
+static void sock_reset( SOCKET *s, u8 type );
 
 static void tcp_input( u32 src, u32 dst, const u8 *th, u32 len )
 {
@@ -972,8 +974,7 @@ static void tcp_input( u32 src, u32 dst, const u8 *th, u32 len )
         if ( lis && ( flags & TCP_SYN ) && !( flags & TCP_ACK ) ) {
             SOCKET *c = sock_free_slot();
             if ( c == NULL ) { tcp_rst( src, dport, sport, 0, seq + 1, 1 ); return; }
-            c->used = 1;
-            c->type = SOCK_STREAM;
+            sock_reset( c, SOCK_STREAM );
             c->lip = dst; c->rip = src;
             c->lport = dport; c->rport = sport;
             c->irs = seq;
@@ -1384,6 +1385,9 @@ static void tls_fill( SOCKET *s )
 static void tls_drive( SOCKET *s )
 {
     if ( !s->tls ) return;
+    if ( s->tls_state != TLSX_IDLE && ( s->tc == NULL || s->trx == NULL || s->tapp == NULL ) ) {
+        s->tls_state = TLSX_FAIL; s->err = NET_FAIL; return;
+    }
 
     if ( s->tls_state == TLSX_IDLE ) {
         if ( s->tstate == T_ESTAB ) tls_begin( s );
@@ -1524,7 +1528,10 @@ static int do_close( void *buf, u32 len )
     s = sock_by_handle( req->handle );
     if ( s == NULL ) return ERR_BADDATA;
 
-    if ( s->tls ) tls_release( s );     /* drop the crypto; the TCP close runs on */
+    if ( s->tls ) {                     /* drop the crypto; the TCP close runs on */
+        tls_release( s );
+        s->tls = 0; s->tls_state = TLSX_IDLE; s->tls_eof = 0;
+    }
 
     if ( s->type == SOCK_DGRAM || s->tstate == T_CLOSED || s->listening ) {
         s->used = 0;
@@ -1620,7 +1627,7 @@ static int do_send( void *buf, u32 len, u32 *answer )
     s = sock_by_handle( io->handle );
     if ( s == NULL ) return ERR_BADDATA;
     dlen = io->len;
-    if ( len < SOCK_IO_HDR + dlen ) return ERR_BADLEN;
+    if ( dlen > len - SOCK_IO_HDR ) return ERR_BADLEN;
 
     if ( s->type == SOCK_DGRAM ) {
         u32 dst = io->ip ? io->ip : s->rip;
@@ -1678,7 +1685,7 @@ static int do_recv( void *buf, u32 len, u32 *answer )
     s = sock_by_handle( io->handle );
     if ( s == NULL ) return ERR_BADDATA;
     want = io->len;
-    if ( len < SOCK_IO_HDR + want ) want = len - SOCK_IO_HDR;
+    if ( want > len - SOCK_IO_HDR ) want = len - SOCK_IO_HDR;
 
     if ( s->type == SOCK_DGRAM ) {
         u32 dlen;
@@ -1820,11 +1827,19 @@ static int do_setca( void *buf, u32 len )
 {
     SOCK_CAREQ *req = (SOCK_CAREQ *)buf;
     const u8 *data = (const u8 *)buf + SOCKCA_HDR;
+    int i;
 
     if ( len < SOCKCA_HDR ) return ERR_BADLEN;
-    if ( len < SOCKCA_HDR + req->len ) return ERR_BADLEN;
+    if ( req->len > len - SOCKCA_HDR ) return ERR_BADLEN;
     if ( req->total == 0 || req->total > 65536 ) return ERR_BADDATA;
-    if ( req->offset + req->len > req->total ) return ERR_BADDATA;
+    if ( req->offset > req->total || req->len > req->total - req->offset ) return ERR_BADDATA;
+
+    /* a handshake under way reads the whole bundle: leave it be till done */
+    if ( tls_ca && tls_calen == tls_catotal ) {
+        for ( i = 0; i < SOCK_MAX; i++ ) {
+            if ( sock[i].used && sock[i].tls && sock[i].tls_state == TLSX_HS ) return ERR_GENERAL;
+        }
+    }
 
     if ( req->offset == 0 ) {                   /* the first chunk starts fresh */
         if ( tls_ca ) { free( tls_ca ); tls_ca = NULL; }

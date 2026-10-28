@@ -76,6 +76,13 @@ static void stack_push( const OBJ *obj )
     stack[stack_len++] = *obj;
 }
 
+/* A page given up in the middle of an array or a dictionary leaves
+   what it had collected on the stack: pdf_page_end lets it go. */
+void lex_reset( void )
+{
+    stack_len = 0;
+}
+
 static void text_put( int ch )
 {
     u8 *grown;

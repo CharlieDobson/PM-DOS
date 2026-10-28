@@ -181,9 +181,9 @@ static u32 filetime_to_dos( u32 lo, u32 hi )
 /* =================================================================== */
 
 /* fold "." and "..", turn '/' into '\', drop a leading slash: a
-   share-relative path with no leading backslash.  'dst' must hold at
-   least as many bytes as 'src'. */
-static void canon( const char *src, char *dst )
+   share-relative path with no leading backslash.  'dst' holds 'dmax'
+   bytes; -1 (and an empty 'dst') when the path does not fit. */
+static int canon( const char *src, char *dst, int dmax )
 {
     const char *p = src;
     int out = 0;
@@ -207,15 +207,17 @@ static void canon( const char *src, char *dst )
             out = i;
             continue;
         }
+        if ( out + ( out > 0 ? 1 : 0 ) + clen >= dmax ) { dst[0] = 0; return -1; }
         if ( out > 0 ) dst[out++] = '\\';
         { int i; for ( i = 0; i < clen; i++ ) dst[out++] = comp[i]; }
     }
     dst[out] = 0;
+    return 0;
 }
 
 /* split a find path (drive already stripped) into its directory and its
-   last component (the wildcard).  'dir' comes back canonical and share-
-   relative; 'pat' is the raw last component. */
+   last component (the wildcard).  'dir' (260 bytes) comes back canonical
+   and share-relative; 'pat' is the raw last component. */
 static void split_find( const char *path, char *dir, char *pat )
 {
     int len = slen( path ), cut = -1, i;
@@ -228,7 +230,7 @@ static void split_find( const char *path, char *dir, char *pat )
         char tmp[260];
         for ( i = 0; i < cut && i < 259; i++ ) tmp[i] = path[i];
         tmp[i] = 0;
-        canon( tmp, dir );
+        canon( tmp, dir, 260 );                            /* tmp is shorter: it fits */
         scopy( pat, path + cut + 1, 16 );
     }
     if ( pat[0] == 0 ) { pat[0] = '*'; pat[1] = 0; }       /* "DIR\" -> "*" */
@@ -510,6 +512,7 @@ static int do_findnext( redir_req *r )
     }
     s = g_sess[drive];
     if ( r->gen != s->gen ) { r->status = E_NOFILE; return 0; }   /* a new find ran */
+    if ( r->count > (u32)s->count ) { r->status = E_NOFILE; return 0; }   /* past the end */
     return find_from( r, s, (int)r->count );
 }
 
@@ -529,7 +532,7 @@ static int do_open( redir_req *r )
         r->status = E_GENERAL; return 0;
     }
     s = g_sess[drive];
-    canon( r->path, path );
+    if ( canon( r->path, path, (int)sizeof( path ) ) != 0 ) { r->status = E_NOPATH; return 0; }
     write = ( r->count == 1 || r->count == 2 );            /* access 1 write, 2 both */
 
     for ( slot = 0; slot < NET_OPEN_MAX; slot++ )
@@ -569,8 +572,11 @@ static int do_read( redir_req *r )
     fh = &s->open[slot].fh;
 
     while ( done < want ) {
-        int n = sess_read( s, fh, off_lo, off_hi, dst + done, (int)( want - done ) );
+        u32 chunk = want - done;
+        int n;
         u32 nlo;
+        if ( chunk > 0x10000UL ) chunk = 0x10000UL;          /* both engines take less */
+        n = sess_read( s, fh, off_lo, off_hi, dst + done, (int)chunk );
         if ( n < 0 ) { r->status = E_ACCESS; return 0; }
         if ( n == 0 ) break;                               /* end of file */
         done += (u32)n;
@@ -599,9 +605,13 @@ static int do_write( redir_req *r )
     if ( want == 0 ) { r->result = 0; r->status = 0; return 0; }   /* truncate: not yet */
 
     while ( done < want ) {
-        int n = sess_write( s, fh, off_lo, off_hi, src + done, (int)( want - done ) );
+        u32 chunk = want - done;
+        int n;
         u32 nlo;
+        if ( chunk > 0x10000UL ) chunk = 0x10000UL;          /* both engines take less */
+        n = sess_write( s, fh, off_lo, off_hi, src + done, (int)chunk );
         if ( n <= 0 ) { r->status = E_ACCESS; return 0; }
+        if ( (u32)n > chunk ) n = (int)chunk;
         done += (u32)n;
         nlo = off_lo + (u32)n;
         if ( nlo < off_lo ) off_hi++;
@@ -623,7 +633,7 @@ static int do_pathop( redir_req *r, int op )
         r->status = E_GENERAL; return 0;
     }
     s = g_sess[drive];
-    canon( r->path, path );
+    if ( canon( r->path, path, (int)sizeof( path ) ) != 0 ) { r->status = E_NOPATH; return 0; }
     switch ( op ) {
     case REDIR_DELETE: rc = sess_delete( s, path ); break;
     case REDIR_MKDIR:  rc = sess_mkdir( s, path );  break;
@@ -647,8 +657,8 @@ static int do_rename( redir_req *r )
         r->status = E_GENERAL; return 0;
     }
     s = g_sess[drive];
-    canon( r->path, oldp );
-    canon( r->share, newp );
+    if ( canon( r->path, oldp, (int)sizeof( oldp ) ) != 0 ||
+         canon( r->share, newp, (int)sizeof( newp ) ) != 0 ) { r->status = E_NOPATH; return 0; }
     rc = sess_rename( s, oldp, newp );
     r->status = ( rc == 0 ) ? 0 : E_ACCESS;
     return 0;
@@ -711,6 +721,15 @@ void __cdecl nd_tick( void )
 
 static int redir_dispatch( u32 op, redir_req *r )
 {
+    /* every string the caller filled ends inside its field */
+    r->path[sizeof( r->path ) - 1] = 0;
+    r->pattern[sizeof( r->pattern ) - 1] = 0;
+    r->server[sizeof( r->server ) - 1] = 0;
+    r->share[sizeof( r->share ) - 1] = 0;
+    r->user[sizeof( r->user ) - 1] = 0;
+    r->pass[sizeof( r->pass ) - 1] = 0;
+    r->domain[sizeof( r->domain ) - 1] = 0;
+
     switch ( op ) {
     case REDIR_MOUNT:     return do_mount( r );
     case REDIR_UMOUNT:    return do_umount( r );

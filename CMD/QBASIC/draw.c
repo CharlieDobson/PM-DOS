@@ -127,6 +127,9 @@ void rtf_CIRCLE( void )
     if ( r < 0 ) {
         r = -r;
     }
+    if ( DBL_BAD( aspect ) ) {
+        vm_error( E_ILLEGAL_CALL );
+    }
     if ( aspect < 0 ) {
         aspect = -aspect;
     }

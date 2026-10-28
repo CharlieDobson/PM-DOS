@@ -143,6 +143,13 @@ int card_find( void )
        trusting a strapped base - the address is split across MSR and
        LAAR on a 16-bit board and is awkward to read back */
     membase = net_opt_mem ? ( net_opt_mem << 4 ) : 0xD0000L;
+    /* a window the board can decode: in upper memory, on a boundary of
+       its RAM size */
+    if ( net_opt_mem > 0xFFFFL || membase < 0xA0000L || ( membase & ( ramsize - 1 ) ) != 0
+         || membase + ramsize > 0x100000L ) {
+        net_print( "/M: is not a window this board can use\r\n" );
+        return 1;
+    }
     net_mem = membase;
     win = net_pci_map( membase, ramsize );
     if ( win == 0 ) return 1;

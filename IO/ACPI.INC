@@ -190,6 +190,8 @@ pwf_list:
         xor     edx,edx
         call    pws_scan                        ; -> EBX, ECX, or CF
         jc      pwf_none
+        cmp     ecx,FADT_PMTMR + 4              ; the 1.0 fields, at least
+        jb      pwf_none
 
         mov     eax,[ebx+FADT_SMICMD]
         cmp     eax,10000h

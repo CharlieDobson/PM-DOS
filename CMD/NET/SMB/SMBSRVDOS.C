@@ -41,7 +41,7 @@ static int dpath( dosfs *fs, const char *rel, char *out, int cap )
     while ( *p == '\\' || *p == '/' ) p++;
     while ( *p ) {
         char comp[80]; int cl = 0;
-        while ( *p && *p != '\\' && *p != '/' ) { if ( cl < 79 ) comp[cl++] = *p; p++; }
+        while ( *p && *p != '\\' && *p != '/' ) { if ( cl >= 79 ) return 0; comp[cl++] = *p; p++; }
         comp[cl] = 0;
         while ( *p == '\\' || *p == '/' ) p++;
         if ( cl == 0 ) continue;
@@ -79,6 +79,13 @@ static int d_open( void *ctx, const char *path, int write, int dispo, unsigned l
         sl_memzero( &r, sizeof( r ) ); r.eax = (u32)( 0x3D00 | ( write ? 2 : 0 ) ); r.edx = (u32)full; int21( &r );
         if ( CF( r ) ) return -1;
         h = (int)( r.eax & 0xFFFF ); *action = 1;
+    }
+
+    /* a device name (CON, PRN, ...) opens the device: serve files only */
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x4400; r.ebx = (u32)h; int21( &r );
+    if ( CF( r ) || ( r.edx & 0x80 ) ) {
+        sl_memzero( &r, sizeof( r ) ); r.eax = 0x3E00; r.ebx = (u32)h; int21( &r );
+        return -1;
     }
 
     sl_memzero( &r, sizeof( r ) ); r.eax = 0x4202; r.ebx = (u32)h; r.ecx = 0; int21( &r );

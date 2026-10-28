@@ -26,7 +26,7 @@
 #define CMD_RXENABLE    0x2000
 #define CMD_RXRESET     0x2800
 #define CMD_UPUNSTALL   0x3001
-#define CMD_DNUNSTALL   0x3002
+#define CMD_DNUNSTALL   0x3003
 #define CMD_TXENABLE    0x4800
 #define CMD_TXRESET     0x5800
 #define CMD_ACKINTR     0x6800
@@ -178,8 +178,8 @@ int card_setup( void )
     rx_cur = tx_cur = 0;
 
     el_window( 7 );                              /* the operating window */
-    MMIO32( net_port, EL_UPLISTPTR ) = (u32)&rxd[0];
-    MMIO32( net_port, EL_DNLISTPTR ) = 0;
+    outl( net_port + EL_UPLISTPTR, (u32)&rxd[0] );
+    outl( net_port + EL_DNLISTPTR, 0 );
 
     /* station, broadcast AND multicast (NetBEUI's functional address
        03-00-00-00-00-01 is a multicast) */
@@ -211,9 +211,12 @@ int card_send( const u8 *frame, u32 len )
     volatile DESC *d = &txd[entry];
     u32 n;
 
-    if ( !( d->status & 0x00008000L ) ) {         /* download not complete: busy */
-        for ( n = 0; n < SPIN_TX; n++ ) if ( d->status & 0x00008000L ) break;
-        if ( !( d->status & 0x00008000L ) ) { net_stats.txerrors++; return 0; }
+    /* one frame is downloaded at a time, and the engine clears DnListPtr
+       when it is done with it - every chip does that, where only the
+       Cyclone and Tornado mark the descriptor */
+    if ( inl( net_port + EL_DNLISTPTR ) != 0 ) {  /* download not complete: busy */
+        for ( n = 0; n < SPIN_TX; n++ ) if ( inl( net_port + EL_DNLISTPTR ) == 0 ) break;
+        if ( inl( net_port + EL_DNLISTPTR ) != 0 ) { net_stats.txerrors++; return 0; }
     }
     if ( len < 60 ) {
         net_memzero( pad, sizeof( pad ) );
@@ -229,7 +232,7 @@ int card_send( const u8 *frame, u32 len )
     d->length = len | LAST_FRAG;
     el_window( 7 );
     /* point the download engine at this descriptor and unstall it */
-    MMIO32( net_port, EL_DNLISTPTR ) = (u32)d;
+    outl( net_port + EL_DNLISTPTR, (u32)d );
     el_cmd( CMD_DNUNSTALL );
     tx_cur = ( entry + 1 ) % TXN;
     return 1;

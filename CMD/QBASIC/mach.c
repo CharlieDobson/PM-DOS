@@ -227,7 +227,16 @@ static void address_of( u8 *addr, u16 *seg, u32 *off )
             }
         }
         if ( r == NULL ) {
-            r = region_for( addr, 16, 0, NULL );
+            u32 size = 16;
+            if ( addr < vm.gdata || addr >= vm.gdata + vm.gcap ) {
+                *seg = 0;                       /* no block known to hold it */
+                *off = 0;
+                return;
+            }
+            if ( size > (u32)(vm.gdata + vm.gcap - addr) ) {
+                size = (u32)(vm.gdata + vm.gcap - addr);    /* not past the module's data */
+            }
+            r = region_for( addr, size, 0, NULL );
         }
     }
     *seg = (u16)(r->lin >> 4);

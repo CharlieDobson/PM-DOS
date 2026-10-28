@@ -428,15 +428,25 @@ QTYPE c_peek_type( void )
     return type;
 }
 
+/* expressions open inside each other, and one-line IFs: the stack
+   has room for so many (each line starts it at 0) */
+int c_depth;
+
 QTYPE expr( void )
 {
     TOKEN *tok = c_tok();
+    QTYPE type;
 
     if ( tok->kind == TK_EOL || tok->kind == TK_COLON || tok->kind == TK_COMMA
       || tok->kind == TK_RPAREN || tok->kind == TK_SEMI || tok->kind == TK_REM ) {
         c_expect_msg( "expression" );
     }
-    return parse_imp();
+    if ( ++c_depth > 64 ) {
+        c_fail( "Expression too complex" );
+    }
+    type = parse_imp();
+    c_depth--;
+    return type;
 }
 
 void expr_num( QTYPE want )
@@ -1990,6 +2000,7 @@ typedef struct {
 } KVAL;
 
 static int k_ok;
+static int k_depth;             /* brackets open inside each other */
 
 static void k_fail( void )
 {
@@ -2026,7 +2037,16 @@ static void k_atom( KVAL *val )
     }
     case TK_LPAREN:
         c_next();
+        if ( k_depth >= 32 ) {
+            /* too deep for the stack: not taken as a constant */
+            k_fail();
+            val->type = TY_INT;
+            val->num = 0;
+            return;
+        }
+        k_depth++;
         k_imp( val );
+        k_depth--;
         if ( !c_accept( TK_RPAREN ) ) {
             k_fail();
         }
@@ -2376,6 +2396,7 @@ int const_expr( CELL *cval, QTYPE *type, STR **sval )
     KVAL val;
 
     k_ok = 1;
+    k_depth = 0;
     mem_set( &val, 0, sizeof( val ) );
     k_imp( &val );
     *sval = NULL;

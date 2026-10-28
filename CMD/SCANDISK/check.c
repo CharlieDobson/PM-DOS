@@ -984,7 +984,10 @@ static int own_walk( u32 dir_first, const char *path, OWNER *own, int level )
     int found = 0;
     u8 *ent;
 
-    if ( level > MAX_DEPTH || dir_load_first( &dir, dir_first ) != 0 ) {
+    if ( level > MAX_DEPTH ) {
+        return 0;
+    }
+    if ( dir_load_first( &dir, dir_first ) != 0 ) {
         dir_free( &dir );
         return 0;
     }

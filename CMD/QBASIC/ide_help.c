@@ -248,36 +248,9 @@ static int load_from( const char *dir, u32 dlen )
     return 1;
 }
 
-/* the directory QBASIC.EXE was run from: the name after the environment */
-static int exe_dir( char *out )
-{
-    const char *env = sys_environment(), *last = NULL, *scan;
-
-    while ( *env ) {
-        env += str_len( env ) + 1;
-    }
-    env++;
-    if ( *(const u16 *)env < 1 ) {
-        return 0;
-    }
-    env += 2;
-    for ( scan = env; *scan; scan++ ) {
-        if ( *scan == '\\' || *scan == ':' ) {
-            last = scan;
-        }
-    }
-    if ( last == NULL ) {
-        return 0;
-    }
-    mem_cpy( out, env, (u32)(last - env + 1) );
-    out[last - env + 1] = 0;
-    return 1;
-}
-
 /* (again, after Options > Help Path) */
 void help_init( void )
 {
-    char dir[PATH_MAX];
     const char *path, *end;
 
     if ( loaded > 0 ) {
@@ -294,10 +267,6 @@ void help_init( void )
     }
     loaded = -1;
     if ( help_path[0] && load_from( help_path, str_len( help_path ) ) ) {
-        loaded = 1;
-        return;
-    }
-    if ( exe_dir( dir ) && load_from( dir, str_len( dir ) ) ) {
         loaded = 1;
         return;
     }

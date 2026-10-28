@@ -567,6 +567,7 @@ dlf_err:
 ;=====================================================================
 dl_load:
         pushad
+        mov     dword ptr [dl_keep],0   ; nothing linked yet
         call    dl_init
         jc      dll_nomem
 
@@ -632,8 +633,17 @@ dl_load:
         ; own: each NEXT holds the offset of the one after it and
         ; FFFFh ends it.  One header is the normal case; two is not an
         ; error and is why this is a loop.
+        cmp     dword ptr [dl_fsize],DEVH_LEN
+        jb      dll_initbad             ; too short to hold a header
         mov     dword ptr [dl_hdroff],0
 dll_hdr:
+        mov     eax,[dl_hdroff]         ; the whole header inside the block
+        add     eax,DEVH_LEN
+        mov     ecx,[dl_brkseg]
+        sub     ecx,[dl_drvseg]
+        shl     ecx,4
+        cmp     eax,ecx
+        ja      dll_initbad
         mov     eax,[dl_drvseg]
         shl     eax,4
         add     eax,[dl_hdroff]
@@ -672,8 +682,41 @@ dll_ischar:
         call    dl_doinit
         mov     word ptr ds:[sv_initver],0      ; a MOV: CF survives it
         jc      dll_initbad
+
+        ; WHAT INIT ASKED TO KEEP, CHECKED BEFORE THE HEADER IS LINKED.
+        ; It has to end past this header and inside the block it was
+        ; given.  Once a header is in the chain the block is never freed
+        ; under it (dll_undo), so a refusal frees it only while nothing
+        ; from the file is linked.
+        mov     eax,[dl_endseg]
+        shl     eax,4
+        add     eax,[dl_endoff]
+        mov     ecx,[dl_drvseg]
+        shl     ecx,4
+        sub     eax,ecx                 ; how many bytes of it are resident
+        jbe     dll_initbad             ; at or below the start: it refused
+        mov     ecx,[dl_brkseg]
+        sub     ecx,[dl_drvseg]
+        shl     ecx,4
+        cmp     eax,ecx
+        ja      dll_initbad             ; past the end of the block
+        mov     ecx,[dl_hdroff]
+        add     ecx,DEVH_LEN
+        cmp     eax,ecx
+        jb      dll_initbad             ; the header itself would not be kept
+        add     eax,15
+        shr     eax,4
+        mov     ebx,eax                 ; EBX = paragraphs to keep
+
+        cmp     byte ptr [dl_isblk],0
+        je      dll_link
+        mov     eax,[dl_pktflat]
+        cmp     byte ptr [eax+REQI_UNITS],0
+        je      dll_nounits             ; a driver that found nothing
+dll_link:
         call    dl_chain
         jc      dll_full
+        mov     [dl_keep],ebx           ; linked: the block stays from here
 
         cmp     byte ptr [dl_isblk],0
         jne     dll_isblk
@@ -689,21 +732,14 @@ dll_notblk:
         cmp     ax,0FFFFh
         je      dll_keep
         movzx   eax,ax
+        cmp     eax,[dl_hdroff]
+        jbe     dll_initbad             ; the chain has to go forwards
         mov     [dl_hdroff],eax
         jmp     dll_hdr                 ; near: MASM will not stretch a short one
 
 ;--- what INIT asked to keep, and not a paragraph more ---------------
 dll_keep:
-        mov     eax,[dl_endseg]
-        shl     eax,4
-        add     eax,[dl_endoff]
-        mov     ecx,[dl_drvseg]
-        shl     ecx,4
-        sub     eax,ecx                 ; how many bytes of it are resident
-        jbe     dll_initbad             ; at or below the start: it refused
-        add     eax,15
-        shr     eax,4
-        mov     ebx,eax
+        mov     ebx,[dl_keep]           ; the last INIT's, checked above
         mov     eax,[dl_drvseg]
         call    lm_resize               ; smaller than we have, so it fits
         popad
@@ -733,7 +769,14 @@ dll_full:
 dll_undo:
         push    eax
         mov     eax,[dl_drvseg]
+        mov     ebx,[dl_keep]
+        or      ebx,ebx
+        jnz     dll_part
         call    lm_free
+        jmp     short dll_undone
+dll_part:
+        call    lm_resize               ; a header from it is in the chain:
+dll_undone:                             ; it stays, at what was asked for
         pop     eax
 dll_fail:
         mov     [dl_err],eax
@@ -1775,6 +1818,10 @@ dli_go:
         call    dl_fire                 ; -> AX, CF; EDI still the packet
         jc      dli_err
         movzx   eax,word ptr [edi+REQC_COUNT]
+        cmp     eax,[dli_cnt]
+        jbe     dli_cntok
+        mov     eax,[dli_cnt]           ; no more than was asked for
+dli_cntok:
         cmp     byte ptr [dli_bounce],0
         je      dli_ok
         cmp     dword ptr [dli_cmd],DEVC_IOCTLIN
@@ -2083,6 +2130,7 @@ dl_fnext    dd  0
 dl_endoff   dd  0
 dl_endseg   dd  0
 dl_brkseg   dd  0                       ; the end of the room INIT was given
+dl_keep     dd  0                       ; paragraphs to keep, once linked
 dlx_v86fn   db  25h, 35h, 34h, 50h, 51h, 62h, 2Fh, 52h, 38h, 65h
 .ERRNZ  ($ - dlx_v86fn) - DLX_NV86, <DLX_NV86 is not the length of dlx_v86fn>
 dl_lost     db  0

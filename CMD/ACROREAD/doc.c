@@ -382,6 +382,10 @@ u8 *pdf_stream_pool( OBJ *stm, POOL *pool, u32 *len, u32 max )
 /* the page tree                                                       */
 /* ------------------------------------------------------------------ */
 
+/* the nodes looked at since the page count or the page search began:
+   a tree that names the same node over and over is cut short */
+static int tree_visits;
+
 static int tree_count( DICT *node, int depth )
 {
     ARR *kids = dict_arr( node, "Kids" );
@@ -389,6 +393,9 @@ static int tree_count( DICT *node, int depth )
     u32 index;
     int total = 0;
 
+    if ( ++tree_visits > 1000000L ) {
+        return 0;
+    }
     if ( kids == NULL ) {
         return 1;
     }
@@ -423,6 +430,7 @@ int pdf_count_pages( void )
 {
     DICT *pages = dict_dict( doc.root, "Pages" );
 
+    tree_visits = 0;
     return pages ? node_count( pages ) : 0;
 }
 
@@ -463,6 +471,7 @@ int pdf_page( int index, PAGE *page )
     if ( node == NULL || index < 0 ) {
         return 0;
     }
+    tree_visits = 0;                    /* one budget for the whole search */
     for ( depth = 0; depth < 64; depth++ ) {
         /* what this node gives the pages under it */
         val = dict_get( node, "Resources" );

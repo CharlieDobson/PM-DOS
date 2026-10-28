@@ -374,6 +374,10 @@ net_write:
         cmp     dword ptr [net_req+NR_STATUS],0
         jne     net_err_status
         mov     eax,[net_req+NR_RESULT]        ; bytes written
+        cmp     eax,[net_req+NR_COUNT]         ; never more than was asked
+        jbe     nw_counted
+        mov     eax,[net_req+NR_COUNT]
+nw_counted:
         add     [esi+SFT_POS],eax
         ; a write past the old size grows the file
         mov     edx,[esi+SFT_POS]
@@ -475,7 +479,7 @@ net_fill_dta:
         mov     [edi+1Ah],eax
         add     edi,1Eh                         ; +1E : the 8.3 name, ASCIIZ
         mov     esi,OFFSET net_req + NR_NAME
-        mov     ecx,13
+        mov     ecx,12                          ; 12 + the NUL: the record ends at +2A
 nfd_nm:
         mov     al,[esi]
         mov     [edi],al
@@ -608,20 +612,14 @@ net_lfn_fill:
         lea     esi,[net_req+NR_NAME]           ; 8.3 name at +130h
         push    edi
         add     edi,130h
-        call    nlf_copyz
+        mov     ecx,14                          ; the short-name slot
+        call    net_copyz
         pop     edi
         lea     esi,[net_req+NR_NAME]           ; long name at +2Ch
         add     edi,2Ch
-        call    nlf_copyz
+        mov     ecx,16                          ; no more than NR_NAME holds
+        call    net_copyz
         popad
-        ret
-nlf_copyz:
-        mov     al,[esi]
-        mov     [edi],al
-        inc     esi
-        inc     edi
-        or      al,al
-        jnz     nlf_copyz
         ret
 
 ;=====================================================================

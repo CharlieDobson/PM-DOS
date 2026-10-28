@@ -55,7 +55,7 @@ static u32 rd( const CFF *cff, u32 off, u32 size )
 {
     u32 val = 0;
 
-    if ( off + size > cff->len ) {
+    if ( off > cff->len || size > cff->len - off ) {
         return 0;
     }
     while ( size-- ) {
@@ -70,7 +70,7 @@ static int index_at( const CFF *cff, u32 off, CIDX *idx )
     u32 last;
 
     mem_set( idx, 0, sizeof( *idx ) );
-    if ( off + 2 > cff->len ) {
+    if ( off > cff->len || cff->len - off < 2 ) {
         return 0;
     }
     idx->count = rd( cff, off, 2 );
@@ -86,7 +86,7 @@ static int index_at( const CFF *cff, u32 off, CIDX *idx )
     idx->base = off + 3 + (idx->count + 1) * idx->offsize - 1;
     last = rd( cff, idx->offs + idx->count * idx->offsize, idx->offsize );
     idx->end = idx->base + last;
-    return idx->end <= cff->len && idx->base < cff->len;
+    return idx->base < cff->len && last <= cff->len - idx->base;
 }
 
 /* entry "which" of an INDEX: where it is and how long */
@@ -99,7 +99,7 @@ static int index_get( const CFF *cff, const CIDX *idx, u32 which, u32 *start, u3
     }
     from = rd( cff, idx->offs + which * idx->offsize, idx->offsize );
     to = rd( cff, idx->offs + (which + 1) * idx->offsize, idx->offsize );
-    if ( to < from || idx->base + to > cff->len ) {
+    if ( to < from || idx->base > cff->len || to > cff->len - idx->base ) {
         return 0;
     }
     *start = idx->base + from;

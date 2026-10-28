@@ -30,10 +30,11 @@ typedef struct {
 
 static TPOINT *points;
 static u32     point_cap;
+static u32     parts;                   /* glyphs drawn as parts of this one, against a loop */
 
 static u32 rd16( const TTF *ttf, u32 off )
 {
-    if ( off + 2 > ttf->len ) {
+    if ( off > ttf->len || ttf->len - off < 2 ) {
         return 0;
     }
     return ((u32)ttf->data[off] << 8) | ttf->data[off + 1];
@@ -213,7 +214,7 @@ int ttf_cmap( void *prog, int platform, int encoding, u32 code )
 u16 ttf_unicode_of( void *prog, u32 gid )
 {
     TTF *ttf = (TTF *)prog;
-    u32 sub = cmap_sub( ttf, 3, 1 ), segs, seg, start, end, code;
+    u32 sub = cmap_sub( ttf, 3, 1 ), segs, seg, start, end, code, tried = 0;
 
     if ( sub == 0 ) {
         sub = cmap_sub( ttf, 0, 3 );
@@ -229,6 +230,9 @@ u16 ttf_unicode_of( void *prog, u32 gid )
             continue;
         }
         for ( code = start; code <= end; code++ ) {
+            if ( ++tried > 65536UL ) {
+                return 0;                           /* more than a whole map's worth */
+            }
             if ( cmap_lookup( ttf, sub, code ) == gid ) {
                 return (u16)code;
             }
@@ -331,7 +335,7 @@ static int glyph_emit( const TTF *ttf, u32 gid, const FMAT *xf, int depth )
         at = rd16( ttf, ttf->loca + gid * 2 ) * 2;
         next = rd16( ttf, ttf->loca + gid * 2 + 2 ) * 2;
     }
-    if ( next <= at || at + 10 > ttf->glyf_len ) {
+    if ( next <= at || at > ttf->glyf_len || ttf->glyf_len - at < 10 ) {
         return 1;                                   /* a glyph with no outline: a space */
     }
     at += ttf->glyf;
@@ -379,6 +383,9 @@ static int glyph_emit( const TTF *ttf, u32 gid, const FMAT *xf, int depth )
             sub.d = fx_mul( mc, xf->b ) + fx_mul( md, xf->d );
             sub.e = xf->a * dx + xf->c * dy + xf->e;
             sub.f = xf->b * dx + xf->d * dy + xf->f;
+            if ( ++parts > 256 ) {
+                break;
+            }
             glyph_emit( ttf, comp, &sub, depth + 1 );
             if ( !(flags_at & 0x20) || off >= ttf->len ) {
                 break;
@@ -464,5 +471,6 @@ int ttf_outline( void *prog, u32 gid )
 
     unit.a = unit.d = FX_ONE;
     unit.b = unit.c = unit.e = unit.f = 0;
+    parts = 0;
     return glyph_emit( (TTF *)prog, gid, &unit, 0 );
 }

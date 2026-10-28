@@ -228,7 +228,10 @@ void dir_children( u32 dirno, int sort, U32LIST *out )
 static int arrange( u32 dirno, int sort, int apply )
 {
     DIRINFO *di = &dirs[dirno];
-    u32 bytes = di->buf.nent * 32, end, at = 0, index, *order, *who;
+    /* the root goes out in whole sectors, and its entries need not fill
+       the last one */
+    u32 bytes = di->buf.fixed_root ? vol.root_secs * vol.bps : di->buf.nent * 32;
+    u32 end, at = 0, index, *order, *who;
     const GROUP *grp;
     u8 *image;
     int changed;

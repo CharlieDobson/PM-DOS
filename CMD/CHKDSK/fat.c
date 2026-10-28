@@ -623,6 +623,10 @@ int dir_extend( DIRBUF *dir )
     if ( vol.fattype != 32 || nclus == 0 ) {
         return -1;
     }
+    /* only a chain loaded to its end mark can take another cluster */
+    if ( !IS_EOC( fat_get( dir->clus.items[nclus - 1] ) ) ) {
+        return -1;
+    }
     for ( clus = 2; clus <= vol.maxclus; clus++ ) {
         if ( fat_get( clus ) == 0 &&
              !(vol.map[clus] & (MF_USED | MF_LOST | MF_BAD)) ) {

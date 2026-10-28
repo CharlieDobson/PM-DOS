@@ -846,6 +846,8 @@ rm_dirchain:
         mov     byte ptr [rm_dirend],0
         mov     ebp,eax                 ; EBP = the cluster
         mov     dword ptr [rdc_steps],0
+        cmp     dword ptr [fv_spc],RC_CHUNK
+        ja      rdc_damaged             ; a cluster bigger than cpy_buf
 rdc_one:
         inc     dword ptr [rdc_steps]
         mov     eax,[rdc_steps]

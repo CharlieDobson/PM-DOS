@@ -970,6 +970,8 @@ static void rec_from_lfn( FINDREC *rec )
     rec->time = *(u16 *)(find_rec + 0x14);     /* SI = 1: DOS's form */
     rec->date = *(u16 *)(find_rec + 0x16);
     rec->size = *(u32 *)(find_rec + 0x20);
+    rec->name[0] = 0;                           /* a name too long for it: none */
+    find_rec[0x130 + 13] = 0;
     str_cpyn( rec->name, (const char *)find_rec + 0x2C, sizeof( rec->name ) );
     str_cpyn( rec->alias, (const char *)find_rec + 0x130, sizeof( rec->alias ) );
     if ( rec->alias[0] == 0 ) {
@@ -983,6 +985,7 @@ static void rec_from_dta( FINDREC *rec )
     rec->time = *(u16 *)(find_rec + 0x16);
     rec->date = *(u16 *)(find_rec + 0x18);
     rec->size = *(u32 *)(find_rec + 0x1A);
+    find_rec[0x1E + 12] = 0;
     str_cpyn( rec->name, (const char *)find_rec + 0x1E, 13 );
     str_cpyn( rec->alias, rec->name, sizeof( rec->alias ) );
 }

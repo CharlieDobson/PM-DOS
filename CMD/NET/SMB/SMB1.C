@@ -104,7 +104,8 @@ static unsigned char *smb1_begin( smb1_client *cl, int command )
 
 /* send what was built (end -> just past the last byte) and receive the
    reply into recvbuf.  Stores cl->last_status.  0 if a reply came (even
-   an error status), <0 on a transport failure. */
+   an error status), <0 on a transport failure or a malformed reply (a
+   success whose word or byte block runs past what was received). */
 static int smb1_txrx( smb1_client *cl, unsigned char *end )
 {
     unsigned char *p = cl->sendbuf + 4;
@@ -120,6 +121,12 @@ static int smb1_txrx( smb1_client *cl, unsigned char *end )
     if ( cl->recvbuf[0] != 0xFF || cl->recvbuf[1] != 'S' ||
          cl->recvbuf[2] != 'M' || cl->recvbuf[3] != 'B' ) return -1;
     cl->last_status = get32( cl->recvbuf + 5 );
+    if ( cl->last_status == 0 ) {
+        /* the words and bytes a good reply carries must have come in */
+        int fixed = 33 + cl->recvbuf[32] * 2;
+        if ( fixed + 2 > cl->recvlen ) return -1;
+        if ( fixed + 2 + (int)get16( cl->recvbuf + fixed ) > cl->recvlen ) return -1;
+    }
     return 0;
 }
 
@@ -355,7 +362,7 @@ static int find_walk( const unsigned char *data, int dcount, int want_resume,
         count++;
 
         if ( next == 0 ) break;
-        if ( (int)next <= 0 || off + (int)next > dcount ) break;
+        if ( next < 64 || next > (unsigned long)( dcount - off ) ) break;
         off += (int)next;
     }
     return count;
@@ -443,6 +450,7 @@ int smb1_list_dir( smb1_client *cl, const char *dir, const char *pattern,
             rdata = cl->recvbuf + rdataoff;
             if ( rdataoff + dcount > cl->recvlen ) dcount = cl->recvlen - rdataoff;
             if ( dcount < 0 ) dcount = 0;
+            if ( pcount > 0 && rparmoff + pcount > cl->recvlen ) return -1;
 
             if ( first ) {
                 if ( pcount >= 6 ) { sid = get16( rparm + 0 ); eos = (int)get16( rparm + 4 ); }
@@ -515,6 +523,7 @@ int smb1_read( smb1_client *cl, const smb2_fh *fh, unsigned long off_lo, unsigne
     unsigned char *w = p + 1;
     int dlen, doff;
 
+    if ( len <= 0 ) return 0;
     if ( len > (int)sizeof( cl->recvbuf ) - 128 ) len = (int)sizeof( cl->recvbuf ) - 128;
 
     p[0] = 12;                                        /* WordCount */
@@ -537,7 +546,7 @@ int smb1_read( smb1_client *cl, const smb2_fh *fh, unsigned long off_lo, unsigne
     doff = (int)get16( r_words( cl ) + 12 );
     if ( doff > cl->recvlen ) return 0;                /* a bogus data offset */
     if ( dlen < 0 ) dlen = 0;
-    if ( doff + dlen > cl->recvlen ) dlen = cl->recvlen - doff;
+    if ( dlen > cl->recvlen - doff ) dlen = cl->recvlen - doff;
     if ( dlen < 0 ) dlen = 0;
     if ( dlen > len ) dlen = len;
     memcpy( buf, cl->recvbuf + doff, (unsigned)dlen );
@@ -551,6 +560,7 @@ int smb1_write( smb1_client *cl, const smb2_fh *fh, unsigned long off_lo, unsign
     unsigned char *w = p + 1, *bc, *data;
     int doff;
 
+    if ( len <= 0 ) return 0;
     if ( len > (int)sizeof( cl->sendbuf ) - 128 ) len = (int)sizeof( cl->sendbuf ) - 128;
 
     p[0] = 14;                                        /* WordCount */
@@ -575,7 +585,11 @@ int smb1_write( smb1_client *cl, const smb2_fh *fh, unsigned long off_lo, unsign
     if ( smb1_txrx( cl, data + len ) < 0 ) return -1;
     if ( cl->last_status != 0 ) return -1;
     if ( r_wordcount( cl ) < 6 ) return -1;
-    return (int)get16( r_words( cl ) + 4 );           /* Count written */
+    {
+        int n = (int)get16( r_words( cl ) + 4 );      /* Count written */
+        if ( n > len ) n = len;
+        return n;
+    }
 }
 
 int smb1_close_file( smb1_client *cl, const smb2_fh *fh )

@@ -386,7 +386,7 @@ void image_draw( IMGREQ *req )
     int height = (int)obj_int( dict_get2( dict, "Height", "H" ) );
     int bpc = (int)obj_int( dict_get2( dict, "BitsPerComponent", "BPC" ) );
     int stencil = (int)obj_int( dict_get2( dict, "ImageMask", "IM" ) );
-    int mbpc, side, dw, dh, left, top, flip_x, flip_y, first, last, count, index, ypos, xpos, dest;
+    int mbpc, mwidth, mheight, side, dw, dh, left, top, flip_x, flip_y, first, last, count, index, ypos, xpos, dest;
     int have_mask = 0, global = req->fill->alpha, filtered;
 
     /* a page that was given up may have left these as they were */
@@ -465,6 +465,11 @@ void image_draw( IMGREQ *req )
         placeholder( req );
         return;
     }
+    if ( bpc != 1 && bpc != 2 && bpc != 4 && bpc != 8 && bpc != 16 ) {
+        in_close( in );
+        placeholder( req );
+        return;
+    }
     decode = dict_get2( dict, "Decode", "D" )->type == T_ARR ? dict_get2( dict, "Decode", "D" )->u.arr : NULL;
     scaler_open( &colour, in, width, height, bpc, cs, stencil ? K_STENCIL : K_COLOUR, decode, dw, dh );
 
@@ -480,10 +485,19 @@ void image_draw( IMGREQ *req )
         mcs = dict_int( mdict, "ImageMask", 0 ) ? NULL : cs_load( dict_get( mdict, "ColorSpace" ), req->res );
         min = pdf_stream_raw( mobj, &index );
         min = open_data( mobj, min, index, &mbpc, &mcs, mcs == NULL );
+        mwidth = (int)dict_int( mdict, "Width", 1 );
+        mheight = (int)dict_int( mdict, "Height", 1 );
+        if ( mcs == NULL ) {
+            mbpc = 1;
+        }
+        if ( min && (mwidth < 1 || mheight < 1 || mwidth > 32000 || mheight > 32000 ||
+                     (mbpc != 1 && mbpc != 2 && mbpc != 4 && mbpc != 8 && mbpc != 16)) ) {
+            in_close( min );                        /* drawn without it */
+            min = NULL;
+        }
         if ( min ) {
             key = dict_arr( mdict, "Decode" );
-            scaler_open( &mask, min, (int)dict_int( mdict, "Width", 1 ), (int)dict_int( mdict, "Height", 1 ),
-                         mbpc, mcs, mcs ? K_ALPHA : K_STENCIL, key, dw, dh );
+            scaler_open( &mask, min, mwidth, mheight, mbpc, mcs, mcs ? K_ALPHA : K_STENCIL, key, dw, dh );
             if ( mask.width >= 1 && mask.height >= 1 ) {
                 have_mask = 1;
             } else {

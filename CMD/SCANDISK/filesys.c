@@ -311,10 +311,17 @@ static const char *cross_copy( const CROSSREC *cr, DIRBUF *dir )
     need = size / vol.bpc + (size % vol.bpc ? 1 : 0);
     take = need > own ? need - own : 0;
     for ( clus = cr->clus; CLUS_OK( clus ) && src.count < take; clus = fat_get( clus ) ) {
+        if ( vol.map[clus] & MF_CUR ) {
+            break;                              /* the chain came round again */
+        }
+        vol.map[clus] |= MF_CUR;
         list_add( &src, clus );
         if ( IS_EOC( fat_get( clus ) ) ) {
             break;
         }
+    }
+    for ( index = 0; index < src.count; index++ ) {
+        vol.map[src.items[index]] &= ~MF_CUR;
     }
     for ( index = 0; index < src.count; index++ ) {
         fresh = fat_free_after( fresh );

@@ -560,6 +560,8 @@ nra_piece:
         call    net_xfer                ; -> CX
         pop     ax                      ; what was asked
         jc      nra_err
+        cmp     cx,ax                   ; more than asked: a broken answer
+        ja      nra_err
         movzx   ecx,cx
         add     ebx,ecx
         add     di,cx

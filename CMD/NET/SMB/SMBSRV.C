@@ -76,6 +76,7 @@ static int reply( srv_conn *c, int cmd, unsigned long status,
 {
     unsigned char *p = c->out + 4;      /* SMB header start */
     int n;
+    if ( wlen < 0 || blen < 0 || wlen > 510 || 4 + 33 + wlen + 2 + blen > SRV_BUF ) return -1;
     memset( c->out, 0, 37 );
     p[0] = 0xFF; p[1] = 'S'; p[2] = 'M'; p[3] = 'B';
     p[4] = (unsigned char)cmd;
@@ -98,12 +99,15 @@ static int reply( srv_conn *c, int cmd, unsigned long status,
     return send_all( c, c->out, n );
 }
 
-/* copy a leading-NUL-free ASCIIZ out of a byte field at 'bf' */
-static void getz( const unsigned char *bf, int max, char *dst, int cap )
+/* copy a leading-NUL-free ASCIIZ out of a byte field at 'bf'; -1 if the
+   name does not fit 'cap' */
+static int getz( const unsigned char *bf, int max, char *dst, int cap )
 {
     int i = 0;
     while ( i < max && i + 1 < cap && bf[i] ) { dst[i] = (char)bf[i]; i++; }
     dst[i] = 0;
+    if ( i < max && i + 1 >= cap && bf[i] ) return -1;
+    return 0;
 }
 
 /* ---- the per-command handlers ---- */
@@ -119,7 +123,7 @@ static void do_negotiate( srv_conn *c, const unsigned char *bytes, int bc,
     while ( o < bc && bytes[o] == 0x02 ) {
         const char *d = (const char *)( bytes + o + 1 );
         int z = o + 1; while ( z < bc && bytes[z] ) z++;
-        if ( slen( d ) == 10 &&
+        if ( z - o - 1 == 10 &&
              d[0]=='N'&&d[1]=='T'&&d[2]==' '&&d[3]=='L'&&d[4]=='M'&&d[5]==' '&&d[6]=='0'&&d[7]=='.'&&d[8]=='1'&&d[9]=='2' )
             idx = i;
         i++; o = z + 1;
@@ -149,6 +153,13 @@ static int alloc_fid( srv_conn *c, int vh )
     return 0;
 }
 
+/* close what the client left open */
+static void close_all( srv_conn *c )
+{
+    int i;
+    for ( i = 0; i < SRV_FIDS; i++ ) if ( c->fid[i].used ) { c->fs->vclose( c->fsctx, c->fid[i].vh ); c->fid[i].used = 0; }
+}
+
 static void do_open( srv_conn *c, const unsigned char *words, const unsigned char *bytes, int bc,
                      unsigned int tid, unsigned int uid, unsigned int pid, unsigned int mid )
 {
@@ -159,7 +170,10 @@ static void do_open( srv_conn *c, const unsigned char *words, const unsigned cha
     int action = 1, dispo, write, vh, fid;
     unsigned char w[30];
 
-    getz( bytes + 1, bc - 1, path, sizeof( path ) );        /* skip the 0x00 format byte */
+    if ( getz( bytes + 1, bc - 1, path, sizeof( path ) ) < 0 ) {   /* skip the 0x00 format byte */
+        reply( c, 0x2D, 0xC0000033UL, tid, uid, pid, mid, (unsigned char *)0, 0, (unsigned char *)0, 0 );
+        return;
+    }
     if ( openfn & 0x10 ) dispo = ( ( openfn & 0x03 ) == 2 ) ? 5 : 3;  /* create (+trunc) */
     else                 dispo = 1;                          /* open existing */
     write = ( access & 0x7 ) ? 1 : 0;
@@ -228,8 +242,8 @@ static void do_write( srv_conn *c, const unsigned char *words, const unsigned ch
 
     if ( fid < 1 || fid > SRV_FIDS || !c->fid[fid - 1].used ) { reply( c, 0x2F, 0xC0000008UL, tid, uid, pid, mid, (unsigned char *)0, 0, (unsigned char *)0, 0 ); return; }
     if ( doff < 32 || doff > c->inlen ) { doff = c->inlen; dlen = 0; }   /* untrusted offset */
-    if ( doff + dlen > c->inlen ) dlen = c->inlen - doff;
     if ( dlen < 0 ) dlen = 0;
+    if ( dlen > c->inlen - doff ) dlen = c->inlen - doff;
     n = c->fs->vwrite( c->fsctx, c->fid[fid - 1].vh, off, smb + doff, dlen );
     if ( n < 0 ) n = 0;
 
@@ -322,7 +336,7 @@ static void do_trans2( srv_conn *c, const unsigned char *words, const unsigned c
         unsigned char rparm[10];
         static unsigned char data[SRV_BUF - 512];
         int dlen;
-        getz( parm + 12, pcnt - 12, spec, sizeof( spec ) );
+        if ( getz( parm + 12, pcnt - 12, spec, sizeof( spec ) ) < 0 ) { reply( c, 0x32, 0xC0000033UL, tid, uid, pid, mid, (unsigned char *)0, 0, (unsigned char *)0, 0 ); return; }
         for ( i = 0; spec[i]; i++ ) if ( spec[i] == '\\' || spec[i] == '/' ) cut = i;
         if ( cut <= 0 ) { dir[0] = '\\'; dir[1] = 0; }
         else { for ( i = 0; i < cut; i++ ) dir[i] = spec[i]; dir[i] = 0; }
@@ -349,7 +363,10 @@ static void do_pathop( srv_conn *c, int cmd, const unsigned char *words, const u
     char path[300];
     int rc, skip = ( cmd == 0x06 ) ? 1 : 1;       /* all three: 0x04 format byte, then name */
     (void)words;
-    getz( bytes + skip, bc - skip, path, sizeof( path ) );
+    if ( getz( bytes + skip, bc - skip, path, sizeof( path ) ) < 0 ) {
+        reply( c, cmd, 0xC0000033UL, tid, uid, pid, mid, (unsigned char *)0, 0, (unsigned char *)0, 0 );
+        return;
+    }
     if      ( cmd == 0x06 ) rc = c->fs->vunlink( c->fsctx, path );
     else if ( cmd == 0x00 ) rc = c->fs->vmkdir( c->fsctx, path );
     else                    rc = c->fs->vrmdir( c->fsctx, path );
@@ -371,15 +388,22 @@ void smbsrv_serve( smb_send_fn send, smb_recv_fn recv, void *ioctx,
         unsigned int tid, pid, uid, mid;
 
         c->inlen = recv_msg( c );
-        if ( c->inlen < 33 ) return;
+        if ( c->inlen < 33 ) { close_all( c ); return; }
         smb = c->in;
-        if ( smb[0] != 0xFF || smb[1] != 'S' || smb[2] != 'M' || smb[3] != 'B' ) return;
+        if ( smb[0] != 0xFF || smb[1] != 'S' || smb[2] != 'M' || smb[3] != 'B' ) { close_all( c ); return; }
         cmd = smb[4];
         tid = get16( smb + 24 ); pid = get16( smb + 26 ); uid = get16( smb + 28 ); mid = get16( smb + 30 );
         wc  = smb[32];
         words = smb + 33;
         bc  = (int)get16( smb + 33 + wc * 2 );
         bytes = smb + 33 + wc * 2 + 2;
+
+        /* the counts are untrusted: keep the byte field inside the message */
+        if ( 33 + wc * 2 + 2 > c->inlen ) {
+            reply( c, cmd, 0xC0000002UL, tid, uid, pid, mid, (unsigned char *)0, 0, (unsigned char *)0, 0 );
+            continue;
+        }
+        if ( bc > c->inlen - ( 33 + wc * 2 + 2 ) ) bc = c->inlen - ( 33 + wc * 2 + 2 );
 
         switch ( cmd ) {
         case 0x72: do_negotiate( c, bytes, bc, pid, mid ); break;
@@ -400,7 +424,10 @@ void smbsrv_serve( smb_send_fn send, smb_recv_fn recv, void *ioctx,
             break; }
         case 0x71: reply( c, 0x71, 0, tid, uid, pid, mid, (unsigned char *)0, 0, (unsigned char *)0, 0 ); break;
         case 0x74: { unsigned char w[6]; memset( w, 0, sizeof( w ) ); w[0] = 0xFF; reply( c, 0x74, 0, tid, uid, pid, mid, w, 6, (unsigned char *)0, 0 ); break; }
-        case 0x2B: reply( c, 0x2B, 0, tid, uid, pid, mid, (unsigned char *)words, 2, (unsigned char *)bytes, bc ); break;
+        case 0x2B:     /* ECHO: the reply is longer than the request */
+            if ( bc > SRV_BUF - 41 ) bc = SRV_BUF - 41;
+            reply( c, 0x2B, 0, tid, uid, pid, mid, (unsigned char *)words, 2, (unsigned char *)bytes, bc );
+            break;
         case 0x2D: do_open( c, words, bytes, bc, tid, uid, pid, mid ); break;
         case 0x2E: do_read( c, words, tid, uid, pid, mid ); break;
         case 0x2F: do_write( c, words, smb, tid, uid, pid, mid ); break;

@@ -155,7 +155,7 @@ gpt_disk:
         jne     gpt_err
         push    ds
         pop     es
-        mov     word ptr [dap_lba],1    ; the header
+        inc     word ptr [dap_lba]      ; the header, LBA 1 (0 until now)
         call    gpt_read
         jc      gpt_err
         cmp     word ptr ds:[GPT_BUF],'FE'      ; "EFI PART"
@@ -164,8 +164,13 @@ gpt_disk:
         mov     di,GPT_ALBA             ; entries, and how big each is
         mov     cx,7
         rep     movsw
-        cmp     word ptr ds:[GPT_ESIZE],0
-        jne     gpt_sector
+        mov     ax,ds:[GPT_ESIZE]       ; 128, 256 or 512 bytes, so the
+        cmp     ax,80h                  ; entries tile each sector
+        je      gpt_sector
+        cmp     ax,100h
+        je      gpt_sector
+        cmp     ax,200h
+        je      gpt_sector
 ; the two ways out, in the middle where every jump to them reaches
 gpt_none:
         mov     si,OFFSET msgNoAct

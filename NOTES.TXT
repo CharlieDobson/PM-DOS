@@ -1,6 +1,6 @@
 PM-DOS - Protected Mode DOS, a 32-bit DOS kernel
 ================================================
-Started 2026-08-06.  Version 0.62.
+Started 2026-08-06.  Version 0.67.
 
 The VDM - running 16-bit DOS programs
 -------------------------------------
@@ -17537,6 +17537,245 @@ TESTS
 
 Not done: BIN, IMAGES and the VM were last delivered from the 0.65
 version number; the next build brings them to 0.66.
+
+
+EVERYTHING WRITTEN SINCE 2026-10-14, MEASURED THE SAME WAY
+(2026-10-26)
+---------------------------------------------------------------------
+
+The two reviews of 2026-10-14 (the kernel's, and the applications')
+over everything that has come since and everything they left out: the
+network from the card drivers up (TCPIP.SYS, the socket calls, SMB1
+and SMB2/3, SMBFS.SYS and the redirector, SMBSRV.EXE, TLS, WINSOCK.DLL),
+PMDOS.386 and the parked kernel's side of it, USB, the firmware tables,
+exFAT, GPT, disk images, DEVICE= and the D32 loader, and the programs
+that read a file or a disk: ACROREAD, QBASIC, DEBUG, SCANDISK, DEFRAG,
+CHKDSK, LABEL, FDISK, SETUP, XARC, SYS, FC, FTP, SORT, LRGDISK.386.
+The question each time was the same - a length, count, offset or
+pointer that did not come from the code itself: is it measured against
+what it indexes before it is used?  Each place found was read again by
+two more readers, one following every path to the line and one doing
+the arithmetic, and 159 survived both.  156 of those are fixed and
+three are left as they are (below); of 15 more that the two readers
+split on or did not reach, 10 proved real on a third reading and are
+fixed too.  48 were a write outside a buffer, or a pointer from outside
+used as it came.  What held is the
+larger list and is not repeated here: SMBSRV's framing, FID table and
+listing builder, the SMB2 NTLM and AV-pair walks, TLS records and the
+DER walker, the bignum and curve code, the park mailbox, the NIC
+receive rings.
+
+The shape that came up most was a check written as an add:
+"if ( a + b > len )", which wraps when b comes from outside and is
+near 4G, and passes.  Every one found is now written as a subtract
+against what is left ("b > len - a"): TCPIP.SYS's send, receive and
+SETCA checks, SMB1's READ and FIND walks, SMBSRV's WRITE, the CFF, TTF
+and Type 1 readers, ACROREAD's pool and xref table, PMDOS.386's NDIS
+copies.
+
+THE ONES THAT WROTE PAST A BUFFER
+  SMBSRV.C     ECHO copied its byte count into the reply with no check
+               against the message or the reply buffer: the byte count
+               is now clamped to the message for every request, and
+               reply() refuses one that does not fit.
+  TCPIP.C      a connection accepted on a listener took a free slot
+               without clearing it, and inherited its last owner's
+               rings and TLS state; a closed TLS socket kept tls set
+               with its buffers freed.  Both cleared now.
+  PMDOS.386    pv_redir, pv_block, pd_pmapi and the INT 13h hook used
+               the client's pointer and count as given: each now checks
+               the span against the VM's window (and a block request
+               is one sector); the GDT copy at start-up is checked
+               against the room it has.  SMBFS.SYS ends every string
+               field of a request inside its field, and canon() stops
+               at the end of its output.
+  DEVLOAD.INC  a driver's headers were linked into the chain before
+               INIT's answers were checked, so a refused driver left
+               headers in a freed block; the IOCTL bounce copy took
+               the driver's count as its length.  Checked first now,
+               and the count is clamped to the request.
+  EXFAT.INC    the valid-data clip used a signed compare, so a read
+               2GB past ValidDataLength zero-filled far past the
+               caller's buffer.  Unsigned.
+  USB.INC      a string descriptor whose bLength is 3 made a count of
+               0, and the copy ran 4G times; a bulk endpoint of size 0
+               divided by zero in PMIO.  Both refused.
+  DEBUG        L and W used a 512-byte stack buffer for INT 25h/26h,
+               whose sector can be 4K; x87 QWORD operands filled 8
+               bytes into 4.  A 4K static sector buffer now, and W
+               reads the sector first so the rest of it is written
+               back as it was.
+  SYS.COM      the same 512-byte assumption: a volume whose logical
+               sector is not 512 bytes is refused.
+  FDISK        a cluster of more than 128 sectors was read into the
+               64K copy buffer whole; refused.
+  LRGDISK.386  AH=42h/43h and AH=02h/03h on the large drives did not
+               check the buffer's end against 110000h; the API copy
+               did not check the caller's selector limit.
+  FC           the /LBn count could wrap the line table's size, and a
+               long second name or extension ran past its buffers.
+  XARC         two joins into 260-byte paths and two error messages
+               into 128 bytes.
+  ACROREAD     CCITT rows ending in black read past the row's changes
+               and drew from what was there; a Type 4 calculator
+               function's operators did not check their operands; an
+               array function's parts wrote all their outputs into one
+               value; the soft mask's size was not checked; the pool
+               allocator's rounding wrapped; the xref table's size
+               wrapped on very large files.
+  QBASIC       CHAIN's COMMON arrays did not compare element sizes;
+               the Open dialog's directory was 3 bytes short; the help
+               file's directory was looked for past the environment;
+               a TYPE could contain itself, or nest until its size
+               wrapped ("Type not defined", "Overflow"); expressions
+               nested without limit.
+  SCANDISK     the depth limit freed a directory buffer that was never
+               loaded.
+
+THE REST, by what they did: reads past a buffer (SMB1/SMB2 short
+replies, the DTA name's NUL a byte past the DTA, NETFS's LFN record,
+the TTF/CFF/ACPI table reads, the OHCI and UHCI byte counts, MBRBOOT's
+GPT entry size, WINSOCK's address lengths and select counts); loops and
+recursion with no bound from the data (the PDF page tree, TrueType
+composites, CMap codespaces of length 0, cmap searches, the exFAT
+directory walks, FDISK's gap scans, FTP's reply loop, SORT /+n, CIRCLE
+with a NaN aspect, DEFRAG and SCANDISK cross-chain copies); and counts
+a server or driver gave back used before they were limited to what was
+asked (SMB1 and SMB2 WRITE, NETFS and RMNET2 writes, RMNET's EXEC read,
+the CSW-less short USB data stage, which now fails a READ(10) with
+INT 13h 0Ch).
+
+TWO OF THEM WERE NOT ABOUT INPUT AT ALL, and are worth saying on their
+own because a real machine will show them:
+  OHCI.INC     oh_run built the endpoint descriptor's packet size from
+               DX after EDX had been loaded with the placeholder TD's
+               address, so every OHCI endpoint got address bits for a
+               packet size.  QEMU does not look; a real OHCI chip does.
+  EL3C90X.C    UpListPtr and DnListPtr were written with MMIO32 at the
+               I/O port number, which is low memory, so the card never
+               got its lists.  They are I/O-port writes now.  The
+               'still downloading' test also read a bit the driver sets
+               itself.  Not run: no emulator has a 3C90x.
+
+CHANGES OF BEHAVIOUR THAT COME WITH THE FIXES
+  - TCPIP.SYS drops an IP fragment instead of reading it as a whole
+    datagram.  Reassembly is not done.
+  - SOCK_SETCA refuses (ERR_GENERAL) while a handshake still uses the
+    bundle.
+  - SMBSRV refuses a name under the share that is a character device
+    (CON, PRN, COM1, a DEVICE= driver), a component over 79
+    characters and a path over 299, instead of cutting them; it closes
+    a client's files when the client goes.
+  - A USB endpoint with packet size 0 or over 64 is not taken (the
+    device is listed as other); a short USB data stage ends the stage.
+  - An FADT shorter than the ACPI 1.0 fields is treated as no ACPI.
+  - ACROREAD: a CMap codespace of a length other than 1 to 4 bytes is
+    ignored; a composite glyph draws at most 256 components.
+  - CHKDSK /F and LABEL do not use the end mark in the last entry of
+    the 2MB they load when the FAT32 root's chain goes on past it: the
+    entry after it is in a cluster they did not read, so it cannot be
+    made the new end mark, and an old entry there would come back to
+    life.  CHKDSK says "Insufficient room in root directory" and LABEL
+    "Cannot make directory entry", and neither writes anything.  A
+    root whose chain ends at the 2MB still takes the entry (2026-10-27,
+    proven on the NT harnesses and on PM-DOS in DOSBox-X with a 65,535-
+    file root, old build beside new).
+
+LEFT AS THEY ARE: SMB2 does not verify the server's signatures (a
+feature, not a bound); ACROREAD's nested forms are bounded in depth but
+not in total work; QBASIC's PEEK/POKE reach is the design; PMDOS.386
+does not limit the drive number to the USB units - blk_bridge is where
+that belongs; WINSOCK's __WSAFDIsSet reads the program's own fd_set,
+whose size only the program knows; SETUP's COPY.C size sum is caught by
+the copy's own check.
+
+TESTED.  A mirror build, and a second one from the sources as they
+were before, compared: the binaries that differ are exactly the ones
+the fixes touch.  RUNTESTS on all seven rows, old and new: the only
+answers that differ are RMTEST's free count (10 clusters), SFTSCAN's
+table address (17 bytes) and CACHETST's "a write is owed" - layout.
+Re-recorded from a full -Update run, with PMD's version line and
+RMTEST's count that 0.66 had left: 27 files, then 101 on every row.
+On QEMU with an RTL8139: NICTEST and SOCKTEST the same on both builds;
+WGET over HTTPS to example.com fetched the page on both; NET USE /SMB1
+to the reference peer, then DIR, TYPE, COPY in and out, MD, DEL, RD
+and NET USE /DELETE, the same on both but for the times.  ACROHOST
+built from both trees, on MKPDF.PL's fixtures and DISK's PDFs: 101
+output files (info, text, rendered pages) the same byte for byte.  Not
+exercised: SMBSRV with a client, SMB2/3, WINSOCK.DLL and PMDOS.386
+under WfW, USB on real chips, the 3C90x, LRGDISK under Windows,
+anything on real hardware or 86Box.  Every assembly file assembles with
+wasm and with ML 6.13; IOPM.ASM under ML still stops at three short
+jumps in KEYBD.INC, as it did before.
+
+Files: CMD\ACROREAD (ccitt cff color doc font image interp lex rt shade
+ttf type1 view xref), CMD\CHKDSK (fat lost), CMD\LABEL\fat.c,
+CMD\DEBUG (DIS file RUN), CMD\DEFRAG (dirs move vol), CMD\FC\FC.C,
+CMD\FTP\FTP.C, CMD\FDISK (FDISK.ASM FDREMAP.INC), CMD\LRGDISK\
+lrgdisk.asm, CMD\NET\SMB (SMB1 SMB2 SMBSRV SMBSRVDOS), CMD\NET\TLS\
+TLSHS.C, CMD\NET\WINSOCK\WINSOCK.C, CMD\PMDOS386\pmdos386.asm,
+CMD\QBASIC (cexpr comp draw file ide_dlgs ide_help mach main sys_d32
+vm), CMD\SCANDISK (check filesys vol), CMD\SETUP (CFG DISK UNDO),
+CMD\SORT\SORT.ASM, CMD\SYS\SYS.ASM, CMD\XARC\XARC.C, BOOT\MBRBOOT.ASM,
+DOS\ (CONFIG DEVLOAD EXFAT IMAGE INT21 NDLOAD NETFS RMNET RMNET2 VBE),
+IO\ (ACPI OHCI USB USBMSC), DRV\ (NETCORE.C EL3C90X RTL8139 SMBFS
+TCPIP WD80X3), BASELINE\ (27).  PMIO.SYS 75,543 -> 75,765, PMDOS.SYS
+194,343 -> 194,710, RMDOS.SYS 63,989 -> 64,006; 35 files in S:\BIN in
+all.  S:\BIN, PMDOS.IMG, PMDOS2.IMG, TESTS.IMG, HD16.IMG (FATREPL), the
+five Setup images and the 86Box VM's four images carry it.  Still 0.66;
+not committed.
+
+
+v0.67 - EVERYTHING SINCE 2026-10-14 MEASURED AGAINST WHAT IT INDEXES
+        (2026-10-27)
+---------------------------------------------------------------------
+
+Charlie: "Write up a summary and commit new version 0.67".
+INC\PMVER.INC now says 67.  This release is everything since the
+v0.66 tag, which is the third bounds review and its CHKDSK/LABEL
+follow-up; the entry above ("EVERYTHING WRITTEN SINCE 2026-10-14,
+MEASURED THE SAME WAY") has the detail, and this one is the list.
+
+THE REVIEW
+  - 166 places fixed in everything written since 2026-10-14: the
+    network from the card drivers up, PMDOS.386, USB, ACPI, exFAT,
+    GPT, disk images, DEVICE= and the D32 loader, and ACROREAD,
+    QBASIC, DEBUG, SCANDISK, DEFRAG, CHKDSK, LABEL, FDISK, SETUP,
+    XARC, SYS, FC, FTP, SORT and LRGDISK.386.  48 of them were a
+    write outside a buffer or a pointer from outside used as given.
+  - Every check written as "a + b > len" is now "b > len - a".
+  - Two that were not about input: OHCI built every endpoint's packet
+    size from a TD's address, and EL3C90X wrote its list pointers as
+    memory at an I/O port number.
+
+CHANGES OF BEHAVIOUR
+  - TCPIP.SYS drops IP fragments; SOCK_SETCA refuses during a
+    handshake.
+  - SMBSRV refuses device names and over-long names instead of
+    cutting them, and closes a client's files when the client goes.
+  - USB endpoints of size 0 or over 64 are not taken; a short data
+    stage fails READ(10) with INT 13h 0Ch.
+  - An FADT shorter than ACPI 1.0's is no ACPI.
+  - CHKDSK /F and LABEL do not take the end mark in the last entry of
+    the 2MB they load when a FAT32 root's chain goes on past it.
+
+BUILT AND TESTED.  A scratch mirror build from the tree as committed:
+against S:\BIN only PMDOS.SYS, CMD.EXE and COMMAND.COM differ, at the
+same sizes (PMDOS.SYS 194,710, CMD.EXE 63,034, COMMAND.COM 33,472);
+PMDOS.IMG differs in those three files, PMDOS2.IMG and TESTS.IMG not
+at all.  RUNTESTS -Update on all seven rows: 101 on every row, and the
+only baselines that moved are PMD.OUT's version line, 0.66 to 0.67 (7
+files).  A first run had RMTEST's free count 3 clusters lower and
+CACHETST's "a write is owed" at 4 instead of 5: the mirror's BIN had been
+seeded with all of S:\BIN, which also holds nine files BUILD.CMD does
+not make and the earlier baselines were recorded without (FDISK.TST,
+FORMAT.TST, PMDOS.TST, USB.TST, HIDE81.COM, INT13GEO.COM, PMDOSND.SYS,
+WINSOCK.DLL, HD\AUTOEXEC.BAT); RUNTESTS puts every BIN file on its
+disk.  Taken out, the second full run moved only PMD.OUT.
+Delivered: S:\BIN (the three), BASELINE (7), PMDOS.IMG, PMDOS2.IMG,
+TESTS.IMG, HD16.IMG (the three by FATREPL), the five Setup images, and
+the four images into the 86Box VM.
+
 
 v0.61 - THE NUMBER CAUGHT UP (2026-09-30)
 ---------------------------------------------------------------------

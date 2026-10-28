@@ -222,8 +222,8 @@ ndl_relocated:
         mov     ecx,eax                 ; where the table is in the image
         add     eax,NDT_LEN
         jc      ndl_badimage
-        cmp     eax,[nd_keep]
-        ja      ndl_badimage
+        cmp     eax,[nd_reloff]         ; the image ends where the
+        ja      ndl_badimage            ; relocation table starts
         cmp     dword ptr [ebx+NDT_SIG],NDT_SIGVAL
         jne     ndl_badimage
         cmp     word ptr [ebx+NDT_VER],NDT_VERSION
@@ -239,13 +239,32 @@ ndl_relocated:
         jz      ndl_badimage
         add     ecx,NDT_DLEN
         jc      ndl_badimage
-        cmp     ecx,[nd_keep]
+        cmp     ecx,[nd_reloff]
         ja      ndl_badimage
         jmp     short ndl_tabok
 ndl_tabv1:
         test    word ptr [ebx+NDT_FLAGS],NDTF_DISK
         jnz     ndl_badimage
 ndl_tabok:
+
+        ; THE ENTRY POINTS, inside the image as the table is.  INIT has
+        ; to be there; PARK, HALT and CALL are there or are 0.
+        mov     eax,[ebx+NDT_INIT]
+        sub     eax,esi
+        cmp     eax,[nd_reloff]
+        jae     ndl_badimage
+        mov     ecx,NDT_PARK
+ndl_entry:
+        mov     eax,[ebx+ecx]
+        or      eax,eax
+        jz      ndl_entnext
+        sub     eax,esi
+        cmp     eax,[nd_reloff]
+        jae     ndl_badimage
+ndl_entnext:
+        add     ecx,4
+        cmp     ecx,NDT_CALL
+        jbe     ndl_entry
 
         ; a row, and the block trimmed to what stays
         cmp     dword ptr [nd_count],ND_MAX

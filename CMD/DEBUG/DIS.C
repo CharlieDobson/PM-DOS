@@ -421,7 +421,8 @@ static void decode_one( DEC *d )
             goto done;
         }
     } else {
-        for ( ;; ) {
+        /* fourteen at most: fifteen bytes is the longest instruction */
+        while ( d->pos < 14 ) {
             op = d->p[d->pos];
             if ( op == 0x66 ) { d->opsize = d->opsize == 16 ? 32 : 16; d->pos++; continue; }
             if ( op == 0x67 ) { d->adsize = d->adsize == 16 ? 32 : 16; d->pos++; continue; }
@@ -726,11 +727,16 @@ done:
 void disasm( ADDR addr, const u8 *code, int use32, DISASM *dis )
 {
     DEC d;
+    u8  buf[DIS_MAX * 2];
 
     mem_set( dis, 0, sizeof( *dis ) );
     dis->mem_seg = -1;
     dis->kind = DK_OTHER;
-    d.p = code;
+    /* the decode takes what an instruction needs and does not count:
+       give it zeros past the caller's DIS_MAX bytes to run into */
+    mem_cpy( buf, code, DIS_MAX );
+    mem_set( buf + DIS_MAX, 0, DIS_MAX );
+    d.p = buf;
     d.at = addr;
     d.pos = 0;
     d.opsize = use32 ? 32 : 16;
@@ -741,6 +747,16 @@ void disasm( ADDR addr, const u8 *code, int use32, DISASM *dis )
     d.x87 = 0;
     d.out = dis;
     decode_one( &d );
+    if ( dis->len > DIS_MAX ) {
+        /* longer than any instruction: the first byte on its own */
+        set_mnem( "DB" );
+        oplen = 0;
+        op_hex( code[0], 2 );
+        d.rep = 0;
+        d.x87 = 0;
+        dis->kind = DK_OTHER;
+        dis->mem_seg = -1;
+    }
     if ( dis->len == 0 || dis->len > DIS_MAX ) {
         dis->len = 1;
     }
@@ -844,6 +860,7 @@ void show_insn( ADDR addr, int with_mem )
     if ( with_mem && dis.mem_seg >= 0 ) {
         ADDR m;
         u8   v[4], ok[4];
+        u32  n = (u32)dis.mem_size;
         m.seg = dis.mem_seg == 0 ? cpu.es : dis.mem_seg == 1 ? cpu.cs :
                 dis.mem_seg == 2 ? cpu.ss : dis.mem_seg == 3 ? cpu.ds :
                 dis.mem_seg == 4 ? cpu.fs : cpu.gs;
@@ -852,7 +869,10 @@ void show_insn( ADDR addr, int with_mem )
         out_ch( ':' );
         out_hex( dis.mem_off, mode == MODE_NAT ? 8 : 4 );
         out_ch( '=' );
-        mem_get( m, v, dis.mem_size, ok );
+        if ( n > sizeof( v ) ) {
+            n = sizeof( v );            /* a QWORD shows its low dword */
+        }
+        mem_get( m, v, n, ok );
         if ( dis.mem_size == 1 ) out_hex( v[0], 2 );
         else if ( dis.mem_size == 2 ) out_hex( v[0] | ( v[1] << 8 ), 4 );
         else out_hex( v[0] | ( (u32)v[1] << 8 ) | ( (u32)v[2] << 16 ) | ( (u32)v[3] << 24 ), 8 );

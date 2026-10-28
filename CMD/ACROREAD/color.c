@@ -62,6 +62,15 @@ static const char *const calc_names[OP_COUNT] = {
     "not", "or", "true", "xor", "copy", "dup", "exch", "index", "pop", "roll"
 };
 
+/* how many each one wants on the stack */
+static const u8 calc_arity[OP_COUNT] = {
+    0, 1, 0,
+    1, 2, 2, 1, 1, 1, 1, 2, 2, 1,
+    2, 1, 1, 2, 2, 1, 1, 1, 1, 2,
+    1, 2, 2, 2, 0, 2, 2, 2, 2, 2,
+    1, 2, 0, 2, 1, 1, 2, 1, 1, 2
+};
+
 typedef struct {
     u8  op;
     fx  val;                    /* OP_NUM: the number; a jump: where to */
@@ -108,7 +117,7 @@ static void fx_array( DICT *dict, const char *key, fx *out, int max, int *got )
     *got = index;
 }
 
-static int calc_compile( LEX *lex, CALC *code, int at, int max )
+static int calc_compile( LEX *lex, CALC *code, int at, int max, int depth )
 {
     OBJ tok;
     int type, op, jz, jmp;
@@ -135,15 +144,18 @@ static int calc_compile( LEX *lex, CALC *code, int at, int max )
         }
         if ( lex->word[0] == '{' ) {
             /* { then } if     or     { then } { else } ifelse */
+            if ( depth >= 32 ) {
+                return at;
+            }
             jz = at++;
             code[jz].op = OP_JZ;
-            at = calc_compile( lex, code, at, max );
+            at = calc_compile( lex, code, at, max, depth + 1 );
             type = lex_obj( lex, &tok );
             if ( type == T_OP && lex->word[0] == '{' ) {
                 jmp = at++;
                 code[jmp].op = OP_JMP;
                 code[jz].val = at;
-                at = calc_compile( lex, code, at, max );
+                at = calc_compile( lex, code, at, max, depth + 1 );
                 lex_obj( lex, &tok );           /* ifelse */
                 code[jmp].val = at;
             } else {
@@ -217,6 +229,10 @@ FUNC *func_load( OBJ *obj )
             return NULL;
         }
         fn->bps = (int)dict_int( dict, "BitsPerSample", 8 );
+        if ( fn->bps != 1 && fn->bps != 2 && fn->bps != 4 && fn->bps != 8 && fn->bps != 12 &&
+             fn->bps != 16 && fn->bps != 24 && fn->bps != 32 ) {
+            return NULL;
+        }
         arr = dict_arr( dict, "Size" );
         total = fn->nout;
         for ( index = 0; index < fn->nin; index++ ) {
@@ -286,7 +302,7 @@ FUNC *func_load( OBJ *obj )
         fn->code = (CALC *)pool_alloc( doc.page_pool, 1024 * sizeof( CALC ) );
         lex_init( &lex, in, doc.page_pool, 1 );
         if ( lex_obj( &lex, &tok ) == T_OP && lex.word[0] == '{' ) {
-            fn->code_len = calc_compile( &lex, fn->code, 0, 1024 );
+            fn->code_len = calc_compile( &lex, fn->code, 0, 1024, 0 );
         }
         in_close( in );
         break;
@@ -351,7 +367,10 @@ static void eval_sampled( const FUNC *fn, const fx *in, fx *out )
             whole = FX_FLOOR( pos );
             frac = FX_FRAC( pos );
         } else {
-            whole = FX_ROUND( pos );
+            whole = FX_FLOOR( pos ) + (FX_FRAC( pos ) >= FX_HALF ? 1 : 0);
+        }
+        if ( whole > fn->size[index] - 1 ) {
+            whole = fn->size[index] - 1;
         }
         base += (u32)whole * stride;
         stride *= (u32)fn->size[index];
@@ -378,7 +397,7 @@ static void eval_calc( const FUNC *fn, const fx *in, fx *out )
         stack[top++] = in[index];
     }
     for ( pc = 0; pc < fn->code_len; pc++ ) {
-        if ( top < 0 || top > CALC_STACK - 4 ) {
+        if ( top < calc_arity[fn->code[pc].op] || top > CALC_STACK - 4 ) {
             break;
         }
         lhs = top >= 2 ? stack[top - 2] : 0;
@@ -493,7 +512,7 @@ static void eval_calc( const FUNC *fn, const fx *in, fx *out )
 
 void func_eval( FUNC *fn, const fx *in, fx *out )
 {
-    fx arg[MAX_IN], val, lo, hi;
+    fx arg[MAX_IN], val, lo, hi, part_out[MAX_COMPS];
     int index, part;
 
     for ( index = 0; index < fn->nin && index < MAX_IN; index++ ) {
@@ -504,6 +523,9 @@ void func_eval( FUNC *fn, const fx *in, fx *out )
         if ( arg[index] > fn->domain[index * 2 + 1] ) {
             arg[index] = fn->domain[index * 2 + 1];
         }
+    }
+    for ( ; index < MAX_IN; index++ ) {
+        arg[index] = 0;
     }
     switch ( fn->type ) {
     case FN_SAMPLED:
@@ -520,16 +542,17 @@ void func_eval( FUNC *fn, const fx *in, fx *out )
         }
         lo = part == 0 ? fn->domain[0] : fn->bounds[part - 1];
         hi = part == fn->count - 1 ? fn->domain[1] : fn->bounds[part];
-        val = interp( arg[0], lo, hi, fn->part_encode[part * 2], fn->part_encode[part * 2 + 1] );
-        func_eval( fn->parts[part], &val, out );
+        arg[0] = interp( arg[0], lo, hi, fn->part_encode[part * 2], fn->part_encode[part * 2 + 1] );
+        func_eval( fn->parts[part], arg, out );
         return;                         /* the part has clipped it to its own range */
     case FN_CALC:
         eval_calc( fn, arg, out );
         break;
     case FN_ARRAY:
         for ( index = 0; index < fn->count; index++ ) {
-            func_eval( fn->parts[index], arg, &val );
-            out[index] = val;
+            part_out[0] = 0;
+            func_eval( fn->parts[index], arg, part_out );
+            out[index] = part_out[0];
         }
         return;
     }

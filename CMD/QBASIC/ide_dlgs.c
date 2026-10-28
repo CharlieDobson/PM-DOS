@@ -110,7 +110,7 @@ typedef struct {
     STRLIST files, dirs;
     char    name[PATH_MAX];
     char    pattern[PATH_MAX];
-    char    dirtext[PATH_MAX];
+    char    dirtext[PATH_MAX + 3];
     char    result[PATH_MAX];
     int     name_ctl, files_ctl, dirs_ctl;
 } FDATA;
@@ -122,7 +122,9 @@ static void cur_dir( char *out )
     out[0] = (char)('A' + drv);
     out[1] = ':';
     out[2] = '\\';
-    sys_get_cwd( drv, out + 3 );
+    if ( sys_get_cwd( drv, out + 3 ) != 0 ) {
+        out[3] = 0;
+    }
 }
 
 /* the full name of what was typed: -> 0 if it will not fit a path */

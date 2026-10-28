@@ -150,12 +150,15 @@ static int bpb_read( const u8 *boot, BPB *bpb )
         return 1;
     }
     rootsecs = ((u32)bpb->rootents * 32 + SECSIZE - 1) / SECSIZE;
-    bpb->fatlba = bpb->rsvd;
-    bpb->rootlba = bpb->rsvd + (u32)bpb->nfats * bpb->spf;
-    bpb->datalba = bpb->rootlba + rootsecs;
-    if ( bpb->datalba >= bpb->total ) {
+    if ( bpb->rsvd >= bpb->total || bpb->spf > (bpb->total - bpb->rsvd) / bpb->nfats ) {
         return 1;
     }
+    bpb->fatlba = bpb->rsvd;
+    bpb->rootlba = bpb->rsvd + (u32)bpb->nfats * bpb->spf;
+    if ( rootsecs >= bpb->total - bpb->rootlba ) {
+        return 1;
+    }
+    bpb->datalba = bpb->rootlba + rootsecs;
     bpb->clusters = (bpb->total - bpb->datalba) / bpb->spc;
     bpb->fat = bpb->clusters < 4085 ? 12 : bpb->clusters < 65525 ? 16 : 32;
     if ( bpb->fat == 32 && bpb->rootents ) {
@@ -255,7 +258,7 @@ static void examine_volume( void )
    6.22 left it. */
 static void find_gap( const u8 *mbr, int table )
 {
-    u32 start[5], end[5], lo, hi, best = 0, best_lba = 0, cyl, disk_end, tmp;
+    u32 start[5], end[5], lo, hi, best = 0, best_lba = 0, cyl, disk_end, tmp, size;
     int n = 0, i, j, slot = -1;
 
     for ( i = 0; i < 4; i++ ) {
@@ -267,7 +270,10 @@ static void find_gap( const u8 *mbr, int table )
             continue;
         }
         start[n] = RD32( ent + 8 );
-        end[n] = start[n] + RD32( ent + 12 );
+        size = RD32( ent + 12 );
+        /* an entry that runs off the disk ends with it */
+        end[n] = start[n] < tgt.disk_secs && size <= tgt.disk_secs - start[n] ?
+                 start[n] + size : tgt.disk_secs;
         n++;
     }
     /* in order of where they start */
@@ -286,7 +292,7 @@ static void find_gap( const u8 *mbr, int table )
     end[n] = disk_end;                  /* last area                      */
     lo = 0;
     for ( i = 0; i <= n; i++ ) {
-        hi = start[i];
+        hi = start[i] < disk_end ? start[i] : disk_end;
         if ( lo == 0 ) {
             lo = tgt.spt;
         } else if ( lo % cyl ) {
@@ -298,7 +304,7 @@ static void find_gap( const u8 *mbr, int table )
             best_lba = lo;
         }
         if ( end[i] > lo ) {
-            lo = end[i];
+            lo = end[i] < disk_end ? end[i] : disk_end;
         }
     }
     tgt.gap_lba = best_lba;
@@ -326,8 +332,9 @@ void disk_examine( void )
     DRIVEINFO di;
     DISKINFO dk;
     BPB bpb;
-    int i, table;
+    int i, j, table;
     const u8 *ent;
+    u32 lba, size;
 
     mem_set( &tgt, 0, sizeof( tgt ) );
     tgt.final = 'C';
@@ -408,6 +415,27 @@ void disk_examine( void )
         return;
     }
     (void)is_ext;
+    /* a partition that runs off the disk or over another is left alone */
+    if ( tgt.part_lba == 0 || tgt.part_lba >= tgt.disk_secs || tgt.part_secs == 0 ||
+         tgt.part_secs > tgt.disk_secs - tgt.part_lba ) {
+        tgt.state = TG_FOREIGN;
+        tgt.drive = 2;
+        return;
+    }
+    for ( j = 0; j < 4; j++ ) {
+        ent = sec + 0x1BE + j * 16;
+        if ( j == tgt.slot || ent[4] == 0 ) {
+            continue;
+        }
+        lba = RD32( ent + 8 );
+        size = RD32( ent + 12 );
+        if ( size && lba < tgt.part_lba + tgt.part_secs &&
+             (lba >= tgt.part_lba || tgt.part_lba - lba < size) ) {
+            tgt.state = TG_FOREIGN;
+            tgt.drive = 2;
+            return;
+        }
+    }
     tgt.drive = letter_of( tgt.bios, tgt.part_lba );
     tgt.final = 'C';
     if ( tgt.drive < 0 ) {
@@ -818,7 +846,8 @@ static u32 root_cluster( const BPB *bpb, const char *name83, u8 *buf )
                 return 0;
             }
             if ( mem_cmp( buf + i, name83, 11 ) == 0 && !(buf[i + 11] & FA_LABEL) ) {
-                return RD16( buf + i + 26 ) | ((u32)RD16( buf + i + 20 ) << 16);
+                return RD16( buf + i + 26 ) |
+                       (bpb->fat == 32 ? (u32)RD16( buf + i + 20 ) << 16 : 0);
             }
         }
     }
@@ -852,7 +881,7 @@ static u32 stage2_file( const BPB *bpb )
         plat_flush();
         plat_vol_remount( tgt.drive );
         first = root_cluster( bpb, "PMBOOT  SYS", buf );
-        if ( first < 2 ) {
+        if ( first < 2 || first - 2 >= bpb->clusters || need > bpb->clusters - (first - 2) ) {
             break;
         }
         /* in one piece? */

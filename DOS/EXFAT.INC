@@ -68,6 +68,7 @@ XFR_GROW        EQU     64              ; records the table starts with
 ; what the entry dir_seek last made was made from: XVK_* in FAT.INC
 
 XV_SETMAX       EQU     19              ; entries in the biggest set
+XV_DIRMAX       EQU     800000h         ; entries in the biggest directory
 
 ;=====================================================================
 ; THE MOUNT
@@ -590,6 +591,8 @@ xbr_lp:
         jz      xbr_one
         mov     ebx,eax
         call    xv_fatget
+        jc      xbr_out
+        call    xv_cluschk
         jc      xbr_out
         inc     ebx
         cmp     eax,ebx
@@ -1894,7 +1897,7 @@ xv_vdlclip:
         cmp     ebx,edx
         jbe     xvc_out                 ; all of it valid
         sub     edx,ecx                 ; EDX = valid bytes at the front
-        jg      xvc_some
+        ja      xvc_some
         xor     edx,edx
 xvc_some:
         add     edi,edx
@@ -1996,6 +1999,8 @@ xsk_slot:
         mov     byte ptr [xv_ekind],XVK_NEW
         jmp     xsk_out
 xsk_raw:
+        cmp     ebx,XV_DIRMAX           ; as big as a directory can be
+        jae     xsk_fail
         mov     esi,OFFSET sec_buf      ; (the raw seek leaves it in there)
         call    dir_rawseek
         jc      xsk_fail
@@ -3238,6 +3243,9 @@ xv_findrun:
         xor     ebx,ebx
         xor     edx,edx                 ; EDX = the run so far
 xfr_lp:
+        lea     eax,[ebx+edx]
+        cmp     eax,XV_DIRMAX           ; as big as a directory can be
+        jae     xfr_fail
         push    ebx
         add     ebx,edx
         call    dir_rawseek
@@ -3551,6 +3559,8 @@ xv_lblwrite:
         ; the label entry that is there, if any
         xor     ebx,ebx
 xlw_find:
+        cmp     ebx,XV_DIRMAX
+        jae     xlw_fail
         call    dir_rawseek
         jc      xlw_new
         mov     al,[esi]
@@ -3651,11 +3661,18 @@ xde_zero:
         loop    xde_zero
         ; the tail, and the new cluster after it
         mov     eax,[dc_start]
+        mov     edi,[fat_totclus]       ; EDI = the most a chain can have
 xde_tail:
         mov     ecx,eax
         call    fat_next
         cmp     eax,[fat_eoc]
-        jb      xde_tail
+        jae     xde_end
+        dec     edi
+        jnz     xde_tail
+        mov     eax,ebx                 ; a chain that goes round: the new
+        call    fat_freechain           ; cluster goes back
+        jmp     xde_fail
+xde_end:
         mov     eax,ecx
         mov     edx,ebx
         call    fat_setnext

@@ -271,12 +271,12 @@ static int ca_next(const unsigned char *bundle, int len, int *pos,
     l = bundle[p+1]; hdr = 2;
     if (l & 0x80) {
         int nb = l & 0x7F, k;
-        if (nb == 0 || nb > 4 || p + 2 + nb > len) return 0;
+        if (nb == 0 || nb > 3 || p + 2 + nb > len) return 0;
         l = 0;
         for (k = 0; k < nb; k++) l = (l << 8) | bundle[p+2+k];
         hdr = 2 + nb;
     }
-    if (p + hdr + l > len) return 0;
+    if (l < 0 || l > len - (p + hdr)) return 0;
     *cert = bundle + p;
     *certlen = hdr + l;
     *pos = p + hdr + l;

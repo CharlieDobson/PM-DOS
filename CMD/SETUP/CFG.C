@@ -467,7 +467,8 @@ void cfg_read_current( void )
     }
     if ( tgt.olddir[0] ) {
         tgt.olddir[0] = tgt.final;
-        if ( !path_valid( tgt.olddir ) ) {
+        /* room for a '\' and an 8.3 name after it */
+        if ( !path_valid( tgt.olddir ) || str_len( tgt.olddir ) > PATHLEN - 1 - 13 ) {
             tgt.olddir[0] = 0;
         }
     }

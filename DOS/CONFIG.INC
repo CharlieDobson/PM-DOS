@@ -997,11 +997,18 @@ ms_notthere:
         dec     edx                     ; write over the empty string
 ms_at:
         mov     esi,OFFSET menv_tmp
+        mov     edi,esi
+        xor     eax,eax
+        or      ecx,-1
+        cld
+        repne   scasb
+        not     ecx                     ; ECX = its length with the NUL
+        lea     eax,[edx+ecx]
+        cmp     eax,MENV_MAX - 2        ; room for it and the empty string,
+        ja      ms_bad                  ; or nothing is written
         mov     edi,OFFSET master_env
         add     edi,edx
 ms_app:
-        cmp     edx,MENV_MAX - 2
-        jae     ms_bad
         mov     al,[esi]
         mov     [edi],al
         inc     esi

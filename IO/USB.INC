@@ -978,6 +978,8 @@ usb_mkstage:
         mov     byte ptr [usb_mkflags],ah
         mov     word ptr [usb_mkpid],dx
         call    dev_hc                  ; ESI -> the controller
+        cmp     word ptr [usb_mkps],0
+        je      ums_fail                ; no packet size, no packets
         or      ecx,ecx
         jnz     ums_lp
         ; one zero-length packet
@@ -1270,6 +1272,11 @@ ucq_lp:
         je      ucq_error
         test    byte ptr [ebp+EL_FLAGS],ELF_SETUP
         jnz     ucq_next
+        movzx   edx,word ptr [ebp+EL_LEN16]
+        cmp     ecx,edx
+        jbe     ucq_lenok
+        mov     ecx,edx                 ; never more than it was given
+ucq_lenok:
         add     ebx,ecx
         test    byte ptr [ebp+EL_FLAGS],ELF_IN
         jz      ucq_next
@@ -2519,10 +2526,18 @@ uec_getstr:
         push    esi
         push    edi
         lea     esi,[edi+2]
-        movzx   ecx,byte ptr [edi]      ; bLength
+        cmp     ecx,2                   ; ECX = what came back
+        jb      uec_strdone
+        movzx   eax,byte ptr [edi]      ; bLength
+        cmp     eax,ecx
+        jbe     uec_strblen
+        mov     eax,ecx                 ; a short answer: only what came
+uec_strblen:
+        mov     ecx,eax
         sub     ecx,2
         jbe     uec_strdone
         shr     ecx,1
+        jz      uec_strdone             ; an odd byte is no character
         cmp     ecx,31
         jbe     uec_strlen
         mov     ecx,31
@@ -2888,6 +2903,11 @@ upc_ep:
         jne     upc_next
         cmp     edx,7
         jb      upc_next
+        movzx   edi,word ptr [esi+4]    ; wMaxPacketSize
+        and     edi,7FFh
+        jz      upc_next
+        cmp     edi,64                  ; the most a full-speed one has
+        ja      upc_next
         mov     al,[esi+3]              ; bmAttributes: transfer type
         and     al,3
         mov     ah,[esi+2]              ; bEndpointAddress
@@ -2902,8 +2922,7 @@ upc_ep:
         jne     upc_next
         and     ah,0Fh
         mov     [ebx+USBD_EPIN],ah
-        mov     ax,[esi+4]
-        mov     [ebx+USBD_MAXPIN],ax
+        mov     [ebx+USBD_MAXPIN],di
         jmp     upc_next
 upc_bulk:
         cmp     al,2
@@ -2914,16 +2933,14 @@ upc_bulk:
         jne     upc_next
         and     ah,0Fh
         mov     [ebx+USBD_EPIN],ah
-        mov     ax,[esi+4]
-        mov     [ebx+USBD_MAXPIN],ax
+        mov     [ebx+USBD_MAXPIN],di
         jmp     upc_next
 upc_bulkout:
         cmp     byte ptr [ebx+USBD_EPOUT],0
         jne     upc_next
         and     ah,0Fh
         mov     [ebx+USBD_EPOUT],ah
-        mov     ax,[esi+4]
-        mov     [ebx+USBD_MAXPOUT],ax
+        mov     [ebx+USBD_MAXPOUT],di
         jmp     upc_next
 
 upc_done:
@@ -3352,6 +3369,8 @@ ehci_handdown:
         mov     [esi+HC_EECP],cl
         cmp     ecx,40h
         jb      ehd_stop
+        cmp     ecx,0F8h                ; both its words inside the header
+        ja      ehd_stop
         ; BIOS owned (bit 16)?  Ask for it (bit 24) and wait
         mov     al,cl
         call    pci_read

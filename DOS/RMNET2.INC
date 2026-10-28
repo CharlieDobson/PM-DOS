@@ -233,6 +233,8 @@ n2_findnext:
         mov     eax,dword ptr es:[di+N2S_GEN]
         mov     [n2_savegen],eax
         mov     eax,dword ptr es:[di+N2S_IDX]
+        test    eax,eax                                 ; no listing is that long
+        js      nfn_nomore
         mov     [n2_saveidx],eax
         call    n2_reqzero
         mov     dword ptr [n2_req+NR_OP],REDIR_FINDNEXT
@@ -602,8 +604,12 @@ nwr_chunk:
         mov     eax,dword ptr [n2_req+NR_RESULT]
         or      eax,eax
         jz      nwr_end
-        add     [n2_done],eax
         mov     ebx,[n2_chunk]
+        cmp     eax,ebx
+        jbe     nwr_okcnt
+        mov     eax,ebx                                 ; never more than was sent
+nwr_okcnt:
+        add     [n2_done],eax
         cmp     eax,ebx
         jb      nwr_end                                 ; short: the disk is full
         jmp     nwr_loop

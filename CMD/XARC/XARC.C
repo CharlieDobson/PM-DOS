@@ -656,7 +656,7 @@ static void default_dest( char *dst, int size )
 /* the extraction into g_dest, and the word about how it went */
 static int run_extract( const int *items, int count )
 {
-    char text[128];
+    char text[192];
     int rc;
 
     g_ask_names_off = 0;
@@ -1321,7 +1321,7 @@ static void nest_unwind_all( void )
 
 static void browse_into( int index )
 {
-    char root[SZ_MAX_NAME], dir[SZ_MAX_NAME], name[SZ_MAX_NAME], full[SZ_MAX_NAME];
+    char root[SZ_MAX_NAME], dir[SZ_MAX_NAME], name[SZ_MAX_NAME], full[SZ_MAX_NAME * 2];
     char outer_pw[AC_MAX_PW + 1], text[40 + 64 + 160], shown[48];
     ArcFile *child = NULL;
     NEST *level;
@@ -1343,6 +1343,10 @@ static void browse_into( int index )
         return;
     }
     temp_root( root, sizeof( root ) );
+    if ( strlen( root ) + 12 > sizeof( dir ) ) {
+        msg( "Browse", "The TEMP folder's path is too long." );
+        return;
+    }
     sprintf( dir, "%s\\XARCN%d.TMP", root, g_nest_depth );
     _mkdir( dir );                          /* already there is not an error */
     prog_open( "Opening" );
@@ -1364,6 +1368,12 @@ static void browse_into( int index )
         return;
     }
     sprintf( full, "%s\\%s", dir, name );
+    if ( strlen( full ) >= sizeof( level->tmp_file ) ) {
+        remove( full );
+        _rmdir( dir );
+        msg( "Browse", "That entry's name is too long to unpack here." );
+        return;
+    }
     /* the outer archive's password as it now stands, for the way back */
     strcpy( outer_pw, g_password );
     wait_open( "Opening, please wait..." );
@@ -1483,7 +1493,7 @@ static void view_disk_file( const char *path, const char *shown )
 /* unpacked to TEMP, shown, and deleted again */
 static void view_entry( int index )
 {
-    char root[SZ_MAX_NAME], dir[SZ_MAX_NAME], name[SZ_MAX_NAME], full[SZ_MAX_NAME], text[128];
+    char root[SZ_MAX_NAME], dir[SZ_MAX_NAME], name[SZ_MAX_NAME], full[SZ_MAX_NAME * 2], text[192];
     int rc;
 
     if ( g_arc == NULL || index < 0 || index >= ArcNumEntries( g_arc ) ) {
@@ -1494,6 +1504,10 @@ static void view_entry( int index )
         return;
     }
     temp_root( root, sizeof( root ) );
+    if ( strlen( root ) + 11 > sizeof( dir ) ) {
+        msg( "View", "The TEMP folder's path is too long." );
+        return;
+    }
     sprintf( dir, "%s\\XARCV.TMP", root );
     _mkdir( dir );
     prog_open( "Reading" );
@@ -1743,7 +1757,7 @@ static void act_toggle_ask_names( void )
 
 static void act_test( void )
 {
-    char text[128];
+    char text[192];
     int rc;
 
     if ( g_arc == NULL ) {

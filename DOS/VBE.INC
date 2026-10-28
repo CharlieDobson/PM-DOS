@@ -559,6 +559,8 @@ vap_vbe:
 vap_pitch:
         movzx   edi,word ptr ds:[XFER_BUF+VMI_YRES]
         imul    edi,edx                         ; EDI = one screen
+        or      edi,edi
+        jz      vap_fail                        ; no lines, or no pitch
         movzx   ecx,word ptr [vbe_mem64]
         shl     ecx,16                          ; ECX = all of video memory
         cmp     ecx,edi

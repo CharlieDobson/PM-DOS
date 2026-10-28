@@ -242,7 +242,7 @@ static void read_private( T1 *font )
                             break;                  /* RD, or -| */
                         }
                         pos++;                      /* and the one space after it */
-                        if ( pos + size > end || font->nchars >= index ) {
+                        if ( pos > end || size > end - pos || font->nchars >= index ) {
                             break;
                         }
                         font->chars[font->nchars].name = word_keep( font, text, span.off, span.len );
@@ -268,7 +268,7 @@ static void read_private( T1 *font )
                 break;
             }
             pos++;
-            if ( pos + size > end ) {
+            if ( pos > end || size > end - pos ) {
                 break;
             }
             if ( index < font->nsubrs ) {
@@ -448,7 +448,7 @@ static void t1_exec( T1RUN *run, const T1SPAN *span )
     int b0, other, count, index;
     T1SPAN sub;
 
-    if ( run->depth > 8 || len <= skip || span->off + len > font->plain_len ) {
+    if ( run->depth > 8 || len <= skip || len > font->plain_len || span->off > font->plain_len - len ) {
         return;
     }
     /* a subroutine's caller is still running its own, so each level
@@ -469,10 +469,11 @@ static void t1_exec( T1RUN *run, const T1SPAN *span )
     }
 
     for ( at = 0; at < len && !run->done; ) {
-        if ( run->budget-- == 0 ) {
+        if ( run->budget == 0 ) {
             run->done = 1;
             break;
         }
+        run->budget--;
         b0 = prog[at++];
         if ( b0 >= 32 ) {
             if ( run->sp >= 30 ) {

@@ -377,9 +377,17 @@ POOL *pool_new( void )
 
 static void *chunk_new( POOL *pool, u32 size, int must )
 {
-    PCHUNK *chunk = (PCHUNK *)(must ? xalloc( size + sizeof( PCHUNK ) )
-                                    : try_alloc( size + sizeof( PCHUNK ) ));
+    PCHUNK *chunk;
 
+    if ( size > 0xFFFFFF00UL - HDR - sizeof( PCHUNK ) ) {
+        if ( must ) {
+            out_of_memory();            /* there is never room for it */
+            sys_exit( 8 );
+        }
+        return NULL;
+    }
+    chunk = (PCHUNK *)(must ? xalloc( size + sizeof( PCHUNK ) )
+                            : try_alloc( size + sizeof( PCHUNK ) ));
     if ( chunk == NULL ) {
         return NULL;
     }
@@ -395,11 +403,18 @@ static void *chunk_new( POOL *pool, u32 size, int must )
     return chunk + 1;
 }
 
+/* up to a whole number of u32s; a size too large to round is left as
+   it is, for chunk_new to turn down */
+static u32 round4( u32 size )
+{
+    return size > 0xFFFFFF00UL ? size : (size + 3u) & ~3u;
+}
+
 void *pool_alloc( POOL *pool, u32 size )
 {
     void *ptr;
 
-    size = (size + 3u) & ~3u;
+    size = round4( size );
     if ( size > POOL_SMALL ) {
         return chunk_new( pool, size, 1 );
     }
@@ -415,12 +430,12 @@ void *pool_alloc( POOL *pool, u32 size )
 
 void *pool_big( POOL *pool, u32 size )
 {
-    return chunk_new( pool, (size + 3u) & ~3u, 1 );
+    return chunk_new( pool, round4( size ), 1 );
 }
 
 void *pool_try_big( POOL *pool, u32 size )
 {
-    return chunk_new( pool, (size + 3u) & ~3u, 0 );
+    return chunk_new( pool, round4( size ), 0 );
 }
 
 void pool_unbig( void *ptr )

@@ -371,6 +371,10 @@ void vm_common_give( void )
             carry_release( cv, data );
             continue;
         }
+        if ( cv->is_array && *(ARR **)data != NULL && (*(ARR **)data)->esize != type_bytes( to->type ) ) {
+            carry_release( cv, data );          /* STRING * n or a TYPE of another size */
+            continue;
+        }
         carry_release( to, vm.gdata + to->offset );    /* what the new program made there */
         mem_cpy( vm.gdata + to->offset, data, cv->size );
     }

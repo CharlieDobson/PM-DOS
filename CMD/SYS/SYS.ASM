@@ -141,6 +141,13 @@ sy_up:
         cmp     al,[src_type]
         jne     sy_mismatch
 
+        ; and 512-byte sectors on both, which is all the boot code and
+        ; stage 2 know - and the size of a sector buffer below
+        mov     dl,[src_log]
+        call    sy_sec512
+        mov     dl,[tgt_log]
+        call    sy_sec512
+
 ;--- the boot sector: source code, target BPB ------------------------
         mov     al,[src_log]            ; read both boot sectors
         mov     ebx,[src_sec]
@@ -331,6 +338,24 @@ sy_die:
         int     21h
         mov     ax,4C01h
         int     21h
+sy_secsize:
+        mov     edx,OFFSET msg_secsize
+        jmp     short sy_die
+
+;---------------------------------------------------------------------
+; sy_sec512 - DL = a 0-based drive.  Returns if its sectors are 512
+;             bytes; if they are not, SYS stops here with the message.
+;             Behind the errors, so that its jumps to them go back.
+;---------------------------------------------------------------------
+sy_sec512:
+        inc     dl                      ; 1Ch speaks 1-based drives
+        mov     ah,1Ch                  ; CX = bytes per sector
+        int     21h
+        cmp     al,0FFh
+        je      sy_baddrv
+        cmp     cx,512
+        jne     sy_secsize
+        ret
 
 ;---------------------------------------------------------------------
 ; sy_copyopt - sy_copy for a file the source disk may not have.  A file
@@ -557,6 +582,7 @@ msg_baddrv  db  'Invalid drive specification',13,10,'$'
 msg_same    db  'Source and target are the same drive',13,10,'$'
 msg_mismatch db 'Source and target filesystems differ',13,10,'$'
 msg_exfat   db  'An exFAT drive cannot hold the system',13,10,'$'
+msg_secsize db  'The system needs 512-byte sectors on both drives',13,10,'$'
 msg_noroom  db  'No room for system on destination disk',13,10,'$'
 msg_ioerr   db  'Disk error writing the system areas',13,10,'$'
 msg_nofile  db  'Cannot copy the system files',13,10,'$'

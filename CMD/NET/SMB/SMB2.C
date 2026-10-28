@@ -639,7 +639,11 @@ int smb2_write( smb2_client *cl, const smb2_fh *fh, unsigned long off_lo, unsign
     if ( recv_msg( cl ) != 0 ) return -1;
     if ( cl->last_status != ST_SUCCESS ) return -1;
     if ( cl->recvlen < 64 + 8 ) return -1;
-    return (int)get32( cl->recvbuf + 64 + 4 );          /* Count written */
+    {
+        unsigned long count = get32( cl->recvbuf + 64 + 4 );   /* Count written */
+        if ( count > (unsigned long)len ) count = (unsigned long)len;
+        return (int)count;
+    }
 }
 
 int smb2_delete( smb2_client *cl, const char *path )
@@ -782,6 +786,7 @@ int smb2_list_dir( smb2_client *cl, const char *dir, const char *pattern,
         if ( recv_msg( cl ) != 0 ) { rc = -1; break; }
         if ( cl->last_status == ST_NO_MORE_FILES ) break;
         if ( cl->last_status != ST_SUCCESS ) { rc = -1; break; }
+        if ( cl->recvlen < 64 + 8 ) { rc = -1; break; }
 
         b = cl->recvbuf + 64;
         outoff = (int)get16( b + 2 );
@@ -789,6 +794,7 @@ int smb2_list_dir( smb2_client *cl, const char *dir, const char *pattern,
         /* bound each against recvlen separately: a hostile length must not
            overflow the sum, and the window must lie inside what we received */
         if ( outoff < 0 || outlen < 0 || outoff > cl->recvlen || outlen > cl->recvlen - outoff ) { rc = -1; break; }
+        if ( outlen > 0 && outoff < 64 + 8 ) { rc = -1; break; }
 
         /* every read below is kept inside [outoff, outoff+outlen) */
         pos = outoff;

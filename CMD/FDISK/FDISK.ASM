@@ -171,7 +171,8 @@ CHN_BADEBR      EQU     1               ; a record that would not read, or
                                         ; had no signature
 CHN_LOOP        EQU     2               ; a next pointer that goes nowhere new
 CHN_LONG        EQU     3               ; more links than EBR_MAX
-CHN_RANGE       EQU     4               ; a next pointer outside the container
+CHN_RANGE       EQU     4               ; a next pointer or a volume outside
+                                        ; the container
 
 ;--- a GPT disk (FDGPT.INC) ------------------------------------------
 GPT_MAXP        EQU     128             ; entries edited: the array every tool
@@ -1081,6 +1082,8 @@ fc_got:
         mov     [chn_cur],eax
         mov     eax,[esi+PE_SECS]
         mov     [chn_ext],eax
+        add     eax,[chn_base]
+        jc      fc_range                ; a container that wraps 4GB is not one
 
         mov     edi,[chn_tbl]
 fc_step:
@@ -1116,10 +1119,20 @@ fc_step:
         mov     [edi+CH_TYPE],al
         mov     eax,[esi+PE_START]
         add     eax,[chn_cur]           ; slot 0 is relative to THIS record
+        jc      fc_range
+        cmp     eax,[chn_cur]
+        jbe     fc_range                ; and the volume comes after it
         mov     [edi+CH_VSTART],eax
         mov     edx,[esi+PE_SECS]
+        or      edx,edx
+        jz      fc_range
         mov     [edi+CH_VSECS],edx
         add     eax,edx
+        jc      fc_range
+        mov     ecx,[chn_base]
+        add     ecx,[chn_ext]
+        cmp     eax,ecx
+        ja      fc_range                ; and ends inside the container
         sub     eax,[chn_cur]
         mov     [edi+CH_EXTENT],eax     ; record, gap and volume together
 fc_novol:
@@ -1585,12 +1598,20 @@ fv_gottot:                              ; volume needs the 32-bit one
         jne     fv_bad
         cmp     dword ptr [fv_spc],0
         je      fv_bad
+        mov     eax,[fv_spc]            ; a power of two, and no bigger than
+        cmp     eax,65536 / SEC_BYTES   ; the 64K that cpy_buf holds
+        ja      fv_bad
+        lea     edx,[eax-1]
+        test    eax,edx
+        jnz     fv_bad
         cmp     dword ptr [fv_nfats],0
         je      fv_bad
         cmp     dword ptr [fv_spf],0
         je      fv_bad                  ; neither field has a number in it,
                                         ; so this is not a FAT volume
         call    fv_derive
+        cmp     dword ptr [fv_clusters],0
+        je      fv_bad                  ; no room left for any data
         cmp     dword ptr [fv_clusters],FAT32_MAXCLUS
         ja      fv_bad                  ; more clusters than FAT32 can number
         mov     byte ptr [fv_valid],1
@@ -1618,9 +1639,13 @@ fv_derive:
 
         ; data sectors = total - (reserved + FATs + root)
         mov     eax,[fv_nfats]
-        imul    eax,[fv_spf]
+        mul     dword ptr [fv_spf]
+        or      edx,edx
+        jnz     fv_nodata               ; FATs bigger than any disk
         add     eax,[fv_rsvd]
+        jc      fv_nodata
         add     eax,[fv_rootsec]
+        jc      fv_nodata
         mov     ecx,eax                 ; ECX = everything that is not data
         mov     eax,[fv_total]
         sub     eax,ecx
@@ -2346,6 +2371,9 @@ rp_ovl:
         ; they overlap unless one ends at or before the other starts
         mov     eax,[esi+NB_START]
         add     eax,[esi+NB_SECS]       ; the wall's end
+        jnc     rp_ovlend
+        mov     eax,0FFFFFFFFh          ; one that wraps 4GB reaches the top
+rp_ovlend:
         mov     edx,[pl_nstart]
         cmp     edx,eax
         jae     rp_ovlstep              ; we start at or after its end
@@ -4402,8 +4430,9 @@ rw_geom:
         jb      rw_tname                ; the same numbers
         cmp     dword ptr [fg_exec+FG_BITS],32
         jne     rw_tname
-        mov     eax,[edi+BPB_ROOTCLUS]
+        mov     eax,[fv_rootclus]       ; the one rm_named checked
         call    rm_map
+        jc      rw_bad
         mov     [edi+BPB_ROOTCLUS],eax
 rw_tname:
         ; AND THE NAME OF THE WIDTH, which a FAT12 or FAT16 boot sector
@@ -5041,6 +5070,8 @@ fg_scan:
 fg_one:
         cmp     byte ptr [esi+PE_TYPE],PT_EMPTY
         je      fg_onenext
+        cmp     dword ptr [esi+PE_SECS],0
+        je      fg_onenext
         mov     ecx,[esi+PE_START]
         cmp     ecx,ebx                 ; one that ENCLOSES the cursor
         jae     fg_notbehind            ; pushes it past itself
@@ -5097,8 +5128,12 @@ fg_take:
 fg_step:
         cmp     edx,0FFFFFFFFh
         je      fg_done
-        mov     ebx,edx
-        add     ebx,edi                 ; past the partition we found
+        mov     eax,edx
+        add     eax,edi                 ; past the partition we found
+        jc      fg_done
+        cmp     eax,ebx
+        jbe     fg_done
+        mov     ebx,eax
         jmp     fg_scan
 
 fg_done:
@@ -6832,8 +6867,12 @@ lg_take:
 lg_step:
         cmp     edx,0FFFFFFFFh
         je      lg_done
-        mov     ebx,edx
-        add     ebx,edi
+        mov     eax,edx
+        add     eax,edi
+        jc      lg_done
+        cmp     eax,ebx
+        jbe     lg_done
+        mov     ebx,eax
         jmp     lg_scan
 lg_done:
         cmp     dword ptr [gp_len],0

@@ -1288,7 +1288,10 @@ void rtf_KILL( void )
             continue;
         }
         path[len] = 0;
-        str_catn( path, rec.alias[0] ? rec.alias : rec.name, sizeof( path ) );
+        if ( !str_catn( path, rec.alias[0] ? rec.alias : rec.name, sizeof( path ) ) ) {
+            sys_find_close( handle );
+            vm_error( E_BAD_FILENAME );
+        }
         if ( is_open_file( path ) ) {
             sys_find_close( handle );
             vm_error( E_FILE_OPEN );

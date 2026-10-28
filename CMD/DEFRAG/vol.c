@@ -251,6 +251,13 @@ int vol_open( int drive )
             rc = -1;
         }
     }
+#ifndef HOSTBUILD
+    /* every FAT volume the kernel has mounted answers 7302h; without
+       it there is no sector size to hold the boot sector's to */
+    if ( !have_dpb ) {
+        rc = -1;
+    }
+#endif
     xfree( dpb_bpb );
     xfree( boot );
     return rc;

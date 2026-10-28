@@ -204,11 +204,14 @@ NR_DRIVE                EQU     4
 NR_RESULT               EQU     28              ; bytes a read moved
 NR_BUFPTR               EQU     48              ; a read's destination, flat linear
 REDIR_READ              EQU     6               ; so the trace can dump what a read fetched
+REDIR_WRITE             EQU     7
 NR_STATUS               EQU     12
+NR_COUNT                EQU     24              ; bytes a read or write moves
 NR_SIZELO               EQU     32
 NR_ATTR                 EQU     40
 NR_SPARE                EQU     60
-NR_PATH                 EQU     64
+NR_PATH                 EQU     64              ; char[260]
+NR_PATTERN              EQU     324             ; char[16]
 NR_NAME                 EQU     340
 NR_SERVER               EQU     356
 NR_SHARE                EQU     420
@@ -355,6 +358,8 @@ PDAPI_SOCK              EQU     3               ; Stage C: one socket op on the 
                                                 ; = the tick held the bridge this instant, retry
 PDS_MAXLEN              EQU     0300h           ; the bounce buffer's room (PGO_RES-PGO_BUF)
 PDS_IOHDR               EQU     16              ; SOCK_IO header before the data (SOCKET.H)
+PD_V86TOP               EQU     110000h         ; the end of a VM's 1:1 window (1MB + HMA);
+                                                ; a caller's buffer must end at or below it
 
 ; The low page's layout (offsets from the page base, which the
 ; trampoline keeps in EBP; the page is 4K and zero-filled).  The stub is
@@ -375,8 +380,10 @@ PGO_KENTRY              EQU     228h            ; brg_entry's linear address
 PGO_WCR0                EQU     22Ch            ; saved WIN386 CR0 (for WP)
 PGO_WGDTR               EQU     230h            ; WIN386's GDTR (6 bytes), saved
 PGO_LGDTR               EQU     238h            ; GDTR for the low GDT copy
-PGO_GDT                 EQU     400h            ; a copy of WIN386's GDT (<=512B)
+PGO_GDT                 EQU     400h            ; a copy of WIN386's GDT (PGO_GDTMAX at most)
 PGO_STKTOP              EQU     0C00h           ; scratch stack top (grows down)
+PGO_STKRSV              EQU     400h            ; stack room kept clear of the GDT copy
+PGO_GDTMAX              EQU     PGO_STKTOP - PGO_STKRSV - PGO_GDT ; the largest GDT copied
 PGO_BUF                 EQU     0C00h           ; bounce buffer (0C00h..0EFFh)
 PGO_RES                 EQU     0F00h           ; a buffer that persists between
                                                 ; calls, which the async tick
@@ -1194,6 +1201,10 @@ pv_nicinfo:
         shl     edi,4
         movzx   eax,word ptr [ebp+C_EDX]
         add     edi,eax
+        mov     eax,edi
+        add     eax,NICI_LEN
+        cmp     eax,PD_V86TOP
+        ja      pv_fail                         ; runs past the VM's first megabyte
         mov     [pd_clbuf],edi
 
         mov     eax,NDTF_NIC
@@ -1253,7 +1264,13 @@ pv_redir:
         shl     edi,4
         movzx   eax,word ptr [ebp+C_EDX]
         add     edi,eax
+        mov     eax,edi
+        add     eax,NR_SIZE
+        cmp     eax,PD_V86TOP
+        ja      pv_fail                         ; runs past the VM's first megabyte
         mov     [pd_clbuf],edi
+        cmp     dword ptr [pd_pg],0
+        je      pv_rbusy                        ; bridge not up: no page to copy into
         ; copy it into the bounce buffer
         mov     esi,[pd_clbuf]
         mov     edi,[pd_pg]
@@ -1261,8 +1278,39 @@ pv_redir:
         mov     ecx,NR_SIZE
         cld
         rep     movsb
-        ; one slice; the op comes from NR_OP, ORed with REDIR_RESUME
+        ; the driver reads every string field as ASCIIZ, so end each one
+        ; in the copy, whatever the caller left in its last byte
         mov     esi,[pd_pg]
+        mov     byte ptr [esi+PGO_BUF+NR_PATH+259],0
+        mov     byte ptr [esi+PGO_BUF+NR_PATTERN+15],0
+        mov     byte ptr [esi+PGO_BUF+NR_NAME+15],0
+        mov     byte ptr [esi+PGO_BUF+NR_SERVER+63],0
+        mov     byte ptr [esi+PGO_BUF+NR_SHARE+79],0
+        mov     byte ptr [esi+PGO_BUF+NR_USER+63],0
+        mov     byte ptr [esi+PGO_BUF+NR_PASS+63],0
+        mov     byte ptr [esi+PGO_BUF+NR_DOMAIN+63],0
+        ; a read or write moves NR_COUNT bytes at NR_BUFPTR, a flat linear
+        ; address: that span must lie inside the VM's first megabyte
+        mov     eax,[esi+PGO_BUF+NR_OP]
+        and     eax,NOT REDIR_RESUME            ; the op the driver will run
+        cmp     eax,REDIR_READ
+        je      pvr_chkbuf
+        cmp     eax,REDIR_WRITE
+        jne     pvr_bufok
+pvr_chkbuf:
+        mov     ecx,[esi+PGO_BUF+NR_COUNT]
+        cmp     ecx,10000h                      ; a V86 buffer is one segment at most
+        ja      pvr_badbuf
+        mov     eax,[esi+PGO_BUF+NR_BUFPTR]
+        add     eax,ecx
+        jc      pvr_badbuf
+        cmp     eax,PD_V86TOP
+        jbe     pvr_bufok
+pvr_badbuf:
+        mov     word ptr [ebp+C_EAX],5          ; access denied
+        jmp     pv_fail
+pvr_bufok:
+        ; one slice; the op comes from NR_OP, ORed with REDIR_RESUME
         mov     ebx,[esi+PGO_BUF+NR_OP]
         or      ebx,REDIR_RESUME
         mov     eax,NDTF_REDIR
@@ -1309,7 +1357,13 @@ pv_block:
         shl     edi,4
         movzx   eax,word ptr [ebp+C_EDX]
         add     edi,eax
+        mov     eax,edi
+        add     eax,BR_SIZE
+        cmp     eax,PD_V86TOP
+        ja      pv_fail                         ; runs past the VM's first megabyte
         mov     [pd_clbuf],edi
+        cmp     dword ptr [pd_pg],0
+        je      pv_bbusy                        ; bridge not up: no page to copy into
         mov     esi,[pd_clbuf]
         mov     edi,[pd_pg]
         add     edi,PGO_BUF
@@ -1317,6 +1371,11 @@ pv_block:
         cld
         rep     movsb
         mov     esi,[pd_pg]
+        ; only a read or a write of the one sector BR_DATA has room for
+        cmp     dword ptr [esi+PGO_BUF+BR_OP],1
+        ja      pv_fail
+        cmp     dword ptr [esi+PGO_BUF+BR_COUNT],1
+        jne     pv_fail
         mov     ebx,[esi+PGO_BUF+BR_OP]
         mov     eax,NDTF_BLOCK
         xor     edx,edx
@@ -1389,6 +1448,10 @@ pv_sock:
         shl     edi,4
         movzx   eax,word ptr [ebp+C_EDX]
         add     edi,eax
+        mov     eax,edi
+        add     eax,ecx
+        cmp     eax,PD_V86TOP
+        ja      pv_fail                         ; runs past the VM's first megabyte
         mov     [pd_clbuf],edi
         call    pd_sockop                       ; copy in, bridge, copy back, answer
         jmp     pv_done
@@ -1423,6 +1486,11 @@ pd_pmapi:
         movzx   ebx,word ptr [ebp+C_EBX]
         mov     [pd_sockfn],ebx
         mov     edx,[ebp+C_EDX]                 ; PM: EDX = the buffer's flat linear
+        mov     eax,edx
+        add     eax,ecx
+        jc      pp_fail
+        cmp     eax,PD_V86TOP
+        ja      pp_fail                         ; not conventional memory
         mov     [pd_clbuf],edx
         call    pd_sockop
         popad
@@ -1442,6 +1510,8 @@ pp_fail:
 ; The length is already bounded to the bounce buffer's room.
 ;---------------------------------------------------------------------
 pd_sockop:
+        cmp     dword ptr [pd_pg],0
+        je      pso_busy                        ; bridge not up: no page to copy into
         mov     esi,[pd_clbuf]
         mov     edi,[pd_pg]
         add     edi,PGO_BUF
@@ -1878,6 +1948,11 @@ pdi_read:
         movzx   ebx,word ptr [ebp+C_EBX]
         add     eax,ebx                          ; ES:BX -> V86 linear buffer
         mov     [pd_i13buf],eax
+        mov     ecx,[pd_i13cnt]
+        shl     ecx,9
+        add     ecx,eax                          ; the buffer's end
+        cmp     ecx,PD_V86TOP
+        ja      pdi_rerr                         ; runs past the VM's first megabyte
 pdi_rloop:
         mov     eax,[pd_i13done]
         cmp     eax,[pd_i13cnt]
@@ -2180,6 +2255,7 @@ mstx_loop:
         mov     ecx,[ebp-0Ch]                   ; len
         mov     eax,[ebp-10h]                   ; total
         add     eax,ecx
+        jc      mstx_drop
         cmp     eax,NIC_MAXFRAME
         ja      mstx_drop                       ; oversized frame: drop it
         mov     esi,[ebp-8]                     ; src = vaddr
@@ -2272,9 +2348,12 @@ mx_loop:
         jbe     mx_fin                          ; all the protocol asked for is copied
         mov     eax,[pd_rx_len]                 ; available = len - header - offset - copied
         sub     eax,NIC_HDRLEN
+        cmp     eax,[ebp+10h]
+        jbe     mx_fin                          ; the offset is past the frame
         sub     eax,[ebp+10h]
-        sub     eax,[ebp-10h]
+        cmp     eax,[ebp-10h]
         jbe     mx_fin                          ; nothing left in the frame
+        sub     eax,[ebp-10h]
         cmp     edx,eax
         jbe     mx_capped
         mov     edx,eax                         ; cap remaining to what the frame holds
@@ -2629,6 +2708,8 @@ pd_devinit:
         sgdt    [ebp+PGO_WGDTR]
         movzx   ecx,word ptr [ebp+PGO_WGDTR]    ; the limit
         inc     ecx                             ; bytes in the GDT
+        cmp     ecx,PGO_GDTMAX
+        ja      pd_gdtbig                       ; no room for it under the stack
         mov     esi,[ebp+PGO_WGDTR+2]           ; WIN386's GDT base
         lea     edi,[ebp+PGO_GDT]
         push    ds
@@ -2880,6 +2961,11 @@ pd_nobridge:
         mov     esi,OFFSET FLAT:pd_msgnobr
         call    pd_e9str
         jmp     pd_done
+pd_gdtbig:
+        mov     dword ptr [pd_pg],0             ; the bridge stays down
+        mov     esi,OFFSET FLAT:pd_msggdt
+        call    pd_e9str
+        jmp     pd_done
 pd_noalloc:
         mov     esi,OFFSET FLAT:pd_msgnoal
         call    pd_e9str
@@ -2982,6 +3068,7 @@ pd_msgmac       db      ' MAC=', 0
 pd_msgname      db      ' name=', 0
 pd_msgnobr      db      13, 10, 'PMDOS.386: kernel has no bridge signature', 13, 10, 0
 pd_msgnoal      db      13, 10, 'PMDOS.386: global V86 allocation failed', 13, 10, 0
+pd_msggdt       db      13, 10, 'PMDOS.386: WIN386 GDT is too big for the low page', 13, 10, 0
 pd_crlf         db      13, 10, 0
 pd_msgirq       db      13, 10, 'PMDOS.386: card IRQ=', 0
 pd_msgvirq      db      13, 10, 'PMDOS.386: VPICD took the card line, handle=', 0

@@ -469,7 +469,11 @@ static int read_dat( UNDAT *un, const char *path )
             un->del[un->ndel++] = val;
         }
     }
-    return !(un->olddos[0] && un->dosdir[0] && path_valid( un->dosdir ));
+    /* Setup writes the old DOS's directory as one on C: */
+    un->olddos[0] = (char)ch_upper( (u8)un->olddos[0] );
+    return !(un->olddos[0] == 'C' && path_valid( un->olddos ) &&
+             str_len( un->olddos ) <= PATHLEN - 1 - 13 &&
+             un->dosdir[0] && path_valid( un->dosdir ));
 }
 
 static int is_ours( const char *name )
@@ -490,7 +494,8 @@ static int is_ours( const char *name )
 /* put the old DOS back.  NULL = done, else what went wrong */
 static const char *put_back( UNDAT *un )
 {
-    char path[PATHLEN], into[PATHLEN], spec[PATHLEN];
+    static char path[PATHLEN], into[PATHLEN];  /* returned when they fail */
+    char spec[PATHLEN];
     FINDDATA fd;
     u8 *boot = (u8 *)xalloc( 512 );
     u16 handle, got;
@@ -499,11 +504,13 @@ static const char *put_back( UNDAT *un )
     /* the old boot sector first: read it before anything changes */
     path_join( path, un->olddos, "BOOTSECT.DOS", sizeof( path ) );
     if ( plat_open( path, 0, &handle ) ) {
+        xfree( boot );
         return path;
     }
     rc = plat_read( handle, boot, 512, &got ) || got != 512 || RD16( boot + 510 ) != 0xAA55;
     plat_close( handle );
     if ( rc ) {
+        xfree( boot );
         return path;
     }
     /* PM-DOS's files go */
@@ -531,12 +538,14 @@ static const char *put_back( UNDAT *un )
             plat_set_attr( into, 0 );
             plat_delete( into );
             if ( plat_rename( path, into ) ) {
+                xfree( boot );
                 return into;
             }
         } while ( plat_find_next( &fd ) == 0 );
     }
     /* the boot sector */
     if ( plat_vol_write( un->olddos[0] - 'A', 0, 1, boot ) ) {
+        xfree( boot );
         return tx_cant_boot;
     }
     /* OLD_DOS.n itself */

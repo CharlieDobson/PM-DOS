@@ -542,7 +542,8 @@ ohr_dir:
         or      eax,OHE_S
 ohr_fs:
         push    ecx
-        movzx   ecx,dx
+        movzx   ecx,word ptr [esp+24]   ; the caller's DX: EDX is the
+        and     ecx,7FFh                ; placeholder's by now
         shl     ecx,OHE_MPS_SHIFT
         or      eax,ecx
         pop     ecx
@@ -621,6 +622,9 @@ oh_tdstat:
         or      edx,edx
         jz      ots_all
         sub     edx,dword ptr [eax+EL_BUF]
+        jb      ots_bad
+        cmp     edx,ecx
+        ja      ots_bad                 ; CBP outside the buffer
         mov     ecx,edx
 ots_all:
         mov     al,XS_DONE
@@ -648,6 +652,7 @@ ots_error:
         je      ots_err
         cmp     dl,OHCC_BITSTUFF
         je      ots_err
+ots_bad:
         mov     ah,USBE_OTHER
 ots_err:
         mov     al,XS_ERROR

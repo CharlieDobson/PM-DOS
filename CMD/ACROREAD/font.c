@@ -126,7 +126,7 @@ CMAP *cmap_parse( OBJ *stm, POOL *pool )
             continue;
         }
         if ( mode == 1 ) {
-            if ( cmap->nspace < 8 ) {
+            if ( cmap->nspace < 8 && lo.u.str.len >= 1 && lo.u.str.len <= 4 ) {
                 cmap->space[cmap->nspace].lo = code_of( &lo );
                 cmap->space[cmap->nspace].hi = code_of( &hi );
                 cmap->space[cmap->nspace].len = (int)lo.u.str.len;
@@ -221,7 +221,7 @@ static void face_flags( FONT *font, const char *name, DICT *desc )
     s32 flags = dict_int( desc, "Flags", 0 );
     int out = 0;
 
-    if ( name[0] && name[6] == '+' ) {
+    if ( str_len( name ) > 6 && name[6] == '+' ) {
         name += 7;                          /* a subset's six letters */
     }
     if ( (flags & 1) || has_word( name, "Courier" ) || has_word( name, "Mono" ) ||
@@ -413,9 +413,9 @@ static void simple_load( FONT *font, DICT *dict, const char *subtype )
     font->dw = -1;
     if ( widths ) {
         font->dw = (int)missing;
-        for ( code = (int)first; code <= last && code < 256; code++ ) {
-            if ( code >= 0 && (u32)(code - first) < widths->count ) {
-                font->width[code] = (s16)obj_int( arr_get( widths, (u32)(code - first) ) );
+        for ( code = first < 0 ? 0 : (int)first; code <= last && code < 256; code++ ) {
+            if ( (u32)code - (u32)first < widths->count ) {
+                font->width[code] = (s16)obj_int( arr_get( widths, (u32)code - (u32)first ) );
             }
         }
     }

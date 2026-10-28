@@ -44,6 +44,7 @@ static u32  ostm_clock;
 
 int pdf_count_pages( void );
 int cache_reclaim( void );          /* GLYPH.C: the caches of fonts and glyphs */
+void lex_reset( void );             /* LEX.C: what a page given up left behind */
 
 /* ------------------------------------------------------------------ */
 /* the page's pool and its cache                                       */
@@ -77,6 +78,7 @@ void pdf_page_end( void )
     }
     mem_set( oc_num, 0, OC_SIZE * sizeof( u32 ) );
     load_depth = 0;
+    lex_reset();
 }
 
 void pdf_page_begin( void )
@@ -327,6 +329,8 @@ OBJ *pdf_load( u32 num )
 /* the cross-reference table                                           */
 /* ------------------------------------------------------------------ */
 
+#define XREF_MAX    8388608UL       /* object numbers PDF allows: below 2^23 */
+
 static void xref_need( u32 count )
 {
     XENT *grown;
@@ -335,8 +339,8 @@ static void xref_need( u32 count )
     if ( count <= doc.xref_count ) {
         return;
     }
-    if ( count > doc.size ) {
-        pdf_fail( PE_DAMAGED );             /* more objects than bytes */
+    if ( count > doc.size || count > XREF_MAX ) {
+        pdf_fail( PE_DAMAGED );             /* more objects than bytes, or than PDF has */
     }
     cap = (count + 1023) & ~1023UL;
     grown = (XENT *)xalloc( cap * sizeof( XENT ) );
@@ -353,6 +357,9 @@ static void xref_set( u32 num, int type, u32 pos, u32 gen )
 {
     XENT *ent;
 
+    if ( num >= XREF_MAX ) {
+        pdf_fail( PE_DAMAGED );
+    }
     xref_need( num + 1 );
     ent = &doc.xref[num];
     if ( ent->type == 0 ) {
@@ -601,7 +608,7 @@ static void rebuild_streams( void )
                 if ( !read_uint( in, &inner ) || !read_uint( in, &skip ) ) {
                     break;
                 }
-                if ( inner < doc.size ) {
+                if ( inner < doc.size && inner < XREF_MAX ) {
                     xref_set( inner, 2, num, index );
                 }
             }
@@ -644,7 +651,7 @@ static int xref_rebuild( void )
                     }
                 } else {
                     if ( have == 2 && tok_len == 3 && str_cmp( word, "obj" ) == 0 &&
-                         pos1 >= doc.base && num1 < doc.size ) {
+                         pos1 >= doc.base && num1 < doc.size && num1 < XREF_MAX ) {
                         /* the last one in the file is the one in force */
                         xref_need( num1 + 1 );
                         doc.xref[num1].type = 1;

@@ -278,6 +278,12 @@ int vol_open( int drive )
         if ( !have_dpb || parse_bpb( dpb_bpb ) != 0 ) {
             rc = -1;
         }
+#ifndef HOSTBUILD
+    } else if ( !have_dpb ) {
+        /* the system describes every FAT volume it has mounted; without
+           that the size it transfers sectors in is not known */
+        rc = -1;
+#endif
     } else if ( have_dpb && RD16( dpb_bpb + 11 ) != vol.bps ) {
         /* the system transfers sectors in its own (DPB) size; a boot
            sector that disagrees must not size the transfer buffers */
@@ -943,6 +949,9 @@ int dir_extend( DIRBUF *dir )
 
     if ( vol.fattype != 32 || nclus == 0 ) {
         return -1;
+    }
+    if ( !IS_EOC( fat_get( dir->clus.items[nclus - 1] ) ) ) {
+        return -1;                              /* more chain than was loaded */
     }
     clus = fat_free_after( dir->clus.items[nclus - 1] );
     if ( clus == 0 ) {

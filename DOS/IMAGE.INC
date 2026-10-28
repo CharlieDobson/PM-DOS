@@ -940,6 +940,7 @@ img_map:
         ; cache bug exactly, and it is written out here rather than
         ; cross-referenced because the next thing that allocates from
         ; inside a program will need to be told a third time.
+        mov     [imp_cap],eax
         imul    ebx,eax,IX_LEN
         push    esi                     ; ESI is the mount and arena_alloc
         push    dword ptr [cur_own]     ; has never been asked to keep it
@@ -952,7 +953,7 @@ img_map:
 
         mov     byte ptr [imp_count],0  ; pass 2: fill it in
         call    img_walk
-        jc      imm_mapbad
+        jc      imm_mapbad2
         mov     eax,[imp_runs]
         mov     [esi+IM_NEXT],eax
         mov     dword ptr [esi+IM_HINT],0
@@ -970,6 +971,8 @@ imm_mapmem:
 imm_mapfrag:
         mov     ax,ERR_DISKFULL         ; the file is in too many pieces
         jmp     short imm_mapfail
+imm_mapbad2:
+        call    img_unmap               ; the map bought for pass 2
 imm_mapshort:
 imm_mapbad:
         mov     ax,ERR_GENERAL          ; the chain does not cover the file
@@ -1013,6 +1016,10 @@ imw_lp:
         jb      imw_bad
         cmp     eax,[fat_eoc]
         jae     imw_end
+        mov     edx,[fat_totclus]
+        add     edx,2                   ; the first number that is not one
+        cmp     eax,edx
+        jae     imw_bad
 
         call    clus2lba                ; -> EAX = host LBA of the cluster
         mov     [imw_lba],eax
@@ -1084,7 +1091,7 @@ imw_emit:
         mov     eax,[imp_runs]
         cmp     byte ptr [imp_count],0
         jne     ime_justcount
-        cmp     eax,IMG_EXT_MAX
+        cmp     eax,[imp_cap]           ; the runs pass 1 made room for
         jae     ime_full
         imul    edi,eax,IX_LEN
         add     edi,[esi+IM_MAP]
@@ -1582,6 +1589,7 @@ imu_slot    dd  0
 imp_count   db  0
             db  0,0,0
 imp_runs    dd  0
+imp_cap     dd  0                       ; runs the map has room for
 imw_clus    dd  0
 imw_prev    dd  0
 imw_lba     dd  0

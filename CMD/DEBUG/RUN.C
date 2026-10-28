@@ -91,15 +91,15 @@ static void report_end( void )
     out_nl();
 }
 
-/* run until it stops or ends; returns 1 if it is still held */
+/* run until it stops or ends; returns 1 if it is still held, -1 if the
+   kernel refused the registers (a bad CS, SS or EIP) and nothing ran */
 static int go_once( DRX *regs, int *ended )
 {
     int stopped;
 
     *ended = 0;
     if ( sys_dbg_go( regs, &stopped ) ) {
-        /* the kernel refused the registers: a bad CS, SS or EIP */
-        syntax_error();
+        return -1;
     }
     if ( !stopped ) {
         *ended = 1;
@@ -113,7 +113,7 @@ void cmd_go( void )
     DRX  regs;
     ADDR start, bp[MAX_BP];
     u8   saved[MAX_BP];
-    int  nbp = 0, i, ended;
+    int  nbp = 0, i, ended, refused;
     u8   cc = 0xCC;
 
     if ( !runnable() ) {
@@ -141,8 +141,8 @@ void cmd_go( void )
     }
     to_regs( &regs );
     break_quiet = 0;
-    go_once( &regs, &ended );
-    if ( !ended ) {
+    refused = go_once( &regs, &ended ) < 0;
+    if ( !ended && !refused ) {
         from_regs( &regs );
         /* an INT 3 stops one byte past it: step EIP back onto the
            breakpoint, as DEBUG left CS:IP on the planted byte */
@@ -155,8 +155,12 @@ void cmd_go( void )
             }
         }
     }
-    for ( i = 0; i < nbp; i++ ) {
+    /* backwards: a breakpoint given twice saved the INT 3 of the first */
+    for ( i = nbp - 1; i >= 0; i-- ) {
         sys_dbg_write( bp[i].off, &saved[i], 1 );
+    }
+    if ( refused ) {
+        syntax_error();
     }
     if ( ended ) {
         report_end();
@@ -168,8 +172,14 @@ void cmd_go( void )
 /* one instruction with the trap flag */
 static int trace_flag_step( DRX *regs, int *ended )
 {
+    int held;
+
     regs->efl |= 0x100;
-    return go_once( regs, ended );
+    held = go_once( regs, ended );
+    if ( held < 0 ) {
+        syntax_error();
+    }
+    return held;
 }
 
 /* step OVER the instruction at EIP with a breakpoint on the one after
@@ -179,17 +189,18 @@ static int step_over( DRX *regs, u32 len, int *ended )
 {
     u8  cc = 0xCC, saved;
     u32 after = regs->eip + len;
-    int stopped;
+    int stopped, refused;
 
     if ( sys_dbg_read( after, &saved, 1 ) ) {
         return trace_flag_step( regs, ended );      /* cannot plant it */
     }
     sys_dbg_write( after, &cc, 1 );
     regs->efl &= ~0x100UL;
-    if ( sys_dbg_go( regs, &stopped ) ) {
+    refused = sys_dbg_go( regs, &stopped );
+    sys_dbg_write( after, &saved, 1 );
+    if ( refused ) {
         syntax_error();
     }
-    sys_dbg_write( after, &saved, 1 );
     if ( !stopped ) {
         *ended = 1;
         return 0;

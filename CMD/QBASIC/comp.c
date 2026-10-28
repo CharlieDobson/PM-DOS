@@ -15,6 +15,8 @@
  */
 #include "comp.h"
 
+extern int c_depth;             /* CEXPR.C: how deep the line's parse is */
+
 static void define_label( int module_level, TOKEN *tok );
 
 /* ------------------------------------------------------------------ */
@@ -38,6 +40,7 @@ static void lex_src( const char *src, u32 len )
     cc->src = src;
     cc->srclen = len;
     cc->tp = 0;
+    c_depth = 0;
     cc->ntoks = lex_line( src, len, cc->toks, MAX_TOKENS, &col, &msg );
     if ( cc->ntoks < 0 ) {
         cc->ntoks = 1;
@@ -894,7 +897,11 @@ static void branch_part( int stop_at_else )
         stmt_finish( first );
         return;
     }
+    if ( ++c_depth > 64 ) {
+        c_fail( "Program too complex" );
+    }
     c_statements_until_eol( stop_at_else );
+    c_depth--;
 }
 
 static void st_if( void )
@@ -2147,6 +2154,10 @@ static int proc_new( const char *upper, int kind )
     sym = sym_find( &cc->module, upper, 0, SK_PROC );
     if ( sym != NULL ) {
         return sym->proc;
+    }
+    if ( cc->nprocs >= 0xFFFF ) {
+        /* a procedure's number is 16 bits in the code */
+        c_fail( "Program too complex" );
     }
     if ( cc->nprocs == cc->procs_cap ) {
         int cap = cc->procs_cap ? cc->procs_cap * 2 : 32;
@@ -3621,6 +3632,7 @@ static void pass0( void )
             {
                 char upper[NAME_MAX + 1];
                 int i;
+                u32 fsize;
                 c_name_of( tok, upper );
                 for ( i = 0; i < rec->nfields; i++ ) {
                     if ( str_icmp( fields[i].name, upper ) == 0 ) {
@@ -3635,8 +3647,17 @@ static void pass0( void )
                 if ( TKIND( fields[rec->nfields].type ) == TY_STR ) {
                     c_fail_tok( "Fixed-length string expected" );
                 }
+                if ( TKIND( fields[rec->nfields].type ) == TY_REC
+                  && (int)TARG( fields[rec->nfields].type ) == cc->nrecs - 1 ) {
+                    /* the TYPE being defined is not finished yet */
+                    c_fail_tok( "Type not defined" );
+                }
+                fsize = type_size( fields[rec->nfields].type );
+                if ( fsize > 0x7FFFFFFFUL - rec->size ) {
+                    c_fail_tok( "Overflow" );
+                }
                 fields[rec->nfields].offset = rec->size;
-                rec->size += type_size( fields[rec->nfields].type );
+                rec->size += fsize;
                 rec->nfields++;
             }
             continue;

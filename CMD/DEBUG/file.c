@@ -135,7 +135,7 @@ static int is_d32( const u8 *file, u32 len )
     u32 off = 0;
 
     if ( len >= 2 && file[0] == 'M' && file[1] == 'Z' ) {
-        if ( len >= 0x3E && *(const u16 *)( file + 0x18 ) >= 0x40 ) {
+        if ( len >= 0x40 && *(const u16 *)( file + 0x18 ) >= 0x40 ) {
             off = *(const u32 *)( file + 0x3C );
         }
     }
@@ -258,12 +258,18 @@ void load_file( const ADDR *where )
     }
 }
 
+/* INT 25h and 26h move a whole logical sector, which can be up to 4K;
+   L and W take 512 bytes of each, and W reads the sector first so the
+   rest of it is written back as it was */
+#define SECTOR_MAX 4096
+static u8 sector_buf[SECTOR_MAX];
+
 /* L [address [drive sector count]] */
 void cmd_load( void )
 {
     ADDR addr;
     u32  drive, sector, count;
-    u8   buf[512];
+    u8   *buf = sector_buf;
     u32  i;
 
     if ( at_end() ) {
@@ -330,14 +336,21 @@ void cmd_write( void )
             need_end();
             for ( ; count; count--, sector++ ) {
                 u32 j;
+                /* the sector's own bytes past the first 512 stay */
+                if ( sys_abs_read( (int)drive, sector, 1, sector_buf ) ) {
+                    out_str( msg_wrerr );
+                    out_ch( (char)( 'A' + drive ) );
+                    out_nl();
+                    return;
+                }
                 for ( j = 0; j < 512; j++ ) {
                     ADDR at = addr;
                     u8 one[1], ok[1];
                     at.off = addr.off + j;
                     mem_get( at, one, 1, ok );
-                    buf[j] = one[0];
+                    sector_buf[j] = one[0];
                 }
-                if ( sys_abs_write( (int)drive, sector, 1, buf ) ) {
+                if ( sys_abs_write( (int)drive, sector, 1, sector_buf ) ) {
                     out_str( msg_wrerr );
                     out_ch( (char)( 'A' + drive ) );
                     out_nl();

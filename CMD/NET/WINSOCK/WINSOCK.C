@@ -195,6 +195,7 @@ static int sk_wait( void )
 
 static int sk_valid( SOCKET s )
 {
+    if ( !g_started ) { g_lasterr = WSANOTINITIALISED; return 0; }
     if ( s < 1 || s > MAXSOCK || !g_sk[ s ].used ) {
         g_lasterr = WSAENOTSOCK;
         return 0;
@@ -263,10 +264,26 @@ int __loadds PASCAL FAR WSAStartup( WORD wVersionRequired, LPWSADATA lpWSAData )
 int __loadds PASCAL FAR WSACleanup( void )
 {
     if ( !g_started ) { g_lasterr = WSANOTINITIALISED; return SOCKET_ERROR; }
+    /* a blocking call (run from its hook) still uses the request block */
+    if ( g_inblock ) { g_lasterr = WSAEINPROGRESS; return SOCKET_ERROR; }
     if ( --g_started > 0 ) return 0;
     if ( g_timer ) { KillTimer( NULL, g_timer ); g_timer = 0; }
+    {
+        /* close what the program left open, so the stack gets them back */
+        KHANDLE FAR *hc = (KHANDLE FAR *)g_buf;
+        WORD cf;
+        SOCKET s;
+        for ( s = 1; s <= MAXSOCK; s++ ) {
+            if ( g_sk[ s ].used ) {
+                hc->handle = s;
+                sk_op( K_CLOSE, sizeof( KHANDLE ), &cf );
+                g_sk[ s ].used = 0;
+            }
+        }
+    }
     if ( g_dossel ) { GlobalDosFree( g_dossel ); g_dossel = 0; }
     g_buf = 0;
+    g_buflin = 0;
     return 0;
 }
 
@@ -359,9 +376,11 @@ int __loadds PASCAL FAR connect( SOCKET s, const struct sockaddr FAR *name, int 
     KCONN FAR *cn = (KCONN FAR *)g_buf;
     KSTAT kst;
     WORD cf;
-    (void)namelen;
 
     if ( !sk_valid( s ) ) return SOCKET_ERROR;
+    if ( name == 0 || namelen < (int)sizeof( struct sockaddr_in ) ) {
+        g_lasterr = WSAEFAULT; return SOCKET_ERROR;
+    }
 
     /* the port map: a stream connection to a TLS port (443) becomes a TLS
        connection transparently.  Naming the server (SNI and the certificate
@@ -450,6 +469,7 @@ int __loadds PASCAL FAR recv( SOCKET s, char FAR *buf, int len, int flags )
 
     if ( !sk_valid( s ) ) return SOCKET_ERROR;
     if ( len == 0 ) return 0;
+    if ( len < 0 ) { g_lasterr = WSAEINVAL; return SOCKET_ERROR; }
     want = ( len > KBUF_MAX ) ? KBUF_MAX : len;
     g_inblock = 1; g_cancel = 0;
     for ( ;; ) {
@@ -487,8 +507,10 @@ int __loadds PASCAL FAR shutdown( SOCKET s, int how )
 int __loadds PASCAL FAR bind( SOCKET s, const struct sockaddr FAR *name, int namelen )
 {
     const struct sockaddr_in FAR *sin = (const struct sockaddr_in FAR *)name;
-    (void)namelen;
     if ( !sk_valid( s ) ) return SOCKET_ERROR;
+    if ( name == 0 || namelen < (int)sizeof( struct sockaddr_in ) ) {
+        g_lasterr = WSAEFAULT; return SOCKET_ERROR;
+    }
     g_sk[ s ].lport = ntohs( sin->sin_port );
     return 0;
 }
@@ -564,8 +586,11 @@ int __loadds PASCAL FAR select( int nfds, fd_set FAR *rd, fd_set FAR *wr,
     int haveto = 0;
     (void)nfds;
 
+    if ( !g_started ) { g_lasterr = WSANOTINITIALISED; return SOCKET_ERROR; }
     if ( rd ) rin = *rd; else rin.fd_count = 0;
     if ( wr ) win = *wr; else win.fd_count = 0;
+    if ( rin.fd_count > FD_SETSIZE ) rin.fd_count = FD_SETSIZE;
+    if ( win.fd_count > FD_SETSIZE ) win.fd_count = FD_SETSIZE;
 
     if ( tv ) {
         haveto = 1;
@@ -579,6 +604,7 @@ int __loadds PASCAL FAR select( int nfds, fd_set FAR *rd, fd_set FAR *wr,
         for ( i = 0; i < rin.fd_count; i++ ) {
             SOCKET s = rin.fd_array[ i ];
             KSTAT kst;
+            if ( s < 1 || s > MAXSOCK || !g_sk[ s ].used ) continue;
             if ( sk_state( s, &kst ) == 0 &&
                  ( kst.rxready > 0 || (WORD)kst.state > KS_ESTABLISHED
                    || (WORD)kst.state == KS_LISTEN ) ) {
@@ -588,6 +614,7 @@ int __loadds PASCAL FAR select( int nfds, fd_set FAR *rd, fd_set FAR *wr,
         for ( i = 0; i < win.fd_count; i++ ) {
             SOCKET s = win.fd_array[ i ];
             KSTAT kst;
+            if ( s < 1 || s > MAXSOCK || !g_sk[ s ].used ) continue;
             if ( sk_state( s, &kst ) == 0 &&
                  ( (WORD)kst.state == KS_ESTABLISHED && kst.txfree > 0 ) ) {
                 fd_add( wr, s ); count++;
@@ -776,8 +803,8 @@ struct hostent FAR * __loadds PASCAL FAR gethostbyname( const char FAR *name )
 
 struct hostent FAR * __loadds PASCAL FAR gethostbyaddr( const char FAR *addr, int len, int type )
 {
-    (void)len;
     if ( !g_started || addr == 0 || type != AF_INET ) { g_lasterr = WSAHOST_NOT_FOUND; return 0; }
+    if ( len < 4 ) { g_lasterr = WSAEFAULT; return 0; }
     g_headdr = *(const unsigned long FAR *)addr;      /* network order in */
     {
         struct in_addr ia; char FAR *txt; int i;
@@ -799,6 +826,7 @@ int __loadds PASCAL FAR gethostname( char FAR *name, int namelen )
 {
     static const char hn[] = "pmdos";
     int i;
+    if ( name == 0 || namelen <= 0 ) { g_lasterr = WSAEFAULT; return SOCKET_ERROR; }
     for ( i = 0; i < namelen - 1 && hn[ i ]; i++ ) name[ i ] = hn[ i ];
     if ( namelen > 0 ) name[ i ] = 0;
     return 0;
@@ -834,6 +862,7 @@ static int sk_streq( const char FAR *a, const char FAR *b )
 struct servent FAR * __loadds PASCAL FAR getservbyname( const char FAR *name, const char FAR *proto )
 {
     const char FAR *pr = proto ? proto : (const char FAR *)"tcp";
+    if ( name == 0 ) { g_lasterr = WSAEFAULT; return 0; }
     if ( sk_streq( name, (const char FAR *)"http" ) )  return fill_serv( name, 80, pr );
     if ( sk_streq( name, (const char FAR *)"https" ) ) return fill_serv( name, 443, pr );
     if ( sk_streq( name, (const char FAR *)"ftp" ) )   return fill_serv( name, 21, pr );
@@ -878,6 +907,7 @@ static struct protoent FAR *fill_proto( const char FAR *nm, int num )
 }
 struct protoent FAR * __loadds PASCAL FAR getprotobyname( const char FAR *name )
 {
+    if ( name == 0 ) { g_lasterr = WSAEFAULT; return 0; }
     if ( sk_streq( name, (const char FAR *)"tcp" ) ) return fill_proto( name, 6 );
     if ( sk_streq( name, (const char FAR *)"udp" ) ) return fill_proto( name, 17 );
     if ( sk_streq( name, (const char FAR *)"icmp" ) ) return fill_proto( name, 1 );
@@ -903,9 +933,13 @@ int __loadds PASCAL FAR sendto( SOCKET s, const char FAR *buf, int len, int flag
     KIO FAR *io = (KIO FAR *)g_buf;
     int chunk;
     WORD cf, took;
-    (void)flags; (void)tolen;
+    (void)flags;
 
     if ( !sk_valid( s ) ) return SOCKET_ERROR;
+    if ( len < 0 ) { g_lasterr = WSAEINVAL; return SOCKET_ERROR; }
+    if ( to && tolen < (int)sizeof( struct sockaddr_in ) ) {
+        g_lasterr = WSAEFAULT; return SOCKET_ERROR;
+    }
     chunk = ( len > KBUF_MAX ) ? KBUF_MAX : len;
     io->handle = s;
     io->ip = to ? ntohl( sin->sin_addr.s_addr ) : 0;
@@ -927,6 +961,8 @@ int __loadds PASCAL FAR recvfrom( SOCKET s, char FAR *buf, int len, int flags,
     (void)flags;
 
     if ( !sk_valid( s ) ) return SOCKET_ERROR;
+    if ( len == 0 ) return 0;
+    if ( len < 0 ) { g_lasterr = WSAEINVAL; return SOCKET_ERROR; }
     want = ( len > KBUF_MAX ) ? KBUF_MAX : len;
     g_inblock = 1; g_cancel = 0;
     for ( ;; ) {

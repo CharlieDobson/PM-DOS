@@ -92,8 +92,11 @@ so_cdig:
         sub     edx,'0'
         cmp     edx,9
         ja      so_chave
+        cmp     eax,TEXT_MAX            ; already past any line
+        ja      so_cnext
         imul    eax,10
         add     eax,edx
+so_cnext:
         inc     esi
         dec     ecx
         jmp     short so_cdig
@@ -296,6 +299,9 @@ so_cmp:
         mov     ecx,[cmp_col]
 sc_col:
         or      ecx,ecx
+        jz      sc_lp
+        mov     al,[esi]                ; both lines ended: no more to skip
+        or      al,[edi]
         jz      sc_lp
         cmp     byte ptr [esi],0
         je      sc_c2

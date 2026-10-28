@@ -260,7 +260,8 @@ static u32 num_after( const char *text, int hex, u32 none )
         if ( ch >= '0' && ch <= '9' ) digit = ch - '0';
         else if ( hex && ( ch | 0x20 ) >= 'a' && ( ch | 0x20 ) <= 'f' ) digit = ( ch | 0x20 ) - 'a' + 10;
         else break;
-        value = value * ( hex ? 16 : 10 ) + digit;
+        if ( value > 0x0FFFFFFFL ) value = 0xFFFFFFFFL;     /* too long: stays too big */
+        else value = value * ( hex ? 16 : 10 ) + digit;
         digits++;
     }
     return digits ? value : none;
@@ -280,8 +281,8 @@ static void parse_line( const char *line )
             if ( p[3] == '0' && ( p[4] | 0x20 ) == 'x' ) p += 2;
             net_opt_mem = num_after( p + 3, 1, 0 );
         } else if ( ( p[1] | 0x20 ) == 'i' && p[2] == ':' ) {
-            net_opt_irq = (u8)num_after( p + 3, 0, NIC_NOIRQ );
-            if ( net_opt_irq > 15 ) net_opt_irq = NIC_NOIRQ;
+            u32 value = num_after( p + 3, 0, NIC_NOIRQ );
+            net_opt_irq = (u8)( value > 15 ? NIC_NOIRQ : value );
         } else if ( ( p[1] | 0x20 ) == 'p' && ( p[2] | 0x20 ) == 'o' ) {
             net_opt_poll = 1;           /* /POLL - no interrupt, clock only */
         }
@@ -369,6 +370,12 @@ int __cdecl nd_init( const char *line )
     nds_tickhook();
     if ( card_setup() ) {
         net_print( "the card would not start\r\n" );
+        /* the kernel frees this driver: let go of the line, the clock
+           and the queue first */
+        nds_tickunhook();
+        if ( net_irq != NIC_NOIRQ ) nds_irqunhook( net_irq );
+        nds_free( queue );
+        queue = 0;
         return 1;
     }
     running = 1;

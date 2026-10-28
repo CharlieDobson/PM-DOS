@@ -234,9 +234,11 @@ int card_service( void )
         if ( isr & IR_RER ) net_stats.rxerrors++;
         if ( isr & IR_TER ) net_stats.txerrors++;
         if ( isr & ( IR_RXOVW | IR_FOVW ) ) {
+            u16 cbr = inw( net_port + R_CBR );  /* read once: the card moves it */
+
             net_stats.overflows++;
-            outw( net_port + R_CAPR, (u16)( inw( net_port + R_CBR ) - 16 ) );
-            cur_rx = inw( net_port + R_CBR );
+            cur_rx = cbr;
+            outw( net_port + R_CAPR, (u16)( cbr - 16 ) );
         }
         if ( isr & ( IR_ROK | IR_RER ) ) rx_drain();
     }

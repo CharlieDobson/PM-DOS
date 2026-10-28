@@ -260,9 +260,10 @@ int vol_open( int drive )
     have_dpb = sys_get_bpb( drive, dpb_bpb ) == 0;
     err = sys_read_sec( drive, 0, 1, 512, boot );
     if ( err == 0 && is_exfat( boot ) ) {
-        /* the DPB of an exFAT volume is one the system made up in
-           FAT32's shape, so it is no fallback; its sector size must
-           still be the volume's, for the reason given below */
+        /* PM-DOS gives an exFAT volume no DPB, and its kernel takes the
+           sector size from this same boot sector byte; a DPB from any
+           other system is no fallback, but its sector size must still
+           be the volume's, for the reason given below */
         if ( parse_exfat( boot ) != 0 ||
              (have_dpb && RD16( dpb_bpb + 11 ) != vol.bps) ) {
             vol.exfat = 0;
@@ -479,7 +480,8 @@ int root_next_label( ROOTDIR *root, u32 from )
     return -1;
 }
 
-/* the first deleted or never used entry, as DOS picks for a new one */
+/* the first deleted or never used entry, as DOS picks for a new one;
+   when it is the end mark, the entry after it becomes the end mark */
 int root_free_slot( ROOTDIR *root )
 {
     u32 i;
@@ -487,7 +489,20 @@ int root_free_slot( ROOTDIR *root )
 
     for ( i = 0; i < root->nent; i++ ) {
         ch = root->data[i * DE_LEN];
+        if ( ch == 0 && i + 1 == root->nent && vol.fattype == 32 &&
+             root->clus.count != 0 &&
+             CLUS_OK( fat_get( root->clus.items[root->clus.count - 1] ) ) ) {
+            /* an end mark in the last entry read, with the chain going
+               on past the size limit: the entry after it is on disk,
+               not here, and cannot be made the end mark */
+            break;
+        }
         if ( ch == 0 || ch == DEL_MARK ) {
+            if ( ch == 0 && i + 1 < root->nent &&
+                 root->data[(i + 1) * DE_LEN] != 0 ) {
+                mem_set( root->data + (i + 1) * DE_LEN, 0, DE_LEN );
+                root_touch( root, i + 1 );
+            }
             return (int)i;
         }
     }
@@ -503,7 +518,9 @@ void root_write( ROOTDIR *root )
 {
     u32 i, lba;
 
-    for ( i = 0; i < root->nsec; i++ ) {
+    /* last sector first, so an end mark root_free_slot moved down is on
+       disk before the entry that takes its old place */
+    for ( i = root->nsec; i-- > 0; ) {
         if ( !root->dirty[i] ) {
             continue;
         }

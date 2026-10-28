@@ -284,7 +284,8 @@ int move_dir( u32 dirno, u32 dst )
  */
 static int rewrite_twice( DIRBUF *dir, const u8 *old, u32 old_end, u32 new_end )
 {
-    u32 per = vol.bps / 32, bytes = dir->nent * 32;
+    u32 per = vol.bps / 32;
+    u32 bytes = dir->fixed_root ? vol.root_secs * vol.bps : dir->nent * 32;
     u32 behind = (old_end + per - 1) / per * per;       /* where the copy starts */
     u32 first_sec = old_end / per, last_sec, head_secs, sec, idx;
     u8 *both;

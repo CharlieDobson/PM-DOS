@@ -609,9 +609,9 @@ static void run_from( u32 at )
     if ( at == 0 || prog == NULL ) {
         return;
     }
-    vm.pc = prog->code + at - 1;
     for ( i = 0; i < prog->nlocs; i++ ) {
-        if ( prog->locs[i].pc == at - 1 ) {
+        if ( at - 1 < prog->code_len && prog->locs[i].pc == at - 1 ) {
+            vm.pc = prog->code + at - 1;
             vm.stmt = i;
             break;
         }
@@ -916,7 +916,7 @@ static int immediate( void )
             char next[PATH_MAX];
             int named = vm.chain_to[0] != 0;
             str_cpy( next, vm.chain_to );
-            run_at = vm.chain_at;
+            run_at = need_restart ? 0 : vm.chain_at; /* changed: the line's code has moved */
             if ( vm.chain_keep ) {
                 vm_common_take();
             }
@@ -1337,16 +1337,17 @@ static int status_click( int col )
         { "<Esc=Cancel>", K_ESC }, { "<Ctrl+F1=Next>", K_CTRLF1 }, { "<Alt+F1=Back>", K_ALTF1 }
     };
     char line[100];
-    int index, at;
+    int index, at, filled;
     u32 len;
 
     for ( at = 0; at < scr_cols && at < (int)sizeof( line ) - 1; at++ ) {
         line[at] = (char)(scr_cell( scr_rows - 1, at ) & 0xFF);
     }
     line[at] = 0;
+    filled = at;
     for ( index = 0; index < (int)(sizeof( words ) / sizeof( words[0] )); index++ ) {
         len = str_len( words[index].word );
-        for ( at = 0; at + (int)len <= scr_cols; at++ ) {
+        for ( at = 0; at + (int)len <= filled; at++ ) {
             if ( str_nicmp( line + at, words[index].word, len ) == 0 ) {
                 if ( col >= at && col < at + (int)len ) {
                     return words[index].key;

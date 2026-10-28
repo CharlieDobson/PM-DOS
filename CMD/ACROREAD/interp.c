@@ -391,7 +391,7 @@ static void ext_gstate( const char *name )
         } else if ( str_cmp( name, "BM" ) == 0 ) {
             gs->fill.blend = gs->stroke.blend = (u8)blend_of( val );
         } else if ( str_cmp( name, "Font" ) == 0 && val->type == T_ARR ) {
-            gs->font = font_get( &val->u.arr->items[0] );
+            gs->font = font_get( arr_get( val->u.arr, 0 ) );
             gs->size = obj_fx( arr_get( val->u.arr, 1 ) );
             text_stale = 1;
         } else if ( str_cmp( name, "D" ) == 0 && val->type == T_ARR ) {
@@ -487,6 +487,9 @@ static void show( const u8 *str, u32 len )
         }
         before = str;
         code = font_next_code( font, &str, &len );
+        if ( str == before ) {
+            break;                                  /* a code of no bytes */
+        }
         step = mul_div( font_width( font, code ), gs->size, 1000 ) + gs->char_space;
         if ( code == 32 && str - before == 1 ) {
             step += gs->word_space;

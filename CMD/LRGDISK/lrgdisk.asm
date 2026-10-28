@@ -288,8 +288,11 @@ CL_AH           EQU     1Dh
 CL_EFLAGS       EQU     2Ch
 CL_ES           EQU     38h
 CL_DS           EQU     3Ch
+CB_VMSTATUS     EQU     00h             ; CB_VM_Status
 CB_HIGHLIN      EQU     04h             ; CB_High_Linear
 CB_CLIENTPTR    EQU     08h             ; CB_Client_Pointer
+VMSTAT_PM       EQU     20h             ; VMStat_PM_Exec
+VMSTAT_USE32    EQU     80h             ; VMStat_PM_Use32
 
 SYS_CRITICAL_INIT       EQU     0               ; the control calls we answer
 DEVICE_INIT             EQU     1
@@ -936,6 +939,8 @@ lap_account:
         cmp     eax,-1
         je      lap_bad
         mov     edi,eax
+        call    lap_room                ; EDX = the room in the buffer
+        jc      lap_bad
         pushfd
         cli
         call    ld_account
@@ -946,6 +951,10 @@ lap_account:
         jbe     lap_fits
         mov     ecx,LI_TOTAL
 lap_fits:
+        cmp     ecx,edx
+        jbe     lap_room_ok
+        mov     ecx,edx
+lap_room_ok:
         mov     [ebp+CL_CX],cx
         cld
         rep     movsb
@@ -956,6 +965,46 @@ lap_ok:
 lap_bad:
         or      byte ptr [ebp+CL_EFLAGS],1
         popad
+        ret
+
+; lap_room - EDX = the bytes from ES:DI to the end of its segment, up to
+; LI_TOTAL: a V86 program's 64K, or the selector's limit.  CF set: a
+; selector the program cannot write through.  EAX and ECX changed.
+lap_room:
+        test    byte ptr [ebx+CB_VMSTATUS],VMSTAT_PM
+        jnz     lrm_pm
+        movzx   eax,word ptr [ebp+CL_DI]
+        mov     edx,10000h
+        sub     edx,eax
+        clc
+        ret
+lrm_pm:
+        movzx   ecx,word ptr [ebp+CL_ES]
+        verw    cx                      ; data, and writable
+        jnz     lrm_no
+        lar     eax,ecx
+        jnz     lrm_no
+        and     ah,84h                  ; present, and not expand-down
+        cmp     ah,80h
+        jne     lrm_no
+        lsl     edx,ecx
+        jnz     lrm_no
+        mov     eax,[ebp+CL_DI]         ; the offset Map_Flat took: EDI for
+        test    byte ptr [ebx+CB_VMSTATUS],VMSTAT_USE32 ; a 32-bit program
+        jnz     lrm_off
+        movzx   eax,ax
+lrm_off:
+        sub     edx,eax                 ; (the limit is the last byte)
+        jb      lrm_no
+        cmp     edx,LI_TOTAL
+        jb      lrm_last
+        mov     edx,LI_TOTAL-1
+lrm_last:
+        inc     edx
+        clc
+        ret
+lrm_no:
+        stc
         ret
 
 ;---------------------------------------------------------------------
@@ -2581,13 +2630,19 @@ lx_rw:
         ja      lx_range
         cmp     dword ptr [esi+4],-1    ; EDD 3's 64-bit flat buffer:
         je      lx_badfn                ; not offered
-        push    ebx
         movzx   eax,word ptr [esi+6]
         shl     eax,4
         push    ecx
         movzx   ecx,word ptr [esi+4]
         add     eax,ecx
         pop     ecx
+        push    ecx                     ; the buffer has to end in the VM's
+        shl     ecx,9                   ; 1MB and 64K
+        add     ecx,eax
+        cmp     ecx,110000h
+        pop     ecx
+        ja      lx_rwfar
+        push    ebx
         add     eax,[ebx+CB_HIGHLIN]
         mov     bl,BDC_READ
         cmp     byte ptr [ebp+CL_AH],42h
@@ -2612,6 +2667,10 @@ lx_range:
         mov     word ptr [esi+2],0
         mov     al,04h
         jmp     lx_err
+lx_rwfar:
+        mov     word ptr [esi+2],0
+        mov     al,09h                  ; past the VM's memory: a DMA
+        jmp     lx_err                  ; boundary, as a BIOS has it
 
 ; 02h, 03h: AL sectors from the cylinder, head and sector in CX and DH
 ; into ES:BX, by the BIOS's geometry, as INT13.386 does it for 80h and
@@ -2623,10 +2682,14 @@ lx_chs:
         xchg    al,ah                   ; EAX = the cylinder
         imul    eax,[edi+BD_HEADS]
         movzx   edx,byte ptr [ebp+CL_DH]
+        cmp     edx,[edi+BD_HEADS]
+        jae     lx_range2
         add     eax,edx
         imul    eax,[edi+BD_SPT]
         and     ecx,3Fh
         jz      lx_range2               ; (sectors count from 1)
+        cmp     ecx,[edi+BD_SPT]
+        ja      lx_range2
         lea     edx,[eax+ecx-1]         ; EDX = the first sector
         movzx   ecx,byte ptr [ebp+CL_AL]
         or      ecx,ecx
@@ -2637,13 +2700,19 @@ lx_chs:
         dec     eax
         cmp     eax,dword ptr [edi+BD_MAXSEC]
         ja      lx_range2
-        push    ebx
         movzx   eax,word ptr [ebp+CL_ES]
         shl     eax,4
         push    ecx
         movzx   ecx,word ptr [ebp+CL_BX]
         add     eax,ecx
         pop     ecx
+        push    ecx                     ; the buffer has to end in the VM's
+        shl     ecx,9                   ; 1MB and 64K
+        add     ecx,eax
+        cmp     ecx,110000h
+        pop     ecx
+        ja      lx_chsfar
+        push    ebx
         add     eax,[ebx+CB_HIGHLIN]
         mov     bl,BDC_READ
         cmp     byte ptr [ebp+CL_AH],02h
@@ -2663,6 +2732,9 @@ lx_chsgo:
 lx_chsecc:
         mov     al,11h                  ; corrected: the BIOS says so
         jmp     lx_chsfail
+lx_chsfar:
+        mov     al,09h                  ; past the VM's memory: a DMA
+        jmp     lx_chsfail              ; boundary
 lx_chserr:
         mov     cl,04h
         cmp     ax,BDS_BAD_SECTOR
@@ -2715,9 +2787,17 @@ lx_48:
         jb      lx_badfn
         mov     ecx,1Ah
         cmp     eax,1Eh
+        jb      lx_48end
+        mov     ecx,1Eh
+lx_48end:
+        mov     eax,esi                 ; the buffer has to end in the VM's
+        sub     eax,[ebx+CB_HIGHLIN]    ; 1MB and 64K
+        add     eax,ecx
+        cmp     eax,110000h
+        ja      lx_badfn
+        cmp     ecx,1Eh
         jb      lx_48size
         mov     dword ptr [esi+1Ah],-1
-        mov     ecx,1Eh
 lx_48size:
         mov     word ptr [esi],cx
         mov     word ptr [esi+2],2      ; the geometry is filled in

@@ -338,6 +338,8 @@ static void decode_row( FAX *fax, IN *src )
             }
         }
     }
+    /* the ends, for the bits below and as what the next row is decoded against */
+    cur[ro.at + 1] = cur[ro.at + 2] = fax->columns;
     /* the row as bits: black from each even change to the odd one after */
     mem_set( fax->out, fax->black_is_1 ? 0x00 : 0xFF, fax->rowbytes );
     for ( index = 0; cur[index] < fax->columns; index += 2 ) {
@@ -352,10 +354,6 @@ static void decode_row( FAX *fax, IN *src )
             }
         }
     }
-    /* and as what the next row is decoded against */
-    for ( index = 0; cur[index] < fax->columns; index++ ) {
-    }
-    cur[index + 1] = cur[index + 2] = fax->columns;
     fax->ref = cur;
     fax->cur = ref;
 }

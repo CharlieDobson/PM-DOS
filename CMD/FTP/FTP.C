@@ -30,11 +30,15 @@ static int ftp_reply( void )
 {
     int code = 0, n, first = 1;
     char want[4];
+    u32 asked;
 
+    if ( !ctrl ) return 0;
     want[0] = 0;
     for ( ;; ) {
+        asked = sl_now();
         n = sl_recvline( ctrl, reply, sizeof( reply ), 1500 );
         if ( n < 0 ) { sl_puts( "  (connection closed)\r\n" ); ctrl = 0; return 0; }
+        if ( n == 0 && sl_since( asked ) > 1500 ) { sl_puts( "  (no reply)\r\n" ); break; }
         sl_puts( "  " ); sl_puts( reply ); sl_puts( "\r\n" );
         if ( first && n >= 3 && reply[0] >= '0' && reply[0] <= '9' ) {
             code = ( reply[0] - '0' ) * 100 + ( reply[1] - '0' ) * 10 + ( reply[2] - '0' );
@@ -52,10 +56,14 @@ static int ftp_reply( void )
     return code;
 }
 
+/* send one command and read its reply; -1 if the line was too long to
+   send at all */
 static int ftp_cmd( const char *verb, const char *arg )
 {
     char *w = linebuf;
     const char *s;
+    u32 need = sl_strlen( verb ) + ( ( arg && *arg ) ? 1 + sl_strlen( arg ) : 0 ) + 2;
+    if ( need > sizeof( linebuf ) ) { sl_puts( "ftp: argument too long\r\n" ); return -1; }
     for ( s = verb; *s; ) *w++ = *s++;
     if ( arg && *arg ) { *w++ = ' '; for ( s = arg; *s; ) *w++ = *s++; }
     *w++ = '\r'; *w++ = '\n';
@@ -134,7 +142,7 @@ static void do_list( const char *arg )
     if ( !ctrl ) { sl_puts( "Not connected.\r\n" ); return; }
     data = ftp_pasv();
     if ( data == 0 ) { sl_puts( "ftp: cannot open the data connection\r\n" ); return; }
-    ftp_cmd( "LIST", arg );
+    if ( ftp_cmd( "LIST", arg ) < 0 ) { sl_sclose( data ); return; }
     for ( ;; ) {
         got = sl_recvwait( data, xfer, sizeof( xfer ), 2000 );
         if ( got <= 0 ) break;
@@ -165,7 +173,11 @@ static void do_get( const char *remote, const char *local )
 
     data = ftp_pasv();
     if ( data == 0 ) { sl_puts( "ftp: cannot open the data connection\r\n" ); sl_memzero(&regs,sizeof(regs)); regs.eax=0x3E00; regs.ebx=handle; int21(&regs); return; }
-    ftp_cmd( "RETR", remote );
+    if ( ftp_cmd( "RETR", remote ) < 0 ) {
+        sl_sclose( data );
+        sl_memzero( &regs, sizeof( regs ) ); regs.eax = 0x3E00; regs.ebx = handle; int21( &regs );
+        return;
+    }
     for ( ;; ) {
         got = sl_recvwait( data, xfer, sizeof( xfer ), 2000 );
         if ( got <= 0 ) break;
@@ -196,7 +208,11 @@ static void do_put( const char *local, const char *remote )
 
     data = ftp_pasv();
     if ( data == 0 ) { sl_puts( "ftp: cannot open the data connection\r\n" ); sl_memzero(&regs,sizeof(regs)); regs.eax=0x3E00; regs.ebx=handle; int21(&regs); return; }
-    ftp_cmd( "STOR", remote );
+    if ( ftp_cmd( "STOR", remote ) < 0 ) {
+        sl_sclose( data );
+        sl_memzero( &regs, sizeof( regs ) ); regs.eax = 0x3E00; regs.ebx = handle; int21( &regs );
+        return;
+    }
     for ( ;; ) {
         sl_memzero( &regs, sizeof( regs ) );
         regs.eax = 0x3F00; regs.ebx = handle; regs.ecx = sizeof( xfer ); regs.edx = (u32)xfer;
