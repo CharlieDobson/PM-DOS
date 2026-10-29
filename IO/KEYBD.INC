@@ -811,6 +811,8 @@ sys_reboot:
 kbr_nohook:
         call    usb_halt                ; a USB schedule left running would
                                         ; be writing into the BIOS's memory
+        call    ahci_halt               ; and the SATA ports' lists are the
+                                        ; BIOS's again before it starts
         xor     al,al
         call    nt_arm
         mov     edx,dword ptr [fpu_cr0boot]

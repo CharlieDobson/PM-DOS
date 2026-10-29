@@ -5,6 +5,9 @@
 ;
 ;   ATA PIO   hard disks that answered IDENTIFY (see ATA.INC).  The
 ;             transfer lands straight in the caller's flat buffer.
+;   AHCI      SATA disks on an AHCI adapter, once PMDOS has had them
+;             taken from the BIOS (AHCI.INC); until then, and on a
+;             machine with AHCI=OFF, they are BIOS drives like any other
 ;   USB       disks on the USB bus, drives USB_DRV0 upwards, and a
 ;             BIOS drive a USB disk turned out to be (USBMSC.INC)
 ;   BIOS      everything else - floppies always, and hard disks on
@@ -46,6 +49,7 @@ blk_init:
         mov     ecx,(MAX_DRIVES * GEO_LEN + 3) / 4
         rep     stosd
         call    ata_init
+        call    ahci_init               ; looked at, not yet taken
         pop     edi
         pop     ecx
         pop     eax
@@ -300,6 +304,8 @@ be_out:
 blk_params:
         call    ata_capacity            ; IDENTIFY knows better than CHS
         jnc     bp_ata
+        call    ahci_capacity           ; on either kind of disk
+        jnc     bp_ata
         call    usbm_capacity           ; and so does READ CAPACITY
         jnc     bp_ata
         call    blk_getgeo
@@ -363,6 +369,14 @@ blk_read:
         pop     ecx
         jmp     short blk_ata_ret
 blk_r_notata:
+        call    ahci_owns               ; a SATA one?
+        jc      blk_r_notahci
+        push    ecx
+        movzx   ecx,cx
+        call    ahci_read
+        pop     ecx
+        jmp     short blk_ata_ret
+blk_r_notahci:
         call    usbm_owns               ; or a USB one?  Then USBMSC.INC
         jc      blk_r_bios              ; answers, status and all
         jmp     usbm_read
@@ -382,6 +396,14 @@ blk_write:
         pop     ecx
         jmp     short blk_ata_ret
 blk_w_notata:
+        call    ahci_owns
+        jc      blk_w_notahci
+        push    ecx
+        movzx   ecx,cx
+        call    ahci_write
+        pop     ecx
+        jmp     short blk_ata_ret
+blk_w_notahci:
         call    usbm_owns
         jc      blk_w_bios
         jmp     usbm_write

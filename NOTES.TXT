@@ -1,6 +1,6 @@
 PM-DOS - Protected Mode DOS, a 32-bit DOS kernel
 ================================================
-Started 2026-08-06.  Version 0.67.
+Started 2026-08-06.  Version 0.68.
 
 The VDM - running 16-bit DOS programs
 -------------------------------------
@@ -17920,6 +17920,300 @@ in the machine.
 FOR CHARLIE: the help's CDROM= example is CDROM=R, which PM-DOS
 refuses (A: to P:).  The new help text is in 21EXTERN.TXT (RAMDISK
 /L:x) and 30CONFIG.TXT (CDROM=, starting from a CD-ROM).
+
+
+AHCI: SATA DISKS IN AHCI MODE (2026-10-28)
+---------------------------------------------------------------------
+
+Charlie asked whether AHCI could be added and tested with the VMs
+here, or only on real hardware - and then that he has a Core 2 Quad
+to test it on.  QEMU is the one emulator here with an AHCI controller
+(ich9-ahci; the q35 machine has one built in, and its SeaBIOS starts
+from it).  86Box 4.2.1 and DOSBox-X have none.  So it was built and
+proven on QEMU, and the Core 2 is the real test.
+
+Before this an AHCI disk was a BIOS drive: INT 13h through the BIOS's
+own AHCI code and the 8K staging buffer.  Correct and slow.  ATA.INC
+cannot see it at all - there is no task file - and does not see a
+SATA port in "enhanced"/native mode either (it probes 1F0h and 170h
+only); that one is still a BIOS drive.
+
+WHAT IS WHERE.
+  - IO\AHCI.INC, new.  ahci_init (from blk_init) finds the first
+    class 01h/06h/01h function, maps ABAR, and records each implemented
+    port - link, signature, the BIOS's command list and PxCMD - writing
+    nothing to the ports.  ahci_start (AHF_START) takes the disks.
+    ahci_read/ahci_write: READ/WRITE DMA (EXT for LBA48 drives), slot
+    0, one region, up to 2048 sectors a command, polled on PxCI, FLUSH
+    CACHE after every write chunk as ATA.INC does.  ahci_park and
+    ahci_halt give the ports back.
+  - BLOCK.INC asks ahci_owns after ata_owns and before usbm_owns, for
+    reads, writes and the capacity.
+  - IOS_AHCI (IOSVC+118h): AHF_REPORT, AHF_START, AHF_OWNS.  The report
+    layout (AHR_*, AHP_*, AHPF_*, AHS_*) is in PMDOS.INC.
+  - 21h/F1h AL=2Ah copies the report (with its row in vdm_subptr, or a
+    native caller's EDI is never flattened - the first test run said
+    "This kernel keeps no AHCI report" for exactly that), and
+    \TESTS\AHCITEST.EXE prints it: the adapter, its registers as the
+    BIOS left them, what the BIOS read for 80h and 81h, and for each
+    port a stage letter and the device's own registers.
+  - AHCI=ON|OFF in CONFIG.SYS (CONFIG.INC), ON by default.  cfg_ahcigo
+    runs after CONFIG.SYS, BEFORE usb_start - USB reads sector 0 of
+    every BIOS disk it does not know is the kernel's, and usv_one now
+    asks ahci_owns as well as ata_owns.  Safe mode is OFF.
+  - INT13.INC: a DOS box's INT 13h for an AHCI disk is never reflected
+    to the ROM.  Seeks, resets and readiness tests (09h 0Ch 0Dh 10h 11h
+    14h 47h) are answered done, anything else unserved is AH=01h.
+  - box_park (BUS.INC) and sys_reboot (KEYBD.INC) call ahci_park and
+    ahci_halt.
+
+THE PORT HAS ONE LIST POINTER AND TWO OWNERS.  The BIOS's INT 13h code
+keeps its own command list and points each port at it.  Once PxCLB is
+ours, a BIOS disk call on that port is fetched from OUR list - our last
+command, which may have been a write.  Everything follows from that:
+nothing is changed until after CONFIG.SYS; every BIOS read the start
+needs is made before any port is taken; the geometry 08h/41h/48h give
+is cached by blk_getgeo before the take and never asked again; the
+DOS box is not reflected to the ROM; the BIOS's CLB, CLBU, FB, FBU, IE
+and CMD are kept and put back at every park and restart; a port that
+will not recover from a failure is given back for good, and the block
+layer then sends that drive to the BIOS again.
+
+WHICH DISK IS 80h.  Not port order: the BIOS's numbers follow the boot
+order its setup chose.  ahci_start reads sector 0 of 80h and 81h through
+the BIOS, then each disk port's through the port, and gives a port the
+number whose sector it matches.  Two ports matching one drive (a disk
+and its clone) are told apart by the size 48h gave, or not taken.  A
+disk that matches nothing stays the BIOS's.  Only the numbers the IDE
+driver does not own (ata_owns) and the CD image does not (GV_HDEMU) are
+looked at, and MAX_PHYS is still two.
+
+THE MEMORY IS PMIO'S OWN TAIL.  The stub blits IO_PM_MAX bytes up to
+IO_PM_BASE whatever the image's length, so from pm_end (a new label at
+the end of IOPM.ASM) to IO_LIMIT is identity-mapped room nobody used.
+AHCI.INC carves 18K of it (AHM_NEED: 2K a port - command list, FIS
+area, command table, a sector - two BIOS sectors, the report) instead
+of declaring it, and IOPM.ASM checks at assembly time that it fits.
+A park's XMS for Windows comes out of the arena above 230000h, so the
+tail is not handed out.  Buffers the adapter cannot be given (an odd
+address, or the band ata_dmaok describes) go through XFER_BUF, 16
+sectors at a time.
+
+SIZES.  PMIO.SYS 75,781 -> 78,549.  PMDOS.SYS 195,290 -> 195,469, so
+1,139 bytes are left under 196,608.  AHCITEST.EXE 3,311.
+
+TESTED, QEMU 11.1 headless (rig in scratchpad 5ab2ae62, rig\qrun.ps1:
+-Machine q35|pc, -Sata images, -SataPorts, -SataBoot; SeaBIOS's log in
+SEABIOS.TXT from the debug port):
+  - q35, HD16 on port 0: started from it, taken as 80h by sector 0;
+    COPY /B of three files to one, COPY again, FC; the file read back
+    on the host equals the three joined; I13TEST all OK through a DOS
+    box; CHKDSK clean.
+  - AHCI=OFF: "found, not started", nothing taken, the disk by the BIOS.
+  - two disks, ports 0 and 2: 80h and 81h, COPY + FC to D:.
+  - the BIOS started from port 3 with a disk on port 0: port 3 is 80h,
+    port 0 is 81h.
+  - a PIIX machine with HD16 on IDE and an ich9-ahci card: IDE keeps
+    80h, AHCI takes 81h.
+  - PARKTEST A20TEST.COM, then COPY + FC: the port taken back.
+  - Ctrl-Alt-Del: SeaBIOS starts from the disk again, taken again.
+  - a .COM in a DOS box (scratchpad bnc\BNCTEST.ASM): INT 13h to odd
+    addresses - one sector, forty by 42h, sector 0 written back - all
+    equal to the even-address reads, sector 0 unchanged on the host;
+    and the guard's answers (10h 0Ch 11h 0Dh 47h done, 05h 0Ah AH=01h)
+    against AHCI=OFF, where the same calls reach SeaBIOS.
+NOT TESTED: real hardware; a drive without LBA48 (QEMU's all have it);
+one request of more than 2048 sectors; a failing command, the recovery
+and the give-back (needs a failing drive); the BIOS/OS hand-off (QEMU
+has no BOHC) and CLO; a second AHCI controller; port multipliers;
+Windows on an AHCI machine; RUNTESTS - it builds its disk with MKDISK,
+which was not run overnight.
+
+FOUND AND LEFT.  After a park, real-mode DOS starts with the A20 gate
+shut (A20TEST under PARKTEST: "on entry the gate is shut"), and
+SeaBIOS's AHCI INT 13h then fails: I13TEST under PARKTEST says "the
+read failed" after 30 seconds, and SeaBIOS's log says "Timeout at
+ahci_command".  The same with AHCI=OFF, and with 256MB; an IDE disk is
+fine.  So it is older than this driver.  The guess is SeaBIOS's 32-bit
+AHCI code writing its command list, near the top of RAM, with the wrap
+on.  What it means: Windows on a machine whose disk is AHCI is reading
+through a BIOS that may not be able to - at least under SeaBIOS.  Not
+chased.
+
+
+IDE: MULTIWORD TIMING, AUTO PICKS THE FASTEST, A SECOND CONTROLLER
+(2026-10-28)
+---------------------------------------------------------------------
+
+Charlie asked, once AHCI was done, for "PIIX/VIA timing so that
+IDEDMA=AUTO can pick the fastest mode, and a second PCI IDE controller".
+UNCOMMITTED, NOT DELIVERED: built and tested in a scratch mirror only.
+
+THE TIMING.  IDEHOST.INC has written the Ultra DMA half of the host's
+timing since v0.60.  The multiword half it left as the BIOS set it,
+which is only right when the BIOS left PIO 4 - so AUTO could not choose
+a mode, and kept whatever the BIOS had chosen.  ideh_mwdma now writes
+it: on Intel the IORDY sample point and recovery of the PIO mode each
+multiword mode is timed as (IDETIM, and SIDETIM with SITRE for a
+slave; a slave on the old shared timing is given a copy of it first),
+DTE when the drive's PIO is slower; multiword 0 gets TIME off, the
+compatible timing, because the slowest fast timing is 270ns and the
+mode wants 480.  On VIA the drive's data byte at 48h, from ih_vmw: the
+ATA minimums of the multiword mode and of the drive's best PIO mode,
+the longer of each, in 33MHz clocks.  ATD_PIO (word 64, or 51 before
+it) is the drive's best PIO.  The first PIIX (82371FB) has one timing
+for both drives of a channel and is left alone (ideh_mw = 0).
+
+AUTO IS ON WHERE BOTH HALVES ARE WRITTEN: ata_policy.  Elsewhere AUTO
+is what it was.  [ata_dmapol] keeps what the line said, so F1h AL=0Ah
+and IDETEST still report "policy 1".  F1h AL=0Ah's controller report
+has bit 20: the multiword timing is written.  IDETEST holds a multiword
+mode PM-DOS chose to the host's registers, and prints 40h-57h raw.
+
+A SECOND CONTROLLER.  ata_bminit takes up to two class 01h/01h
+functions from pci_table (ata_hosts, AH_*).  A channel in native mode
+gets a slot after the four fixed ones (ATA_MAXCHAN 8, ATA_MAXDEV 16),
+at its BARs; a compatibility-mode channel keeps 1F0h/170h, and the
+first controller to claim one keeps it.  ata_chost says whose channel
+each slot is; ATD_HOST and ATD_HDRV say whose drive each device is.
+IDEHOST.INC's state is now the SELECTED host's, and every routine that
+touches a device selects the device's own first (ideh_sel), so no
+timing is ever written into the wrong chip.  Cards that call
+themselves 0180h or 0104h (most Promise, HighPoint, SiI) are not taken:
+they have registers of their own and stay with their option ROM.
+
+WHICH DISK IS 80h - THE PART THAT MATTERS MOST.  Up to v0.67 ata_slot
+gave out 80h and 81h in probe order.  With two controllers, or a boot
+order set in the BIOS, the BIOS's order is not the probe order, and a
+disk given another's number is written as that disk.  ata_number now
+matches: the BIOS's sector 0 of 80h and 81h (ata_biosread, read ONCE,
+BEFORE the probe sets nIEN - a BIOS that waits for IRQ 14 would wait
+for ever afterwards) against each disk's own by PIO, hashed.  A tie
+goes by size, then to the first disk if all of the tied disks are on
+the board's own channels, and to nobody (the BIOS path) if one is a
+second controller's.  A number the BIOS could not be asked about goes
+by probe order to a disk on the board's channels, as before.  F1h
+AL=0Ah's ECX now carries the number (third byte) and the controller
+(top byte).  AHCI.INC's start takes the numbers ata_owns does not, as
+it did.
+
+nIEN.  A drive the probe found and nothing here uses gets its
+interrupt back (ata_irqs), so the BIOS can still drive it.  ata_park
+(called by box_park) does what IORM's ata_toRM does for 1F0h/170h for
+every channel: interrupts back on the way down, off again on the way
+up only where this driver uses the channel.
+
+THE BLOCK LAYER STILL HAS TWO HARD-DISK NUMBERS (MAX_PHYS, 80h and
+81h; USB starts at 82h).  A third disk, on whichever controller, is
+not reachable at all, as before.
+
+TESTS (scratchpad of session 0cc45ff6: kbuild.ps1 builds the kernel
+and IDETEST only; v86.ps1 runs 86Box from a copy of a disk patched by
+FATREPL, or from a MKDISK floppy; qide.ps1 runs QEMU):
+  - 86Box vs440fx (PIIX3, BIOS leaves PIO): AUTO now MWDMA2 on master
+    and slave, "host matches"; MWDMA2/1/0 by name, registers E377h/0Bh,
+    E177h/09h, C044h/00h as they should read; YES and OFF give the
+    same checksum; a CD-ROM on the secondary at MWDMA2 reads; PARKTEST
+    (RMTEST through the BIOS on the far side) and IDETEST after it.
+  - 86Box p3bf (PIIX4E, BIOS leaves UDMA2): AUTO keeps UDMA2; MWDMA2
+    clears 48h's enable bits and keeps the BIOS's PIO 4 fields.
+  - 86Box pb520r (no PCI): one disk, 80h, PIO.
+  - QEMU pc: SeaBIOS leaves UDMA5 on a PIIX3, which has none - v0.67's
+    AUTO kept it, AUTO now gives MWDMA2 and times it (disk and CD).
+    The test disk as primary SLAVE made 80h by bootindex: v0.67 gave
+    80h to the blank master and stopped at "Bad or missing command
+    interpreter"; now the slave is 80h and everything passes.  Two
+    identical disks: probe order.  q35, AHCI disk only: AHCITEST as
+    before.  The new IDETEST on the v0.67 kernel: passes.
+NOT TESTED: a native-mode channel, and two controllers at once - none
+of the emulators here can show either (86Box 4.2.1 takes one hdc and
+keeps a board's own IDE; its CMD646 would need a board with no IDE of
+its own, PCI mechanism 1 and a saved CMOS; QEMU's piix IDE is legacy
+only, and SeaBIOS will not start with two of them on the same ports).
+VIA: cuv4xls in 86Box stops at "CMOS checksum error - Defaults loaded,
+press F1" with no saved CMOS - one F1 in that VM (and closing it
+normally) would make VIA testable.  Real hardware.  RUNTESTS.
+
+FOUND AND LEFT.
+  - 86Box p3bf does not start PM-DOS from its hard disk, from v0.60 to
+    now: HD16.IMG stops at "PMDOS.SYS not found", a fresh MKDISK disk
+    hangs after the BIOS.  QEMU starts both.  From a floppy it is fine.
+    TOOLS\IDE86.PS1 builds that same MKDISK disk and starts from it,
+    so it should hang there too (not run).  Not chased.
+  - The saved CMOS for vs440fx is for 512MB; IDE86.PS1's 64MB makes
+    the BIOS stop at "Memory Size Decreased".
+  - LRGDISK.386 knows the two fixed channels only.
+
+
+v0.68 - SATA DISKS IN AHCI MODE, IDE TIMING AND A SECOND CONTROLLER,
+        AND STARTING FROM A CD-ROM (2026-10-29)
+---------------------------------------------------------------------
+
+Charlie: "Let's bump the kernel up to 0.68, write up summary of
+changes and commit with new version tag".  INC\PMVER.INC now says 68.
+This release is everything since the v0.67 tag.  The four entries
+above have the detail ("CON.C IS CONS.C", "EL TORITO", "AHCI", "IDE");
+this one is the list.
+
+EL TORITO (committed before the release, 143b003)
+  - BOOT\BOOTCD.ASM starts PM-DOS from a CD with no emulation; the
+    drive is found again by the volume's creation stamp, and CDROM=
+    names it.
+  - A hard disk image as 80h is read from the image: IORM asks INT 13h
+    AX=4B01h, and the IDE disks are numbered from 81h.
+  - PMDOSCD.ISO, a running PM-DOS and Setup's source in one, replaces
+    SETUPCD.ISO.  RAMDISK.SYS /L:x asks for a letter.
+
+CONS.C (1edb1c6)
+  - CMD\MODE\con.c and CMD\QBASIC\con.c are cons.c, so Git for Windows
+    can open them.  Same bytes out.
+
+AHCI
+  - IO\AHCI.INC drives the first AHCI controller's disks: READ/WRITE
+    DMA (EXT for LBA48), up to 2048 sectors a command, polled.
+  - The disks are taken after CONFIG.SYS, and only the BIOS's 80h and
+    81h, each by matching its sector 0 with what the BIOS reads, so a
+    disk keeps the number the BIOS gave it.
+  - The BIOS's port registers go back at every park and restart; a
+    port that will not recover is given back for good.
+  - A DOS box's INT 13h for an AHCI disk is answered, never sent to
+    the ROM.
+  - AHCI=ON|OFF in CONFIG.SYS, OFF in safe mode; 21h/F1h AL=2Ah and
+    \TESTS\AHCITEST.EXE report what was found.
+  - A CD-ROM on an AHCI port is not supported yet.
+
+IDE
+  - IDEHOST.INC writes the multiword half of the host's timing (Intel
+    and VIA), so IDEDMA=AUTO picks the fastest mode both sides can do.
+  - A second PCI IDE controller's channels are taken (ATA_MAXCHAN 8),
+    each routine selecting the device's own host first.
+  - IDE disks are numbered 80h and 81h by matching sector 0 against
+    the BIOS, as AHCI's are, not by probe order.
+  - A drive nothing here uses gets its interrupt back; box_park calls
+    ata_park.
+  - IDETEST reports the multiword timing and registers 40h-57h.
+
+NOT RUN ON REAL HARDWARE: AHCI (Charlie's Core 2 Quad is next), the
+IDE timing on VIA, a native-mode channel, two IDE controllers at once,
+starting from a CD on a real BIOS.
+
+BUILT AND TESTED.  A scratch mirror build (BUILD.CMD) of the tree as
+committed: against S:\BIN, PMIO.SYS 75,781 -> 81,274, PMDOS.SYS
+195,290 -> 195,469 (1,139 bytes left under 196,608), CMD.EXE and
+COMMAND.COM the version byte, TESTS\IDETEST.EXE 3,925 -> 4,554, and
+TESTS\AHCITEST.EXE 3,311 new; nothing else.  RUNTESTS -Update on all
+seven rows: 101 on every row.  Baselines moved: PMD.OUT's version line
+(7), RMFIND's \TESTS count 0085 -> 0086 for AHCITEST (7), RMTEST's
+free clusters 6B10 -> 6B06, ten clusters for PMIO.SYS, AHCITEST and
+IDETEST (7), and CACHETST's "a write is owed" 4 -> 5 (6).  The
+delivered HD16.IMG on QEMU: VER and COMMAND /C VER say 0.68; IDETEST
+on a PIIX machine and AHCITEST on q35 (the disk on SATA port 0, taken
+as 80h) pass.  The AHCI and IDE work tested together beforehand: an
+IDE disk and an AHCI card (IDE 80h, AHCI 81h), and two AHCI disks on
+ports 0 and 2, COPY and FC /B clean on each.
+Delivered: S:\BIN (6), BASELINE (27), PMDOS.IMG, PMDOS2.IMG,
+TESTS.IMG, HD16.IMG (8 files by FATREPL, CONFIG.TXT among them), the
+five Setup images, and the four images into the 86Box VM.
 
 
 v0.61 - THE NUMBER CAUGHT UP (2026-09-30)

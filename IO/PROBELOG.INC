@@ -41,9 +41,15 @@ plog_get:
 ; plog_ide - EBX = a device's place in the table -> EDI = its record.
 ;---------------------------------------------------------------------
 plog_ide:
-        mov     edi,ebx
-        imul    edi,PLI_LEN
-        add     edi,OFFSET plog + PLI_FIRST
+        cmp     ebx,(PLP_FIRST - PLI_FIRST) / PLI_LEN
+        jae     pli_spare               ; a native channel's: the log has
+        mov     edi,ebx                 ; room for the four fixed channels
+        imul    edi,PLI_LEN             ; and no more, and the ISA Plug and
+        add     edi,OFFSET plog + PLI_FIRST     ; Play record is next
+        ret
+pli_spare:
+        mov     edi,OFFSET plog_spare
         ret
 
 plog    db      PLOG_LEN dup(0)
+plog_spare  db  PLI_LEN dup(0)

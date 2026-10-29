@@ -19,11 +19,12 @@
 ; for a unit on an IDE channel.  This file gets a command block to the
 ; drive and the answer back, and asks REQUEST SENSE when it fails.
 ;
-; WHY A CD-ROM IS NOT A BIOS DRIVE HERE.  ata_slot hands out 80h, 81h
-; and so on in probe order to everything carrying ATDF_PRESENT, so
-; giving a CD-ROM that flag would renumber the hard disks behind it -
-; a machine with the CD on the primary slave would find its second
-; disk had moved.  An ATAPI unit gets ATDF_ATAPI and NOT ATDF_PRESENT:
+; WHY A CD-ROM IS NOT A BIOS DRIVE HERE.  ata_number hands out 80h and
+; 81h to the disks carrying ATDF_PRESENT - by probe order up to v0.67,
+; by matching each to what the BIOS reads since - so giving a CD-ROM
+; that flag would put it among the disks being numbered: under the old
+; rule a machine with the CD on the primary slave would have found its
+; second disk had moved.  An ATAPI unit gets ATDF_ATAPI and NOT ATDF_PRESENT:
 ; ata_slot, ata_count and the whole INT 13h path carry on seeing
 ; exactly the disks they saw before, and CDUNIT.INC numbers the packet
 ; devices separately.

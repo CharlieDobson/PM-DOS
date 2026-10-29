@@ -1150,6 +1150,9 @@ usv_one:
         push    ecx
         call    ata_owns
         jnc     uso_out                 ; the IDE driver's: not the BIOS's
+        call    ahci_owns
+        jnc     uso_out                 ; nor the SATA one's, whose port
+                                        ; the BIOS must not be sent to
         call    blk_getgeo              ; -> EBX = its geometry record
         jc      uso_out
         ; the capacity the BIOS gave it is a key as well: a stick that

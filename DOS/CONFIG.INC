@@ -299,6 +299,7 @@ cfg_bypass:
         ; driver could not take is still a keyboard through the BIOS's
         ; emulation, which is what a safe mode is for.
         mov     byte ptr [usb_on],0
+        mov     byte ptr [ahci_on],0    ; and the SATA disks the BIOS's
 
         ; A drive not shut down properly is asked about rather than
         ; checked: CHKDSK at boot may be the very thing that needed a
@@ -1245,9 +1246,11 @@ ckr_have:
 ;   IDEDMA=OFF      programmed I/O, always.  The kernel did nothing
 ;                   else before v0.43 and this is how to get that back
 ;                   on a machine where the bus master misbehaves.
-;   IDEDMA=AUTO     bus-master DMA if, and only if, the drive already
-;                   has a transfer mode selected.  The default, and
-;                   what an absent statement means.
+;   IDEDMA=AUTO     on a host whose timing the kernel writes (Intel
+;                   and VIA), the same as ON.  On any other, bus-master
+;                   DMA if, and only if, the drive already has a
+;                   transfer mode selected.  The default, and what an
+;                   absent statement means.
 ;   IDEDMA=ON       bus-master DMA in the best mode the drive, the
 ;                   host and the cable will all carry, selecting it if
 ;                   the BIOS did not.
@@ -1264,7 +1267,9 @@ ckr_have:
 ; a timing register that every chipset spells differently, and PM-DOS
 ; can write Intel's and VIA's and nobody else's (IO\IDEHOST.INC).  The
 ; BIOS programmed both at POST and made them match.  AUTO means "use
-; what they agreed on".  ON means "do better if you can", and on a
+; what they agreed on" - except where the kernel writes both halves
+; itself, which since v0.68 includes the multiword timing, and there
+; AUTO is ON.  ON means "do better if you can", and on a
 ; host whose timing the kernel cannot write that is never faster than
 ; the BIOS was seen to go, or Ultra DMA 2.  A named mode on such a
 ; host means "I know my machine", which is a thing a user may well
@@ -1502,6 +1507,37 @@ cfg_scsi:
 cfsc_on:
         mov     byte ptr [scsi_on],1
         ret
+
+;---------------------------------------------------------------------
+; AHCI=ON|OFF - whether the kernel drives the SATA disks on an AHCI
+;               adapter or leaves them to the BIOS.  ON is the default;
+;               the disks are taken once CONFIG.SYS is finished
+;               (cfg_ahcigo), so until then, and with OFF, they are
+;               read by INT 13h as they always were.  Safe mode is OFF.
+;---------------------------------------------------------------------
+cfg_ahci:
+        mov     edi,OFFSET cfgw_on
+        call    cfg_iskw
+        mov     al,1
+        jnc     cfah_set
+        mov     edi,OFFSET cfgw_off
+        call    cfg_iskw
+        jc      cfg_badparm
+        xor     al,al
+cfah_set:
+        mov     [ahci_on],al
+        ret
+
+;--- cfg_ahcigo - after CONFIG.SYS, from DOSMAIN: take them -----------
+cfg_ahcigo:
+        cmp     byte ptr [ahci_on],0
+        je      cfah_out
+        mov     al,AHF_START
+        call    dword ptr ds:[IOS_AHCI]
+cfah_out:
+        ret
+
+ahci_on     db  1                       ; AHCI=ON|OFF
 
 ;---------------------------------------------------------------------
 ; USB=ON|OFF[,n] - whether the kernel drives the USB controllers, and
@@ -2587,6 +2623,7 @@ cfg_table:
         dd      OFFSET cfgn_cdrom,   OFFSET cfg_cdrom
         dd      OFFSET cfgn_scsi,    OFFSET cfg_scsi
         dd      OFFSET cfgn_usb,     OFFSET cfg_usb
+        dd      OFFSET cfgn_ahci,    OFFSET cfg_ahci
         dd      OFFSET cfgn_cache,   OFFSET cfg_cache
         dd      OFFSET cfgn_wincache,OFFSET cfg_wincache
         dd      OFFSET cfgn_share,   OFFSET cfg_share
@@ -2628,6 +2665,7 @@ cfgn_idecbl   db  'IDECABLE',0
 cfgn_cdrom    db  'CDROM',0
 cfgn_scsi     db  'SCSI',0
 cfgn_usb      db  'USB',0
+cfgn_ahci     db  'AHCI',0
 cfgn_cache    db  'CACHE',0
 cfgn_wincache db  'WINCACHE',0
 cfgn_share    db  'SHARE',0

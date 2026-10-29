@@ -2859,6 +2859,74 @@ IOS_BRGBLK      EQU     IOSVC + 114h            ; EDI -> a block_req (BR_*) in t
                                                 ; parked.  EAX=0, CF clear = the
                                                 ; call was made; BR_STATUS carries
                                                 ; the result (IO\BLOCK.INC)
+IOS_AHCI        EQU     IOSVC + 118h            ; AL = an AHF_* function: SATA
+                                                ; disks on an AHCI adapter
+                                                ; (IO\AHCI.INC)
+
+;---------------------------------------------------------------------
+; AHCI.  The adapter is found and its ports looked at during boot, and
+; nothing on it is changed until PMDOS asks (AHF_START, after CONFIG.SYS
+; - AHCI=OFF and a safe-mode start never do).  Then each SATA disk the
+; BIOS knows as 80h or 81h, and the IDE driver does not, is taken over
+; under that number, found by its sector 0.  21h/F1h AL=2Ah hands the
+; report to \TESTS\AHCITEST.
+;---------------------------------------------------------------------
+AHF_REPORT      EQU     0       ; EDI -> AHR_LEN bytes: the report below
+AHF_START       EQU     1       ; the disks taken from the BIOS
+AHF_OWNS        EQU     2       ; DL = a BIOS drive -> CF clear if it is
+                                ;    an AHCI disk of the kernel's
+
+AHS_NONE        EQU     0       ; AHR_STATE: no AHCI adapter
+AHS_FOUND       EQU     1       ; found, not started (yet, or AHCI=OFF)
+AHS_STARTED     EQU     2       ; started: AHR_UNITS disks are ours
+AHS_NOREGS      EQU     3       ; its registers could not be reached
+AHS_NOHAND      EQU     4       ; the BIOS would not hand it over
+AHS_NOAE        EQU     5       ; not in AHCI mode, so left alone
+
+AHR_STATE       EQU     0       ; db - AHS_*
+AHR_NREC        EQU     1       ; db - port records filled
+AHR_UNITS       EQU     2       ; db - disks in use
+AHR_BIOSOK      EQU     3       ; db - bit 0: the BIOS read 80h's sector
+                                ;      0, bit 1: 81h's
+AHR_PCI         EQU     4       ; dd - bus, device, function, as PCI.INC
+AHR_ID          EQU     8       ; dd - device:vendor
+AHR_ABAR        EQU     12      ; dd - where its registers are
+AHR_CAP         EQU     16      ; dd - CAP, GHC, PI, VS, CAP2 and BOHC,
+AHR_GHC         EQU     20      ;      as found
+AHR_PI          EQU     24
+AHR_VS          EQU     28
+AHR_CAP2        EQU     32
+AHR_BOHC        EQU     36
+AHR_BTOT0       EQU     40      ; dd - sectors by INT 13h/48h, 80h and
+AHR_BTOT1       EQU     44      ;      81h, 0 if it did not say
+AHR_PORTS       EQU     48      ; the ports, AHP_LEN each
+AHR_MAXPORT     EQU     8
+
+AHP_NUM         EQU     0       ; db - the port's number
+AHP_STAGE       EQU     1       ; db - how far it got, a letter (AHCITEST)
+AHP_DRIVE       EQU     2       ; db - its BIOS drive, if AHPF_OWNED
+AHP_FLAGS       EQU     3       ; db - AHPF_*
+AHP_SSTS        EQU     4       ; dd - the link, at boot
+AHP_SIG         EQU     8       ; dd - the device's signature, at boot
+AHP_TFD         EQU     12      ; dd - its status and error, last seen
+AHP_IS          EQU     16      ; dd - PxIS and PxSERR when a command
+AHP_SERR        EQU     20      ;      last failed
+AHP_BCLB        EQU     24      ; dd - the BIOS's command list and PxCMD,
+AHP_BCMD        EQU     28      ;      as last found
+AHP_TOTAL       EQU     32      ; dd - sectors, from IDENTIFY
+AHP_MATCH       EQU     36      ; db - bit 0: its sector 0 is 80h's,
+                                ;      bit 1: 81h's
+AHP_ERRS        EQU     37      ; db - commands that failed
+AHP_MODEL       EQU     40      ; ATA_MODEL_LEN bytes, space padded
+AHP_LEN         EQU     80
+AHR_LEN         EQU     AHR_PORTS + AHR_MAXPORT * AHP_LEN
+
+AHPF_DISK       EQU     01h     ; a disk's signature
+AHPF_ATAPI      EQU     02h     ; a packet device's: left to the BIOS
+AHPF_TAKEN      EQU     04h     ; the port is on the kernel's lists now
+AHPF_OWNED      EQU     08h     ; ...and its disk is AHP_DRIVE
+AHPF_LBA48      EQU     10h
+AHPF_NOT512     EQU     20h     ; sectors that are not 512 bytes
 
 ;---------------------------------------------------------------------
 ; block_req - the WfW bridge's sector-I/O request, in the VxD's low 1:1

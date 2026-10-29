@@ -248,6 +248,11 @@ ENDIF
         call    scsi_start              ; the SCSI cards, now that a DEVICE=
                                         ; line may have loaded a manager
                                         ; that owns one (ASPI.INC)
+        call    cfg_ahcigo              ; the SATA disks, now that AHCI=
+                                        ; has had its say - and before USB,
+                                        ; which asks the BIOS for sector 0
+                                        ; of each disk not yet the kernel's
+                                        ; (CONFIG.INC)
         call    usb_start               ; the USB controllers, now that
                                         ; USB= has said whether to take
                                         ; them from the BIOS (USBDRV.INC)

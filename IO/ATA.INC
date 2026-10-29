@@ -43,7 +43,7 @@
 ; runs on.
 ;
 ; NEITHER IS TURNED ON BY GUESSWORK ON A WRITE PATH.  See ata_pickdma
-; for why an unselected transfer mode is left unselected, and
+; for when an unselected transfer mode is left unselected, and
 ; ata_dmarun for what happens when a bus master gets it wrong: the
 ; device is demoted to PIO for the rest of the session and the
 ; transfer is done again.  A machine whose chipset lies gets a slow
@@ -57,10 +57,27 @@
 ; Included by IOPM.ASM, after PCI.INC and IDEHOST.INC.
 ;=====================================================================
 
-ATA_MAXCHAN     EQU     4               ; the two on the board, and the two
+ATA_LEGACY      EQU     4               ; the two on the board, and the two
                                         ; a sound card or an add-in card
-                                        ; answers at
+                                        ; answers at: the fixed addresses
+ATA_MAXHOST     EQU     2               ; PCI IDE controllers driven
+ATA_MAXCHAN     EQU     ATA_LEGACY + ATA_MAXHOST * 2    ; and a channel
+                                        ; for each of theirs that is in
+                                        ; native mode, where its address
+                                        ; is whatever its BARs say
 ATA_MAXDEV      EQU     ATA_MAXCHAN * 2 ; master + slave on each
+
+; A PCI IDE controller, ata_hosts.  The timing fields are IDEHOST.INC's
+; and are what it found this controller to be.
+AH_DEV          EQU     0               ; dd - where in configuration space
+AH_ID           EQU     4               ; dd - device:vendor
+AH_BM           EQU     8               ; dw - BAR4, the engine; 0 = none
+AH_PROGIF       EQU     10              ; db - which channels are native
+AH_KIND         EQU     11              ; db - IH_*
+AH_TOP          EQU     12              ; db - its fastest Ultra DMA mode
+AH_ROW          EQU     13              ; db - VIA: the row of ih_vcycle
+AH_MW           EQU     14              ; db - its multiword timing is written
+AH_LEN          EQU     16
 
 ; Command block registers, as offsets from the channel's base port
 ATA_DATA        EQU     0
@@ -114,8 +131,12 @@ ATA_ID_CAPS     EQU     49 * 2          ; bit 9 = LBA supported
                                         ; bit 8 = DMA supported
 ATA_ID_VALID    EQU     53 * 2          ; bit 1 = word 63 means something,
                                         ; bit 2 = word 88 does
+ATA_ID_OLDPIO   EQU     51 * 2          ; high byte: the PIO mode, 0 to 2,
+                                        ; from before word 64
 ATA_ID_LBA28    EQU     60 * 2          ; dword - LBA28 sector count
 ATA_ID_MWDMA    EQU     63 * 2          ; low byte supported, high selected
+ATA_ID_PIO      EQU     64 * 2          ; bit 0 = PIO 3, bit 1 = PIO 4, if
+                                        ; word 53 bit 1 says so
 ATA_ID_CMDSET   EQU     83 * 2          ; bit 10 = LBA48 supported
 ATA_ID_UDMA     EQU     88 * 2          ; low byte supported, high selected
 ATA_ID_CABLE    EQU     93 * 2          ; bits 15-14 = 01: the word is used,
@@ -145,13 +166,29 @@ ATD_ID          EQU     20              ; byte - ATI_*
 ATD_BIOS        EQU     21              ; byte - the mode the BIOS left it
                                         ; in, which is ATD_CUR as it was
                                         ; the first time anything looked
+ATD_PIO         EQU     22              ; byte - the fastest PIO mode the
+                                        ; drive offers, 0 to 4, which a
+                                        ; multiword mode's timing must not
+                                        ; outrun (IDEHOST.INC)
 ATD_MODEL       EQU     24              ; ATA_MODEL_LEN bytes - the model
                                         ; string out of IDENTIFY words
                                         ; 27-46, byte-swapped into reading
                                         ; order, space padded.  Kept so a
                                         ; report can NAME a drive; see
                                         ; ata_model
-ATD_LEN         EQU     ATD_MODEL + ATA_MODEL_LEN
+ATD_HOST        EQU     ATD_MODEL + ATA_MODEL_LEN
+                                        ; dword - its controller's entry in
+                                        ; ata_hosts, 0 if it is on none
+                                        ; PM-DOS drives (ISA, or 1E8h/168h)
+ATD_HDRV        EQU     ATD_HOST + 4    ; byte - which of that controller's
+                                        ; four drives: 0 and 1 its primary
+                                        ; channel, 2 and 3 the secondary
+ATD_NUM         EQU     ATD_HOST + 5    ; byte - the BIOS number it answers
+                                        ; for, 80h or 81h; 0 for none.  See
+                                        ; ata_number
+ATD_S0OK        EQU     ATD_HOST + 6    ; byte - ATD_S0 holds its sector 0
+ATD_S0          EQU     ATD_HOST + 8    ; dword - a hash of its sector 0
+ATD_LEN         EQU     ATD_HOST + 12
 
 ; ATDF_*, ATI_* and ATC_* live in PMDOS.INC, because F1h AL=0Ah
 ; publishes them: a program asking how its disk is being talked to is
@@ -214,6 +251,9 @@ ata_init:
         mov     ecx,(ATA_MAXDEV * ATD_LEN) / 4
         rep     stosd
 
+        call    ata_biosread                    ; the first time only, and
+                                                ; before any drive is touched:
+                                                ; see ata_number
         call    ata_prdinit
         call    ata_bminit                      ; before the probe, because
                                                 ; a device decides how it
@@ -229,11 +269,14 @@ ai_loop:
         imul    esi,ATD_LEN
         add     esi,OFFSET ata_devs
 
-        ; where each channel answers: ata_ports, two words a channel
+        ; where each channel answers: ata_ports, two words a channel.
+        ; A native slot no controller filled in is not a channel
         mov     eax,ebx
         shr     eax,1                           ; EAX = channel
         mov     dx,word ptr [ata_ports+eax*4]
         mov     cx,word ptr [ata_ports+eax*4+2]
+        or      dx,dx
+        jz      ai_skip
         mov     [esi+ATD_BASE],dx
         mov     [esi+ATD_CTRL],cx
 
@@ -292,9 +335,12 @@ ai_next:
         mov     byte ptr [edi+PLI_STAGE],al
         mov     al,byte ptr [esi+ATD_FLAGS]
         mov     byte ptr [edi+PLI_FLAGS],al
+ai_skip:
         inc     ebx
         jmp     ai_loop
 ai_done:
+        call    ata_number              ; which BIOS numbers are ours, while
+                                        ; every disk is still on PIO
         ; HOW EACH DEVICE WILL MOVE ITS DATA, and it is a second pass
         ; because of the cable.  A cable belongs to a channel and the
         ; drives on it are asked one at a time, so the master's mode
@@ -312,6 +358,8 @@ ai_picked:
         jnz     ai_pick
         call    cun_build               ; and the CD-ROM units, which number
                                         ; the packet devices just found
+        call    ata_irqs                ; and a channel nothing here uses has
+                                        ; its drives' interrupt back
 IFDEF ATA_DEBUG
         ; self-test: read LBA 0 back and show its signature word
         cmp     dword ptr [ata_count],0
@@ -858,36 +906,19 @@ awd_ok:
 
 ;=====================================================================
 ; ata_slot - AL = BIOS drive number -> ESI = its device table entry.
-;            CF set unless that drive is a hard disk this driver owns.
-;
-; Hard disks are handed out in probe order, so BIOS 80h is the first
-; ATA disk found (normally the primary master), 81h the next.
-;
-; UNLESS THE MACHINE STARTED FROM A CD THAT EMULATES A HARD DISK: the
-; BIOS's 80h is then the disc's image and its own disks are 81h and up
-; (GV_HDEMU, which IORM set), so the first ATA disk is 81h and 80h is
-; left to the BIOS path in BLOCK.INC, which reads the image.
+;            CF set unless that drive is a hard disk this driver owns,
+;            which is the disk whose ATD_NUM it is.  See ata_number.
 ;
 ; NOTHING AT USB_DRV0 OR ABOVE.  Those numbers are the USB units', and
-; blk_read asks this driver first: a third IDE disk, or a second one
-; moved up by an image, would have answered for USB unit 0.
+; blk_read asks this driver first.  ata_number gives out 80h and 81h
+; and nothing else, so this only says so.
 ;=====================================================================
 ata_slot:
-        push    eax
-        push    ebx
         push    ecx
-
+        cmp     al,80h
+        jb      as_bad
         cmp     al,USB_DRV0
         jae     as_bad
-        movzx   ebx,al
-        sub     ebx,80h                 ; EBX = which hard disk is wanted
-        jb      as_bad
-        cmp     byte ptr ds:[GV_HDEMU],0
-        je      as_numbered
-        sub     ebx,1                   ; 80h is the image, not ours
-        jb      as_bad
-as_numbered:
-
         xor     ecx,ecx                 ; ECX = devices scanned
         mov     esi,OFFSET ata_devs
 as_scan:
@@ -895,25 +926,387 @@ as_scan:
         jae     as_bad
         test    byte ptr [esi+ATD_FLAGS],ATDF_PRESENT
         jz      as_next
-        or      ebx,ebx
-        jz      as_found
-        dec     ebx
+        cmp     al,[esi+ATD_NUM]
+        je      as_found
 as_next:
         add     esi,ATD_LEN
         inc     ecx
         jmp     short as_scan
-
 as_found:
+        pop     ecx
+        clc
+        ret
+as_bad:
+        pop     ecx
+        stc
+        ret
+
+;=====================================================================
+; ata_number - which IDE disk answers for BIOS 80h, and which for 81h?
+;              ATD_NUM, for every disk.  Called by ata_init once the
+;              probe is over and before any disk is on DMA.
+;
+; UP TO v0.67 THE ANSWER WAS PROBE ORDER: the first disk found was 80h
+; and the next 81h, on the theory that the BIOS numbers them the same
+; way.  It does when there is one controller.  It need not when there
+; are two, or a SCSI card, or a boot order chosen in the BIOS setup:
+; the BIOS numbers its disks in the order it will try to start from
+; them, and the order is the user's.  A disk given another disk's
+; number is read and WRITTEN as that disk.
+;
+; SO EACH NUMBER GOES TO THE DISK WHOSE SECTOR 0 IS WHAT THE BIOS
+; READS AS THAT NUMBER'S, as AHCI.INC does for a SATA port.  The BIOS's
+; were read by ata_biosread, before the probe; each disk's own is read
+; here, by PIO.  They are compared as a hash (ata_hash) - a match on
+; 128 dwords mixed through a multiply is not a coincidence, and a
+; mismatch is certain.
+;
+; WHEN MORE THAN ONE DISK MATCHES - a disk and its copy, or two that
+; are both blank - the sizes are asked, as AHCI.INC asks them.  If
+; that does not settle it either, and every disk still in it is on the
+; board's own channels, the first one found has it, which is what
+; v0.67 did and the best that can be known.  If a disk on a second
+; controller is among them, nobody has it: the number stays with the
+; BIOS, which costs speed and nothing else.
+;
+; WHEN THE BIOS COULD NOT BE ASKED - a number it does not have, a read
+; it refused - the number goes by probe order to a disk on the board's
+; own channels, as it always did, and never to one on a second
+; controller.  A disk the BIOS does not know cannot be mounted anyway:
+; blk_getgeo asks the BIOS for its geometry first.
+;
+; A CD'S HARD DISK IMAGE IS 80h (GV_HDEMU): that number is the BIOS's,
+; and the first disk of ours can be no lower than 81h.
+;=====================================================================
+ata_number:
+        pushad
+
+        ; each disk's own sector 0, and nobody numbered yet
+        mov     esi,OFFSET ata_devs
+        xor     ecx,ecx
+anu_read:
+        mov     byte ptr [esi+ATD_NUM],0
+        mov     byte ptr [esi+ATD_S0OK],0
+        test    byte ptr [esi+ATD_FLAGS],ATDF_PRESENT
+        jz      anu_rnext
+        mov     byte ptr [ata_dir],0
+        mov     [ata_dev],esi
+        mov     dword ptr [ata_lba],0
+        mov     dword ptr [ata_nsec],1
+        mov     dword ptr [ata_buf],OFFSET ata_idbuf
+        call    ata_rw
+        jc      anu_rnext
+        push    esi
+        mov     esi,OFFSET ata_idbuf
+        call    ata_hash
+        pop     esi
+        mov     [esi+ATD_S0],eax
+        mov     byte ptr [esi+ATD_S0OK],1
+anu_rnext:
+        add     esi,ATD_LEN
+        inc     ecx
+        cmp     ecx,ATA_MAXDEV
+        jb      anu_read
+
+        xor     edx,edx                 ; EDX = 0 for 80h, 1 for 81h
+anu_num:
+        or      edx,edx
+        jnz     anu_noemu
+        cmp     byte ptr ds:[GV_HDEMU],0
+        jne     anu_next                ; 80h is the disc's image
+anu_noemu:
+        bt      dword ptr [ata_bok],edx
+        jnc     anu_blind
+        call    ata_matchnum            ; -> ESI, or CF
+        jc      anu_next
+        jmp     short anu_give
+
+        ; no sector 0 from the BIOS: the first unnumbered disk on the
+        ; board's own channels, as before
+anu_blind:
+        mov     esi,OFFSET ata_devs
+        xor     ecx,ecx
+anu_blp:
+        test    byte ptr [esi+ATD_FLAGS],ATDF_PRESENT
+        jz      anu_bnext
+        cmp     byte ptr [esi+ATD_NUM],0
+        jne     anu_bnext
+        jmp     short anu_give
+anu_bnext:
+        add     esi,ATD_LEN
+        inc     ecx
+        cmp     ecx,ATA_LEGACY * 2
+        jb      anu_blp
+        jmp     short anu_next
+
+anu_give:
+        lea     eax,[edx+80h]
+        mov     [esi+ATD_NUM],al
+anu_next:
+        inc     edx
+        cmp     edx,2
+        jb      anu_num
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; ata_matchnum - EDX = 0 or 1.  -> ESI = the unnumbered disk whose
+;                sector 0 is what the BIOS read from 80h + EDX, CF if
+;                there is none that can be told apart.  ata_number has
+;                the rules.
+;---------------------------------------------------------------------
+ata_matchnum:
+        push    eax
+        push    ebx
+        push    ecx
+        push    edi
+        push    ebp
+        xor     ebp,ebp                 ; by sector 0 alone
+        call    amn_count
+        cmp     ebx,1
+        je      amn_one
+        jb      amn_none
+        mov     ecx,edi                 ; ECX = the first of them, AL = one
+        mov     ah,al                   ; of them is on a second controller
+        inc     ebp                     ; more than one: will the sizes say?
+        call    amn_count
+        cmp     ebx,1
+        je      amn_one
+        or      ah,ah                   ; no: the first by sector 0, if
+        jnz     amn_none                ; they are all on the board's
+        mov     edi,ecx                 ; channels
+amn_one:
+        mov     esi,edi
+        pop     ebp
+        pop     edi
         pop     ecx
         pop     ebx
         pop     eax
         clc
         ret
-as_bad:
+amn_none:
+        pop     ebp
+        pop     edi
         pop     ecx
         pop     ebx
         pop     eax
         stc
+        ret
+
+; amn_count - EDX = 0 or 1, EBP = 1 to ask the size as well as sector
+; 0.  -> EBX = how many unnumbered disks fit, EDI = the first, AL = 1
+; if one of them is on a second controller's channel.  AH is kept.
+amn_count:
+        push    ecx
+        push    esi
+        xor     ebx,ebx
+        xor     edi,edi
+        mov     al,0
+        mov     esi,OFFSET ata_devs
+        xor     ecx,ecx
+amc_lp:
+        test    byte ptr [esi+ATD_FLAGS],ATDF_PRESENT
+        jz      amc_next
+        cmp     byte ptr [esi+ATD_NUM],0
+        jne     amc_next
+        cmp     byte ptr [esi+ATD_S0OK],0
+        je      amc_next
+        push    eax
+        mov     eax,[esi+ATD_S0]
+        cmp     eax,[ata_bhash+edx*4]
+        jne     amc_no
+        or      ebp,ebp
+        jz      amc_yes
+        mov     eax,[ata_btot+edx*4]
+        or      eax,eax                 ; the BIOS gave no size
+        jz      amc_no
+        cmp     eax,[esi+ATD_TOTAL]
+        jne     amc_no
+amc_yes:
+        pop     eax
+        inc     ebx
+        or      edi,edi
+        jnz     amc_first
+        mov     edi,esi
+amc_first:
+        cmp     ecx,ATA_LEGACY * 2
+        jb      amc_next
+        mov     al,1
+        jmp     short amc_next
+amc_no:
+        pop     eax
+amc_next:
+        add     esi,ATD_LEN
+        inc     ecx
+        cmp     ecx,ATA_MAXDEV
+        jb      amc_lp
+        pop     esi
+        pop     ecx
+        ret
+
+;=====================================================================
+; ata_irqs - which channels does this driver use, and which only
+;            answered?  ata_used and ata_found, a bit a channel; the
+;            drives on a channel that only answered get their
+;            interrupt back.
+;
+; THE PROBE TELLS EVERY DRIVE IT FINDS TO KEEP ITS INTERRUPT TO ITSELF
+; (nIEN, in ata_identify), because this driver polls.  A drive this
+; driver then does not use - a disk with no BIOS number of ours, which
+; since ata_number can be a disk on a second controller, or one the
+; BIOS has under a number nobody here could match - is the BIOS's, and
+; a BIOS whose INT 13h waits for the drive's interrupt waits for good
+; (IORM.ASM, ata_toRM).  Up to v0.67 there was no such drive: every
+; disk the probe could reach was one of the first two found.
+;
+; A channel with one drive of ours and one of the BIOS's keeps nIEN:
+; the device control register is the channel's, not a drive's.
+;=====================================================================
+ata_irqs:
+        pushad
+        mov     dword ptr [ata_used],0
+        mov     dword ptr [ata_found],0
+        mov     esi,OFFSET ata_devs
+        xor     ecx,ecx
+aiq_lp:
+        mov     eax,ecx
+        shr     eax,1                   ; EAX = the channel
+        test    byte ptr [esi+ATD_FLAGS],ATDF_PRESENT OR ATDF_ATAPI
+        jz      aiq_next
+        bts     dword ptr [ata_found],eax
+        test    byte ptr [esi+ATD_FLAGS],ATDF_ATAPI
+        jnz     aiq_used                ; a CD-ROM is always ours
+        cmp     byte ptr [esi+ATD_NUM],0
+        je      aiq_next
+aiq_used:
+        bts     dword ptr [ata_used],eax
+aiq_next:
+        add     esi,ATD_LEN
+        inc     ecx
+        cmp     ecx,ATA_MAXDEV
+        jb      aiq_lp
+        mov     al,1
+        call    ata_nien
+        popad
+        ret
+
+;=====================================================================
+; ata_park - AL = 0 before the machine is handed to real mode, 1 after
+;            it comes back (box_park, BUS.INC).
+;
+; THE OTHER CHANNELS' HALF OF IORM's ata_toRM, which gives the drives
+; on 1F0h and 170h their interrupt back for the BIOS on the way down
+; and takes it again on the way up - those two addresses and no
+; others, because the stub is assembled on its own and knows nothing
+; else.  A native channel's drives are a second controller's, and its
+; option ROM is the BIOS for them; this does the same for them, from
+; the protected-mode side where the addresses are known.  Coming back
+; it also undoes ata_toPM for a fixed channel nothing here uses.
+;=====================================================================
+ata_park:
+        call    ata_nien
+        ret
+
+; ata_nien - AL = 0: every channel a drive answered on gets its
+; drives' interrupt back.  AL = 1: the ones this driver uses lose it
+; again, and the others get it back.  All registers kept.
+ata_nien:
+        pushad
+        mov     bl,al
+        xor     ecx,ecx
+anz_lp:
+        bt      dword ptr [ata_found],ecx
+        jnc     anz_next                ; nothing there to tell
+        movzx   edx,word ptr [ata_ports+ecx*4+2]
+        or      edx,edx
+        jz      anz_next
+        xor     al,al
+        or      bl,bl
+        jz      anz_out
+        bt      dword ptr [ata_used],ecx
+        jnc     anz_out
+        mov     al,ATA_DC_NIEN
+anz_out:
+        out     dx,al
+anz_next:
+        inc     ecx
+        cmp     ecx,ATA_MAXCHAN
+        jb      anz_lp
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; ata_biosread - what the BIOS reads as sector 0 of 80h and 81h, and
+;                how big it says each is.  ata_bhash, ata_btot and
+;                ata_bok.  The first call does it; later ones return.
+;
+; BEFORE THE PROBE AND NEVER AGAIN.  ata_identify sets nIEN in every
+; drive it finds, and a BIOS whose INT 13h waits for the drive's
+; interrupt then waits for good (IORM.ASM, ata_toRM) - so the BIOS is
+; asked while the drives are still as it left them.  ata_init runs
+; again whenever CONFIG.SYS changes a policy, and those runs use what
+; this one kept.
+;---------------------------------------------------------------------
+ata_biosread:
+        cmp     byte ptr [ata_bdone],0
+        jne     abr_out
+        mov     byte ptr [ata_bdone],1
+        pushad
+        xor     edx,edx
+abr_one:
+        lea     eax,[edx+80h]           ; AL = the drive
+        cmp     dl,byte ptr ds:[BDA_HDCOUNT]
+        jae     abr_next                ; the BIOS has no such disk
+        or      edx,edx
+        jnz     abr_noemu
+        cmp     byte ptr ds:[GV_HDEMU],0
+        jne     abr_next                ; a disc's image: never ours
+abr_noemu:
+        push    eax
+        call    blk_getgeo              ; EBX = its cache entry
+        pop     eax
+        jc      abr_next
+        mov     ecx,[ebx+GEO_LBATOT]
+        mov     [ata_btot+edx*4],ecx
+        pushad
+        xor     ebx,ebx
+        mov     ecx,1
+        mov     edi,OFFSET ata_idbuf
+        mov     byte ptr [bio_write],0
+        call    blk_go                  ; by INT 13h, the BIOS's own way
+        popad
+        jc      abr_next
+        mov     esi,OFFSET ata_idbuf
+        call    ata_hash
+        mov     [ata_bhash+edx*4],eax
+        bts     dword ptr [ata_bok],edx
+abr_next:
+        inc     edx
+        cmp     edx,2
+        jb      abr_one
+        popad
+abr_out:
+        ret
+
+;---------------------------------------------------------------------
+; ata_hash - ESI -> 512 bytes.  -> EAX = a 32-bit hash of them (FNV-1a
+;            a dword at a time).  ESI is kept.
+;---------------------------------------------------------------------
+ata_hash:
+        push    ecx
+        push    edx
+        push    esi
+        mov     eax,811C9DC5h
+        mov     ecx,128
+ahs_lp:
+        xor     eax,[esi]
+        imul    eax,eax,01000193h
+        add     esi,4
+        dec     ecx
+        jnz     ahs_lp
+        pop     esi
+        pop     edx
+        pop     ecx
         ret
 
 ;=====================================================================
@@ -952,7 +1345,8 @@ api_fits:
         ret
 
 ;=====================================================================
-; ata_bminit - find the bus-master engine, if there is one.
+; ata_bminit - find the PCI IDE controllers, up to ATA_MAXHOST, and
+;              where each one's channels and engine are.
 ;
 ; Class 01h subclass 01h is "mass storage, IDE" and BAR4 is where the
 ; specification puts the engine's registers - eight bytes for the
@@ -960,83 +1354,202 @@ api_fits:
 ;
 ; THE PROG-IF BYTE IS THE PART THAT MATTERS.  Bit 0 says the primary
 ; channel is in native mode and bit 2 says the secondary is, and a
-; native-mode channel does not answer at 1F0h or 170h at all.  This
-; driver probes the two legacy addresses and nothing else, so a
-; channel in native mode is a channel whose drives were never found -
-; and attaching its engine to a device found at a legacy address
-; would be pointing the bus master at the wrong disk.
+; native-mode channel does not answer at 1F0h or 170h at all: it is
+; wherever its BARs put it.  Up to v0.67 this driver probed the legacy
+; addresses and nothing else, and a native channel's drives were never
+; found.  Now each channel is given a place in ata_ports by
+; ata_hostchan, and ata_chost says whose channel each place is.
+;
+; A SECOND CONTROLLER is the one an add-in card or a second chip on
+; the board brings.  Only class 01h/01h is taken: the cards that call
+; themselves "other mass storage" or RAID (most Promise, HighPoint and
+; SiI ones) have registers of their own beside the standard ones and
+; stay with their option ROM, through the BIOS, as before.  Whose
+; disk answers for 80h and 81h is ata_number's to say.
 ;=====================================================================
 ata_bminit:
         pushad
-        mov     byte ptr [ata_bmok],0
-        mov     word ptr [ata_bmbase],0
-        mov     dword ptr [ata_pciid],0
 
-        mov     cx,0101h                        ; mass storage, IDE
-        call    pci_find
-        jc      abi_none
-        mov     [ata_pcidev],ebx
+        ; the channel table: the fixed four stay where they are, the
+        ; native slots are empty, and no channel is on a controller
+        mov     edi,OFFSET ata_ports + ATA_LEGACY * 4
+        xor     eax,eax
+        mov     ecx,ATA_MAXHOST * 2
+        rep     stosd
+        mov     edi,OFFSET ata_chost
+        mov     al,0FFh
+        mov     ecx,ATA_MAXCHAN
+        rep     stosb
+        mov     edi,OFFSET ata_hosts
+        xor     eax,eax
+        mov     ecx,(ATA_MAXHOST * AH_LEN) / 4
+        rep     stosd
+        mov     dword ptr [ata_nhost],0
 
+        xor     ebp,ebp                         ; EBP = functions passed over
+abi_next:
+        cmp     dword ptr [ata_nhost],ATA_MAXHOST
+        jae     abi_done
+        mov     ecx,01010000h                   ; mass storage, IDE, any
+        mov     edx,0FFFF0000h                  ; prog-if
+        mov     edi,PCT_CLASS
+        mov     esi,ebp
+        call    pcx_match                       ; -> EBX = its address
+        jc      abi_done
+        inc     ebp
+
+        mov     edi,[ata_nhost]
+        imul    edi,AH_LEN
+        add     edi,OFFSET ata_hosts            ; EDI = its entry
+        mov     [edi+AH_DEV],ebx
         mov     al,PCIR_VENDOR
         call    pci_read
-        mov     [ata_pciid],eax
-
-        mov     al,PCIR_BAR4
-        call    pci_read
-        test    al,1                            ; it has to be an I/O BAR
-        jz      abi_none
-        and     eax,0FFFCh
-        jz      abi_none                        ; ...and a real address
-        mov     [ata_bmbase],ax
-
+        mov     [edi+AH_ID],eax
         mov     al,PCIR_CLASS
         call    pci_read
         shr     eax,8
-        mov     [ata_progif],al
+        mov     [edi+AH_PROGIF],al
+        mov     al,PCIR_BAR4
+        call    pci_read
+        test    al,1                            ; it has to be an I/O BAR
+        jz      abi_chans
+        and     eax,0FFFCh                      ; ...and a real address, or
+        mov     [edi+AH_BM],ax                  ; this is 0 and means none
 
+abi_chans:
+        xor     ecx,ecx
+        xor     edx,edx                         ; EDX = channels it was given
+abi_chan:
+        call    ata_hostchan
+        jc      abi_cnext
+        inc     edx
+abi_cnext:
+        inc     ecx
+        cmp     ecx,2
+        jb      abi_chan
+        or      edx,edx
+        jnz     abi_have
+        ; NOTHING OF ITS OWN TO DRIVE: both its channels are at the
+        ; legacy addresses, and another controller answers there - or
+        ; its native ones have no addresses
+        mov     ecx,AH_LEN / 4
+        xor     eax,eax
+        rep     stosd
+        jmp     abi_next
+
+abi_have:
         ; a device that has not been told it may master the bus will
-        ; sit there with its Start bit set and transfer nothing
+        ; sit there with its Start bit set and transfer nothing, and a
+        ; native channel nobody turned the I/O decode on for is not there
         mov     al,PCIR_COMMAND
         call    pci_read
         mov     ecx,eax
-        or      ecx,PCIC_BUSMASTER OR PCIC_IOEN
+        or      ecx,PCIC_IOEN
+        cmp     word ptr [edi+AH_BM],0
+        je      abi_cmd
+        or      ecx,PCIC_BUSMASTER
+abi_cmd:
         mov     al,PCIR_COMMAND
         call    pci_write
-
-        mov     byte ptr [ata_bmok],1
-abi_none:
         call    ideh_probe                      ; and whether its timing is
-        popad                                   ; one PM-DOS can write
+        inc     dword ptr [ata_nhost]           ; one PM-DOS can write
+        jmp     abi_next
+abi_done:
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; ata_hostchan - EBX = a controller's address, EDI = its entry, ECX =
+;                its channel, 0 or 1.  Give that channel a place in
+;                the channel table, CF set if it gets none.
+;
+; IN COMPATIBILITY MODE IT IS AT 1F0h OR 170h, and only one controller
+; can be: the first one found keeps the address, which is the board's
+; own on every machine where it matters.  IN NATIVE MODE IT IS WHERE
+; ITS BARs SAY - BAR0 and BAR1 for the primary, BAR2 and BAR3 for the
+; secondary, the control port at the second one plus 2 - and gets one
+; of the native slots, the same one every probe.
+;---------------------------------------------------------------------
+ata_hostchan:
+        pushad
+        movzx   eax,byte ptr [edi+AH_PROGIF]
+        lea     edx,[ecx*2]
+        bt      eax,edx
+        jc      ahc_native
+        cmp     byte ptr [ata_chost+ecx],0FFh
+        jne     ahc_none                        ; another controller's
+        mov     esi,ecx                         ; ESI = its slot
+        jmp     short ahc_mine
+
+ahc_native:
+        lea     eax,[edx*4+PCIR_BAR0]
+        call    pci_read
+        test    al,1
+        jz      ahc_none
+        and     eax,0FFFCh
+        jz      ahc_none
+        mov     ebp,eax                         ; EBP = command block
+        lea     eax,[edx*4+PCIR_BAR0+4]
+        call    pci_read
+        test    al,1
+        jz      ahc_none
+        and     eax,0FFFCh
+        jz      ahc_none
+        add     eax,2                           ; the control port
+        mov     esi,[ata_nhost]
+        lea     esi,[esi*2+ecx+ATA_LEGACY]      ; ESI = its slot
+        mov     word ptr [ata_ports+esi*4],bp
+        mov     word ptr [ata_ports+esi*4+2],ax
+
+ahc_mine:
+        mov     eax,[ata_nhost]
+        lea     eax,[eax*2+ecx]
+        mov     [ata_chost+esi],al
+        popad
+        clc
+        ret
+ahc_none:
+        popad
+        stc
         ret
 
 ;=====================================================================
-; ata_pickbm - ESI = device.  Fill in ATD_BM, or leave it zero.
+; ata_pickbm - ESI = device.  Which controller is it on, which of that
+;              one's drives is it, and where is the engine for its
+;              channel?  ATD_HOST, ATD_HDRV and ATD_BM, or zeros.
 ;=====================================================================
 ata_pickbm:
         push    eax
+        push    ebx
         push    edx
         mov     word ptr [esi+ATD_BM],0
-        cmp     byte ptr [ata_bmok],0
-        je      pbm_out
-        movzx   eax,word ptr [ata_bmbase]
+        mov     dword ptr [esi+ATD_HOST],0
+        mov     byte ptr [esi+ATD_HDRV],0
+        call    ata_chan                ; EBX = the channel
+        movzx   eax,byte ptr [ata_chost+ebx]
+        cmp     al,0FFh
+        je      pbm_out                 ; on no controller of ours
+        mov     edx,eax
+        shr     edx,1
+        imul    edx,AH_LEN
+        add     edx,OFFSET ata_hosts
+        mov     [esi+ATD_HOST],edx
+        mov     ebx,eax
+        and     ebx,1                   ; EBX = which of its channels
+        lea     eax,[ebx*2]
+        test    byte ptr [esi+ATD_SEL],10h
+        jz      pbm_master
+        inc     eax
+pbm_master:
+        mov     [esi+ATD_HDRV],al
+        movzx   eax,word ptr [edx+AH_BM]
         or      eax,eax
         jz      pbm_out
-        mov     dl,[ata_progif]
-        cmp     word ptr [esi+ATD_BASE],170h
-        je      pbm_second
-        cmp     word ptr [esi+ATD_BASE],1F0h
-        jne     pbm_out                 ; not one of the host's channels
-        test    dl,1                    ; primary in native mode
-        jnz     pbm_out
-        jmp     short pbm_have
-pbm_second:
-        test    dl,4                    ; secondary in native mode
-        jnz     pbm_out
-        add     eax,8
-pbm_have:
+        lea     eax,[eax+ebx*8]         ; the secondary's is 8 on
         mov     [esi+ATD_BM],ax
 pbm_out:
         pop     edx
+        pop     ebx
         pop     eax
         ret
 
@@ -1045,31 +1558,33 @@ pbm_out:
 ;               whether this device transfers by bus master, and say
 ;               so in ATD_FLAGS and ATD_DMA.
 ;
-; AUTO DOES NOT SELECT A MODE, AND THAT IS THE WHOLE ARGUMENT.  A
-; transfer mode is TWO settings that have to agree: the drive's, which
-; SET FEATURES chooses and which is standardised, and the host
+; A TRANSFER MODE IS TWO SETTINGS THAT HAVE TO AGREE: the drive's,
+; which SET FEATURES chooses and which is standardised, and the host
 ; adapter's timing, which is a chipset register and is not.  Every
 ; controller spells its timing differently - PIIX one way, VIA
-; another, ALi a third - and PM-DOS knows none of them.  Telling a
-; drive to run UDMA against timing the BIOS programmed for something
-; slower is how a disk returns data that is almost right.
+; another, ALi a third.  Telling a drive to run UDMA against timing
+; the BIOS programmed for something slower is how a disk returns data
+; that is almost right.
 ;
-; So AUTO uses the mode that is ALREADY SELECTED - which the BIOS
-; selected at POST, having programmed its own end to match - and if
-; nothing is selected, it does nothing at all and the transfers stay
-; PIO.  That is not timidity: it is the only version of "automatic"
-; that cannot be wrong.
+; WHERE THE HOST IS ONE IDEHOST.INC KNOWS, BOTH ARE WRITTEN, and they
+; agree because the same routine set both.  There AUTO is ON (see
+; ata_policy): the fastest mode the host, the cable and the drive will
+; all carry, whatever the BIOS chose or failed to choose.
 ;
-; IDEDMA=ON and IDEDMA=<mode> do issue SET FEATURES, because a user
-; who writes one of those has said something deliberate about their
-; own machine.  What either may select is ata_limit's to say: the
-; host has a fastest mode and the cable has one, and no statement in
-; CONFIG.SYS outranks a wire.
+; ON ANY OTHER HOST AUTO USES THE MODE THAT IS ALREADY SELECTED -
+; which the BIOS selected at POST, having programmed its own end to
+; match - and if nothing is selected, the transfers stay PIO.  That is
+; the only version of "automatic" that cannot be wrong on a chipset
+; PM-DOS cannot read.  Up to v0.67 it was AUTO everywhere, because
+; IDEHOST.INC wrote the Ultra DMA timing and not the multiword.
 ;
-; WHERE THE HOST IS ONE IDEHOST.INC KNOWS, ITS TIMING IS WRITTEN TOO,
-; and the two settings agree because the same routine set both.  That
-; is what lets ON go past mode 2.  On any other host the old bargain
-; stands: the drive is told, and the chipset's half is the user's.
+; IDEDMA=ON and IDEDMA=<mode> issue SET FEATURES on any host, because
+; a user who writes one of those has said something deliberate about
+; their own machine.  What either may select is ata_limit's to say:
+; the host has a fastest mode and the cable has one, and no statement
+; in CONFIG.SYS outranks a wire.  On a host PM-DOS cannot time the old
+; bargain stands: the drive is told, and the chipset's half is the
+; user's.
 ;
 ; The drive's own account of itself is in its table entry by now -
 ; ata_keepid put it there - and not in ata_idbuf, which by the time
@@ -1080,16 +1595,17 @@ ata_pickdma:
         mov     byte ptr [esi+ATD_DMA],0
         and     byte ptr [esi+ATD_FLAGS],ATDF_NODMA
 
-        cmp     byte ptr [ata_dmapol],0
+        call    ata_policy
+        cmp     al,0
         je      apd_out                 ; IDEDMA=OFF
         cmp     word ptr [esi+ATD_BM],0
         je      apd_out                 ; no engine on this channel
         test    byte ptr [esi+ATD_ID],ATI_DMA
         jz      apd_out                 ; the drive does not do DMA
 
-        cmp     byte ptr [ata_dmapol],1
+        cmp     al,1
         je      apd_auto
-        cmp     byte ptr [ata_dmapol],3
+        cmp     al,3
         je      apd_forced
 
         call    ata_bestmode            ; IDEDMA=ON
@@ -1138,7 +1654,8 @@ apd_out:
 ;
 ; AUTO SKIPS THE HOST'S LIMIT, because under AUTO the mode wanted is
 ; the mode the BIOS selected, and the BIOS knows its own board better
-; than a table does.
+; than a table does.  That is AUTO on a host PM-DOS cannot time; on
+; one it can, ata_policy has made it ON before this is asked.
 ;
 ; THEN THE CABLE, AND NOBODY SKIPS THAT.  Past mode 2 the edges are
 ; too fast for forty conductors: the forty extra wires of the other
@@ -1162,7 +1679,8 @@ ata_limit:
         movzx   ecx,al
         and     ecx,07h                 ; ECX = the mode, as a number
 
-        cmp     byte ptr [ata_dmapol],1
+        call    ata_policy              ; AL = the policy, as it applies here
+        cmp     al,1
         je      alm_cable
         cmp     byte ptr [ideh_kind],IH_NONE
         je      alm_stranger
@@ -1171,7 +1689,7 @@ ata_limit:
         je      alm_mw
         jmp     short alm_cap
 alm_stranger:
-        cmp     byte ptr [ata_dmapol],2
+        cmp     al,2
         jne     alm_cable
         mov     edx,2
         mov     al,[esi+ATD_BIOS]
@@ -1222,6 +1740,27 @@ alm_none:
         ret
 
 ;=====================================================================
+; ata_policy - ESI = device -> AL = IDEDMA='s policy as it applies on
+;              that device's host, which is now the selected one: AUTO
+;              is ON where IDEHOST.INC writes the whole of the host's
+;              timing, Ultra DMA and multiword alike, and is itself
+;              anywhere else.  The others are what the line said.
+;
+; [ata_dmapol] keeps what the line said, because F1h AL=0Ah reports it
+; and IDETEST prints it.
+;=====================================================================
+ata_policy:
+        call    ideh_sel                ; ESI's controller, for ata_limit too
+        mov     al,[ata_dmapol]
+        cmp     al,1
+        jne     apo_out
+        cmp     byte ptr [ideh_mw],0
+        je      apo_out
+        mov     al,2
+apo_out:
+        ret
+
+;=====================================================================
 ; ata_newmode - ESI = device, AL = a mode.  Put the drive in it, and
 ;               the host with it if the host is one that can be told.
 ;               CF set if the drive refused, or if it must not be
@@ -1243,6 +1782,7 @@ ata_newmode:
         push    eax
         push    ebx
         mov     bl,al
+        call    ideh_sel                ; this device's controller
         cmp     byte ptr [ideh_kind],IH_NONE
         jne     anm_go
         mov     al,[esi+ATD_BIOS]
@@ -1269,7 +1809,9 @@ anm_go:
         call    ideh_udma
         jmp     short anm_ok
 anm_mw:
-        call    ideh_noudma
+        mov     al,bl
+        and     al,07h
+        call    ideh_mwdma
 anm_ok:
         pop     ebx
         pop     eax
@@ -1362,9 +1904,15 @@ acb_chan:
         call    ata_isfast
         jnc     acb_store
 
-        cmp     ebx,2                   ; a host has two channels, and
-        jae     acb_drive               ; the other two are not on it
-        mov     al,bl
+        movzx   eax,byte ptr [ata_chost+ebx]
+        cmp     al,0FFh                 ; on no controller of ours: only the
+        je      acb_drive               ; drives can say
+        mov     edi,eax
+        shr     edi,1
+        imul    edi,AH_LEN
+        add     edi,OFFSET ata_hosts
+        call    ideh_selh               ; its own controller is asked
+        and     al,1                    ; about its own channel
         call    ideh_cable
         mov     dl,ATC_BY_HOST OR ATC_80
         cmp     al,IHC_80
@@ -1422,6 +1970,30 @@ aki_noudma:
         and     al,07h
         mov     [esi+ATD_MOFF],al
 aki_nomw:
+        ; THE FASTEST PIO MODE: word 64 for 3 and 4, and before it the
+        ; high byte of word 51, which a drive old enough to need it
+        ; filled with 0, 1 or 2.  Anything past 4 there is not a mode
+        ; at all, and is taken as the slowest
+        mov     al,byte ptr [ata_idbuf+ATA_ID_OLDPIO+1]
+        cmp     al,4
+        jbe     aki_old
+        xor     al,al
+aki_old:
+        test    word ptr [ata_idbuf+ATA_ID_VALID],2
+        jz      aki_pio
+        test    byte ptr [ata_idbuf+ATA_ID_PIO],2
+        jz      aki_no4
+        mov     al,4
+        jmp     short aki_pio
+aki_no4:
+        test    byte ptr [ata_idbuf+ATA_ID_PIO],1
+        jz      aki_pio
+        cmp     al,3
+        jae     aki_pio
+        mov     al,3
+aki_pio:
+        mov     [esi+ATD_PIO],al
+
         mov     ax,word ptr [ata_idbuf+ATA_ID_CABLE]
         and     ax,0E000h
         cmp     ax,6000h
@@ -1699,9 +2271,9 @@ IFDEF IDE32_EAGER
 ENDIF
         test    word ptr [ata_idbuf+ATA_ID_DWIO],1
         jnz     p32_yes                 ; the drive says so (ATA-1/2)
-        cmp     byte ptr [ata_bmok],0
+        cmp     dword ptr [esi+ATD_HOST],0
         je      p32_out
-p32_yes:                                ; or it is on a PCI controller
+p32_yes:                                ; or its channel is a PCI controller's
         or      byte ptr [esi+ATD_FLAGS],ATDF_PIO32
 p32_out:
         ret
@@ -2072,23 +2644,27 @@ acf_out:
         ret
 
 ;=====================================================================
-; ata_info - IOS_ATAINFO.  AL = device index, or FFh for the
-;            controller.
+; ata_info - IOS_ATAINFO.  AL = device index, or FFh for the first
+;            controller, FEh for the second.
 ;
 ;   a device:     EAX = ATDF_* flags, with the ATI_* byte above them,
 ;                 its channel's ATC_* cable byte above that and the
 ;                 Ultra DMA modes the drive offers on top
 ;                 EBX = its engine's base port
 ;                 ECX = the transfer mode in force, and in the next
-;                 byte the mode the BIOS left it in
+;                 byte the mode the BIOS left it in, in the third the
+;                 BIOS number it answers for (0 for none) and on top
+;                 which controller it is on, 1 or 2 (0 for none)
 ;                 EDX = sectors
-;   the whole:    EAX = disks found, EBX = PCI vendor:device,
+;   a controller: EAX = disks found, EBX = PCI vendor:device (0 when
+;                 there is no such controller),
 ;                 ECX = the engine's base, EDX = the prog-if byte,
 ;                 bits 8-11 which host it is (IH_*, 0 = not one whose
 ;                 timing PM-DOS writes), bits 12-15 that host's
 ;                 fastest Ultra DMA mode or 0Fh for none,
 ;                 bit 16 PCI answered, bit 17 an engine was found,
-;                 bits 18-19 the cable policy,
+;                 bits 18-19 the cable policy, bit 20 that host's
+;                 multiword timing is written too (and so AUTO is ON),
 ;                 bits 24-27 the DMA policy, 28-31 the 32-bit one
 ;
 ; It exists because the report has to come from inside the kernel:
@@ -2129,8 +2705,8 @@ amd_bad:
         ret
 
 ata_info:
-        cmp     al,0FFh
-        je      ain_whole
+        cmp     al,0FEh
+        jae     ain_whole
         movzx   ebx,al
         cmp     ebx,ATA_MAXDEV
         jae     ain_bad
@@ -2160,7 +2736,16 @@ ain_differ:
         mov     al,[ebx+ATD_ID]
         shl     eax,8
         mov     al,[ebx+ATD_FLAGS]
-        movzx   ecx,byte ptr [ebx+ATD_BIOS]
+        mov     ecx,[ebx+ATD_HOST]      ; which controller, counting from 1
+        or      ecx,ecx
+        jz      ain_nohost
+        sub     ecx,OFFSET ata_hosts - AH_LEN
+        shr     ecx,4                   ; AH_LEN is 16
+ain_nohost:
+        shl     ecx,8
+        mov     cl,[ebx+ATD_NUM]
+        shl     ecx,8
+        mov     cl,[ebx+ATD_BIOS]
         shl     ecx,8
         mov     cl,[ebx+ATD_DMA]
         mov     edx,[ebx+ATD_TOTAL]
@@ -2173,18 +2758,31 @@ ain_bad:
         xor     edx,edx
         ret
 ain_whole:
-        mov     eax,[ata_count]
-        mov     ebx,[ata_pciid]
-        movzx   ecx,word ptr [ata_bmbase]
-        movzx   edx,byte ptr [ata_progif]
+        push    edi
+        mov     edi,OFFSET ata_hosts
+        cmp     al,0FFh
+        je      ain_host
+        add     edi,AH_LEN              ; FEh: the second one
+ain_host:
+        push    edi                     ; its kind and top, below: an empty
+        cmp     dword ptr [edi+AH_ID],0 ; entry is no controller, and says
+        jne     ain_sel                 ; "none" as v0.67 did, not mode 0
+        xor     edi,edi
+ain_sel:
+        call    ideh_selh
+        pop     edi
+        mov     ebx,[edi+AH_ID]         ; 0 if there is no such controller
+        movzx   ecx,word ptr [edi+AH_BM]
+        movzx   edx,byte ptr [edi+AH_PROGIF]
         cmp     byte ptr [pci_ok],0
         je      ain_nopci
         or      edx,00010000h
 ain_nopci:
-        cmp     byte ptr [ata_bmok],0
-        je      ain_nobm
+        or      ecx,ecx
+        jz      ain_nobm
         or      edx,00020000h
 ain_nobm:
+        pop     edi
         movzx   eax,byte ptr [ideh_kind]
         shl     eax,8
         or      edx,eax
@@ -2193,6 +2791,9 @@ ain_nobm:
         or      edx,eax
         movzx   eax,byte ptr [ata_cblpol]
         shl     eax,18
+        or      edx,eax
+        movzx   eax,byte ptr [ideh_mw]
+        shl     eax,20
         or      edx,eax
         movzx   eax,byte ptr [ata_dmapol]
         shl     eax,24
@@ -2664,33 +3265,41 @@ ata_cbl      db ATA_MAXCHAN dup(0)      ; ATC_*, a channel each
 ata_seen     db ATA_MAXDEV dup(0)       ; this device's first IDENTIFY has
 ata_bios     db ATA_MAXDEV dup(0)       ; been and gone, and the mode it
                                         ; found selected
-             db 0
+ata_chost    db ATA_MAXCHAN dup(0FFh)   ; whose channel each is: twice the
+                                        ; controller's place in ata_hosts,
+                                        ; plus which of its two; FFh for
+                                        ; none of theirs
 ata_usedma   db 0                       ; this chunk, not this device
 ata_p32      db 0                       ; ditto, for the data port width
-ata_bmok     db 0                       ; a bus-master controller was found
-ata_progif   db 0                       ; and which of its channels are
-            db  0                       ; in compatibility mode
 ata_bmbad   db  0                       ; the last failure was the engine's
 ata_bmst    db  0                       ; and its status when it ended
-            db  0
-            db  0
-ata_bmbase  dw  0                       ; BAR4: the engine's register block
-            dw  0
-ata_pcidev  dd  0                       ; where in configuration space
-ata_pciid   dd  0                       ; and what it says it is
+ata_bdone   db  0                       ; ata_biosread has asked the BIOS
+            db  0, 0, 0
+ata_nhost   dd  0                       ; controllers in ata_hosts
+ata_found   dd  0                       ; a drive answered on the channel, a
+ata_used    dd  0                       ; bit each; and this driver uses one
+                                        ; (ata_irqs)
+ata_bok     dd  0                       ; the BIOS's sector 0 was read: bit 0
+                                        ; for 80h, bit 1 for 81h
+ata_bhash   dd  0, 0                    ; ...and its hash, ata_hash's
+ata_btot    dd  0, 0                    ; ...and its size, if the BIOS said
 ata_prdaddr dd  0                       ; the descriptor table, placed by
                                         ; ata_prdinit rather than declared
+ata_hosts   db  ATA_MAXHOST * AH_LEN dup(0)
 
 ata_plog    dd  OFFSET plog + PLI_FIRST ; the record being written
 
 ; Where a channel answers: its command block, then its control port.
 ; The first two are the ones on the board.  The second two are where
 ; an add-in card or a sound card's CD-ROM connector is jumpered to
-; when the first two are taken
+; when the first two are taken.  The rest are the native-mode channels
+; of the PCI controllers, two each, filled in by ata_hostchan; a 0
+; there is a channel nobody has
 ata_ports   dw  1F0h, 3F6h
             dw  170h, 376h
             dw  1E8h, 3EEh
             dw  168h, 36Eh
+            dw  ATA_MAXHOST * 2 * 2 dup(0)
 
 ata_devs    db  ATA_MAXDEV * ATD_LEN dup(0)
 ata_idbuf   db  512 dup(0)

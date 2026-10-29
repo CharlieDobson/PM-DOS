@@ -296,12 +296,13 @@ KEYRATE=rate[,delay]
     DOSBox 0.74 stops taking keys at KEYRATE=32,1.  Use 31,1 there.
 
 IDEDMA=OFF|AUTO|ON|mode
-    How IDE disks move data.  AUTO (the default) keeps the mode the
-    BIOS set and falls back to PIO if there isn't one.  ON picks the
-    fastest mode the drive, controller and cable can handle.  PM-DOS
-    knows the controller timing on Intel (PIIX/ICH) and VIA chipsets
-    only.  On other chipsets ON stops at the BIOS mode or UDMA2,
-    whichever is faster.  OFF is PIO only.
+    How IDE disks move data.  ON picks the fastest mode the drive,
+    controller and cable can handle.  PM-DOS knows the controller
+    timing on Intel (PIIX/ICH) and VIA chipsets only.  On other
+    chipsets ON stops at the BIOS mode or UDMA2, whichever is faster.
+    AUTO (the default) is the same as ON on Intel and VIA chipsets.
+    On others it keeps the mode the BIOS set and falls back to PIO if
+    there isn't one.  OFF is PIO only.
     UDMA0 to UDMA6 sets a ceiling: that mode, or the best one under
     the ceiling that works.  MWDMA0 to MWDMA2 sets that exact mode.
     Naming a mode also gets past the limit on other chipsets.
@@ -320,6 +321,18 @@ IDE32=OFF|AUTO|ON
     here but works fine on MS-DOS, try IDE32=OFF.
 
     IDETEST, in \TESTS, shows what was picked for each drive.
+
+AHCI=ON|OFF
+    SATA disks, when the BIOS setup has the SATA ports in AHCI mode.
+    ON by default: PM-DOS drives them itself once CONFIG.SYS has been
+    read.  Only the BIOS's first two hard disks are taken, and each
+    keeps the drive number the BIOS gave it.  OFF leaves them to the
+    BIOS, which works but is slower.  Safe mode (Shift or F5 at start)
+    is OFF whatever the line says.
+    CD-ROM drives on an AHCI controller don't work.  To use one, set
+    the SATA ports to IDE mode in the BIOS setup.
+    Under Windows the disks go back to the BIOS.
+    AHCITEST, in \TESTS, shows what PM-DOS found on each port.
 
 CDROM=x
     Drive letter for the first CD-ROM; any others follow it.  Without

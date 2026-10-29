@@ -272,6 +272,8 @@ box_park:
         pop     eax
         call    usb_park                ; the controllers back to the BIOS,
                                         ; or taken again (USB.INC)
+        call    ahci_park               ; and the SATA ports (AHCI.INC)
+        call    ata_park                ; and the IDE drives' interrupts
         call    vd_park
         call    vt_park
         call    kb_park

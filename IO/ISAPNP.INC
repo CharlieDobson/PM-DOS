@@ -637,7 +637,7 @@ pch_ctl:
         bts     ebx,eax
 pch_next:
         inc     ecx
-        cmp     ecx,ATA_MAXCHAN
+        cmp     ecx,ATA_LEGACY          ; the fixed addresses only
         jb      pch_lp
         mov     eax,ebx
         pop     ebp
@@ -709,7 +709,7 @@ pse_where:
         je      pse_kept
 pse_wnext:
         inc     ecx
-        cmp     ecx,ATA_MAXCHAN
+        cmp     ecx,ATA_LEGACY          ; the fixed addresses only
         jb      pse_where
         jmp     short pse_pick
 pse_kept:

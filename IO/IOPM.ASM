@@ -101,6 +101,7 @@ svc_table:
         dd      tk_hook         ; IOS_TICKHOOK
         dd      tk_unhook       ; IOS_TICKUNHOOK
         dd      blk_bridge      ; IOS_BRGBLK
+        dd      ahci_svc        ; IOS_AHCI
 
 ;=====================================================================
 ; pm_entry - first instruction executed in 32-bit protected mode.
@@ -320,6 +321,8 @@ ENDIF
         INCLUDE NCR5380.INC      ; ...and a Pro Audio Spectrum's port
         INCLUDE BLOCK.INC
         INCLUDE FLOPPY.INC       ; after BLOCK.INC: they are the same drives
+        INCLUDE AHCI.INC         ; ...and SATA disks, by the BIOS path until
+                                 ; they are taken from it
         INCLUDE USB.INC          ; the USB controllers and their devices...
         INCLUDE UHCI.INC         ; ...Intel's controller
         INCLUDE OHCI.INC         ; ...everybody else's
@@ -348,6 +351,11 @@ msgStart2   db  'Starting PM-DOS...',13,10,13,10,0
 ENDIF
 msgNoDos    db  'PMDOS.SYS was never loaded',0
 msgPanic    db  13,10,'PMIO PANIC: ',0
+
+; THE END OF THE IMAGE.  The stub blits IO_PM_MAX bytes whatever the
+; file's length, and AHCI.INC keeps its tables in what is past here.
+pm_end      LABEL BYTE
+.ERRE   ((pm_end - svc_table) + 10h + 400h + AHM_NEED) LE IO_PM_MAX, <PMIO leaves no room for the AHCI tables>
 
 _PM     ENDS
         END

@@ -6022,6 +6022,7 @@ vdm_subptr:
         db  0F1h, 24h,  P_DI            ; a USB controller's, a device's, a
                                         ; unit's model - r3_pflags leaves
                                         ; USBF_PROBE's EDI alone by hand
+        db  0F1h, 2Ah,  P_DI            ; the AHCI report's buffer
         db  0F1h, 21h,  P_SI            ; the registers a BIOS call is given
                                         ; and gives back.  20h's pointer
                                         ; depends on its function, so

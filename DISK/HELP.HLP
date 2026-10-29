@@ -10,7 +10,8 @@ menu, or press F1.  To leave, press ALT, F, X.
 
 <\aAbout PM-DOS\vAbout PM-DOS\v>
 
-<\aAcroread\vACROREAD\v>                 <\aEdit\vEDIT\v>                     <\aPause\vPAUSE\v>
+<\aAcroread\vACROREAD\v>                 <\aEcho\vECHO\v>                     <\aPath\vPATH\v>
+<\aAhci\vAHCI=\v>                     <\aEdit\vEDIT\v>                     <\aPause\vPAUSE\v>
 <\aAnsi.sys\vANSI.SYS\v>                 <\aEms\vEMS=\v>                      <\aPmd\vPMD\v>
 <\aAttrib\vATTRIB\v>                   <\aExit\vEXIT\v>                     <\aPrompt\vPROMPT\v>
 <\aAutocheck\vAUTOCHECK=\v>                <\aFc\vFC\v>                       <\aQbasic\vQBASIC\v>
@@ -49,7 +50,6 @@ menu, or press F1.  To leave, press ALT, F, X.
 <\aDosshell\vDOSSHELL\v>                 <\aMulti-config\vMultiple Configurations\v>             <\aXarc\vXARC\v>
 <\aDpmi\vDPMI=\v>                     <\aNulltrap\vNULLTRAP=\v>                 <\aXcopy\vXCOPY\v>
 <\aDrivparm\vDRIVPARM=\v>                 <\aNumlock\vNUMLOCK=\v>
-<\aEcho\vECHO\v>                     <\aPath\vPATH\v>
 
 Every command and every CONFIG.SYS statement PM-DOS has is listed.  A
 command's topic says what it does, how it is written, and what each
@@ -7165,14 +7165,15 @@ The statements that are PM-DOS's own.  On MS-DOS these jobs took a
 driver or a program - EMM386, SMARTDRV, SHARE, MODE - and on PM-DOS
 they are in the kernel, so those programs are not loaded:
 
-\i<\aAutocheck\vAUTOCHECK=\v>                <\aKeyrate\vKEYRATE=\v>\p
-\i<\aCache\vCACHE=\v>                    <\aLfn\vLFN=\v>\p
-\i<\aCdrom\vCDROM=\v>                    <\aNulltrap\vNULLTRAP=\v>\p
-\i<\aDpmi\vDPMI=\v>                     <\aScsi\vSCSI=\v>\p
-\i<\aEms\vEMS=\v>                      <\aShare\vSHARE=\v>\p
-\i<\aIde32\vIDE32=\v>                    <\aUndelete\vUNDELETE=\v>\p
-\i<\aIdecable\vIDECABLE=\v>                 <\aUsb\vUSB=\v>\p
-\i<\aIdedma\vIDEDMA=\v>                   <\aWincache\vWINCACHE=\v>\p
+\i<\aAhci\vAHCI=\v>                     <\aKeyrate\vKEYRATE=\v>\p
+\i<\aAutocheck\vAUTOCHECK=\v>                <\aLfn\vLFN=\v>\p
+\i<\aCache\vCACHE=\v>                    <\aNulltrap\vNULLTRAP=\v>\p
+\i<\aCdrom\vCDROM=\v>                    <\aScsi\vSCSI=\v>\p
+\i<\aDpmi\vDPMI=\v>                     <\aShare\vSHARE=\v>\p
+\i<\aEms\vEMS=\v>                      <\aUndelete\vUNDELETE=\v>\p
+\i<\aIde32\vIDE32=\v>                    <\aUsb\vUSB=\v>\p
+\i<\aIdecable\vIDECABLE=\v>                 <\aWincache\vWINCACHE=\v>\p
+\i<\aIdedma\vIDEDMA=\v>\p
 
 CONFIG.SYS can also hold several configurations, with a menu at
 startup to choose one.  See <\aMultiple Configurations\vMulti-config\v>.
@@ -7329,6 +7330,70 @@ so AUTOEXEC.BAT can do something different for each one:
     :NOUSB
     ECHO USB is left to the BIOS.
     :END
+ 
+                                     
+.context AHCI=
+.context Ahci
+.topic AHCI=
+.freeze 3
+\i\aNotes\vAHCI=--Notes\v  \aExamples\vAHCI=--Examples\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                                    AHCI=
+ 
+Turns PM-DOS's own driver for SATA disks in AHCI mode on or off.
+
+\bSyntax\p
+
+    AHCI=ON | OFF
+
+\bParameters\p
+
+ON
+    PM-DOS drives the SATA disks itself when the BIOS setup has the
+    SATA ports in AHCI mode.  This is the default setting.
+
+OFF
+    The disks are left to the BIOS.  They still work, but more slowly.
+
+\bRelated Commands\p
+
+\\TESTS\\AHCITEST shows what PM-DOS found on the controller.
+ 
+                                     
+.context AHCI=--Notes
+.topic AHCI=--Notes
+.freeze 3
+\i\aExamples\vAHCI=--Examples\v  \aSyntax\vAHCI=\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                               AHCI=컴Notes
+ 
+\bWhen it takes effect\p
+
+The disks are taken from the BIOS once CONFIG.SYS has been read, so
+the line can be anywhere in the file.  Safe mode (Shift or F5 at
+start) always leaves the disks to the BIOS regardless of setting.
+
+\bWhich disks\p
+
+Only the first AHCI controller is used, and only for the BIOS's first
+and second hard disks.  Each disk keeps the drive number the BIOS gave
+it.
+
+CD-ROM drives on an AHCI controller are not supported.  To use one,
+set the SATA ports to IDE mode in the BIOS setup.
+ 
+                                     
+.context AHCI=--Examples
+.topic AHCI=--Examples
+.freeze 3
+\i\aSyntax\vAHCI=\v  \aNotes\vAHCI=--Notes\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                             AHCI=컴Examples
+ 
+    AHCI=OFF
  
                                      
 .context AUTOCHECK=
@@ -8171,8 +8236,9 @@ OFF
     Programmed Input/Output (PIO) only.
 
 AUTO
-    Keeps the mode set by the BIOS, and falls back to PIO when there is
-    none.  This is the default setting.
+    On Intel (PIIX/ICH) and VIA chipsets, the same as ON.  On other
+    chipsets, keeps the mode set by the BIOS, and falls back to PIO
+    when there is none.  This is the default setting.
 
 ON
     The fastest mode the drive, the controller and the cable can handle.

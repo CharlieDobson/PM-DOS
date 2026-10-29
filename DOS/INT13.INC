@@ -108,6 +108,26 @@ ENDIF
 ; those two happens.
 ;---------------------------------------------------------------------
 i13_reflect:
+        ; NOT FOR A SATA DISK OF THE KERNEL'S.  The BIOS would drive its
+        ; port through its own command list, and the port now points at
+        ; ours.  What is left once read, write, verify and the parameters
+        ; are served is seeks, resets and readiness tests, which have
+        ; nothing to do on an AHCI disk and are answered done; anything
+        ; else is a function this disk does not have.
+        mov     dl,[i13_drive]
+        mov     al,AHF_OWNS
+        call    dword ptr ds:[IOS_AHCI]
+        jc      i13_rom
+I13_NNOPS       EQU     7               ; in i13_nops
+        mov     edi,OFFSET i13_nops
+        mov     ecx,I13_NNOPS
+        mov     al,[i13_fn]
+        cld
+        repne   scasb
+        jne     i13_badcmd
+        xor     al,al
+        jmp     i13_ok
+i13_rom:
         mov     al,[i13_drive]
         mov     ah,0
         xor     ebx,ebx
@@ -704,6 +724,9 @@ msgI13L     db  ' lba=',0
 msgI13B     db  ' buf=',0
 msgI13N     db  ' n=',0
 ENDIF
+i13_nops        db  09h,0Ch,0Dh,10h,11h,14h,47h ; done at once on an AHCI
+.ERRNZ  ($ - i13_nops) - I13_NNOPS, <i13_nops and its count disagree>
+                db  0                   ; disk: see i13_reflect
 i13_fn          db  0                   ; the function, as it came in
 i13_drive       db  0                   ; and the BIOS drive number
 i13_iswrite     db  0                   ; 0 read, 1 write, 2 verify

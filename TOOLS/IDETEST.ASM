@@ -71,9 +71,19 @@ _ID     SEGMENT USE32 PUBLIC 'CODE'
 
 ARENA           EQU     0040000h        ; room for the three buffers, with
                                         ; a 64K line inside it to straddle
+MAXDEV          EQU     16              ; F1h AL=0Ah's device indexes: the
+                                        ; four fixed channels and four native
+                                        ; ones, two drives each
 RUNSECS         EQU     32              ; 16K: two descriptors, always
 RUNBYTES        EQU     RUNSECS * 512
 FILEBYTES       EQU     49152           ; and a file big enough to be many
+
+; 21h/F1h AL=12h, the kernel's PCI calls: the function in the third
+; byte of EAX, as PCITEST has it
+BUS     MACRO   fn
+        mov     eax,0F112h + (fn SHL 16)
+        int     21h
+        ENDM
 
 id_entry:
         mov     edx,OFFSET msg_hi
@@ -99,6 +109,12 @@ id_entry:
         mov     [pciid],ebx
         mov     [bmbase],ecx
         mov     [ctlflags],edx
+        mov     eax,0F10Ah              ; and a second controller, which a
+        mov     edx,0FEh                ; kernel before v0.68 answers with
+        int     21h                     ; zeros: no such controller
+        mov     [pciid2],ebx
+        mov     [bmbase2],ecx
+        mov     [ctlflags2],edx
         call    good
         jmp     short t1_done
 t1_bad:
@@ -145,7 +161,7 @@ t2_done:
         xor     ebx,ebx                 ; EBX = device index
         mov     byte ptr [t3bad],0
 t3_lp:
-        cmp     ebx,8                   ; four channels, two on each
+        cmp     ebx,MAXDEV              ; eight channels, two on each
         jae     t3_done
         push    ebx
         mov     eax,0F10Ah
@@ -189,10 +205,13 @@ t3_shown:
 ;=====================================================================
 ; 4 - which drive letter is one of them?
 ;
-; A drive record carries the BIOS number its volume lives on, and the
-; ATA driver hands out 80h upwards in probe order, so a drive whose
-; number is inside that run is a drive this test can use.  A floppy is
-; not one and neither is a loaded block driver's unit.
+; A drive record carries the BIOS number its volume lives on, and since
+; v0.68 each ATA disk says which BIOS number it answers for (the third
+; byte of ECX from F1h AL=0Ah), so a drive whose number one of them
+; claims is a drive this test can use.  A kernel before that reports
+; none, and handed out 80h upwards in probe order: for one of those, a
+; number inside that run will do.  A floppy is not one and neither is
+; a loaded block driver's unit.
 ;=====================================================================
         mov     edx,OFFSET msg_t4
         call    puts
@@ -212,9 +231,9 @@ t4_lp:
         movzx   eax,byte ptr [drv_rec+DRV_BIOS]
         cmp     eax,80h
         jb      t4_next
+        call    is_ours
+        jc      t4_next
         sub     eax,80h
-        cmp     eax,[ndisks]
-        jae     t4_next
         mov     [tstdrv],ebx
         mov     [tstdisk],eax
         call    good
@@ -506,7 +525,10 @@ fin_pass:
         int     21h
 
 ;=====================================================================
-; report - what the controller came back as
+; report - what the controllers came back as: the first, the policies,
+;          the first one's timing, and then the second one if there is
+;          one.  rep_ctl and rep_timing report whichever is in cpciid,
+;          cbm and cflags.
 ;=====================================================================
 report:
         mov     edx,OFFSET msg_disks
@@ -516,30 +538,63 @@ report:
         mov     edx,OFFSET msg_crlf
         call    puts
 
-        test    dword ptr [ctlflags],00010000h
+        mov     eax,[pciid]
+        mov     [cpciid],eax
+        mov     eax,[bmbase]
+        mov     [cbm],eax
+        mov     eax,[ctlflags]
+        mov     [cflags],eax
+        mov     dword ptr [cnth],0
+        call    rep_ctl
+        call    rep_pol
+        call    rep_timing
+
+        cmp     dword ptr [pciid2],0
+        je      rep_one
+        mov     edx,OFFSET msg_second
+        call    puts
+        mov     eax,[pciid2]
+        mov     [cpciid],eax
+        cmp     eax,[pciid]             ; two of the same: the second of
+        jne     rep_other               ; them is the one whose registers
+        mov     dword ptr [cnth],1      ; these are
+rep_other:
+        mov     eax,[bmbase2]
+        mov     [cbm],eax
+        mov     eax,[ctlflags2]
+        mov     [cflags],eax
+        call    rep_ctl
+        call    rep_timing
+rep_one:
+        ret
+
+rep_ctl:
+        test    dword ptr [cflags],00010000h
         jz      rep_nopci
         mov     edx,OFFSET msg_pci
         call    puts
-        mov     eax,[pciid]
+        mov     eax,[cpciid]
         call    phex8
         mov     edx,OFFSET msg_crlf
         call    puts
-        test    dword ptr [ctlflags],00020000h
+        test    dword ptr [cflags],00020000h
         jz      rep_nobm
         mov     edx,OFFSET msg_bm
         call    puts
-        mov     eax,[bmbase]
+        mov     eax,[cbm]
         call    phex8
         mov     edx,OFFSET msg_crlf
         call    puts
-        jmp     short rep_pol
+        ret
 rep_nobm:
         mov     edx,OFFSET msg_nobm
         call    puts
-        jmp     short rep_pol
+        ret
 rep_nopci:
         mov     edx,OFFSET msg_nopci
         call    puts
+        ret
+
 rep_pol:
         mov     edx,OFFSET msg_pol
         call    puts
@@ -561,11 +616,13 @@ rep_pol:
         call    pdec
         mov     edx,OFFSET msg_crlf
         call    puts
+        ret
 
         ; whose timing registers these are, if PM-DOS writes them
-        test    dword ptr [ctlflags],00020000h
+rep_timing:
+        test    dword ptr [cflags],00020000h
         jz      rep_done
-        mov     eax,[ctlflags]
+        mov     eax,[cflags]
         shr     eax,8
         and     eax,0Fh
         mov     edx,OFFSET msg_hnone
@@ -579,7 +636,7 @@ rep_pol:
         mov     edx,OFFSET msg_hvia
 rep_top:
         call    puts
-        mov     eax,[ctlflags]
+        mov     eax,[cflags]
         shr     eax,12
         and     eax,0Fh
         mov     edx,OFFSET msg_hnoudma
@@ -591,6 +648,49 @@ rep_top:
         mov     edx,OFFSET msg_crlf
 rep_host:
         call    puts
+        mov     eax,[cflags]
+        test    eax,00000F00h
+        jz      rep_done                ; a stranger, and it has been said
+        test    eax,00100000h
+        jnz     rep_regs
+        mov     edx,OFFSET msg_hnomw
+        call    puts
+
+        ; THE REGISTERS THEMSELVES, 40h to 57h, which hold every timing
+        ; field PIIX, ICH and VIA have.  "host matches" below is the
+        ; kernel's tables agreeing with the kernel's tables; this is
+        ; what the chip was left holding, for a person with a data
+        ; sheet to read
+rep_regs:
+        push    esi
+        mov     ecx,[cpciid]
+        mov     edx,ecx
+        shr     edx,16
+        mov     esi,[cnth]
+        BUS     BUS_PCIID
+        jc      rep_noregs
+        mov     edx,OFFSET msg_regs
+        call    puts
+        mov     esi,40h
+rep_reg:
+        mov     edx,esi
+        mov     dh,4
+        push    ebx
+        BUS     BUS_PCIREAD
+        pop     ebx
+        jc      rep_noregs
+        call    phex8
+        add     esi,4
+        cmp     esi,58h
+        jae     rep_regend
+        mov     edx,OFFSET msg_space
+        call    puts
+        jmp     short rep_reg
+rep_regend:
+        mov     edx,OFFSET msg_crlf
+        call    puts
+rep_noregs:
+        pop     esi
 rep_done:
         ret
 
@@ -606,12 +706,26 @@ rep_done:
 mode_ok:
         push    eax
         push    ecx
+        mov     eax,[ctlflags]          ; the device's own controller's
+        cmp     byte ptr [devmode+3],2  ; flags: the top byte of the mode
+        jne     mo_ctl                  ; says which it is on
+        mov     eax,[ctlflags2]
+mo_ctl:
+        mov     [devctl],eax
         mov     al,byte ptr [devmode]
         movzx   ecx,al
         and     ecx,07h                 ; ECX = the mode, as a number
         and     al,0F8h
         cmp     al,40h
-        jne     mo_yes                  ; multiword: nothing more to ask
+        je      mo_udma
+        test    byte ptr [devflags+1],ATI_OURS
+        jz      mo_yes                  ; multiword the BIOS chose
+        test    dword ptr [devctl],00100000h
+        jz      mo_yes                  ; on a host whose timing is the BIOS's
+        test    byte ptr [devflags+1],ATI_AGREES
+        jz      mo_no
+        jmp     short mo_yes
+mo_udma:
 
         movzx   eax,byte ptr [devflags+3]
         bt      eax,ecx
@@ -625,11 +739,11 @@ mode_ok:
 mo_host:
         test    byte ptr [devflags+1],ATI_OURS
         jz      mo_yes
-        mov     eax,[ctlflags]
+        mov     eax,[devctl]
         shr     eax,8
         and     eax,0Fh
         jz      mo_yes                  ; not a host PM-DOS times
-        mov     eax,[ctlflags]
+        mov     eax,[devctl]
         shr     eax,12
         and     eax,0Fh
         cmp     eax,0Fh
@@ -656,7 +770,7 @@ report_disks:
         push    ebx
         xor     ebx,ebx
 rd_lp:
-        cmp     ebx,8
+        cmp     ebx,MAXDEV
         jae     rd_done
         push    ebx
         mov     eax,0F10Ah
@@ -678,16 +792,14 @@ rd_lp:
         test    byte ptr [devflags],ATDF_ATAPI
         jz      rd_next
         mov     edx,OFFSET msg_pkt
-        mov     eax,ebx
-        add     al,'0'
+        call    hexdig
         mov     [msg_pkt+11],al
         call    puts
-        jmp     short rd_mode
+        jmp     short rd_where
 
 rd_disk:
         mov     edx,OFFSET msg_disk
-        mov     eax,ebx
-        add     al,'0'
+        call    hexdig
         mov     [msg_disk+9],al
         call    puts
 
@@ -695,6 +807,19 @@ rd_disk:
         shr     eax,11                  ; sectors -> MB
         call    pdec
         mov     edx,OFFSET msg_mb
+        call    puts
+        movzx   eax,byte ptr [devmode+2]
+        or      eax,eax
+        jz      rd_where                ; it answers for no BIOS number
+        mov     edx,OFFSET msg_bnum
+        call    puts
+        call    phex2
+        mov     edx,OFFSET msg_bnum2
+        call    puts
+rd_where:
+        cmp     byte ptr [devmode+3],2
+        jne     rd_mode
+        mov     edx,OFFSET msg_on2
         call    puts
 
 rd_mode:
@@ -727,6 +852,57 @@ rd_next:
         jmp     rd_lp
 rd_done:
         pop     ebx
+        ret
+
+; is_ours - EAX = a BIOS hard disk number.  CF clear if an ATA disk
+; answers for it: one that says so, or - when none says anything, as
+; before v0.68 - one inside the run of 80h upwards.  All kept.
+is_ours:
+        pushad
+        mov     ebp,eax
+        xor     esi,esi                 ; ESI = a disk said its number
+        xor     ebx,ebx
+io_lp:
+        push    ebx
+        mov     eax,0F10Ah
+        mov     edx,ebx
+        int     21h
+        pop     ebx
+        test    al,ATDF_PRESENT
+        jz      io_next
+        shr     ecx,16
+        or      cl,cl
+        jz      io_next
+        inc     esi
+        movzx   ecx,cl
+        cmp     ecx,ebp
+        je      io_yes
+io_next:
+        inc     ebx
+        cmp     ebx,MAXDEV
+        jb      io_lp
+        or      esi,esi
+        jnz     io_no
+        sub     ebp,80h                 ; an old kernel's numbering
+        cmp     ebp,[ndisks]
+        jb      io_yes
+io_no:
+        popad
+        stc
+        ret
+io_yes:
+        popad
+        clc
+        ret
+
+; hexdig - EBX = 0 to 15 -> AL = its hex digit
+hexdig:
+        mov     eax,ebx
+        add     al,'0'
+        cmp     al,'9'
+        jbe     hd_out
+        add     al,7
+hd_out:
         ret
 
 ;=====================================================================
@@ -965,6 +1141,9 @@ msg_hich    db  '    host timing: Intel ICH','$'
 msg_hvia    db  '    host timing: VIA','$'
 msg_hupto   db  ', up to UDMA ','$'
 msg_hnoudma db  ', no Ultra DMA',13,10,'$'
+msg_hnomw   db  '    multiword timing: left to the BIOS',13,10,'$'
+msg_regs    db  '    40h-57h: ','$'
+msg_space   db  ' ','$'
 msg_offers  db  '            offers UDMA ','$'
 msg_noudma  db  'none','$'
 msg_bios    db  ', BIOS left mode ','$'
@@ -980,6 +1159,10 @@ msg_agrees  db  ', host matches','$'
 msg_disk    db  '    disk N: ','$'
 msg_pkt     db  '    packet N: ','$'
 msg_mb      db  'MB, ','$'
+msg_bnum    db  'BIOS ','$'
+msg_bnum2   db  'h, ','$'
+msg_on2     db  'second controller, ','$'
+msg_second  db  '    and a second controller:',13,10,'$'
 msg_dma     db  'bus-master DMA, mode ','$'
 msg_pio     db  'PIO','$'
 msg_32      db  ' + 32-bit','$'
@@ -1004,6 +1187,14 @@ ndisks      dd  0
 pciid       dd  0
 bmbase      dd  0
 ctlflags    dd  0
+pciid2      dd  0                       ; the second controller's, 0 if none
+bmbase2     dd  0
+ctlflags2   dd  0
+cpciid      dd  0                       ; the one rep_ctl and rep_timing
+cbm         dd  0                       ; are reporting
+cflags      dd  0
+cnth        dd  0                       ; ...and which of its ID it is
+devctl      dd  0                       ; the flags of devmode's controller
 devflags    dd  0
 devbm       dd  0
 devmode     dd  0

@@ -10569,7 +10569,22 @@ fnF1:
         je      fF1_mode
         cmp     al,29h
         je      fF1_dbg
+        cmp     al,2Ah
+        je      fF1_ahci
         jmp     i21_unsup
+
+;--- AL=2Ah: the SATA ports, and how far each got.  EDI -> AHR_LEN
+;--- bytes, laid out by the AHR_ and AHP_ equates.  \TESTS\AHCITEST
+;--- prints them.
+fF1_ahci:
+        mov     eax,[ebp+F_EDI]
+        mov     ecx,AHR_LEN
+        call    cbuf_ok
+        jc      buf_deny
+        mov     edi,[ebp+F_EDI]
+        mov     al,AHF_REPORT
+        call    dword ptr ds:[IOS_AHCI]
+        jmp     i21_ok
 
 ;--- AL=24h: THE USB BUS, for USB.EXE.  Bits 16-23 of EAX say which:
 ;---   USBF_DEVICE  DL = a slot, EDI -> USBD_LEN bytes; ECX = USB_MAXDEV

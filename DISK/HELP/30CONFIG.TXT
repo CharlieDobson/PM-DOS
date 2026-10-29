@@ -31,14 +31,15 @@ The statements that are PM-DOS's own.  On MS-DOS these jobs took a
 driver or a program - EMM386, SMARTDRV, SHARE, MODE - and on PM-DOS
 they are in the kernel, so those programs are not loaded:
 
-{i}[[Autocheck|AUTOCHECK=]]                [[Keyrate|KEYRATE=]]{p}
-{i}[[Cache|CACHE=]]                    [[Lfn|LFN=]]{p}
-{i}[[Cdrom|CDROM=]]                    [[Nulltrap|NULLTRAP=]]{p}
-{i}[[Dpmi|DPMI=]]                     [[Scsi|SCSI=]]{p}
-{i}[[Ems|EMS=]]                      [[Share|SHARE=]]{p}
-{i}[[Ide32|IDE32=]]                    [[Undelete|UNDELETE=]]{p}
-{i}[[Idecable|IDECABLE=]]                 [[Usb|USB=]]{p}
-{i}[[Idedma|IDEDMA=]]                   [[Wincache|WINCACHE=]]{p}
+{i}[[Ahci|AHCI=]]                     [[Keyrate|KEYRATE=]]{p}
+{i}[[Autocheck|AUTOCHECK=]]                [[Lfn|LFN=]]{p}
+{i}[[Cache|CACHE=]]                    [[Nulltrap|NULLTRAP=]]{p}
+{i}[[Cdrom|CDROM=]]                    [[Scsi|SCSI=]]{p}
+{i}[[Dpmi|DPMI=]]                     [[Share|SHARE=]]{p}
+{i}[[Ems|EMS=]]                      [[Undelete|UNDELETE=]]{p}
+{i}[[Ide32|IDE32=]]                    [[Usb|USB=]]{p}
+{i}[[Idecable|IDECABLE=]]                 [[Wincache|WINCACHE=]]{p}
+{i}[[Idedma|IDEDMA=]]{p}
 
 CONFIG.SYS can also hold several configurations, with a menu at
 startup to choose one.  See [[Multiple Configurations|Multi-config]].
@@ -172,6 +173,43 @@ so AUTOEXEC.BAT can do something different for each one:
     :NOUSB
     ECHO USB is left to the BIOS.
     :END
+#topic AHCI=|Ahci
+#title AHCI=
+Turns PM-DOS's own driver for SATA disks in AHCI mode on or off.
+
+{b}Syntax{p}
+
+    AHCI=ON | OFF
+
+{b}Parameters{p}
+
+ON
+    PM-DOS drives the SATA disks itself when the BIOS setup has the
+    SATA ports in AHCI mode.  This is the default setting.
+
+OFF
+    The disks are left to the BIOS.  They still work, but more slowly.
+
+{b}Related Commands{p}
+
+\TESTS\AHCITEST shows what PM-DOS found on the controller.
+#notes
+{b}When it takes effect{p}
+
+The disks are taken from the BIOS once CONFIG.SYS has been read, so
+the line can be anywhere in the file.  Safe mode (Shift or F5 at
+start) always leaves the disks to the BIOS regardless of setting.
+
+{b}Which disks{p}
+
+Only the first AHCI controller is used, and only for the BIOS's first
+and second hard disks.  Each disk keeps the drive number the BIOS gave
+it.
+
+CD-ROM drives on an AHCI controller are not supported.  To use one,
+set the SATA ports to IDE mode in the BIOS setup.
+#examples
+    AHCI=OFF
 #topic AUTOCHECK=|Autocheck
 #title AUTOCHECK=
 Says what happens at startup to a hard disk that was not shut down
@@ -654,8 +692,9 @@ OFF
     Programmed Input/Output (PIO) only.
 
 AUTO
-    Keeps the mode set by the BIOS, and falls back to PIO when there is
-    none.  This is the default setting.
+    On Intel (PIIX/ICH) and VIA chipsets, the same as ON.  On other
+    chipsets, keeps the mode set by the BIOS, and falls back to PIO
+    when there is none.  This is the default setting.
 
 ON
     The fastest mode the drive, the controller and the cable can handle.
