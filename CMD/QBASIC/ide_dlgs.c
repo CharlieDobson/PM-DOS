@@ -1,10 +1,11 @@
 /*
- * IDE_DLGS.C - the dialogs: Open, Save As, Print, New SUB and New
- * FUNCTION, SUBs, Find and Change, Display, Help Path, About, and the
- * box QBasic greets you with.  Each is where QBasic puts its own, with
- * the same controls in the same order; the sentences in them are this
- * program's.  EDIT's DLGS.C is where the file lists and the searching
- * come from.
+ * IDE_DLGS.C - the dialogs: Open, Save As, Print, Make EXE File, New SUB
+ * and New FUNCTION, SUBs, Find and Change, Display, Help Path, About,
+ * and the box QBasic greets you with.  Each is where QBasic puts its own
+ * (Make EXE File, which QBasic has not got, where QuickBASIC 4.5 puts
+ * it), with the same controls in the same order; the sentences in them
+ * are this program's.  EDIT's DLGS.C is where the file lists and the
+ * searching come from.
  */
 #include "ide.h"
 
@@ -541,6 +542,46 @@ void dlg_print( void )
     if ( rc != 0 ) {
         msg_box( "The printer could not be written to.", MB_OK, 1 );
     }
+}
+
+/* ------------------------------------------------------------------ */
+/* Make EXE File                                                       */
+/* ------------------------------------------------------------------ */
+
+static int make_debug = 1;
+
+/* QuickBASIC 4.5's dialog as its Easy Menus have it: the file's name and
+   Produce Debug Code (there is only the stand-alone kind of .EXE here) */
+int dlg_makeexe( char *path, int *debug )
+{
+    CTL ctl[7];
+    DLG dlg;
+    int answer;
+
+    mem_set( &dlg, 0, sizeof( dlg ) );
+    put( &ctl[0], CT_LABEL, 2, 2, 0, "EXE File &Name:" );
+    put( &ctl[1], CT_EDIT, 2, 18, 46, NULL );
+    ctl[1].buf = path;
+    ctl[1].max = PATH_MAX;
+    put( &ctl[2], CT_CHECK, 5, 4, 0, "Produce &Debug Code" );
+    ctl[2].value = &make_debug;
+    button( &ctl[3], 9, 4, " &Make EXE ", ID_OK, 1 );
+    button( &ctl[4], 9, 19, " Make EXE and E&xit ", ID_MAKEEXIT, 0 );
+    button( &ctl[5], 9, 43, " Cancel ", ID_CANCEL, 0 );
+    button( &ctl[6], 9, 56, " &Help ", ID_HELP, 0 );
+    dlg.title = "Make EXE File";
+    dlg.top = 7;
+    dlg.left = 6;
+    dlg.rows = 11;
+    dlg.cols = 67;
+    dlg.sep = 8;
+    dlg.ctl = ctl;
+    dlg.nctl = 7;
+    dlg.focus = 1;
+    dlg.help = "d.makeexe";
+    answer = dlg_run( &dlg );
+    *debug = make_debug;
+    return answer == ID_OK || answer == ID_MAKEEXIT ? answer : 0;
 }
 
 /* ------------------------------------------------------------------ */

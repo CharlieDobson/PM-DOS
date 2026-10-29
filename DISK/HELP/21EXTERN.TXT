@@ -709,6 +709,19 @@ Programs written for QBasic 1.1 run unchanged.  PM-DOS has no real
 mode, so PEEK, POKE and DEF SEG only reach the program's own
 variables, the screen and the BIOS data area, and CALL ABSOLUTE gives
 "Advanced feature unavailable".  Arrays can be larger than 64K.
+
+{b}Making an .EXE file{p}
+
+Make EXE File on the Run menu writes the program as an .EXE file that
+runs at the command prompt without QBasic.  QBasic builds the .EXE
+file from QBRUN.EXE, which has to be in QBasic's directory or on the
+PATH.  Setup puts QBRUN.EXE beside QBASIC.EXE.  The .EXE file does not
+need QBRUN.EXE or QBasic to run, but it needs a math coprocessor.
+
+With Produce Debug Code checked, Ctrl+Break stops the program, and an
+error message gives the line number when the line has one.  In an
+.EXE file, CHAIN and RUN with a file name start another .EXE file,
+not a .BAS file.
 #examples
 To start QBasic:
 
@@ -979,7 +992,8 @@ Sets the DOS version number reported to a program.
 
 filename
     The program's file name and extension, without a path.  For
-    example, EDLIN.EXE.
+    example, EDLIN.EXE.  Use * for every program that is not in the
+    table.
 
 n.nn
     The version number to report to the program, from 2.11 to 9.99.
@@ -997,16 +1011,19 @@ The version table is used only when CONFIG.SYS loads it with
 #notes
 {b}Why SETVER is needed{p}
 
-PM-DOS reports version 6.22.  Some older programs and drivers refuse
-to run on any version other than the one they were written for.
-SETVER's table lists those programs and the version number each one
-is given.
+PM-DOS reports its own version number, the one VER shows.  Most DOS
+programs read a version below 2 as MS-DOS 1 and will not run.  Some
+older programs and drivers refuse to run on any version other than
+the one they were written for.  SETVER's table lists those programs
+and the version number each one is given.  The * entry is the
+version given to every other DOS program.  As supplied it is 6.22.
 
 {b}Loading the table{p}
 
 Add DEVICE=C:\SETVER.EXE to CONFIG.SYS to load the table.  Put the
 line above any driver listed in the table.  The table uses less than
-1K of memory.
+1K of memory.  The CONFIG.SYS that Setup writes already has this
+line.  Without it, DOS programs are told PM-DOS's own version.
 
 {b}Changes{p}
 
@@ -1016,9 +1033,10 @@ changed entry moves to the end of the table.
 
 {b}What is reported{p}
 
-Programs listed in the table get their version number from INT 21h
-function 30h, in DOS sessions and under Windows.  Function 3306h
-always reports 6.22.  PM-DOS's own 32-bit programs are not affected.
+Programs listed in the table, and all others when there is a *
+entry, get their version number from INT 21h function 30h, in DOS
+sessions and under Windows.  Function 3306h always reports PM-DOS's
+own version.  PM-DOS's own 32-bit programs are not affected.
 
 {b}Errorlevels{p}
 
@@ -1040,6 +1058,7 @@ always reports 6.22.  PM-DOS's own 32-bit programs are not affected.
 #examples
     setver
     setver edlin.exe 5.00
+    setver * 6.22
     setver edlin.exe /delete
     setver c:\old netx.exe 5.00
 #topic SHUTDOWN|Shutdown

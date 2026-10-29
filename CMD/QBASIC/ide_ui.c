@@ -68,7 +68,9 @@ static const MITEM search_items[] = {
 static const MITEM run_items[] = {
     { "&Start",    "Shift+F5", CMD_START,    "Runs the program from the beginning", "m.start" },
     { "&Restart",  "",         CMD_RESTART,  "Sets the program back to its first statement", "m.restart" },
-    { "&Continue", "F5",       CMD_CONTINUE, "Runs on from where the program stopped", "m.continue" }
+    { "&Continue", "F5",       CMD_CONTINUE, "Runs on from where the program stopped", "m.continue" },
+    { NULL,        NULL, 0, NULL, NULL },
+    { "Make E&XE File...", "", CMD_MAKEEXE,  "Writes the program as an .EXE that runs without QBasic", "m.makeexe" }
 };
 
 static const MITEM debug_items[] = {

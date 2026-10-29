@@ -194,9 +194,13 @@ saved_esp       dd      0
 
 ; THE LAST BYTES OF THE IMAGE, so that wlink writes the BSS out as
 ; zeroes to reach them (the link orders class D32END after BSS) and the
-; kernel's 48h heap starts past it.
+; kernel's 48h heap starts past it.  d32_tail is the first byte past
+; the image: the kernel loads the whole file, so in QBRUN.EXE the
+; program Make EXE File put behind the image is there.
 D32END  segment dword public 'D32END'
         db      'D32END',0,0
+        public  _d32_tail
+_d32_tail       label   byte
 D32END  ends
 
 DGROUP  group   _TEXT, D32END

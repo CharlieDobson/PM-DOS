@@ -13,7 +13,7 @@ setlocal
 pushd "%~dp0"
 if not exist HOSTOBJ mkdir HOSTOBJ
 if exist HOSTOBJ\*.obj del /q HOSTOBJ\*.obj
-set SRCS=rt mem num bigdec lex list csym cexpr comp vm qstr rtlib cons using file gfx draw snd mach doc prog
+set SRCS=rt mem num bigdec lex list csym cexpr comp vm qstr rtlib cons using file gfx draw snd mach doc prog pack
 wasm -q -fo=HOSTOBJ\jmp.obj jmp.asm || goto :fail
 wasm -q -fpi87 -fo=HOSTOBJ\fpu.obj fpu.asm || goto :fail
 for %%F in (%SRCS% sys_nt host) do wcc386 -q -bt=nt -mf -3r -s -ox -w4 -we -zp4 -fpi87 -fo=HOSTOBJ\%%F.obj %%F.c || goto :fail

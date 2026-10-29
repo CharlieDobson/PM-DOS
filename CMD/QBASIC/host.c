@@ -2,12 +2,17 @@
  * HOST.C - QBHOST.EXE: a QBasic program run from a Windows console, for
  * checking the interpreter against real QBasic's results.
  *
- *   QBHOST [-root dir] [-keys file] [-screen file] [-list] program.bas
+ *   QBHOST [-root dir] [-keys file] [-screen file] [-list] [-pack]
+ *          [-make out.exe qbrun.exe [-nodebug]] program.bas
  *
  * -root    the folder that stands for C:\ (default: the current one)
  * -keys    the keys a program reads, one a line (SYS_NT.C says how)
  * -screen  the text screen at the end, written to a file, a row a line
  * -list    each line as QBasic would show it, instead of running
+ * -pack    the compiled program packed as Make EXE File packs it, and
+ *          what PACK.C reads back run in its place
+ * -make    out.exe qbrun.exe: what Make EXE File writes, written, and
+ *          nothing run (-nodebug: without Produce Debug Code)
  *
  * A compile error is printed with its procedure, line and column, and
  * the exit code is 2; a run-time error the program did not trap is
@@ -59,6 +64,91 @@ static void dump_screen( const char *path )
     fclose( fp );
 }
 
+/* -pack: the program through PACK.C and back, the compiled one let go */
+static PROGRAM *round_trip( PROGRAM *prog )
+{
+    PROGRAM *back;
+    u8 *blob;
+    u32 len, flags;
+    int rc;
+    char module[PATH_MAX];
+
+    blob = pack_program( prog, PK_DEBUG, "HOST", &len );
+    comp_free( prog );
+    if ( blob == NULL ) {
+        out_of_memory();
+    }
+    back = pack_read( blob, len, &flags, module, sizeof( module ), &rc );
+    xfree( blob );
+    if ( back == NULL ) {
+        fprintf( stderr, "qbhost: the packed program did not read back (%d)\n", rc );
+        exit( 3 );
+    }
+    return back;
+}
+
+/* -make: the program packed behind a copy of QBRUN.EXE, as Make EXE File
+   writes it -> the exit code */
+static int make_file( const char *file, const char *exe, const char *runtime, int debug )
+{
+    FILE *in, *out;
+    PROGRAM *prog;
+    CERR err;
+    u8 *blob;
+    u32 len;
+    char module[PATH_MAX], *dot;
+    const char *base = file, *scan;
+    int ch;
+
+    for ( scan = file; *scan; scan++ ) {
+        if ( *scan == '\\' || *scan == '/' || *scan == ':' ) {
+            base = scan + 1;
+        }
+    }
+    str_cpyt( module, base, sizeof( module ) );
+    dot = str_rchr( module, '.' );
+    if ( dot != NULL ) {
+        *dot = 0;
+    }
+    prog = comp_program( &ptext, &err );
+    if ( prog == NULL ) {
+        fprintf( stderr, "%s line %lu col %d: %s\n", text_name( err.text ), (unsigned long)err.line + 1,
+                 err.col + 1, err.msg );
+        return 2;
+    }
+    blob = pack_program( prog, (opt_mbf ? PK_MBF : 0) | (debug ? PK_DEBUG : 0), module, &len );
+    comp_free( prog );
+    if ( blob == NULL ) {
+        out_of_memory();
+    }
+    in = fopen( runtime, "rb" );
+    out = fopen( exe, "wb" );
+    if ( in == NULL || out == NULL ) {
+        fprintf( stderr, "qbhost: cannot open %s or %s\n", runtime, exe );
+        return 2;
+    }
+    while ( (ch = fgetc( in )) != EOF ) {
+        fputc( ch, out );
+    }
+    fwrite( blob, 1, len, out );
+    fclose( in );
+    if ( fclose( out ) != 0 ) {
+        fprintf( stderr, "qbhost: cannot write %s\n", exe );
+        return 2;
+    }
+    xfree( blob );
+    return 0;
+}
+
+static void prog_free( PROGRAM *prog, int packed )
+{
+    if ( packed ) {
+        pack_free( prog );
+    } else {
+        comp_free( prog );
+    }
+}
+
 static int list_program( void )
 {
     int t;
@@ -83,7 +173,9 @@ static int list_program( void )
 int main( int argc, char **argv )
 {
     const char *file = NULL, *screen_file = NULL;
-    int i, rc, why, list = 0;
+    const char *make_exe = NULL, *make_rt = NULL;
+    int i, rc, why, list = 0, pack = 0;
+    int debug = 1;
     u32 run_at = 0, n;
     PROGRAM *prog;
     CERR err;
@@ -98,12 +190,20 @@ int main( int argc, char **argv )
             screen_file = argv[++i];
         } else if ( strcmp( argv[i], "-list" ) == 0 ) {
             list = 1;
+        } else if ( strcmp( argv[i], "-pack" ) == 0 ) {
+            pack = 1;
+        } else if ( strcmp( argv[i], "-make" ) == 0 && i + 2 < argc ) {
+            make_exe = argv[++i];
+            make_rt = argv[++i];
+        } else if ( strcmp( argv[i], "-nodebug" ) == 0 ) {
+            debug = 0;
         } else {
             file = argv[i];
         }
     }
     if ( file == NULL ) {
-        fprintf( stderr, "usage: qbhost [-root dir] [-keys file] [-screen file] [-list] program.bas\n" );
+        fprintf( stderr, "usage: qbhost [-root dir] [-keys file] [-screen file] [-list] [-pack]\n"
+                         "              [-make out.exe qbrun.exe [-nodebug]] program.bas\n" );
         return 2;
     }
     fp_init();
@@ -116,6 +216,9 @@ int main( int argc, char **argv )
     if ( list ) {
         return list_program();
     }
+    if ( make_exe != NULL ) {
+        return make_file( file, make_exe, make_rt, debug );
+    }
     con_capture_dos();
     for ( ;; ) {
         prog = comp_program( &ptext, &err );
@@ -123,6 +226,9 @@ int main( int argc, char **argv )
             fprintf( stderr, "%s line %lu col %d: %s\n", text_name( err.text ), (unsigned long)err.line + 1,
                      err.col + 1, err.msg );
             return 2;
+        }
+        if ( pack ) {
+            prog = round_trip( prog );
         }
         if ( !vm_begin( prog ) ) {
             fprintf( stderr, "qbhost: no memory for the run\n" );
@@ -149,7 +255,7 @@ int main( int argc, char **argv )
                 vm_common_take();
             }
             vm_end();
-            comp_free( prog );
+            prog_free( prog, pack );
             prog_clear();
             if ( prog_load( next ) != 0 ) {
                 fprintf( stderr, "qbhost: cannot read %s\n", next );
@@ -160,7 +266,7 @@ int main( int argc, char **argv )
         if ( why == RUN_CHAIN ) {
             run_at = vm.chain_at;
             vm_end();
-            comp_free( prog );
+            prog_free( prog, pack );
             continue;
         }
         break;
@@ -186,6 +292,6 @@ int main( int argc, char **argv )
         dump_screen( screen_file );
     }
     vm_end();
-    comp_free( prog );
+    prog_free( prog, pack );
     return rc;
 }

@@ -549,13 +549,23 @@ static u8 *gosub_pop( void )
 /* Look round, between statements: -> RUN_* to stop with, or -1 */
 static int look_round( u32 stmt )
 {
+    static u32 last_flush;
     PROGRAM *prog = vm.prog;
     u8 *handler;
     int kind, which;
+    u32 now;
 
     vm.poll = POLL_EVERY;
     con_poll_keys();
     snd_service();
+    /* what the program has written goes on the screen while it works,
+       twenty times a second at most, and not only when it waits for a
+       key or ends */
+    now = sys_hundredths();
+    if ( now - last_flush >= 5 || now < last_flush ) {
+        last_flush = now;
+        con_flush();
+    }
     if ( vm.stopped >= 0 ) {
         int why = vm.stopped;
         vm.stopped = -1;

@@ -18,6 +18,15 @@ init:
         int     21h
         cmp     al,3
         jae     in_verok
+        ; PM-DOS's own version is 0.x, which is below 3 and is not DOS
+        ; 1.  A DOS that answers 3306h is DOS 5 or later whatever 30h
+        ; says, and PM-DOS answers it, under Windows too; DOS 1 to 4
+        ; leave BX as it was.  (Not F100h: RMDOS leaves that alone.)
+        mov     bx,0FFFFh
+        mov     ax,3306h
+        int     21h
+        cmp     bx,0FFFFh
+        jne     in_verok
         mov     dx,OFFSET msg_badver
         mov     ah,09h
         int     21h

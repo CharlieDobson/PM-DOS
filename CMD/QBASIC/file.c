@@ -1645,8 +1645,11 @@ int file_flush_all( void )
 /* CHAIN, RUN, and the rest                                            */
 /* ------------------------------------------------------------------ */
 
-/* CHAIN's and RUN's file: .BAS when the name has none, and there to be
-   read - a file that is not there is the statement's error */
+const char *chain_ext = ".BAS";         /* QBRUN: ".EXE" */
+
+/* CHAIN's and RUN's file: .BAS (.EXE in a program made by Make EXE
+   File) when the name has none, and there to be read - a file that is
+   not there is the statement's error */
 static void chain_path( STR *s, char *path )
 {
     const char *name = path;
@@ -1660,7 +1663,7 @@ static void chain_path( STR *s, char *path )
         }
     }
     if ( str_chr( name, '.' ) == NULL && at + 4 < PATH_MAX ) {
-        str_cpy( path + at, ".BAS" );
+        str_cpy( path + at, chain_ext );
     }
     rc = sys_open_read( path, &handle );
     if ( rc != 0 ) {

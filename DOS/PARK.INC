@@ -788,6 +788,12 @@ park_loadprog:
         mov     word ptr [edi+2],ax
         mov     byte ptr [edi+80h],0            ; an empty command tail
         mov     byte ptr [edi+81h],13
+        ; The version 30h tells it, as vdm_psp stamps a DOS box's: left
+        ; at zero it would be the real one, which a program takes for
+        ; DOS 1 (PMDOS.INC), however SETVER's table reads.
+        mov     esi,dword ptr [park_prog]
+        call    sv_find
+        mov     word ptr [edi+RSP_VERSION],ax
 
         ; ...and the image at PSP:0100
         movzx   edx,word ptr [park_pspseg]

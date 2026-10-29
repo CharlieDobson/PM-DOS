@@ -55,6 +55,8 @@ static int  last_scan;
 static int  shift_seen;
 static int  in_scan = -1;               /* INPUT$: an extended key's scan code, next */
 
+int con_no_break;
+
 int  gfx_text_attr( int fgc, int bgc );
 void gfx_set_colors( int fgc, int bgc );
 
@@ -861,6 +863,9 @@ void con_poll_keys( void )
         }
         key = sys_key_read( &shift );
         if ( key == 0x0003 ) {
+            if ( con_no_break ) {
+                continue;                       /* a program made without debug code */
+            }
             kq_count = 0;
             vm_break();
         }

@@ -561,6 +561,18 @@ int   comp_check_line( PROGTEXT *pt, int text, u32 line, const char *src, u32 le
                        char *out, u32 outmax, CERR *err );
                         /* 1 = fine and "out" is the line QBasic would show */
 
+/* PACK.C: a compiled program as bytes, for Make EXE File and QBRUN.EXE */
+#define PK_MBF      0x01        /* QBASIC /MBF was in force */
+#define PK_DEBUG    0x02        /* Produce Debug Code: Ctrl+Break, line numbers */
+#define PK_NOTONE   1           /* pack_read: not a program, or damaged */
+#define PK_NOMEM    2           /* ...no memory */
+u8   *pack_program( PROGRAM *prog, u32 flags, const char *module, u32 *len );  /* xfree it */
+u32   pack_length( const u8 *head, u32 avail );     /* 0: not the start of one */
+u32   pack_tail_length( const u8 *tail );           /* a file's last 8 bytes */
+int   pack_runtime_ok( const u8 *file, u32 len );   /* QBRUN.EXE, whole: ours? */
+PROGRAM *pack_read( const u8 *blob, u32 len, u32 *flags, char *module, u32 module_max, int *rc );
+void  pack_free( PROGRAM *prog );
+
 /* LIST.C */
 int   list_line( const char *src, u32 len, TOKEN *toks, char *out, u32 max );  /* -1: too long */
 void  names_reset( void );
@@ -634,6 +646,7 @@ void  con_save_ide( void );         /* the text screen the IDE drew */
 void  con_capture_dos( void );      /* the screen QBASIC started on */
 void  con_text_then_error( STR *text, int code );
 void  con_end_prompt( const char *text );      /* the run over: a word at the bottom */
+extern int con_no_break;            /* Ctrl+Break is not a stop (QBRUN without debug code) */
 
 /* graphics: GFX.C */
 int   gfx_mode( void );             /* the SCREEN mode, 0 for text */
@@ -674,6 +687,7 @@ int   file_close_all( void );         /* -> 0, or the first write error */
 int   file_flush_all( void );
 void  file_raise( int rc );           /* rc not 0: its error */
 void  file_reset_state( void );
+extern const char *chain_ext;         /* CHAIN's and RUN's file with no extension: ".BAS" */
 
 /* the machine the run sees: the first megabyte as QBasic's programs
    expect it */

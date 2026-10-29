@@ -1,6 +1,6 @@
 PM-DOS - Protected Mode DOS, a 32-bit DOS kernel
 ================================================
-Started 2026-08-06.  Version 0.68.
+Started 2026-08-06.  Version 0.69.
 
 The VDM - running 16-bit DOS programs
 -------------------------------------
@@ -18320,6 +18320,298 @@ build); audio (no disc with audio tracks here); a port that stops
 answering; Windows with an AHCI CD-ROM drive (not served: RMCD.SYS
 knows IDE channels only); a BIOS that numbers a boot CD below its last
 hard disk; RUNTESTS.
+
+
+30h SAYS PM-DOS'S OWN VERSION, AND SETVER'S "*" SAYS 6.22 (2026-10-29)
+---------------------------------------------------------------------
+
+Charlie: "Now that we have SETVER.EXE, let's have PM-DOS report its
+actual version to applications, and SETVER.EXE can be used to lie to
+programs requiring MS-DOS 6.22 or earlier."  21h/30h and 21h/3306h
+said 6.22 from v0.31 to v0.68.  They now say PM-DOS's own version,
+0.68, the number F100h and VER give.
+
+THE CATCH, put to him before anything was written: 30h with AL=0 is
+DOS 1 to every program (DOS 1 had no 30h and left AL alone), so 0.68
+is refused by nearly all of them, not only by the ones written for
+6.22 or earlier.  The MSVC and Borland C runtimes want 2.0, PM-DOS's
+own COMMAND.COM wanted 3.0, Windows 3.1's WIN.COM and DOSMGR want 3.1,
+and the table has room for about a hundred names.  His choice, of
+three: 0.68 at both calls, and SETVER gets a default entry that the
+CONFIG.SYS PM-DOS ships loads.
+
+WHAT IS WHERE.
+  - INC\PMDOS.INC: DOSVER_* are PMDOS_* now.  INC\RMDOS.INC does the
+    same for RMDOS.SYS and RMCD.SYS, through PMVER.INC.
+  - SETVER's "*" ENTRY: an entry whose name is the single character *
+    is the version for every name the table does not list.  No file
+    can be called *, so a name entry wins over it wherever the two
+    are, and MS-DOS's SETVER lists it and never matches it.  The walk
+    is in the kernel (sv_find, VDM.INC) and in RMDOS (sv_ver,
+    RMMEM.INC); both take an empty path as "no file" and give the *
+    entry or the real version.  The table SETVER.EXE ships starts with
+    * 6.22, and SETVER at the prompt takes * as a name (valid_name),
+    so SETVER * 5.00 and SETVER * /DELETE work as for any program.
+  - RMDOS's 26h AND 55h stamp PSP+40h with the * entry, not the real
+    version.  MS-DOS's SETMEM stamps the real one, which there was
+    6.22; here it is 0.68, and Windows makes every task's PSP with 55h,
+    so a DOS call from any task would have been told DOS 1.  The
+    kernel has no 26h or 55h.
+  - SETVER.EXE's driver INIT refused anything below DOS 5, which is
+    where the list of lists' SETVER field arrived.  It now also takes
+    a DOS that answers 3306h, which is DOS 5 or later whatever 30h
+    says (DOS 1 to 4 leave BX alone).  So do COMMAND.COM's start
+    (INIT16.INC, which wanted 3.0) and SYS16.COM's look for its own
+    directory.  NOT F100h, which was the first try: RMDOS leaves F100h
+    unanswered on purpose, and BLKTEST, RDTEST, CDSTEST, DRVTEST,
+    NETTEST and SEEKWR tell the kernel from RMDOS by it.  With RMDOS
+    answering it all six took RMDOS for the kernel and left no report
+    from the far side.  3306h is answered on both.
+  - PARK.INC's park_loadprog stamps the PSP it builds, as vdm_psp does.
+    It was left at zero, which RMDOS's 30h reads as the real version,
+    so a program PARKTEST starts was told 0.68 whatever the table said.
+    Windows does not come in that way (its process is a DOS box's,
+    stamped when it was loaded), but PARKTEST is how RMDOS is tested.
+  - The ones that ship: DISK\CONFIG.SYS (the floppy and HD16) has
+    DEVICE=SETVER.EXE first; SETUP.LST's [config] has
+    DEVICE=%DOSDIR%\SETVER.EXE after SHELL=, and the CD's [PMDOS] block
+    DEVICE=O:\PMDOS\SETVER.EXE; Setup's upgrade (CFG.C) adds the line
+    at the top when no DEVICE= line loads SETVER.EXE.  Not the startup
+    floppy (F7): SETVER.EXE is not one of its files, and what it is for
+    is mending a machine, with CMD.EXE and PM-DOS's own programs.
+  - PMD's summary line "as MS-DOS 6.22" is left out when 30h gives the
+    same number as F100h, which it always does for a native program.
+  - Help: SETVER's topic (21EXTERN.TXT) and CONFIG.TXT say what is
+    reported and what * is for.
+
+TESTS that had 6.22 or "AL is not zero" in them: APITEST now checks
+30h against its own PSP+40h (what the kernel stamped from SETVER's
+table, so it passes with SETVER loaded or not) and 3306h against
+F100h, and prints the number only when it is wrong, so it no longer
+moves at a release; DPMITEST, DPMIVEC and
+HOOKTEST took AL=0 as "not answered", and now look for AX changed from
+3000h.  RUNTESTS's CONFIG.SYS loads no SETVER, so every row runs the
+0.68 path.
+
+RESULTS.
+  - RUNTESTS, all seven rows, 101 tests: 96 the same, and the five
+    that had to move, moved and were re-recorded from that full run:
+    APITEST (its two new lines), HELLO and RMTEST (they print 30h's
+    minor in hex: 0.44, was 6.16), PMD (no "as MS-DOS 6.22"), SFTSCAN (two SFTs
+    20h higher: COMMAND.COM's image grew by the check).  The first run
+    was the one with RMDOS answering F100h, which lost six reports.
+  - NLSTESTS: all nine rows the same.
+  - A rig on DOSBox-X (scratchpad f81aa6a6, rig\svrig.ps1): a hard
+    disk with SETVER loaded, SVKID.COM 5.00 and SVDEV.SYS 4.00 added to
+    the shipped table, booted three times.  As shipped: SVTEST 6.22 at
+    30h, 0.68 at 3306h, PSP 6.22; SVKID 5.00, typed in either case and
+    through COMMAND /C; SVDEV's INIT 4.00; COMMAND /C VER "PM-DOS
+    version 0.68"; SVTEST /F's EXEC and PARKTEST's parked SVTEST and
+    its RMDOS EXEC child 6.22 / 5.00.  After SETVER * 4.00: 4.00 where
+    6.22 was, the named entries as they were, and * at the end of the
+    listing.  After SETVER * /D /Q: 0.68 where 4.00 was, the named
+    entries as they were.  A disk with no SETVER: 0.68 to everything,
+    SVDEV's INIT too; COMMAND.COM starts and runs; SETVER lists the
+    file's table and says it is not loaded.  APITEST passes on all four
+    boots.
+  - The delivered HD16, booted: SVTEST 6.22 / 0.68 / 6.22, VER and
+    COMMAND /C VER 0.68, SETVER's listing with * 6.22 first.
+
+  - WINDOWS FOR WORKGROUPS 3.11 IN 386 ENHANCED MODE ON RMDOS, QEMU,
+    no window (scratchpad f81aa6a6 rig\win\wintest.ps1, built on
+    session e73b216b's winbuild.ps1 and winrun.ps1).  With
+    DEVICE=C:\SETVER.EXE (SVKID.COM 5.00 added to the shipped table):
+    Windows started (WINDRV: "Windows 3.10 is up, flags 0429", 20h
+    the enhanced-mode bit), WINSTART.BAT's SVTEST in the system VM said
+    6.22 / 0.68 / 6.22, and WINDRV's WINDOS.BAT, run through COMSPEC as
+    the MS-DOS Prompt is, ran COMMAND.COM and said the same; SVKID
+    5.00 / 0.68 / 5.00; COMMAND /C and RMDOS's EXEC (SVTEST /F) the
+    same again; VER in that box "PM-DOS COMMAND.COM version 0.68,
+    running on DOS 6.22".  Windows exited, and after it SVTEST said
+    6.22 and VER 0.68.  The same disk with no SETVER: IFSHLP.SYS
+    "Incompatible DOS Version", WIN.COM "Must have MS-DOS version
+    3.10 or greater", back to the prompt - which is what the * entry
+    is there to prevent.
+
+NOT TESTED: COMMAND.COM under Windows with NO SETVER (Windows does not
+start without it, so the 3306h check ran on the kernel only); Setup
+writing a new CONFIG.SYS or upgrading one (CFG.C and SETUP.LST were
+read, not run); the CD's [PMDOS] block; Windows 3.1 itself (WfW 3.11
+was the one run); 86Box and real hardware.  MS-DOS 6.22's own
+SETVER.EXE was not run against the new table.
+
+
+MAKE EXE FILE: QBASIC PROGRAMS AS .EXE FILES (2026-10-29)
+---------------------------------------------------------------------
+
+Charlie asked how hard it would be to compile QBASIC programs into
+native D32 programs.  Of the two ways offered - the bytecode behind a
+runtime, or real x86 code - he chose the first, with Make EXE File in
+the IDE.
+
+WHAT IT IS.  Run > Make EXE File... compiles the program and writes a
+copy of QBRUN.EXE with the compiled program behind it.  QBRUN.EXE is
+the interpreter alone (VM.C and its library, no editor, no compiler;
+126,028 bytes) and ships beside QBASIC.EXE.  The kernel loads the whole
+file, so the program is in memory where the image ends - d32_tail,
+DOSINT.ASM's last label - and RTMAIN.C runs it from there.  A program
+runs as it does under QBASIC /RUN, at the same speed.
+
+  PACK.C    the compiled program as bytes and back.  The code goes as
+            it is (every operand is a number: an offset, a constant's
+            number, a routine's number), the tables field by field.
+            The header carries the instruction set's signature, a hash
+            of OP.H's and RTFN.H's names and shapes, so a runtime never
+            runs code made for another; the block ends with its length
+            and 'QBXE', so it can be found from the end of a file.
+            Every count is checked against what is left of the block
+            before anything is allocated.
+  RTMAIN.C  QBRUN.EXE's main.
+  MAIN.C IDE_DLGS.C IDE_UI.C
+            the menu item and the dialog; QBRUN.EXE is looked for as
+            QBASIC.HLP is (the shell's directory, the help path, the
+            current directory, the PATH) and must hold this QBASIC's
+            instruction set; a file not written whole is deleted.
+  HOST.C    -pack (every program through PACK.C and back before it
+            runs) and -make OUT.EXE QBRUN.EXE (writes what Make EXE
+            File writes) - test aids only.
+
+THE DIALOG AND THE ENDINGS ARE QUICKBASIC 4.5's, taken from the real
+one (WinWorld's 1988 720K disks) under MS-DOS 5 in QEMU.  The Run menu
+is as its Easy Menus have it (a rule, then Make EXE File... with X);
+the dialog has EXE File Name, Produce Debug Code (checked) and Make EXE
+/ Make EXE and Exit / Cancel / Help, at QB 4.5's places.  The Full
+Menus' "EXE Requiring BRUN45.EXE" is left out: every .EXE here stands
+alone.  QB 4.5 asks for the program to be saved first, because its
+BC.EXE reads the file; this compiles what is in memory and does not
+ask.  A program made this way:
+  - END and SYSTEM go straight back to DOS; a graphics screen is
+    cleared to text on the way.
+  - An error nothing traps: "Division by zero in line 30 of module
+    T3" (the line number only with debug code and on a numbered line,
+    as in QB 4.5); STOP: "STOP in module T2"; Ctrl+Break: "*Break*".
+    Then "Hit any key to return to system", and the exit code is 0,
+    as QB 4.5's is.  QB 4.5's "at address ssss:oooo" is left out.
+  - Ctrl+Break stops it only when it was made with debug code.
+  - CHAIN and RUN "name" go to name.EXE.  One that Make EXE File made
+    for the same instruction set is read and run in place, with the
+    COMMON and the open files kept; any other program is started as
+    SHELL starts one, and this one ends.
+Differences kept: subscripts are always checked (QB 4.5 checks them
+only with debug code); after "Hit any key" the cursor goes to a new
+line, because CMD.EXE puts its prompt where the cursor is.
+
+FOUND ON THE WAY.  VM.C's look round (every 256 statements) read the
+keys but never put the program's screen up, so a program that printed
+and then worked showed nothing until it waited for a key or ended -
+under QBASIC too.  It now flushes, at most twenty times a second.  And
+PACK.C's first pack_free freed every constant, including one a COMMON
+string still held across CHAIN; it now frees only those nothing holds,
+as COMP.C does.
+
+TESTED.  QBHOST -pack: the 71 oracle programs, the 15 of the QBASIC
+session, CHAINX/CHAINY (CHAIN between two .EXEs), the old limits and
+keyword programs and LIMPACK (40-character names, 60 dimensions, a
+4,000-character constant, 1,100 DATA items, a STATIC array in a STATIC
+SUB) give the same output as without -pack.  On PM-DOS (DOSBox-X, a
+copy of HD16.IMG) every oracle program made into an .EXE and run: 63
+of 71 match the real QBasic, the rest are the known ARITH2, ARITH3,
+MATHFN, ARRAY2, MISC3, GFX6 and USING4 differences, and TYPES (it
+writes into \QB, not the root).  In QEMU with real keys: the menu, the
+dialog, its help, debug code off and on, a name given without .EXE, a
+made program's error, STOP, Ctrl+Break with and without debug code, a
+graphics END, the "QBRUN.EXE cannot be found" box.  The IDE's test-mode
+scripts T1-T9 match their baselines; T12 (the dialog, its help, a
+made .EXE) and T13 (Make EXE and Exit) are new.
+
+FILES.  CMD\QBASIC\PACK.C and RTMAIN.C (new); MAIN.C, IDE_DLGS.C,
+IDE_UI.C, IDE.H, QB.H, CONS.C (con_no_break), FILE.C (chain_ext),
+VM.C, DOSINT.ASM, HOST.C, MKHOST.CMD; DISK\QBHELP\1MENUS.TXT (m.makeexe,
+d.makeexe) and DISK\QBASIC.HLP (330 topics); BUILD.CMD (PACK and RTMAIN
+compiled, QBRUN.EXE linked and bound, on PMDOS2.IMG), MKHD.CMD and
+DISK\SETUP.LST (QBRUN.EXE beside QBASIC.EXE).  DISK\HELP\21EXTERN.TXT,
+the PM-DOS help's QBASIC topic, is Charlie's and does not mention Make
+EXE File yet.
+
+DELIVERED: BIN\QBASIC.EXE (289,072) and BIN\QBRUN.EXE; IMAGES\HD16.IMG
+(FATREPL: QBASIC.EXE, QBRUN.EXE, QBASIC.HLP) and IMAGES\PMDOS2.IMG
+(BUILD.CMD's MKDISK line), both copied into the 86Box VM (backups
+.bak-20261029-1125).  NOT rebuilt: the Setup images and PMDOSCD.ISO.
+RUNTESTS: BIN has one file more, so RMFIND and RMTEST's free clusters
+move on the next full run - re-record them from a full run.
+Not tried: real hardware, 86Box, an .EXE with a long file name.
+
+
+v0.69 - CD-ROM DRIVES ON SATA, PM-DOS'S OWN VERSION AT 30h, AND
+        QBASIC'S MAKE EXE FILE (2026-10-29)
+---------------------------------------------------------------------
+
+Charlie: "Add a note in help about compiling to EXE, then write a
+summary of all changes and commit to GitHub and tag new version
+0.69".  INC\PMVER.INC now says 69.  This release is everything since
+the v0.68 tag.  The three entries above have the detail ("AHCI: CD-ROM
+DRIVES ON SATA PORTS", "30h SAYS PM-DOS'S OWN VERSION", "MAKE EXE
+FILE"); this one is the list.
+
+AHCI CD-ROM DRIVES (committed before the release, f4a5e6b)
+  - IO\AHCI.INC ahci_cdexec sends ATAPI packets to a CD-ROM drive on
+    an AHCI port, by the drive's DMA for whole blocks and by PIO for
+    the rest; IO\CDUNIT.INC gives such drives letters after the IDE
+    and SCSI ones.
+  - PM-DOS starts from a CD in a SATA drive (the drives are taken
+    before disk_scan then).  0.68 found no CD-ROM drive on a board
+    whose BIOS had moved the DVD drive to AHCI.
+  - While an AHCI CD-ROM drive is the kernel's, a DOS box's INT 13h
+    for a BIOS CD number (E0h up) is answered, never sent to the ROM.
+  - CDEX says "SATA port n"; AHCITEST lists the drives.
+
+PM-DOS'S OWN VERSION AT 30h
+  - 21h/30h and 21h/3306h give PM-DOS's own version (0.69 now), not
+    6.22.  A SETVER table entry named * gives a version to every
+    program the table does not list; the table SETVER.EXE ships starts
+    with * 6.22, and the CONFIG.SYS PM-DOS ships loads SETVER.EXE.
+  - RMDOS's 26h and 55h stamp new PSPs with the * entry; PARK.INC's
+    park_loadprog stamps its PSP.
+  - COMMAND.COM, SETVER's driver and SYS16 check for DOS 5 or later by
+    3306h, not by 30h.
+  - Setup: SETUP.LST and the CD's [PMDOS] block load SETVER.EXE, and
+    an upgrade adds the line when there is none.
+  - APITEST, DPMITEST, DPMIVEC, HOOKTEST and SVTEST follow; SETVER's
+    help topic and CONFIG.TXT say what is reported.
+
+MAKE EXE FILE IN QBASIC
+  - Run > Make EXE File... writes the program as an .EXE that runs at
+    the prompt without QBasic: a copy of the new QBRUN.EXE (the
+    interpreter without the editor) with the compiled program behind
+    it.  The dialog and the endings are QuickBASIC 4.5's.
+  - PACK.C (the compiled program as bytes and back) and RTMAIN.C
+    (QBRUN.EXE's main) are new; BUILD.CMD links and binds QBRUN.EXE;
+    MKHD.CMD, SETUP.LST and PMDOS2.IMG ship it beside QBASIC.EXE.
+  - VM.C puts the screen up while a program works (at most 20 times a
+    second); before, output stayed hidden until the program waited for
+    a key or ended.  This was in QBASIC too.
+  - Help: m.makeexe and d.makeexe in QBASIC.HLP; the PM-DOS help's
+    QBASIC topic has "Making an .EXE file".
+
+NOT RUN ON REAL HARDWARE: an AHCI CD-ROM drive; Windows 3.1 itself
+with the new version (WfW 3.11 was run); a made QBASIC program.
+
+BUILT AND TESTED.  A scratch mirror build (BUILD.CMD) of the tree as
+committed: against S:\BIN, CMD.EXE, COMMAND.COM, PMDOS.SYS (195,561)
+and RMDOS.SYS (64,038) differ only in the version byte; QBASIC.EXE
+(289,052) and QBRUN.EXE (126,028) are this build's, not the scratch
+build delivered earlier the same day.  RUNTESTS -Update on all seven
+rows: 101 on every row.  Baselines moved: HELLO and RMTEST's 30h line
+0.44 -> 0.45 (7 each), PMD.OUT's version line (7), RMTEST's free
+clusters 6B03 -> 6A7E, which is QBRUN.EXE's 124 clusters and the 9
+QBASIC.EXE grew by (7), and CACHETST's "a write is owed" 4 -> 5 (6).
+This build's QBASIC.EXE: the test-mode scripts T1-T9 match their
+baselines, and T12 and T13 made their .EXEs (debug code off and on).
+This build's QBRUN.EXE: the 71 oracle programs made into .EXEs and run
+on PM-DOS, 63 match the real QBasic, as with the scratch build.
+Delivered: S:\BIN, BASELINE, PMDOS.IMG, PMDOS2.IMG, TESTS.IMG,
+HD16.IMG (by FATREPL), the five Setup images, and the four images into
+the 86Box VM.
 
 
 v0.61 - THE NUMBER CAUGHT UP (2026-09-30)

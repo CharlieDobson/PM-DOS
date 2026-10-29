@@ -202,7 +202,7 @@ t_hook21:
         mov     ax,2521h
         int     21h
         mov     word ptr [n21],0
-        mov     ah,30h
+        mov     ax,3000h
         int     21h
         mov     [t_ax],ax
         push    ds
@@ -212,8 +212,8 @@ t_hook21:
         pop     ds
         cmp     word ptr [n21],1
         jne     th21_bad
-        cmp     byte ptr [t_ax],0
-        je      th21_bad
+        cmp     word ptr [t_ax],3000h   ; answered: PM-DOS's own is 0.x,
+        je      th21_bad                ; so AL can be zero
         mov     dx,OFFSET m_h21
         jmp     pass
 th21_bad:

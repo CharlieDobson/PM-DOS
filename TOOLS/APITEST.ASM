@@ -9,7 +9,7 @@
 ;
 ; Covers what v0.31 added:
 ;
-;   30h / 3306h    both answer 6.22, and answer the SAME thing
+;   30h / 3306h    what SETVER gave this program, and PM-DOS's own
 ;   4400h / 4401h  device info, and raw mode set and read back
 ;   4406h / 4407h  input and output status, on a file and at its end
 ;   4408h / 4409h  removable and remote, and a bad drive refused
@@ -30,9 +30,6 @@ _AT     SEGMENT USE16 PUBLIC 'CODE'
         ASSUME  CS:_AT, DS:_AT, ES:_AT, SS:_AT
         ORG     0
 
-VER_MAJ EQU     6
-VER_MIN EQU     22
-
 start:
         ; Clear the screen first.  Not decoration: the output is
         ; eighteen lines and the boot messages are twenty-five, so
@@ -46,50 +43,56 @@ start:
         call    puts
 
 ;=====================================================================
-; 30h and 3306h - the version, twice, and they must agree
+; 30h and 3306h - the version, twice.  30h says what this program's
+; PSP says at 40h, where the kernel put SETVER's answer for it (or
+; PM-DOS's own version, with no SETVER, as in RUNTESTS); 3306h says
+; PM-DOS's own, what F100h says, whatever SETVER's table holds.  The
+; number is printed only when it is wrong, so that this test's output
+; does not change at every release.
 ;=====================================================================
+        mov     ax,word ptr ds:[40h]    ; DS is the PSP: a .COM
+        xchg    al,ah                   ; as F100h gives it: BH = major
+        mov     [exp_ver],ax
         mov     dx,OFFSET t_ver
         call    puts
         mov     ah,30h
         int     21h
         mov     [got_maj],al
         mov     [got_min],ah
-        mov     al,[got_maj]
-        call    pdec
-        mov     dl,'.'
-        call    putc
-        mov     al,[got_min]
-        call    pdec
-        cmp     byte ptr [got_maj],VER_MAJ
-        jne     ver_bad
-        cmp     byte ptr [got_min],VER_MIN
-        jne     ver_bad
-        call    good
-        jmp     short ver_true
-ver_bad:
-        call    bad
+        call    ver_check
 
-ver_true:
+        mov     bx,0FFFFh
+        mov     ax,0F100h
+        int     21h
+        mov     [exp_ver],bx            ; BH = major, BL = minor
         mov     dx,OFFSET t_vertrue
         call    puts
         mov     ax,3306h
         int     21h
         mov     [got_maj],bl
         mov     [got_min],bh
-        mov     al,bl
+        call    ver_check
+        jmp     short do_ioctl
+
+; ver_check - [got_maj].[got_min] against [exp_ver]: ok, or the number
+; and FAILED.
+ver_check:
+        mov     ax,[exp_ver]
+        cmp     byte ptr [got_maj],ah
+        jne     vc_bad
+        cmp     byte ptr [got_min],al
+        jne     vc_bad
+        jmp     good
+vc_bad:
+        mov     dl,' '
+        call    putc
+        mov     al,[got_maj]
         call    pdec
         mov     dl,'.'
         call    putc
         mov     al,[got_min]
         call    pdec
-        cmp     byte ptr [got_maj],VER_MAJ
-        jne     vert_bad
-        cmp     byte ptr [got_min],VER_MIN
-        jne     vert_bad
-        call    good
-        jmp     short do_ioctl
-vert_bad:
-        call    bad
+        jmp     bad
 
 ;=====================================================================
 ; 4400h / 4401h - device information, and raw mode
@@ -719,8 +722,8 @@ msg_media   db  ' - $'
 msg_removbl db  'removable$'
 msg_fixed   db  'fixed$'
 
-t_ver       db  '  30h says DOS $'
-t_vertrue   db  '  3306h agrees: $'
+t_ver       db  '  30h says what PSP+40h says$'
+t_vertrue   db  '  3306h says what F100h says$'
 t_ioget     db  '  4400h device info for stdout $'
 t_ioraw     db  '  4401h raw mode on and off again$'
 t_ioskip    db  '  4401h skipped: stdout is a file',13,10,'$'
@@ -750,6 +753,7 @@ step        db  '?'
 wasverify   db  0
 got_maj     db  0
 got_min     db  0
+exp_ver     dw  0
 devinfo     dw  0
 h_tmp       dw  0
 tnbuf       db  128 dup(0)

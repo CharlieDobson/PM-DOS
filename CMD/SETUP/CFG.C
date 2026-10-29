@@ -18,7 +18,10 @@
  *   - MODE CON CODEPAGE lines go (PM-DOS has no screen code pages), and
  *     SET COMSPEC= too (the kernel sets it);
  *   - PATH gets the DOS directory if it lacks it;
- *   - the lines of [config.add] are added if missing.
+ *   - the lines of [config.add] are added if missing;
+ *   - a DEVICE= line for SETVER.EXE is added if none loads it.  PM-DOS
+ *     reports its own version, 0.x, and SETVER's table tells the DOS
+ *     programs 6.22 (its "*" entry) - without it they refuse to run.
  * New lines go at the top of CONFIG.SYS, before any [menu] block, where
  * every configuration reads them.
  *
@@ -558,7 +561,7 @@ static int upgrade_config( int full, int *emm_ems )
     LINES lines;
     char path[PATHLEN], word[24], name[16], line[LINELEN];
     const char *val;
-    int i, j, top = 0, have_country = 0, rc;
+    int i, j, top = 0, have_country = 0, have_setver = 0, rc;
 
     root_path( path, "CONFIG.SYS" );
     if ( lines_read( &lines, path ) ) {
@@ -591,6 +594,9 @@ static int upgrade_config( int full, int *emm_ems )
                 }
                 rem_out( &lines, i );
             } else {
+                if ( !str_icmp( name, "SETVER.EXE" ) ) {
+                    have_setver = 1;
+                }
                 device_path( &lines, i, val, name );
             }
         }
@@ -599,6 +605,10 @@ static int upgrade_config( int full, int *emm_ems )
     if ( full ) {
         sfmt( line, sizeof( line ), "SHELL=%s\\CMD.EXE /P", opt.dosdir );
         lines_insert( &lines, top++, line );
+        if ( !have_setver ) {
+            sfmt( line, sizeof( line ), "DEVICE=%s\\SETVER.EXE", opt.dosdir );
+            lines_insert( &lines, top++, line );
+        }
     }
     country_line( line, sizeof( line ) );
     if ( line[0] && (full || have_country || opt.country) ) {

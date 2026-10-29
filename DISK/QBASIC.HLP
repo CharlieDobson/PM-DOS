@@ -765,6 +765,15 @@ start.
 Runs the program on from where it stopped: a STOP, a
 breakpoint, Ctrl+Break, an error, or a step.  A program not
 yet started starts from the beginning.  Shortcut: F5.
+.context m.makeexe
+.topic Make EXE File Command
+Writes the program as an .EXE file that runs at the prompt
+without QBasic.  The file is a copy of QBRUN.EXE with the
+compiled program added, so QBRUN.EXE has to be in QBasic's
+directory or on the PATH.
+
+A program made this way that uses CHAIN or RUN with a file
+name goes to another .EXE, not to a .BAS file.
 .context m.step
 .topic Step Command
 Runs the next statement and stops.  A statement that calls
@@ -850,6 +859,16 @@ Choose what to print on LPT1:
 \bCurrent Window\p      All of the window's text: the module or
                     the procedure shown.
 \bEntire Program\p      The module and every procedure.
+.context d.makeexe
+.topic Make EXE File Dialog
+\bEXE File Name\p       The file to write.  .EXE is added when
+                    no extension is given.
+\bProduce Debug Code\p  Ctrl+Break can stop the program, and an
+                    error message gives the line number of
+                    a numbered line.
+
+\bMake EXE\p writes the file and goes back to the program.
+\bMake EXE and Exit\p writes it and leaves QBasic.
 .context d.newsub
 .topic New SUB Dialog
 \bName\p  The SUB's name: a letter, then letters, digits and

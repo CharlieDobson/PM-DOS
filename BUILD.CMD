@@ -49,7 +49,7 @@ rem     PMDOS2.IMG   the help disk: HELP.EXE and HELP.HLP, which do not
 rem                  fit on the boot disk, and LRGDISK.386 and
 rem                  LRGSTAT.EXE, which stopped fitting on 2026-10-24,
 rem                  and what came after it: MODE, ACROREAD, DEBUG,
-rem                  QBASIC with QBASIC.HLP, and TREEVIEW
+rem                  QBASIC with QBASIC.HLP, QBRUN, and TREEVIEW
 rem     TESTS.IMG    the test disk: every test program, batch file and
 rem                  key file, in \TESTS, and the long-named fixtures
 rem                  in its root.  Not a system disk.  The tests left
@@ -993,13 +993,20 @@ rem after changing one).  Its test mode is QBTEST and keys from a
 rem redirected file; MKHOST.CMD there builds a Windows twin of the
 rem interpreter for checking programs against real QBasic, and nothing
 rem of that ships.
+rem QBRUN.EXE is the same interpreter without the editor or the
+rem compiler, and ships beside QBASIC.EXE: Run > Make EXE File writes a
+rem copy of it with the compiled program behind (PACK.C), and RTMAIN.C
+rem finds the program there and runs it.
 cd CMD\QBASIC
 wasm -q -dD32 -i=..\..\INC dosint.asm           || goto :fail
 wasm -q jmp.asm                                 || goto :fail
 wasm -q -fpi87 fpu.asm                          || goto :fail
-for %%M in (main rt mem num bigdec lex list csym cexpr comp vm qstr rtlib cons using file gfx draw snd mach doc prog sys_d32 ide_dlgs ide_help ide_scr ide_ui ide_view) do wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -fpi87 %%M.c || goto :fail
+for %%M in (main rt mem num bigdec lex list csym cexpr comp vm qstr rtlib cons using file gfx draw snd mach doc prog sys_d32 ide_dlgs ide_help ide_scr ide_ui ide_view pack rtmain) do wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -fpi87 %%M.c || goto :fail
 wlink form raw bin option offset=0x2000 name ..\..\BIN\QBASIC.EXE ^
-    file dosint.obj,main.obj,rt.obj,mem.obj,num.obj,bigdec.obj,lex.obj,list.obj,csym.obj,cexpr.obj,comp.obj,vm.obj,qstr.obj,rtlib.obj,cons.obj,using.obj,file.obj,gfx.obj,draw.obj,snd.obj,mach.obj,doc.obj,prog.obj,sys_d32.obj,ide_dlgs.obj,ide_help.obj,ide_scr.obj,ide_ui.obj,ide_view.obj,jmp.obj,fpu.obj ^
+    file dosint.obj,main.obj,rt.obj,mem.obj,num.obj,bigdec.obj,lex.obj,list.obj,csym.obj,cexpr.obj,comp.obj,vm.obj,qstr.obj,rtlib.obj,cons.obj,using.obj,file.obj,gfx.obj,draw.obj,snd.obj,mach.obj,doc.obj,prog.obj,sys_d32.obj,ide_dlgs.obj,ide_help.obj,ide_scr.obj,ide_ui.obj,ide_view.obj,pack.obj,jmp.obj,fpu.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\BIN\QBRUN.EXE ^
+    file dosint.obj,rtmain.obj,rt.obj,mem.obj,num.obj,bigdec.obj,vm.obj,qstr.obj,rtlib.obj,cons.obj,using.obj,file.obj,gfx.obj,draw.obj,snd.obj,mach.obj,pack.obj,sys_d32.obj,jmp.obj,fpu.obj ^
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
 cd ..\..
 rem FC is C, one file and its startup:
@@ -1270,7 +1277,7 @@ rem version of its own names that .EXE to D32BIND in place of the stub.
 for %%F in (CMD.EXE CHOICE.COM MORE.COM SORT.COM SYS.COM FORMAT.COM MEM.EXE FDISK.EXE MOUNT.EXE ^
   CACHE.EXE UNDELETE.EXE CDEX.EXE SHUTDOWN.EXE FIND.EXE DISKCOPY.COM DISKCOMP.COM MOVE.EXE DELTREE.EXE TREE.EXE MODE.EXE ^
   ATTRIB.EXE CHKDSK.EXE LABEL.EXE XCOPY.EXE EDIT.EXE FC.EXE ISAPNP.EXE PMD.EXE DOSSHELL.EXE ^
-  ACROREAD.EXE SCANDISK.EXE DEFRAG.EXE XARC.EXE TREEVIEW.EXE KEYB.COM HELP.EXE USB.EXE DEBUG.EXE QBASIC.EXE ^
+  ACROREAD.EXE SCANDISK.EXE DEFRAG.EXE XARC.EXE TREEVIEW.EXE KEYB.COM HELP.EXE USB.EXE DEBUG.EXE QBASIC.EXE QBRUN.EXE ^
   SNTP.EXE WGET.EXE FTP.EXE TELNET.EXE NET.EXE SMBSRV.EXE) do TOOLS\D32BIND.EXE BIN\%%F TOOLS\D32STUB.EXE || goto :fail
 rem SETUP is the one with a 16-bit version of its own: the MS-DOS half
 rem upgrades the DOS it runs on, the PM-DOS half installs from a Setup
@@ -2490,10 +2497,10 @@ rem disks, where HELP is found along the PATH.  The two Windows files
 rem joined them here when the boot disk filled (see PMDOS.IMG above),
 rem MODE.EXE, which was written after it had, and ACROREAD.EXE, which
 rem was moved off it to give the kernel room.  QBASIC.EXE and its
-rem QBASIC.HLP (half a megabyte between them) came after, and
-rem TREEVIEW.EXE last.
+rem QBASIC.HLP (half a megabyte between them) came after, then
+rem TREEVIEW.EXE, and QBRUN.EXE (Make EXE File's runtime) last.
 echo === PMDOS2.IMG (the help disk) ===
-TOOLS\MKDISK.EXE IMAGES\PMDOS2.IMG BIN\BOOT.BIN -label "PM-DOS HELP" -nolfn BIN\HELP.EXE DISK\HELP.HLP BIN\LRGDISK.386 BIN\LRGSTAT.EXE BIN\MODE.EXE BIN\ACROREAD.EXE BIN\DEBUG.EXE BIN\QBASIC.EXE DISK\QBASIC.HLP BIN\TREEVIEW.EXE || goto :fail
+TOOLS\MKDISK.EXE IMAGES\PMDOS2.IMG BIN\BOOT.BIN -label "PM-DOS HELP" -nolfn BIN\HELP.EXE DISK\HELP.HLP BIN\LRGDISK.386 BIN\LRGSTAT.EXE BIN\MODE.EXE BIN\ACROREAD.EXE BIN\DEBUG.EXE BIN\QBASIC.EXE DISK\QBASIC.HLP BIN\TREEVIEW.EXE BIN\QBRUN.EXE || goto :fail
 
 rem === TESTS.IMG - the test disk ===
 rem Everything written to prove one thing about the kernel: BIN\TESTS\

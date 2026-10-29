@@ -5249,8 +5249,8 @@ cmd_ver:
 
         ; ONE LINE, DELIBERATELY.  VER reports the SYSTEM's version and
         ; the system is PM-DOS.  What 21h/30h answers when a program
-        ; asks what DOS this is - 6.22, a compatibility target rather
-        ; than a fact about this code - is a different question, and
+        ; asks what DOS this is - the same number, unless SETVER is
+        ; lying to that program - is a different question, and
         ; printing both here invited the reader to take them as two
         ; halves of one answer.  Anything that wants the 30h number
         ; asks 30h.

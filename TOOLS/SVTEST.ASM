@@ -5,13 +5,15 @@
 ;
 ; One line, the program's own file name and then three versions:
 ;
-;   SVTEST.COM   30h 6.22  3306h 6.22  PSP 6.22
+;   SVTEST.COM   30h 6.22  3306h 0.68  PSP 6.22
 ;
 ; 30h is the one SETVER changes; 3306h is the one it must not; PSP is
 ; the word at PSP+40h that the kernel (or RMDOS, under Windows) stamped
-; when it loaded this program, and that 30h reads back.  Copied under
-; a name the SETVER table has - SVKID.COM, with SVKID.COM 5.00 in the
-; table - it should say 5.00, 6.22 and 5.00.
+; when it loaded this program, and that 30h reads back.  The line above
+; is the table SETVER.EXE ships, whose "*" entry is 6.22; with no
+; SETVER loaded all three are PM-DOS's own version.  Copied under a
+; name the table has - SVKID.COM, with SVKID.COM 5.00 in it - it should
+; say 5.00, 0.68 and 5.00.
 ;
 ; With a program named it then EXECs it, with an empty tail or with
 ; /F, which is how the lookup EXEC does is tested from inside a DOS

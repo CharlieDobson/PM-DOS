@@ -5139,20 +5139,23 @@ SHELLTAIL_MAX   EQU     130             ; length byte + 126 + CR + slack
 ; TWO VERSIONS, and they answer different questions.
 ;
 ; PMDOS_* is what PM-DOS is: the build number of this kernel, reported
-; by 21h/F100h and by nothing else.  It goes up every release.
+; by 21h/F100h.  It goes up every release.
 ;
-; DOSVER_* is what PM-DOS ANSWERS WHEN ASKED WHAT DOS IT IS, and it is
-; a compatibility target rather than a fact.  6.22 is the last MS-DOS
-; that was only DOS, it is the version the software of the period was
-; written and tested against, and it is the number every "DOS 3.3 or
-; later" check in existence is satisfied by.
+; DOSVER_* is what PM-DOS ANSWERS WHEN ASKED WHAT DOS IT IS, at 21h/30h
+; and 21h/3306h, and after v0.68 it is the same number.  From v0.31 to
+; v0.68 it was 6.22, a compatibility target: the last MS-DOS that was
+; only DOS, and a number every "DOS 3.3 or later" check is satisfied by.
+; Charlie, 2026-10-29: report the real version, and let SETVER lie to
+; the programs that want 6.22 or earlier.
 ;
-; It is reported by BOTH 21h/30h and 21h/3306h, and that pairing is
-; deliberate.  3306h exists because 30h can be lied to by SETVER, so a
-; program that wants the truth asks 3306h - and a program that finds
-; 6.22 at 30h and 0.31 at 3306h has caught the system contradicting
-; itself, which is worse than either answer alone.  The honest number
-; has a call of its own; these two agree.
+; THE REAL VERSION IS 0.x, WHICH SOFTWARE READS AS DOS 1 - DOS 1 had no
+; 30h and left AL zero - so nearly every DOS program refuses it: the C
+; runtimes want 2.0, COMMAND.COMs 3.0, Windows 3.1.  SETVER's table
+; therefore has a default entry, named "*", for every program it does
+; not name, and the CONFIG.SYS PM-DOS ships loads it with * = 6.22.
+; Without SETVER, a DOS program is told the truth (sv_find, VDM.INC).
+;
+; 3306h is never lied to, and 30h without SETVER agrees with it.
 ;
 ; AND IT WENT STALE FOR TWO RELEASES, which is worth a line because it
 ; is the failure mode of a version number that only one call reports.
@@ -5173,5 +5176,5 @@ SHELLTAIL_MAX   EQU     130             ; length byte + 126 + CR + slack
 ;---------------------------------------------------------------------
         INCLUDE PMVER.INC
 
-DOSVER_MAJOR    EQU     6
-DOSVER_MINOR    EQU     22
+DOSVER_MAJOR    EQU     PMDOS_MAJOR
+DOSVER_MINOR    EQU     PMDOS_MINOR

@@ -486,18 +486,22 @@ void pg_os( TEXT *text )
     }
 }
 
+/* 30h gives a native program PM-DOS's own version, so the second line
+   is there only for a kernel that answers something else */
 void sum_os( char *line1, char *line2 )
 {
-    int major, minor, oem;
+    int major, minor, dos_major, dos_minor, oem;
     u32 serial;
     char line[40];
 
     sys_version( &major, &minor );
     sfmt( line, sizeof( line ), "PM-DOS %u.%02u", major, minor );
     sum_set( line1, line );
-    sys_dos_version( &major, &minor, &oem, &serial );
-    sfmt( line, sizeof( line ), "as MS-DOS %u.%02u", major, minor );
-    sum_set( line2, line );
+    sys_dos_version( &dos_major, &dos_minor, &oem, &serial );
+    if ( dos_major != major || dos_minor != minor ) {
+        sfmt( line, sizeof( line ), "as MS-DOS %u.%02u", dos_major, dos_minor );
+        sum_set( line2, line );
+    }
 }
 
 /* ------------------------------------------------------------------ */

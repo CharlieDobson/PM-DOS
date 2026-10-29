@@ -944,6 +944,233 @@ static int immediate( void )
 }
 
 /* ------------------------------------------------------------------ */
+/* Make EXE File: the program compiled, PACK.C's block of it put       */
+/* behind a copy of QBRUN.EXE                                          */
+/* ------------------------------------------------------------------ */
+
+/* QBRUN.EXE in that directory -> its path in "out", 1 if it is there */
+static int runtime_in( const char *dir, u32 dlen, char *out )
+{
+    u32 handle;
+
+    if ( dlen + 12 >= PATH_MAX ) {
+        return 0;
+    }
+    mem_cpy( out, dir, dlen );
+    out[dlen] = 0;
+    if ( dlen && out[dlen - 1] != '\\' && out[dlen - 1] != ':' ) {
+        str_catn( out, "\\", PATH_MAX );
+    }
+    str_catn( out, "QBRUN.EXE", PATH_MAX );
+    if ( sys_open_read( out, &handle ) != 0 ) {
+        return 0;
+    }
+    sys_close( handle );
+    return 1;
+}
+
+/* QBRUN.EXE is looked for as QBASIC.HLP is: beside PM-DOS's shell, where
+   SETUP puts QBASIC (a native program is not told its own path), where
+   the help is, in the current directory, and along the PATH */
+static int find_runtime( char *out )
+{
+    const char *shell = sys_shell(), *scan, *last = NULL, *path, *end;
+
+    for ( scan = shell; *scan; scan++ ) {
+        if ( *scan == '\\' || *scan == ':' ) {
+            last = scan;
+        }
+    }
+    if ( last != NULL && runtime_in( shell, (u32)(last - shell + 1), out ) ) {
+        return 1;
+    }
+    if ( help_path[0] && runtime_in( help_path, str_len( help_path ), out ) ) {
+        return 1;
+    }
+    if ( runtime_in( ".", 1, out ) ) {
+        return 1;
+    }
+    path = sys_getenv( "PATH" );
+    while ( path && *path ) {
+        for ( end = path; *end && *end != ';'; end++ ) {
+        }
+        if ( end > path && runtime_in( path, (u32)(end - path), out ) ) {
+            return 1;
+        }
+        path = *end ? end + 1 : end;
+    }
+    return 0;
+}
+
+/* a whole file into memory -> it (xfree it), or NULL and *rc */
+static u8 *read_file( const char *path, u32 *len, int *rc )
+{
+    u32 handle, size, done;
+    u8 *buf = NULL;
+
+    *rc = sys_open_read( path, &handle );
+    if ( *rc != 0 ) {
+        return NULL;
+    }
+    *rc = sys_file_size( handle, &size );
+    if ( *rc == 0 ) {
+        buf = (u8 *)try_alloc( size ? size : 1 );
+        if ( buf == NULL ) {
+            *rc = ERR_NOMEM;
+        }
+    }
+    if ( *rc == 0 ) {
+        *rc = sys_read( handle, buf, size, &done );
+        if ( *rc == 0 && done != size ) {
+            *rc = ERR_ACCESS;
+        }
+    }
+    sys_close( handle );
+    if ( *rc != 0 ) {
+        xfree( buf );
+        return NULL;
+    }
+    *len = size;
+    return buf;
+}
+
+/* the runtime, then the program: a file that is not whole is deleted */
+static int write_exe( const char *path, const u8 *runtime, u32 rlen, const u8 *blob, u32 blen )
+{
+    u32 handle, done;
+    int rc, closed;
+
+    rc = sys_create( path, &handle );
+    if ( rc != 0 ) {
+        return rc;
+    }
+    rc = sys_write( handle, runtime, rlen, &done );
+    if ( rc == 0 ) {
+        rc = sys_write( handle, blob, blen, &done );
+    }
+    closed = sys_close( handle );
+    if ( rc == 0 ) {
+        rc = closed;
+    }
+    if ( rc != 0 ) {
+        sys_delete( path );
+    }
+    return rc;
+}
+
+/* "name" without its directory or its extension */
+static void base_name( const char *path, char *out, u32 max )
+{
+    const char *scan, *start = path;
+    char *dot;
+
+    for ( scan = path; *scan; scan++ ) {
+        if ( *scan == '\\' || *scan == ':' ) {
+            start = scan + 1;
+        }
+    }
+    str_cpyt( out, start, max );
+    dot = str_rchr( out, '.' );
+    if ( dot != NULL ) {
+        *dot = 0;
+    }
+}
+
+static void make_exe( void )
+{
+    char exe[PATH_MAX], runtime[PATH_MAX], module[PATH_MAX], full_exe[PATH_MAX], full_rt[PATH_MAX];
+    const char *last;
+    char *dot;
+    int answer, debug, rc;
+    u32 blen, rlen, at, from;
+    u8 *blob, *body;
+    PROGRAM *made;
+    CERR err;
+
+    /* the name it offers: the program's file, .EXE for its extension */
+    exe[0] = 0;
+    if ( ptext.path[0] ) {
+        str_cpy( exe, ptext.path );
+        last = str_rchr( exe, '\\' );
+        dot = str_rchr( last ? last : exe, '.' );
+        if ( dot != NULL ) {
+            *dot = 0;
+        }
+        str_catn( exe, ".EXE", sizeof( exe ) );
+    }
+    answer = dlg_makeexe( exe, &debug );
+    if ( answer == 0 ) {
+        return;
+    }
+    /* the name as typed, without the blanks round it; .EXE if it has
+       no extension */
+    for ( from = 0; exe[from] == ' '; from++ ) {
+    }
+    for ( at = 0; exe[from + at]; at++ ) {
+        exe[at] = exe[from + at];
+    }
+    while ( at > 0 && exe[at - 1] == ' ' ) {
+        at--;
+    }
+    exe[at] = 0;
+    if ( exe[0] == 0 ) {
+        msg_box( "Bad file name", MB_OK, 1 );
+        return;
+    }
+    last = str_rchr( exe, '\\' );
+    if ( str_chr( last ? last : exe, '.' ) == NULL ) {
+        str_catn( exe, ".EXE", sizeof( exe ) );
+    }
+    base_name( ptext.path[0] ? ptext.path : exe, module, sizeof( module ) );
+
+    made = comp_program( &ptext, &err );
+    if ( made == NULL ) {
+        show_place( err.text, err.line, err.col, err.len > 0 ? err.len : 1, 1 );
+        msg_box( err.msg, MB_OK, 1 );
+        views[active].sel = 0;
+        return;
+    }
+    blob = pack_program( made, (opt_mbf ? PK_MBF : 0) | (debug ? PK_DEBUG : 0), module, &blen );
+    comp_free( made );
+    if ( blob == NULL ) {
+        out_of_memory();
+        return;
+    }
+    if ( !find_runtime( runtime ) ) {
+        xfree( blob );
+        msg_box2( "QBRUN.EXE cannot be found.", "It has to be in QBasic's directory or on the PATH.", MB_OK, 0 );
+        return;
+    }
+    body = read_file( runtime, &rlen, &rc );
+    if ( body == NULL ) {
+        xfree( blob );
+        msg_box( err_text( rc ), MB_OK, 1 );
+        return;
+    }
+    if ( !pack_runtime_ok( body, rlen ) ) {
+        xfree( blob );
+        xfree( body );
+        msg_box( "QBRUN.EXE does not belong to this version of QBasic.", MB_OK, 0 );
+        return;
+    }
+    if ( sys_truename( exe, full_exe, 0 ) == 0 && sys_truename( runtime, full_rt, 0 ) == 0
+      && str_icmp( full_exe, full_rt ) == 0 ) {
+        rc = ERR_ACCESS;                        /* QBRUN.EXE itself is not written over */
+    } else {
+        rc = write_exe( exe, body, rlen, blob, blen );
+    }
+    xfree( blob );
+    xfree( body );
+    if ( rc != 0 ) {
+        msg_box( err_text( rc ), MB_OK, 1 );
+        return;
+    }
+    if ( answer == ID_MAKEEXIT ) {
+        app_exit();
+    }
+}
+
+/* ------------------------------------------------------------------ */
 /* the commands                                                        */
 /* ------------------------------------------------------------------ */
 
@@ -1201,6 +1428,9 @@ void app_command( int cmd )
         break;
     case CMD_CONTINUE:
         run_program( GO_RUN, 0 );
+        break;
+    case CMD_MAKEEXE:
+        make_exe();
         break;
     case CMD_STEP:
         run_program( GO_STEP, 0 );

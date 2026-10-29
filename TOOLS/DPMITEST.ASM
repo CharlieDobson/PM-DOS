@@ -345,10 +345,10 @@ pm_dos:
         mov     dx,OFFSET msg_p4
         call    puts
 
-        mov     ah,30h                          ; the DOS version
-        int     21h
-        cmp     al,5
-        jb      pm_dosbad
+        mov     ax,3000h                        ; the DOS version: any
+        int     21h                             ; answer, since PM-DOS's
+        cmp     ax,3000h                        ; own is 0.x and SETVER
+        je      pm_dosbad                       ; can make it 6.22
         mov     dx,OFFSET msg_dosver
         call    ok
         jmp     short pm_write

@@ -18,6 +18,9 @@
 ;   which are laid out as MS-DOS 5's SETVER.EXE lays them out, so
 ;   either command edits either file.
 ;
+;   "*" is a name only PM-DOS uses: the version for every program the
+;   table does not name.  See the table below.
+;
 ; 16-BIT, AND NOT A D32 PROGRAM, because the driver half has to be
 ; real-mode code in conventional memory, where RMDOS.SYS still reads
 ; the table after a handover to Windows; and the command half is small
@@ -120,8 +123,15 @@ dvi_unknown:
 ; version; a zero length after the last entry.  The entries are the
 ; ones MS-DOS 6.22 ships: programs of the period that would not run on
 ; a DOS newer than the one they were written for.
+;
+; AND "*", PM-DOS's own: the version for every program the table does
+; not name.  PM-DOS's real version is 0.x, which a program reads as
+; DOS 1 and refuses, so the table starts out telling everything 6.22
+; (sv_find, VDM.INC).  MS-DOS's SETVER lists the entry and never
+; matches it, since no file can be called "*".
 ;=====================================================================
-ver_tab     db  10,'KERNEL.EXE',5,0
+ver_tab     db  1,'*',6,22
+            db  10,'KERNEL.EXE',5,0
             db  10,'DOSOAD.SYS',5,0
             db  11,'EXTDISK.SYS',6,0
             db  11,'REDIR50.EXE',5,0
@@ -170,8 +180,18 @@ dev_init:
         int     21h
         pop     bx
         cmp     al,5                    ; DOS 5 or later: before 5 that
-        jb      dvn_refuse              ; field of the list of lists is
+        jae     dvn_dos5                ; field of the list of lists is
                                         ; something else
+        push    bx                      ; or PM-DOS, which says 0.x at
+        push    dx                      ; 30h.  A DOS that answers 3306h
+        mov     bx,0FFFFh               ; is DOS 5 or later, whatever
+        mov     ax,3306h                ; 30h says; DOS 1 to 4 leave BX
+        int     21h                     ; as it was.  It answers in DX
+        cmp     bx,0FFFFh               ; too.
+        pop     dx
+        pop     bx
+        je      dvn_refuse
+dvn_dos5:
         mov     si,OFFSET ver_tab
 dvn_walk:
         mov     al,cs:[si]
@@ -652,9 +672,16 @@ tp_long:
 ; valid_name - SI -> a word.  CF unless it is a plain name.ext: one to
 ;              eight characters, an optional dot and one to three
 ;              more, nothing a file name may not hold, no path, no
-;              wildcard, and not a device's name.  CX = its length.
+;              wildcard, and not a device's name.  Or "*" alone, the
+;              entry for every program not named.  CX = its length.
 ;=====================================================================
 valid_name:
+        cmp     word ptr [si],'*'       ; "*" and the NUL that ends it
+        jne     vn_file
+        mov     cx,1
+        clc
+        ret
+vn_file:
         push    si
         xor     cx,cx                   ; characters so far
         xor     dx,dx                   ; DL = in the name, DH = after the dot
@@ -1258,6 +1285,7 @@ msg_help    db  'Sets the DOS version number reported to a program.',13,10,13,10
             db  'SETVER [drive:path] filename /DELETE [/QUIET]  Removes an entry.',13,10,13,10
             db  '  [drive:path]   Where the SETVER.EXE to work on is, if not this one.',13,10
             db  '  filename       The program''s file name and extension, with no path.',13,10
+            db  '                 * sets the version for every program not in the table.',13,10
             db  '  n.nn           The version to tell the program, from 2.11 to 9.99.',13,10
             db  '  /DELETE or /D  Removes the program''s entry.',13,10
             db  '  /QUIET or /Q   Says nothing when an entry is removed.',13,10,13,10

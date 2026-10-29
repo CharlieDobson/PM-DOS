@@ -87,6 +87,8 @@ DEVICEHIGH=file [options]
     A driver can be an .EXE.  DEVICE=C:\SETVER.EXE loads SETVER's
     version table, which tells the programs named in it the DOS
     version they were written for; put it above any driver it names.
+    Its * entry tells every other DOS program 6.22.  Without the
+    table they are told PM-DOS's own version, and most will not run.
     SETVER at the prompt lists and changes the table.
     DEVICE=C:\ANSI.SYS makes the screen understand ANSI escape
     sequences: colours and cursor moves from PROMPT $E[...] and from

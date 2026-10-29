@@ -578,8 +578,15 @@ sy_srcdir:
         mov     ah,30h
         int     21h
         cmp     al,3
-        jb      sd_out
-
+        jae     sd_env
+        push    dx                      ; or PM-DOS, whose own version is
+        mov     bx,0FFFFh               ; 0.x.  A DOS that answers 3306h
+        mov     ax,3306h                ; is DOS 5 or later whatever 30h
+        int     21h                     ; says; DOS 1 to 4 leave BX alone
+        pop     dx
+        cmp     bx,0FFFFh
+        je      sd_out
+sd_env:
         mov     bx,2Ch                  ; PSP: environment segment
         mov     es,[bx]
         mov     ax,es

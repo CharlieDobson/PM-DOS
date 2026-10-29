@@ -312,10 +312,12 @@ vp_noenv:
         ret
 
 ;=====================================================================
-; sv_find - ESI -> a program's path, flat ASCIIZ.  AX = the version
-;           SETVER's table gives that file name, as 30h answers it
-;           (major in AL, minor in AH), or DOSVER_* when there is no
-;           table or no entry.  Every other register is preserved.
+; sv_find - ESI -> a program's path, flat ASCIIZ, or 0 for none.  AX =
+;           the version SETVER's table gives that file name, as 30h
+;           answers it (major in AL, minor in AH); or, for a name the
+;           table does not list, what its "*" entry gives; or DOSVER_*
+;           when there is no table or neither entry.  Every other
+;           register is preserved.
 ;
 ; THE TABLE IS SETVER.EXE'S, in conventional memory where its INIT left
 ; it, and GLOL_SETVER is the far pointer to it - the one MS-DOS 5 keeps
@@ -325,6 +327,12 @@ vp_noenv:
 ; The name matched is the last part of the path with its extension,
 ; upper-cased, which is how SETVER stores it.  RMDOS.SYS has the same
 ; walk in 16 bits (sv_ver, RMMEM.INC) for what runs under Windows.
+;
+; "*" IS PM-DOS'S OWN, because the real version is 0.x and a program
+; reads that as DOS 1 (PMDOS.INC).  No file can be called "*", so the
+; entry can only ever be the default, and a name entry wins over it
+; wherever the two are in the table.  MS-DOS's SETVER lists the entry
+; and never matches it.
 ;
 ; THE WALK STOPS AT THE END OF THE TABLE'S SEGMENT, as a real-mode one
 ; would.  Every address it can reach is mapped and readable, so a
@@ -336,9 +344,12 @@ sv_find:
         push    edx
         push    esi
         push    edi
+        push    ebp
+        mov     ebp,DOSVER_MINOR * 256 + DOSVER_MAJOR   ; until a "*"
+        xor     ecx,ecx                         ; no name, until one is found
         mov     edx,esi                         ; where the name starts:
         or      esi,esi                         ; after the last \, / or :
-        jz      svf_none
+        jz      svf_table
 svf_scan:
         mov     al,[esi]
         inc     esi
@@ -357,8 +368,7 @@ svf_based:
         mov     ecx,esi
         sub     ecx,edx
         dec     ecx                             ; ECX = the name's length
-        jz      svf_none
-
+svf_table:
         movzx   ebx,word ptr ds:[DOSDATA+GLOL_SETVER]   ; offset...
         movzx   edi,word ptr ds:[DOSDATA+GLOL_SETVER+2] ; ...and segment
         mov     eax,edi
@@ -369,7 +379,14 @@ svf_entry:
         movzx   eax,byte ptr [edi+ebx]
         or      eax,eax
         jz      svf_none                        ; the end of the table
-        cmp     eax,ecx
+        cmp     eax,1
+        jne     svf_named
+        cmp     byte ptr [edi+ebx+1],'*'
+        jne     svf_named
+        movzx   ebp,word ptr [edi+ebx+2]        ; the default, kept until
+        jmp     short svf_next                  ; the walk ends unmatched
+svf_named:
+        cmp     eax,ecx                         ; never equal for no name
         jne     svf_next
         push    ebx
         push    ecx
@@ -400,8 +417,9 @@ svf_next:
         cmp     ebx,0FFFDh                      ; room left in the segment
         jb      svf_entry                       ; for a length and a version
 svf_none:
-        mov     ax,DOSVER_MINOR * 256 + DOSVER_MAJOR
+        mov     eax,ebp
 svf_out:
+        pop     ebp
         pop     edi
         pop     esi
         pop     edx

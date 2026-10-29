@@ -338,10 +338,10 @@ t8:
         jc      t8_bad
 
         mov     [spwas],sp
-        mov     ah,30h
+        mov     ax,3000h
         int     21h
-        or      al,al
-        jz      t8_bad
+        cmp     ax,3000h                ; answered: PM-DOS's own version is
+        je      t8_bad                  ; 0.x, so AL can be zero
         mov     ax,3D00h                ; a file there is not
         mov     dx,OFFSET nofile
         movzx   edx,dx

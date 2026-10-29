@@ -2330,24 +2330,18 @@ itp_out:
         ret
 
 ;=====================================================================
-; 30h - get version -> AL = major, AH = minor: 6.22
+; 30h - get version -> AL = major, AH = minor: PM-DOS's own, 0.x
 ;                      BH = 03h, the OEM number: PM-DOS
 ;                      BL:CX = 24-bit user serial number, zero
 ;
-; 6.22 IS A TARGET, NOT A CLAIM ABOUT THIS CODE, and it moved here from
-; 5.00 in v0.31 because the target changed rather than because anything
-; was fixed.  MS-DOS 6.22 is the last version that was only DOS - 7.x
-; is Windows 95's - so it is the high-water mark of the API this kernel
-; is trying to be, and the number every version check in the software
-; of the period was written against.
+; THE REAL VERSION AFTER v0.68.  It was 5.00 until v0.31 and 6.22 up to
+; v0.68, a target rather than a fact; PMDOS.INC has why it changed, and
+; why a DOS program is lied to by default anyway.
 ;
-; What PM-DOS itself is has a call of its own, F100h, and 3306h agrees
-; with this one rather than telling a different story; PMDOS.INC has
-; the argument.
-;
-; EXCEPT TO A DOS PROGRAM THAT SETVER NAMES, which is told the version
-; SETVER's table gives its file name - read out of its PSP, where
-; vdm_psp put it at load (sv_caller, VDM.INC).  3306h is not lied to.
+; EXCEPT TO A DOS PROGRAM THAT SETVER NAMES, or that its "*" entry
+; covers, which is told the version SETVER's table gives - read out of
+; its PSP, where vdm_psp put it at load (sv_caller, VDM.INC).  3306h is
+; not lied to.
 ;
 ; The OEM byte is the only place identity is asserted at all: this is
 ; how software asks who made the DOS it is running on, which is
@@ -2370,7 +2364,7 @@ PMDOS_OEM       EQU     03h
 
 fn30:
         mov     al,byte ptr [ebp+F_EAX]
-        call    sv_caller                       ; DX = 6.22, or SETVER's
+        call    sv_caller                       ; DX = the version, or SETVER's
         mov     word ptr [ebp+F_EAX],dx
         mov     dword ptr [ebp+F_EBX],PMDOS_OEM * 256   ; BH = OEM, BL = serial hi
         cmp     al,1
@@ -2394,17 +2388,10 @@ f30_oem:
 ;   AL=06h  get the TRUE version    -> BL = major, BH = minor,
 ;                                      DL = revision, DH = flags
 ;
-; 06h USED TO BE THE HONEST HALF of the version story: 30h said 5.00
-; and this said 0.17, on the reasoning that 3306h exists precisely
-; because 30h can be lied to by SETVER.
-;
-; That was the wrong reading of what 3306h is for.  It reports the
-; version SETVER is lying ABOUT - still a DOS version, just the
-; un-faked one - and a program that finds 6.22 at one call and 0.31 at
-; the other has not found the truth, it has found a system that
-; contradicts itself, and the sensible thing for it to do is refuse to
-; run.  So the two agree, and PM-DOS's own build number lives at F100h
-; where nothing mistakes it for a DOS version.
+; 06h IS THE VERSION SETVER IS LYING ABOUT, and has been PM-DOS's own
+; after v0.68: the same number 30h gives a program SETVER leaves alone,
+; and F100h gives everybody.  Before that it was 6.22, as 30h was, so
+; that the two never told different stories (PMDOS.INC).
 ;
 ; DH's flags say DOS is neither in ROM (08h) nor in the HMA (10h), both
 ; of which are true: it is in extended memory, which the flags have no

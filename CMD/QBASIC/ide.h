@@ -219,7 +219,8 @@ enum {
     CMD_START, CMD_RESTART, CMD_CONTINUE,
     CMD_STEP, CMD_PSTEP, CMD_TRACE, CMD_BREAKPOINT, CMD_CLEARBP, CMD_SETNEXT,
     CMD_DISPLAY, CMD_HELPPATH, CMD_SYNTAX,
-    CMD_INDEX, CMD_CONTENTS, CMD_TOPIC, CMD_USINGHELP, CMD_ABOUT
+    CMD_INDEX, CMD_CONTENTS, CMD_TOPIC, CMD_USINGHELP, CMD_ABOUT,
+    CMD_MAKEEXE
 };
 
 extern VIEW  views[3];          /* [0], [1] the editor's, [2] Immediate */
@@ -256,6 +257,7 @@ void  app_set_bar_hot( int hot );   /* the menu bar's letters, Alt held */
 #define ID_YES          3
 #define ID_NO           4
 #define ID_HELP         5
+#define ID_MAKEEXIT     6       /* Make EXE File: Make EXE and Exit */
 
 int   menu_run( int key );          /* F10, Alt, Alt+letter -> a command or 0 */
 void  menu_draw_bar( int selected, int show_hot, int lit );
@@ -310,6 +312,7 @@ int   dlg_find( int change );
 void  find_again( void );
 int   find_can_repeat( void );
 void  dlg_print( void );
+int   dlg_makeexe( char *path, int *debug );   /* -> ID_OK, ID_MAKEEXIT or 0 */
 void  dlg_display( void );
 void  dlg_helppath( void );
 int   dlg_newproc( int kind, char *name );
