@@ -3413,10 +3413,10 @@ SCSI drivers on and off.  To give an .ISO file a drive letter, see
 \bWhat the lines say\p
 
 One line a drive: its letter, the unit number that MSCDEX-style
-programs count it by, where it is (an IDE channel or a SCSI ID), the
-label of the disc in it, and the name the drive reports.  With a
-drive on a SCSI card, the cards are listed under the table; "SCSI 1
-ID 2" is ID 2 on the first card.
+programs count it by, where it is (an IDE channel, a SATA port or a
+SCSI ID), the label of the disc in it, and the name the drive
+reports.  With a drive on a SCSI card, the cards are listed under the
+table; "SCSI 1 ID 2" is ID 2 on the first card.
 
 \bNo MSCDEX\p
 
@@ -7341,7 +7341,8 @@ so AUTOEXEC.BAT can do something different for each one:
  
                                     AHCI=
  
-Turns PM-DOS's own driver for SATA disks in AHCI mode on or off.
+Turns PM-DOS's own driver for SATA disks and CD-ROM drives in AHCI
+mode on or off.
 
 \bSyntax\p
 
@@ -7350,11 +7351,13 @@ Turns PM-DOS's own driver for SATA disks in AHCI mode on or off.
 \bParameters\p
 
 ON
-    PM-DOS drives the SATA disks itself when the BIOS setup has the
-    SATA ports in AHCI mode.  This is the default setting.
+    PM-DOS drives the SATA disks and CD-ROM drives itself when the
+    BIOS setup has the SATA ports in AHCI mode.  This is the default
+    setting.
 
 OFF
     The disks are left to the BIOS.  They still work, but more slowly.
+    The CD-ROM drives get no drive letter.
 
 \bRelated Commands\p
 
@@ -7371,9 +7374,14 @@ OFF
  
 \bWhen it takes effect\p
 
-The disks are taken from the BIOS once CONFIG.SYS has been read, so
-the line can be anywhere in the file.  Safe mode (Shift or F5 at
-start) always leaves the disks to the BIOS regardless of setting.
+The disks and CD-ROM drives are taken from the BIOS once CONFIG.SYS
+has been read, so the line can be anywhere in the file.  Safe mode
+(Shift or F5 at start) always leaves them to the BIOS regardless of
+setting.
+
+When PM-DOS starts from a CD, the CD-ROM drives are taken before
+CONFIG.SYS is read, so AHCI=OFF and safe mode don't keep them from
+PM-DOS.
 
 \bWhich disks\p
 
@@ -7381,8 +7389,15 @@ Only the first AHCI controller is used, and only for the BIOS's first
 and second hard disks.  Each disk keeps the drive number the BIOS gave
 it.
 
-CD-ROM drives on an AHCI controller are not supported.  To use one,
-set the SATA ports to IDE mode in the BIOS setup.
+\bCD-ROM drives\p
+
+CD-ROM drives on an AHCI controller get drive letters after any on IDE
+or SCSI.  CDROM= moves them with the others.
+
+When the computer starts from a disk image on a CD, the CD-ROM drives
+are left to the BIOS, which is reading the image through one of them.
+
+Under Windows, a CD-ROM drive on an AHCI controller isn't there.
  
                                      
 .context AHCI=--Examples

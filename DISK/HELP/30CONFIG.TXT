@@ -175,7 +175,8 @@ so AUTOEXEC.BAT can do something different for each one:
     :END
 #topic AHCI=|Ahci
 #title AHCI=
-Turns PM-DOS's own driver for SATA disks in AHCI mode on or off.
+Turns PM-DOS's own driver for SATA disks and CD-ROM drives in AHCI
+mode on or off.
 
 {b}Syntax{p}
 
@@ -184,11 +185,13 @@ Turns PM-DOS's own driver for SATA disks in AHCI mode on or off.
 {b}Parameters{p}
 
 ON
-    PM-DOS drives the SATA disks itself when the BIOS setup has the
-    SATA ports in AHCI mode.  This is the default setting.
+    PM-DOS drives the SATA disks and CD-ROM drives itself when the
+    BIOS setup has the SATA ports in AHCI mode.  This is the default
+    setting.
 
 OFF
     The disks are left to the BIOS.  They still work, but more slowly.
+    The CD-ROM drives get no drive letter.
 
 {b}Related Commands{p}
 
@@ -196,9 +199,14 @@ OFF
 #notes
 {b}When it takes effect{p}
 
-The disks are taken from the BIOS once CONFIG.SYS has been read, so
-the line can be anywhere in the file.  Safe mode (Shift or F5 at
-start) always leaves the disks to the BIOS regardless of setting.
+The disks and CD-ROM drives are taken from the BIOS once CONFIG.SYS
+has been read, so the line can be anywhere in the file.  Safe mode
+(Shift or F5 at start) always leaves them to the BIOS regardless of
+setting.
+
+When PM-DOS starts from a CD, the CD-ROM drives are taken before
+CONFIG.SYS is read, so AHCI=OFF and safe mode don't keep them from
+PM-DOS.
 
 {b}Which disks{p}
 
@@ -206,8 +214,15 @@ Only the first AHCI controller is used, and only for the BIOS's first
 and second hard disks.  Each disk keeps the drive number the BIOS gave
 it.
 
-CD-ROM drives on an AHCI controller are not supported.  To use one,
-set the SATA ports to IDE mode in the BIOS setup.
+{b}CD-ROM drives{p}
+
+CD-ROM drives on an AHCI controller get drive letters after any on IDE
+or SCSI.  CDROM= moves them with the others.
+
+When the computer starts from a disk image on a CD, the CD-ROM drives
+are left to the BIOS, which is reading the image through one of them.
+
+Under Windows, a CD-ROM drive on an AHCI controller isn't there.
 #examples
     AHCI=OFF
 #topic AUTOCHECK=|Autocheck

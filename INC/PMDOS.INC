@@ -2868,17 +2868,28 @@ IOS_AHCI        EQU     IOSVC + 118h            ; AL = an AHF_* function: SATA
 ; nothing on it is changed until PMDOS asks (AHF_START, after CONFIG.SYS
 ; - AHCI=OFF and a safe-mode start never do).  Then each SATA disk the
 ; BIOS knows as 80h or 81h, and the IDE driver does not, is taken over
-; under that number, found by its sector 0.  21h/F1h AL=2Ah hands the
-; report to \TESTS\AHCITEST.
+; under that number, found by its sector 0, and each CD-ROM drive is
+; taken as a CD-ROM unit (CUK_AHCI) - unless the BIOS is reading a
+; disk image from a CD, which it does through one of those ports.
+; After a start from a CD with no emulation the CD-ROM drives are taken
+; first, before the boot drive is looked for (AHF_CDSTART).  21h/F1h
+; AL=2Ah hands the report to \TESTS\AHCITEST.
 ;---------------------------------------------------------------------
 AHF_REPORT      EQU     0       ; EDI -> AHR_LEN bytes: the report below
-AHF_START       EQU     1       ; the disks taken from the BIOS
+AHF_START       EQU     1       ; the disks taken from the BIOS, and the
+                                ;    CD-ROM drives if they were not yet
 AHF_OWNS        EQU     2       ; DL = a BIOS drive -> CF clear if it is
-                                ;    an AHCI disk of the kernel's
+                                ;    an AHCI disk of the kernel's, or -
+                                ;    while an AHCI CD-ROM drive is the
+                                ;    kernel's - any number past the BIOS's
+                                ;    hard disks, where its CD-ROMs are
+AHF_CDSTART     EQU     3       ; the CD-ROM drives only, after a start
+                                ;    from a CD (DOSMAIN, before disk_scan)
 
 AHS_NONE        EQU     0       ; AHR_STATE: no AHCI adapter
 AHS_FOUND       EQU     1       ; found, not started (yet, or AHCI=OFF)
-AHS_STARTED     EQU     2       ; started: AHR_UNITS disks are ours
+AHS_STARTED     EQU     2       ; started: AHR_UNITS disks are ours, and
+                                ;    the ports with AHPF_CD
 AHS_NOREGS      EQU     3       ; its registers could not be reached
 AHS_NOHAND      EQU     4       ; the BIOS would not hand it over
 AHS_NOAE        EQU     5       ; not in AHCI mode, so left alone
@@ -2922,11 +2933,13 @@ AHP_LEN         EQU     80
 AHR_LEN         EQU     AHR_PORTS + AHR_MAXPORT * AHP_LEN
 
 AHPF_DISK       EQU     01h     ; a disk's signature
-AHPF_ATAPI      EQU     02h     ; a packet device's: left to the BIOS
+AHPF_ATAPI      EQU     02h     ; a packet device's
 AHPF_TAKEN      EQU     04h     ; the port is on the kernel's lists now
 AHPF_OWNED      EQU     08h     ; ...and its disk is AHP_DRIVE
 AHPF_LBA48      EQU     10h
 AHPF_NOT512     EQU     20h     ; sectors that are not 512 bytes
+AHPF_CD         EQU     40h     ; ...or it is a CD-ROM unit of the kernel's
+AHPF_PDMA       EQU     80h     ; the CD-ROM drive takes its data by DMA
 
 ;---------------------------------------------------------------------
 ; block_req - the WfW bridge's sector-I/O request, in the VxD's low 1:1
@@ -3151,6 +3164,8 @@ CUE_LEN         EQU     12
 
 CUK_ATAPI       EQU     1               ; ATAPI.INC's atapi_exec
 CUK_SCSI        EQU     2               ; SCSI.INC's scs_cdexec
+CUK_AHCI        EQU     3               ; AHCI.INC's ahci_cdexec; CUE_DEVIDX
+                                        ; is the port's record, CUE_DEV it
 
 SCSI_MAXHBA     EQU     4               ; host adapters, every kind
 SCSI_MAXDEV     EQU     16              ; devices of any type, every bus
@@ -4434,13 +4449,17 @@ CSTF_ERROR      EQU     04h                     ; a write-back failed and the
 CDU_UNIT        EQU     00h                     ; db - the unit asked about
 CDU_DEV         EQU     01h                     ; db - its ATA device index:
                                                 ; channel * 2 + 1 for a slave.
-                                                ; SCSI: the adapter number
+                                                ; SCSI: the adapter number.
+                                                ; AHCI: the port number
 CDU_FLAGS       EQU     02h                     ; db - ATDF_*, as AL=0Ah has them.
-                                                ; SCSI: the adapter's SHK_*
+                                                ; SCSI: the adapter's SHK_*.
+                                                ; AHCI: the port's AHPF_*
 CDU_MODE        EQU     03h                     ; db - the transfer mode in force.
-                                                ; SCSI: the adapter's own ID
+                                                ; SCSI: the adapter's own ID.
+                                                ; AHCI: 0
 CDU_BASE        EQU     04h                     ; dw - the channel's base port.
-                                                ; SCSI: the adapter's, or 0
+                                                ; SCSI: the adapter's, or 0.
+                                                ; AHCI: 0
 CDU_KIND        EQU     06h                     ; db - CDK_*: how it is reached
 CDU_TARGET      EQU     07h                     ; db - SCSI: the target ID in
                                                 ; bits 0-3, the LUN in 4-6
@@ -4454,6 +4473,7 @@ CDK_ATAPI       EQU     0                       ; an IDE channel (zero, so a
                                                 ; record from before SCSI
                                                 ; reads as what it was)
 CDK_SCSI        EQU     1                       ; a SCSI host adapter
+CDK_AHCI        EQU     2                       ; a SATA port on an AHCI adapter
 
 ;---------------------------------------------------------------------
 ; THE SCSI BUSES, as 21h/F1h AL=1Ch shows them: bits 16-23 of EAX = an

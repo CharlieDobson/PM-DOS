@@ -172,6 +172,15 @@ ENDIF
         mov     edi,OFFSET int26_entry
         call    dword ptr ds:[IOS_SETVEC]
 
+        ; After a start from a CD, the CD-ROM drives on SATA ports first:
+        ; the disc the machine started from may be in one, and boot_find
+        ; has to be able to read it (IO\AHCI.INC, AHF_CDSTART).
+        cmp     byte ptr ds:[GV_CDBOOT],0
+        je      no_sata_cd
+        mov     al,AHF_CDSTART
+        call    dword ptr ds:[IOS_AHCI]
+no_sata_cd:
+
         ; Every volume on every disk, before any of them is mounted:
         ; a drive letter is an index into that table now and not a sum
         ; on a BIOS drive number.

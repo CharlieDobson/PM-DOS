@@ -323,15 +323,19 @@ IDE32=OFF|AUTO|ON
     IDETEST, in \TESTS, shows what was picked for each drive.
 
 AHCI=ON|OFF
-    SATA disks, when the BIOS setup has the SATA ports in AHCI mode.
-    ON by default: PM-DOS drives them itself once CONFIG.SYS has been
-    read.  Only the BIOS's first two hard disks are taken, and each
-    keeps the drive number the BIOS gave it.  OFF leaves them to the
-    BIOS, which works but is slower.  Safe mode (Shift or F5 at start)
+    SATA disks and CD-ROM drives, when the BIOS setup has the SATA
+    ports in AHCI mode.  ON by default: PM-DOS drives them itself once
+    CONFIG.SYS has been read.  Only the BIOS's first two hard disks are
+    taken, and each keeps the drive number the BIOS gave it.  OFF
+    leaves the disks to the BIOS, which works but is slower, and the
+    CD-ROM drives without a letter.  Safe mode (Shift or F5 at start)
     is OFF whatever the line says.
-    CD-ROM drives on an AHCI controller don't work.  To use one, set
-    the SATA ports to IDE mode in the BIOS setup.
-    Under Windows the disks go back to the BIOS.
+    The CD-ROM drives come after any on IDE or SCSI.  After a start
+    from a CD they are PM-DOS's before CONFIG.SYS is read, whatever
+    this line says.  After a start from a disk image on a CD they are
+    left to the BIOS.
+    Under Windows the disks go back to the BIOS, and the CD-ROM drives
+    aren't there.
     AHCITEST, in \TESTS, shows what PM-DOS found on each port.
 
 CDROM=x

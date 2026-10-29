@@ -1509,11 +1509,14 @@ cfsc_on:
         ret
 
 ;---------------------------------------------------------------------
-; AHCI=ON|OFF - whether the kernel drives the SATA disks on an AHCI
-;               adapter or leaves them to the BIOS.  ON is the default;
-;               the disks are taken once CONFIG.SYS is finished
-;               (cfg_ahcigo), so until then, and with OFF, they are
-;               read by INT 13h as they always were.  Safe mode is OFF.
+; AHCI=ON|OFF - whether the kernel drives the SATA disks and CD-ROM
+;               drives on an AHCI adapter or leaves them to the BIOS.
+;               ON is the default; they are taken once CONFIG.SYS is
+;               finished (cfg_ahcigo), so until then, and with OFF, the
+;               disks are read by INT 13h as they always were and the
+;               CD-ROM drives have no letter.  Safe mode is OFF.  After
+;               a start from a CD the CD-ROM drives are the kernel's
+;               before CONFIG.SYS is read (AHF_CDSTART), whatever it says.
 ;---------------------------------------------------------------------
 cfg_ahci:
         mov     edi,OFFSET cfgw_on
@@ -1529,12 +1532,24 @@ cfah_set:
         ret
 
 ;--- cfg_ahcigo - after CONFIG.SYS, from DOSMAIN: take them -----------
+; ...and letters for the CD-ROM drives among them, as scsi_start gives
+; a SCSI card's.  IOS_CDUNIT counts the units without asking a drive.
 cfg_ahcigo:
+        pushad
         cmp     byte ptr [ahci_on],0
         je      cfah_out
         mov     al,AHF_START
         call    dword ptr ds:[IOS_AHCI]
+        xor     al,al
+        call    dword ptr ds:[IOS_CDUNIT]       ; ECX = units, valid on CF
+        cmp     cl,[cd_units]
+        je      cfah_out                        ; nothing new to name
+        call    drv_addcds
+        cmp     dword ptr [cdd_seg],0
+        jne     cfah_out
+        call    cdd_init                        ; the first CD-ROM there is
 cfah_out:
+        popad
         ret
 
 ahci_on     db  1                       ; AHCI=ON|OFF

@@ -18216,6 +18216,112 @@ TESTS.IMG, HD16.IMG (8 files by FATREPL, CONFIG.TXT among them), the
 five Setup images, and the four images into the 86Box VM.
 
 
+AHCI: CD-ROM DRIVES ON SATA PORTS (2026-10-29)
+---------------------------------------------------------------------
+
+Charlie asked why the AHCI driver had no CD-ROM support (scope: the
+disks first), and then said yes to adding it.  On most boards a BIOS
+set to AHCI moves the DVD drive onto the AHCI controller too, so in
+0.68 such a machine had no CD-ROM drive at all - and could not start
+from PMDOSCD.ISO ("Cannot find the CD-ROM drive PM-DOS started from",
+then "Bad or missing command interpreter").
+
+WHAT IS WHERE.
+  - IO\AHCI.INC: ahci_cdexec, the third CD transport beside atapi_exec
+    and scs_cdexec.  The command block goes in the command table's
+    ATAPI area (header bit A), PACKET (A0h) in the FIS; whole blocks
+    coming in go by the drive's DMA when IDENTIFY PACKET DEVICE word 49
+    offers it and the caller did not ask for PIO (cun_pio), everything
+    else by PIO, which the adapter does burst by burst itself.  The
+    bytes moved are the header's PRDBC.  A failure is followed by
+    REQUEST SENSE; the error register's sense key stands if that gets
+    no answer.  sa_cdone takes a packet device's port and keeps it if
+    it is a CD-ROM drive taking 12-byte blocks (stage 'c').
+  - IO\CDUNIT.INC: CUK_AHCI units after the ATAPI and SCSI ones, in
+    port order, so existing letters do not move; cun_exec, cun_svcunit
+    (EDX -1, EBX 0, so the park gives RMCD.SYS none of them) and
+    cun_desc (CDK_AHCI: CDU_DEV the port, CDU_FLAGS its AHPF_*).
+  - INC\PMDOS.INC: AHF_CDSTART, AHPF_CD, AHPF_PDMA, CUK_AHCI, CDK_AHCI.
+  - DOS\CONFIG.INC cfg_ahcigo gives the new units letters as
+    scsi_start does (drv_addcds, cdd_init if there was no CD before).
+  - DOS\DOSMAIN.ASM: after a start from a CD (GV_CDBOOT), AHF_CDSTART
+    before disk_scan, so boot_find can find and read the disc.
+  - CMD\CDEX: "SATA port n".  TOOLS\AHCITEST: CD-ROM drives in use, the
+    model and how blocks come, and stages c e q w k y l.
+  - DISK\HELP\30CONFIG.TXT (AHCI=), 20EXTERN.TXT (CDEX), DISK\CONFIG.TXT;
+    HELP.HLP regenerated after the committed parts reproduced it.
+
+WHEN THE DRIVES ARE TAKEN.  With the disks, after CONFIG.SYS (AHF_START,
+last), except:
+  - THE BIOS IS READING A DISK IMAGE FROM A CD, which it does through
+    the drive's port: 80h as an image (GV_HDEMU), or A: as one, which
+    sa_cdask asks the BIOS (INT 13h AX=4B01h, from protected mode with
+    rm_int - IORM has no room).  Then no packet port is taken ('e').
+  - A START FROM A CD WITH NO EMULATION: the kernel has to read that
+    disc for CONFIG.SYS, so the drives are taken before disk_scan
+    (AHF_CDSTART), and AHCI=OFF and safe mode cannot keep them back.
+    AHF_START then takes the disks with the CD port already ours; the
+    BIOS reaches each disk through the disk's own port.
+
+TWO THINGS FOUND IN TESTING, AND FIXED.
+  - Phase 5 of AHF_START gives back every taken port with no drive
+    number, and a CD port AHF_CDSTART took is one: started from a SATA
+    CD with a SATA disk present, the port went back to the BIOS while
+    the kernel kept sending it commands, and the shell could not be
+    loaded from O:.  Phase 5 skips AHPF_CD, and ahci_cdexec refuses a
+    port that is not AHPF_TAKEN.
+  - SeaBIOS gives EVERY CD-ROM drive an INT 13h number, E0h up, not only
+    the one it started from.  A DOS box's INT 13h E0h on a machine
+    started from its disk made SeaBIOS run the kernel's last command on
+    the CD's port and answer "done" with nothing read.  While an AHCI
+    CD-ROM drive is the kernel's, AHF_OWNS now says yes to every number
+    past the BIOS's hard disks, and INT13.INC's guard answers them.
+
+THE LIMITS ON A COMMAND.  A region's count must be even and a region
+holds 4MB.  An odd address, an odd length or the A0000h-DOS_BASE band
+go through XFER_BUF, 8K at a time; a read longer than one command
+(READ(10), READ(12), READ CD) is cut into pieces by its block count, as
+scs_cdexec cuts one, and any other command that long is refused as an
+illegal request.  Only what the drive sent comes back out of XFER_BUF,
+and never more than the caller's length.
+
+SIZES.  PMIO.SYS 81,274 -> 83,435.  PMDOS.SYS 195,469 -> 195,525 (1,083
+left under 196,608).  AHCITEST.EXE 3,311 -> 3,848; CDEX.EXE (bound)
+2,468 -> 2,536.
+
+TESTED, QEMU 11.1 (scratchpad 5ab2ae62 final.ps1, rig\qrun.ps1 with
+-SataCd/-CdBoot/-IdeCd; bnc\CDBNC.ASM, bnc\I13CD.ASM; isoput.pl and
+fat12put.pl put this kernel on copies of PMDOSCD.ISO and of the El
+Torito session's FDEMU.ISO and HDEMU.ISO):
+  - q35, disk on port 0, PMDOSCD.ISO on port 4: D: "SATA port 4"; a
+    263,346-byte COPY equal to the disc's file on the host, FC clean;
+    CDXTEST 9 of 9; CDBNC (one block and twelve blocks to an odd
+    address, twelve at once against one by one, CD001 at block 16);
+    an empty drive, a disc put in, ejected, another disc.
+  - Started from the disc in a SATA drive: alone (O:\>), and with a
+    SATA disk (O: the disc, C: the disk, COPY and FC clean).  0.68 on
+    the same machine: "Cannot find the CD-ROM drive".
+  - Started from a CD's diskette image and from its hard disk image,
+    each with a SATA disk: port 4 'e', the image still read through
+    the BIOS (DIR, COPY, FC), the disk taken as 80h and 81h.
+  - AHCI=OFF: 'p', no letter, INT 13h E0h answered by SeaBIOS.  A park
+    (PARKTEST): taken again, COPY and FC clean.  Ctrl-Alt-Del: taken
+    again.  PIIX with an IDE CD and an AHCI card's CD: D: the IDE one,
+    E: the SATA one, CDXTEST 9 of 9.
+  - The INT 13h guard: E0h answered CF=1 AH=01 from a disk start and
+    from a CD start; from the BIOS (CD001) with AHCI=OFF and with only
+    an IDE CD.
+  - A scratch build that never sets AHPF_PDMA: blocks by PIO, CDBNC and
+    the COPY the same.  (On the build before the guard change.)
+  - The disks as before: two on ports 0 and 2; an IDE disk with an
+    AHCI card's disk.
+NOT TESTED: real hardware; a drive without DMA (only by the scratch
+build); audio (no disc with audio tracks here); a port that stops
+answering; Windows with an AHCI CD-ROM drive (not served: RMCD.SYS
+knows IDE channels only); a BIOS that numbers a boot CD below its last
+hard disk; RUNTESTS.
+
+
 v0.61 - THE NUMBER CAUGHT UP (2026-09-30)
 ---------------------------------------------------------------------
 

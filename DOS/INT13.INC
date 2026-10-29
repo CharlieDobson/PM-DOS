@@ -113,7 +113,9 @@ i13_reflect:
         ; ours.  What is left once read, write, verify and the parameters
         ; are served is seeks, resets and readiness tests, which have
         ; nothing to do on an AHCI disk and are answered done; anything
-        ; else is a function this disk does not have.
+        ; else is a function this disk does not have.  While a SATA
+        ; CD-ROM drive is the kernel's the same goes for every number
+        ; past the BIOS's hard disks, where a BIOS puts its CD-ROMs.
         mov     dl,[i13_drive]
         mov     al,AHF_OWNS
         call    dword ptr ds:[IOS_AHCI]

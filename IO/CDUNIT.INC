@@ -13,6 +13,7 @@
 ;   CUK_ATAPI   atapi_exec, in ATAPI.INC
 ;   CUK_SCSI    scs_cdexec, in SCSI.INC, and through it whichever
 ;               host adapter the device is on
+;   CUK_AHCI    ahci_cdexec, in AHCI.INC: a SATA port
 ;
 ; Both take the command in cun_cdb and cun_dir, the buffer in EDI and
 ; ECX, and give back EAX = bytes moved and CF.  On a failure both have
@@ -23,15 +24,16 @@
 ; A UNIT NUMBER IS A PLACE IN cun_tab, and the table is rebuilt from
 ; the hardware tables whenever they change (cun_build): ATAPI units
 ; first, in probe order, then SCSI devices in the order the buses were
-; scanned.  The ATAPI half is therefore numbered exactly as it was
-; before SCSI existed, and a machine without SCSI cannot tell.
+; scanned, then the CD-ROM drives on SATA ports in port order.  The
+; ATAPI half is therefore numbered exactly as it was before SCSI
+; existed, and a machine without SCSI cannot tell.
 ;
 ; THE LISTENER BITS STAY WITH THE HARDWARE.  A disc change is reported
 ; once and destroyed by the asking (see cun_pendall), so the bits that
 ; remember it for each listener are kept per device - atapi_pend per
 ; ATA slot, SDV_PEND in each SCSI device's row - and a unit holds a
-; pointer to its device's byte.  Rebuilding the table cannot lose a
-; change that was owed.
+; pointer to its device's byte (ahci_pend per AHCI port record).
+; Rebuilding the table cannot lose a change that was owed.
 ;
 ; Included by IOPM.ASM, after ATAPI.INC and SCSI.INC.
 ;=====================================================================
@@ -78,7 +80,7 @@ cnb_scsi:
         mov     esi,OFFSET scs_devs
 cnb_sdev:
         cmp     ecx,[scs_ndev]
-        jae     cnb_done
+        jae     cnb_ahci
         call    scs_iscd                ; a CD-ROM, on an adapter in use?
         jc      cnb_snext
         cmp     ebp,CDU_MAX
@@ -94,6 +96,27 @@ cnb_snext:
         add     esi,SDV_LEN
         inc     ecx
         jmp     cnb_sdev
+
+cnb_ahci:
+        xor     ecx,ecx
+cnb_hport:
+        call    ahci_cdat               ; ECX = a port record -> EBX
+        jc      cnb_done
+        test    byte ptr [ebx+AHP_FLAGS],AHPF_CD
+        jz      cnb_hnext
+        cmp     ebp,CDU_MAX
+        jae     cnb_done
+        mov     byte ptr [edi+CUE_KIND],CUK_AHCI
+        mov     byte ptr [edi+CUE_DEVIDX],cl
+        mov     [edi+CUE_DEV],ebx
+        mov     eax,OFFSET ahci_pend
+        add     eax,ecx
+        mov     [edi+CUE_PENDP],eax
+        add     edi,CUE_LEN
+        inc     ebp
+cnb_hnext:
+        inc     ecx
+        jmp     cnb_hport
 
 cnb_done:
         mov     [cun_count],ebp
@@ -157,6 +180,8 @@ cun_cdbzero:
 cun_exec:
         cmp     byte ptr [esi+CUE_KIND],CUK_SCSI
         je      scs_cdexec
+        cmp     byte ptr [esi+CUE_KIND],CUK_AHCI
+        je      ahci_cdexec
         jmp     atapi_exec
 
 ;=====================================================================
@@ -515,7 +540,8 @@ ccg_yes:
 ; report can name a drive with nothing in it.
 ;
 ; A SCSI unit has no ATA index: EDX is -1 for one, and EBX is its
-; adapter's port.  SSF_CDDESC is the call that describes either kind.
+; adapter's port.  An AHCI unit has neither: EDX -1, EBX 0.  SSF_CDDESC
+; is the call that describes every kind.
 ;=====================================================================
 cun_svcunit:
         push    eax
@@ -524,6 +550,8 @@ cun_svcunit:
         jc      csu_bad
         cmp     byte ptr [esi+CUE_KIND],CUK_SCSI
         je      csu_scsi
+        cmp     byte ptr [esi+CUE_KIND],CUK_AHCI
+        je      csu_ahci
         movzx   edx,byte ptr [esi+CUE_DEVIDX]
         mov     esi,[esi+CUE_DEV]
         movzx   ebx,word ptr [esi+ATD_CTRL]     ; the control port above,
@@ -536,6 +564,10 @@ csu_scsi:
         movzx   eax,byte ptr [esi+SDV_HBA]
         imul    eax,eax,HBA_LEN
         movzx   ebx,word ptr [scs_hbas+eax+HBA_BASE]
+        jmp     short csu_have
+csu_ahci:
+        mov     edx,-1
+        xor     ebx,ebx
 csu_have:
         mov     ecx,[cun_count]
         pop     esi
@@ -569,6 +601,8 @@ cun_desc:
         mov     [edi+CDU_UNIT],al
         cmp     byte ptr [esi+CUE_KIND],CUK_SCSI
         je      cdsc_scsi
+        cmp     byte ptr [esi+CUE_KIND],CUK_AHCI
+        je      cdsc_ahci
 
         ; AN IDE CHANNEL: exactly the record 21h/F1h AL=17h built from
         ; IOS_CDUNIT, IOS_ATAMODEL and IOS_ATAINFO before there was any
@@ -589,7 +623,7 @@ cun_desc:
         pop     edi
         mov     [edi+CDU_FLAGS],al
         mov     [edi+CDU_MODE],cl
-        jmp     short cdsc_ok
+        jmp     cdsc_ok
 
 cdsc_scsi:
         mov     esi,[esi+CUE_DEV]       ; the SDV row
@@ -626,6 +660,27 @@ cdsc_scsi:
         rep     movsb
         inc     edi
         mov     ecx,4                   ; revision
+        rep     movsb
+        pop     edi
+        jmp     cdsc_ok
+
+        ; A SATA PORT: its number, its flags, and the name IDENTIFY
+        ; PACKET DEVICE gave
+cdsc_ahci:
+        mov     esi,[esi+CUE_DEV]       ; the port's record
+        mov     byte ptr [edi+CDU_KIND],CDK_AHCI
+        mov     byte ptr [edi+CDU_TARGET],0
+        mov     byte ptr [edi+CDU_MODE],0
+        mov     word ptr [edi+CDU_BASE],0
+        mov     al,[esi+AHP_NUM]
+        mov     [edi+CDU_DEV],al
+        mov     al,[esi+AHP_FLAGS]
+        mov     [edi+CDU_FLAGS],al
+        push    edi
+        add     edi,CDU_MODEL
+        add     esi,AHP_MODEL
+        mov     ecx,ATA_MODEL_LEN
+        cld
         rep     movsb
         pop     edi
 cdsc_ok:

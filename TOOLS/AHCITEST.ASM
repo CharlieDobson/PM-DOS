@@ -164,6 +164,22 @@ at_stknown:
         call    puts
         movzx   eax,byte ptr [rpt+AHR_UNITS]
         call    pdec
+        mov     edx,OFFSET msg_cdinuse
+        call    puts
+        xor     eax,eax                         ; the ports that are CD-ROM
+        movzx   ecx,byte ptr [rpt+AHR_NREC]     ; units, counted
+        mov     esi,OFFSET rpt + AHR_PORTS
+at_cdcount:
+        jecxz   at_cdcounted
+        test    byte ptr [esi+AHP_FLAGS],AHPF_CD
+        jz      at_cdnext
+        inc     eax
+at_cdnext:
+        add     esi,AHP_LEN
+        dec     ecx
+        jmp     short at_cdcount
+at_cdcounted:
+        call    pdec
 at_nounits:
         call    crlf
 
@@ -231,6 +247,20 @@ at_port:
 at_nodrive:
         call    crlf
 
+        test    byte ptr [esi+AHP_FLAGS],AHPF_CD
+        jz      at_disk
+        mov     edx,OFFSET msg_pad              ; a CD-ROM drive: its name,
+        call    puts                            ; and how its data comes
+        call    pmodel
+        mov     edx,OFFSET msg_bypio
+        test    byte ptr [esi+AHP_FLAGS],AHPF_PDMA
+        jz      at_cdhow
+        mov     edx,OFFSET msg_bydma
+at_cdhow:
+        call    puts
+        call    crlf
+        jmp     short at_nomodel
+at_disk:
         cmp     dword ptr [esi+AHP_TOTAL],0
         je      at_nomodel
         mov     edx,OFFSET msg_pad
@@ -494,6 +524,9 @@ msg_cap2    db  '  CAP2 ','$'
 msg_bohc    db  '  BOHC ','$'
 msg_state   db  '  State: ','$'
 msg_inuse   db  ', disks in use: ','$'
+msg_cdinuse db  ', CD-ROM drives in use: ','$'
+msg_bydma   db  ', blocks by DMA','$'
+msg_bypio   db  ', by PIO','$'
 msg_bios    db  '  BIOS drive ','$'
 msg_h       db  'h: ','$'
 msg_bnot    db  'not read',13,10,'$'
@@ -532,6 +565,13 @@ states      dd  OFFSET st_none, OFFSET st_found, OFFSET st_started
 stages      db  'n','no device','$'
             db  'u','unknown device, left to the BIOS','$'
             db  'p','CD-ROM or other packet device, left to the BIOS','$'
+            db  'c','CD-ROM drive in use','$'
+            db  'e','CD-ROM or other packet device, left to the BIOS: it is reading a disk image from a CD','$'
+            db  'q','packet device that is not a CD-ROM drive, left to the BIOS','$'
+            db  'w','packet device, the port could not be taken from the BIOS','$'
+            db  'k','packet device, IDENTIFY PACKET DEVICE failed','$'
+            db  'y','CD-ROM drive that stopped answering, given back to the BIOS','$'
+            db  'l','CD-ROM drive not taken back after Windows, left to the BIOS','$'
             db  'f','disk, not taken','$'
             db  't','disk, the port could not be taken from the BIOS','$'
             db  'i','disk, IDENTIFY failed','$'

@@ -333,10 +333,10 @@ SCSI drivers on and off.  To give an .ISO file a drive letter, see
 {b}What the lines say{p}
 
 One line a drive: its letter, the unit number that MSCDEX-style
-programs count it by, where it is (an IDE channel or a SCSI ID), the
-label of the disc in it, and the name the drive reports.  With a
-drive on a SCSI card, the cards are listed under the table; "SCSI 1
-ID 2" is ID 2 on the first card.
+programs count it by, where it is (an IDE channel, a SATA port or a
+SCSI ID), the label of the disc in it, and the name the drive
+reports.  With a drive on a SCSI card, the cards are listed under the
+table; "SCSI 1 ID 2" is ID 2 on the first card.
 
 {b}No MSCDEX{p}
 

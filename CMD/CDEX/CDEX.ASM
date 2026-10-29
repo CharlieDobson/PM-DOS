@@ -3,8 +3,9 @@
 ;
 ;   CDEX            one line per drive: the letter, the unit number
 ;                   MSCD001 and INT 2Fh AH=15h count it by, where it
-;                   is - an IDE channel or a SCSI ID, and the adapter
-;                   when there are two - what is in it, and its name;
+;                   is - an IDE channel, a SATA port or a SCSI ID, and
+;                   the adapter when there are two - what is in it,
+;                   and its name;
 ;                   then the SCSI adapters, if a drive is on one
 ;
 ; THERE IS NO MSCDEX.EXE ON THIS MACHINE AND THIS IS NOT ONE.  The
@@ -250,6 +251,8 @@ rw_letter:
         ; the first.  With two adapters or more, which one - "SCSI 1
         ; ID 2" - and the adapters are listed under the table
         mov     dword ptr [loc_len],0
+        cmp     byte ptr [cdu+CDU_KIND],CDK_AHCI
+        je      rw_sata
         cmp     byte ptr [cdu+CDU_KIND],CDK_SCSI
         jne     rw_ide
         mov     byte ptr [any_scsi],1
@@ -278,7 +281,15 @@ rw_lpadset:
         mov     ecx,LOC_W + 2
         sub     ecx,[loc_len]
         jle     rw_disc
-        jmp     short rw_lpad
+        jmp     rw_lpad
+
+rw_sata:
+        ; ON A SATA PORT of an AHCI adapter: the port's number
+        mov     edx,OFFSET msg_sata
+        call    printc
+        movzx   eax,byte ptr [cdu+CDU_DEV]
+        call    pdecc
+        jmp     short rw_lpadset
 
 rw_ide:
         ; where it is: the channel by its base port, then the device
@@ -588,6 +599,7 @@ msg_hnum    db  '0000h','$'
 msg_master  db  'master','$'
 msg_slave   db  'slave','$'
 msg_scsiid  db  'SCSI ID ','$'
+msg_sata    db  'SATA port ','$'
 msg_scsin   db  'SCSI ','$'
 msg_id      db  ' ID ','$'
 msg_lun     db  ' LUN ','$'
@@ -606,10 +618,10 @@ msg_usage   db  'Displays the CD-ROM drives and their drive letters.',13,10,13,1
             db  'CDEX',13,10,13,10
             db  'Each line is one drive: its letter, the unit number by which',13,10
             db  'MSCD001 and INT 2Fh AH=15h count it, where it is (an IDE',13,10
-            db  'channel or a SCSI ID), the label of the disc in it, and the',13,10
-            db  'name the drive reports.  The SCSI adapters are listed under',13,10
-            db  'the table when a drive is on one.  With two or more adapters,',13,10
-            db  'SCSI 1 ID 2 is ID 2 on adapter 1.',13,10,13,10
+            db  'channel, a SATA port or a SCSI ID), the label of the disc in',13,10
+            db  'it, and the name the drive reports.  The SCSI adapters are',13,10
+            db  'listed under the table when a drive is on one.  With two or',13,10
+            db  'more adapters, SCSI 1 ID 2 is ID 2 on adapter 1.',13,10,13,10
             db  'CDROM= in CONFIG.SYS chooses the first letter.',13,10,'$'
 
 _CDX    ENDS
