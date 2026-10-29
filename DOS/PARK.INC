@@ -1033,11 +1033,7 @@ pfh_psp:
         shr     eax,4                           ; sides since v0.45 and written
         mov     word ptr [edi + RMH_MEMTOP],ax  ; by neither until now
 
-        movzx   eax,byte ptr ds:[GV_BOOTDRV]
-        cmp     al,80h
-        jb      pfh_fd
-        sub     al,80h - 2
-pfh_fd:
+        mov     al,[boot_vol]                   ; boot_find's letter, 0 = A:
         mov     byte ptr [edi + RMH_BOOTDRV],al
         mov     al,[cur_drive]
         mov     byte ptr [edi + RMH_CURDRV],al

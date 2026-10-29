@@ -2440,8 +2440,7 @@ f33_xchgbrk:
         mov     [ebp+F_EDX],al
         jmp     i21_ok
 f33_boot:
-        mov     al,byte ptr ds:[GV_BOOTDRV]
-        call    bios2log
+        mov     al,[boot_vol]           ; boot_find's, which knows a CD
         inc     al                      ; 1 = A:, as this call reports it
         movzx   eax,al
         mov     [ebp+F_EDX],eax

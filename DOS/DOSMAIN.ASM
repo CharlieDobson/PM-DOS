@@ -190,8 +190,8 @@ ENDIF
         ; a warm restart is added.
         call    img_init
 
-        mov     al,byte ptr ds:[GV_BOOTDRV]
-        call    bios2log                ; the letter the boot disk got
+        call    boot_find               ; the letter the boot disk got -
+                                        ; or the CD it was (FAT.INC)
         mov     [cur_vol],al            ; the boot volume owns vol_state
         mov     [cur_drive],al
         add     al,'A'                  ; the shell reloads off the boot

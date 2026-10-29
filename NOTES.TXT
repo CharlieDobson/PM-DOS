@@ -1986,10 +1986,11 @@ WHAT IS LEFT ON THE CD-ROM:
     sizes up only while the pieces are contiguous.  MKCD.PL writes
     such a file at a size a test disc can hold, since the real article
     is over 4GB.  See the entry above]
-  - EL TORITO, which is booting FROM the disc rather than reading it,
-    and is a boot-sector job rather than a filesystem one.  LEFT ON
-    PURPOSE: Charlie set it aside twice, and it is the one item here
-    that is not about reading a disc at all.
+  - [DONE 2026-10-28 - EL TORITO, booting FROM the disc: a loader of
+    its own for a start with no emulation (BOOT\BOOTCD.ASM), the
+    boot drive found by the disc's stamp, and a hard disk image
+    read as 80h instead of the first IDE disk.  See the entry "EL
+    TORITO: STARTING FROM A CD-ROM"]
   - [DONE 2026-09-12 - UDF, in DOS\UDF.INC, for exactly the discs
     named here: ISO9660 first and UDF only when there is no CD001.
     The test disc is IMAPI2FS's, not ours, and Windows will mount it
@@ -17775,6 +17776,139 @@ disk.  Taken out, the second full run moved only PMD.OUT.
 Delivered: S:\BIN (the three), BASELINE (7), PMDOS.IMG, PMDOS2.IMG,
 TESTS.IMG, HD16.IMG (the three by FATREPL), the five Setup images, and
 the four images into the 86Box VM.
+
+
+EL TORITO: STARTING FROM A CD-ROM (2026-10-28)
+---------------------------------------------------------------------
+
+Charlie: "Let's add El Torito to PM-DOS."  The last item on the
+CD-ROM list.  He chose all of it - a start from the disc's own files
+with no emulation, and the hard-disk emulation fixed - and one disc
+that is both a running PM-DOS and Setup's source, which takes the
+place of SETUPCD.ISO.  And for the letters, CDROM= naming the drive
+the machine started from and a new RAMDISK.SYS /L:x.
+
+THE THREE WAYS A CD STARTS A MACHINE, AND WHAT EACH ONE NEEDED.
+  - A DISKETTE IMAGE (drive A:) needed nothing.  Diskettes always go
+    through the BIOS here, and the BIOS reads the image; SETUPCD.ISO
+    has started that way since 2026-10-24.
+  - A HARD DISK IMAGE (drive 80h) was read from the wrong disk.  The
+    BIOS calls the image 80h and the machine's own disks 81h and up,
+    and ata_slot gave 80h to the first IDE disk it found - the same
+    fault the USB stick found on 2026-10-24.  IORM now asks the BIOS
+    once, in real mode, when it was started from 80h: INT 13h
+    AX=4B01h, the El Torito status call.  "A hard disk image, as 80h"
+    sets GV_HDEMU, ata_slot numbers its disks from 81h, and 80h goes
+    down the BIOS path to the image.  ata_slot also stops at USB_DRV0
+    now: blk_read asks the IDE driver first, and a third IDE disk (or
+    a second one moved up) answered for USB unit 0.  With MAX_PHYS at
+    two, a second IDE disk has no number while an image is 80h.
+  - NO EMULATION is the new one: BOOT\BOOTCD.ASM, one 2048-byte block
+    the catalog points at.  It reads the disc with INT 13h AH=42h,
+    finds PMIO.SYS and PMDOS.SYS in the root, puts PMIO.SYS at
+    2000:0000 as every loader does and PMDOS.SYS at DOS_BASE itself -
+    32K at a time through INT 15h AH=87h, which deals with A20 - and
+    then writes into PMIO's own globals, in the image at 2000:0F00,
+    what it did: GV_DOSSIZE, GV_CDBOOT = 1 (IORM's load_dos does
+    nothing) and GV_CDSTAMP.  PMIO cannot do this part: its PMDOS.SYS
+    loader walks a FAT, and the stub has no room for a second one.
+    The first 512 bytes stand alone, because some BIOSes load one
+    sector whatever the catalog says: they read the rest back by the
+    boot information table MKSETUP fills in (mkisofs's layout).  And
+    a DL below 80h, which some early BIOSes pass, is replaced by the
+    drive 4B01h names.
+
+WHICH CD DRIVE IT WAS.  The BIOS's number for the drive (E0h on
+SeaBIOS) means nothing to the kernel's ATAPI driver, and 4B01h's
+"controller and device" is in terms each BIOS picks for itself.  So
+the disc says: the loader copies the volume's creation stamp out of
+the primary descriptor, and boot_find (FAT.INC) reads every drive's
+descriptor and takes the one with the same stamp.  That drive becomes
+the first CD-ROM letter (dac_unit), so CDROM= names it whatever cable
+it is on, and boot_follow moves the boot letter with it whenever the
+CD-ROMs are placed again - CDROM=, a rescan, a SCSI card's drives.
+boot_setletter moves everything that holds the boot letter together:
+boot_vol, the List of Lists byte at 43h, the interpreter's names and
+the default drive if it stood there.  21h/3305h, the List of Lists
+and the Windows header used to work it out from the BIOS number (80h
+meant C:) and read boot_vol now.  CONFIG.SYS is read whole before any
+line acts, so nothing is open on the old letter when it moves.
+
+AND A MOUNT LEFT BEHIND.  drv_dropcds took the CD letters back and
+left whatever had been mounted under them in their vol_slots rows,
+which are keyed by letter: the drive that took the letter next was
+read with the first disc's extents.  A CD read before CDROM= always
+did this; a start from a CD makes it certain.  It clears fat_ok now.
+
+SIXTEEN LETTERS.  The first try said CDROM=X and TEMP=T:\.  PM-DOS has
+A: to P:, CDROM=X was refused and the disc stayed at C:.  The disc's
+own CONFIG.SYS says CDROM=O, which leaves P: for a second drive, and
+the RAM disk is N:.
+
+RAMDISK.SYS /L:x, and the NDU_WANT byte under it.  A disk driver's
+INIT is now also told EBP = every free letter, a bit each, and a unit
+may ask for one in NDU_WANT (the spare byte 15 of NDU, 1 = A:).
+dl_ndunits gives it when it is still free and the next one when not.
+RAMDISK.SYS knows from EBP at INIT which it will be, so its line names
+the letter it really gets; a taken letter, or one past P:, is
+reported as "drive x: cannot be used".
+
+THE DISC.  MKSETUP -iso writes a directory tree now (8.3 names, eight
+levels) and the boot file says how the BIOS starts it: a 1.2, 1.44 or
+2.88MB .IMG is a diskette, any other .IMG a hard disk (an MBR with one
+partition), anything else a loader with no emulation and the boot
+information table filled in.  Dates are local time with the offset
+from Greenwich; they were UTC, five hours out on the disc.  The Setup
+pass writes IMAGES\SETUP\CD\: the stage in the root (Setup's source,
+and PMIO.SYS and PMDOS.SYS where BOOTCD.BIN looks), the disc's own
+CONFIG.SYS and AUTOEXEC.BAT from SETUP.LST's new [cd.config] and
+[cd.autoexec], and in \PMDOS every file Setup installs, unpacked.  A
+name in brackets inside [cd.config] that is none of SETUP.LST's
+sections is a line of it.  MKIMG.CMD makes PMDOSCD.ISO from that in
+place of SETUPCD.ISO.  The menu offers PM-DOS from the disc or Setup
+and waits: Setup restarts the computer after it partitions, the disc
+starts again, and a timeout would have left an unfinished install
+at a prompt.
+
+THE STUB'S ROOM.  The 4B01h call and load_dos's test took IORM's code
+before RMT_PARK to about 0972h in a release build (78 bytes free,
+132 before) and 09B6h under PMDOS_DEBUG (10 free, 64 before).  Every
+debug target still assembles; the next thing added there will not.
+
+TESTS, ON QEMU THROUGH ITS MONITOR (scratchpad rig\srun.ps1, with a
+second CD drive added):
+  - PMDOSCD.ISO, no hard disk: the menu, PM-DOS from O:, the RAM disk
+    at N:, PATH, TEMP and COMSPEC, CDEX, a pipe in N:, MEM; a write
+    to O: is "File creation error".
+  - Two CD drives and HD16.IMG, started from the secondary SLAVE: the
+    stamp found unit 1, which got O:, and the master got P:.
+  - Setup from the disc onto a blank 200MB disk: Install, partition,
+    restart, the menu again, Install, format, copy; then the disk on
+    its own starts PM-DOS from C:\DOS with the CD back at D:.
+  - A hard disk image (SETUPUSB.IMG) with HD16.IMG present: C: is the
+    image and D: the IDE disk.  Before, C: was the IDE disk.
+  - The diskette route (DISK1.IMG) still starts Setup from A:.
+  - RAMDISK.SYS /L: with ordinary lines that reach every limit: a
+    taken letter (C:), one past P: (Q:), lower case (k), the last
+    letter (P:), P: again with no letter left, and /L:1, /L: and /LX
+    refused.
+  - RUNTESTS on all seven rows: 96 or 97 the same on each.  What
+    moved is RAMDISK.SYS being 234 bytes bigger in the arena (MEM,
+    XMSREPT, XMSTEST: 1K less XMS and the locked block 192 bytes
+    higher) and BOOTCD.BIN on the test disk (RMTEST two clusters
+    fewer free, CACHETST's "a write is owed" 5 to 4).  Re-recorded.
+
+NOT RUN: a real BIOS (86Box needs its window driven and a BIOS setup
+change to start from a CD) and real hardware; the DL-below-80h path
+(SeaBIOS passes E0h); a start from a SCSI or USB CD-ROM, which the
+kernel cannot read until after CONFIG.SYS - boot_find says it cannot
+find the drive, and the start goes on from A:; Windows started from a
+PM-DOS that started from a CD; a hard disk image with two IDE disks
+in the machine.
+
+FOR CHARLIE: the help's CDROM= example is CDROM=R, which PM-DOS
+refuses (A: to P:).  The new help text is in 21EXTERN.TXT (RAMDISK
+/L:x) and 30CONFIG.TXT (CDROM=, starting from a CD-ROM).
 
 
 v0.61 - THE NUMBER CAUGHT UP (2026-09-30)

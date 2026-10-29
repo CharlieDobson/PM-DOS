@@ -78,6 +78,11 @@
 ;           them once INIT has come back CF clear and gives each unit
 ;           its letter (DEVLOAD.INC, dl_ndunits).  A disk driver with no
 ;           letter to have refuses.
+;           EBP is every letter free at that moment, bit 0 = A: (zero
+;           when the units table is full): a unit may ask for one of
+;           them in NDU_WANT instead of taking the next, and a driver
+;           that says which letter it got knows from this which one it
+;           will be.
 ;   PARK    AL = 0: the machine is about to be handed to real mode.
 ;           AL = 1: it has come back.  Preserve nothing; the kernel
 ;           keeps the registers.
@@ -170,7 +175,10 @@ NDU_FLAGS       EQU     13              ; db - NDUF_*
 NDU_LETTER      EQU     14              ; db - the letter it got, 0 = A:;
                                         ; written by the kernel, FFh before
                                         ; and for a unit that got none
-                                        ; db - spare, 0
+NDU_WANT        EQU     15              ; db - the letter it asks for, 1 = A:;
+                                        ; 0 = the next free one.  Taken when
+                                        ; it is free (EBP at INIT says), and
+                                        ; the next free one when it is not
 NDU_LEN         EQU     16
 
 NDUF_MEMORY     EQU     01h             ; one block of memory, for life

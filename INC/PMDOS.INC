@@ -2368,6 +2368,38 @@ GVB_NONE        EQU     0
 GVB_BOX         EQU     1
 GVB_OWED        EQU     2
 
+; STARTED FROM A CD-ROM WITH NO EMULATION (BOOT\BOOTCD.ASM).  The CD
+; loader reads both system files itself, because the loader PMIO
+; carries for PMDOS.SYS walks a FAT, and writes these into PMIO's
+; image before jumping to it: GV_CDBOOT = 1 tells IORM's load_dos that
+; PMDOS.SYS is already at DOS_BASE and GV_DOSSIZE already says how big
+; it is.  GV_CDSTAMP is the volume's creation stamp, out of its primary
+; volume descriptor, and it is how PMDOS knows which CD drive the
+; machine started from (boot_find, FAT.INC): the BIOS's number for the
+; drive is nothing the kernel's own ATAPI driver can be asked about.
+; Both are zero after a start from any other kind of disk.
+GV_CDBOOT       EQU     GV_BASE + 0EAh          ; db - 1 = BOOTCD loaded us
+GVO_CDBOOT      EQU     GV_OFF  + 0EAh
+GV_CDSTAMP      EQU     GV_BASE + 0EBh          ; 17 bytes, to 0FBh
+GVO_CDSTAMP     EQU     GV_OFF  + 0EBh
+CDSTAMP_LEN     EQU     17
+CDSTAMP_PVD     EQU     813                     ; where it is in the PVD
+.ERRE   (GVO_CDSTAMP + CDSTAMP_LEN) LE (GV_OFF + 0FCh), <the CD stamp runs into GV_HDEMU>
+
+; STARTED FROM A CD-ROM THAT EMULATES A HARD DISK.  The BIOS then calls
+; the disc's disk image 80h and the machine's own hard disks 81h and
+; up, and the kernel's IDE driver - which numbers the disks it finds
+; from 80h - would read the first IDE disk where the image should be.
+; IORM asks the BIOS (INT 13h AX=4B01h, the El Torito status call)
+; whenever the machine started from 80h, and sets this when the answer
+; is "a hard disk image, as 80h"; ata_slot (ATA.INC) then starts its
+; numbering at 81h, and 80h goes to the BIOS, which reads the image.
+GV_HDEMU        EQU     GV_BASE + 0FCh          ; db - 1 = BIOS 80h is a CD image
+GVO_HDEMU       EQU     GV_OFF  + 0FCh
+ET_MEDIA        EQU     1                       ; 4B01h packet: the media type,
+ET_MEDIA_HD     EQU     4                       ; low nibble; 4 = a hard disk
+ET_DRIVE        EQU     2                       ; and the number it was given
+
 ; THE HANG REPORTER'S MAILBOX, in a kernel built with HANG_E9 (BUILD
 ; hang) and in no other.  PMDOS writes it at every INT 21h and PMIO's
 ; v86_fault at every trap a DOS box takes; PMIO's timer tick counts

@@ -198,3 +198,47 @@ FILES=40
 BUFFERS=30,8
 LFN=ON
 %COUNTRY%
+
+; The PM-DOS CD's own CONFIG.SYS and AUTOEXEC.BAT (PMDOSCD.ISO): start
+; PM-DOS from the disc, or Setup.  The menu waits for a choice: Setup
+; restarts the computer after it has partitioned the disk, and the CD
+; then starts again and has to be told to go on with Setup.  The disc
+; is O: on any machine, because CDROM= gives its letter to the drive
+; the machine started from (P:, the last letter PM-DOS has, is left for
+; a second CD-ROM drive), and a RAM disk at N: holds TEMP, because
+; nothing on the disc can be written.
+; A name in brackets that is none of this file's sections is a line of
+; [cd.config], so its blocks are spelled in capitals.
+[cd.config]
+[MENU]
+MENUITEM=PMDOS,Start PM-DOS from the CD
+MENUITEM=SETUP,Install PM-DOS
+MENUDEFAULT=PMDOS
+[COMMON]
+CDROM=O
+LASTDRIVE=Z
+FILES=40
+BUFFERS=30,8
+FCBS=4,0
+STACKS=9,256
+DOS=HIGH,UMB
+LFN=ON
+[PMDOS]
+SHELL=O:\PMDOS\CMD.EXE /P
+DEVICE=O:\PMDOS\RAMDISK.SYS 2048 /L:N
+EMS=AUTO
+DPMI=ON
+NULLTRAP=ON
+[SETUP]
+
+[cd.autoexec]
+@ECHO OFF
+PROMPT $P$G
+GOTO %CONFIG%
+:PMDOS
+PATH O:\PMDOS
+SET TEMP=N:\
+GOTO END
+:SETUP
+SETUP
+:END

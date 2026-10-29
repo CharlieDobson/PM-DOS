@@ -1702,16 +1702,9 @@ vdm_lolinit:
         mov     word ptr [edi+GLOL_NBUF],0
         mov     word ptr [edi+GLOL_NLOOK],0
 
-        ; The boot drive as DOS numbers it - 1 = A - from the BIOS
-        ; number PMIO booted with.  A hard disk is C: because that is
-        ; where its first partition mounts.
-        movzx   eax,byte ptr ds:[GV_BOOTDRV]
-        cmp     al,80h
-        jb      vli_bootfd
-        sub     al,80h - 2
-vli_bootfd:
-        inc     al
-        mov     [edi+GLOL_BOOTDRV],al
+        ; The boot drive (GLOL_BOOTDRV) is not known yet: the disks
+        ; have not been scanned.  boot_setletter (FAT.INC) writes it
+        ; when it is, and again if CDROM= moves a start-up CD-ROM.
 
         mov     byte ptr [edi+GLOL_DWMOVE],1    ; a 386 is the entry price
 

@@ -2,7 +2,7 @@
  * MKSETUP.C - make PM-DOS's Setup disks
  *
  *   mksetup <list> <outdir>
- *   mksetup -iso <out.iso> <boot.img> <dir> [label]
+ *   mksetup -iso <out.iso> <boot> <dir> [label]
  *
  * THE FIRST FORM reads <list> (DISK\SETUP.LST), INC\PMVER.INC for the
  * version and NLS\COUNTRY.DEF and NLS\KEYBOARD.DEF for the countries
@@ -14,11 +14,17 @@
  *                      and the tag files DISK1, DISK2... that tell the
  *                      disks apart.  A CD, a USB stick or a network
  *                      directory is this directory as it is.
+ *   <outdir>\CD\       the PM-DOS CD: the stage in its root, but with
+ *                      the disc's own CONFIG.SYS and AUTOEXEC.BAT (the
+ *                      list's [cd.config] and [cd.autoexec]: PM-DOS or
+ *                      Setup), and in \PMDOS every file Setup installs,
+ *                      unpacked, for PM-DOS started from the disc.
  *   <outdir>\MKIMG.CMD MKDISK lines for the diskettes (DISK1.IMG ...),
  *                      the USB image (SETUPUSB.IMG, 16MB, 16 heads of
  *                      63 sectors) and the Zip image (SETUPZIP.IMG, the
  *                      same at 64 heads of 32), then this program's
- *                      -iso line for SETUPCD.ISO.  BUILD.CMD calls it.
+ *                      -iso line for PMDOSCD.ISO, which starts from
+ *                      BIN\BOOTCD.BIN.  BUILD.CMD calls it.
  *
  * PACKING is SZDD, the format MS-DOS 5's EXPAND reads (and SETUP's own
  * COPY.C): "SZDD" 88 F0 27 33, 'A', the last character of the name the
@@ -36,10 +42,14 @@
  * 1, in order, as they are - and then whatever fits; the rest go on in
  * list order to disk 2 and on.
  *
- * THE SECOND FORM writes an ISO9660 CD-ROM image of <dir>'s files (one
- * directory, 8.3 names) that starts the computer the El Torito way: the
- * BIOS makes <boot.img>, a 1.44MB diskette image, drive A:.  The image
- * is a file on the disc as well.
+ * THE SECOND FORM writes an ISO9660 CD-ROM image of <dir> and the
+ * directories under it (8.3 names, eight levels) that starts the
+ * computer the El Torito way, as <boot> says: a .IMG of 1.2MB, 1.44MB
+ * or 2.88MB is a diskette the BIOS makes drive A:, any other .IMG a
+ * hard disk it makes drive 80h (an MBR with one partition), and any
+ * other file a loader the BIOS runs with no emulation - BOOTCD.BIN -
+ * with the boot information table filled in at its offset 8, as
+ * mkisofs -boot-info-table does.  <boot> is a file in the root as well.
  *
  * Built with:  wcl386 -q -bt=nt -fe=mksetup.exe mksetup.c
  *===================================================================*/
@@ -81,10 +91,12 @@ static char *section[16][MAXLINES];
 static int nsection[16];
 static const char *section_names[] = {
     "setup", "files", "config", "autoexec", "config.add", "config.remove",
-    "autoexec.remove", "floppy.config", "setup.config", "setup.autoexec"
+    "autoexec.remove", "floppy.config", "setup.config", "setup.autoexec",
+    "cd.config", "cd.autoexec"
 };
 enum { SEC_SETUP, SEC_FILES, SEC_CONFIG, SEC_AUTOEXEC, SEC_CFGADD,
-       SEC_CFGDROP, SEC_AUTODROP, SEC_FLCFG, SEC_SUCFG, SEC_SUAUTO, SEC_N };
+       SEC_CFGDROP, SEC_AUTODROP, SEC_FLCFG, SEC_SUCFG, SEC_SUAUTO,
+       SEC_CDCFG, SEC_CDAUTO, SEC_N };
 
 static char product[32] = "PM-DOS", dosdir[64] = "C:\\DOS", label[16] = "PM-DOS";
 static char version[16];
@@ -269,7 +281,8 @@ static void read_list(const char *path)
         next = strchr(line, '\n');
         if (next) *next++ = 0; else next = line + strlen(line);
         if (sec != SEC_CONFIG && sec != SEC_AUTOEXEC && sec != SEC_SUCFG &&
-            sec != SEC_SUAUTO && sec != SEC_FLCFG && sec != SEC_CFGADD) {
+            sec != SEC_SUAUTO && sec != SEC_FLCFG && sec != SEC_CFGADD &&
+            sec != SEC_CDCFG && sec != SEC_CDAUTO) {
             line = trim(line);
         } else {
             char *t = trim(line);
@@ -279,11 +292,16 @@ static void read_list(const char *path)
         if (!*line || *line == ';') continue;
         if (*line == '[') {
             char *e = strchr(line, ']');
-            if (e) *e = 0;
+            int was = sec;
             sec = -1;
-            for (i = 0; i < SEC_N; i++) if (!strcmp(line + 1, section_names[i])) sec = i;
-            if (sec < 0) die("unknown section", line);
-            continue;
+            for (i = 0; i < SEC_N; i++)
+                if (e && (size_t)(e - line - 1) == strlen(section_names[i]) &&
+                    !strncmp(line + 1, section_names[i], e - line - 1)) sec = i;
+            /* the CD's CONFIG.SYS has blocks of its own: a name in
+               brackets that is none of this file's is one of its lines */
+            if (sec < 0 && was == SEC_CDCFG) sec = was;
+            else if (sec < 0) die("unknown section", line);
+            else continue;
         }
         if (sec < 0) die("a line before any section", line);
         if (nsection[sec] >= MAXLINES) die("too many lines in", section_names[sec]);
@@ -473,7 +491,7 @@ static unsigned char *join_section(int sec, unsigned long *len)
 
 static void make_set(const char *outdir)
 {
-    char stage[300], path[400], line[400], tag[16];
+    char stage[300], cdroot[300], cdsys[310], path[400], line[400], tag[16];
     static char inf[60000];
     unsigned long len, used[16], i_used[16];
     int i, d, s;
@@ -586,6 +604,39 @@ static void make_set(const char *outdir)
         save(path, (unsigned char *)line, strlen(line));
     }
 
+    /* THE PM-DOS CD's tree, CD\.  Its root is the stage - Setup's source
+       with every disk's tag, and PMIO.SYS and PMDOS.SYS where the CD
+       loader looks for them - but with the disc's own CONFIG.SYS and
+       AUTOEXEC.BAT, which offer PM-DOS or Setup.  \PMDOS is everything
+       Setup installs, as it is, for PM-DOS started from the disc: the
+       boot code reads the two files in the root and nothing else. */
+    sprintf(cdroot, "%s\\CD", outdir);
+    mkdir(cdroot);
+    sprintf(cdsys, "%s\\PMDOS", cdroot);
+    mkdir(cdsys);
+    for (i = 0; i < nent; i++) {
+        sprintf(path, "%s\\%s", cdroot, ent[i].packed);
+        save(path, ent[i].data, ent[i].disksize);
+        if (!strcmp(ent[i].where, "DOS") || (!strcmp(ent[i].where, "ROOT") && !ent[i].first)) {
+            unsigned char *raw = load(ent[i].src, &len);
+            if (!raw || len != ent[i].size) die("cannot read", ent[i].src);
+            sprintf(path, "%s\\%s", cdsys, ent[i].name);
+            save(path, raw, len);
+            free(raw);
+        }
+    }
+    sprintf(path, "%s\\SETUP.INF", cdroot);
+    save(path, (unsigned char *)inf, strlen(inf));
+    sprintf(path, "%s\\CONFIG.SYS", cdroot);
+    { unsigned char *t = join_section(SEC_CDCFG, &len); save(path, t, len); }
+    sprintf(path, "%s\\AUTOEXEC.BAT", cdroot);
+    { unsigned char *t = join_section(SEC_CDAUTO, &len); save(path, t, len); }
+    for (d = 1; d <= ndisks; d++) {
+        sprintf(path, "%s\\DISK%d", cdroot, d);
+        sprintf(line, "%s %s Setup Disk #%d\r\n", product, version, d);
+        save(path, (unsigned char *)line, strlen(line));
+    }
+
     /* the commands that make the images */
     sprintf(path, "%s\\MKIMG.CMD", outdir);
     cmd = fopen(path, "wb");
@@ -615,8 +666,8 @@ static void make_set(const char *outdir)
             fprintf(cmd, " %s\\%s", stage, ent[i].packed);
         fprintf(cmd, "\r\n");
     }
-    fprintf(cmd, "TOOLS\\MKSETUP.EXE -iso %s\\SETUPCD.ISO %s\\DISK1.IMG %s \"PMDOS_%s\"\r\n",
-            outdir, outdir, stage, version);
+    fprintf(cmd, "TOOLS\\MKSETUP.EXE -iso %s\\PMDOSCD.ISO BIN\\BOOTCD.BIN %s \"PMDOS_%s\"\r\n",
+            outdir, cdroot, version);
     fclose(cmd);
 
     printf("%d disks, %d files (%s %s)\n", ndisks, nent, product, version);
@@ -662,14 +713,34 @@ static void pad(unsigned char *p, const char *text, int len)
     for (i = 0; i < len; i++) p[i] = (unsigned char)(i < n ? text[i] : ' ');
 }
 
+/* The disc is built from a directory tree on this machine, and every
+   name in it has to be one DOS could have made: 8.3, a directory name
+   without an extension, eight levels at most (ISO 9660 level 1). */
+#define CD_MAXFILES 1000
+#define CD_MAXDIRS  64
+#define CD_MAXDEPTH 8
+#define BOOTINFO    64              /* the boot information table ends here */
+
 typedef struct {
-    char name[16];                  /* NAME.EXT;1 */
-    char path[300];
+    char name[16];                  /* NAME.EXT;1, or a directory's NAME */
+    char path[300];                 /* where it is on this machine */
     unsigned long size, lba;
+    int parent;                     /* the cdd[] row it is in */
+    int isdir;
+    int sub;                        /* a directory: its own cdd[] row */
 } CDFILE;
 
-static CDFILE cdf[MAXFILES + 16];
+typedef struct {
+    char path[300];
+    int parent, depth;
+    int self;                       /* its cdf[] row; -1 for the root */
+    unsigned long lba, secs;
+} CDDIR;
+
+static CDFILE cdf[CD_MAXFILES];
 static int ncdf;
+static CDDIR cdd[CD_MAXDIRS];
+static int ncdd;
 
 static int cdcmp(const void *a, const void *b)
 {
@@ -678,10 +749,16 @@ static int cdcmp(const void *a, const void *b)
 
 static unsigned char stamp7[7];
 
+/* a directory record's length: 33 bytes and the name, made even */
+static int reclen(int nlen)
+{
+    return 33 + nlen + ((nlen & 1) ? 0 : 1);
+}
+
 static void dirrec(unsigned char *p, unsigned long lba, unsigned long size, int dir,
                    const char *name, int nlen)
 {
-    int len = 33 + nlen + ((nlen & 1) ? 0 : 1);
+    int len = reclen(nlen);
     memset(p, 0, len);
     p[0] = (unsigned char)len;
     both32(p + 2, lba);
@@ -693,114 +770,254 @@ static void dirrec(unsigned char *p, unsigned long lba, unsigned long size, int 
     memcpy(p + 33, name, nlen);
 }
 
-static void make_iso(const char *out, const char *bootimg, const char *dir, const char *vol)
+/* the name a file or a directory of this machine's has on the disc */
+static void cd_name(char *dst, const char *name, int dir)
 {
-    unsigned char *iso, *p;
-    unsigned long total, rootlba, rootsecs, at, cat, i, bootlba = 0, sum;
-    unsigned long rootbytes;
-    char path[400], spec[400], digits[20];
-    int k, n;
-    time_t now = time(NULL);
-    struct tm *tm = gmtime(&now);
-    FILE *f;
+    const char *dot = strchr(name, '.');
+    size_t len = strlen(name);
+
+    if (len > 12 || (dot && (dot - name > 8 || strlen(dot) > 4 || strchr(dot + 1, '.'))) ||
+        (!dot && len > 8) || (dir && dot))
+        die("not an 8.3 name, which the CD cannot hold", name);
+    base_name(dst, name);
+    if (!dir) {
+        if (!strchr(dst, '.')) strcat(dst, ".");
+        strcat(dst, ";1");
+    }
+}
+
+static void cd_add(int parent, const char *path, const char *name, unsigned long size, int dir)
+{
+    if (ncdf >= CD_MAXFILES) die("too many files for the CD", path);
+    if (strlen(path) + 1 > sizeof(cdf[0].path)) die("the path is too long", path);
+    cd_name(cdf[ncdf].name, name, dir);
+    strcpy(cdf[ncdf].path, path);
+    cdf[ncdf].size = dir ? 0 : size;
+    cdf[ncdf].parent = parent;
+    cdf[ncdf].isdir = dir;
+    cdf[ncdf].sub = -1;
+    ncdf++;
+}
+
+/* Every directory under <top>, breadth first, which is the order the
+   path tables want them in; each one's entries sorted by name, which
+   is the order its records want.  The boot file goes in the root. */
+static void cd_scan(const char *top, const char *boot, unsigned long bootsize)
+{
+    char spec[400], path[400], bname[16];
     struct _finddata_t fd;
     long h;
+    int k, i;
 
-    /* the files: the directory's, then the boot image */
-    if (strlen(dir) > 250) die("the directory's name is too long", dir);
-    sprintf(spec, "%s\\*.*", dir);
-    h = (long)_findfirst(spec, &fd);
-    if (h == -1) die("nothing in", dir);
-    do {
-        if (fd.attrib & _A_SUBDIR) continue;
-        if (ncdf >= MAXFILES + 15) die("too many files for the CD", NULL);
-        /* one directory of 8.3 names, which is all ISO9660 level 1 has */
-        {
-            const char *dot = strchr(fd.name, '.');
-            size_t len = strlen(fd.name);
-            if (len > 12 || (dot && (dot - fd.name > 8 || strlen(dot) > 4)) || (!dot && len > 8))
-                die("not an 8.3 name, which the CD cannot hold", fd.name);
-            if (strlen(dir) + len + 2 > sizeof(cdf[0].path)) die("the path is too long", dir);
+    if (strlen(top) + 1 > sizeof(cdd[0].path)) die("the path is too long", top);
+    strcpy(cdd[0].path, top);
+    cdd[0].parent = 0;
+    cdd[0].depth = 1;
+    cdd[0].self = -1;
+    ncdd = 1;
+    for (k = 0; k < ncdd; k++) {
+        int first = ncdf;
+        if (strlen(cdd[k].path) > 250) die("the directory's name is too long", cdd[k].path);
+        sprintf(spec, "%s\\*.*", cdd[k].path);
+        h = (long)_findfirst(spec, &fd);
+        if (h != -1) {
+            do {
+                if (!strcmp(fd.name, ".") || !strcmp(fd.name, "..")) continue;
+                if (strlen(fd.name) > 12) die("not an 8.3 name, which the CD cannot hold", fd.name);
+                sprintf(path, "%s\\%s", cdd[k].path, fd.name);
+                cd_add(k, path, fd.name, fd.size, (fd.attrib & _A_SUBDIR) != 0);
+            } while (_findnext(h, &fd) == 0);
+            _findclose(h);
         }
-        base_name(cdf[ncdf].name, fd.name);
-        if (!strchr(cdf[ncdf].name, '.')) strcat(cdf[ncdf].name, ".");
-        strcat(cdf[ncdf].name, ";1");
-        sprintf(cdf[ncdf].path, "%s\\%s", dir, fd.name);
-        cdf[ncdf].size = fd.size;
-        ncdf++;
-    } while (_findnext(h, &fd) == 0);
-    _findclose(h);
-    {
-        struct stat st;
-        if (stat(bootimg, &st) || st.st_size != 1474560L) die("the boot image is not a 1.44MB diskette", bootimg);
-        if (strlen(bootimg) + 1 > sizeof(cdf[0].path)) die("the path is too long", bootimg);
-        base_name(cdf[ncdf].name, bootimg);
-        strcat(cdf[ncdf].name, ";1");
-        strcpy(cdf[ncdf].path, bootimg);
-        cdf[ncdf].size = (unsigned long)st.st_size;
-        ncdf++;
+        if (k == 0) {
+            base_name(bname, boot);
+            cd_add(0, boot, bname, bootsize, 0);
+        }
+        qsort(cdf + first, ncdf - first, sizeof(CDFILE), cdcmp);
+        for (i = first + 1; i < ncdf; i++)
+            if (!strcmp(cdf[i].name, cdf[i - 1].name)) die("two files would share the name", cdf[i].name);
+        for (i = first; i < ncdf; i++) if (cdf[i].isdir) {
+            if (ncdd >= CD_MAXDIRS) die("too many directories for the CD", cdf[i].path);
+            if (cdd[k].depth >= CD_MAXDEPTH) die("more than eight levels of directories", cdf[i].path);
+            strcpy(cdd[ncdd].path, cdf[i].path);
+            cdd[ncdd].parent = k;
+            cdd[ncdd].depth = cdd[k].depth + 1;
+            cdd[ncdd].self = i;
+            cdf[i].sub = ncdd++;
+        }
     }
-    qsort(cdf, ncdf, sizeof(CDFILE), cdcmp);
+}
 
+/* how many blocks a directory's records take: none crosses a block */
+static unsigned long dir_secs(int k)
+{
+    unsigned long insec = 68, secs = 1;     /* "." and ".." */
+    int i;
+    for (i = 0; i < ncdf; i++) if (cdf[i].parent == k) {
+        int len = reclen((int)strlen(cdf[i].name));
+        if (insec + len > SEC2K) { secs++; insec = 0; }
+        insec += len;
+    }
+    return secs;
+}
+
+static void dir_write(unsigned char *iso, int k)
+{
+    unsigned char *p = iso + cdd[k].lba * SEC2K;
+    int up = cdd[k].parent, i;
+    unsigned long insec = 68, secno = 0;
+
+    dirrec(p, cdd[k].lba, cdd[k].secs * SEC2K, 1, "\0", 1);
+    dirrec(p + 34, cdd[up].lba, cdd[up].secs * SEC2K, 1, "\1", 1);
+    for (i = 0; i < ncdf; i++) if (cdf[i].parent == k) {
+        int nlen = (int)strlen(cdf[i].name);
+        int len = reclen(nlen);
+        unsigned long lba = cdf[i].isdir ? cdd[cdf[i].sub].lba : cdf[i].lba;
+        unsigned long size = cdf[i].isdir ? cdd[cdf[i].sub].secs * SEC2K : cdf[i].size;
+        if (insec + len > SEC2K) { secno++; insec = 0; }
+        dirrec(p + secno * SEC2K + insec, lba, size, cdf[i].isdir, cdf[i].name, nlen);
+        insec += len;
+    }
+}
+
+/* one path table, little-endian (be = 0) or big-endian, written at p
+   unless p is NULL; -> its length */
+static unsigned long path_table(unsigned char *p, int be)
+{
+    unsigned long at = 0;
+    int k;
+    for (k = 0; k < ncdd; k++) {
+        const char *name = k ? cdf[cdd[k].self].name : "\0";
+        int nlen = k ? (int)strlen(name) : 1;
+        unsigned up = (unsigned)cdd[k].parent + 1;
+        if (p) {
+            p[at] = (unsigned char)nlen;
+            p[at + 1] = 0;
+            if (be) {
+                put32be(p + at + 2, cdd[k].lba);
+                p[at + 6] = (unsigned char)(up >> 8);
+                p[at + 7] = (unsigned char)up;
+            } else {
+                put32le(p + at + 2, cdd[k].lba);
+                p[at + 6] = (unsigned char)up;
+                p[at + 7] = (unsigned char)(up >> 8);
+            }
+            memcpy(p + at + 8, name, nlen);
+        }
+        at += 8 + nlen + (nlen & 1);
+    }
+    return at;
+}
+
+/* -iso: the disc.  The boot file says how the BIOS starts it:
+     a .IMG of 1.2MB, 1.44MB or 2.88MB   that diskette, as drive A:
+     any other .IMG                      a hard disk, as drive 80h: an
+                                         MBR with one partition
+     anything else                       a loader, run as it is (no
+                                         emulation), with the boot
+                                         information table filled in */
+static void make_iso(const char *out, const char *boot, const char *dir, const char *vol)
+{
+    unsigned char *iso, *p, *bootdata;
+    unsigned long total, at, cat, ptlen, ptsecs, i, bootlba = 0, sum, bootsize;
+    char digits[20];
+    const char *ext;
+    int k, media, nsec, systype = 0;
+    time_t now = time(NULL);
+    struct tm lt, gt, *tm = &lt;
+    int gmtoff;
+    FILE *f;
+
+    bootdata = load(boot, &bootsize);
+    if (!bootdata) die("cannot read", boot);
+    ext = strrchr(boot, '.');
+    if (ext && (strchr(ext, '\\') || strchr(ext, '/'))) ext = NULL;
+    if (ext && !stricmp(ext, ".IMG")) {
+        nsec = 1;
+        if (bootsize == 1228800UL) media = 1;
+        else if (bootsize == 1474560UL) media = 2;
+        else if (bootsize == 2949120UL) media = 3;
+        else {
+            int used = 0;
+            media = 4;
+            if (bootsize < 512 || bootdata[510] != 0x55 || bootdata[511] != 0xAA)
+                die("the hard disk image has no master boot record", boot);
+            for (k = 0; k < 4; k++) if (bootdata[446 + k * 16 + 4]) {
+                used++;
+                systype = bootdata[446 + k * 16 + 4];
+            }
+            if (used != 1) die("the hard disk image must have one partition", boot);
+        }
+    } else {
+        media = 0;
+        if (bootsize < BOOTINFO || bootsize > 32768UL)
+            die("the loader must be 64 bytes to 32K", boot);
+        nsec = (int)((bootsize + 511) / 512);
+    }
+
+    cd_scan(dir, boot, bootsize);
+
+    /* LOCAL TIME, and how far it is from Greenwich in quarter hours,
+       which every date on the disc carries: a reader that ignores the
+       offset - PM-DOS's does - then shows the time the disc was made
+       as the clock in the room said it */
+    lt = *localtime(&now);
+    gt = *gmtime(&now);
+    gt.tm_isdst = lt.tm_isdst;
+    gmtoff = (int)(difftime(now, mktime(&gt)) / 900);
     stamp7[0] = (unsigned char)tm->tm_year; stamp7[1] = (unsigned char)(tm->tm_mon + 1);
     stamp7[2] = (unsigned char)tm->tm_mday; stamp7[3] = (unsigned char)tm->tm_hour;
     stamp7[4] = (unsigned char)tm->tm_min; stamp7[5] = (unsigned char)tm->tm_sec;
+    stamp7[6] = (unsigned char)(signed char)gmtoff;
 
-    /* the root's size: records do not cross a sector */
-    rootbytes = 0;
-    {
-        unsigned long insec = 68;           /* "." and ".." */
-        rootsecs = 1;
-        for (k = 0; k < ncdf; k++) {
-            int nlen = (int)strlen(cdf[k].name);
-            int len = 33 + nlen + ((nlen & 1) ? 0 : 1);
-            if (insec + len > SEC2K) { rootsecs++; insec = 0; }
-            insec += len;
-        }
-    }
     /* the layout: 16 empty, PVD 16, boot record 17, end 18, catalog 19,
-       path tables 20 and 21, root 22, then the files */
+       the two path tables, the directories, then the files */
     cat = 19;
-    rootlba = 22;
-    at = rootlba + rootsecs;
-    for (k = 0; k < ncdf; k++) {
+    ptlen = path_table(NULL, 0);
+    ptsecs = (ptlen + SEC2K - 1) / SEC2K;
+    at = 20 + 2 * ptsecs;
+    for (k = 0; k < ncdd; k++) {
+        cdd[k].secs = dir_secs(k);
+        cdd[k].lba = at;
+        at += cdd[k].secs;
+    }
+    for (k = 0; k < ncdf; k++) if (!cdf[k].isdir) {
         cdf[k].lba = at;
         at += (cdf[k].size + SEC2K - 1) / SEC2K;
-        if (!strcmp(cdf[k].path, bootimg)) bootlba = cdf[k].lba;
+        if (!strcmp(cdf[k].path, boot)) bootlba = cdf[k].lba;
     }
     total = at;
     iso = calloc(total, SEC2K);
     if (!iso) die("out of memory", NULL);
 
     /* the files */
-    for (k = 0; k < ncdf; k++) {
+    for (k = 0; k < ncdf; k++) if (!cdf[k].isdir) {
         unsigned long len;
         unsigned char *data = load(cdf[k].path, &len);
         if (!data) die("cannot read", cdf[k].path);
+        if (len != cdf[k].size) die("a file changed while the CD was made", cdf[k].path);
         memcpy(iso + cdf[k].lba * SEC2K, data, len);
         free(data);
     }
 
-    /* the root */
-    p = iso + rootlba * SEC2K;
-    dirrec(p, rootlba, rootsecs * SEC2K, 1, "\0", 1);
-    dirrec(p + 34, rootlba, rootsecs * SEC2K, 1, "\1", 1);
-    {
-        unsigned long insec = 68, secno = 0;
-        for (k = 0; k < ncdf; k++) {
-            int nlen = (int)strlen(cdf[k].name);
-            int len = 33 + nlen + ((nlen & 1) ? 0 : 1);
-            if (insec + len > SEC2K) { secno++; insec = 0; }
-            dirrec(p + secno * SEC2K + insec, cdf[k].lba, cdf[k].size, 0, cdf[k].name, nlen);
-            insec += len;
-        }
+    /* a loader's boot information table, as mkisofs -boot-info-table
+       writes it: the PVD's block, the loader's own, its length, and a
+       sum of its dwords from byte 64 on */
+    if (media == 0) {
+        p = iso + bootlba * SEC2K;
+        put32le(p + 8, 16);
+        put32le(p + 12, bootlba);
+        put32le(p + 16, bootsize);
+        sum = 0;
+        for (i = BOOTINFO; i < bootsize; i += 4)
+            sum += p[i] | (p[i + 1] << 8) | ((unsigned long)p[i + 2] << 16) |
+                   ((unsigned long)p[i + 3] << 24);
+        put32le(p + 20, sum);
     }
 
-    /* the path tables: the root alone */
-    p = iso + 20 * SEC2K;
-    p[0] = 1; put32le(p + 2, rootlba); p[6] = 1;
-    p = iso + 21 * SEC2K;
-    p[0] = 1; put32be(p + 2, rootlba); p[7] = 1;
+    for (k = 0; k < ncdd; k++) dir_write(iso, k);
+    path_table(iso + 20 * SEC2K, 0);
+    path_table(iso + (20 + ptsecs) * SEC2K, 1);
 
     /* the primary volume descriptor */
     p = iso + 16 * SEC2K;
@@ -811,19 +1028,19 @@ static void make_iso(const char *out, const char *bootimg, const char *dir, cons
     both16(p + 120, 1);
     both16(p + 124, 1);
     both16(p + 128, (unsigned)SEC2K);
-    both32(p + 132, 10);
+    both32(p + 132, ptlen);
     put32le(p + 140, 20);
-    put32be(p + 148, 21);
-    dirrec(p + 156, rootlba, rootsecs * SEC2K, 1, "\0", 1);
+    put32be(p + 148, 20 + ptsecs);
+    dirrec(p + 156, cdd[0].lba, cdd[0].secs * SEC2K, 1, "\0", 1);
     pad(p + 190, "", 128);
     pad(p + 318, "PM-DOS", 128);
     pad(p + 446, "", 128);
-    pad(p + 574, "PM-DOS SETUP", 128);
+    pad(p + 574, "PM-DOS", 128);
     pad(p + 702, "", 37); pad(p + 739, "", 37); pad(p + 776, "", 37);
     sprintf(digits, "%04d%02d%02d%02d%02d%02d00", tm->tm_year + 1900, tm->tm_mon + 1,
             tm->tm_mday, tm->tm_hour, tm->tm_min, tm->tm_sec);
-    memcpy(p + 813, digits, 16); p[829] = 0;
-    memcpy(p + 830, digits, 16); p[846] = 0;
+    memcpy(p + 813, digits, 16); p[829] = (unsigned char)(signed char)gmtoff;
+    memcpy(p + 830, digits, 16); p[846] = (unsigned char)(signed char)gmtoff;
     memset(p + 847, '0', 16); p[863] = 0;
     memset(p + 864, '0', 16); p[880] = 0;
     p[881] = 1;
@@ -838,7 +1055,7 @@ static void make_iso(const char *out, const char *bootimg, const char *dir, cons
 
     p = iso + cat * SEC2K;
     p[0] = 1;                       /* validation entry, x86 */
-    memcpy(p + 4, "PM-DOS SETUP", 12);
+    memcpy(p + 4, "PM-DOS", 6);
     p[30] = 0x55; p[31] = 0xAA;
     sum = 0;
     for (i = 0; i < 32; i += 2) sum += p[i] | (p[i + 1] << 8);
@@ -846,14 +1063,19 @@ static void make_iso(const char *out, const char *bootimg, const char *dir, cons
     p[28] = (unsigned char)sum; p[29] = (unsigned char)(sum >> 8);
     p += 32;                        /* the initial entry */
     p[0] = 0x88;                    /* bootable */
-    p[1] = 2;                       /* a 1.44MB diskette */
-    p[6] = 1;                       /* one 512-byte sector: the BIOS reads */
-    put32le(p + 8, bootlba);        /* the rest itself as drive A: */
+    p[1] = (unsigned char)media;
+    p[4] = (unsigned char)systype;  /* a hard disk image's partition type */
+    p[6] = (unsigned char)nsec;     /* 512-byte sectors the BIOS loads: one */
+    p[7] = (unsigned char)(nsec >> 8); /* of an image, all of a loader */
+    put32le(p + 8, bootlba);
 
     f = fopen(out, "wb");
     if (!f || fwrite(iso, SEC2K, total, f) != total || fclose(f)) die("cannot write", out);
-    n = ncdf;
-    printf("%s: %lu sectors, %d files, boots %s\n", out, total, n, bootimg);
+    printf("%s: %lu sectors, %d files in %d directories, boots %s (%s)\n", out, total,
+           ncdf - (ncdd - 1), ncdd, boot,
+           media == 0 ? "no emulation" : media == 4 ? "a hard disk image" : "a diskette image");
+    free(iso);
+    free(bootdata);
 }
 
 /*---------------------------------------------------------------------*/
@@ -866,7 +1088,7 @@ int main(int argc, char **argv)
     if (argc != 3) {
         fprintf(stderr,
             "usage: mksetup <list> <outdir>        the Setup disks (from the tree's top)\n"
-            "       mksetup -iso <out.iso> <boot.img> <dir> [label]\n");
+            "       mksetup -iso <out.iso> <boot> <dir> [label]\n");
         return 1;
     }
     read_version();

@@ -5853,6 +5853,7 @@ Uses part of the computer's memory as a disk drive.
 \bSyntax\p
 
     DEVICE=[drive:][path]RAMDISK.SYS [size [sector-size [entries]]] [/E | /A]
+           [/L:x]
 
 \bParameters\p
 
@@ -5880,6 +5881,10 @@ entries
 /A
     For backwards compatibility only.  Has no effect under PM-DOS.
 
+/L:x
+    The drive letter to use.  If another drive already has the letter,
+    the RAM disk gets the next free drive letter.
+
 \bRelated Commands\p
 
 RAMDISK.SYS is loaded with <\aDEVICE=\vDEVICE=\v>.  Each DEVICE= line makes one
@@ -5896,8 +5901,9 @@ more RAM disk.
  
 \bThe drive letter\p
 
-The RAM disk gets the next free drive letter.  RAMDISK.SYS shows the
-letter and the size when CONFIG.SYS runs.
+The RAM disk gets the next free drive letter, or the letter /L:
+names.  RAMDISK.SYS shows the letter and the size when CONFIG.SYS
+runs.
 
 \bMemory\p
 
@@ -6585,7 +6591,7 @@ drive:
 
 /G
     Uses a VGA graphics screen instead of text mode.  The disk is drawn
-    as a pie chart there.
+    as a pie chart.
 
 \bRelated Commands\p
 
@@ -7574,6 +7580,11 @@ RMCD.SYS is an ordinary file: SYS does not copy it, COPY does, and
 without it only the CD-ROM under Windows is missing.  The disc's
 file names are displayed in 8.3 format.  Other CD-ROM drives are
 not shown under Windows.
+
+\bStarting from a CD-ROM\p
+
+When PM-DOS is started from a CD-ROM, the drive it was started from
+gets this letter, and the other CD-ROM drives follow it.
  
                                      
 .context CDROM=--Examples

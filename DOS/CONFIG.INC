@@ -1458,6 +1458,11 @@ ci32_go:
 ; A letter that is already a hard disk is not stolen - the drive falls
 ; back to where the scan would have put it - because a CONFIG.SYS line
 ; should not be able to make a partition unreachable.
+;
+; AFTER A START FROM A CD, the drive started from takes this letter and
+; the others follow it (dac_unit), and the boot letter moves with it
+; (boot_follow): CONFIG.SYS has been read whole by now, so nothing is
+; left open on the old letter.
 ;---------------------------------------------------------------------
 cfg_cdrom:
         mov     al,[esi]

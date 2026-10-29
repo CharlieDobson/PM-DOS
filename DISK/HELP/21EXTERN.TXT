@@ -723,6 +723,7 @@ Uses part of the computer's memory as a disk drive.
 {b}Syntax{p}
 
     DEVICE=[drive:][path]RAMDISK.SYS [size [sector-size [entries]]] [/E | /A]
+           [/L:x]
 
 {b}Parameters{p}
 
@@ -750,6 +751,10 @@ entries
 /A
     For backwards compatibility only.  Has no effect under PM-DOS.
 
+/L:x
+    The drive letter to use.  If another drive already has the letter,
+    the RAM disk gets the next free drive letter.
+
 {b}Related Commands{p}
 
 RAMDISK.SYS is loaded with [[DEVICE=]].  Each DEVICE= line makes one
@@ -757,8 +762,9 @@ more RAM disk.
 #notes
 {b}The drive letter{p}
 
-The RAM disk gets the next free drive letter.  RAMDISK.SYS shows the
-letter and the size when CONFIG.SYS runs.
+The RAM disk gets the next free drive letter, or the letter /L:
+names.  RAMDISK.SYS shows the letter and the size when CONFIG.SYS
+runs.
 
 {b}Memory{p}
 

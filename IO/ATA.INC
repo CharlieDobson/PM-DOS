@@ -862,16 +862,31 @@ awd_ok:
 ;
 ; Hard disks are handed out in probe order, so BIOS 80h is the first
 ; ATA disk found (normally the primary master), 81h the next.
+;
+; UNLESS THE MACHINE STARTED FROM A CD THAT EMULATES A HARD DISK: the
+; BIOS's 80h is then the disc's image and its own disks are 81h and up
+; (GV_HDEMU, which IORM set), so the first ATA disk is 81h and 80h is
+; left to the BIOS path in BLOCK.INC, which reads the image.
+;
+; NOTHING AT USB_DRV0 OR ABOVE.  Those numbers are the USB units', and
+; blk_read asks this driver first: a third IDE disk, or a second one
+; moved up by an image, would have answered for USB unit 0.
 ;=====================================================================
 ata_slot:
         push    eax
         push    ebx
         push    ecx
 
-        cmp     al,80h
-        jb      as_bad
+        cmp     al,USB_DRV0
+        jae     as_bad
         movzx   ebx,al
         sub     ebx,80h                 ; EBX = which hard disk is wanted
+        jb      as_bad
+        cmp     byte ptr ds:[GV_HDEMU],0
+        je      as_numbered
+        sub     ebx,1                   ; 80h is the image, not ours
+        jb      as_bad
+as_numbered:
 
         xor     ecx,ecx                 ; ECX = devices scanned
         mov     esi,OFFSET ata_devs

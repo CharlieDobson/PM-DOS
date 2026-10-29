@@ -442,6 +442,25 @@ a20_ok:
         call    get_e820
         call    get_extmem
 
+;--- a hard disk image on a CD?  (GV_HDEMU, PMDOS.INC) ---------------
+        cmp     byte ptr [v_bootdrv],80h
+        jne     no_hdemu
+        mov     ax,4B01h                ; El Torito: what are you emulating?
+        mov     dl,80h
+        mov     si,OFFSET v_edp         ; DS = CS; nothing uses it yet
+        mov     byte ptr [v_edp],13h    ; the packet's size, which some
+                                        ; BIOSes look at before filling it
+        int     13h
+        jc      no_hdemu
+        mov     al,[v_edp+ET_MEDIA]
+        and     al,0Fh
+        cmp     al,ET_MEDIA_HD
+        jne     no_hdemu
+        cmp     byte ptr [v_edp+ET_DRIVE],80h
+        jne     no_hdemu
+        mov     byte ptr [v_hdemu],1
+no_hdemu:
+
 ;--- unreal mode, so we can write above 1M while still in real mode ---
         call    go_unreal
 
@@ -783,6 +802,9 @@ gu2:
 ; some BIOSes restore FS from the real-mode value on the way out.
 ;=====================================================================
 load_dos:
+        cmp     byte ptr [v_cdboot],0   ; a CD start: BOOTCD.ASM read
+        jne     ld_cdboot               ; PMDOS.SYS and set v_dossize, as
+                                        ; there is no FAT here to walk
         push    es
 
         mov     al,[v_bootdrv]
@@ -870,6 +892,7 @@ ENDIF
 
 ld_done:
         pop     es
+ld_cdboot:
         ret
 
 ld_diskerr:
@@ -1519,6 +1542,15 @@ v_brgentry dd  0                        ; GV_BRGENTRY: brg_entry, for the VxD
         ORG     GV_OFF + 0E8h
 v_box1b    db  GVB_NONE                 ; GV_BOX1B: a DOS box, and a Break
                                         ; owed to its INT 1Bh (KEYBD.INC)
+
+        ORG     GVO_CDBOOT
+v_cdboot   db  0                        ; GV_CDBOOT: BOOTCD.ASM loaded
+v_cdstamp  db  CDSTAMP_LEN dup(0)       ; PMDOS.SYS, and GV_CDSTAMP is the
+                                        ; disc it came from - both written
+                                        ; into this image by the CD loader
+        ORG     GVO_HDEMU
+v_hdemu    db  0                        ; GV_HDEMU: BIOS 80h is a disk image
+                                        ; on the CD the machine started from
 
 ;=====================================================================
 ; Pad the stub to exactly RMSTUB_SIZE so IOPM.BIN lands at IO_PM_BASE.

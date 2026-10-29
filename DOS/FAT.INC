@@ -400,10 +400,19 @@ cda_out:
 
 msgCdDrive  db  'CD-ROM drive detected as '
 msgCdLetter db  'D:',13,10,0
+msgBootCd   db  'Cannot find the CD-ROM drive PM-DOS started from',13,10,0
 
 ;---------------------------------------------------------------------
 ; drv_dropcds - take the letters back from the CD-ROMs, and drv_count
 ;               down to the highest letter still in use.
+;
+; AND WHATEVER WAS MOUNTED UNDER THEM.  A letter's mount is parked in
+; its vol_slots row, keyed by the letter and not by the drive, so a CD
+; that had been read before CDROM= moved the drives left its mount
+; behind for whichever drive took the letter next - and that drive was
+; then read with the first disc's directory and extents.  A start from
+; a CD makes this certain rather than possible: the disc is read for
+; CONFIG.SYS before CDROM= is.  fat_ok is the first byte of a row.
 ;---------------------------------------------------------------------
 drv_dropcds:
         pushad
@@ -417,6 +426,14 @@ ddc_clear:
         jz      ddc_clnext
         mov     byte ptr [ebx+DRV_FLAGS],0
         mov     byte ptr [ebx+DRV_BIOS],0
+        cmp     al,[cur_vol]
+        jne     ddc_parked
+        mov     byte ptr [fat_ok],0     ; the loaded one
+        jmp     short ddc_clnext
+ddc_parked:
+        imul    eax,VOL_STATE_SIZE
+        add     eax,[vol_slotp]
+        mov     byte ptr [eax],0        ; a parked one
 ddc_clnext:
         inc     ebp
         jmp     short ddc_clear
@@ -465,7 +482,7 @@ drv_addcds:
         jz      dac_none
         mov     [cd_units],cl
 
-        xor     ebp,ebp                         ; EBP = the unit
+        xor     ebp,ebp                         ; EBP = which CD letter, in order
 dac_loop:
         cmp     ebp,ecx
         jae     dac_none
@@ -483,7 +500,7 @@ dac_loop:
         test    byte ptr [ebx+DRV_FLAGS],DRVF_PRESENT
         jnz     dac_next_free                   ; taken: fall back
         mov     byte ptr [ebx+DRV_FLAGS],DRVF_PRESENT OR DRVF_CDROM
-        mov     edx,ebp                         ; no bpl in 32-bit code
+        call    dac_unit                        ; EDX = the unit for this letter
         mov     [ebx+DRV_BIOS],dl
         mov     byte ptr [ebx+DRV_TYPE],0
         mov     byte ptr [ebx+DRV_PIDX],0FFh
@@ -505,7 +522,7 @@ dac_next_free:
         jae     dac_none
         call    drv_slot
         mov     byte ptr [ebx+DRV_FLAGS],DRVF_PRESENT OR DRVF_CDROM
-        mov     edx,ebp                         ; no bpl in 32-bit code
+        call    dac_unit                        ; EDX = the unit for this letter
         mov     [ebx+DRV_BIOS],dl
         mov     byte ptr [ebx+DRV_TYPE],0
         mov     byte ptr [ebx+DRV_PIDX],0FFh
@@ -517,7 +534,32 @@ dac_step:
         inc     ebp
         jmp     dac_loop
 dac_none:
+        call    boot_follow                     ; a start from a CD: its letter
         popad
+        ret
+
+;---------------------------------------------------------------------
+; dac_unit - EBP = which CD-ROM letter, counting from the first ->
+;            EDX = the ATAPI unit that gets it.
+;
+; The drive the machine started from comes first (boot_cd, set by
+; boot_find), so that CDROM= in CONFIG.SYS names the start-up disc
+; whichever cable it is on, and the rest keep their order behind it.
+; With no such drive the units are taken as they were found.
+;---------------------------------------------------------------------
+dac_unit:
+        mov     edx,ebp
+        cmp     byte ptr [boot_cd],0FFh
+        je      dcu_out
+        or      edx,edx
+        jnz     dcu_later
+        mov     dl,[boot_cd]            ; the first letter: the start-up drive
+        ret
+dcu_later:
+        cmp     dl,[boot_cd]
+        ja      dcu_out                 ; behind it: in place
+        dec     edx                     ; before it: one along
+dcu_out:
         ret
 
 ;---------------------------------------------------------------------
@@ -1621,6 +1663,195 @@ ENDIF
         pop     edx
         pop     ecx
         pop     ebx
+        ret
+
+;=====================================================================
+; THE LETTER THE MACHINE STARTED FROM.
+;
+; boot_find - once, from dos_entry, after disk_scan: -> AL = the boot
+;             letter (0 = A:), also kept in boot_vol.
+;
+; A START FROM A DISKETTE OR A HARD DISK is the BIOS's drive number
+; turned into a letter, as it always was (bios2log).  That includes a
+; CD that emulates one: the BIOS calls its image 00h or 80h and reads
+; it for us.
+;
+; A START FROM A CD WITH NO EMULATION (BOOT\BOOTCD.ASM, GV_CDBOOT) has
+; a drive number the BIOS made up - E0h on most - and nothing in this
+; kernel knows which drive that is.  The IDE driver numbers its CD-ROMs
+; in the order it found them, and the BIOS's El Torito status call
+; describes the drive as a controller and a device in terms each BIOS
+; chooses for itself.  So the disc says instead: the loader copied the
+; volume's creation stamp out of its primary descriptor, and the drive
+; whose disc carries the same stamp is the one.  Two drives holding
+; copies of one disc would both do; the first is taken.
+;
+; That drive is then given the first CD-ROM letter (dac_unit), and the
+; letter follows it whenever the CD-ROMs are placed again: CDROM= in
+; CONFIG.SYS, a rescan, a SCSI card's drives (boot_follow).
+;=====================================================================
+boot_find:
+        cmp     byte ptr ds:[GV_CDBOOT],0
+        je      bf_bios
+        pushad
+        xor     ebp,ebp                 ; EBP = the unit
+bf_unit:
+        movzx   eax,byte ptr [cd_units]
+        cmp     ebp,eax
+        jae     bf_none
+        mov     eax,ebp
+        call    dword ptr ds:[IOS_CDINFO]       ; ready, with retries
+        jc      bf_next
+        mov     ebx,ISO_PVDBLK          ; the descriptors, as the loader
+bf_desc:                                ; read them: the first of type 1
+        push    ebx
+        mov     eax,ebp
+        mov     ecx,1
+        mov     edi,OFFSET iso_buf
+        call    dword ptr ds:[IOS_CDREAD]
+        pop     ebx
+        jc      bf_next
+        cmp     dword ptr [iso_buf+1],30304443h ; "CD00"
+        jne     bf_next
+        cmp     byte ptr [iso_buf+5],'1'
+        jne     bf_next
+        cmp     byte ptr [iso_buf],1
+        je      bf_pvd
+        cmp     byte ptr [iso_buf],0FFh ; the set ends with no primary
+        je      bf_next
+        inc     ebx
+        cmp     ebx,ISO_PVDBLK + 32
+        jb      bf_desc
+        jmp     short bf_next
+bf_pvd:
+        mov     esi,OFFSET iso_buf + CDSTAMP_PVD
+        mov     edi,GV_CDSTAMP
+        mov     ecx,CDSTAMP_LEN
+        repe    cmpsb
+        je      bf_found
+bf_next:
+        inc     ebp
+        jmp     bf_unit
+
+bf_found:
+        call    iso_forget              ; iso_buf was read behind its back
+        mov     edx,ebp
+        mov     [boot_cd],dl
+        call    drv_addcds              ; that drive first, and boot_follow
+        popad                           ; gives boot_vol its letter
+        cmp     byte ptr [boot_cd],0FFh
+        je      bf_bios                 ; it got none: out of letters
+        mov     al,[boot_vol]
+        ret
+
+bf_none:
+        call    iso_forget
+        mov     esi,OFFSET msgBootCd
+        call    dword ptr ds:[IOS_CONSTR]
+        popad
+bf_bios:
+        mov     al,byte ptr ds:[GV_BOOTDRV]
+        call    bios2log
+        call    boot_setletter
+        ret
+
+;---------------------------------------------------------------------
+; boot_follow - the CD-ROMs have just been given letters (drv_addcds).
+;               After a start from one, the boot letter goes with it.
+;
+; A CD drive left without a letter (more drives than letters) keeps
+; boot_vol where it was and gives up being the boot drive, so nothing
+; after this goes looking for a letter that is not there.
+;---------------------------------------------------------------------
+boot_follow:
+        cmp     byte ptr [boot_cd],0FFh
+        je      bfl_out
+        push    eax
+        mov     al,[boot_cd]
+        call    cd_unitslot
+        jc      bfl_lost
+        call    boot_setletter
+        pop     eax
+bfl_out:
+        ret
+bfl_lost:
+        mov     byte ptr [boot_cd],0FFh
+        pop     eax
+        ret
+
+;---------------------------------------------------------------------
+; cd_unitslot - AL = an ATAPI unit -> AL = the letter it has (0 = A:).
+;               CF if it has none.  A mounted .ISO is not a drive and
+;               is passed over.
+;---------------------------------------------------------------------
+cd_unitslot:
+        push    ebx
+        push    ecx
+        push    edx
+        mov     cl,al
+        xor     eax,eax
+cus_lp:
+        cmp     eax,MAX_DRIVES
+        jae     cus_none
+        call    drv_slot
+        mov     dl,[ebx+DRV_FLAGS]
+        and     dl,DRVF_PRESENT OR DRVF_CDROM OR DRVF_IMAGE
+        cmp     dl,DRVF_PRESENT OR DRVF_CDROM
+        jne     cus_next
+        cmp     [ebx+DRV_BIOS],cl
+        je      cus_found
+cus_next:
+        inc     eax
+        jmp     short cus_lp
+cus_none:
+        stc
+cus_found:                              ; CF clear from the CMP that matched
+        pop     edx
+        pop     ecx
+        pop     ebx
+        ret
+
+;---------------------------------------------------------------------
+; boot_setletter - AL = the boot letter from now on (0 = A:).
+;
+; Everything that holds the boot letter as a letter, moved together:
+; boot_vol, which 21h/3305h and the Windows hand-over read; the list of
+; lists' byte, which DOS programs read; the interpreter's names, which
+; the shell is reloaded from; and the default drive, if it was standing
+; on the old letter.  Only what still says the OLD letter is changed -
+; SHELL=E:\X.EXE that somebody typed is theirs.
+;
+; The mount is not touched: drv_dropcds already took it back from the
+; old letter, and the new one mounts the disc the first time it is read.
+;---------------------------------------------------------------------
+boot_setletter:
+        push    eax
+        push    edx
+        mov     dl,[boot_vol]           ; DL = the old letter
+        mov     [boot_vol],al
+        mov     dh,al
+        inc     dh
+        mov     byte ptr ds:[DOSDATA + GLOL_BOOTDRV],dh ; 1 = A:
+        cmp     [cur_drive],dl
+        jne     bsl_names
+        mov     [cur_drive],al
+bsl_names:
+        add     al,'A'
+        add     dl,'A'
+        cmp     [shell_name],dl
+        jne     bsl_dflt
+        mov     [shell_name],al
+bsl_dflt:
+        cmp     [shell_dflt],dl
+        jne     bsl_old
+        mov     [shell_dflt],al
+bsl_old:
+        cmp     [shell_old],dl
+        jne     bsl_out
+        mov     [shell_old],al
+bsl_out:
+        pop     edx
+        pop     eax
         ret
 
 ;=====================================================================
@@ -3959,6 +4190,10 @@ cd_units    db  0                       ; ATAPI units the scan found
 cd_letter   db  0                       ; CDROM= in CONFIG.SYS: the letter the
                                         ; first one takes, 1 = A.  Zero means
                                         ; "after the disks, wherever that is"
+boot_vol    db  0                       ; the letter the machine started
+                                        ; from, 0 = A: (boot_find)
+boot_cd     db  0FFh                    ; and the ATAPI unit, when that was
+                                        ; a CD with no emulation; FFh if not
 ds_disk     db  0                       ; the disk disk_scan is walking
 ds_taken    db  MAX_PHYS dup(0)         ; which primary pass 1 claimed
             db  0,0,0,0

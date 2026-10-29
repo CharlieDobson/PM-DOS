@@ -2321,6 +2321,34 @@ dur_out:
         ret
 
 ;---------------------------------------------------------------------
+; dl_freemask - EBP = every drive letter no volume has, bit 0 = A:, for
+;               a disk driver's INIT to choose from (NDU_WANT).  Zero
+;               when the units table is full, as then no letter can be
+;               given at all.  Everything else preserved.
+;---------------------------------------------------------------------
+dl_freemask:
+        push    eax
+        push    ebx
+        xor     ebp,ebp
+        cmp     dword ptr [dl_nunits],DLU_MAX
+        jae     dfm_out
+        mov     eax,MAX_DRIVES - 1
+dfm_lp:
+        call    drv_slot
+        shl     ebp,1
+        test    byte ptr [ebx+DRV_FLAGS],DRVF_PRESENT
+        jnz     dfm_taken
+        or      ebp,1
+dfm_taken:
+        dec     eax
+        jns     dfm_lp
+dfm_out:
+        pop     ebx
+        pop     eax
+        ret
+.ERRE   MAX_DRIVES LE 32, <dl_freemask keeps a letter a bit>
+
+;---------------------------------------------------------------------
 ; dl_ndunits - a 32-bit disk driver's INIT has come back CF clear
 ;              (NDLOAD.INC).  ESI -> its row in nd_tab.  Give each unit
 ;              its table names a drive letter.  CF if none got one.
@@ -2418,6 +2446,36 @@ dnu_row:
         mov     [eax+DLU_IO],edx
         mov     [eax+DLU_REC],edi
 
+        ; THE LETTER THE UNIT ASKED FOR (NDU_WANT, 1 = A:), if no volume
+        ; has it; the next free one if it is taken or nothing was asked.
+        ; The row is filled in as drv_add fills one, and drv_count is
+        ; the high-water mark, which a letter far out can be past - as
+        ; CDROM= can (drv_addcds).
+        movzx   eax,byte ptr [edi+NDU_WANT]
+        dec     eax                     ; 0, "no wish", wraps past the top
+        cmp     eax,MAX_DRIVES
+        jae     dnu_nextfree
+        push    ebx
+        call    drv_slot                ; EBX = that row
+        test    byte ptr [ebx+DRV_FLAGS],DRVF_PRESENT
+        jnz     dnu_taken
+        mov     edx,[dl_nunits]
+        add     edx,DL_UNIT_BASE
+        mov     [ebx+DRV_BIOS],dl       ; the pseudo number, as below
+        mov     byte ptr [ebx+DRV_TYPE],0
+        mov     byte ptr [ebx+DRV_FLAGS],DRVF_PRESENT
+        mov     byte ptr [ebx+DRV_PIDX],0FFh
+        mov     dword ptr [ebx+DRV_START],0
+        mov     [ebx+DRV_SECS],ecx
+        pop     ebx
+        lea     edx,[eax+1]
+        cmp     dl,[drv_count]
+        jbe     dnu_lettered
+        mov     [drv_count],dl
+        jmp     short dnu_lettered
+dnu_taken:
+        pop     ebx
+dnu_nextfree:
         push    ebx                     ; and a letter, ECX sectors long
         mov     eax,[dl_nunits]
         add     eax,DL_UNIT_BASE        ; AL = the pseudo number, AH = no
@@ -2428,6 +2486,7 @@ dnu_row:
         jc      dnu_done                ; out of letters
         movzx   eax,byte ptr [drv_count]        ; the row it just took
         dec     eax
+dnu_lettered:
         mov     [edi+NDU_LETTER],al
         imul    eax,DRV_LEN
         add     eax,OFFSET drv_tbl

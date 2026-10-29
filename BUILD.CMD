@@ -33,6 +33,7 @@ rem     MBRBOOT.BIN  512-byte master boot record
 rem     BOOT16.BIN   FAT16 volume boot record  (hard-disk stage 1)
 rem     BOOT32.BIN   FAT32 volume boot record  (hard-disk stage 1)
 rem     BOOT2.BIN    hard-disk stage 2 - the FAT-walking loader
+rem     BOOTCD.BIN   the CD-ROM loader (El Torito, no emulation)
 rem     PMIO.SYS     real-mode stub (4K) + protected-mode body
 rem     PMDOS.SYS    the 32-bit DOS kernel
 rem     SYS16.COM    16-bit SYS - builds a PM-DOS disk from real DOS
@@ -414,8 +415,13 @@ wasm -q -dFAT32BOOT -i=..\INC boothd.asm        || goto :fail
 wlink form raw bin option offset=0x0 name ..\BIN\BOOT32.BIN file boothd.obj || goto :fail
 wasm -q -i=..\INC boot2.asm                     || goto :fail
 wlink form raw bin option offset=0x8000 name ..\BIN\BOOT2.BIN file boot2.obj || goto :fail
+wasm -q -i=..\INC bootcd.asm                    || goto :fail
+wlink form raw bin option offset=0x0 name ..\BIN\BOOTCD.BIN file bootcd.obj || goto :fail
 cd ..
 for %%F in (BIN\BOOT.BIN BIN\BOOT16.BIN BIN\BOOT32.BIN BIN\MBRBOOT.BIN) do TOOLS\FSIZE.EXE -eq 512 %%F || goto :fail
+rem The CD loader is one 2048-byte block of the disc: the catalog asks
+rem the BIOS for four sectors and the loader reads that block itself.
+TOOLS\FSIZE.EXE -max 2048 BIN\BOOTCD.BIN "the CD loader is one block" || goto :fail
 
 echo === PMIO.SYS ===
 cd IO
@@ -2527,7 +2533,11 @@ rem 1.44MB disks and writes STAGE\ (every disk's files in one directory,
 rem SETUP.INF among them - a CD or a network directory is that) and
 rem MKIMG.CMD, which makes DISK1.IMG on, SETUPUSB.IMG and SETUPZIP.IMG
 rem (bootable hard-disk images for a USB stick and a Zip disk) and
-rem SETUPCD.ISO (a CD that starts from DISK1.IMG, El Torito).
+rem PMDOSCD.ISO: the PM-DOS CD, which starts from BIN\BOOTCD.BIN with
+rem no emulation and offers PM-DOS from the disc or Setup.  Its tree is
+rem CD\ - the stage in the root and every file Setup installs, unpacked,
+rem in \PMDOS.  It took the place of SETUPCD.ISO, which started from
+rem DISK1.IMG as drive A:.
 rem MKIMG.CMD has no "goto :eof" - NT 3.51 has none - so what it was to
 rem make is deleted first and looked for afterwards.
 echo === the Setup disks (IMAGES\SETUP) ===
@@ -2535,12 +2545,14 @@ if not exist IMAGES\SETUP\nul mkdir IMAGES\SETUP
 if exist IMAGES\SETUP\*.IMG del /q IMAGES\SETUP\*.IMG
 if exist IMAGES\SETUP\*.ISO del /q IMAGES\SETUP\*.ISO
 if exist IMAGES\SETUP\STAGE\*.* del /q IMAGES\SETUP\STAGE\*.*
+if exist IMAGES\SETUP\CD\PMDOS\*.* del /q IMAGES\SETUP\CD\PMDOS\*.*
+if exist IMAGES\SETUP\CD\*.* del /q IMAGES\SETUP\CD\*.*
 TOOLS\MKSETUP.EXE DISK\SETUP.LST IMAGES\SETUP   || goto :fail
 call IMAGES\SETUP\MKIMG.CMD
 if not exist IMAGES\SETUP\DISK1.IMG goto :fail
 if not exist IMAGES\SETUP\SETUPUSB.IMG goto :fail
 if not exist IMAGES\SETUP\SETUPZIP.IMG goto :fail
-if not exist IMAGES\SETUP\SETUPCD.ISO goto :fail
+if not exist IMAGES\SETUP\PMDOSCD.ISO goto :fail
 
 echo.
 echo Build OK.

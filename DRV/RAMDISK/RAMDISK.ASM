@@ -2,7 +2,7 @@
 ; RAMDISK.ASM - RAMDISK.SYS, a RAM disk: memory above the megabyte
 ;               made into a drive letter
 ;
-;   DEVICE=RAMDISK.SYS [size [sector-size [entries]]] [/E | /A]
+;   DEVICE=RAMDISK.SYS [size [sector-size [entries]]] [/E | /A] [/L:x]
 ;
 ;   size          kilobytes, 4 to 2096896; 64 if it is not given.  A
 ;                 bigger number is cut to the largest FAT16 volume
@@ -15,6 +15,11 @@
 ;   /E, /A        extended or expanded memory, which on PM-DOS are the
 ;                 same memory.  Taken and ignored, so that a line
 ;                 written for MS-DOS's RAMDRIVE.SYS works as it stands
+;   /L:x          the drive letter x, if no other drive has it; the
+;                 next free one if it is taken or past the kernel's
+;                 last letter, as without /L:.  It is how a CONFIG.SYS
+;                 that has to work on any machine - a start-up CD's -
+;                 can say TEMP=N:\ and know N: is it
 ;
 ; THE DISK IS ONE BLOCK OF THE KERNEL'S ARENA, taken at INIT through
 ; NDS_ALLOC and never given back, so neither a program's exit nor the
@@ -150,9 +155,11 @@ rd_init:
         mov     [services],esi
         mov     [room],ecx
         mov     [letter],bl
+        mov     [freemask],ebp          ; before rd_parse, which counts in EBP
         mov     esi,edx
         call    rd_parse
         jc      rii_refuse              ; rd_parse said why
+        call    rd_want                 ; /L:, if it was there
         cmp     dword ptr [room],0
         je      rii_noletter
         call    rd_geometry
@@ -209,6 +216,41 @@ rii_refuse:
         ret
 
 ;=====================================================================
+; rd_want - /L:x was on the line ([want], 1 = A:).  The kernel said at
+;           INIT which letters are free (EBP, kept in [freemask]): one
+;           of those is asked for in the unit's NDU_WANT and becomes
+;           the letter the message names.  One that is taken, or past
+;           the kernel's last letter (never in the mask), is reported
+;           and the disk takes the next free letter, as without /L:.
+;=====================================================================
+rd_want:
+        movzx   eax,byte ptr [want]
+        or      eax,eax
+        jz      rw_out
+        dec     eax
+        bt      dword ptr [freemask],eax
+        jnc     rw_taken
+        mov     [letter],al
+        inc     eax
+        mov     byte ptr [unit+NDU_WANT],al
+        mov     dword ptr [room],1      ; a free letter is room, even past
+rw_out:                                 ; the last one in use
+        ret
+rw_taken:
+        push    eax
+        mov     edi,OFFSET textbuf
+        mov     esi,OFFSET msg_inuse
+        call    rd_cat                  ; uses AL
+        pop     eax
+        add     al,'A'
+        stosb
+        mov     esi,OFFSET msg_inuse2
+        call    rd_cat
+        mov     esi,OFFSET textbuf
+        call    rd_say
+        ret
+
+;=====================================================================
 ; rd_parse - ESI -> the DEVICE= line: the path and what follows it,
 ;            ended by CR (or LF, or a zero).  Sets [kb] and [entries].
 ;            CF, with the word it did not like printed, if the line is
@@ -240,7 +282,7 @@ rp_next:
         je      rp_secsize
         cmp     ebp,2
         je      rp_entries
-        jmp     short rp_bad            ; a fourth number
+        jmp     rp_bad                  ; a fourth number
 
 rp_size:
         cmp     eax,RD_KBMIN
@@ -260,7 +302,7 @@ rp_secsize:
         je      rp_took
         cmp     eax,1024
         je      rp_took
-        jmp     short rp_bad
+        jmp     rp_bad
 rp_entries:
         cmp     eax,RD_ENTMIN
         jb      rp_bad
@@ -274,12 +316,29 @@ rp_took:
 rp_switch:
         mov     al,[esi+1]
         or      al,20h
+        cmp     al,'l'
+        je      rp_letter
         cmp     al,'e'
         je      rp_swok
         cmp     al,'a'
         jne     rp_bad
 rp_swok:
         add     esi,2
+        call    rd_atblank
+        jnz     rp_bad
+        jmp     rp_next
+
+rp_letter:                              ; /L:x, a letter A to Z
+        cmp     byte ptr [esi+2],':'
+        jne     rp_bad
+        mov     al,[esi+3]
+        and     al,0DFh                 ; a to z as A to Z; anything else
+        sub     al,'A'                  ; lands outside them
+        cmp     al,26
+        jae     rp_bad
+        inc     al
+        mov     [want],al               ; 1 = A:, as NDU_WANT counts
+        add     esi,4
         call    rd_atblank
         jnz     rp_bad
         jmp     rp_next
@@ -624,6 +683,8 @@ msg_crlf    db  13,10,0
 msg_badparm db  'RAMDISK.SYS: invalid parameter - ',0
 msg_noletter db 'RAMDISK.SYS: no drive letter is left',13,10,0
 msg_nomem   db  'RAMDISK.SYS: not enough memory for ',0
+msg_inuse   db  'RAMDISK.SYS: drive ',0
+msg_inuse2  db  ': cannot be used',13,10,0
 
 services    dd  0
 room        dd  0
@@ -635,9 +696,11 @@ spc         dd  0
 spf         dd  0
 base        dd  0                       ; where they are
 tokstart    dd  0
+freemask    dd  0                       ; the letters free at INIT, bit 0 = A:
 letter      db  0
 fat16       db  0
-            db  0, 0
+want        db  0                       ; /L:, 1 = A:; 0 = not given
+            db  0
 textbuf     db  80 dup(0)
 
 _RD     ENDS

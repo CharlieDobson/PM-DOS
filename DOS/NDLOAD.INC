@@ -307,6 +307,7 @@ ndl_entnext:
         mov     eax,[ebx+NDT_INIT]
         mov     [nd_callee],eax
         call    dl_unitroom             ; -> ECX letters left, EBX the next
+        call    dl_freemask             ; -> EBP the letters free, by bit
         mov     esi,OFFSET nds_table
         mov     edx,OFFSET dl_line
         cld
