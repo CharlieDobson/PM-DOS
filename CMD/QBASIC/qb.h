@@ -11,7 +11,7 @@
  *   NUM.C    numbers to text and back, PRINT USING
  *   QSTR.C   string values and the string functions
  *   RTLIB.C  the other runtime routines: numbers, data, arrays, memory
- *   CON.C    the program's own screen in text: PRINT, INPUT, the keys
+ *   CONS.C   the program's own screen in text: PRINT, INPUT, the keys
  *   GFX.C    the graphics modes: a picture in memory and its drawing
  *   DRAW.C   CIRCLE, PAINT, DRAW, GET and PUT
  *   SND.C    SOUND, PLAY and BEEP

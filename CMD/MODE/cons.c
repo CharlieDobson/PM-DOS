@@ -1,5 +1,5 @@
 /*
- * CON.C - MODE CON and the display words: the screen's columns and
+ * CONS.C - MODE CON and the display words: the screen's columns and
  * lines, the adapter, the keyboard's repeat, and the screen's status.
  *
  * WITH ANSI.SYS LOADED, the columns and lines go through it as they

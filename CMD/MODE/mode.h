@@ -6,7 +6,7 @@
  *   SCAN.C   the command line, split the way MS-DOS's parser split it,
  *            and the error messages that name a piece of it
  *   COM.C    the serial ports            LPT.C   the printer ports
- *   CON.C    the screen and keyboard     CP.C    code pages
+ *   CONS.C   the screen and keyboard     CP.C    code pages
  */
 #ifndef MODE_H
 #define MODE_H
@@ -157,7 +157,7 @@ void lpt_reset( int unit );
 void lpt_route( const REQ *rq );
 void lpt_status( int unit );
 
-/* CON.C */
+/* CONS.C */
 int  con_parse( SCAN *sc, REQ *rq );
 int  display_parse( SCAN *sc, REQ *rq, int mode );
 void con_set( const REQ *rq );

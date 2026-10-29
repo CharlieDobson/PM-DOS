@@ -17778,6 +17778,17 @@ TESTS.IMG, HD16.IMG (the three by FATREPL), the five Setup images, and
 the four images into the 86Box VM.
 
 
+CON.C IS CONS.C (2026-10-28)
+---------------------------------------------------------------------
+
+Charlie: "Can we change con.c if it is a reserved name so that we can
+get it commited?"  Git for Windows will not open a file named CON, so
+CMD\MODE\con.c and CMD\QBASIC\con.c showed as changed forever and
+"git add -A" stopped at them.  Both are CONS.C now (the con_ names
+inside stay), with BUILD.CMD, MKHOST.CMD and the comments that list
+the files.  MODE.EXE and QBASIC.EXE build to the same bytes from
+either name.
+
 EL TORITO: STARTING FROM A CD-ROM (2026-10-28)
 ---------------------------------------------------------------------
 

@@ -1,5 +1,5 @@
 /*
- * CON.C - the program's own screen in text, its keyboard, and the PRINT
+ * CONS.C - the program's own screen in text, its keyboard, and the PRINT
  * family's layout.
  *
  * THE OUTPUT SCREEN IS KEPT HERE, in memory, page by page: a program

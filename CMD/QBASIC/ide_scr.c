@@ -4,7 +4,7 @@
  * the runs of cells that changed), with QBasic's colours and two things
  * EDIT has no need of:
  *
- *   The program's screen.  A running program draws through CON.C and
+ *   The program's screen.  A running program draws through CONS.C and
  *   GFX.C straight to the hardware, so when the editor comes back what
  *   it last sent is not what is there: scr_invalidate() says so, and the
  *   next flush sends every cell.

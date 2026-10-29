@@ -910,13 +910,13 @@ wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 main.c    || goto :fail
 wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 scan.c    || goto :fail
 wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 com.c     || goto :fail
 wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 lpt.c     || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 con.c     || goto :fail
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 cons.c    || goto :fail
 wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 cp.c      || goto :fail
 wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 msg.c     || goto :fail
 wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 rt.c      || goto :fail
 wcc386 -q -bt=dos -mf -3r -s -zl -zld -os -w4 -we -zp4 sys_d32.c || goto :fail
 wlink form raw bin option offset=0x2000 name ..\..\BIN\MODE.EXE ^
-    file dosint.obj,main.obj,scan.obj,com.obj,lpt.obj,con.obj,cp.obj,msg.obj,rt.obj,sys_d32.obj ^
+    file dosint.obj,main.obj,scan.obj,com.obj,lpt.obj,cons.obj,cp.obj,msg.obj,rt.obj,sys_d32.obj ^
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
 cd ..\..
 rem DEBUG is C with DOSINT.ASM's thunks (INT 21h/25h/26h, IN, OUT, a ^C
@@ -997,9 +997,9 @@ cd CMD\QBASIC
 wasm -q -dD32 -i=..\..\INC dosint.asm           || goto :fail
 wasm -q jmp.asm                                 || goto :fail
 wasm -q -fpi87 fpu.asm                          || goto :fail
-for %%M in (main rt mem num bigdec lex list csym cexpr comp vm qstr rtlib con using file gfx draw snd mach doc prog sys_d32 ide_dlgs ide_help ide_scr ide_ui ide_view) do wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -fpi87 %%M.c || goto :fail
+for %%M in (main rt mem num bigdec lex list csym cexpr comp vm qstr rtlib cons using file gfx draw snd mach doc prog sys_d32 ide_dlgs ide_help ide_scr ide_ui ide_view) do wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -fpi87 %%M.c || goto :fail
 wlink form raw bin option offset=0x2000 name ..\..\BIN\QBASIC.EXE ^
-    file dosint.obj,main.obj,rt.obj,mem.obj,num.obj,bigdec.obj,lex.obj,list.obj,csym.obj,cexpr.obj,comp.obj,vm.obj,qstr.obj,rtlib.obj,con.obj,using.obj,file.obj,gfx.obj,draw.obj,snd.obj,mach.obj,doc.obj,prog.obj,sys_d32.obj,ide_dlgs.obj,ide_help.obj,ide_scr.obj,ide_ui.obj,ide_view.obj,jmp.obj,fpu.obj ^
+    file dosint.obj,main.obj,rt.obj,mem.obj,num.obj,bigdec.obj,lex.obj,list.obj,csym.obj,cexpr.obj,comp.obj,vm.obj,qstr.obj,rtlib.obj,cons.obj,using.obj,file.obj,gfx.obj,draw.obj,snd.obj,mach.obj,doc.obj,prog.obj,sys_d32.obj,ide_dlgs.obj,ide_help.obj,ide_scr.obj,ide_ui.obj,ide_view.obj,jmp.obj,fpu.obj ^
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
 cd ..\..
 rem FC is C, one file and its startup:

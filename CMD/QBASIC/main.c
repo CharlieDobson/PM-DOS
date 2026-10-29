@@ -7,7 +7,7 @@
  * THE SCREEN IS QBASIC 1.1's: the menu bar, the program's window with
  * the Immediate window under it, the status line with the cursor's line
  * and column at the right; the help window above them when it is open.
- * A run puts the program's own screen up (CON.C and GFX.C keep it in
+ * A run puts the program's own screen up (CONS.C and GFX.C keep it in
  * memory the whole time, so F4 can show it again) and the editor comes
  * back when the program ends, stops or fails.
  *
