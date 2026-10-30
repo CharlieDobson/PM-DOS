@@ -12,6 +12,7 @@
  * ========================================================================== */
 #include "socklib.h"
 #include "smbsrv.h"
+#include "netbios.h"
 
 /* the little C runtime SMBSRV.C needs (like the driver's DRVRT) */
 void *memcpy( void *to, const void *from, unsigned len )
@@ -222,32 +223,240 @@ static const srv_vfs DOSVFS = {
 static int srv_send( void *ctx, const unsigned char *buf, int len ) { return sl_send( (int)ctx, buf, (u32)len, 15000 ); }
 static int srv_recv( void *ctx, unsigned char *buf, int len ) { return sl_recvwait( (int)ctx, buf, (u32)len, 30000 ); }
 
+/* ====================================================================== */
+/* the transport over NetBEUI (NETBEUI.SYS, on its row: 21h/F1h AL=25h)  */
+/* ====================================================================== */
+
+/* SMBSRV.C speaks NetBIOS over TCP: a 4-byte header on every message.
+   A NetBEUI session keeps the messages whole, so the header is taken off
+   what goes and made from the length of what comes */
+
+#define NB_PIECE 1024
+
+static int nb_row = -1;                 /* NETBEUI.SYS's row, or -1 */
+
+static u32 nbc( u32 fn, void *buf, u32 len, int *err )
+{
+    REGS regs;
+
+    sl_memzero( &regs, sizeof( regs ) );
+    regs.eax = ( (u32)NDF_CALL << 16 ) | 0xF125;
+    regs.edx = (u32)nb_row;
+    regs.ebx = fn;
+    regs.ecx = len;
+    regs.edi = (u32)buf;
+    int21( &regs );
+    *err = CF( regs ) ? (int)( regs.eax & 0xFFFF ) : 0;
+    return *err ? 0 : regs.eax;
+}
+
+/* the row of a loaded NETBEUI.SYS, or -1 */
+static int nb_find_row( void )
+{
+    REGS regs;
+    ND_ROW row;
+    u32 count, i;
+
+    sl_memzero( &regs, sizeof( regs ) );
+    regs.eax = ( (u32)NDF_COUNT << 16 ) | 0xF125;
+    int21( &regs );
+    if ( CF( regs ) ) return -1;
+    count = regs.ecx;
+    for ( i = 0; i < count; i++ ) {
+        sl_memzero( &regs, sizeof( regs ) );
+        regs.eax = ( (u32)NDF_INFO << 16 ) | 0xF125;
+        regs.edx = i;
+        regs.edi = (u32)&row;
+        regs.ecx = sizeof( row );
+        int21( &regs );
+        if ( !CF( regs ) && ( row.flags & NDTF_NETBIOS ) ) return (int)i;
+    }
+    return -1;
+}
+
+static u32 nb_state( u32 h, NB_STAT *st )
+{
+    int err;
+    sl_memzero( st, NBSTAT_LEN );
+    st->handle = h;
+    nbc( NB_STATE, st, NBSTAT_LEN, &err );
+    return err ? NBX_FAIL : st->state;
+}
+
+typedef struct {
+    u32           h;
+    unsigned char pend[4];
+    int           pendn, pendoff;
+    u32           left;
+} nbconn;
+
+static int nb_send( void *ctx, const unsigned char *buf, int len )
+{
+    nbconn *c = (nbconn *)ctx;
+    unsigned char out[NBIO_HDR + NB_PIECE];
+    NB_IO *io = (NB_IO *)out;
+    NB_STAT st;
+    u32 plen, n, got, start = sl_now();
+    const unsigned char *p;
+    int err;
+
+    if ( len < 4 ) return -1;
+    if ( buf[0] != 0x00 ) return len;   /* 0x82 and keepalives: not on NetBEUI */
+    plen = ( (u32)( buf[1] & 1 ) << 16 ) | ( (u32)buf[2] << 8 ) | buf[3];
+    if ( (u32)len != 4 + plen ) return -1;
+    p = buf + 4;
+    do {
+        n = plen > NB_PIECE ? NB_PIECE : plen;
+        io->handle = c->h;
+        io->len = n;
+        sl_memcpy( out + NBIO_HDR, p, n );
+        for ( ;; ) {
+            got = nbc( n == plen ? NB_SEND : NB_SENDP, out, NBIO_HDR + n, &err );
+            if ( err ) return -1;
+            if ( got ) break;
+            if ( nb_state( c->h, &st ) != NBX_UP || sl_since( start ) > 1500 ) return -1;
+        }
+        p += n;
+        plen -= n;
+    } while ( plen );
+    return len;
+}
+
+static int nb_recv( void *ctx, unsigned char *buf, int len )
+{
+    nbconn *c = (nbconn *)ctx;
+    unsigned char in[NBIO_HDR + NB_PIECE];
+    NB_IO *io = (NB_IO *)in;
+    NB_STAT st;
+    u32 n, start = sl_now();
+    int err;
+
+    if ( len <= 0 ) return 0;
+    if ( c->pendoff == c->pendn && c->left == 0 ) {
+        for ( ;; ) {                    /* the next message */
+            if ( nb_state( c->h, &st ) != NBX_UP && st.rxready == 0 ) return 0;
+            if ( st.rxready ) break;
+            if ( sl_since( start ) > 30000 ) return 0;
+        }
+        n = st.rxready;
+        c->pend[0] = 0x00;
+        c->pend[1] = (unsigned char)( ( n >> 16 ) & 1 );
+        c->pend[2] = (unsigned char)( n >> 8 );
+        c->pend[3] = (unsigned char)n;
+        c->pendn = 4;
+        c->pendoff = 0;
+        c->left = n;
+    }
+    if ( c->pendoff < c->pendn ) {
+        n = (u32)( c->pendn - c->pendoff );
+        if ( n > (u32)len ) n = (u32)len;
+        sl_memcpy( buf, c->pend + c->pendoff, n );
+        c->pendoff += (int)n;
+        return (int)n;
+    }
+    n = c->left < (u32)len ? c->left : (u32)len;
+    if ( n > NB_PIECE ) n = NB_PIECE;
+    io->handle = c->h;
+    io->len = 0;
+    n = nbc( NB_RECV, in, NBIO_HDR + n, &err );
+    if ( err ) return -1;
+    sl_memcpy( buf, in + NBIO_HDR, n );
+    c->left -= n;
+    return (int)n;
+}
+
+/* a listen on our server name, <20> */
+static u32 nb_listen( void )
+{
+    NB_NAMEREQ req;
+    int err;
+    u32 h;
+
+    sl_memzero( &req, NBNAME_LEN );
+    req.suffix = 0x20;
+    h = nbc( NB_LISTEN, &req, NBNAME_LEN, &err );
+    return err ? 0 : h;
+}
+
 void __cdecl dos_entry( void )
 {
     char **argv;
-    int    argc, lh, nh;
+    int    argc, lh = 0, nh, tcp, err;
     dosfs  fs;
-    u32    peer_ip;
+    u32    peer_ip, nbh = 0;
     u16    peer_port;
+    NB_STAT st;
+    NB_IF nbif;
 
     argc = sl_args( &argv );
     sl_strcpy( fs.root, ( argc >= 1 && argv[0][0] ) ? argv[0] : "C:\\", sizeof( fs.root ) );
 
-    if ( !sl_up( 8000 ) ) { sl_puts( "SMBSRV: the network is not up.\r\n" ); sl_flush(); return; }
-    lh = sl_open( SOCK_STREAM );
-    if ( lh == 0 ) { sl_puts( "SMBSRV: no socket.\r\n" ); sl_flush(); return; }
-    if ( !sl_listen( lh, 139 ) ) { sl_puts( "SMBSRV: cannot listen on 139.\r\n" ); sl_flush(); return; }
+    nb_row = nb_find_row();
+    tcp = sl_up( nb_row >= 0 ? 300 : 8000 );    /* no TCP/IP loaded: at once */
+    if ( !tcp && nb_row < 0 ) { sl_puts( "SMBSRV: the network is not up.\r\n" ); sl_flush(); return; }
 
-    sl_puts( "SMBSRV: sharing " ); sl_puts( fs.root ); sl_puts( " on port 139.  Ctrl-Break to stop.\r\n" );
+    /* the computer's NetBIOS name (TCPIP.SYS /NAME=, else NETBEUI.SYS's),
+       for SESSION_SETUP */
+    if ( tcp ) {
+        SOCK_IF info;
+        REGS regs;
+        sl_memzero( &info, SOCKIF_LEN2 );
+        sl_memzero( &regs, sizeof( regs ) );
+        regs.eax = ( (u32)SOCK_IFSTAT << 16 ) | 0xF126;
+        regs.ecx = SOCKIF_LEN2;
+        regs.edi = (u32)&info;
+        int21( &regs );
+        if ( !CF( regs ) && info.nbname[0] ) sl_strcpy( smbsrv_name, info.nbname, sizeof( smbsrv_name ) );
+    }
+    if ( nb_row >= 0 ) {
+        sl_memzero( &nbif, NBIF_LEN );
+        nbc( NB_IFSTAT, &nbif, NBIF_LEN, &err );
+        if ( err || !nbif.up ) nb_row = -1;
+        else if ( !tcp || sl_strcmp( smbsrv_name, "PMDOS" ) == 0 ) sl_strcpy( smbsrv_name, nbif.name, sizeof( smbsrv_name ) );
+    }
+
+    if ( tcp ) {
+        lh = sl_open( SOCK_STREAM );
+        if ( lh == 0 || !sl_listen( lh, 139 ) ) { sl_puts( "SMBSRV: cannot listen on port 139.\r\n" ); tcp = 0; }
+    }
+    if ( nb_row >= 0 ) {
+        nbh = nb_listen();
+        if ( nbh == 0 ) { sl_puts( "SMBSRV: cannot listen on NetBEUI.\r\n" ); nb_row = -1; }
+    }
+    if ( !tcp && nb_row < 0 ) { sl_flush(); return; }
+
+    sl_puts( "SMBSRV: sharing " ); sl_puts( fs.root );
+    sl_puts( " as \\\\" ); sl_puts( smbsrv_name );
+    sl_puts( tcp && nb_row >= 0 ? " on TCP/IP and NetBEUI" : tcp ? " on TCP/IP" : " on NetBEUI" );
+    sl_puts( ".  Ctrl-Break to stop.\r\n" );
     sl_flush();
 
     for ( ;; ) {
-        nh = sl_accept( lh, &peer_ip, &peer_port, 2000 );
-        if ( nh == 0 ) { if ( sl_kbhit() ) break; continue; }
-        sl_puts( "SMBSRV: client " ); sl_putip( peer_ip ); sl_puts( " connected.\r\n" ); sl_flush();
-        smbsrv_serve( srv_send, srv_recv, (void *)nh, &DOSVFS, &fs, "PMSHARE" );
-        sl_sclose( nh );
-        sl_puts( "SMBSRV: client done.\r\n" ); sl_flush();
+        if ( tcp ) {
+            nh = sl_accept( lh, &peer_ip, &peer_port, nb_row >= 0 ? 20 : 2000 );
+            if ( nh ) {
+                sl_puts( "SMBSRV: client " ); sl_putip( peer_ip ); sl_puts( " connected.\r\n" ); sl_flush();
+                smbsrv_serve( srv_send, srv_recv, (void *)nh, &DOSVFS, &fs, "PMSHARE" );
+                sl_sclose( nh );
+                sl_puts( "SMBSRV: client done.\r\n" ); sl_flush();
+            }
+        }
+        if ( nb_row >= 0 && nb_state( nbh, &st ) != NBX_LISTEN ) {
+            if ( st.state == NBX_UP ) {
+                nbconn c;
+                sl_memzero( &c, sizeof( c ) );
+                c.h = nbh;
+                sl_puts( "SMBSRV: NetBEUI client connected.\r\n" ); sl_flush();
+                smbsrv_serve( nb_send, nb_recv, (void *)&c, &DOSVFS, &fs, "PMSHARE" );
+                sl_puts( "SMBSRV: client done.\r\n" ); sl_flush();
+            }
+            nbc( NB_HANGUP, &nbh, sizeof( nbh ), &err );
+            nbh = nb_listen();
+            if ( nbh == 0 ) { sl_puts( "SMBSRV: cannot listen on NetBEUI.\r\n" ); nb_row = -1; }
+        }
+        if ( sl_kbhit() ) break;
+        if ( !tcp && nb_row < 0 ) break;
     }
-    sl_sclose( lh );
+    if ( tcp ) sl_sclose( lh );
+    if ( nb_row >= 0 && nbh ) nbc( NB_HANGUP, &nbh, sizeof( nbh ), &err );
 }

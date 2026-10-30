@@ -10,46 +10,47 @@ menu, or press F1.  To leave, press ALT, F, X.
 
 <\aAbout PM-DOS\vAbout PM-DOS\v>
 
-<\aAcroread\vACROREAD\v>                 <\aEcho\vECHO\v>                     <\aPath\vPATH\v>
-<\aAhci\vAHCI=\v>                     <\aEdit\vEDIT\v>                     <\aPause\vPAUSE\v>
-<\aAnsi.sys\vANSI.SYS\v>                 <\aEms\vEMS=\v>                      <\aPmd\vPMD\v>
-<\aAttrib\vATTRIB\v>                   <\aExit\vEXIT\v>                     <\aPrompt\vPROMPT\v>
-<\aAutocheck\vAUTOCHECK=\v>                <\aFc\vFC\v>                       <\aQbasic\vQBASIC\v>
-<\aBatch\vBatch Commands\v>                    <\aFcbs\vFCBS=\v>                     <\aRamdisk.sys\vRAMDISK.SYS\v>
-<\aBreak\vBREAK\v>                    <\aFdisk\vFDISK\v>                    <\aRd\vRD\v>
-<\aBreak (CONFIG.SYS)\vBREAK=\v>       <\aFiles\vFILES=\v>                    <\aRem\vREM\v>
-<\aBuffers\vBUFFERS=\v>                  <\aFind\vFIND\v>                     <\aRen\vREN\v>
-<\aCache\vCACHE\v>                    <\aFor\vFOR\v>                      <\aScandisk\vSCANDISK\v>
-<\aCache (CONFIG.SYS)\vCACHE=\v>       <\aFormat\vFORMAT\v>                   <\aScsi\vSCSI=\v>
-<\aCall\vCALL\v>                     <\aGoto\vGOTO\v>                     <\aSet\vSET\v>
-<\aCd\vCD\v>                       <\aHelp\vHELP\v>                     <\aSet (CONFIG.SYS)\vSET=\v>
-<\aCdex\vCDEX\v>                     <\aIde32\vIDE32=\v>                    <\aSetup\vSETUP\v>
-<\aCdrom\vCDROM=\v>                    <\aIdecable\vIDECABLE=\v>                 <\aSetver\vSETVER\v>
-<\aChcp\vCHCP\v>                     <\aIdedma\vIDEDMA=\v>                   <\aShare\vSHARE=\v>
-<\aChkdsk\vCHKDSK\v>                   <\aIf\vIF\v>                       <\aShell\vSHELL=\v>
-<\aChoice\vCHOICE\v>                   <\aInclude\vINCLUDE=\v>                  <\aShift\vSHIFT\v>
-<\aCls\vCLS\v>                      <\aInstall\vINSTALL=\v>                  <\aShutdown\vSHUTDOWN\v>
-<\aCmd\vCMD\v>                      <\aInstallhigh\vINSTALLHIGH=\v>              <\aSort\vSORT\v>
-<\aCommand\vCOMMAND\v>                  <\aInternational\vInternational Commands\v>            <\aStacks\vSTACKS=\v>
-<\aCONFIG\vCONFIG.SYS Commands\v>                   <\aIsapnp\vISAPNP\v>                   <\aStarting\vStarting PM-DOS\v>
-<\aCopy\vCOPY\v>                     <\aKeyb\vKEYB\v>                     <\aSubmenu\vSUBMENU=\v>
-<\aCountry\vCOUNTRY=\v>                  <\aKeyrate\vKEYRATE=\v>                  <\aSwitches\vSWITCHES=\v>
-<\aCtty\vCTTY\v>                     <\aLabel\vLABEL\v>                    <\aSys\vSYS\v>
-<\aDate\vDATE\v>                     <\aLastdrive\vLASTDRIVE=\v>                <\aTime\vTIME\v>
-<\aDebug\vDEBUG\v>                    <\aLfn\vLFN=\v>                      <\aTree\vTREE\v>
-<\aDefrag\vDEFRAG\v>                   <\aLoadhigh\vLOADHIGH\v>                 <\aTreeView\vTREEVIEW\v>
-<\aDel\vDEL\v>                      <\aMd\vMD\v>                       <\aType\vTYPE\v>
-<\aDeltree\vDELTREE\v>                  <\aMem\vMEM\v>                      <\aUndelete\vUNDELETE\v>
-<\aDevice\vDEVICE=\v>                   <\aMenucolor\vMENUCOLOR=\v>                <\aUndelete (CONFIG.SYS)\vUNDELETE=\v>
-<\aDevicehigh\vDEVICEHIGH=\v>               <\aMenudefault\vMENUDEFAULT=\v>              <\aUsb\vUSB\v>
-<\aDir\vDIR\v>                      <\aMenuitem\vMENUITEM=\v>                 <\aUsb (CONFIG.SYS)\vUSB=\v>
-<\aDiskcomp\vDISKCOMP\v>                 <\aMode\vMODE\v>                     <\aVer\vVER\v>
-<\aDiskcopy\vDISKCOPY\v>                 <\aMore\vMORE\v>                     <\aVerify\vVERIFY\v>
-<\aDos\vDOS=\v>                      <\aMount\vMOUNT\v>                    <\aVol\vVOL\v>
-<\aDoskey\vDOSKEY\v>                   <\aMove\vMOVE\v>                     <\aWincache\vWINCACHE=\v>
-<\aDosshell\vDOSSHELL\v>                 <\aMulti-config\vMultiple Configurations\v>             <\aXarc\vXARC\v>
-<\aDpmi\vDPMI=\v>                     <\aNulltrap\vNULLTRAP=\v>                 <\aXcopy\vXCOPY\v>
-<\aDrivparm\vDRIVPARM=\v>                 <\aNumlock\vNUMLOCK=\v>
+<\aAcroread\vACROREAD\v>                 <\aEdit\vEDIT\v>                     <\aPath\vPATH\v>
+<\aAhci\vAHCI=\v>                     <\aEms\vEMS=\v>                      <\aPause\vPAUSE\v>
+<\aAnsi.sys\vANSI.SYS\v>                 <\aExit\vEXIT\v>                     <\aPing\vPING\v>
+<\aAttrib\vATTRIB\v>                   <\aFc\vFC\v>                       <\aPmd\vPMD\v>
+<\aAutocheck\vAUTOCHECK=\v>                <\aFcbs\vFCBS=\v>                     <\aPrompt\vPROMPT\v>
+<\aBatch\vBatch Commands\v>                    <\aFdisk\vFDISK\v>                    <\aQbasic\vQBASIC\v>
+<\aBreak\vBREAK\v>                    <\aFiles\vFILES=\v>                    <\aRamdisk.sys\vRAMDISK.SYS\v>
+<\aBreak (CONFIG.SYS)\vBREAK=\v>       <\aFind\vFIND\v>                     <\aRd\vRD\v>
+<\aBuffers\vBUFFERS=\v>                  <\aFor\vFOR\v>                      <\aRem\vREM\v>
+<\aCache\vCACHE\v>                    <\aFormat\vFORMAT\v>                   <\aRen\vREN\v>
+<\aCache (CONFIG.SYS)\vCACHE=\v>       <\aGoto\vGOTO\v>                     <\aScandisk\vSCANDISK\v>
+<\aCall\vCALL\v>                     <\aHelp\vHELP\v>                     <\aScsi\vSCSI=\v>
+<\aCd\vCD\v>                       <\aIde32\vIDE32=\v>                    <\aSet\vSET\v>
+<\aCdex\vCDEX\v>                     <\aIdecable\vIDECABLE=\v>                 <\aSet (CONFIG.SYS)\vSET=\v>
+<\aCdrom\vCDROM=\v>                    <\aIdedma\vIDEDMA=\v>                   <\aSetup\vSETUP\v>
+<\aChcp\vCHCP\v>                     <\aIf\vIF\v>                       <\aSetver\vSETVER\v>
+<\aChkdsk\vCHKDSK\v>                   <\aInclude\vINCLUDE=\v>                  <\aShare\vSHARE=\v>
+<\aChoice\vCHOICE\v>                   <\aInstall\vINSTALL=\v>                  <\aShell\vSHELL=\v>
+<\aCls\vCLS\v>                      <\aInstallhigh\vINSTALLHIGH=\v>              <\aShift\vSHIFT\v>
+<\aCmd\vCMD\v>                      <\aInternational\vInternational Commands\v>            <\aShutdown\vSHUTDOWN\v>
+<\aCommand\vCOMMAND\v>                  <\aIpconfig\vIPCONFIG\v>                 <\aSort\vSORT\v>
+<\aCONFIG\vCONFIG.SYS Commands\v>                   <\aIsapnp\vISAPNP\v>                   <\aStacks\vSTACKS=\v>
+<\aCopy\vCOPY\v>                     <\aKeyb\vKEYB\v>                     <\aStarting\vStarting PM-DOS\v>
+<\aCountry\vCOUNTRY=\v>                  <\aKeyrate\vKEYRATE=\v>                  <\aSubmenu\vSUBMENU=\v>
+<\aCtty\vCTTY\v>                     <\aLabel\vLABEL\v>                    <\aSwitches\vSWITCHES=\v>
+<\aDate\vDATE\v>                     <\aLastdrive\vLASTDRIVE=\v>                <\aSys\vSYS\v>
+<\aDebug\vDEBUG\v>                    <\aLfn\vLFN=\v>                      <\aTcpip.sys\vTCPIP.SYS\v>
+<\aDefrag\vDEFRAG\v>                   <\aLoadhigh\vLOADHIGH\v>                 <\aTime\vTIME\v>
+<\aDel\vDEL\v>                      <\aMd\vMD\v>                       <\aTree\vTREE\v>
+<\aDeltree\vDELTREE\v>                  <\aMem\vMEM\v>                      <\aTreeView\vTREEVIEW\v>
+<\aDevice\vDEVICE=\v>                   <\aMenucolor\vMENUCOLOR=\v>                <\aType\vTYPE\v>
+<\aDevicehigh\vDEVICEHIGH=\v>               <\aMenudefault\vMENUDEFAULT=\v>              <\aUndelete\vUNDELETE\v>
+<\aDir\vDIR\v>                      <\aMenuitem\vMENUITEM=\v>                 <\aUndelete (CONFIG.SYS)\vUNDELETE=\v>
+<\aDiskcomp\vDISKCOMP\v>                 <\aMode\vMODE\v>                     <\aUsb\vUSB\v>
+<\aDiskcopy\vDISKCOPY\v>                 <\aMore\vMORE\v>                     <\aUsb (CONFIG.SYS)\vUSB=\v>
+<\aDos\vDOS=\v>                      <\aMount\vMOUNT\v>                    <\aVer\vVER\v>
+<\aDoskey\vDOSKEY\v>                   <\aMove\vMOVE\v>                     <\aVerify\vVERIFY\v>
+<\aDosshell\vDOSSHELL\v>                 <\aMulti-config\vMultiple Configurations\v>             <\aVol\vVOL\v>
+<\aDpmi\vDPMI=\v>                     <\aNetbeui.sys\vNETBEUI.SYS\v>              <\aWincache\vWINCACHE=\v>
+<\aDrivparm\vDRIVPARM=\v>                 <\aNulltrap\vNULLTRAP=\v>                 <\aXarc\vXARC\v>
+<\aEcho\vECHO\v>                     <\aNumlock\vNUMLOCK=\v>                  <\aXcopy\vXCOPY\v>
 
 Every command and every CONFIG.SYS statement PM-DOS has is listed.  A
 command's topic says what it does, how it is written, and what each
@@ -4887,6 +4888,93 @@ To open at the contents:
     help
  
                                      
+.context IPCONFIG
+.context Ipconfig
+.topic IPCONFIG
+.freeze 3
+\i\aNotes\vIPCONFIG--Notes\v  \aExamples\vIPCONFIG--Examples\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                                   IPCONFIG
+ 
+Shows the computer's TCP/IP settings, and gives back or renews the IP
+address a DHCP server lent it.
+
+\bSyntax\p
+
+    IPCONFIG [/ALL | /RELEASE | /RENEW]
+
+\bSwitches\p
+
+/ALL
+    Also shows the computer's name, the network card's physical
+    address, the DHCP, DNS and WINS servers, and when the lease was
+    obtained and when it expires.
+
+/RELEASE
+    Gives the IP address back to the DHCP server.  The computer has no
+    address until IPCONFIG /RENEW is used or the computer is restarted.
+
+/RENEW
+    Renews the lease, or asks for a new address if there is none.
+    IPCONFIG waits up to 10 seconds for the answer.
+
+\bRelated Commands\p
+
+The address comes from <\aTCPIP.SYS\vTCPIP.SYS\v>, which is loaded with <\aDEVICE=\vDEVICE=\v>.
+ 
+                                     
+.context IPCONFIG--Notes
+.topic IPCONFIG--Notes
+.freeze 3
+\i\aExamples\vIPCONFIG--Examples\v  \aSyntax\vIPCONFIG\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                             IPCONFIG컴Notes
+ 
+\bWhere the address comes from\p
+
+TCPIP.SYS asks a DHCP server for an address when CONFIG.SYS runs.  If
+no answer comes in time, TCPIP.SYS keeps asking in the background, so
+IPCONFIG may show an address that arrived later.
+
+TCPIP.SYS renews the lease itself when half of it has passed.  If the
+server does not answer, any DHCP server is asked near the end of the
+lease.  When the lease runs out, the address is dropped and a new one
+is asked for.
+
+\bA fixed address\p
+
+An address set with TCPIP.SYS /IP= has no lease.  /RELEASE and /RENEW
+say so and change nothing.
+
+\bThe exit code\p
+
+0, or 1 when TCPIP.SYS is not loaded, a switch is wrong, or the address
+could not be released or renewed.
+ 
+                                     
+.context IPCONFIG--Examples
+.topic IPCONFIG--Examples
+.freeze 3
+\i\aSyntax\vIPCONFIG\v  \aNotes\vIPCONFIG--Notes\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                            IPCONFIG컴Examples
+ 
+To see the address:
+
+    IPCONFIG
+
+To see every setting:
+
+    IPCONFIG /ALL
+
+To ask the DHCP server for the address again:
+
+    IPCONFIG /RENEW
+ 
+                                     
 .context ISAPNP
 .context Isapnp
 .topic ISAPNP
@@ -5669,6 +5757,163 @@ To move a file to another drive under a new name:
 To rename a directory:
 
     move oldname newname
+ 
+                                     
+.context NETBEUI.SYS
+.context Netbeui.sys
+.topic NETBEUI.SYS
+.freeze 3
+\i\aNotes\vNETBEUI.SYS--Notes\v  \aExamples\vNETBEUI.SYS--Examples\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                                 NETBEUI.SYS
+ 
+Loads the NetBEUI network protocol, which older Windows networks use
+without TCP/IP.
+
+\bSyntax\p
+
+    DEVICE=[drive:][path]NETBEUI.SYS [/NAME=name]
+
+\bParameters\p
+
+[drive:][path]
+    Location of the NETBEUI.SYS file.
+
+\bSwitches\p
+
+/NAME=name
+    This computer's name on the network, up to 15 letters and digits.
+    Without /NAME=, the name given to TCPIP.SYS is used, or, without
+    one, PMDOS- and six digits from the network card's address.
+
+\bRelated Commands\p
+
+Load the network card's driver on a <\aDEVICE=\vDEVICE=\v> line above this one.
+NETBEUI.SYS and <\aTCPIP.SYS\vTCPIP.SYS\v> can both be loaded, in either order.
+ 
+                                     
+.context NETBEUI.SYS--Notes
+.topic NETBEUI.SYS--Notes
+.freeze 3
+\i\aExamples\vNETBEUI.SYS--Examples\v  \aSyntax\vNETBEUI.SYS\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                            NETBEUI.SYS컴Notes
+ 
+\bWhat NetBEUI is used for\p
+
+NET USE tries TCP/IP first.  When TCPIP.SYS is not loaded, or the
+server cannot be found with it, NET USE connects with NetBEUI.  SMBSRV
+answers on both.  NetBEUI does not cross routers: it reaches only the
+computers on the same network.
+
+\bThe name\p
+
+At start-up NETBEUI.SYS checks that no other computer is using the
+name.  If one is, it says so and does not load.
+
+\bNetwork cards\p
+
+For now only NE2000.SYS can carry NetBEUI.  With another card driver,
+NETBEUI.SYS says the card cannot be shared and does not load.
+ 
+                                     
+.context NETBEUI.SYS--Examples
+.topic NETBEUI.SYS--Examples
+.freeze 3
+\i\aSyntax\vNETBEUI.SYS\v  \aNotes\vNETBEUI.SYS--Notes\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                          NETBEUI.SYS컴Examples
+ 
+To use NetBEUI alone:
+
+    device=c:\\dos\\ne2000.sys
+    device=c:\\dos\\netbeui.sys /name=pmdos1
+
+To use NetBEUI and TCP/IP, with one name for both:
+
+    device=c:\\dos\\ne2000.sys
+    device=c:\\dos\\tcpip.sys /name=pmdos1
+    device=c:\\dos\\netbeui.sys
+ 
+                                     
+.context PING
+.context Ping
+.topic PING
+.freeze 3
+\i\aNotes\vPING--Notes\v  \aExamples\vPING--Examples\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                                     PING
+ 
+Sends echo requests to another computer, to see whether it answers.
+
+\bSyntax\p
+
+    PING [-n count] [-w timeout] host
+
+\bParameters\p
+
+host
+    A computer name or an IP address.
+
+\bSwitches\p
+
+-n count
+    How many requests to send.  Default is 4.
+
+-w timeout
+    How long to wait for each answer, in milliseconds.  Default is 1000.
+
+\bRelated Commands\p
+
+To see this computer's own address, see <\aIPCONFIG\vIPCONFIG\v>.
+ 
+                                     
+.context PING--Notes
+.topic PING--Notes
+.freeze 3
+\i\aExamples\vPING--Examples\v  \aSyntax\vPING\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                               PING컴Notes
+ 
+\bNames\p
+
+A name of up to 15 letters with no dot, such as SERVER, is looked up as
+a Windows computer name first: the WINS server is asked if there is
+one, then the other computers on the network.  Any other name, and a
+short name nobody answers for, is looked up with DNS.
+
+\bTimes\p
+
+Times are measured with the computer's clock tick, so they go up in
+steps of 55 milliseconds.  "time<55ms" means the answer came within one
+tick.
+
+\bThe exit code\p
+
+0 when at least one request was answered, 1 when none was or the name
+could not be found.
+ 
+                                     
+.context PING--Examples
+.topic PING--Examples
+.freeze 3
+\i\aSyntax\vPING\v  \aNotes\vPING--Notes\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                              PING컴Examples
+ 
+To see whether SERVER answers:
+
+    PING SERVER
+
+To send ten requests to an address:
+
+    PING -n 10 192.168.1.1
  
                                      
 .context PMD
@@ -6503,6 +6748,120 @@ works on a disk that already has files on it.
 To make the diskette in A: boot:
 
     sys a:
+ 
+                                     
+.context TCPIP.SYS
+.context Tcpip.sys
+.topic TCPIP.SYS
+.freeze 3
+\i\aNotes\vTCPIP.SYS--Notes\v  \aExamples\vTCPIP.SYS--Examples\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                                  TCPIP.SYS
+ 
+Loads the TCP/IP network protocol, which the network commands and
+NET USE use.
+
+\bSyntax\p
+
+    DEVICE=[drive:][path]TCPIP.SYS [/IP=address [/MASK=mask] [/GW=address]]
+           [/DNS=address] [/WINS=address] [/NAME=name]
+
+\bParameters\p
+
+[drive:][path]
+    Location of the TCPIP.SYS file.
+
+\bSwitches\p
+
+/IP=address
+    A fixed IP address, such as 192.168.1.20.  Without /IP=, the address
+    comes from a DHCP server.
+
+/MASK=mask
+    The subnet mask, such as 255.255.255.0.  Used only with /IP=.
+    Defaults to 255.0.0.0 for an address starting 1 to 127, 255.255.0.0
+    for 128 to 191, and 255.255.255.0 for the rest.
+
+/GW=address
+    The default gateway: the router to other networks.  Used only with
+    /IP=, and must be on the same network as the address.
+
+/DNS=address
+    The DNS server that looks up names.  With DHCP, this server is used
+    in place of the one the DHCP server names.
+
+/WINS=address
+    The WINS server that looks up Windows computer names.  With DHCP,
+    this server is used in place of the one the DHCP server names.
+
+/NAME=name
+    This computer's name on a Windows network, up to 15 letters and
+    digits.  Other computers can then find it by the name, as
+    \\\\name.  Without /NAME=, the computer has no name of its own.
+
+\bRelated Commands\p
+
+Load the network card's driver on a <\aDEVICE=\vDEVICE=\v> line above this one.  To
+see the address, see <\aIPCONFIG\vIPCONFIG\v>.  To see whether another computer
+answers, see <\aPING\vPING\v>.
+ 
+                                     
+.context TCPIP.SYS--Notes
+.topic TCPIP.SYS--Notes
+.freeze 3
+\i\aExamples\vTCPIP.SYS--Examples\v  \aSyntax\vTCPIP.SYS\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                             TCPIP.SYS컴Notes
+ 
+\bGetting an address\p
+
+Without /IP=, TCPIP.SYS asks a DHCP server for an address and waits up
+to five seconds for the answer.  It then shows "IP Address:" and the
+address, or "Failed to get IP address".  After a failure it keeps
+asking in the background, so the network can still come up a little
+later.
+
+The address is lent for a time, called the lease.  TCPIP.SYS renews
+the lease when half of it has passed, and drops the address if the
+lease runs out.
+
+\bComputer names\p
+
+A name of up to 15 letters with no dot, such as \\\\SERVER in NET USE,
+is looked up as a Windows computer name first: the WINS server is
+asked if there is one, then the other computers on the network.  DNS
+is asked last, and for every other name.
+
+\bMistakes on the line\p
+
+An address or mask that is not valid stops TCPIP.SYS from loading, and
+the reason is shown.  A switch TCPIP.SYS does not know is shown and
+skipped.
+ 
+                                     
+.context TCPIP.SYS--Examples
+.topic TCPIP.SYS--Examples
+.freeze 3
+\i\aSyntax\vTCPIP.SYS\v  \aNotes\vTCPIP.SYS--Notes\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                           TCPIP.SYS컴Examples
+ 
+To get the address from a DHCP server:
+
+    device=c:\\dos\\ne2000.sys
+    device=c:\\dos\\tcpip.sys
+
+To use a fixed address:
+
+    device=c:\\dos\\ne2000.sys
+    device=c:\\dos\\tcpip.sys /ip=192.168.1.20 /gw=192.168.1.1
+
+To give the computer the name PMDOS1 on a Windows network:
+
+    device=c:\\dos\\tcpip.sys /name=pmdos1
  
                                      
 .context TREE

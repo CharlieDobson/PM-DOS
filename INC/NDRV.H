@@ -42,6 +42,7 @@ typedef struct {
 #define NDTF_STACK   0x0002              /* CALL answers INC\SOCKET.H */
 #define NDTF_REDIR   0x0004              /* CALL answers INC\REDIR.H */
 #define NDTF_DISK    0x0010              /* units are drive letters */
+#define NDTF_NETBIOS 0x0020              /* CALL answers INC\NETBIOS.H */
 #define NDT_DISKVER  2                   /* the version a disk driver's
                                             table carries */
 #define NDUF_MEMORY  0x01                /* a unit that is memory */
@@ -152,6 +153,11 @@ int   __cdecl nds_niccall( u32 idx, u32 fn, void *buf, u32 len, u32 *answer );
 /* a redirector reaches the one TCP/IP stack the same way: EBX = a socket
    function (INC\SOCKET.H), the request buffer is the driver's own memory */
 int   __cdecl nds_sockcall( u32 fn, void *buf, u32 len, u32 *answer );
+                                             /* 0: EAX = *answer; else ERR_* */
+
+/* any other kind of driver, by its NDTF_* flag: the first loaded one
+   that has it.  ERR_FUNC from a kernel older than NDS_VERSION 5 */
+int   __cdecl nds_flagcall( u32 flag, u32 fn, void *buf, u32 len, u32 *answer );
                                              /* 0: EAX = *answer; else ERR_* */
 
 extern ND_ROW *nds_row;                      /* the kernel's row for us */

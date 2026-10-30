@@ -162,6 +162,8 @@ static void nb_encode( const char *name, unsigned char type, unsigned char *out 
     out[33] = 0;
 }
 
+char smb1_calling[16] = "PMDOS";
+
 static int nbt_session_request( smb1_client *cl, const char *server )
 {
     unsigned char pkt[4 + 68];
@@ -175,7 +177,7 @@ static int nbt_session_request( smb1_client *cl, const char *server )
     pkt[0] = 0x81; pkt[1] = 0;                  /* SESSION REQUEST */
     pkt[2] = 0; pkt[3] = 68;
     nb_encode( called, 0x20, pkt + 4 );         /* CALLED  (server service) */
-    nb_encode( "PMDOS", 0x00, pkt + 4 + 34 );   /* CALLING (workstation)    */
+    nb_encode( smb1_calling, 0x00, pkt + 4 + 34 );  /* CALLING (workstation)  */
     if ( send_all( cl, pkt, sizeof( pkt ) ) < 0 ) return -1;
 
     /* the response is a bare 4-byte NBT header: 0x82 positive, else no */

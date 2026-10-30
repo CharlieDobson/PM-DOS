@@ -701,6 +701,7 @@ nds_table:
         dd      OFFSET ndsv_niccall              ; NDS_NICCALL
         dd      OFFSET ndsv_sockcall             ; NDS_SOCKCALL
         dd      OFFSET ndsv_stamp                ; NDS_STAMP
+        dd      OFFSET ndsv_flagcall             ; NDS_FLAGCALL
 IF ($ - nds_table) NE NDS_LEN
         .ERR    <nds_table does not match NDS_LEN in NDRV.INC>
 ENDIF
@@ -871,6 +872,22 @@ ndsv_sockcall:
         jc      nscl_nostack
         jmp     nd_call_row                     ; EBX, ECX, EDI already set
 nscl_nostack:
+        mov     ax,ERR_GENERAL
+        stc
+        ret
+
+;--- ndsv_flagcall - EAX = an NDTF_* flag, EBX = a function, EDI -> the
+;--- request, ECX = its length -> EAX = what the first loaded driver with
+;--- that flag answered, or CF and AX = ERR_GENERAL when none has it.
+;--- ndsv_sockcall for any flag; the buffer is the caller's kernel memory.
+ndsv_flagcall:
+        push    ebx
+        xor     edx,edx
+        call    nd_find_flag                    ; ESI -> the driver's row
+        pop     ebx
+        jc      nfcl_none
+        jmp     nd_call_row                     ; EBX, ECX, EDI already set
+nfcl_none:
         mov     ax,ERR_GENERAL
         stc
         ret

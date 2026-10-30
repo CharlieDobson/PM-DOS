@@ -143,6 +143,10 @@ NDTF_BLOCK      EQU     0008h           ; NOT a loaded driver: a sentinel the
 NDTF_DISK       EQU     0010h           ; a block device: its units are drive
                                         ; letters, read and written through
                                         ; NDU_IO.  The table is NDT_DISKVER's
+NDTF_NETBIOS    EQU     0020h           ; NetBIOS over NetBEUI (DRV\NETBEUI):
+                                        ; CALL answers the NB_* functions in
+                                        ; INC\NETBIOS.H.  A redirector reaches
+                                        ; it through NDS_FLAGCALL
 
 ;---------------------------------------------------------------------
 ; ONE UNIT of a disk driver - one drive letter - as INIT describes it.
@@ -231,6 +235,14 @@ NDUF_MEMORY     EQU     01h             ; one block of memory, for life
 ;                   calls from inside the kernel, the path 21h/F1h AL=26h
 ;                   takes for a program - the buffer is the caller's own
 ;                   kernel memory, so it is not checked
+;   NDS_FLAGCALL    EAX = an NDTF_* flag, EBX = a function, EDI -> a
+;                   request buffer, ECX = its length -> EAX = what the
+;                   first loaded driver with that flag answered, CF and
+;                   AX = ERR_GENERAL when none has it or ERR_* from the
+;                   driver.  NDS_SOCKCALL for any kind of driver: how a
+;                   redirector reaches NETBEUI.SYS (NDTF_NETBIOS).  The
+;                   buffer is the caller's kernel memory, not checked.
+;                   Since NDS_VERSION 5
 ;   NDS_STAMP       -> EAX = now, as a directory entry is stamped: the
 ;                   date in the high word and the time in the low, both
 ;                   packed as DOS packs them (the clock's, through the
@@ -252,9 +264,10 @@ NDS_NICCOUNT    EQU     40
 NDS_NICCALL     EQU     44
 NDS_SOCKCALL    EQU     48
 NDS_STAMP       EQU     52
-NDS_LEN         EQU     56
+NDS_FLAGCALL    EQU     56
+NDS_LEN         EQU     60
 
-NDS_VERSION     EQU     4
+NDS_VERSION     EQU     5
 
 ;---------------------------------------------------------------------
 ; THE KERNEL'S ROW for a loaded driver - EDI at INIT and CALL, and what

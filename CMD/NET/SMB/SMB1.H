@@ -43,6 +43,10 @@ typedef struct {
     int            recvlen;
 } smb1_client;
 
+/* our NetBIOS name, sent as the CALLING name of the session request:
+   "PMDOS" unless the program sets it (SMBFS takes TCPIP.SYS /NAME=) */
+extern char smb1_calling[16];
+
 /* Open the NetBIOS session, negotiate NT LM 0.12, authenticate and
    tree-connect \\server\share.  The TCP connection must be made already.
    0 on success, <0 on failure (cl->stage / cl->last_status say what). */

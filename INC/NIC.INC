@@ -55,6 +55,10 @@ NIC_STATS       EQU     3
 NIC_SERVICE     EQU     4               ; drain the card's ring (bridge use)
 NIC_WAKE        EQU     5               ; wake the parked card, polled (bridge use)
 NIC_WAKE_IRQ    EQU     6               ; wake it with its interrupt live (bridge use)
+NIC_BIND        EQU     7               ; claim an Ethernet type or 802.2 DSAP
+NIC_RECVB       EQU     8               ; the next frame a binding claimed
+NICB_LEN        EQU     4
+NIC_BINDS       EQU     2
 
 NIC_HDRLEN      EQU     14              ; destination, source, type
 NIC_MINFRAME    EQU     NIC_HDRLEN      ; a header and nothing else

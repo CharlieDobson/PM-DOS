@@ -18614,6 +18614,347 @@ HD16.IMG (by FATREPL), the five Setup images, and the four images into
 the 86Box VM.
 
 
+TCPIP.SYS: THE ADDRESS AT BOOT, A FIXED ADDRESS, THE LEASE KEPT; IPCONFIG (2026-10-29)
+---------------------------------------------------------------------
+
+Charlie set the network's direction on 2026-10-28/29: native PM-DOS
+first, the 3C509 and the Windows bridge left for later, one driver for
+each protocol suite (TCPIP.SYS, NETBEUI.SYS; IPX dropped - TCP/IP and
+NetBEUI with NetBIOS reach a Windows server), and the NE2000 the one
+card for now.  Getting the address stays in TCPIP.SYS, since TCP/IP is
+the only protocol that has one.  This is the first step.
+
+AT BOOT.  TCPIP.SYS used to send one DISCOVER from INIT, print "asking
+DHCP for an address" and leave the rest to the clock.  Now INIT waits
+up to five seconds (91 ticks; the tick runs the pump meanwhile, INIT
+spins on dhcp_state, which is volatile) and prints "IP Address:
+a.b.c.d" or "Failed to get IP address" - Charlie's wording.  After a
+failure the clock goes on asking, with the wait between DISCOVERs
+doubling from 1 second to 64, so a network that comes up late still
+gets the machine an address.
+
+THE LEASE.  The address was held for ever before: the lease was read
+and never looked at.  Now RFC 2131's states are kept on the clock:
+bound until T1 (option 58, else half the lease), then REQUESTs to the
+server that gave it, unicast from our address (RENEWING); from T2
+(option 59, else seven-eighths) broadcast to any server (REBINDING);
+at the end the address is dropped and DISCOVER starts again.  While
+renewing or rebinding, a retry waits half the time to the next deadline,
+not under a minute, and never past the deadline.  A NAK starts again
+from DISCOVER.  An OFFER or ACK is taken only when its chaddr is ours,
+and the mask, gateway and name server only from an ACK (an OFFER used
+to set them).  A lease of 0x06000000 seconds or more (about three
+years) is treated as having no end: that keeps every deadline within
+the signed range a tick difference can be compared in.
+
+A FIXED ADDRESS.  /IP=a.b.c.d /MASK= /GW= /DNS= on the DEVICE= line
+(= or :).  /MASK= defaults to the address's class.  A bad address, a
+mask that is not ones then zeros, a gateway off the network, or
+255.255.255.255 stop the load with the reason, before any memory is
+taken; a switch TCPIP.SYS does not know is shown and skipped.  /MASK=
+and /GW= without /IP= are shown as ignored.  /DNS= with DHCP replaces
+the server DHCP names.  A fixed address never runs DHCP.
+
+THE SOCKET API.  SOCK_IFSTAT takes SOCKIF_LEN (60) as before or
+SOCKIF_LEN2 (72): the long form adds the DHCP server, the seconds since
+the lease was given or renewed, where DHCP is (DHST_*), and a count of
+the ACKs taken (it wraps; a change is a lease given or renewed); the
+answer is the length filled.  SOCK_DHCP (16) takes one word, DHCPOP_RELEASE
+(a DHCPRELEASE to the server, then no address until a renew) or
+DHCPOP_RENEW (a REQUEST at once with a lease, a DISCOVER without);
+ERR_BADDATA for a fixed address.  SOCK_IF grew by 12 bytes, so every
+program with one on its stack (SOCKLIB's sl_up, SMBFS, SOCKTEST) moved
+a stack offset or two: FTP, NET, SMBFS, SMBSRV, SNTP, TELNET, WGET and
+SMBTEST are the same length and differ only there.
+
+IPCONFIG.EXE (CMD\IPCONFIG).  Over SOCKLIB, like SNTP.  With nothing,
+the address, mask and gateway; /ALL adds the physical address, DHCP
+Enabled, the DHCP and DNS servers, and Lease Obtained / Lease Expires,
+worked out from the clock (21h/2Ah, 2Ch) less the lease's age and
+written the country's way (21h/38h: date order, separators, 12 or 24
+hours).  /RELEASE and /RENEW show the settings after; /RENEW waits up
+to 10 seconds, and counts it done only when the ACK count moves -
+otherwise "Failed to renew the lease." and the address is kept.  (The
+first version watched the lease's age come back near zero instead; a
+/RENEW of a no-end lease a few seconds after it was given, to a server
+that ignored it, was then reported as renewed.  Found by the limit
+tests below, fixed by the count.)  "TCPIP.SYS is not loaded." when the
+call fails.  Exit code 0, or 1 for any failure (ended by 4Ch itself:
+NETSTART always ends 0).  Built in BUILD.CMD after TELNET and bound
+with D32BIND; on MKHD's two lists and SETUP.LST.
+
+HELP.  IPCONFIG and TCPIP.SYS topics in 21EXTERN.TXT; CONFIG.TXT's
+TCPIP.SYS paragraph says what is shown and names the switches.
+HELP.HLP regenerated (it equalled the parts' generation first): 350
+topics.
+
+TESTED in QEMU (NE2000, ISA 300h IRQ 9):
+  - user-mode net: "IP Address: 10.0.2.15" at boot; IPCONFIG, /ALL,
+    /RELEASE, /ALL, /RENEW, /ALL; SOCKTEST all passed; SNTP /S; WGET
+    over HTTPS.
+  - against a DHCP peer of my own on a QEMU dgram netdev (rig\
+    dhcppeer.pl in this session's scratchpad: an ordinary DHCP server
+    with a 40-second lease, told to answer, ignore or NAK renewals and
+    rebinds): renewed at 20s, 40s, 60s; renew ignored -> rebind at 35s
+    acked; both ignored -> DISCOVER at 40s and a new lease; renew NAKed
+    -> DISCOVER at once and a new lease; quiet for 15s -> "Failed to
+    get IP address" at boot, then bound in the background; IPCONFIG
+    /RENEW with a lease (unicast REQUEST, ACK), /RELEASE (DHCPRELEASE
+    seen at the peer), a second /RELEASE ("There is no IP address to
+    release."), /RENEW ignored ("Failed to renew the lease.").
+  - a fixed address with four wrong DEVICE= lines in front of it, each
+    refused with its reason, and /FOO shown and skipped; IPCONFIG /ALL
+    "DHCP Enabled: No", /RELEASE and /RENEW refused; a ping to the
+    gateway answered.
+  - at the limits: a lease of 0x05FFFFFF seconds, the longest still
+    timed (Lease Expires 2030, three years on); a lease of FFFFFFFF
+    ("Never"; /RENEW ignored -> "Failed to renew the lease."); a bad
+    /IP= of 40-odd characters (the message cuts it at 32 and still
+    ends its line).
+86Box (pb520r, novell_ne2k, user-mode): IPCONFIG /ALL and SOCKTEST
+passed.  (The rig's p3bf machine no longer boots under the 86Box
+installed; pb520r, the VM's own, does.)
+
+NOT RUN: real hardware; Windows (the bridge parks the stack, and the
+lease's clock with it - not looked at, by Charlie's direction).
+
+BUILT AND DELIVERED.  A scratch mirror build: against S:\BIN only
+TCPIP.SYS (97,244), IPCONFIG.EXE (17,048, new), the eight network
+programs above and TESTS\SOCKTEST.EXE (12,024) differ.  RUNTESTS
+-Update on all seven rows: 101 on every row; moved RMTEST's free
+clusters 6A7E -> 6A6D, which is IPCONFIG.EXE's 17 (7), and CACHETST's
+"a write is owed" 5 -> 4 (6).  Delivered: S:\BIN (11), BASELINE (13),
+PMDOS.IMG (CONFIG.TXT), PMDOS2.IMG (HELP.HLP), TESTS.IMG (SOCKTEST),
+HD16.IMG by FATREPL (13 files), the five Setup images, and the four
+images into the 86Box VM.
+
+NEXT, in Charlie's order: NetBIOS names over TCP/IP (UDP 137, so
+\\NAME finds a Windows server without DNS), then frames shared by
+protocol (the card's queue has one reader today; NetBEUI is 802.2 SAP
+F0), then NETBEUI.SYS and a transport layer under SMBFS.
+
+
+NETBIOS NAMES OVER TCP/IP: \\NAME WITHOUT DNS; /NAME=, /WINS=; PING (2026-10-29)
+---------------------------------------------------------------------
+
+The second step of the native network (see the entry above): a Windows
+server is found by its computer name, the way Windows' NetBIOS over
+TCP/IP finds it, and PM-DOS can have a name of its own.
+
+LOOKING A NAME UP (SOCK_RESOLVE).  A name of 1 to 15 characters with no
+dot is a NetBIOS name first (RFC 1001/1002, the name service on UDP
+137): the WINS server if one is known (two tries, a second each; a
+"no such name" moves on at once), then a broadcast to the network's
+directed broadcast address (three tries, 0.75s each), and DNS last.
+Every other name goes to DNS as before.  The query is for the <00>
+(workstation) name, which every Windows machine registers.  So the
+worst case for a short name nobody has is about 8 seconds; SMBFS's
+lookup limit went from 2 to 8 seconds for it (the clients allow 5-10).
+A dotted quad never reaches the stack (SOCKLIB and DRVSOCK parse it).
+
+ANSWERING FOR OUR NAME.  /NAME= on the TCPIP.SYS line (1 to 15 of the
+characters a NetBIOS name may safely have, kept in upper case) is
+answered for, <00> and <20>: a positive response, unique, B node, TTL
+300000s as Windows gives its own.  The asker's card address is taken
+from the query's frame when it is on our network, so the answer need
+not wait for an ARP that would lose it.  No registration is broadcast
+at start and no node-status (NBSTAT) query is answered - not needed to
+be found.  Without /NAME= nothing is answered, so two PM-DOS machines
+never fight over a default.
+
+WINS.  /WINS= on the line, or DHCP option 44 (now in the parameter
+request list); /WINS= wins over DHCP as /DNS= does.
+
+THE NAME ELSEWHERE.  SMB1.C's session request said CALLING "PMDOS" and
+SMBSRV's SESSION_SETUP answer named the server "PMDOS"; both are now
+variables (smb1_calling, smbsrv_name), still "PMDOS" by default, set
+from /NAME= by SMBFS (DRVSOCK's new dsock_nbname) and SMBSRV.EXE.
+SMBSRV says "sharing C:\ as \\NAME on port 139".  SOCK_IF's long form
+grew to SOCKIF_LEN2 92 (wins, nbname[16]); IPCONFIG /ALL shows
+"Computer Name" and "WINS Server".
+
+THE STACK, BESIDE THE NAMES:
+  - ip_send sends to our network's directed broadcast (host bits all
+    ones) as an Ethernet broadcast; before, it ARPed for it.
+  - A ping, DNS or WINS packet that waited on ARP (ip_send drops the
+    packet and sends the ARP request) is now sent again after 3 ticks,
+    not a second: PING's first echo to a new host timed out at its 1s
+    default, and a WINS lookup lost one of its two tries.
+  - A finished lookup is told to callers asking for the same name: a
+    failure for RES_HOLD (55 ticks, 3s), then a new attempt.  Before, a
+    failed lookup was restarted by the caller's next poll, so the
+    caller only ever saw its own timeout - SOCKLIB's 6s, not the 4s DNS
+    took to fail - and the queries went on behind it.
+
+PING.EXE (CMD\PING).  New: there was no ping.  PING [-n count] [-w
+timeout] host (Windows' switches; /N:5 also works); one echo a second
+through SOCK_PING; times are ticks, so "time<55ms" or a multiple of
+55; exit code 0 when any echo was answered.  BUILD.CMD, MKHD's lists,
+SETUP.LST; a help topic.
+
+HELP.  PING topic; TCPIP.SYS gains /WINS= and /NAME= and "Computer
+names"; IPCONFIG's /ALL text; CONFIG.TXT's paragraph.  353 topics.
+
+DEFECTS FOUND IN REVIEW AND FIXED: the lookup restart and the ARP drop
+above; and nbns_input read the byte after a 12-byte answer's header
+before checking the datagram held it (inside rx_frame, so nothing
+faulted, and the checks after rejected it) - it now checks dlen first.
+
+TESTED in QEMU (NE2000):
+  - against rig\dhcppeer.pl (session 6766cc80's scratchpad; now also a
+    NetBIOS responder, --nb NAME=IP, --nbmode bcast|wins|both, --ask
+    NAME@secs): broadcast lookups (WINSRV answered and pinged; OTHER
+    answered, no host there, "Request timed out."; NOBODY: three
+    broadcasts, DNS, "Cannot find NOBODY." with no queries after);
+    the peer's query for PMDOS1<20> answered by PM-DOS with its address
+    and TTL 300000; a query for another name not answered.  As WINS
+    (DHCP option 44): WINSRV asked of WINS only; NOBODY refused by WINS,
+    then broadcast at once.  At the limits: a 16-character /NAME=
+    refused, a 15-character one taken (upper-cased) and answered for; a
+    15-character lookup by NetBIOS, a 16-character one straight to DNS.
+  - two PM-DOS machines on one wire (rig\pair.ps1: QEMU socket netdev,
+    fixed addresses, own MACs): A with /NAME=PMSRV running SMBSRV C:\,
+    B with /NAME=PMCLI: PING PMSRV, NET USE K: \\PMSRV\C /SMB1, DIR and
+    TYPE of a file on A, NET USE /DELETE.  The first echo took 165ms -
+    an ARP and the 3-tick retry - instead of timing out.
+  - user-mode net: SOCKTEST all passed, SNTP /S, WGET over HTTPS, PING
+    10.0.2.2 and PING example.com; NET USE \\10.0.2.200\SHARE /SMB1 to
+    smb1peer.pl with a COPY onto the share.
+  - QEMU's user-mode net does NOT carry UDP 137 to the host: a WINS
+    responder on 127.0.0.1:137 (rig\winspeer.pl) saw nothing and
+    Windows did not answer for its own name, while a capture showed
+    PM-DOS sending both WINS queries, the broadcasts and DNS correctly.
+    So no test reached a real Windows NetBIOS service.
+NOT RUN: a real Windows server by name; SMB2/3 (the host's test share
+is gone; SMBFS's SMB2 path changed only in the lookup limit); real
+hardware.
+
+BUILT AND DELIVERED.  Against the step-1 delivery: TCPIP.SYS 99,748,
+IPCONFIG.EXE 17,160, PING.EXE 15,168 (new), SMBFS.SYS 68,912,
+SMBSRV.EXE 124,044, and FTP, NET, SNTP, TELNET, WGET, SMBTEST and
+SOCKTEST (12,044) for SOCK_IF's 20 bytes.  RUNTESTS -Update on all
+seven rows: 101 each; moved RMTEST's free clusters 6A6D -> 6A5D (7):
+PING.EXE's 15 and SMBSRV's one more (TCPIP.SYS is not on the test
+disk).  Delivered: S:\BIN (12), BASELINE (7), PMDOS.IMG (CONFIG.TXT),
+PMDOS2.IMG (HELP.HLP), TESTS.IMG (SOCKTEST), HD16.IMG by FATREPL (14),
+the five Setup images, and the four images into the 86Box VM.
+
+NEXT: frames shared by protocol (the card's queue has one reader,
+TCPIP.SYS; NetBEUI is 802.2 LLC, SAP F0), then NETBEUI.SYS - NetBIOS
+over NetBEUI, so SMB can run without IP - and a transport layer under
+SMBFS so NET USE can use either.
+
+
+NETBEUI.SYS: NETBIOS OVER NETBEUI, BESIDE TCP/IP OR ALONE (2026-10-29)
+---------------------------------------------------------------------
+
+The third step of the native network (the two entries above): the
+NetBIOS Frames Protocol - NetBIOS names and sessions straight on 802.2
+LLC, SAP F0 - as a DEVICE= driver of its own, so SMB reaches LAN
+Manager / WfW / NT machines that run NetBEUI and no TCP/IP.
+
+FRAMES SHARED BY PROTOCOL (NE2000.SYS only, for now).  TCPIP.SYS was the
+card's one reader.  NIC_BIND (7) lets a second protocol claim an
+Ethernet type or an 802.3 frame's DSAP: the handler (q_filled) looks at
+each frame as it comes off the ring and puts the claimed ones in that
+binding's own queue (8 slots), read by NIC_RECVB (8); everything else
+goes to NIC_RECV's queue as before, so TCPIP.SYS is unchanged.  Two
+bindings.  INC\NIC.H/NIC.INC carry the numbers only (no new typedef).
+The NETCORE cards do not have it: NETBEUI.SYS says "the card driver
+cannot share the card" on them and does not load.
+
+A DRIVER CALLING A DRIVER (kernel).  NDS_FLAGCALL (NDS_VERSION 5): EAX =
+an NDTF_* flag, the call goes to the first loaded driver with it - what
+NDS_SOCKCALL does for NDTF_STACK, for any flag.  NDTF_NETBIOS = 0020h.
+NDSTART.ASM's nds_flagcall answers ERR_FUNC under an older kernel.  So
+every C driver grew 64 bytes; PMDOS.SYS 195,587.
+
+NETBEUI.SYS (DRV\NETBEUI\NETBEUI.C, INC\NETBIOS.H).  NB_IFSTAT, NB_FIND,
+NB_CALL, NB_LISTEN, NB_SEND/NB_SENDP (a message whole, or in parts),
+NB_RECV (a message, in parts if wanted), NB_STATE, NB_HANGUP.  Messages
+up to NB_MSGMAX (34,816: SMB1's 33K reads), whole and in order; two
+buffers a session, allocated at CALL/LISTEN and freed at HANGUP; 4
+sessions, 4 links.  Names: /NAME=, else TCPIP.SYS's, else PMDOS- and
+six digits of the MAC; NAME<00> and NAME<20> taken with ADD_NAME_QUERY
+three times half a second apart at INIT ("NetBEUI name: X", or "X is
+already in use on the network" and no load); ADD_NAME_QUERY and
+NAME_QUERY for our names answered.  Links: SABME/UA, I-frames with one
+outstanding (a window of 1 out, any number in), RR/RNR/REJ, T1 1s and
+N2 8 (an RNR answer restarts the count), DISC/DM/FRMR, XID and TEST
+answered.  A message counts as delivered when the link has taken its
+last piece; DATA_ACK is sent for every message that arrives.
+
+WHAT WINDOWS FOR WORKGROUPS SHOWED.  Against WfW 3.11's own NETBEUI.386
+on its own NE2000.386 (below): the caller sends SESSION_INITIALIZE and
+the listener answers SESSION_CONFIRM - except on a link that has just
+come up, where WfW answers with a SESSION_INITIALIZE of its own (its
+transmit correlator the caller's NAME_QUERY's, its response correlator
+its NAME_RECOGNIZED's) and the caller must confirm that.  WfW answers a
+SESSION_INITIALIZE that comes straight after UA and ignores one a
+second late - which is how the first build lost: the SI went from the
+tick, and a program polling NB_STATE held the tick off.  So: the SI
+goes the moment UA comes (caller_si), nd_call runs the timers as well
+as the pump, and either answer starts the session.  data1 0x02 on
+DATA_ONLY_LAST is NO_ACK (WfW acks ours, sent with 0); WfW's own carry
+0x04 (ack with data allowed).
+
+SMBFS.  NET USE tries TCP/IP first (when TCPIP.SYS has an address); when
+the name is not found there, and it is 1-15 characters with no dot, and
+NETBEUI.SYS is up, it calls NAME<20> on NetBEUI and runs SMB1 over the
+session (mount_netbeui).  The SMB1 engine still speaks NBT: nb_smb_send
+takes the 4-byte header off each (whole) message and answers the
+SESSION REQUEST itself; nb_smb_recv makes the header from the message's
+length.  smb1_calling = NETBEUI.SYS's name.  DRVSOCK's dnb_* helpers go
+through NDS_FLAGCALL, buffers static (not the worker fibre's stack).
+
+SMBSRV.  Listens on NetBEUI too (NB_LISTEN on <20>, found by its row's
+NDTF_NETBIOS) and runs without TCPIP.SYS; "sharing C:\ as \\NAME on
+TCP/IP and NetBEUI" (or one of them).  One client at a time, as before.
+
+HELP.  NETBEUI.SYS topic; CONFIG.TXT.  356 topics.
+
+TESTED:
+  - two PM-DOS machines on a QEMU socket wire, NetBEUI only (no
+    TCPIP.SYS anywhere): NET USE K: \\PMSRV\C, DIR, TYPE, COPY onto the
+    share, NET USE /DELETE, and again over the same link.  The capture
+    (rig\nbfcap.pl lists NBF frames) shows ADD_NAME_QUERY x3,
+    NAME_QUERY/NAME_RECOGNIZED, SABME/UA, SI/SC, DATA_ONLY_LAST/
+    DATA_ACK with matching correlators, a 2,652-byte message as
+    DATA_FIRST_MIDDLE + DATA_ONLY_LAST, and the sequence numbers right.
+  - the client with TCP/IP and NetBEUI, the server NetBEUI only: NET USE
+    falls back to NetBEUI and works.  Both on both: NET USE /SMB1 goes
+    over TCP/IP (no NBF session in the capture).
+  - WfW 3.11 (enhanced mode, its own NE2000.386 + NETBEUI.386, on the
+    bridge sessions' WfW tree: wfwrig\winbuild.ps1 with proto_ne.ini,
+    SETVER loaded - since 0.69 IFSHLP and WIN refuse to start without
+    it) on the same wire, sitting at its logon prompt with its server
+    listening: PM-DOS's NAME_QUERY answered, link up, two sessions
+    (one on a new link, one on the link already up), SMB NEGOTIATE out
+    and WfW's answer back, both acknowledged, SESSION_END.  WfW also
+    registers its names and runs its browser; NETBEUI.SYS ignores the
+    datagrams.
+  - TCP/IP with NETBEUI.SYS loaded beside it: SOCKTEST, NICTEST, WGET
+    over HTTPS, PING, NET USE /SMB1 to smb1peer.pl - all as before.
+FOUND, NOT FIXED: WfW's answer to NEGOTIATE was dialect 0xFFFF - WfW
+3.11 does not speak "NT LM 0.12", the one dialect SMB1.C offers (since
+step 6), so PM-DOS cannot use a WfW share over any transport, nor WfW
+an SMBSRV share.  NT, Windows 2000/2003 and Samba speak it.  LAN Manager
+dialects ("DOS LANMAN2.1", "Windows for Workgroups 3.1a") would be
+SMB1.C and SMBSRV.C work, not NetBEUI's.
+NOT RUN: a Windows NT/2000 NetBEUI server or client; WfW as a NetBEUI
+CLIENT of SMBSRV (it needs its logon); NetBEUI on real hardware.
+
+BUILT AND DELIVERED.  NETBEUI.SYS 21,036 (new), NE2000.SYS 11,396,
+SMBFS.SYS 72,572, SMBSRV.EXE 125,804, PMDOS.SYS 195,587, TCPIP.SYS and
+the eight other card drivers (+64, NDSTART).  RUNTESTS -Update, all
+seven rows 101: RMTEST free clusters 6A5D -> 6A5A (PMDOS.SYS, NE2000.SYS
+and SMBSRV.EXE a cluster each) and CACHETST "a write is owed" 4 -> 5
+(x6).  Delivered: S:\BIN (14), BASELINE (13), PMDOS.IMG (PMDOS.SYS,
+CONFIG.TXT), PMDOS2.IMG (HELP.HLP), HD16.IMG by FATREPL (16), the five
+Setup images, the four images into the 86Box VM; a copy of the
+delivered HD16 boots to the menu and the prompt.
+
+
 v0.61 - THE NUMBER CAUGHT UP (2026-09-30)
 ---------------------------------------------------------------------
 

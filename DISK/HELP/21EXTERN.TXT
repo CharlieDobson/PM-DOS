@@ -46,6 +46,65 @@ To read about COPY:
 To open at the contents:
 
     help
+#topic IPCONFIG|Ipconfig
+Shows the computer's TCP/IP settings, and gives back or renews the IP
+address a DHCP server lent it.
+
+{b}Syntax{p}
+
+    IPCONFIG [/ALL | /RELEASE | /RENEW]
+
+{b}Switches{p}
+
+/ALL
+    Also shows the computer's name, the network card's physical
+    address, the DHCP, DNS and WINS servers, and when the lease was
+    obtained and when it expires.
+
+/RELEASE
+    Gives the IP address back to the DHCP server.  The computer has no
+    address until IPCONFIG /RENEW is used or the computer is restarted.
+
+/RENEW
+    Renews the lease, or asks for a new address if there is none.
+    IPCONFIG waits up to 10 seconds for the answer.
+
+{b}Related Commands{p}
+
+The address comes from [[TCPIP.SYS]], which is loaded with [[DEVICE=]].
+#notes
+{b}Where the address comes from{p}
+
+TCPIP.SYS asks a DHCP server for an address when CONFIG.SYS runs.  If
+no answer comes in time, TCPIP.SYS keeps asking in the background, so
+IPCONFIG may show an address that arrived later.
+
+TCPIP.SYS renews the lease itself when half of it has passed.  If the
+server does not answer, any DHCP server is asked near the end of the
+lease.  When the lease runs out, the address is dropped and a new one
+is asked for.
+
+{b}A fixed address{p}
+
+An address set with TCPIP.SYS /IP= has no lease.  /RELEASE and /RENEW
+say so and change nothing.
+
+{b}The exit code{p}
+
+0, or 1 when TCPIP.SYS is not loaded, a switch is wrong, or the address
+could not be released or renewed.
+#examples
+To see the address:
+
+    IPCONFIG
+
+To see every setting:
+
+    IPCONFIG /ALL
+
+To ask the DHCP server for the address again:
+
+    IPCONFIG /RENEW
 #topic ISAPNP|Isapnp
 Lists the ISA Plug and Play cards in the machine, and switches their
 devices on.
@@ -606,6 +665,107 @@ To move a file to another drive under a new name:
 To rename a directory:
 
     move oldname newname
+#topic NETBEUI.SYS|Netbeui.sys
+Loads the NetBEUI network protocol, which older Windows networks use
+without TCP/IP.
+
+{b}Syntax{p}
+
+    DEVICE=[drive:][path]NETBEUI.SYS [/NAME=name]
+
+{b}Parameters{p}
+
+[drive:][path]
+    Location of the NETBEUI.SYS file.
+
+{b}Switches{p}
+
+/NAME=name
+    This computer's name on the network, up to 15 letters and digits.
+    Without /NAME=, the name given to TCPIP.SYS is used, or, without
+    one, PMDOS- and six digits from the network card's address.
+
+{b}Related Commands{p}
+
+Load the network card's driver on a [[DEVICE=]] line above this one.
+NETBEUI.SYS and [[TCPIP.SYS]] can both be loaded, in either order.
+#notes
+{b}What NetBEUI is used for{p}
+
+NET USE tries TCP/IP first.  When TCPIP.SYS is not loaded, or the
+server cannot be found with it, NET USE connects with NetBEUI.  SMBSRV
+answers on both.  NetBEUI does not cross routers: it reaches only the
+computers on the same network.
+
+{b}The name{p}
+
+At start-up NETBEUI.SYS checks that no other computer is using the
+name.  If one is, it says so and does not load.
+
+{b}Network cards{p}
+
+For now only NE2000.SYS can carry NetBEUI.  With another card driver,
+NETBEUI.SYS says the card cannot be shared and does not load.
+#examples
+To use NetBEUI alone:
+
+    device=c:\dos\ne2000.sys
+    device=c:\dos\netbeui.sys /name=pmdos1
+
+To use NetBEUI and TCP/IP, with one name for both:
+
+    device=c:\dos\ne2000.sys
+    device=c:\dos\tcpip.sys /name=pmdos1
+    device=c:\dos\netbeui.sys
+#topic PING|Ping
+Sends echo requests to another computer, to see whether it answers.
+
+{b}Syntax{p}
+
+    PING [-n count] [-w timeout] host
+
+{b}Parameters{p}
+
+host
+    A computer name or an IP address.
+
+{b}Switches{p}
+
+-n count
+    How many requests to send.  Default is 4.
+
+-w timeout
+    How long to wait for each answer, in milliseconds.  Default is 1000.
+
+{b}Related Commands{p}
+
+To see this computer's own address, see [[IPCONFIG]].
+#notes
+{b}Names{p}
+
+A name of up to 15 letters with no dot, such as SERVER, is looked up as
+a Windows computer name first: the WINS server is asked if there is
+one, then the other computers on the network.  Any other name, and a
+short name nobody answers for, is looked up with DNS.
+
+{b}Times{p}
+
+Times are measured with the computer's clock tick, so they go up in
+steps of 55 milliseconds.  "time<55ms" means the answer came within one
+tick.
+
+{b}The exit code{p}
+
+0 when at least one request was answered, 1 when none was or the name
+could not be found.
+#examples
+To see whether SERVER answers:
+
+    PING SERVER
+
+To send ten requests to an address:
+
+    PING -n 10 192.168.1.1
 #topic PMD|Pmd
 Shows what is in the machine: the processor, memory, disks, video,
 mouse, ports, interrupts and the kernel's own settings, a page at a
@@ -1186,6 +1346,92 @@ works on a disk that already has files on it.
 To make the diskette in A: boot:
 
     sys a:
+#topic TCPIP.SYS|Tcpip.sys
+Loads the TCP/IP network protocol, which the network commands and
+NET USE use.
+
+{b}Syntax{p}
+
+    DEVICE=[drive:][path]TCPIP.SYS [/IP=address [/MASK=mask] [/GW=address]]
+           [/DNS=address] [/WINS=address] [/NAME=name]
+
+{b}Parameters{p}
+
+[drive:][path]
+    Location of the TCPIP.SYS file.
+
+{b}Switches{p}
+
+/IP=address
+    A fixed IP address, such as 192.168.1.20.  Without /IP=, the address
+    comes from a DHCP server.
+
+/MASK=mask
+    The subnet mask, such as 255.255.255.0.  Used only with /IP=.
+    Defaults to 255.0.0.0 for an address starting 1 to 127, 255.255.0.0
+    for 128 to 191, and 255.255.255.0 for the rest.
+
+/GW=address
+    The default gateway: the router to other networks.  Used only with
+    /IP=, and must be on the same network as the address.
+
+/DNS=address
+    The DNS server that looks up names.  With DHCP, this server is used
+    in place of the one the DHCP server names.
+
+/WINS=address
+    The WINS server that looks up Windows computer names.  With DHCP,
+    this server is used in place of the one the DHCP server names.
+
+/NAME=name
+    This computer's name on a Windows network, up to 15 letters and
+    digits.  Other computers can then find it by the name, as
+    \\name.  Without /NAME=, the computer has no name of its own.
+
+{b}Related Commands{p}
+
+Load the network card's driver on a [[DEVICE=]] line above this one.  To
+see the address, see [[IPCONFIG]].  To see whether another computer
+answers, see [[PING]].
+#notes
+{b}Getting an address{p}
+
+Without /IP=, TCPIP.SYS asks a DHCP server for an address and waits up
+to five seconds for the answer.  It then shows "IP Address:" and the
+address, or "Failed to get IP address".  After a failure it keeps
+asking in the background, so the network can still come up a little
+later.
+
+The address is lent for a time, called the lease.  TCPIP.SYS renews
+the lease when half of it has passed, and drops the address if the
+lease runs out.
+
+{b}Computer names{p}
+
+A name of up to 15 letters with no dot, such as \\SERVER in NET USE,
+is looked up as a Windows computer name first: the WINS server is
+asked if there is one, then the other computers on the network.  DNS
+is asked last, and for every other name.
+
+{b}Mistakes on the line{p}
+
+An address or mask that is not valid stops TCPIP.SYS from loading, and
+the reason is shown.  A switch TCPIP.SYS does not know is shown and
+skipped.
+#examples
+To get the address from a DHCP server:
+
+    device=c:\dos\ne2000.sys
+    device=c:\dos\tcpip.sys
+
+To use a fixed address:
+
+    device=c:\dos\ne2000.sys
+    device=c:\dos\tcpip.sys /ip=192.168.1.20 /gw=192.168.1.1
+
+To give the computer the name PMDOS1 on a Windows network:
+
+    device=c:\dos\tcpip.sys /name=pmdos1
 #topic TREE|Tree
 Shows the directories of a drive or path as a tree.
 

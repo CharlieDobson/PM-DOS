@@ -373,6 +373,8 @@ static void do_pathop( srv_conn *c, int cmd, const unsigned char *words, const u
     reply( c, cmd, rc == 0 ? 0 : 0xC0000034UL, tid, uid, pid, mid, (unsigned char *)0, 0, (unsigned char *)0, 0 );
 }
 
+char smbsrv_name[16] = "PMDOS";
+
 void smbsrv_serve( smb_send_fn send, smb_recv_fn recv, void *ioctx,
                    const srv_vfs *fs, void *fsctx, const char *sharename )
 {
@@ -411,7 +413,7 @@ void smbsrv_serve( smb_send_fn send, smb_recv_fn recv, void *ioctx,
             unsigned char w[6]; unsigned char b[32]; int bn = 0; const char *s;
             memset( w, 0, sizeof( w ) ); w[0] = 0xFF;
             s = "Unix"; { int k; for ( k = 0; s[k]; k++ ) b[bn++] = (unsigned char)s[k]; } b[bn++] = 0;
-            s = "PMDOS"; { int k; for ( k = 0; s[k]; k++ ) b[bn++] = (unsigned char)s[k]; } b[bn++] = 0;
+            s = smbsrv_name; { int k; for ( k = 0; s[k]; k++ ) b[bn++] = (unsigned char)s[k]; } b[bn++] = 0;
             s = "WORKGROUP"; { int k; for ( k = 0; s[k]; k++ ) b[bn++] = (unsigned char)s[k]; } b[bn++] = 0;
             reply( c, 0x73, 0, tid, 100, pid, mid, w, 6, b, bn );
             break; }

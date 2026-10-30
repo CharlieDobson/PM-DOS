@@ -46,6 +46,10 @@ typedef struct {
 
 /* Serve one connected client to the end (its disconnect).  'sharename' is
    reported on tree-connect; the back end's ctx carries the served root. */
+/* the server's name in SESSION_SETUP's answer: "PMDOS" unless the program
+   sets it (SMBSRV.EXE takes TCPIP.SYS /NAME=) */
+extern char smbsrv_name[16];
+
 void smbsrv_serve( smb_send_fn send, smb_recv_fn recv, void *ioctx,
                    const srv_vfs *fs, void *fsctx, const char *sharename );
 

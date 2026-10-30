@@ -48,6 +48,12 @@
                                  For the WfW bridge to indicate to its protocol */
 #define SOCK_NICSTATS  15     /* buf <- the card's NIC_STATBLOCK (INC\NIC.H);
                                  answer = NICS_LEN.  A window on tx/rx counts */
+#define SOCK_DHCP      16     /* buf -> a u32, DHCPOP_*; answer = 0.  ERR_BADDATA
+                                 when the address is static (TCPIP.SYS /IP=) */
+
+/* SOCK_DHCP's one word: what to do with the lease */
+#define DHCPOP_RELEASE 1      /* give the address back and stay without one */
+#define DHCPOP_RENEW   2      /* renew the lease, or ask for a new address */
 
 /* a socket's kind, for SOCK_OPEN */
 #define SOCK_STREAM    1      /* TCP: a connection */
@@ -79,19 +85,36 @@
 #define DHS_BOUND      1      /* DHCP gave one */
 #define DHS_STATIC     2      /* set by hand */
 
-/* SOCK_IFSTAT - the interface and its address */
+/* SOCK_IFSTAT - the interface and its address.  A caller gives SOCKIF_LEN
+   bytes or SOCKIF_LEN2; the stack fills what fits and answers how many.
+   The last three fields are only in the longer form */
 typedef struct {
     u32  ip;
     u32  mask;
     u32  gw;
     u32  dns;
-    u32  leasesecs;           /* the DHCP lease, in seconds */
+    u32  leasesecs;           /* the DHCP lease, in seconds; FFFFFFFF = no end */
     u8   mac[6];
     u8   up;                  /* 1: an address is held */
     u8   dhcp;                /* DHS_* */
     char nic[32];             /* the card driver's name */
+    u32  dhcpsrv;             /* the DHCP server that gave the lease */
+    u32  leaseage;            /* seconds since the lease was given or renewed */
+    u16  dhstate;             /* DHST_*: where DHCP is now */
+    u16  acks;                /* ACKs taken since TCPIP.SYS loaded (wraps):
+                                 a change means a lease was given or renewed */
+    u32  wins;                /* the WINS server (NetBIOS names), 0 if none */
+    char nbname[16];          /* this computer's NetBIOS name (/NAME=), "" if none */
 } SOCK_IF;
 #define SOCKIF_LEN   60
+#define SOCKIF_LEN2  92
+
+/* SOCK_IF.dhstate */
+#define DHST_OFF       0      /* not asking: a static address, or released */
+#define DHST_ASKING    1      /* looking for a server (DISCOVER or REQUEST out) */
+#define DHST_BOUND     2      /* holding a lease */
+#define DHST_RENEWING  3      /* past half the lease: asking the server again */
+#define DHST_REBINDING 4      /* near the end: asking any server */
 
 /* SOCK_OPEN */
 typedef struct {
@@ -148,8 +171,11 @@ typedef struct {
 } SOCK_STAT;
 #define SOCKSTAT_LEN 20
 
-/* SOCK_RESOLVE - a host name to an address, through the DNS server DHCP
-   gave.  Call with the name; poll until the state is not NET_PENDING */
+/* SOCK_RESOLVE - a host name to an address.  A name of 1 to 15 characters
+   with no dot is a NetBIOS name first: the WINS server is asked, then the
+   network by broadcast, and DNS last.  Any other name goes to DNS.  Call
+   with the name; poll until the state is not NET_PENDING (up to about 8
+   seconds when nothing answers) */
 typedef struct {
     u32  ip;                  /* out */
     u32  state;               /* out: NET_* */

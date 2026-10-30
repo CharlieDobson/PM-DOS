@@ -21,6 +21,18 @@
                                  LIVE (not polled) so it asserts on receive,
                                  for the WfW bridge to field through VPICD;
                                  answer 1 if it is running */
+#define NIC_BIND     7        /* buf -> NICB_LEN bytes: a u16 Ethernet type at
+                                 +0, or 0 and an 802.2 DSAP at +2.  The frames
+                                 that match go to a queue of their own, read by
+                                 NIC_RECVB, and not to NIC_RECV's; answer the
+                                 binding, 1..NIC_BINDS.  ERR_GENERAL when every
+                                 binding is taken */
+#define NIC_RECVB    8        /* buf -> a u32 binding at +0, room for a frame
+                                 at +4 (len counts both); answer the frame's
+                                 length copied to +4, 0 for none */
+
+#define NICB_LEN     4
+#define NIC_BINDS    2
 
 #define NIC_HDRLEN   14
 #define NIC_MINFRAME NIC_HDRLEN

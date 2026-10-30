@@ -81,9 +81,18 @@ DEVICEHIGH=file [options]
         DEVICE=C:\NE2000.SYS
         DEVICE=C:\TCPIP.SYS
 
-    It finds the card the line above loaded, asks DHCP for an address,
-    a gateway and a name server, and from then on gives programs
-    sockets.  Without a card loaded first it says so and does not load.
+    It finds the card the line above loaded and asks DHCP for an
+    address, a gateway and a name server.  It waits up to five seconds
+    and shows the address, or "Failed to get IP address" and keeps
+    asking in the background.  /IP=address gives a fixed address
+    instead, with /MASK=, /GW= and /DNS= for the rest.  /NAME=PMDOS1
+    gives the computer a name other Windows computers can find it by,
+    and /WINS= names a WINS server.  IPCONFIG shows the settings.
+    Without a card loaded first it says so and does not load.
+    NETBEUI.SYS is the NetBEUI protocol, for Windows networks without
+    TCP/IP.  Load it after the card driver too, beside TCPIP.SYS or
+    on its own; /NAME= gives its name, or it takes TCPIP.SYS's.  For
+    now it works only with NE2000.SYS.
     A driver can be an .EXE.  DEVICE=C:\SETVER.EXE loads SETVER's
     version table, which tells the programs named in it the DOS
     version they were written for; put it above any driver it names.

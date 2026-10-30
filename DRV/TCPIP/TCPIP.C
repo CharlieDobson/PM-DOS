@@ -14,8 +14,8 @@
  * clock tick, and whenever a program makes a socket call.  It touches
  * no hardware of its own - the card driver does that - so it has no
  * interrupt of its own; the clock tick and the socket calls are when
- * it works.  DHCP and the first ARP for the gateway are done at INIT,
- * which is the one entry that may take its time.
+ * it works.  INIT waits up to five seconds for the first DHCP lease (or
+ * takes /IP= from the DEVICE= line); the clock keeps the lease after.
  *
  * NOTHING BLOCKS once it is up.  A tick drains whatever the card has
  * received and runs the timers; a socket call drains too, then does
@@ -182,7 +182,11 @@ static u32  if_ip, if_mask, if_gw, if_dns;
 static u32  if_lease;
 static u8   if_up;
 static u8   if_dhcp;            /* DHS_* */
+static u8   if_static;          /* /IP= was given: DHCP never runs */
 static char if_name[32];
+static u32  if_wins;            /* the WINS server: /WINS=, or DHCP option 44 */
+static char nb_name[16];        /* our NetBIOS name (/NAME=), upper case; "" none */
+static const u8 *rx_srcmac;     /* the station that sent the frame being read */
 
 static u16  ip_id = 1;
 static u8   running;
@@ -215,6 +219,7 @@ static struct {
 
 static struct {
     u8   active;
+    u8   step;                  /* RS_*: who is being asked */
     u32  ip;
     u32  state;
     u16  id;
@@ -223,6 +228,20 @@ static struct {
     u8   tries;
     char name[128];
 } res;
+
+/* a lookup is over, found or not: callers asking for the same name are
+   told so - a failure for RES_HOLD ticks, then a new attempt is made */
+#define RES_HOLD     55
+static u32 res_done_at;
+static void res_end( void )
+{
+    res.active = 0;
+    res_done_at = nds_ticks();
+}
+
+#define RS_WINS      0          /* the WINS server, by NetBIOS name */
+#define RS_BCAST     1          /* the network, by NetBIOS broadcast */
+#define RS_DNS       2          /* the DNS server */
 
 /* ---------------------------------------------------------------- */
 /* what a library would have supplied                                */
@@ -361,6 +380,7 @@ static void nic_service( void )
 /* ---------------------------------------------------------------- */
 
 #define ARP_N   8
+#define ARP_RETRY 3             /* ticks: a send that waited on ARP goes again */
 
 static struct { u32 ip; u8 mac[6]; u8 valid; u32 at; } arp[ARP_N];
 
@@ -448,8 +468,8 @@ static int ip_send( u32 dst, u8 proto, u32 plen )
     u32 nexthop;
     static const u8 bcast[6] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
-    if ( dst == IP_BCAST ) {
-        mac = (u8 *)bcast;
+    if ( dst == IP_BCAST || ( if_mask && same_subnet( dst ) && ( dst | if_mask ) == IP_BCAST ) ) {
+        mac = (u8 *)bcast;              /* everyone, or everyone on our network */
     } else {
         nexthop = same_subnet( dst ) ? dst : if_gw;
         mac = arp_find( nexthop );
@@ -515,6 +535,8 @@ static int udp_send( u32 dst, u16 dport, u16 sport, const u8 *data, u32 dlen )
 /* forward */
 static void dhcp_input( const u8 *bootp, u32 len );
 static void dns_input( const u8 *dns, u32 len );
+#define NBNS_PORT 137
+static void nbns_input( u32 src, u16 sport, const u8 *data, u32 dlen );
 static SOCKET *udp_socket_for( u16 port );
 static void udp_queue( SOCKET *s, u32 src, u16 sport, const u8 *data, u32 dlen );
 
@@ -534,6 +556,7 @@ static void udp_input( u32 src, const u8 *uh, u32 len )
     dlen = ulen - 8;
 
     if ( dport == 68 ) { dhcp_input( uh, len ); return; }
+    if ( dport == NBNS_PORT ) { nbns_input( src, sport, data, dlen ); return; }
     if ( res.active && dport == res.lport && sport == 53 ) {
         dns_input( data, dlen );
         return;
@@ -546,7 +569,7 @@ static void udp_input( u32 src, const u8 *uh, u32 len )
 /* ICMP                                                              */
 /* ---------------------------------------------------------------- */
 
-static void icmp_echo( u32 dst, u16 id, u16 seq )
+static int icmp_echo( u32 dst, u16 id, u16 seq )
 {
     u8 *ic = tx_frame + 34;
     u32 i, plen = 8 + 32;
@@ -558,7 +581,7 @@ static void icmp_echo( u32 dst, u16 id, u16 seq )
     put16( ic + 6, seq );
     for ( i = 0; i < 32; i++ ) ic[8 + i] = (u8)( 'a' + ( i & 15 ) );
     put16( ic + 2, cksum_done( cksum_add( ic, plen, 0 ) ) );
-    ip_send( dst, IP_ICMP, plen );
+    return ip_send( dst, IP_ICMP, plen );
 }
 
 static void icmp_input( u32 src, const u8 *ic, u32 len )
@@ -622,6 +645,7 @@ static void eth_input( const u8 *frame, u32 len )
     u16 type;
 
     if ( len < ETH_HDR ) return;
+    rx_srcmac = frame + 6;
     type = get16( frame + 12 );
     if ( type == ETH_ARP ) arp_input( frame, len );
     else if ( type == ETH_IP ) ip_input( frame, len );
@@ -629,26 +653,64 @@ static void eth_input( const u8 *frame, u32 len )
 }
 
 /* ---------------------------------------------------------------- */
-/* DHCP - done at INIT, where waiting is allowed                     */
+/* DHCP - the first answer waited for at INIT, the rest on the clock */
 /* ---------------------------------------------------------------- */
+
+/* RFC 2131: DISCOVER, an OFFER back, REQUEST, an ACK back - bound.  At
+   half the lease (T1) a REQUEST goes to the server that gave it; at
+   seven-eighths (T2) to any server, by broadcast; at the end the address
+   is let go and the hunt starts again.  A NAK at any point starts it
+   again too.  Nothing here prints or waits: it runs from the pump and
+   the tick, and nd_init watches dhcp_state to see how it went. */
 
 #define DHCP_DISCOVER 1
 #define DHCP_OFFER    2
 #define DHCP_REQUEST  3
 #define DHCP_ACK      5
+#define DHCP_NAK      6
+#define DHCP_RELEASE  7
 
-#define DH_OFF        0
+#define DH_OFF        0          /* not asking: static, or released */
 #define DH_DISCOVER   1          /* a DISCOVER is out, waiting for an OFFER */
 #define DH_REQUEST    2          /* a REQUEST is out, waiting for an ACK */
 #define DH_BOUND      3
+#define DH_RENEW      4          /* past T1: REQUESTs to our server */
+#define DH_REBIND     5          /* past T2: REQUESTs to anyone */
+
+#define TICKS_SEC     18         /* ~18.2 a second; the .2 is in secs_ticks */
+#define DH_FOREVER    0xFFFFFFFFL
+#define DH_LONGEST    0x06000000L /* ~3 years: longer is treated as no end,
+                                    which keeps every deadline in the
+                                    signed range of a tick difference */
+#define DH_RETRY_MIN  ( 60 * TICKS_SEC )    /* RFC 2131's floor while renewing */
+#define DH_BACKOFF    ( 64 * TICKS_SEC )    /* the longest wait between DISCOVERs */
 
 static u32 dhcp_xid;
-static u8  dhcp_state;
+static volatile u8 dhcp_state;   /* nd_init spins on this while the tick runs */
 static u32 dhcp_next;            /* when to send again */
+static u32 dhcp_wait;            /* the DISCOVER interval, doubling */
 static u8  dhcp_tries;
 static u32 dhcp_offer_ip, dhcp_server_ip;
+static u32 dhcp_bound_at;        /* the tick the lease was given or renewed */
+static u32 dhcp_t1, dhcp_t2, dhcp_end;      /* deadlines, in ticks */
+static u8  dhcp_timed;           /* 0: the lease has no end */
+static u32 dns_fixed;            /* /DNS= - used whatever DHCP says */
+static u32 wins_fixed;           /* /WINS= - the same for the WINS server */
+static u16 dhcp_acks;            /* ACKs taken: IPCONFIG /RENEW watches it move */
 
-static u32 bootp_build( u8 type, u32 request_ip, u32 server_ip )
+/* seconds to ticks, 18.2 a second, for a span under DH_LONGEST */
+static u32 secs_ticks( u32 secs )
+{
+    return secs * TICKS_SEC + secs / 5;
+}
+
+/* ticks to seconds, without the multiply overflowing */
+static u32 ticks_secs( u32 ticks )
+{
+    return ( ticks / 91 ) * 5 + ( ( ticks % 91 ) * 5 ) / 91;
+}
+
+static u32 bootp_build( u8 type, u32 client_ip, u32 request_ip, u32 server_ip )
 {
     u8 *b = tx_frame + 34 + 8;   /* past the UDP header, filled by udp_send */
     u32 n;
@@ -658,24 +720,104 @@ static u32 bootp_build( u8 type, u32 request_ip, u32 server_ip )
     b[1] = 1;                    /* Ethernet */
     b[2] = 6;
     put32( b + 4, dhcp_xid );
+    put32( b + 12, client_ip );         /* ciaddr: ours, when renewing */
     mem_copy( b + 28, if_mac, 6 );      /* chaddr */
     put32( b + 236, 0x63825363L );      /* the magic cookie */
     n = 240;
     b[n++] = 53; b[n++] = 1; b[n++] = type;             /* message type */
-    if ( type == DHCP_REQUEST ) {
+    if ( request_ip ) {
         b[n++] = 50; b[n++] = 4; put32( b + n, request_ip ); n += 4;
+    }
+    if ( server_ip ) {
         b[n++] = 54; b[n++] = 4; put32( b + n, server_ip ); n += 4;
     }
-    b[n++] = 55; b[n++] = 4;            /* parameter request list */
-    b[n++] = 1; b[n++] = 3; b[n++] = 6; b[n++] = 51;    /* mask, gw, dns, lease */
+    if ( type != DHCP_RELEASE ) {
+        b[n++] = 55; b[n++] = 5;        /* parameter request list */
+        b[n++] = 1; b[n++] = 3; b[n++] = 6; b[n++] = 51;    /* mask, gw, dns, lease */
+        b[n++] = 44;                                        /* WINS */
+    }
     b[n++] = 255;                       /* end */
     return n;
 }
 
 static void dhcp_send( u8 type )
 {
-    u32 n = bootp_build( type, dhcp_offer_ip, dhcp_server_ip );
-    udp_send( IP_BCAST, 67, 68, NULL, n );
+    u32 n;
+
+    switch ( dhcp_state ) {
+    case DH_RENEW:              /* to our server, from our address */
+        n = bootp_build( type, if_ip, 0, 0 );
+        udp_send( dhcp_server_ip, 67, 68, NULL, n );
+        break;
+    case DH_REBIND:             /* to anyone, from our address */
+        n = bootp_build( type, if_ip, 0, 0 );
+        udp_send( IP_BCAST, 67, 68, NULL, n );
+        break;
+    default:                    /* SELECTING: from nowhere, naming the offer */
+        if ( type == DHCP_REQUEST ) n = bootp_build( type, 0, dhcp_offer_ip, dhcp_server_ip );
+        else n = bootp_build( type, 0, 0, 0 );
+        udp_send( IP_BCAST, 67, 68, NULL, n );
+        break;
+    }
+}
+
+/* let the address go: nothing is sent from it after this */
+static void dhcp_drop( void )
+{
+    if_ip = 0;
+    if_mask = 0;
+    if_gw = 0;
+    if_dns = dns_fixed;
+    if_wins = wins_fixed;
+    if_up = 0;
+    if_dhcp = DHS_DOWN;
+}
+
+/* start looking for a server: at INIT, after a NAK, at the lease's end,
+   or for IPCONFIG /RENEW with no address */
+static void dhcp_start( void )
+{
+    dhcp_drop();
+    dhcp_xid = rnd();
+    dhcp_offer_ip = 0;
+    dhcp_server_ip = 0;
+    dhcp_tries = 0;
+    dhcp_state = DH_DISCOVER;
+    dhcp_send( DHCP_DISCOVER );
+    dhcp_wait = TICKS_SEC;              /* 1s, 2s, 4s ... up to DH_BACKOFF */
+    dhcp_next = nds_ticks() + dhcp_wait;
+}
+
+/* the lease's three deadlines, from the ACK's lease, T1 and T2 */
+static void dhcp_schedule( u32 lease, u32 t1, u32 t2 )
+{
+    u32 now = nds_ticks();
+
+    dhcp_bound_at = now;
+    if ( lease == DH_FOREVER || lease >= DH_LONGEST ) {
+        dhcp_timed = 0;
+        return;
+    }
+    if ( t1 == 0 || t1 >= lease ) t1 = lease / 2;
+    if ( t2 == 0 || t2 >= lease || t2 <= t1 ) t2 = lease - lease / 8;
+    if ( t2 <= t1 ) t2 = t1 + 1;        /* a lease of a second or two */
+    dhcp_timed = 1;
+    dhcp_t1 = now + secs_ticks( t1 );
+    dhcp_t2 = now + secs_ticks( t2 );
+    dhcp_end = now + secs_ticks( lease );
+}
+
+/* the next try while renewing or rebinding: half the time left to the
+   deadline, but not under a minute, and never past the deadline */
+static u32 dhcp_halfway( u32 now, u32 deadline )
+{
+    u32 left = deadline - now;
+    u32 step = left / 2;
+
+    if ( (long)left <= 0 ) return now;
+    if ( step < DH_RETRY_MIN ) step = DH_RETRY_MIN;
+    if ( step > left ) step = left;
+    return now + step;
 }
 
 /* a BOOTP reply arrived: move the state machine along.  Called from the
@@ -685,14 +827,20 @@ static void dhcp_input( const u8 *uh, u32 len )
     const u8 *b = uh + 8;
     u32 blen, n;
     u8  type = 0;
+    u32 yiaddr, server = 0, mask = 0, gw = 0, dns = 0, wins = 0;
+    u32 lease = 0, t1 = 0, t2 = 0;
+    u8  have_lease = 0;
 
+    if ( dhcp_state == DH_OFF || dhcp_state == DH_BOUND ) return;
     if ( len < 8 + 240 ) return;
     blen = len - 8;
     if ( b[0] != 2 ) return;            /* BOOTREPLY */
     if ( get32( b + 4 ) != dhcp_xid ) return;
     if ( get32( b + 236 ) != 0x63825363L ) return;
+    if ( !( b[28] == if_mac[0] && b[29] == if_mac[1] && b[30] == if_mac[2] &&
+            b[31] == if_mac[3] && b[32] == if_mac[4] && b[33] == if_mac[5] ) ) return;
 
-    dhcp_offer_ip = get32( b + 16 );    /* yiaddr */
+    yiaddr = get32( b + 16 );
 
     for ( n = 240; n + 1 < blen; ) {
         u8 opt = b[n], olen;
@@ -702,53 +850,118 @@ static void dhcp_input( const u8 *uh, u32 len )
         if ( n + 2 + olen > blen ) break;
         switch ( opt ) {
         case 53: if ( olen >= 1 ) type = b[n + 2]; break;
-        case 1:  if ( olen >= 4 ) if_mask = get32( b + n + 2 ); break;
-        case 3:  if ( olen >= 4 ) if_gw = get32( b + n + 2 ); break;
-        case 6:  if ( olen >= 4 ) if_dns = get32( b + n + 2 ); break;
-        case 51: if ( olen >= 4 ) if_lease = get32( b + n + 2 ); break;
-        case 54: if ( olen >= 4 ) dhcp_server_ip = get32( b + n + 2 ); break;
+        case 1:  if ( olen >= 4 ) mask = get32( b + n + 2 ); break;
+        case 3:  if ( olen >= 4 ) gw = get32( b + n + 2 ); break;
+        case 6:  if ( olen >= 4 ) dns = get32( b + n + 2 ); break;
+        case 44: if ( olen >= 4 ) wins = get32( b + n + 2 ); break;
+        case 51: if ( olen >= 4 ) { lease = get32( b + n + 2 ); have_lease = 1; } break;
+        case 54: if ( olen >= 4 ) server = get32( b + n + 2 ); break;
+        case 58: if ( olen >= 4 ) t1 = get32( b + n + 2 ); break;
+        case 59: if ( olen >= 4 ) t2 = get32( b + n + 2 ); break;
         }
         n += 2 + olen;
     }
 
     if ( type == DHCP_OFFER && dhcp_state == DH_DISCOVER ) {
+        if ( yiaddr == 0 || server == 0 ) return;
+        dhcp_offer_ip = yiaddr;
+        dhcp_server_ip = server;
         dhcp_state = DH_REQUEST;
         dhcp_tries = 0;
         dhcp_send( DHCP_REQUEST );
-        dhcp_next = nds_ticks() + 18;
-    } else if ( type == DHCP_ACK && dhcp_state == DH_REQUEST ) {
-        if_ip = dhcp_offer_ip;
+        dhcp_next = nds_ticks() + 2 * TICKS_SEC;
+    } else if ( type == DHCP_ACK && dhcp_state != DH_DISCOVER ) {
+        if ( yiaddr == 0 ) return;
+        if_ip = yiaddr;
+        if ( mask ) if_mask = mask;
+        if ( gw ) if_gw = gw;
+        if_dns = dns_fixed ? dns_fixed : ( dns ? dns : if_dns );
+        if_wins = wins_fixed ? wins_fixed : ( wins ? wins : if_wins );
+        if ( server ) dhcp_server_ip = server;
+        if ( !have_lease ) lease = DH_FOREVER;
+        if_lease = lease;
+        dhcp_schedule( lease, t1, t2 );
         if_up = 1;
         if_dhcp = DHS_BOUND;
         dhcp_state = DH_BOUND;
+        dhcp_acks++;
         arp_request( if_gw );           /* learn the gateway's address early */
+    } else if ( type == DHCP_NAK && dhcp_state != DH_DISCOVER ) {
+        dhcp_start();                   /* the server says no: begin again */
     }
 }
 
-/* kick DHCP off (at INIT) and keep it going (on every tick until bound) */
-static void dhcp_start( void )
-{
-    dhcp_xid = rnd();
-    if_ip = 0;
-    dhcp_offer_ip = 0;
-    dhcp_server_ip = 0;
-    dhcp_tries = 0;
-    dhcp_state = DH_DISCOVER;
-    dhcp_send( DHCP_DISCOVER );
-    dhcp_next = nds_ticks() + 18;
-}
-
+/* every tick: resend what is unanswered, and keep the lease */
 static void dhcp_tick( void )
 {
     u32 now = nds_ticks();
 
-    if ( dhcp_state == DH_DISCOVER && (long)( now - dhcp_next ) >= 0 ) {
+    switch ( dhcp_state ) {
+    case DH_DISCOVER:
+        if ( (long)( now - dhcp_next ) < 0 ) break;
         dhcp_send( DHCP_DISCOVER );
-        dhcp_next = now + 36;
-    } else if ( dhcp_state == DH_REQUEST && (long)( now - dhcp_next ) >= 0 ) {
-        if ( ++dhcp_tries > 3 ) { dhcp_start(); return; }   /* begin again */
+        if ( dhcp_wait < DH_BACKOFF ) dhcp_wait *= 2;
+        dhcp_next = now + dhcp_wait;
+        break;
+    case DH_REQUEST:
+        if ( (long)( now - dhcp_next ) < 0 ) break;
+        if ( ++dhcp_tries > 3 ) { dhcp_start(); break; }    /* begin again */
         dhcp_send( DHCP_REQUEST );
-        dhcp_next = now + 36;
+        dhcp_next = now + 2 * TICKS_SEC;
+        break;
+    case DH_BOUND:
+        if ( !dhcp_timed || (long)( now - dhcp_t1 ) < 0 ) break;
+        dhcp_state = DH_RENEW;
+        dhcp_xid = rnd();
+        dhcp_send( DHCP_REQUEST );
+        dhcp_next = dhcp_halfway( now, dhcp_t2 );
+        break;
+    case DH_RENEW:
+        if ( !dhcp_timed ) {            /* a /RENEW of a lease with no end */
+            if ( (long)( now - dhcp_next ) >= 0 ) dhcp_state = DH_BOUND;
+        } else if ( (long)( now - dhcp_t2 ) >= 0 ) {
+            dhcp_state = DH_REBIND;
+            dhcp_send( DHCP_REQUEST );
+            dhcp_next = dhcp_halfway( now, dhcp_end );
+        } else if ( (long)( now - dhcp_next ) >= 0 ) {
+            dhcp_send( DHCP_REQUEST );
+            dhcp_next = dhcp_halfway( now, dhcp_t2 );
+        }
+        break;
+    case DH_REBIND:
+        if ( (long)( now - dhcp_end ) >= 0 ) {
+            dhcp_start();               /* the lease ran out */
+        } else if ( (long)( now - dhcp_next ) >= 0 ) {
+            dhcp_send( DHCP_REQUEST );
+            dhcp_next = dhcp_halfway( now, dhcp_end );
+        }
+        break;
+    }
+}
+
+/* IPCONFIG /RELEASE: tell the server, then hold no address until a renew */
+static void dhcp_release( void )
+{
+    if ( if_up && dhcp_server_ip ) {
+        u32 n;
+        dhcp_xid = rnd();
+        n = bootp_build( DHCP_RELEASE, if_ip, 0, dhcp_server_ip );
+        udp_send( dhcp_server_ip, 67, 68, NULL, n );
+    }
+    dhcp_drop();
+    dhcp_state = DH_OFF;
+}
+
+/* IPCONFIG /RENEW: with a lease, ask at once; without one, look */
+static void dhcp_renew( void )
+{
+    if ( dhcp_state == DH_BOUND || dhcp_state == DH_RENEW || dhcp_state == DH_REBIND ) {
+        if ( dhcp_state == DH_BOUND ) dhcp_state = DH_RENEW;
+        dhcp_xid = rnd();
+        dhcp_send( DHCP_REQUEST );
+        dhcp_next = nds_ticks() + 4 * TICKS_SEC;    /* one more try soon */
+    } else {
+        dhcp_start();
     }
 }
 
@@ -802,7 +1015,7 @@ static void dns_input( const u8 *dns, u32 len )
 
     if ( len < 12 ) return;
     if ( get16( dns ) != res.id ) return;
-    if ( ( get16( dns + 2 ) & 0x000F ) != 0 ) { res.state = NET_FAIL; res.active = 0; return; }
+    if ( ( get16( dns + 2 ) & 0x000F ) != 0 ) { res.state = NET_FAIL; res_end(); return; }
     answers = get16( dns + 6 );
     at = dns_skip_name( dns, len, 12 ) + 4;         /* past the question */
     for ( i = 0; i < answers && at + 10 <= len; i++ ) {
@@ -814,18 +1027,212 @@ static void dns_input( const u8 *dns, u32 len )
         if ( type == 1 && rdlen == 4 && at + 10 + 4 <= len ) {
             res.ip = get32( dns + at + 10 );
             res.state = NET_DONE;
-            res.active = 0;
+            res_end();
             return;
         }
         at += 10 + rdlen;
     }
     res.state = NET_FAIL;
-    res.active = 0;
+    res_end();
 }
 
-static void dns_send( void )
+static int dns_send( void )
 {
-    udp_send( if_dns, 53, res.lport, NULL, dns_build( res.name ) );
+    return udp_send( if_dns, 53, res.lport, NULL, dns_build( res.name ) );
+}
+
+/* ---------------------------------------------------------------- */
+/* NetBIOS names over TCP/IP: the name service on UDP 137            */
+/* ---------------------------------------------------------------- */
+
+/* RFC 1001/1002.  A name is 15 characters, upper case, padded with
+   spaces, and a 16th byte saying which service: 00 the workstation, 20
+   the file server.  On the wire each byte is two letters 'A' + nibble,
+   32 in all, in one label.  A lookup asks the WINS server if there is
+   one, then the network by broadcast; the owner of the name answers.
+   With /NAME= we answer for our own name, so a Windows machine finds
+   PM-DOS's SMB server as \\NAME. */
+
+#define NB_TTL       300000L    /* what Windows gives its own names, seconds */
+
+/* 1 to 15 characters, no dot: a name NetBIOS can look up */
+static int nb_able( const char *name )
+{
+    u32 n;
+
+    for ( n = 0; name[n]; n++ ) {
+        if ( name[n] == '.' || n >= 15 ) return 0;
+    }
+    return n > 0;
+}
+
+static u8 nb_upper( u8 ch )
+{
+    return ( ch >= 'a' && ch <= 'z' ) ? (u8)( ch - 32 ) : ch;
+}
+
+/* the 34 bytes of an encoded name: the length 32, the letters, the root */
+static void nb_encode( u8 *out, const char *name, u8 suffix )
+{
+    u8  raw[16];
+    u32 i;
+    int ended = 0;
+
+    for ( i = 0; i < 15; i++ ) {
+        if ( !ended && name[i] == 0 ) ended = 1;
+        raw[i] = ended ? (u8)' ' : nb_upper( (u8)name[i] );
+    }
+    raw[15] = suffix;
+    out[0] = 32;
+    for ( i = 0; i < 16; i++ ) {
+        out[1 + 2 * i] = (u8)( 'A' + ( raw[i] >> 4 ) );
+        out[2 + 2 * i] = (u8)( 'A' + ( raw[i] & 15 ) );
+    }
+    out[33] = 0;
+}
+
+/* a query for res.name: to the WINS server, or to everyone on the network */
+static int nbns_send( void )
+{
+    u8 *q = tx_frame + 34 + 8;
+    u32 dst;
+
+    put16( q, res.id );
+    put16( q + 2, res.step == RS_BCAST ? 0x0110 : 0x0100 );    /* query, RD (+ B) */
+    put16( q + 4, 1 );
+    put16( q + 6, 0 );
+    put16( q + 8, 0 );
+    put16( q + 10, 0 );
+    nb_encode( q + 12, res.name, 0x00 );
+    put16( q + 46, 0x0020 );            /* NB */
+    put16( q + 48, 1 );                 /* IN */
+    if ( res.step == RS_WINS ) dst = if_wins;
+    else dst = if_mask ? ( if_ip | ~if_mask ) : IP_BCAST;
+    return udp_send( dst, NBNS_PORT, NBNS_PORT, NULL, 50 );
+}
+
+/* is the query's name (34 bytes at q) ours, for the workstation or the
+   server service? */
+static int nb_ours( const u8 *q )
+{
+    u8  raw[16];
+    u32 i;
+
+    if ( nb_name[0] == 0 || q[0] != 32 || q[33] != 0 ) return 0;
+    for ( i = 0; i < 16; i++ ) {
+        u8 hi = (u8)( q[1 + 2 * i] - 'A' ), lo = (u8)( q[2 + 2 * i] - 'A' );
+        if ( hi > 15 || lo > 15 ) return 0;
+        raw[i] = (u8)( ( hi << 4 ) | lo );
+    }
+    if ( raw[15] != 0x00 && raw[15] != 0x20 ) return 0;
+    for ( i = 0; i < 15; i++ ) {
+        u8 want = nb_name[i] ? (u8)nb_name[i] : (u8)' ';
+        if ( nb_name[i] == 0 ) {
+            for ( ; i < 15; i++ ) if ( raw[i] != ' ' ) return 0;
+            return 1;
+        }
+        if ( nb_upper( raw[i] ) != want ) return 0;
+    }
+    return 1;
+}
+
+static void res_next( u8 step );
+
+static void nbns_input( u32 src, u16 sport, const u8 *d, u32 dlen )
+{
+    u16 flags;
+    u32 at, rdlen;
+
+    if ( dlen < 12 ) return;
+    flags = get16( d + 2 );
+
+    if ( flags & 0x8000 ) {
+        /* an answer: to our lookup, if it is the one going */
+        if ( !res.active || res.step == RS_DNS || get16( d ) != res.id ) return;
+        if ( ( flags & 0x000F ) != 0 ) {        /* "no such name" */
+            if ( res.step == RS_WINS ) res_next( RS_BCAST );
+            return;
+        }
+        if ( get16( d + 6 ) == 0 || dlen < 13 ) return;
+        at = 12;
+        if ( ( d[at] & 0xC0 ) == 0xC0 ) at += 2;
+        else if ( d[at] == 32 && at + 34 <= dlen ) at += 34;
+        else return;
+        if ( at + 10 > dlen || get16( d + at ) != 0x0020 ) return;
+        rdlen = get16( d + at + 8 );
+        if ( rdlen < 6 || at + 10 + 6 > dlen ) return;
+        res.ip = get32( d + at + 12 );          /* past the NB flags */
+        res.state = NET_DONE;
+        res_end();
+        return;
+    }
+
+    /* a question: answer one for our name, if we have an address */
+    if ( ( ( flags >> 11 ) & 0x0F ) != 0 ) return;      /* a query, not a registration */
+    if ( !if_up || dlen < 50 || get16( d + 4 ) != 1 ) return;
+    if ( get16( d + 46 ) != 0x0020 || !nb_ours( d + 12 ) ) return;
+    {
+        u8 *r = tx_frame + 34 + 8;
+
+        put16( r, get16( d ) );
+        put16( r + 2, 0x8500 );         /* answer, authoritative, RD */
+        put16( r + 4, 0 );
+        put16( r + 6, 1 );
+        put16( r + 8, 0 );
+        put16( r + 10, 0 );
+        mem_copy( r + 12, d + 12, 34 ); /* the name as it was asked */
+        put16( r + 46, 0x0020 );
+        put16( r + 48, 1 );
+        put32( r + 50, NB_TTL );
+        put16( r + 54, 6 );
+        put16( r + 56, 0x0000 );        /* a unique name, B node */
+        put32( r + 58, if_ip );
+        /* the asker is on our network and waiting: take its card address
+           from this frame, so the answer need not wait for an ARP */
+        if ( same_subnet( src ) && arp_find( src ) == NULL && rx_srcmac ) arp_put( src, rx_srcmac );
+        udp_send( src, sport, NBNS_PORT, NULL, 62 );
+    }
+}
+
+/* the lookup's next step: WINS (if there is one), broadcast, DNS (if
+   there is one), or give up */
+static void res_next( u8 step )
+{
+    int sent;
+
+    if ( step == RS_WINS && if_wins == 0 ) step = RS_BCAST;
+    if ( step == RS_DNS && if_dns == 0 ) {
+        res.state = NET_FAIL;
+        res_end();
+        return;
+    }
+    res.step = step;
+    res.tries = 0;
+    res.id = (u16)rnd();
+    if ( step == RS_DNS ) sent = dns_send();
+    else sent = nbns_send();
+    /* a send that is waiting on ARP goes again as soon as the answer
+       can be in */
+    res.give_up = nds_ticks() + ( !sent ? ARP_RETRY : step == RS_BCAST ? 14 : 18 );
+}
+
+/* a lookup's time is up: ask again, or move on */
+static void res_timeout( u32 now )
+{
+    switch ( res.step ) {
+    case RS_WINS:                       /* two tries, a second each */
+        if ( ++res.tries >= 2 ) res_next( RS_BCAST );
+        else res.give_up = now + ( nbns_send() ? 18 : ARP_RETRY );
+        break;
+    case RS_BCAST:                      /* three, three-quarters of a second */
+        if ( ++res.tries >= 3 ) res_next( RS_DNS );
+        else res.give_up = now + ( nbns_send() ? 14 : ARP_RETRY );
+        break;
+    default:                            /* DNS: four, a second each */
+        if ( ++res.tries > 3 ) { res.state = NET_FAIL; res_end(); }
+        else res.give_up = now + ( dns_send() ? 18 : ARP_RETRY );
+        break;
+    }
 }
 
 /* ---------------------------------------------------------------- */
@@ -1473,23 +1880,24 @@ static void timers( void )
 
     if ( ping.active && (long)( now - ping.give_up ) >= 0 ) {
         if ( ++ping.tries > 3 ) { ping.state = NET_FAIL; ping.active = 0; }
-        else { icmp_echo( ping.ip, ping.id, ping.seq ); ping.give_up = now + 18; }
+        else ping.give_up = now + ( icmp_echo( ping.ip, ping.id, ping.seq ) ? 18 : ARP_RETRY );
     }
-    if ( res.active && (long)( now - res.give_up ) >= 0 ) {
-        if ( ++res.tries > 3 ) { res.state = NET_FAIL; res.active = 0; }
-        else { dns_send(); res.give_up = now + 18; }
-    }
+    if ( res.active && (long)( now - res.give_up ) >= 0 ) res_timeout( now );
 }
 
 /* ---------------------------------------------------------------- */
 /* the socket calls (nd_call)                                        */
 /* ---------------------------------------------------------------- */
 
-static int do_ifstat( void *buf, u32 len )
+static int do_ifstat( void *buf, u32 len, u32 *answer )
 {
     SOCK_IF *info = (SOCK_IF *)buf;
+    static const u8 dhst[6] = { DHST_OFF, DHST_ASKING, DHST_ASKING,
+                                DHST_BOUND, DHST_RENEWING, DHST_REBINDING };
+
     if ( len < SOCKIF_LEN ) return ERR_BADLEN;
-    mem_zero( info, SOCKIF_LEN );
+    len = len < SOCKIF_LEN2 ? SOCKIF_LEN : SOCKIF_LEN2;
+    mem_zero( info, len );
     info->ip = if_ip;
     info->mask = if_mask;
     info->gw = if_gw;
@@ -1499,6 +1907,32 @@ static int do_ifstat( void *buf, u32 len )
     info->up = if_up;
     info->dhcp = if_dhcp;
     str_copy( info->nic, if_name, sizeof( info->nic ) );
+    if ( len == SOCKIF_LEN2 ) {
+        if ( if_up && if_dhcp == DHS_BOUND ) {
+            info->dhcpsrv = dhcp_server_ip;
+            info->leaseage = ticks_secs( nds_ticks() - dhcp_bound_at );
+        }
+        info->dhstate = dhcp_state < 6 ? dhst[dhcp_state] : DHST_OFF;
+        info->acks = dhcp_acks;
+        info->wins = if_wins;
+        str_copy( info->nbname, nb_name, sizeof( info->nbname ) );
+    }
+    *answer = len;
+    return 0;
+}
+
+/* SOCK_DHCP: IPCONFIG's /RELEASE and /RENEW */
+static int do_dhcp( void *buf, u32 len, u32 *answer )
+{
+    u32 op;
+
+    if ( len < 4 ) return ERR_BADLEN;
+    op = *(u32 *)buf;
+    if ( if_static ) return ERR_BADDATA;    /* /IP= on the DEVICE= line: no lease */
+    if ( op == DHCPOP_RELEASE ) dhcp_release();
+    else if ( op == DHCPOP_RENEW ) dhcp_renew();
+    else return ERR_FUNC;
+    *answer = 0;
     return 0;
 }
 
@@ -1749,24 +2183,27 @@ static int do_resolve( void *buf, u32 len, u32 *answer )
 
     if ( len < SOCKRES_LEN ) return ERR_BADLEN;
     req->name[sizeof( req->name ) - 1] = 0;
-    if ( !if_up || if_dns == 0 ) { req->state = NET_FAIL; *answer = NET_FAIL; return 0; }
+    if ( !if_up || ( if_dns == 0 && !nb_able( req->name ) ) ) {
+        req->state = NET_FAIL;
+        *answer = NET_FAIL;
+        return 0;
+    }
 
-    if ( res.state == NET_DONE && res.active == 0 && str_same( res.name, req->name ) ) {
+    if ( res.active == 0 && str_same( res.name, req->name ) &&
+         ( res.state == NET_DONE ||
+           ( res.state == NET_FAIL && nds_ticks() - res_done_at < RES_HOLD ) ) ) {
         req->ip = res.ip;
-        req->state = NET_DONE;
-        *answer = NET_DONE;
+        req->state = res.state;
+        *answer = res.state;
         return 0;
     }
     if ( !res.active || !str_same( res.name, req->name ) ) {
         str_copy( res.name, req->name, sizeof( res.name ) );
-        res.id = (u16)rnd();
         res.lport = (u16)( 0xC000 + ( rnd() & 0x3FFF ) );
         res.ip = 0;
         res.state = NET_PENDING;
-        res.tries = 0;
         res.active = 1;
-        res.give_up = nds_ticks() + 18;
-        dns_send();
+        res_next( nb_able( res.name ) ? RS_WINS : RS_DNS );
     }
     req->ip = res.ip;
     req->state = res.state;
@@ -1797,8 +2234,7 @@ static int do_ping( void *buf, u32 len, u32 *answer )
         ping.tries = 0;
         ping.active = 1;
         ping.sent_at = nds_ticks();
-        ping.give_up = ping.sent_at + 18;
-        icmp_echo( ping.ip, ping.id, ping.seq );
+        ping.give_up = ping.sent_at + ( icmp_echo( ping.ip, ping.id, ping.seq ) ? 18 : ARP_RETRY );
     }
     req->state = ping.state;
     req->rttms = ping.rtt;
@@ -1855,6 +2291,197 @@ static int do_setca( void *buf, u32 len )
 }
 
 /* ---------------------------------------------------------------- */
+/* the DEVICE= line: /IP=, /MASK=, /GW=, /DNS=                       */
+/* ---------------------------------------------------------------- */
+
+static u32 opt_ip, opt_mask, opt_gw, opt_dns, opt_wins;
+static u8  opt_bad;
+
+/* /NAME=: 1 to 15 of the characters a NetBIOS name may safely have,
+   kept in upper case; 0 if the name is not one */
+static int take_name( const char *p, const char **after )
+{
+    u32 n = 0;
+    u8  ch;
+
+    for ( ;; p++ ) {
+        ch = (u8)*p;
+        if ( ch == 0 || ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n' || ch == '/' ) break;
+        if ( !( ( ch >= 'A' && ch <= 'Z' ) || ( ch >= 'a' && ch <= 'z' ) || ( ch >= '0' && ch <= '9' ) ||
+                ch == '-' || ch == '_' || ch == '!' || ch == '#' || ch == '$' || ch == '%' ||
+                ch == '&' || ch == '\'' || ch == '(' || ch == ')' || ch == '^' || ch == '{' ||
+                ch == '}' || ch == '~' ) ) return 0;
+        if ( n >= 15 ) return 0;
+        nb_name[n++] = (char)nb_upper( ch );
+    }
+    nb_name[n] = 0;
+    *after = p;
+    return n > 0;
+}
+
+/* a dotted quad, a.b.c.d, ending at a space, a switch or the line's end;
+   0 if it is not one */
+static u32 parse_ip( const char *p, const char **after )
+{
+    u32 ip = 0, part;
+    int i, digits;
+
+    for ( i = 0; i < 4; i++ ) {
+        part = 0;
+        digits = 0;
+        while ( *p >= '0' && *p <= '9' && digits < 4 ) {
+            part = part * 10 + (u32)( *p - '0' );
+            p++;
+            digits++;
+        }
+        if ( digits == 0 || digits > 3 || part > 255 ) return 0;
+        ip = ( ip << 8 ) | part;
+        if ( i < 3 ) {
+            if ( *p != '.' ) return 0;
+            p++;
+        }
+    }
+    if ( *p && *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n' && *p != '/' ) return 0;
+    *after = p;
+    return ip;
+}
+
+/* does the switch at p (just past the '/') read 'name' then '=' or ':'? */
+static const char *switch_is( const char *p, const char *name )
+{
+    while ( *name ) {
+        if ( ( *p | 0x20 ) != *name ) return NULL;
+        p++;
+        name++;
+    }
+    return ( *p == '=' || *p == ':' ) ? p + 1 : NULL;
+}
+
+static void say_switch( const char *what, const char *p )
+{
+    char text[100];
+    u32 i = 0;
+
+    str_copy( text, "TCP/IP: ", sizeof( text ) );
+    while ( text[i] ) i++;
+    while ( *p && *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n' && i < 40 ) text[i++] = *p++;
+    text[i] = 0;
+    str_copy( text + i, what, sizeof( text ) - i );
+    nds_print( text );
+}
+
+static void parse_line( const char *line )
+{
+    const char *p = line, *value, *after;
+    u32 *slot;
+
+    while ( *p && *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n' ) p++;
+    for ( ; *p && *p != '\r' && *p != '\n'; p++ ) {
+        if ( *p != '/' ) continue;
+        slot = NULL;
+        if ( ( value = switch_is( p + 1, "name" ) ) != NULL ) {
+            if ( !take_name( value, &after ) ) {
+                nb_name[0] = 0;
+                say_switch( " is not a name of 1 to 15 letters and digits\r\n", p );
+                opt_bad = 1;
+                continue;
+            }
+            p = after - 1;
+            continue;
+        }
+        if ( ( value = switch_is( p + 1, "ip" ) ) != NULL ) slot = &opt_ip;
+        else if ( ( value = switch_is( p + 1, "mask" ) ) != NULL ) slot = &opt_mask;
+        else if ( ( value = switch_is( p + 1, "gw" ) ) != NULL ) slot = &opt_gw;
+        else if ( ( value = switch_is( p + 1, "dns" ) ) != NULL ) slot = &opt_dns;
+        else if ( ( value = switch_is( p + 1, "wins" ) ) != NULL ) slot = &opt_wins;
+        if ( slot == NULL ) {
+            say_switch( " is not a TCPIP.SYS switch\r\n", p );
+            continue;
+        }
+        *slot = parse_ip( value, &after );
+        if ( *slot == 0 ) {
+            say_switch( " is not an address such as 192.168.1.20\r\n", p );
+            opt_bad = 1;
+            continue;
+        }
+        p = after - 1;
+    }
+}
+
+/* a mask is ones then zeros */
+static int mask_ok( u32 mask )
+{
+    u32 low = ~mask + 1;            /* the lowest one bit, or 0 for 0.0.0.0 */
+    return mask != 0 && ( low & ( low - 1 ) ) == 0;
+}
+
+/* the mask an address's class gives, for /IP= without /MASK= */
+static u32 class_mask( u32 ip )
+{
+    if ( ( ip >> 24 ) < 128 ) return 0xFF000000L;
+    if ( ( ip >> 24 ) < 192 ) return 0xFFFF0000L;
+    return 0xFFFFFF00L;
+}
+
+/* check the switches and make them the interface's; 0 if they are wrong */
+static int take_static( void )
+{
+    if ( opt_bad ) return 0;
+    if ( opt_ip == 0 ) {
+        if ( opt_mask || opt_gw ) nds_print( "TCP/IP: /MASK= and /GW= are used only with /IP=\r\n" );
+        dns_fixed = opt_dns;
+        wins_fixed = opt_wins;
+        if_wins = opt_wins;
+        return 1;
+    }
+    if ( opt_ip == IP_BCAST ) {
+        nds_print( "TCP/IP: /IP= cannot be 255.255.255.255\r\n" );
+        return 0;
+    }
+    if ( opt_mask == 0 ) opt_mask = class_mask( opt_ip );
+    if ( !mask_ok( opt_mask ) ) {
+        nds_print( "TCP/IP: /MASK= is not a network mask such as 255.255.255.0\r\n" );
+        return 0;
+    }
+    if ( opt_gw && ( ( opt_gw ^ opt_ip ) & opt_mask ) != 0 ) {
+        nds_print( "TCP/IP: /GW= is not on the same network as /IP=\r\n" );
+        return 0;
+    }
+    if_static = 1;
+    if_ip = opt_ip;
+    if_mask = opt_mask;
+    if_gw = opt_gw;
+    if_dns = opt_dns;
+    if_lease = 0;
+    dns_fixed = opt_dns;
+    wins_fixed = opt_wins;
+    if_wins = opt_wins;
+    return 1;
+}
+
+/* "IP Address: 10.0.2.15" */
+static void say_address( void )
+{
+    char text[40];
+    u32 i, shift, part;
+
+    str_copy( text, "IP Address: ", sizeof( text ) );
+    i = 0; while ( text[i] ) i++;
+    for ( shift = 24; ; shift -= 8 ) {
+        part = ( if_ip >> shift ) & 0xFF;
+        if ( part >= 100 ) text[i++] = (char)( '0' + part / 100 );
+        if ( part >= 10 ) text[i++] = (char)( '0' + part / 10 % 10 );
+        text[i++] = (char)( '0' + part % 10 );
+        if ( shift == 0 ) break;
+        text[i++] = '.';
+    }
+    text[i++] = '\r';
+    text[i++] = '\n';
+    text[i] = 0;
+    nds_print( text );
+}
+
+/* ---------------------------------------------------------------- */
 /* the four entries the kernel calls                                 */
 /* ---------------------------------------------------------------- */
 
@@ -1866,7 +2493,8 @@ int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
     pump();
 
     switch ( fn ) {
-    case SOCK_IFSTAT:  result = do_ifstat( buf, len ); if ( !result ) *answer = SOCKIF_LEN; break;
+    case SOCK_IFSTAT:  result = do_ifstat( buf, len, answer ); break;
+    case SOCK_DHCP:    result = do_dhcp( buf, len, answer ); break;
     case SOCK_OPEN:    result = do_open( buf, len, answer ); break;
     case SOCK_CLOSE:   result = do_close( buf, len ); break;
     case SOCK_CONNECT: result = do_connect( buf, len ); break;
@@ -1912,11 +2540,8 @@ int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
 int __cdecl nd_init( const char *line )
 {
     NIC_INFOBLOCK info;
-    u32 answer;
+    u32 answer, start;
     int i;
-    char text[64];
-
-    (void)line;
 
     if ( nds_niccount() == 0 ) {
         nds_print( "TCP/IP: no network card is loaded - load the card driver first\r\n" );
@@ -1928,6 +2553,11 @@ int __cdecl nd_init( const char *line )
     }
     mem_copy( if_mac, info.mac, 6 );
     str_copy( if_name, info.name, sizeof( if_name ) );
+
+    /* the switches first: a wrong address stops the load before any
+       memory is taken */
+    parse_line( line );
+    if ( !take_static() ) return 1;
 
     rnd_state = nds_ticks() ^ ( (u32)if_mac[5] << 16 ) ^ get32( if_mac + 1 );
 
@@ -1951,16 +2581,23 @@ int __cdecl nd_init( const char *line )
     nds_tickhook();
     running = 1;
 
-    /* DHCP runs from here on, on the clock: it is bound once a program
-       finds the interface up (SOCK_IFSTAT) */
-    dhcp_start();
+    if ( if_static ) {
+        if_up = 1;
+        if_dhcp = DHS_STATIC;
+        dhcp_state = DH_OFF;
+        if ( if_gw ) arp_request( if_gw );  /* learn the gateway's address early */
+        say_address();
+        return 0;
+    }
 
-    str_copy( text, "TCP/IP on ", sizeof( text ) );
-    i = 0; while ( text[i] ) i++;
-    str_copy( text + i, if_name, sizeof( text ) - i );
-    i = 0; while ( text[i] ) i++;
-    str_copy( text + i, ", asking DHCP for an address\r\n", sizeof( text ) - i );
-    nds_print( text );
+    /* DHCP runs on the clock.  Wait up to five seconds here for the first
+       lease, so the address can be shown; without one the clock keeps
+       asking, more slowly, and IPCONFIG shows when one arrives */
+    dhcp_start();
+    start = nds_ticks();
+    while ( dhcp_state != DH_BOUND && nds_ticks() - start < 5 * TICKS_SEC + 1 ) ;
+    if ( dhcp_state == DH_BOUND ) say_address();
+    else nds_print( "Failed to get IP address\r\n" );
     return 0;
 }
 

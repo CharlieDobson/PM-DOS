@@ -294,8 +294,62 @@ static u8 *q_fill_slot( void )
     return q_slot( q_count == QN ? QN : q_tail );
 }
 
+/* the bindings (NIC_BIND): a protocol driver other than the default
+   reader - NETBEUI.SYS beside TCPIP.SYS - claims an Ethernet type or an
+   802.2 DSAP, and the frames that match are queued for it apart from
+   NIC_RECV's.  Filled by the handler, emptied by NIC_RECVB */
+#define BQN         8                   /* frames a binding's queue holds */
+
+static struct {
+    u8   used;
+    u8   dsap;                          /* with type 0: an 802.3 frame's DSAP */
+    u16  type;                          /* an Ethernet type, or 0 */
+    u8  *q;                             /* BQN slots of QSLOT */
+    u32  head, tail;
+    volatile u32 count;
+} binds[NIC_BINDS];
+
+/* which binding wants this frame, or -1 */
+static int bind_match( const u8 *frame, u32 len )
+{
+    u16 type;
+    int i;
+
+    if ( len < NIC_HDRLEN + 1 ) return -1;
+    type = (u16)( ( (u16)frame[12] << 8 ) | frame[13] );
+    for ( i = 0; i < NIC_BINDS; i++ ) {
+        if ( !binds[i].used ) continue;
+        if ( binds[i].type ? type == binds[i].type
+                           : ( type <= 1500 && frame[14] == binds[i].dsap ) ) return i;
+    }
+    return -1;
+}
+
+static void bind_put( int b, const u8 *frame, u32 len )
+{
+    u8 *slot;
+
+    if ( binds[b].count == BQN ) {
+        stats.rxdropped++;
+        return;
+    }
+    slot = binds[b].q + binds[b].tail * QSLOT;
+    *(u16 *)slot = (u16)len;
+    mem_copy( slot + 2, frame, len );
+    binds[b].tail = ( binds[b].tail + 1 ) % BQN;
+    binds[b].count++;
+    stats.rxframes++;
+    stats.rxbytes += len;
+}
+
 static void q_filled( u32 len )
 {
+    int b = bind_match( q_fill_slot() + 2, len );
+
+    if ( b >= 0 ) {                     /* another protocol's: its own queue */
+        bind_put( b, q_fill_slot() + 2, len );
+        return;
+    }
     if ( q_count == QN ) {
         stats.rxdropped++;
         return;
@@ -1087,6 +1141,50 @@ int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
         int_back( flags );
         *answer = got;
         return 0;
+
+    case NIC_BIND: {
+        u8 *req = (u8 *)buf;
+        u16 type;
+        int i;
+
+        if ( len < NICB_LEN ) return ERR_BADLEN;
+        type = *(u16 *)req;
+        for ( i = 0; i < NIC_BINDS && binds[i].used; i++ ) ;
+        if ( i == NIC_BINDS ) return ERR_GENERAL;
+        binds[i].q = nds_alloc( BQN * QSLOT );
+        if ( binds[i].q == 0 ) return ERR_GENERAL;
+        binds[i].type = type;
+        binds[i].dsap = type ? 0 : req[2];
+        binds[i].head = binds[i].tail = 0;
+        binds[i].count = 0;
+        flags = int_off();
+        binds[i].used = 1;              /* the handler may use it from now */
+        int_back( flags );
+        *answer = (u32)( i + 1 );
+        return 0;
+    }
+
+    case NIC_RECVB: {
+        u32 b;
+
+        if ( len < 4 ) return ERR_BADLEN;
+        b = *(u32 *)buf;
+        if ( b < 1 || b > NIC_BINDS || !binds[b - 1].used ) return ERR_BADDATA;
+        b--;
+        if ( binds[b].count == 0 ) {
+            *answer = 0;
+            return 0;
+        }
+        slot = binds[b].q + binds[b].head * QSLOT;
+        got = *(u16 *)slot;
+        mem_copy( (u8 *)buf + 4, slot + 2, got < len - 4 ? got : len - 4 );
+        flags = int_off();
+        binds[b].head = ( binds[b].head + 1 ) % BQN;
+        binds[b].count--;
+        int_back( flags );
+        *answer = got;
+        return 0;
+    }
 
     case NIC_STATS:
         if ( len < NICS_LEN ) return ERR_BADLEN;

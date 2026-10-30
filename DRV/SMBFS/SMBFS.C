@@ -67,6 +67,10 @@ typedef struct {
 typedef struct {
     int           sock;            /* the TCP socket */
     int           proto;           /* 1 = SMB1 (NBT/139), 2 = SMB2/3 (445) */
+    u32           nbh;             /* or a NetBEUI session (SMB1 then) */
+    unsigned char nb_pend[4];      /* NetBIOS-over-TCP header bytes still to give */
+    int           nb_pendn, nb_pendoff;
+    u32           nb_msgleft;      /* bytes of the message under it still to give */
     union {                        /* one protocol engine, per the mount */
         smb2_client c2;
         smb1_client c1;
@@ -338,6 +342,60 @@ static int drv_smb_recv( void *ctx, unsigned char *buf, int len )
     return dsock_recvwait( (int)ctx, buf, (u32)len, 6000 );
 }
 
+/* The same callbacks over NetBEUI.  The SMB1 engine speaks NetBIOS over
+   TCP: a 4-byte header (type, length) on every message, and a SESSION
+   REQUEST first.  Over NetBEUI the session is NetBIOS's own and messages
+   keep their bounds, so the header is taken off on the way out and made
+   from the message's length on the way in, and the SESSION REQUEST is
+   answered here with the positive response it would have had. */
+static int nb_smb_send( void *ctx, const unsigned char *buf, int len )
+{
+    session *s = (session *)ctx;
+    u32 plen;
+
+    if ( len < 4 ) return -1;
+    if ( buf[0] == 0x81 ) {             /* SESSION REQUEST: already in session */
+        s->nb_pend[0] = 0x82;
+        s->nb_pend[1] = s->nb_pend[2] = s->nb_pend[3] = 0;
+        s->nb_pendn = 4;
+        s->nb_pendoff = 0;
+        return len;
+    }
+    if ( buf[0] != 0x00 ) return len;   /* a keepalive: NetBEUI has its own */
+    plen = ( (u32)( buf[1] & 1 ) << 16 ) | ( (u32)buf[2] << 8 ) | buf[3];
+    if ( (u32)len != 4 + plen ) return -1;      /* the engine sends whole messages */
+    return dnb_send( s->nbh, buf + 4, plen, 15000 ) ? len : -1;
+}
+static int nb_smb_recv( void *ctx, unsigned char *buf, int len )
+{
+    session *s = (session *)ctx;
+    u32 n;
+
+    if ( len <= 0 ) return 0;
+    if ( s->nb_pendoff == s->nb_pendn && s->nb_msgleft == 0 ) {
+        n = dnb_wait( s->nbh, 6000 );   /* the next message: make its header */
+        if ( n == 0 ) return 0;
+        s->nb_pend[0] = 0x00;
+        s->nb_pend[1] = (unsigned char)( ( n >> 16 ) & 1 );
+        s->nb_pend[2] = (unsigned char)( n >> 8 );
+        s->nb_pend[3] = (unsigned char)n;
+        s->nb_pendn = 4;
+        s->nb_pendoff = 0;
+        s->nb_msgleft = n;
+    }
+    if ( s->nb_pendoff < s->nb_pendn ) {
+        n = (u32)( s->nb_pendn - s->nb_pendoff );
+        if ( n > (u32)len ) n = (u32)len;
+        memcpy( buf, s->nb_pend + s->nb_pendoff, n );
+        s->nb_pendoff += (int)n;
+        return (int)n;
+    }
+    n = s->nb_msgleft < (u32)len ? s->nb_msgleft : (u32)len;
+    n = dnb_recv( s->nbh, buf, n );
+    s->nb_msgleft -= n;
+    return (int)n;
+}
+
 /* =================================================================== */
 /* sessions - one code path over the two engines, chosen by s->proto    */
 /* =================================================================== */
@@ -385,8 +443,42 @@ static void drop_session( int drive )
     if ( s == (session *)0 ) return;
     sess_disconnect( s );
     if ( s->sock ) dsock_close( s->sock );
+    if ( s->nbh ) dnb_hangup( s->nbh );
     nds_free( s );
     g_sess[drive] = (session *)0;
+}
+
+/* the server is not found over TCP/IP (or there is none): NetBEUI, if
+   NETBEUI.SYS is loaded, with SMB1 - the only SMB that runs over it */
+static int mount_netbeui( redir_req *r, int drive )
+{
+    session *s;
+    int i, rc;
+    u32 seed;
+
+    for ( i = 0; r->server[i]; i++ ) if ( r->server[i] == '.' || i >= 15 ) break;
+    if ( r->server[i] || i == 0 || !dnb_here( smb1_calling ) ) {     /* our NetBEUI name calls */
+        r->status = E_NOFILE;           /* unknown server */
+        return 0;
+    }
+    s = (session *)nds_alloc( sizeof( session ) );
+    if ( s == (session *)0 ) { r->status = E_GENERAL; return 0; }
+    memset( s, 0, sizeof( *s ) );
+    s->proto = 1;
+    s->nbh = dnb_call( r->server, 0x20, 8000 );         /* the server service */
+    if ( s->nbh == 0 ) { nds_free( s ); r->status = E_NOFILE; return 0; }
+    seed = nds_ticks() * 2654435761UL + (u32)drive;
+    rc = smb1_connect( &s->u.c1, nb_smb_send, nb_smb_recv, (void *)s, seed,
+                       r->server, r->share, r->user, r->pass, r->domain );
+    if ( rc != 0 ) {
+        dnb_hangup( s->nbh );
+        nds_free( s );
+        r->status = E_ACCESS;           /* auth or share refused */
+        return 0;
+    }
+    g_sess[drive] = s;
+    r->status = 0;
+    return 0;
 }
 
 static int do_mount( redir_req *r )
@@ -398,9 +490,11 @@ static int do_mount( redir_req *r )
     if ( drive < 0 || drive >= NET_DRIVES ) { r->status = E_BADDRIVE; return 0; }
     if ( g_sess[drive] ) drop_session( drive );
 
-    if ( !dsock_up( 3000 ) ) { r->status = E_GENERAL; return 0; }   /* no network */
-    ip = dsock_resolve( r->server, 2000 );
-    if ( ip == 0 ) { r->status = E_NOFILE; return 0; }              /* unknown server */
+    /* TCP/IP first, when it is loaded and has an address: the name by
+       NetBIOS (WINS, broadcast), then DNS */
+    ip = 0;
+    if ( dsock_up( 3000 ) ) ip = dsock_resolve( r->server, 8000 );
+    if ( ip == 0 ) return mount_netbeui( r, drive );
 
     s = (session *)nds_alloc( sizeof( session ) );
     if ( s == (session *)0 ) { r->status = E_GENERAL; return 0; }
@@ -415,10 +509,11 @@ static int do_mount( redir_req *r )
     {
         u32 seed = nds_ticks() * 2654435761UL + (u32)drive;
         int rc;
-        if ( s->proto == 1 )
+        if ( s->proto == 1 ) {
+            dsock_nbname( smb1_calling );       /* introduce ourselves by /NAME= */
             rc = smb1_connect( &s->u.c1, drv_smb_send, drv_smb_recv, (void *)s->sock, seed,
                                r->server, r->share, r->user, r->pass, r->domain );
-        else
+        } else
             rc = smb2_connect( &s->u.c2, drv_smb_send, drv_smb_recv, (void *)s->sock, seed,
                                r->server, r->share, r->user, r->pass, r->domain );
         if ( rc != 0 ) {

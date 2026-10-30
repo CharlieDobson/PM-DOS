@@ -365,13 +365,13 @@ rem each one has to be named here too: a directory missing from this
 rem list is one whose failed assembly links yesterday's object.  (A
 rem failed COMPILE does not need it - wcc386, unlike wasm, returns an
 rem error - but CHKDSK's and LABEL's startup is assembled like the rest.)
-for %%D in (ACROREAD ANSI ATTRIB CACHE CDEX CHKDSK CHOICE DEBUG DEFRAG DELTREE DISKCOMP DISKCOPY DRIVES EDIT FC FDISK FIND FORMAT HELP ISAPNP KEYB LABEL LFNAPI LRGDISK MEM MODE MORE MOUNT MOVE PMD QBASIC SCANDISK SETUP SHUTDOWN SORT SYS TREE TREEVIEW UNDELETE USB XARC XCOPY NET SNTP WGET FTP TELNET) do if exist CMD\%%D\*.obj del /q CMD\%%D\*.obj
+for %%D in (ACROREAD ANSI ATTRIB CACHE CDEX CHKDSK CHOICE DEBUG DEFRAG DELTREE DISKCOMP DISKCOPY DRIVES EDIT FC FDISK FIND FORMAT HELP ISAPNP KEYB LABEL LFNAPI LRGDISK MEM MODE MORE MOUNT MOVE PMD QBASIC SCANDISK SETUP SHUTDOWN SORT SYS TREE TREEVIEW UNDELETE USB XARC XCOPY NET SNTP WGET FTP TELNET IPCONFIG PING) do if exist CMD\%%D\*.obj del /q CMD\%%D\*.obj
 if exist CMD\NET\TLS\*.obj del /q CMD\NET\TLS\*.obj
 if exist NLS\*.obj del /q NLS\*.obj
 rem ...and the 32-bit drivers under DRV\, the shared base and a
 rem directory each.
 if exist DRV\*.obj del /q DRV\*.obj
-for %%D in (NE2000 RTL8139 PCNET TULIP EEPRO100 E1000 WD80X3 EL3C501 EL3C509 EL3C90X TCPIP RAMDISK) do if exist DRV\%%D\*.obj del /q DRV\%%D\*.obj
+for %%D in (NE2000 RTL8139 PCNET TULIP EEPRO100 E1000 WD80X3 EL3C501 EL3C509 EL3C90X TCPIP NETBEUI RAMDISK) do if exist DRV\%%D\*.obj del /q DRV\%%D\*.obj
 
 rem FSIZE asserts the sizes the checks below used to test with FOR's
 rem "~z" size modifier.  That modifier is a cmd.exe command EXTENSION:
@@ -677,6 +677,18 @@ cd ..\..
 cd CMD\TELNET
 wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=..\NET telnet.c || goto :fail
 wlink form raw bin option offset=0x2000 name ..\..\BIN\TELNET.EXE file ..\NET\netstart.obj,..\NET\socklib.obj,telnet.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+
+cd CMD\IPCONFIG
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=..\NET ipconfig.c || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\BIN\IPCONFIG.EXE file ..\NET\netstart.obj,..\NET\socklib.obj,ipconfig.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+
+cd CMD\PING
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=..\NET ping.c || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\BIN\PING.EXE file ..\NET\netstart.obj,..\NET\socklib.obj,ping.obj ^
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
 cd ..\..
 
@@ -1278,7 +1290,7 @@ for %%F in (CMD.EXE CHOICE.COM MORE.COM SORT.COM SYS.COM FORMAT.COM MEM.EXE FDIS
   CACHE.EXE UNDELETE.EXE CDEX.EXE SHUTDOWN.EXE FIND.EXE DISKCOPY.COM DISKCOMP.COM MOVE.EXE DELTREE.EXE TREE.EXE MODE.EXE ^
   ATTRIB.EXE CHKDSK.EXE LABEL.EXE XCOPY.EXE EDIT.EXE FC.EXE ISAPNP.EXE PMD.EXE DOSSHELL.EXE ^
   ACROREAD.EXE SCANDISK.EXE DEFRAG.EXE XARC.EXE TREEVIEW.EXE KEYB.COM HELP.EXE USB.EXE DEBUG.EXE QBASIC.EXE QBRUN.EXE ^
-  SNTP.EXE WGET.EXE FTP.EXE TELNET.EXE NET.EXE SMBSRV.EXE) do TOOLS\D32BIND.EXE BIN\%%F TOOLS\D32STUB.EXE || goto :fail
+  SNTP.EXE WGET.EXE FTP.EXE TELNET.EXE NET.EXE SMBSRV.EXE IPCONFIG.EXE PING.EXE) do TOOLS\D32BIND.EXE BIN\%%F TOOLS\D32STUB.EXE || goto :fail
 rem SETUP is the one with a 16-bit version of its own: the MS-DOS half
 rem upgrades the DOS it runs on, the PM-DOS half installs from a Setup
 rem disk.  See "SETUP" above.
@@ -2125,6 +2137,20 @@ wlink form raw bin option offset=0x10000000 name tcpip_1.bin ^
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
 cd ..\..
 TOOLS\D32DRV.EXE BIN\TCPIP.SYS TOOLS\DRVSTUB.BIN DRV\TCPIP\tcpip_0.bin DRV\TCPIP\tcpip_1.bin || goto :fail
+
+echo === NETBEUI.SYS (NetBIOS over NetBEUI: 802.2 LLC, SAP F0) ===
+rem Like TCPIP.SYS it rides on a loaded card driver, but it asks the card
+rem for the frames with DSAP F0 alone (NIC_BIND) so TCPIP.SYS keeps the
+rem rest.  Programs reach it on its row (21h/F1h AL=25h), SMBFS through
+rem NDS_FLAGCALL (NDTF_NETBIOS); INC\NETBIOS.H.  NDSTART alone, no NETCORE.
+cd DRV\NETBEUI
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=.. netbeui.c || goto :fail
+wlink form raw bin option offset=0x0 name netbeui_0.bin file ..\ndstart.obj,netbeui.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+wlink form raw bin option offset=0x10000000 name netbeui_1.bin file ..\ndstart.obj,netbeui.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+TOOLS\D32DRV.EXE BIN\NETBEUI.SYS TOOLS\DRVSTUB.BIN DRV\NETBEUI\netbeui_0.bin DRV\NETBEUI\netbeui_1.bin || goto :fail
 
 echo === SMBFS.SYS (the SMB2/3 network redirector: NET USE drive letters) ===
 rem An NDTF_REDIR driver the kernel's net-drive file branches (DOS\NETFS.INC)

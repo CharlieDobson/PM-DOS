@@ -16,6 +16,7 @@
 #define ND_DRIVER
 #include "ndrv.h"
 #include "socket.h"
+#include "netbios.h"
 #include "drvsock.h"
 
 /* ---- the clock: the 18.2 Hz tick, and milliseconds turned into ticks -- */
@@ -58,6 +59,20 @@ static void copy( void *to, const void *from, u32 len )
 }
 
 /* ---- the interface ---- */
+
+/* the computer's NetBIOS name (TCPIP.SYS /NAME=), into out[16]; out is
+   left as it is when there is none */
+void dsock_nbname( char *out )
+{
+    SOCK_IF info;
+    int err, i;
+
+    zero( &info, SOCKIF_LEN2 );
+    sk( SOCK_IFSTAT, &info, SOCKIF_LEN2, &err );
+    if ( err != 0 || info.nbname[0] == 0 ) return;
+    for ( i = 0; i < 15 && info.nbname[i]; i++ ) out[i] = info.nbname[i];
+    out[i] = 0;
+}
 
 int dsock_up( u32 ms )
 {
@@ -232,4 +247,128 @@ int dsock_recvwait( int handle, void *buf, u32 max, u32 ms )
         if ( since( start ) > limit ) return 0;
         dsock_idle();
     }
+}
+
+/* ---- NetBIOS over NetBEUI (NETBEUI.SYS, through NDS_FLAGCALL) ---- */
+
+#define NB_PIECE 1024                   /* what one call carries, on the stack */
+
+static u32 nb( u32 fn, void *buf, u32 len, int *err )
+{
+    u32 answer = 0;
+    int rc = nds_flagcall( NDTF_NETBIOS, fn, buf, len, &answer );
+    if ( err ) *err = rc;
+    return rc == 0 ? answer : 0;
+}
+
+static u32 nb_state( u32 handle, NB_STAT *st )
+{
+    int err;
+    zero( st, NBSTAT_LEN );
+    st->handle = handle;
+    nb( NB_STATE, st, NBSTAT_LEN, &err );
+    return err ? NBX_FAIL : st->state;
+}
+
+int dnb_here( char *name )
+{
+    NB_IF info;
+    int err, i;
+    zero( &info, NBIF_LEN );
+    nb( NB_IFSTAT, &info, NBIF_LEN, &err );
+    if ( err != 0 || !info.up ) return 0;
+    for ( i = 0; i < 15 && info.name[i]; i++ ) name[i] = info.name[i];
+    name[i] = 0;
+    return 1;
+}
+
+u32 dnb_call( const char *name, u8 suffix, u32 ms )
+{
+    NB_NAMEREQ req;
+    NB_STAT st;
+    u32 handle, start = nds_ticks(), limit = ms_ticks( ms ), state;
+    int err, i;
+
+    zero( &req, NBNAME_LEN );
+    for ( i = 0; i < 15 && name[i]; i++ ) req.name[i] = name[i];
+    req.suffix = suffix;
+    handle = nb( NB_CALL, &req, NBNAME_LEN, &err );
+    if ( err || handle == 0 ) return 0;
+    for ( ;; ) {
+        state = nb_state( handle, &st );
+        if ( state == NBX_UP ) return handle;
+        if ( state != NBX_CALLING || since( start ) > limit ) {
+            dnb_hangup( handle );
+            return 0;
+        }
+        dsock_idle();
+    }
+}
+
+void dnb_hangup( u32 handle )
+{
+    int err;
+    nb( NB_HANGUP, &handle, sizeof( handle ), &err );
+}
+
+/* one message, in pieces of NB_PIECE: the parts first, the last with
+   NB_SEND, each part waiting while the message before is still going */
+int dnb_send( u32 handle, const void *data, u32 len, u32 ms )
+{
+    static u8 buf[NBIO_HDR + NB_PIECE];  /* off the stack, like dsock_send's */
+    NB_IO *io = (NB_IO *)buf;
+    NB_STAT st;
+    const u8 *p = (const u8 *)data;
+    u32 start = nds_ticks(), limit = ms_ticks( ms ), n, got;
+    int err;
+
+    do {
+        n = len > NB_PIECE ? NB_PIECE : len;
+        io->handle = handle;
+        io->len = n;
+        copy( buf + NBIO_HDR, p, n );
+        for ( ;; ) {
+            got = nb( n == len ? NB_SEND : NB_SENDP, buf, NBIO_HDR + n, &err );
+            if ( err ) return 0;
+            if ( got ) break;
+            if ( nb_state( handle, &st ) != NBX_UP || since( start ) > limit ) return 0;
+            dsock_idle();
+        }
+        p += n;
+        len -= n;
+    } while ( len );
+    return 1;
+}
+
+/* wait for a message: its length, or 0 when the session ended or the
+   time ran out */
+u32 dnb_wait( u32 handle, u32 ms )
+{
+    NB_STAT st;
+    u32 start = nds_ticks(), limit = ms_ticks( ms );
+
+    for ( ;; ) {
+        if ( nb_state( handle, &st ) != NBX_UP ) return st.state == NBX_CLOSED && st.rxready ? st.rxready : 0;
+        if ( st.rxready ) return st.rxready;
+        if ( since( start ) > limit ) return 0;
+        dsock_idle();
+    }
+}
+
+/* the next part of the message waiting, up to max bytes */
+u32 dnb_recv( u32 handle, void *out, u32 max )
+{
+    static u8 buf[NBIO_HDR + NB_PIECE];
+    NB_IO *io = (NB_IO *)buf;
+    u32 got;
+    int err;
+
+    if ( max > NB_PIECE ) max = NB_PIECE;
+    io->handle = handle;
+    io->len = 0;
+    got = nb( NB_RECV, buf, NBIO_HDR + max, &err );
+    if ( err ) return 0;
+    if ( got > max ) got = max;
+    copy( out, buf + NBIO_HDR, got );
+    return got;
 }

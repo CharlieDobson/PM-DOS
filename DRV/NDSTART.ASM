@@ -59,7 +59,7 @@
         public  _ndv_init, _ndv_park, _ndv_halt, _ndv_call
         public  _nds_alloc, _nds_free, _nds_print, _nds_ticks, _nds_bus
         public  _nds_irqhook, _nds_irqunhook, _nds_tickhook, _nds_tickunhook
-        public  _nds_niccount, _nds_niccall, _nds_sockcall
+        public  _nds_niccount, _nds_niccall, _nds_sockcall, _nds_flagcall
 
 ;=====================================================================
 ; THE ENTRIES - the kernel's register contracts, into C
@@ -297,6 +297,37 @@ _nds_niccall:
 nnc_err:
         movzx   eax,ax
 nnc_out:
+        pop     edi
+        pop     esi
+        pop     ebx
+        ret
+
+;--- int nds_flagcall( u32 flag, u32 fn, void *buf, u32 len, u32 *answer )
+;--- 0 and *answer = what the first driver with that NDTF_* flag
+;--- answered, else ERR_*; ERR_FUNC from a kernel without NDS_FLAGCALL
+_nds_flagcall:
+        push    ebx
+        push    esi
+        push    edi
+        mov     edx,[nds_services]
+        cmp     word ptr [edx+NDS_VER],5        ; NDS_VERSION 5 brought it
+        jb      nfc_old
+        mov     eax,[esp+16]                    ; flag (NDTF_*)
+        mov     ebx,[esp+20]                    ; fn
+        mov     edi,[esp+24]                    ; buf
+        mov     ecx,[esp+28]                    ; len
+        call    dword ptr [edx+NDS_FLAGCALL]    ; -> EAX, CF, AX = ERR_*
+        jc      nfc_err
+        mov     edx,[esp+32]                    ; *answer
+        mov     [edx],eax
+        xor     eax,eax
+        jmp     short nfc_out
+nfc_old:
+        mov     eax,ERR_FUNC
+        jmp     short nfc_out
+nfc_err:
+        movzx   eax,ax
+nfc_out:
         pop     edi
         pop     esi
         pop     ebx
