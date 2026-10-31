@@ -504,7 +504,16 @@ static int do_mount( redir_req *r )
     s->sock = dsock_open( SOCK_STREAM );
     if ( s->sock == 0 ) { nds_free( s ); r->status = E_GENERAL; return 0; }
     if ( !dsock_connect( s->sock, ip, (u16)( ( s->proto == 1 ) ? 139 : 445 ), 5000 ) ) {
-        dsock_close( s->sock ); nds_free( s ); r->status = E_GENERAL; return 0;
+        /* nothing on 445: a server that speaks only SMB1 (Windows for
+           Workgroups, NT 3.x, SMBSRV) is tried on 139, as with /SMB1 */
+        dsock_close( s->sock );
+        s->sock = 0;
+        if ( s->proto == 2 ) {
+            s->proto = 1;
+            s->sock = dsock_open( SOCK_STREAM );
+            if ( s->sock && !dsock_connect( s->sock, ip, 139, 5000 ) ) { dsock_close( s->sock ); s->sock = 0; }
+        }
+        if ( s->sock == 0 ) { nds_free( s ); r->status = E_GENERAL; return 0; }
     }
     {
         u32 seed = nds_ticks() * 2654435761UL + (u32)drive;

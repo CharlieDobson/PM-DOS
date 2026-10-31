@@ -648,6 +648,45 @@ net_rmdir:
         jmp     net_pathop
 
 ;=====================================================================
+; net_rename - 56h on a net drive.  AL = the old name's net drive; the
+;              old name is at F_EDX and the new one at F_EDI.  Both go
+;              to the driver past their "X:" prefixes, the old in
+;              NR_PATH and the new in NR_SHARE (REDIR.H gives the
+;              MOUNT-only field to RENAME), as RMNET2.INC's 1111h does
+;              for a DOS box.  56h used to take a net drive down the FAT
+;              path, where every rename on a share was "file not found".
+;              A new name on another drive is refused as on a disk: a
+;              rename never copies.
+;=====================================================================
+net_rename:
+        mov     dl,al                           ; the old name's drive
+        mov     esi,[ebp+F_EDI]
+        call    net_drive_num                   ; AL = the new name's, if a net one
+        jc      nren_notsame
+        cmp     al,dl
+        jne     nren_notsame
+        mov     ebx,REDIR_RENAME
+        call    net_req_begin                   ; EBX = op, AL = drive
+        mov     esi,[ebp+F_EDX]
+        call    net_setpath                     ; the old name -> NR_PATH
+        mov     esi,[ebp+F_EDI]
+        cmp     byte ptr [esi+1],':'
+        jne     nren_new
+        add     esi,2
+nren_new:
+        mov     edi,OFFSET net_req + NR_SHARE   ; the new name -> NR_SHARE
+        mov     ecx,NR_USER - NR_SHARE
+        call    net_copyz
+        call    net_fire
+        jc      net_err_general
+        cmp     dword ptr [net_req+NR_STATUS],0
+        jne     net_err_status
+        jmp     i21_ok
+nren_notsame:
+        mov     ax,ERR_NOTSAME
+        jmp     i21_fail
+
+;=====================================================================
 ; net_info - 36h on a net drive.  AL = the net drive.  A share has no
 ;            geometry, so report a large, plausible one; DIR turns it
 ;            into a free-bytes figure and nothing else reads it.

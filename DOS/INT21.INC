@@ -6434,6 +6434,10 @@ dos_lol:
 ;       moves between directories when the paths call for it.
 ;=====================================================================
 fn56:
+        mov     esi,[ebp+F_EDX]
+        call    net_drive_num           ; a rename on a net drive -> the redirector
+        jnc     net_rename
+
         ; Neither end may be a device.  The source because there is
         ; nothing there to move, and the destination because a rename
         ; is the other way to get a reserved name onto a disk.

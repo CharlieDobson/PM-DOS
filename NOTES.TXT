@@ -18955,6 +18955,146 @@ Setup images, the four images into the 86Box VM; a copy of the
 delivered HD16 boots to the menu and the prompt.
 
 
+WINDOWS FOR WORKGROUPS: THE LAN MANAGER DIALECTS, BOTH WAYS (2026-10-31)
+---------------------------------------------------------------------
+
+Charlie: "Let's add the WfW protocol."  NETBEUI.SYS (its entry is
+above) reached Windows for Workgroups 3.11, and found that WfW
+answers "NT LM 0.12" with dialect 0xFFFF.  WfW speaks the LAN
+Manager family - its newest is "Windows for Workgroups 3.1a", LAN
+Manager 2.1 with a little more - so NET USE and SMBSRV now speak it
+too, and NT LM 0.12 stays what an NT, Win9x or Samba peer gets.
+
+WHAT WFW ACTUALLY SENDS, read off its own redirector talking to
+SMBSRV: NEGOTIATE with five dialects; SESSION_SETUP in the 10-word
+form, chained to TREE_CONNECT; then the CORE commands - SEARCH (81h)
+for directories, READ (0Ah) and WRITE (0Bh) - with OPEN_ANDX, CLOSE,
+QUERY_INFORMATION (08h), QUERY_INFORMATION_DISK (80h), MKDIR, RMDIR,
+DELETE and RENAME.  No TRANS2: WfW's server answers TRANS2 with
+ERRSRV/ERRerror, so a listing is a SEARCH there too.  Its buffer is
+2,920 bytes and it asks SEARCH for 20 entries at a time.
+
+SMB1.C (the client).  Offers LM1.2X002, DOS LANMAN2.1, LANMAN2.1,
+Windows for Workgroups 3.1a and NT LM 0.12; a LAN Manager answer
+(13 words) sets cl->lm: Flags2 0, the 10-word SESSION_SETUP with the
+LM response alone (or the password in capitals when the server does
+not encrypt), and on a share-level server (WfW) the password goes in
+TREE_CONNECT - the share's password, NET USE's bare word.  Listings by
+SEARCH, resumed by the last entry's 21-byte key; READ and WRITE cut to
+the server's buffer.  Errors are the DOS class and code (status =
+code << 16 | class); "no more files" ends a listing.  Found on the way,
+each a bug against any real server, not only WfW:
+  - WfW 3.11 sends EncryptionKeyLength 0 and the 8-byte key anyway:
+    the key is taken from the bytes.
+  - OPEN_ANDX had a NUL "pad" before the name.  With OEM strings there
+    is none, so a server read the name as empty - WfW said "invalid
+    function".  Only our own server and the perl peer (which both
+    skipped a byte) ever took it.  SMBSRV still skips a leading NUL.
+  - SESSION_SETUP sent SessionKey 0; it now gives back the server's.
+  - The PID was 0xFEFF on every request; it is now an ordinary one per
+    mount.  (Neither of these two was what WfW refused - see below -
+    but both are what the protocol asks.)
+
+SMBSRV.C (the server).  NT LM 0.12 when the client offers it, else the
+newest LAN Manager dialect it offers (answer: the 13-word form, the
+key alone in the bytes, as WfW's own server sends it - with the domain
+after the key WfW said "Error 58: the network has responded
+incorrectly"), else DialectIndex 0xFFFF (it used to pick dialect 0).
+A LAN Manager client gets Flags2 0 and DOS error codes (dos_status).
+New: SEARCH and FCLOSE (resume key: the directory's slot of 4, the
+pattern, the count given, the attributes), core OPEN / CREATE /
+CREATE_NEW / READ / WRITE (a WRITE of 0 bytes sets the file's size),
+QUERY_INFORMATION, CHECK_DIRECTORY, SET_INFORMATION (attributes),
+QUERY_INFORMATION_DISK, RENAME (07h - the server had none), SEEK,
+QUERY/SET_INFORMATION2, CLOSE's LastWriteTime (COPY keeps the date),
+FLUSH, LOCKING_ANDX and LOCK/UNLOCK_BYTE_RANGE (one client: nothing
+can conflict), PROCESS_EXIT, FIND_CLOSE2.  TRANS2 FIND_FIRST2/NEXT2
+match the pattern DOS's way (FCB form, "*" = all) and the search
+attributes, honour MaxDataCount and the client's buffer, give info
+level 1 (8.3, DOS dates) as well as 0x101, and resume (they returned
+the whole directory in one reply).  srv_vfs grows vstat, vrename,
+vsetattr, vfstat, vsettime, vdisk, and srv_dirent the DOS date and
+time; SMBSRVDOS.C (INT 21h) and SMBSRVHOST.C (Win32) fill them.
+
+SMBFS.C.  NET USE without /SMB1 over TCP/IP tried SMB2 on port 445
+only; when 445 does not connect it now tries SMB1 on 139, as /SMB1
+does - which reaches a WfW with TCP/IP-32, NT 3.x, and SMBSRV itself.
+
+THE KERNEL HAD NO NETWORK RENAME.  56h took a net drive down the FAT
+path, so REN on any share - SMB2 as well - said "File not found"; only
+RMDOS (RMNET2.INC's 1111h) sent REDIR_RENAME.  fn56 now routes a net
+drive to net_rename (NETFS.INC): the old name in NR_PATH, the new in
+NR_SHARE, past their "X:" prefixes; a new name on another drive is
+ERR_NOTSAME.
+
+WHY WFW RUNNING ON PM-DOS CANNOT BE A SERVER.  Every file command to
+WfW's server came back ERRDOS 1 when WfW ran on PM-DOS (the rig's
+image): its server does its file work through INT 21h AX=5D00h, the
+network server call, which PM-DOS answers "unsupported" on purpose
+(WINDOWS.INC, RMINFO.INC: "PM-DOS has no redirector for them to be
+part of").  Sharing FROM WfW on PM-DOS therefore needs 5D00h in RMDOS
+- not done; WfW on PM-DOS as a CLIENT is fine.  The client was proven
+against WfW on real MS-DOS 5 instead (below).
+
+TOOLS\FATREPL.PL: AN EMPTY FILE ZEROED THE ROOT.  alloc_chain returned
+the list (0) for a file of no clusters, and the copy loop wrote one
+cluster of zeros at clus_off(0) - two clusters before the data area.
+With 8K clusters that is the whole root directory (found putting an
+empty CONFIG.SYS on a DOS 5 disk); with PM-DOS's own images it hit
+only the unused tail of the root.  It returns an empty list now.
+
+HELP.  NETBEUI.SYS's notes: a "Windows for Workgroups" paragraph.
+
+TESTED (QEMU, NE2000, NetBEUI; the rig is scratchpad 6766cc80
+wfwrig\ + rig\wfwuse.ps1 / wfwsrv.ps1 / wfwmany.ps1 / pairreg.ps1):
+  - WfW 3.11 on real MS-DOS 5 (wfwdos\WFWDOS5_BASE.IMG: DOSBoxRoot's
+    dos5.vhd made raw, WfW's tree and its shares grafted in) sharing
+    C:\ (no password) and C:\WINDOWS (password SECRET): NET USE, DIR,
+    TYPE, COPY both ways (a 21,200-byte file, byte-exact on both
+    disks), MD, COPY into the directory, REN, DIR, DEL, RD, DIR *.TXT,
+    the password share, a wrong password refused; a directory of 150
+    files (three SEARCH replies) lists 152 entries, F1*.TXT 51, and
+    files either side of a reply boundary open.
+  - WfW 3.11 (on PM-DOS) as the client of SMBSRV over NetBEUI: NET USE,
+    DIR, TYPE, COPY both ways (byte-exact), MD, COPY, REN, DEL, RD, DIR
+    with wildcards, the date kept by COPY; 150 files (8 SEARCH replies
+    of 20) all listed.  ATTRIB was not tried: the WfW image has none.
+  - PM-DOS to PM-DOS (NT LM 0.12) over TCP/IP and over NetBEUI, and
+    over TCP/IP without /SMB1 (the 445 -> 139 fallback): the same file
+    operations, REN included.
+  - The host proof (SMB1HOST against SMBSRVHOST, NT LM 0.12): connect,
+    list, read, write, delete, mkdir, rmdir.
+NOT RUN: WfW over TCP/IP-32; LAN Manager 2.x or OS/2 LAN Server; a
+share-level server that does not encrypt (the plain-text password
+path); real hardware.
+KNOWN, NOT CHANGED: DIR on a share says "0 bytes free" (7303h has no
+network branch; every share, SMB2 too) and "Directory of K:\" for a
+subdirectory of a share.
+
+RUNTESTS, all seven rows, with S:\BIN as delivered plus the three new
+files (the tree's other rebuilt programs - FDISK, PMD, SCANDISK, SETUP,
+TREEVIEW, UNDELETE, other sessions' undelivered edits - swapped back):
+everything the same but RMTEST free clusters 6A5A -> 6A4F (SMBSRV.EXE
+eleven clusters bigger), CACHETST "a write is owed" 5 -> 4 (six rows;
+it went 4 -> 5 at the NETBEUI.SYS delivery) and SFTSCAN, two addresses
+13 bytes lower - the SETVER delivery's RMDOS.SYS, whose RMMEM.INC change
+drops exactly 13 bytes, delivered without a RUNTESTS.  Twenty baseline
+files.  LOCKTEST's "caps lock, held" on the 386 row differed once and
+not on the rerun.
+
+Delivered NARROWLY, as the SETVER delivery was, because the tree holds
+other sessions' undelivered work: S:\BIN PMDOS.SYS 195,702, SMBFS.SYS
+75,704, SMBSRV.EXE 137,184; HELP.HLP 276,208 (356 topics).  PMDOS.IMG
+and PMDOS2.IMG by BUILD.CMD's MKDISK lines from their own files (each
+first remade byte for byte; PMDOS2.IMG's volume-label entry, PM-DOS2,
+copied over BUILD.CMD's PM-DOS HELP as it was), HD16.IMG by FATREPL,
+the five Setup images by MKSETUP over S:\BIN plus the three, keeping
+their own PMD.EXE (BIN's newer one is on PMDOS.IMG only).  Every image
+read back against the one it replaced: only the four files and
+SETUP.INF's four size lines differ.  The VM's PMDOS.IMG, PMDOS2.IMG and
+HD16.IMG.  A copy of HD16 boots to the menu and the prompt (QEMU).
+
+
 v0.61 - THE NUMBER CAUGHT UP (2026-09-30)
 ---------------------------------------------------------------------
 

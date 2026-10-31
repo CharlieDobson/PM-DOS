@@ -1,10 +1,18 @@
 /* ==========================================================================
- * SMB1.C - the SMB1 / CIFS ("NT LM 0.12") client engine.  See SMB1.H.
+ * SMB1.C - the SMB1 client engine: "NT LM 0.12" (CIFS) and the LAN
+ * Manager dialects.  See SMB1.H.
  * ==========================================================================
  * NetBIOS-over-TCP (port 139): a session request, then every SMB message
  * rides a 4-byte NBT header (type, flags, 16-bit big-endian length).  The
- * SMB header is the 32-byte CIFS header; OEM (8-bit) strings, NT status,
- * no signing.  Authentication is the old LM + NTLMv1 challenge-response.
+ * SMB header is the 32-byte CIFS header; OEM (8-bit) strings, no signing.
+ * Authentication is the old LM + NTLMv1 challenge-response.
+ *
+ * A LAN Manager server (WfW 3.11, LAN Manager 2.x, OS/2 LAN Server) gets
+ * what WfW's own redirector sends: the 13-word NEGOTIATE answer, a
+ * 10-word SESSION_SETUP with one password, and the core SEARCH, READ and
+ * WRITE (8.3 names, DOS dates).  Its buffer is small (WfW's is 2,920
+ * bytes), so reads, writes and listings are cut to fit.  It answers with
+ * the DOS error class and code instead of NT status.
  *
  * The engine answers in SMB2.H's smb2_fh / smb2_dirent shapes so the
  * kernel redirector drives SMB1 and SMB2 the same way.  C89, and no C
@@ -94,9 +102,9 @@ static unsigned char *smb1_begin( smb1_client *cl, int command )
     p[0] = 0xFF; p[1] = 'S'; p[2] = 'M'; p[3] = 'B';
     p[4] = (unsigned char)command;              /* Command */
     p[9] = 0x18;                                /* Flags: canon + case-insensitive */
-    put16( p + 10, SMB_FLAGS2 );                /* Flags2 */
+    put16( p + 10, cl->flags2 );                /* Flags2 */
     put16( p + 24, cl->tree_id );               /* TID */
-    put16( p + 26, 0xFEFF );                    /* PID (low) - arbitrary */
+    put16( p + 26, cl->pid );                   /* PID: ours, for the mount */
     put16( p + 28, cl->uid );                   /* UID */
     put16( p + 30, cl->mid++ );                 /* MID */
     return p + 32;                              /* -> WordCount */
@@ -196,29 +204,87 @@ static int nbt_session_request( smb1_client *cl, const char *server )
 #define CAP_NT_SMBS   0x00000010UL
 #define CAP_NT_STATUS 0x00000040UL
 
+/* the dialects offered, oldest first; the server answers with the index
+   of the newest one it speaks.  All but the last are LAN Manager
+   dialects with the 13-word answer: WfW 3.11 knows "Windows for
+   Workgroups 3.1a", LAN Manager 2.1 and OS/2 LAN Server "LANMAN2.1". */
+static const char *const dialects[] = {
+    "LM1.2X002", "DOS LANMAN2.1", "LANMAN2.1", "Windows for Workgroups 3.1a", "NT LM 0.12"
+};
+#define DIALECTS    5
+#define DIALECT_NT  4
+
 static int do_negotiate( smb1_client *cl )
 {
-    unsigned char *p = smb1_begin( cl, 0x72 );  /* NEGOTIATE */
-    unsigned char *b, *end;
-    int keylen, wc;
+    unsigned char *p, *b, *end;
+    const unsigned char *w;
+    unsigned long maxbuf;
+    int keylen, wc, idx, i;
 
+    cl->flags2 = SMB_FLAGS2;
+    p = smb1_begin( cl, 0x72 );                 /* NEGOTIATE */
     p[0] = 0;                                   /* WordCount */
     b = p + 3;                                  /* Bytes (ByteCount at p+1) */
-    b[0] = 0x02;                                /* dialect buffer format */
-    end = b + 1 + put_strz( b + 1, "NT LM 0.12", 0 );
+    end = b;
+    for ( i = 0; i < DIALECTS; i++ ) {
+        *end++ = 0x02;                          /* dialect buffer format */
+        end += put_strz( end, dialects[i], 0 );
+    }
     put16( p + 1, (unsigned int)( end - b ) );  /* ByteCount */
 
     cl->stage = "negotiate";
     if ( smb1_txrx( cl, end ) < 0 ) return -1;
     if ( cl->last_status != 0 ) return -1;
     wc = r_wordcount( cl );
-    if ( wc < 17 ) return -1;                   /* not NT LM 0.12 */
+    if ( wc < 1 ) return -1;
+    w = r_words( cl );
+    idx = (int)get16( w );
+    if ( idx >= DIALECTS ) return -1;           /* 0xFFFF: none of them */
 
-    cl->capabilities = get32( r_words( cl ) + 19 );
-    keylen = r_words( cl )[33];
-    if ( keylen < 8 || r_bytecount( cl ) < 8 ) return -1;   /* need a challenge */
-    memcpy( cl->challenge, r_bytes( cl ), 8 );
+    if ( idx == DIALECT_NT ) {
+        if ( wc < 17 ) return -1;
+        cl->secmode = w[2];
+        maxbuf = get32( w + 7 );
+        cl->sesskey = get32( w + 15 );
+        cl->capabilities = get32( w + 19 );
+        keylen = w[33];
+    } else {
+        if ( wc < 13 ) return -1;
+        cl->lm = 1;
+        cl->flags2 = 0;                         /* 8.3 names, DOS errors */
+        cl->secmode = get16( w + 2 );
+        maxbuf = get16( w + 4 );
+        cl->sesskey = get32( w + 12 );
+        keylen = (int)get16( w + 22 );
+        if ( keylen == 0 ) keylen = r_bytecount( cl );  /* WfW 3.11 says 0, sends 8 */
+        if ( maxbuf < 1024 ) return -1;         /* too small to carry a listing */
+    }
+    cl->max_buffer = ( maxbuf > 65535UL ) ? 65535 : (int)maxbuf;
+    if ( !cl->lm || ( cl->secmode & 2 ) ) {     /* the server encrypts */
+        if ( keylen < 8 || r_bytecount( cl ) < 8 ) return -1;   /* need a challenge */
+        memcpy( cl->challenge, r_bytes( cl ), 8 );
+    }
     return 0;
+}
+
+/* the password as a LAN Manager logon or a share-level share takes it:
+   the 24-byte LM response when the server encrypts, else the password in
+   capitals with its NUL; no password is a lone NUL.  Returns the length
+   written to 'out' (64 bytes at most). */
+static int lm_password( smb1_client *cl, const char *password, unsigned char *out )
+{
+    unsigned char h[16];
+    int i;
+
+    if ( password == (const char *)0 || password[0] == 0 ) { out[0] = 0; return 1; }
+    if ( cl->secmode & 2 ) {
+        lm_hash( password, h );
+        desl( h, cl->challenge, out );
+        return 24;
+    }
+    for ( i = 0; i < 63 && password[i]; i++ ) out[i] = (unsigned char)supper( password[i] );
+    out[i] = 0;
+    return i + 1;
 }
 
 static int do_session_setup( smb1_client *cl, const char *user,
@@ -237,7 +303,7 @@ static int do_session_setup( smb1_client *cl, const char *user,
     put16( w + 4, (unsigned int)sizeof( cl->recvbuf ) - 256 ); /* MaxBufferSize */
     put16( w + 6, 1 );                          /* MaxMpxCount */
     put16( w + 8, 0 );                          /* VcNumber */
-    put32( w + 10, 0 );                         /* SessionKey */
+    put32( w + 10, cl->sesskey );               /* SessionKey: the server's, given back */
     put16( w + 14, 24 );                        /* OEM (LM) password length */
     put16( w + 16, 24 );                        /* Unicode (NT) password length */
     put32( w + 18, 0 );                         /* Reserved */
@@ -260,20 +326,61 @@ static int do_session_setup( smb1_client *cl, const char *user,
     return 0;
 }
 
-static int do_tree_connect( smb1_client *cl, const char *server, const char *share )
+/* SESSION_SETUP_ANDX in its LAN Manager form: 10 words, one password.  A
+   share-level server gets no password here (the share takes it). */
+static int do_session_setup_lm( smb1_client *cl, const char *user,
+                                const char *password, const char *domain )
+{
+    unsigned char *p = smb1_begin( cl, 0x73 );  /* SESSION_SETUP_ANDX */
+    unsigned char *w = p + 1, *b, *q;
+    int pwlen;
+
+    p[0] = 10;                                  /* WordCount */
+    w[0] = 0xFF; w[1] = 0;                       /* AndXCommand = none */
+    put16( w + 2, 0 );                          /* AndXOffset */
+    put16( w + 4, (unsigned int)sizeof( cl->recvbuf ) - 256 ); /* MaxBufferSize */
+    put16( w + 6, 1 );                          /* MaxMpxCount */
+    put16( w + 8, 0 );                          /* VcNumber */
+    put32( w + 10, cl->sesskey );               /* SessionKey: the server's, given back */
+    put32( w + 16, 0 );                         /* Reserved */
+
+    b = w + 20 + 2;                             /* ByteCount is at w+20 */
+    q = b;
+    if ( cl->secmode & 1 ) pwlen = lm_password( cl, password, q );
+    else { q[0] = 0; pwlen = 1; }
+    put16( w + 14, (unsigned int)pwlen );       /* PasswordLength */
+    q += pwlen;
+    q += put_strz( q, user ? user : "", 1 );
+    q += put_strz( q, domain ? domain : "", 1 );
+    q += put_strz( q, "PM-DOS", 0 );            /* NativeOS */
+    q += put_strz( q, "PMDOS SMB1", 0 );        /* NativeLanMan */
+    put16( w + 20, (unsigned int)( q - b ) );   /* ByteCount */
+
+    cl->stage = "session setup";
+    if ( smb1_txrx( cl, q ) < 0 ) return -1;
+    if ( cl->last_status != 0 ) return -1;
+    cl->uid = get16( cl->recvbuf + 28 );        /* the server's UID */
+    return 0;
+}
+
+static int do_tree_connect( smb1_client *cl, const char *server, const char *share,
+                            const char *password )
 {
     unsigned char *p = smb1_begin( cl, 0x75 );  /* TREE_CONNECT_ANDX */
     unsigned char *w = p + 1, *b, *q;
+    int pwlen;
 
     p[0] = 4;                                   /* WordCount */
     w[0] = 0xFF; w[1] = 0;
     put16( w + 2, 0 );                          /* AndXOffset */
     put16( w + 4, 0 );                          /* Flags */
-    put16( w + 6, 1 );                          /* PasswordLength (a NUL) */
 
     b = w + 8 + 2;                              /* ByteCount at w+8 */
     q = b;
-    *q++ = 0;                                   /* the empty password */
+    if ( cl->secmode & 1 ) { q[0] = 0; pwlen = 1; }     /* user level: logged on */
+    else pwlen = lm_password( cl, password, q );        /* share level */
+    put16( w + 6, (unsigned int)pwlen );        /* PasswordLength */
+    q += pwlen;
     *q++ = '\\'; *q++ = '\\';
     q += put_strz( q, server, 1 ) - 1;          /* drop the NUL between parts */
     *q++ = '\\';
@@ -297,12 +404,20 @@ int smb1_connect( smb1_client *cl, smb_send_fn send, smb_recv_fn recv, void *ioc
     memset( cl, 0, sizeof( *cl ) );
     cl->send = send; cl->recv = recv; cl->ioctx = ioctx;
     cl->seed = seed; cl->mid = 1;
+    cl->flags2 = SMB_FLAGS2;
+    /* an ordinary PID: WfW 3.11's server refuses every file command from
+       PID 0xFEFF (what this engine sent before) as "invalid function" */
+    cl->pid = (unsigned int)( seed % 0x7E00UL ) + 0x100;
 
     cl->stage = "session request";
     if ( nbt_session_request( cl, server ) < 0 ) return -1;
     if ( do_negotiate( cl ) < 0 ) return -1;
-    if ( do_session_setup( cl, user, password, domain ) < 0 ) return -1;
-    if ( do_tree_connect( cl, server, share ) < 0 ) return -1;
+    if ( !cl->lm ) {
+        if ( do_session_setup( cl, user, password, domain ) < 0 ) return -1;
+    } else if ( do_session_setup_lm( cl, user, password, domain ) < 0 ) {
+        if ( cl->secmode & 1 ) return -1;       /* share level: the share decides */
+    }
+    if ( do_tree_connect( cl, server, share, password ) < 0 ) return -1;
     cl->stage = "connected";
     return 0;
 }
@@ -322,6 +437,186 @@ static int build_path( unsigned char *dst, const char *dir, const char *leaf )
     }
     dst[n] = 0;
     return n;
+}
+
+/* ====================================================================== */
+/* a LAN Manager server: the core SEARCH, READ and WRITE                  */
+/* ====================================================================== */
+
+/* WfW 3.11's server answers TRANS2 with an error, and its own redirector
+   lists with SEARCH (0x81) and reads with READ (0x0A); every LAN Manager
+   server has them, so a LAN Manager dialect gets these. */
+
+/* a DOS date and time -> a Windows FILETIME, so a SEARCH entry comes back
+   in the same smb2_dirent shape as an NT one.  32x32->64 multiplies, no
+   64-bit type (SMBSRVDOS.C does the same). */
+static void umul32( unsigned long a, unsigned long b, unsigned long *hi, unsigned long *lo )
+{
+    unsigned long a0 = a & 0xFFFF, a1 = a >> 16, b0 = b & 0xFFFF, b1 = b >> 16;
+    unsigned long p0 = a0 * b0, p1 = a0 * b1, p2 = a1 * b0, p3 = a1 * b1;
+    unsigned long mid = ( p0 >> 16 ) + ( p1 & 0xFFFF ) + ( p2 & 0xFFFF );
+    *lo = ( p0 & 0xFFFF ) | ( mid << 16 );
+    *hi = p3 + ( p1 >> 16 ) + ( p2 >> 16 ) + ( mid >> 16 );
+}
+static long days_from_civil( int year, int month, int day )
+{
+    long era; unsigned int yoe, doy, doe;
+    year -= ( month <= 2 );
+    era = (long)( ( year >= 0 ? year : year - 399 ) / 400 );
+    yoe = (unsigned int)( year - era * 400 );
+    doy = (unsigned int)( ( 153 * ( month > 2 ? month - 3 : month + 9 ) + 2 ) / 5 + day - 1 );
+    doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return era * 146097 + (long)doe - 719468;
+}
+static void dos_filetime( unsigned int date, unsigned int time, unsigned long *lo, unsigned long *hi )
+{
+    int year  = 1980 + (int)( ( date >> 9 ) & 0x7F );
+    int month = (int)( ( date >> 5 ) & 0x0F );
+    int day   = (int)( date & 0x1F );
+    unsigned long secs, shi, slo, phi, plo, sum;
+
+    if ( date == 0 ) { *lo = 0; *hi = 0; return; }        /* no date */
+    if ( month < 1 ) month = 1;
+    if ( month > 12 ) month = 12;
+    if ( day < 1 ) day = 1;
+    secs = ( ( time >> 11 ) & 0x1F ) * 3600UL + ( ( time >> 5 ) & 0x3F ) * 60UL + ( time & 0x1F ) * 2UL;
+    umul32( (unsigned long)( days_from_civil( year, month, day ) + 134774L ), 86400UL, &shi, &slo );
+    sum = slo + secs;
+    if ( sum < slo ) shi++;
+    umul32( sum, 10000000UL, &phi, &plo );                 /* seconds -> 100ns */
+    *lo = plo;
+    *hi = phi + shi * 10000000UL;
+}
+
+#define SEARCH_ENTRY  43            /* key 21, attr 1, time 2, date 2, size 4, name 13 */
+
+/* SEARCH (0x81) the whole directory: the first call names "\dir\????????.???",
+   each next one carries the last entry's resume key.  The server ends the
+   search itself when it runs out ("no more files", or a count of 0). */
+static int list_dir_search( smb1_client *cl, const char *dir,
+                            void ( *emit )( void *user, const smb2_dirent *entry ),
+                            void *user )
+{
+    unsigned char key[21];
+    int first = 1, maxcount, rounds = 0;
+
+    maxcount = ( cl->max_buffer - 64 ) / SEARCH_ENTRY;
+    if ( maxcount > ( (int)sizeof( cl->recvbuf ) - 64 ) / SEARCH_ENTRY ) maxcount = ( (int)sizeof( cl->recvbuf ) - 64 ) / SEARCH_ENTRY;
+    if ( maxcount < 1 ) maxcount = 1;
+
+    for ( ;; ) {
+        unsigned char *p = smb1_begin( cl, 0x81 );    /* SEARCH */
+        unsigned char *w = p + 1, *bc, *q;
+        const unsigned char *rb, *e;
+        int count, dlen, i, k;
+
+        p[0] = 2;                                     /* WordCount */
+        put16( w + 0, (unsigned int)maxcount );       /* MaxCount */
+        put16( w + 2, 0x0016 );                       /* SearchAttributes: H|S|D */
+        bc = w + 4;
+        q = bc + 2;
+        *q++ = 0x04;                                  /* buffer format: ASCII */
+        if ( first ) {
+            q += build_path( q, dir, "????????.???" ) + 1;
+            *q++ = 0x05; *q++ = 0; *q++ = 0;          /* no resume key */
+        } else {
+            *q++ = 0;                                 /* no name: resume */
+            *q++ = 0x05; *q++ = 21; *q++ = 0;         /* variable block, 21 bytes */
+            memcpy( q, key, 21 ); q += 21;
+        }
+        put16( bc, (unsigned int)( q - ( bc + 2 ) ) );
+
+        cl->stage = first ? "search" : "search next";
+        if ( smb1_txrx( cl, q ) < 0 ) return -1;
+        if ( cl->last_status != 0 ) {
+            /* "no more files" (18) or "file not found" (2): the end, or an
+               empty directory */
+            if ( cl->last_status == 0x00120001UL || cl->last_status == 0x00020001UL ) return 0;
+            return first ? -1 : 0;
+        }
+        if ( r_wordcount( cl ) < 1 ) return -1;
+        count = (int)get16( r_words( cl ) );
+        if ( count == 0 ) return 0;
+        if ( r_bytecount( cl ) < 3 ) return -1;
+        rb = r_bytes( cl );
+        dlen = (int)get16( rb + 1 );
+        if ( dlen > r_bytecount( cl ) - 3 ) dlen = r_bytecount( cl ) - 3;
+        if ( count > dlen / SEARCH_ENTRY ) count = dlen / SEARCH_ENTRY;
+        for ( i = 0; i < count; i++ ) {
+            smb2_dirent de;
+            e = rb + 3 + i * SEARCH_ENTRY;
+            memset( &de, 0, sizeof( de ) );
+            de.attr = e[21];
+            dos_filetime( get16( e + 24 ), get16( e + 22 ), &de.wtime_lo, &de.wtime_hi );
+            de.size_lo = get32( e + 26 );
+            for ( k = 0; k < 12 && e[30 + k] && e[30 + k] != ' '; k++ ) de.name[k] = (char)e[30 + k];
+            de.name[k] = 0;
+            emit( user, &de );
+        }
+        memcpy( key, rb + 3 + ( count - 1 ) * SEARCH_ENTRY, 21 );
+        first = 0;
+        if ( ++rounds > 4096 ) return 0;             /* a server that never ends */
+    }
+}
+
+/* READ (0x0A): 5 words (FID, count, offset, remaining); the answer's data
+   follows a 0x01 buffer format and its own length */
+static int read_core( smb1_client *cl, const smb2_fh *fh, unsigned long off,
+                      unsigned char *buf, int len )
+{
+    unsigned char *p = smb1_begin( cl, 0x0A );       /* READ */
+    unsigned char *w = p + 1;
+    const unsigned char *rb;
+    int dlen;
+
+    p[0] = 5;                                         /* WordCount */
+    put16( w + 0, get16( fh->file_id ) );             /* FID */
+    put16( w + 2, (unsigned int)len );                /* Count */
+    put32( w + 4, off );                              /* Offset */
+    put16( w + 8, 0 );                                /* Remaining */
+    put16( w + 10, 0 );                               /* ByteCount */
+
+    cl->stage = "read";
+    if ( smb1_txrx( cl, w + 12 ) < 0 ) return -1;
+    if ( cl->last_status != 0 ) return -1;
+    if ( r_wordcount( cl ) < 1 ) return -1;
+    if ( r_bytecount( cl ) < 3 ) return 0;            /* nothing: the end */
+    rb = r_bytes( cl );
+    dlen = (int)get16( rb + 1 );
+    if ( dlen > r_bytecount( cl ) - 3 ) dlen = r_bytecount( cl ) - 3;
+    if ( dlen > len ) dlen = len;
+    memcpy( buf, rb + 3, (unsigned)dlen );
+    return dlen;
+}
+
+/* WRITE (0x0B): 5 words, then the data after a 0x01 buffer format and its
+   length.  (A count of 0 would cut the file at 'off': never sent here.) */
+static int write_core( smb1_client *cl, const smb2_fh *fh, unsigned long off,
+                       const unsigned char *buf, int len )
+{
+    unsigned char *p = smb1_begin( cl, 0x0B );       /* WRITE */
+    unsigned char *w = p + 1, *q;
+
+    p[0] = 5;                                         /* WordCount */
+    put16( w + 0, get16( fh->file_id ) );             /* FID */
+    put16( w + 2, (unsigned int)len );                /* Count */
+    put32( w + 4, off );                              /* Offset */
+    put16( w + 8, 0 );                                /* Remaining */
+    q = w + 12;
+    q[0] = 0x01;                                      /* buffer format: data block */
+    put16( q + 1, (unsigned int)len );
+    memcpy( q + 3, buf, (unsigned)len );
+    put16( w + 10, (unsigned int)( len + 3 ) );       /* ByteCount */
+
+    cl->stage = "write";
+    if ( smb1_txrx( cl, q + 3 + len ) < 0 ) return -1;
+    if ( cl->last_status != 0 ) return -1;
+    if ( r_wordcount( cl ) < 1 ) return -1;
+    {
+        int n = (int)get16( r_words( cl ) );          /* Count written */
+        if ( n > len ) n = len;
+        return n;
+    }
 }
 
 /* ====================================================================== */
@@ -380,6 +675,7 @@ int smb1_list_dir( smb1_client *cl, const char *dir, const char *pattern,
 
     (void)pattern;
     last_name[0] = 0;
+    if ( cl->lm ) return list_dir_search( cl, dir, emit, user );
 
     while ( !eos ) {
         unsigned char *p = smb1_begin( cl, 0x32 );   /* TRANSACTION2 */
@@ -501,7 +797,6 @@ int smb1_open_disp( smb1_client *cl, const char *path, int write,
 
     bc = w + 30;                                      /* ByteCount (2) at w+30 */
     q = bc + 2;
-    *q++ = 0;                                          /* name buffer format pad */
     { unsigned char pb[300]; int n = build_path( pb, path, (const char *)0 ); memcpy( q, pb, n + 1 ); q += n + 1; }
     put16( bc, (unsigned int)( q - ( bc + 2 ) ) );
 
@@ -521,12 +816,18 @@ int smb1_open_disp( smb1_client *cl, const char *path, int write,
 int smb1_read( smb1_client *cl, const smb2_fh *fh, unsigned long off_lo, unsigned long off_hi,
                unsigned char *buf, int len )
 {
-    unsigned char *p = smb1_begin( cl, 0x2E );        /* READ_ANDX */
-    unsigned char *w = p + 1;
+    unsigned char *p, *w;
     int dlen, doff;
 
     if ( len <= 0 ) return 0;
     if ( len > (int)sizeof( cl->recvbuf ) - 128 ) len = (int)sizeof( cl->recvbuf ) - 128;
+    if ( cl->lm ) {                                   /* READ, in its buffer */
+        if ( off_hi != 0 ) return -1;
+        if ( len > cl->max_buffer - 64 ) len = cl->max_buffer - 64;
+        return read_core( cl, fh, off_lo, buf, len );
+    }
+    p = smb1_begin( cl, 0x2E );                       /* READ_ANDX */
+    w = p + 1;
 
     p[0] = 12;                                        /* WordCount */
     w[0] = 0xFF; w[1] = 0; put16( w + 2, 0 );
@@ -558,12 +859,18 @@ int smb1_read( smb1_client *cl, const smb2_fh *fh, unsigned long off_lo, unsigne
 int smb1_write( smb1_client *cl, const smb2_fh *fh, unsigned long off_lo, unsigned long off_hi,
                 const unsigned char *buf, int len )
 {
-    unsigned char *p = smb1_begin( cl, 0x2F );        /* WRITE_ANDX */
-    unsigned char *w = p + 1, *bc, *data;
+    unsigned char *p, *w, *bc, *data;
     int doff;
 
     if ( len <= 0 ) return 0;
     if ( len > (int)sizeof( cl->sendbuf ) - 128 ) len = (int)sizeof( cl->sendbuf ) - 128;
+    if ( cl->lm ) {                                   /* WRITE, in its buffer */
+        if ( off_hi != 0 ) return -1;
+        if ( len > cl->max_buffer - 64 ) len = cl->max_buffer - 64;
+        return write_core( cl, fh, off_lo, buf, len );
+    }
+    p = smb1_begin( cl, 0x2F );                       /* WRITE_ANDX */
+    w = p + 1;
 
     p[0] = 14;                                        /* WordCount */
     w[0] = 0xFF; w[1] = 0; put16( w + 2, 0 );

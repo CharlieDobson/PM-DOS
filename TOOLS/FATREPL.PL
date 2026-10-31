@@ -139,7 +139,10 @@ sub free_chain {
 
 sub alloc_chain {
     my $need = shift;
-    return 0 unless $need;
+    # an empty file has no chain: an empty list, not (0) - a chain of
+    # cluster 0 was written at clus_off(0), two clusters before the data
+    # area, which zeroed the whole root on a volume of 8K clusters
+    return () unless $need;
     my @got;
     for (my $c = 2; $c < $nclus && @got < $need; $c++) { push @got, $c if fat_get($c) == 0 }
     die "the volume is full\n" if @got < $need;

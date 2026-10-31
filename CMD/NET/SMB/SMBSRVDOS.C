@@ -196,6 +196,8 @@ static int d_findnext( void *ctx, void *it, srv_dirent *de )
     for ( i = 0; i < 13 && g_dta[0x1E + i]; i++ ) de->name[i] = (char)g_dta[0x1E + i];
     de->name[i] = 0;
     dos_filetime( date, time, &de->ft_lo, &de->ft_hi );
+    de->dosdate = date;
+    de->dostime = time;
 
     sl_memzero( &r, sizeof( r ) ); r.eax = 0x1A00; r.edx = (u32)g_dta; int21( &r );
     sl_memzero( &r, sizeof( r ) ); r.eax = 0x4F00; int21( &r );
@@ -212,8 +214,94 @@ static int d_rmdir( void *ctx, const char *path )
 static int d_unlink( void *ctx, const char *path )
 { char f[DPATH_MAX]; REGS r; if ( !dpath( (dosfs *)ctx, path, f, DPATH_MAX ) ) return -1; sl_memzero( &r, sizeof( r ) ); r.eax = 0x4100; r.edx = (u32)f; int21( &r ); return CF( r ) ? -1 : 0; }
 
+/* a file or directory's entry, by a 4Eh search for its own name (the
+   share root has none: it is a directory with no date) */
+static unsigned char g_sdta[64];
+static int d_stat( void *ctx, const char *path, srv_dirent *de )
+{
+    char f[DPATH_MAX];
+    REGS r;
+    const char *p;
+
+    sl_memzero( de, sizeof( *de ) );
+    p = path;
+    while ( *p == '\\' || *p == '/' ) p++;
+    if ( *p == 0 ) { de->attr = 0x10; return 0; }
+    for ( p = path; *p; p++ ) if ( *p == '*' || *p == '?' ) return -1;
+    if ( !dpath( (dosfs *)ctx, path, f, DPATH_MAX ) ) return -1;
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x1A00; r.edx = (u32)g_sdta; int21( &r );
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x4E00; r.ecx = 0x16; r.edx = (u32)f; int21( &r );
+    if ( CF( r ) ) return -1;
+    de->attr = g_sdta[0x15];
+    de->dostime = get16( g_sdta + 0x16 );
+    de->dosdate = get16( g_sdta + 0x18 );
+    de->size = get32( g_sdta + 0x1A );
+    dos_filetime( de->dosdate, de->dostime, &de->ft_lo, &de->ft_hi );
+    return 0;
+}
+
+static int d_rename( void *ctx, const char *from, const char *to )
+{
+    char f[DPATH_MAX], t[DPATH_MAX];
+    REGS r;
+    if ( !dpath( (dosfs *)ctx, from, f, DPATH_MAX ) || !dpath( (dosfs *)ctx, to, t, DPATH_MAX ) ) return -1;
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x5600; r.edx = (u32)f; r.edi = (u32)t; int21( &r );
+    return CF( r ) ? -1 : 0;
+}
+
+static int d_setattr( void *ctx, const char *path, unsigned int attr )
+{
+    char f[DPATH_MAX];
+    REGS r;
+    if ( !dpath( (dosfs *)ctx, path, f, DPATH_MAX ) ) return -1;
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x4301; r.ecx = attr; r.edx = (u32)f; int21( &r );
+    return CF( r ) ? -1 : 0;
+}
+
+/* an open file's size and date (the reads and writes seek for themselves,
+   so the file pointer is free to move) */
+static int d_fstat( void *ctx, int h, srv_dirent *de )
+{
+    REGS r; (void)ctx;
+    sl_memzero( de, sizeof( *de ) );
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x5700; r.ebx = (u32)h; int21( &r );
+    if ( CF( r ) ) return -1;
+    de->dostime = (unsigned int)( r.ecx & 0xFFFF );
+    de->dosdate = (unsigned int)( r.edx & 0xFFFF );
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x4202; r.ebx = (u32)h; int21( &r );
+    if ( CF( r ) ) return -1;
+    de->size = r.eax;
+    de->attr = 0x20;
+    dos_filetime( de->dosdate, de->dostime, &de->ft_lo, &de->ft_hi );
+    return 0;
+}
+
+static int d_settime( void *ctx, int h, unsigned int date, unsigned int time )
+{
+    REGS r; (void)ctx;
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x5701; r.ebx = (u32)h; r.ecx = time; r.edx = date; int21( &r );
+    return CF( r ) ? -1 : 0;
+}
+
+/* the served drive's size and free space, in clusters (36h) */
+static int d_disk( void *ctx, unsigned long *units, unsigned long *avail, unsigned long *unitsize )
+{
+    dosfs *fs = (dosfs *)ctx;
+    REGS r;
+    char drv = fs->root[0];
+    if ( drv >= 'a' && drv <= 'z' ) drv = (char)( drv - 32 );
+    if ( drv < 'A' || drv > 'Z' || fs->root[1] != ':' ) return -1;
+    sl_memzero( &r, sizeof( r ) ); r.eax = 0x3600; r.edx = (u32)( drv - 'A' + 1 ); int21( &r );
+    if ( ( r.eax & 0xFFFF ) == 0xFFFF ) return -1;
+    *units = r.edx & 0xFFFF;
+    *avail = r.ebx & 0xFFFF;
+    *unitsize = ( r.eax & 0xFFFF ) * ( r.ecx & 0xFFFF );
+    return 0;
+}
+
 static const srv_vfs DOSVFS = {
-    d_open, d_read, d_write, d_close, d_findopen, d_findnext, d_findclose, d_mkdir, d_rmdir, d_unlink
+    d_open, d_read, d_write, d_close, d_findopen, d_findnext, d_findclose, d_mkdir, d_rmdir, d_unlink,
+    d_stat, d_rename, d_setattr, d_fstat, d_settime, d_disk
 };
 
 /* ====================================================================== */

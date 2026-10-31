@@ -1,13 +1,18 @@
 /* ==========================================================================
- * SMB1.H - a small SMB1 (CIFS, "NT LM 0.12") client engine for the
- * down-level peers SMB2 does not reach: Win9x/ME, NT4, OS/2 LAN Server,
- * Samba in NT1 mode and WfW with the NT-compatible redirector.
+ * SMB1.H - a small SMB1 client engine for the down-level peers SMB2 does
+ * not reach: Win9x/ME, NT4 and Samba in NT1 mode ("NT LM 0.12"), and
+ * Windows for Workgroups, LAN Manager 2.x and OS/2 LAN Server (the LAN
+ * Manager dialects).
  * ==========================================================================
  * Transport is NetBIOS-over-TCP (port 139): a session request opens the
  * NetBIOS session, then SMB messages ride the 4-byte NBT length header.
  * Authentication is the old LM + NTLMv1 challenge-response (SMBCRYPT's
  * des/lm_hash/desl over the server's 8-byte challenge) - no SPNEGO, no
- * signing, OEM (8-bit) strings, NT status codes.
+ * signing, OEM (8-bit) strings.  A LAN Manager server gets the LM
+ * response alone, or the password in the clear when it does not encrypt;
+ * a share-level server (WfW) takes the password with the share instead of
+ * at logon.  Errors are NT status codes, or the DOS error class and code
+ * from a LAN Manager server.
  *
  * The engine is transport-agnostic (the same send/recv callbacks as
  * SMB2.H) and answers in the SAME smb2_fh / smb2_dirent shapes, so the
@@ -34,8 +39,14 @@ typedef struct {
     unsigned long  capabilities;      /* the server's NEGOTIATE capabilities */
     unsigned char  challenge[8];      /* the server's 8-byte encryption key */
     int            max_buffer;        /* the server's MaxBufferSize */
+    int            lm;                /* 1: a LAN Manager dialect was chosen */
+    unsigned int   secmode;           /* SecurityMode: 1 user level, 2 encrypt */
+    unsigned int   flags2;            /* Flags2 for every request */
+    unsigned int   pid;               /* the PID every request carries */
+    unsigned long  sesskey;           /* the server's NEGOTIATE SessionKey */
 
-    unsigned long  last_status;       /* NTSTATUS of the last response */
+    unsigned long  last_status;       /* NTSTATUS of the last response, or
+                                         (code << 16) | class from LAN Manager */
     const char    *stage;             /* where we are, for error reports */
 
     unsigned char  sendbuf[SMB1_SENDBUF];
@@ -47,9 +58,11 @@ typedef struct {
    "PMDOS" unless the program sets it (SMBFS takes TCPIP.SYS /NAME=) */
 extern char smb1_calling[16];
 
-/* Open the NetBIOS session, negotiate NT LM 0.12, authenticate and
-   tree-connect \\server\share.  The TCP connection must be made already.
-   0 on success, <0 on failure (cl->stage / cl->last_status say what). */
+/* Open the NetBIOS session, negotiate (NT LM 0.12, else a LAN Manager
+   dialect), authenticate and tree-connect \\server\share.  The TCP
+   connection must be made already.  On a share-level server 'password'
+   is the share's.  0 on success, <0 on failure (cl->stage /
+   cl->last_status say what). */
 int  smb1_connect( smb1_client *cl, smb_send_fn send, smb_recv_fn recv, void *ioctx,
                    unsigned long seed,
                    const char *server, const char *share,

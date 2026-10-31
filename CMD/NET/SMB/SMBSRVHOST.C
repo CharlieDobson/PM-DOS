@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <io.h>
 
 static SOCKET g_sock;
 static int io_send( void *ctx, const unsigned char *buf, int len ) { (void)ctx; return send( g_sock, (const char *)buf, len, 0 ); }
@@ -86,6 +87,17 @@ static void h_close( void *ctx, int h )
     if ( h >= 0 && h < 16 && fs->fh[h] ) { fclose( fs->fh[h] ); fs->fh[h] = (FILE *)0; }
 }
 
+/* a FILETIME -> the entry's DOS date and time (local, as DOS keeps them) */
+static void dos_stamp( const FILETIME *ft, srv_dirent *de )
+{
+    FILETIME lft;
+    WORD date = 0, time = 0;
+    FileTimeToLocalFileTime( ft, &lft );
+    FileTimeToDosDateTime( &lft, &date, &time );
+    de->dosdate = date;
+    de->dostime = time;
+}
+
 typedef struct { HANDLE h; WIN32_FIND_DATAA fd; int first, done; } hiter;
 static hiter g_iter;
 
@@ -115,6 +127,7 @@ static int h_findnext( void *ctx, void *it, srv_dirent *de )
     de->size = i->fd.nFileSizeLow;
     de->ft_lo = i->fd.ftLastWriteTime.dwLowDateTime;
     de->ft_hi = i->fd.ftLastWriteTime.dwHighDateTime;
+    dos_stamp( &i->fd.ftLastWriteTime, de );
     return 1;
 }
 static void h_findclose( void *ctx, void *it ) { hiter *i = (hiter *)it; (void)ctx; if ( i->h != INVALID_HANDLE_VALUE ) FindClose( i->h ); }
@@ -123,8 +136,68 @@ static int h_mkdir( void *ctx, const char *path ) { char f[520]; if ( !joinpath(
 static int h_rmdir( void *ctx, const char *path ) { char f[520]; if ( !joinpath( (hostfs *)ctx, path, f ) ) return -1; return RemoveDirectoryA( f ) ? 0 : -1; }
 static int h_unlink( void *ctx, const char *path ) { char f[520]; if ( !joinpath( (hostfs *)ctx, path, f ) ) return -1; return DeleteFileA( f ) ? 0 : -1; }
 
+static int h_stat( void *ctx, const char *path, srv_dirent *de )
+{
+    char f[520];
+    WIN32_FILE_ATTRIBUTE_DATA fa;
+    memset( de, 0, sizeof( *de ) );
+    if ( !joinpath( (hostfs *)ctx, path, f ) ) return -1;
+    if ( !GetFileAttributesExA( f, GetFileExInfoStandard, &fa ) ) return -1;
+    de->attr = fa.dwFileAttributes & 0x37;
+    de->size = fa.nFileSizeLow;
+    de->ft_lo = fa.ftLastWriteTime.dwLowDateTime;
+    de->ft_hi = fa.ftLastWriteTime.dwHighDateTime;
+    dos_stamp( &fa.ftLastWriteTime, de );
+    return 0;
+}
+static int h_rename( void *ctx, const char *from, const char *to )
+{
+    char f[520], t[520];
+    if ( !joinpath( (hostfs *)ctx, from, f ) || !joinpath( (hostfs *)ctx, to, t ) ) return -1;
+    return MoveFileA( f, t ) ? 0 : -1;
+}
+static int h_setattr( void *ctx, const char *path, unsigned int attr )
+{
+    char f[520];
+    if ( !joinpath( (hostfs *)ctx, path, f ) ) return -1;
+    return SetFileAttributesA( f, attr ? attr : FILE_ATTRIBUTE_NORMAL ) ? 0 : -1;
+}
+static int h_fstat( void *ctx, int h, srv_dirent *de )
+{
+    hostfs *fs = (hostfs *)ctx;
+    FILETIME ft;
+    HANDLE oh;
+    memset( de, 0, sizeof( *de ) );
+    if ( h < 0 || h >= 16 || !fs->fh[h] ) return -1;
+    fflush( fs->fh[h] );
+    oh = (HANDLE)_get_osfhandle( _fileno( fs->fh[h] ) );
+    de->size = GetFileSize( oh, (DWORD *)0 );
+    if ( GetFileTime( oh, (FILETIME *)0, (FILETIME *)0, &ft ) ) dos_stamp( &ft, de );
+    de->attr = 0x20;
+    return 0;
+}
+static int h_settime( void *ctx, int h, unsigned int date, unsigned int time )
+{
+    hostfs *fs = (hostfs *)ctx;
+    FILETIME lft, ft;
+    if ( h < 0 || h >= 16 || !fs->fh[h] ) return -1;
+    fflush( fs->fh[h] );
+    if ( !DosDateTimeToFileTime( (WORD)date, (WORD)time, &lft ) || !LocalFileTimeToFileTime( &lft, &ft ) ) return -1;
+    return SetFileTime( (HANDLE)_get_osfhandle( _fileno( fs->fh[h] ) ), (FILETIME *)0, (FILETIME *)0, &ft ) ? 0 : -1;
+}
+static int h_disk( void *ctx, unsigned long *units, unsigned long *avail, unsigned long *unitsize )
+{
+    DWORD spc, bps, freec, totalc;
+    if ( !GetDiskFreeSpaceA( ( (hostfs *)ctx )->root[0] ? ( (hostfs *)ctx )->root : (const char *)0, &spc, &bps, &freec, &totalc ) ) {
+        if ( !GetDiskFreeSpaceA( (const char *)0, &spc, &bps, &freec, &totalc ) ) return -1;
+    }
+    *units = totalc; *avail = freec; *unitsize = spc * bps;
+    return 0;
+}
+
 static const srv_vfs HOSTFS = {
-    h_open, h_read, h_write, h_close, h_findopen, h_findnext, h_findclose, h_mkdir, h_rmdir, h_unlink
+    h_open, h_read, h_write, h_close, h_findopen, h_findnext, h_findclose, h_mkdir, h_rmdir, h_unlink,
+    h_stat, h_rename, h_setattr, h_fstat, h_settime, h_disk
 };
 
 int main( int argc, char **argv )

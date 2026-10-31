@@ -8,10 +8,13 @@
  * srv_vfs vtable.  Two back ends plug in: INT 21h on PM-DOS (SMBSRV.EXE)
  * and the C runtime on the host (SMBSRVHOST.EXE, for proving).
  *
- * It speaks NT LM 0.12 with OEM (8-bit) names and NT status, accepts any
- * client (one share, the configured directory), and serves OPEN/READ/
- * WRITE_ANDX, CLOSE, TRANS2 FIND_FIRST2, the classic DELETE / CREATE and
- * DELETE DIRECTORY, TREE (dis)connect, LOGOFF and ECHO.  C89.
+ * It speaks NT LM 0.12 with OEM (8-bit) names and NT status, or a LAN
+ * Manager dialect (Windows for Workgroups, LAN Manager 2.x) with DOS
+ * error codes, accepts any client (one share, the configured directory),
+ * and serves OPEN/READ/WRITE_ANDX, CLOSE, TRANS2 FIND_FIRST2/FIND_NEXT2,
+ * the classic DELETE / RENAME / CREATE and DELETE DIRECTORY, the file
+ * information, directory check, disk space, seek and lock commands a DOS
+ * redirector sends, TREE (dis)connect, LOGOFF and ECHO.  C89.
  * ========================================================================== */
 #ifndef PMDOS_SMBSRV_H
 #define PMDOS_SMBSRV_H
@@ -24,6 +27,7 @@ typedef struct {
     unsigned long attr;             /* FILE_ATTRIBUTE_* (low bits = DOS attr) */
     unsigned long size;             /* bytes (low 32) */
     unsigned long ft_lo, ft_hi;     /* LastWriteTime as a Windows FILETIME */
+    unsigned int  dosdate, dostime; /* ...and as a DOS date and time */
 } srv_dirent;
 
 /* the filesystem back end.  Paths are share-relative, backslash-separated,
@@ -42,6 +46,16 @@ typedef struct {
     int   ( *vmkdir )( void *ctx, const char *path );       /* 0 ok */
     int   ( *vrmdir )( void *ctx, const char *path );
     int   ( *vunlink )( void *ctx, const char *path );
+    /* what a DOS client's redirector asks besides (0 ok, -1 not):
+       vstat fills attr, size and the dates of a file or directory ("\" is
+       the share root); vfstat the size and dates of an open file */
+    int   ( *vstat )( void *ctx, const char *path, srv_dirent *de );
+    int   ( *vrename )( void *ctx, const char *from, const char *to );
+    int   ( *vsetattr )( void *ctx, const char *path, unsigned int attr );
+    int   ( *vfstat )( void *ctx, int h, srv_dirent *de );
+    int   ( *vsettime )( void *ctx, int h, unsigned int dosdate, unsigned int dostime );
+    int   ( *vdisk )( void *ctx, unsigned long *units, unsigned long *avail,
+                      unsigned long *unitsize );            /* allocation units */
 } srv_vfs;
 
 /* Serve one connected client to the end (its disconnect).  'sharename' is

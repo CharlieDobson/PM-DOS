@@ -697,6 +697,14 @@ server cannot be found with it, NET USE connects with NetBEUI.  SMBSRV
 answers on both.  NetBEUI does not cross routers: it reaches only the
 computers on the same network.
 
+{b}Windows for Workgroups{p}
+
+NET USE can connect to the shares of a Windows for Workgroups 3.11
+computer, and Windows for Workgroups can connect to SMBSRV.  A share
+with a password takes the password after the share's name:
+
+    net use k: \\wfwpc\c secret
+
 {b}The name{p}
 
 At start-up NETBEUI.SYS checks that no other computer is using the
