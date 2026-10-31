@@ -1043,12 +1043,20 @@ ms_bad:
 ;=====================================================================
 cfg_shellenv:
         pushad
+        mov     byte ptr [exec_qpath],0 ; no block, no path: see below
         mov     ecx,[master_envlen]
         mov     [exec_envlen],ecx
         jecxz   cse_out
         mov     esi,OFFSET master_env
         mov     edi,OFFSET exec_env
         rep     movsb
+        ; With a block, the interpreter's own path goes behind it as any
+        ; program's does (exec_setenv).  shell_name is the one that
+        ; loaded - DOSMAIN keeps it true for F1h AL=3.
+        mov     esi,OFFSET shell_name
+        mov     edi,OFFSET exec_qpath
+        mov     ecx,EXEC_PATH_MAX - 1
+        call    exec_cpz
 cse_out:
         call    exec_setenv
         popad

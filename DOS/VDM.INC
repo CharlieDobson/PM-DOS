@@ -281,13 +281,15 @@ vdm_psp:
         or      esi,esi
         jz      vp_notail
         movzx   ecx,byte ptr [esi]
+        mov     al,cl
         cmp     ecx,7Eh                         ; 126 and the CR fill 80h-FFh
         jbe     vp_tlen
-        mov     ecx,7Eh
-vp_tlen:
+        mov     ecx,7Eh                         ; a longer line keeps 126, and
+        mov     al,7Fh                          ; 7Fh says so, as Windows 95
+vp_tlen:                                        ; has it (fn4B)
         push    edi
         add     edi,RSP_TAIL
-        mov     [edi],cl
+        mov     [edi],al
         inc     edi
         inc     esi
         rep     movsb
@@ -6205,8 +6207,11 @@ vdm_imgpar  dd  0                       ; ...and rounded up to paragraphs
 vdm_minpar  dd  0                       ; the smallest block it can live in
 vdm_relcnt  dd  0                       ; fixups still to do
 vdm_relthis dd  0                       ; fixups in the batch in hand
-vdm_envpath db  EXEC_PATH_MAX dup(0)    ; the program's own path, as the
-                                        ; tail of its environment block
+vdm_envpath db  LFN_MAX dup(0)          ; the program's own path, as the
+                                        ; tail of its environment block.
+                                        ; 7160h writes up to LFN_MAX, and
+                                        ; at EXEC_PATH_MAX (144) a deep
+                                        ; path ran over vdm_hdrbuf
 vdm_hdrbuf  db  EXE_HDRLEN dup(0)
             db  4 dup(0)                ; keep the fixup buffer aligned
 vdm_relbuf  db  VDM_RELBAT * 4 dup(0)

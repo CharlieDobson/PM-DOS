@@ -11,28 +11,26 @@
 COUNTRY country;
 
 const char help_text[] =
-    "Checks a disk for errors, repairs them, and can scan its surface.\r\n"
+    "Runs the PM-DOS ScanDisk disk-repair program.\r\n"
     "\r\n"
-    "SCANDISK [drive: [drive: ...] | /ALL] [/CHECKONLY | /AUTOFIX [/NOSAVE] | /CUSTOM]\r\n"
-    "         [/SURFACE] [/G] [/NOSUMMARY]\r\n"
-    "SCANDISK /FRAGMENT [drive:][path]filename\r\n"
-    "SCANDISK /UNDO [undo-drive:] [/G]\r\n"
+    "To check and repair a drive, use the following syntax:\r\n"
+    "   SCANDISK [drive: | /ALL] [/CHECKONLY | /AUTOFIX [/NOSAVE]] [/SURFACE] [/G]\r\n"
+    "To examine a file for fragmentation, use the following syntax:\r\n"
+    "   SCANDISK /FRAGMENT [drive:][path]filename\r\n"
+    "To undo repairs you made previously, use the following syntax:\r\n"
+    "   SCANDISK /UNDO [undo-drive:] [/G]\r\n"
+    "For [drive:], specify the drive containing your Undo disk.\r\n"
     "\r\n"
-    "  drive:       The drive to check.  The current drive if none is given.\r\n"
-    "  /ALL         Checks every hard disk drive.\r\n"
-    "  /CHECKONLY   Looks for errors and repairs nothing.\r\n"
-    "  /AUTOFIX     Repairs errors without asking.  Lost clusters are saved as\r\n"
-    "               files in the root directory.\r\n"
-    "  /NOSAVE      With /AUTOFIX, frees lost clusters and saves nothing.\r\n"
-    "  /CUSTOM      Runs as the [CUSTOM] section of SCANDISK.INI says.\r\n"
-    "  /SURFACE     Scans the surface of the disk after the other checks,\r\n"
-    "               without asking first.\r\n"
-    "  /G           Uses a graphics screen (EGA or VGA).\r\n"
-    "  /NOSUMMARY   Shows no summary after each drive, and does not ask for\r\n"
-    "               an Undo disk.\r\n"
-    "  /FRAGMENT    Reports which of the named files are fragmented.\r\n"
-    "  /UNDO        Undoes the repairs ScanDisk last made, from the Undo disk\r\n"
-    "               in undo-drive (A: if none is given).\r\n";
+
+    "  /ALL         Checks and repairs all local drives.\r\n"
+    "  /AUTOFIX     Fixes damage without prompting.\r\n"
+    "  /CHECKONLY   Checks a drive, but does not repair any damage.\r\n"
+    "  /CUSTOM      Configures and runs ScanDisk according to SCANDISK.INI settings.\r\n"
+    "  /NOSAVE      With /AUTOFIX, deletes lost clusters rather than saving as files.\r\n"
+    "  /NOSUMMARY   With /CHECKONLY or /AUTOFIX, prevents ScanDisk from stopping at\r\n"
+    "                      summary screens.\r\n"
+    "  /SURFACE     Performs a surface scan after other checks.\r\n"
+    "  /G           Uses a EGA or VGA graphics mode.\r\n";
 
 /* ------------------------------------------------------------------ */
 /* the checks                                                          */

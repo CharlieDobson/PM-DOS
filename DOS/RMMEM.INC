@@ -388,15 +388,12 @@ f26_fits:
         mov     word ptr es:[34h],18h
         mov     ax,[rd_pspnew]
         mov     word ptr es:[36h],ax
-        ; SETVER's "*" entry, or the real version.  MS-DOS's SETMEM
-        ; stamps the real one, which there was 6.22; here it is 0.x,
-        ; and Windows builds every task's PSP with 55h, so the program
-        ; in it would be told DOS 1.
-        push    si
-        mov     si,OFFSET sv_noname     ; DS is ours again: see above
-        call    sv_ver
-        pop     si
-        mov     word ptr es:[40h],ax
+        ; THE VERSION AT PSP:40h STAYS THE ONE THE COPY BROUGHT: the
+        ; maker's.  MS-DOS's SETMEM stamps the real one, which there was
+        ; 6.22; here it is 0.x, which a program reads as DOS 1.  Windows
+        ; builds every task's PSP with 55h out of KRNL386.EXE's (or
+        ; KRNL286.EXE's), so its tasks are told what SETVER tells the
+        ; kernel, and SETVER need not name every Windows program.
 
 ;--- ...and where it will go when it ends.  SETMEM, at the bottom of
 ;--- $CREATE_PROCESS_DATA_BLOCK, copies vectors 22h, 23h and 24h out
@@ -2092,8 +2089,8 @@ psp_unstamp:
 ;--- sv_ver - DS:SI -> a program's path.  AX = the version SETVER's ---
 ;--- table gives its file name (major in AL), or what its "*" entry
 ;--- gives every name it does not list, or the real version.  An empty
-;--- path is a PSP 55h made, with no file: the "*" entry or the real
-;--- one.  Everything else is preserved.
+;--- path gets the "*" entry or the real one.  Everything else is
+;--- preserved.
 ;
 ; The kernel's sv_find (VDM.INC) in 16 bits, over the same table:
 ; SETVER.EXE's, in conventional memory, found through the far pointer
@@ -2190,8 +2187,6 @@ svv_out:
         pop     cx
         pop     bx
         ret
-
-sv_noname   db  0                   ; the path sv_ver is given for 55h
 
 ;=====================================================================
 ; Data

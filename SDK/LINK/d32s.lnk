@@ -1,0 +1,10 @@
+# D32S.LNK - wlink directives for a PM-DOS program built with Open
+# Watcom and -3s (arguments on the stack).  See D32.LNK.
+format raw bin
+option offset=0x2000
+option quiet
+option nodefaultlibs
+disable 1014
+libpath %PMSDK%\LIB\WATCOM
+library pmc3s.lib
+order clname D32HEAD clname CODE clname DATA clname BSS clname D32END

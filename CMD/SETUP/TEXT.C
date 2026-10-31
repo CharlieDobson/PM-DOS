@@ -54,13 +54,13 @@ const char tx_list_change[] =
 
 const char tx_exit_title[] = "Exiting Setup";
 const char tx_exit_text[] =
-    "PM-DOS is not completely installed. If you leave Setup now, you will have "
+    "PM-DOS is not completely installed. If you exit Setup now, you will have "
     "to run Setup again to install PM-DOS.";
-const char tx_exit_f3[] = "To leave Setup, press F3.";
+const char tx_exit_f3[] = "To exit Setup, press F3.";
 const char tx_exit_esc[] = "To go back to Setup, press ESC.";
 
 const char tx_cannot_title[] = "Setup Cannot Continue";
-const char tx_leave_enter[] = "To leave Setup, press ENTER.";
+const char tx_leave_enter[] = "To exit Setup, press ENTER.";
 const char tx_checking[] = "Setup is checking your system configuration.";
 
 /* ------------------------------------------------------------------ */
@@ -71,11 +71,11 @@ const char tx_wel_1[] = "Welcome to Setup.";
 const char tx_wel_2[] = "Setup installs PM-DOS %s on this computer and gets it ready to run.";
 const char tx_wel_enter[] = "To install PM-DOS now, press ENTER.";
 const char tx_wel_f1[] = "To read about Setup before you go on, press F1.";
-const char tx_wel_f3[] = "To leave Setup without installing PM-DOS, press F3.";
+const char tx_wel_f3[] = "To exit Setup without installing PM-DOS, press F3.";
 const char tx_note[] = "Note:";
 const char tx_wel_note[] =
     "If your files have not been backed up lately, back them up before you "
-    "install. To do that, press F3 to leave Setup now, and then run your "
+    "install. To do that, press F3 to exit Setup now, and then run your "
     "backup program.";
 const char tx_wel_last[] = "To continue Setup, press ENTER.";
 
@@ -138,7 +138,7 @@ const char tx_fmt_pct[] = "%3d%% of the drive formatted";
 
 const char tx_raw_1[] =
     "Drive %c: is not formatted, so PM-DOS can't use it yet. Setup can format "
-    "the drive, or you can leave Setup and format the drive yourself.";
+    "the drive, or you can exit Setup and format the drive yourself.";
 const char tx_raw_item[] = "Format drive %c: (recommended).";
 const char tx_h_raw[] = "Formatting the Drive";
 const char tx_h_raw_text[] =
@@ -149,12 +149,12 @@ const char tx_h_raw_text[] =
 const char tx_inst_1[] =
     "Setup will install PM-DOS on drive %c:, which has %s free.";
 const char tx_inst_2[] =
-    "To make room for PM-DOS another way first, leave Setup and change the "
-    "partitions with FDISK, and then start Setup again.";
+    "To make room for PM-DOS, exit Setup and run the FDISK "
+    "utility to change the partitions, and then start Setup again.";
 const char tx_inst_item[] = "Install PM-DOS on drive %c: (recommended).";
 const char tx_h_inst[] = "Choosing Where to Install";
 const char tx_h_inst_text[] =
-    "PM-DOS goes on the first partition of the first hard disk, which is "
+    "PM-DOS installs on the first partition of the first hard disk, which is "
     "drive C: when PM-DOS starts.\n\n"
     "To give PM-DOS a partition of its own, or to make the partition bigger "
     "or smaller, choose the second option. At the prompt, run FDISK to change "
@@ -340,7 +340,7 @@ const char tx_commit[] =
     "Setup is ready to install PM-DOS. From here on, Setup changes the files "
     "on drive %c:.";
 const char tx_commit_y[] = "To install PM-DOS, press Y.";
-const char tx_commit_f3[] = "To leave Setup without changing anything, press F3.";
+const char tx_commit_f3[] = "To exit Setup without changing anything, press F3.";
 
 /* ------------------------------------------------------------------ */
 /* copying                                                             */
@@ -403,7 +403,7 @@ const char tx_un_1[] =
     "installed. PM-DOS is removed from the drive, and your old CONFIG.SYS and "
     "AUTOEXEC.BAT come back.";
 const char tx_un_enter[] = "To put back your old DOS, press ENTER.";
-const char tx_un_f3[] = "To leave without changing anything, press F3.";
+const char tx_un_f3[] = "To exit without changing anything, press F3.";
 const char tx_un_working[] = "Uninstall is putting back your old DOS.";
 const char tx_un_done[] =
     "Your old DOS is back on drive %c:. Remove the Uninstall disk, and then "

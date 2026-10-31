@@ -547,15 +547,15 @@ af_ffail:
         ; A find-first that fails is USUALLY just the empty answer -
         ; nothing matched the pattern - and that is not an error.
         ;
-        ; IT IS NOT WHERE A MISTYPED DIRECTORY IS CAUGHT, and it
-        ; cannot be: this kernel's 4Eh answers ERR_NOFILE for a
-        ; directory that does not exist exactly as it does for a name
-        ; that matched nothing, and tells only a bad DRIVE apart
-        ; (f4E_nf in DOS\INT21.INC).  The first run of this program
-        ; proved it - "ATTRIB \NOSUCHDIR\*.*" said "File not found" -
-        ; and the check that fixed it is in at_qualify, where the
-        ; directory can still be asked about directly.  The two codes
-        ; below are what is left that a find CAN say.
+        ; IT IS NOT WHERE A MISTYPED DIRECTORY IS CAUGHT.  When this
+        ; was written the kernel's 4Eh answered ERR_NOFILE for a
+        ; directory that did not exist exactly as it did for a name
+        ; that matched nothing - "ATTRIB \NOSUCHDIR\*.*" said "File not
+        ; found" - and the check that fixed it is in at_qualify, where
+        ; the directory can still be asked about directly.  4Eh now
+        ; says ERR_NOPATH for the one and ERR_NOMORE for the other
+        ; (f4E_rpfail, f4E_none in DOS\INT21.INC), and the two codes
+        ; below are the ones that need a sentence.
         ;
         ; On a /S sweep this can only fire at the top anyway: every
         ; directory below it was handed over by a find that had just
@@ -943,12 +943,12 @@ aq_short:
 
 ;--- ...AND IT HAS TO BE THERE, which a truename cannot say -----------
 ; 7160h and 60h CANONICALIZE; they do not look.  Without this,
-; "ATTRIB \NOSUCHDIR\*.*" comes back saying it could not find the
-; FILES - because the kernel's 4Eh answers ERR_NOFILE for a directory
-; that does not exist just as it does for a name that matched nothing,
-; and tells only a bad DRIVE apart (f4E_nf in DOS\INT21.INC).  The
-; find can therefore never distinguish the two, so the question is
-; asked HERE, while the answer is still about the directory.  This is
+; "ATTRIB \NOSUCHDIR\*.*" came back saying it could not find the
+; FILES - because the kernel's 4Eh answered ERR_NOFILE for a directory
+; that did not exist just as it did for a name that matched nothing.
+; It tells the two apart now, but ATTRIB also runs on kernels that do
+; not, so the question is still asked HERE, while the answer is still
+; about the directory.  This is
 ; what makes ATTRIB's two refusals different sentences, as they are on
 ; real DOS.
 ;

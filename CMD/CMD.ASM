@@ -1772,6 +1772,8 @@ dir_lastch:
         je      dir_glue
         cmp     al,'\'
         je      dir_glue
+        call    is_dotdir               ; "." and "..": no probe, which
+        jnc     dir_isdir               ; finds nothing when one is the root
         call    has_wild
         jnc     dir_probe
         jmp     dir_pat
@@ -1803,6 +1805,7 @@ dir_probe:
         pop     esi
         test    byte ptr [find_data],ATTR_DIR
         jz      dir_pat
+dir_isdir:
         push    esi
         mov     edi,OFFSET dir_scratch  ; arg + "\*.*"
         mov     edx,OFFSET dir_scratch + SPATH_MAX
@@ -4012,6 +4015,50 @@ cpa_out:
         ret
 
 ;---------------------------------------------------------------------
+; is_dotdir - CF clear if the last component of the path at ESI is
+;             "." or "..", which are directories by name.  A find
+;             cannot be asked about them: when one of them is the root
+;             there is no entry to find, and the answer is "not found".
+;---------------------------------------------------------------------
+is_dotdir:
+        push    eax
+        push    edi
+        mov     edi,esi
+idd_end:
+        cmp     byte ptr [edi],0
+        je      idd_back
+        inc     edi
+        jmp     short idd_end
+idd_back:                               ; EDI -> the NUL; back up to
+        cmp     edi,esi                 ; the start of the last part
+        je      idd_have
+        mov     al,[edi-1]
+        cmp     al,'\'
+        je      idd_have
+        cmp     al,':'
+        je      idd_have
+        dec     edi
+        jmp     short idd_back
+idd_have:
+        cmp     byte ptr [edi],'.'
+        jne     idd_no
+        cmp     byte ptr [edi+1],0
+        je      idd_yes                 ; "."
+        cmp     byte ptr [edi+1],'.'
+        jne     idd_no
+        cmp     byte ptr [edi+2],0
+        je      idd_yes                 ; ".."
+idd_no:
+        stc
+        jmp     short idd_out
+idd_yes:
+        clc
+idd_out:
+        pop     edi
+        pop     eax
+        ret
+
+;---------------------------------------------------------------------
 ; cp_isplace - CF clear if the destination names somewhere to put
 ;              files rather than a file to make: absent, a bare drive,
 ;              a trailing backslash, or an existing directory.
@@ -4036,6 +4083,9 @@ cpi_last:
         je      cpi_yes
         cmp     byte ptr [edi],':'
         je      cpi_yes
+        call    is_dotdir               ; "." and ".." need no asking,
+        jnc     cpi_yes                 ; and the find cannot answer
+                                        ; when one of them is the root
 
         mov     edx,esi                 ; ask the filesystem
         mov     ecx,ATTR_DIR

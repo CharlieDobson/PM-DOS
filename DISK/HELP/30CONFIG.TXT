@@ -1,6 +1,6 @@
 #! 30CONFIG.TXT - CONFIG.SYS: the statements, what each one takes,
-#! and the topics about starting the machine.  CONFIG.TXT on the boot
-#! disk says the same things at more length.
+#! and the topics about starting the machine.  DISK\CONFIG.TXT (not
+#! shipped since 2026-10-30) says the same things at more length.
 #group CONFIG.SYS Commands|CONFIG|CONFIG.SYS|config
 CONFIG.SYS is a text file in the root of the boot drive.  PM-DOS reads
 it once at startup, before the shell, and sets itself up as it says.

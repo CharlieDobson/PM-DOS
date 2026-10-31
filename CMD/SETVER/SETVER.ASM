@@ -124,13 +124,24 @@ dvi_unknown:
 ; ones MS-DOS 6.22 ships: programs of the period that would not run on
 ; a DOS newer than the one they were written for.
 ;
-; AND "*", PM-DOS's own: the version for every program the table does
-; not name.  PM-DOS's real version is 0.x, which a program reads as
-; DOS 1 and refuses, so the table starts out telling everything 6.22
-; (sv_find, VDM.INC).  MS-DOS's SETVER lists the entry and never
-; matches it, since no file can be called "*".
+; AND WINDOWS 3.1x, PM-DOS's own.  PM-DOS's real version is 0.x, which
+; a program reads as DOS 1 and refuses, and Windows refuses it: these
+; are the files of Windows 3.1 and Windows for Workgroups 3.11 that
+; ask, told 6.22.  The tasks Windows runs inherit the kernel's version
+; (55h, RMMEM.INC).
+;
+; "*" is a name only PM-DOS uses: the version for every program the
+; table does not name (sv_find, VDM.INC).  The table does not start
+; with one; SETVER * 6.22 adds it.  MS-DOS's SETVER lists the entry and
+; never matches it, since no file can be called "*".
 ;=====================================================================
-ver_tab     db  1,'*',6,22
+ver_tab     db  7,'WIN.COM',6,22
+            db  10,'WIN386.EXE',6,22
+            db  8,'DOSX.EXE',6,22
+            db  11,'WININIT.EXE',6,22
+            db  11,'KRNL386.EXE',6,22
+            db  11,'KRNL286.EXE',6,22
+            db  10,'IFSHLP.SYS',6,22
             db  10,'KERNEL.EXE',5,0
             db  10,'DOSOAD.SYS',5,0
             db  11,'EXTDISK.SYS',6,0

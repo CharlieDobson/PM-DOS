@@ -62,7 +62,7 @@ static void scr_palette( void )
     pal.button = 0x70;
     pal.button_focus = 0x7F;
     pal.shadow = 0x08;
-    pal.map = 0x0E;             /* yellow on black */
+    pal.map = 0x0F;             /* white on black */
     pal.map_sel = 0x4F;         /* white on red */
 }
 

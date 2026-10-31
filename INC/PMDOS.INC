@@ -3735,6 +3735,7 @@ DP_MINLEN       EQU     1Ah                     ; the v1.x block, all of it
 ERR_FUNC        EQU     1                       ; invalid function
 ERR_NOFILE      EQU     2                       ; file not found
 ERR_NOPATH      EQU     3                       ; path not found
+ERR_NOMORE      EQU     12h                     ; no more files (4Eh/4Fh)
 ERR_NOHANDLES   EQU     4                       ; too many open files
 ERR_ACCESS      EQU     5                       ; access denied
 ERR_BADHANDLE   EQU     6                       ; invalid handle
@@ -3849,16 +3850,23 @@ SHARE_DFLTLK    EQU     20              ; SHARE.EXE's /L: default, and the
 ; 32 bits.  With no compression anywhere in PM-DOS the "physical" and
 ; "allocation unit" fields repeat the cluster ones, which is what a
 ; system that compresses nothing is supposed to say.
+;
+; THE LAYOUT IS DOS 7.1'S, size word first.  Up to v0.69 the record
+; began with the version word and every field sat two bytes early, so
+; a program written for Windows 95 read the sector size as its cluster
+; count.  A program that has to tell the two apart can: the first word
+; is now 2Ch, where it used to be 0.
 ;---------------------------------------------------------------------
-F73_LEVEL       EQU     00h             ; dw - structure version, 0
-F73_SPC         EQU     02h             ; dd - sectors per cluster
-F73_BPS         EQU     06h             ; dd - bytes per sector
-F73_FREECL      EQU     0Ah             ; dd - available clusters
-F73_TOTCL       EQU     0Eh             ; dd - total clusters
-F73_FREESEC     EQU     12h             ; dd - available physical sectors
-F73_TOTSEC      EQU     16h             ; dd - total physical sectors
-F73_FREEAU      EQU     1Ah             ; dd - available allocation units
-F73_TOTAU       EQU     1Eh             ; dd - total allocation units
+F73_RETSIZE     EQU     00h             ; dw - bytes returned, 2Ch
+F73_LEVEL       EQU     02h             ; dw - structure version, 0
+F73_SPC         EQU     04h             ; dd - sectors per cluster
+F73_BPS         EQU     08h             ; dd - bytes per sector
+F73_FREECL      EQU     0Ch             ; dd - available clusters
+F73_TOTCL       EQU     10h             ; dd - total clusters
+F73_FREESEC     EQU     14h             ; dd - available physical sectors
+F73_TOTSEC      EQU     18h             ; dd - total physical sectors
+F73_FREEAU      EQU     1Ch             ; dd - available allocation units
+F73_TOTAU       EQU     20h             ; dd - total allocation units
 F73_SIZE        EQU     2Ch             ; ...and eight reserved bytes
 
 ;---------------------------------------------------------------------

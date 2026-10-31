@@ -18955,6 +18955,101 @@ Setup images, the four images into the 86Box VM; a copy of the
 delivered HD16 boots to the menu and the prompt.
 
 
+CONFIG.TXT AND AUTOEXEC.TXT LEAVE THE DISKS (2026-10-30)
+---------------------------------------------------------------------
+
+Charlie: "Let's not include AUTOEXEC.TXT and CONFIG.TXT in the PM-DOS
+distribution."  HELP covers the same ground.  Both files stay in DISK\
+as the long-form reference; BUILD.CMD (PMDOS.IMG), MKHD.CMD (HD16 and
+HD32) and DISK\SETUP.LST (the Setup disks, the USB and Zip images and
+the CD) no longer name them.  The boot floppy gains 108 clusters (54K).
+Nothing reads either file and RUNTESTS builds its disk from BIN, so no
+baseline moves.
+
+Delivered without a build, because BIN\PMD.EXE had been rebuilt by
+another session (23:07) and was not to ride along: PMDOS.IMG by
+MKDISK from the 46 files read off the delivered floppy (all identical
+to it); the five Setup images by MKSETUP in a scratch copy of the tree
+with the delivered PMD.EXE put back (every file on DISK1/DISK2
+identical to the delivered disks' but the two .TX_ and SETUP.INF's two
+lines); HD16.IMG by FATREPL -del; the VM's PMDOS.IMG and HD16.IMG.
+HD32.IMG (FAT32, last made 2026-10-21) keeps its copies until MKHD.CMD
+is next run.  Not booted.
+
+
+SETVER'S TABLE NAMES WINDOWS INSTEAD OF "*" (2026-10-31)
+---------------------------------------------------------------------
+
+Charlie: "Let's remove "* 6.22" from SETVER and limit it to WIN.COM,
+KRNL386.EXE, KRNL286.EXE, and any other Windows 3.1x executables
+needed to run Windows in PM-DOS."  The * entry still works; the table
+SETVER.EXE ships no longer starts with one, so a DOS program SETVER
+does not name is told PM-DOS's own version (0.69).
+
+THE NEW ENTRIES, all 6.22, at the front of the table:
+  WIN.COM       wants 3.10 ("Must have MS-DOS version 3.10")
+  WIN386.EXE    wants 3.30 ("Cannot run Windows with the installed
+                version of MS-DOS.  Upgrade MS-DOS to version 3.30 or
+                higher."), found with only the first three names in
+  DOSX.EXE      standard mode's extender.  It starts with 0.69, but it
+                asks 30h and skips its DOS 5 HMA query (INT 2Fh 4A01h)
+                below 5, which it never did while * gave it 6.22
+  WININIT.EXE   WfW 3.11's WIN.COM runs it when WININIT.INI is there,
+                to finish what Setup left to replace.  Tested with a
+                [rename] line: without the entry Windows starts and
+                the file is not renamed; with it the file is renamed
+  KRNL386.EXE   and KRNL286.EXE: GetVersion is what 30h told the kernel
+  IFSHLP.SYS    WfW 3.11's ("Incompatible DOS Version"), and enhanced
+                mode will not start without it
+Every MZ, .COM and .SYS file in both Windows trees (S:\WIN31HD,
+S:\WFW311HD) was searched for B4 30 and B8 00 30, which every file
+above has.  DSWAP.EXE and WSWAP.EXE, the real-mode programs standard
+mode runs, have neither.  Not named, though they ask: HIMEM.SYS,
+EMM386.EXE, SMARTDRV.EXE and RAMDRIVE.SYS (PM-DOS does not load them
+to run Windows), MOUSE.COM/.SYS, MSD.EXE, EXPAND.EXE, CPANEL.EXE (the
+mouse driver's settings), WINQ.COM, and WfW's DOS-side SETUP.EXE - a
+name every installer has, so SETVER SETUP.EXE 6.22 is left to whoever
+runs Windows Setup from the prompt.
+
+WINDOWS PROGRAMS: RMDOS's 26h and 55h no longer stamp PSP+40h.  The
+new PSP keeps the version the 256-byte copy brought, its maker's.
+Windows makes every task's PSP with 55h out of KRNL386's or KRNL286's,
+so a Windows program's own 30h says 6.22 without a * entry and
+without a name of its own.  MS-DOS's SETMEM stamps the real version
+there, and here that would be 0.69 to every Windows program.  With no
+SETVER loaded nothing changes: the maker's version is the real one,
+which is what the stamp gave.  RMDOS.SYS 64,038 -> 64,025.
+
+TESTED (QEMU, the WfW rig of 2026-10-29 with WINDRV logging GetVersion
+and its own 30h):
+  - WfW 3.11, enhanced: starts, exits.  GetVersion 6.22, a Windows
+    program's 30h 6.22.  WINSTART.BAT (the system VM), a DOS box,
+    COMMAND /C in it and VER after WIN: 0.69.  SVKID.COM named 5.00:
+    5.00.  PM-DOS's COMMAND.COM in the DOS box: "version 0.69, running
+    on DOS 0.69".  With WININIT.INI: renamed, as above.
+  - Windows 3.1, enhanced (WIN /3): the same.
+  - Windows 3.1, standard (WIN /S): reaches the desktop, GetVersion and
+    30h 6.22.  The DOS box it starts does not come back - with the old
+    RMDOS.SYS and a * entry too, so this is the standard-mode DOS
+    session hang already known, not the version.
+Not run: RUNTESTS (its CONFIG.SYS loads no SETVER, and RMDOS without
+SETVER answers as before), 86Box, real hardware.
+
+Delivered without a full build, because the tree held other sessions'
+work not yet delivered (BIN\PMD.EXE of 23:07 on 10-30 among it):
+RMDOS.SYS and SETVER.EXE from the committed sources plus this change
+(the committed sources alone rebuild BIN's copies byte for byte).
+S:\BIN 2 files.  PMDOS.IMG and PMDOS2.IMG by BUILD.CMD's MKDISK lines
+from the files on the delivered floppies (that remade PMDOS.IMG byte
+for byte), PMDOS2.IMG keeping its label PM-DOS2.  HD16.IMG by FATREPL.
+The five Setup images by MKSETUP (rebuilt from TOOLS\MKSETUP.C - the
+tree's .EXE is stale) in a scratch copy of the tree, with the Setup
+images' own PMD.EXE put back.  Every image read back against the one
+it replaced: only RMDOS.SYS, SETVER.EXE, HELP.HLP (packed or not) and
+SETUP.INF's two size lines differ.  The VM's PMDOS.IMG, PMDOS2.IMG and
+HD16.IMG.  A copy of HD16 boots to the menu and the prompt (QEMU).
+
+
 WINDOWS FOR WORKGROUPS: THE LAN MANAGER DIALECTS, BOTH WAYS (2026-10-31)
 ---------------------------------------------------------------------
 
@@ -28306,7 +28401,8 @@ Layout
                     (C:).  CFGTEST expects its FILES=, LASTDRIVE= and
                     SET PMDOSTEST lines.
   DISK\CONFIG.TXT   the user's guide to every CONFIG.SYS statement,
-                    on every disk next to CONFIG.SYS (2026-10-02).
+                    on every disk next to CONFIG.SYS (2026-10-02) until
+                    2026-10-30; kept in the tree, shipped on no disk.
                     The help moved out of CONFIG.SYS itself, which had
                     grown to 14K of a 16K read buffer.  A new
                     statement gets its entry here.

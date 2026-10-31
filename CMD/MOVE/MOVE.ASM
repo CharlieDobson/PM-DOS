@@ -237,9 +237,39 @@ mv_dsttype:
         cmp     al,'/'
         je      mvd_yes
         cmp     ecx,2                   ; "D:" is D:'s current directory
-        jne     mvd_ask
+        jne     mvd_dots
         cmp     byte ptr [esi+1],':'
         je      mvd_yes
+
+        ; "." AND ".." ARE DIRECTORIES BY NAME.  43h cannot be asked
+        ; about them: when one of them is the root, 43h answers "not
+        ; found", as MS-DOS does for a root, and ".." would become the
+        ; name of a new file.  Find where the last component starts.
+mvd_dots:
+        mov     edx,ecx                 ; EDX = index after the last
+mvd_dback:                              ; separator
+        cmp     edx,0
+        je      mvd_dlast
+        mov     al,[esi+edx-1]
+        cmp     al,'\'
+        je      mvd_dlast
+        cmp     al,'/'
+        je      mvd_dlast
+        cmp     al,':'
+        je      mvd_dlast
+        dec     edx
+        jmp     short mvd_dback
+mvd_dlast:
+        mov     eax,ecx
+        sub     eax,edx                 ; EAX = the last component's length
+        cmp     byte ptr [esi+edx],'.'
+        jne     mvd_ask
+        cmp     eax,1
+        je      mvd_yes                 ; "."
+        cmp     eax,2
+        jne     mvd_ask
+        cmp     byte ptr [esi+edx+1],'.'
+        je      mvd_yes                 ; ".."
 
 mvd_ask:
         mov     edx,OFFSET dst_path

@@ -178,8 +178,7 @@ static void act_about( int arg )
     at.end_row = 17 + dy;
     at.end_col = 59;
     msg_ok( FG_BRIGHT_WHITE, BG_BLUE, "About " APP_NAME,
-            APP_NAME " - Dobson Utilities.  A drive space and folder-size visualizer.  "
-            "(C) 2026 Charlie Dobson.", &at );
+            APP_NAME " A drive space and folder-size visualizer.  ", &at );
     update_status();
 }
 

@@ -24,7 +24,8 @@
 ; that order.
 ;
 ;   1  4Eh on a missing directory is 3
-;   2  4Eh on nothing matching in a real one is 2 (or 12h)
+;   2  4Eh on nothing matching in a real one is 12h, no more files,
+;      as MS-DOS says it (2 up to v0.69)
 ;   3  4Eh on a drive that is not there is 0Fh
 ;   4  714Eh on a missing directory is 3
 ;   5  714Eh on nothing matching is 2
@@ -97,7 +98,7 @@ ft_checks:
         call    try4E
         mov     edx,OFFSET msg_t2
         mov     esi,OFFSET pat_nomatch
-        mov     bx,ERR_NOFILE
+        mov     bx,ERR_NOMORE
         call    try4E
         mov     edx,OFFSET msg_t3
         mov     esi,OFFSET pat_nodrv
@@ -239,9 +240,10 @@ wr_fail:
 
 ;---------------------------------------------------------------------
 ; try4E / try714E - EDX = the check's title, ESI = the pattern, BX = the
-;                   error it must fail with.  4Eh's "no match" may also
+;                   error it must fail with.  714Eh's "no match" may also
 ;                   honestly be 12h, no more files, which some DOSes say
-;                   on a first call; the path and drive errors may not.
+;                   on a first call; the path and drive errors may not,
+;                   and 4Eh's is 12h and nothing else.
 ;---------------------------------------------------------------------
 try4E:
         call    puts
@@ -367,7 +369,7 @@ pd_out:
 ;=====================================================================
 msg_hi      db  'FNDTEST - what the finds say when there is nothing',13,10,13,10,'$'
 msg_t1      db  ' 1 4Eh, no such directory: 3             ','$'
-msg_t2      db  ' 2 4Eh, nothing matches: 2               ','$'
+msg_t2      db  ' 2 4Eh, nothing matches: 12h             ','$'
 msg_t3      db  ' 3 4Eh, no such drive: 0Fh               ','$'
 msg_t4      db  ' 4 714Eh, no such directory: 3           ','$'
 msg_t5      db  ' 5 714Eh, nothing matches: 2             ','$'

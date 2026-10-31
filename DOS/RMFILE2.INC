@@ -2184,8 +2184,8 @@ IFDEF RMDOS_USBDBG
         call    udbg1
         pop     ax
 ENDIF
-        mov     ax,ERR_NOFILE
-        jmp     i21_fail
+        mov     ax,12h                  ; no more files, DOS's answer to
+        jmp     i21_fail                ; a search that finds nothing
 f4E_bad:
 IFDEF RMDOS_USBDBG
         push    ax
@@ -2282,7 +2282,7 @@ f4F_found:
         jmp     i21_ok
 f4F_none:
         mov     word ptr [rd_ffvol],0
-        mov     ax,ERR_NOFILE
+        mov     ax,12h                  ; no more files (was 2 up to v0.69)
         jmp     i21_fail
 
 ;--- ff_match - BX = an entry.  CF set if it does not match the search

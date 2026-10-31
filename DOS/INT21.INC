@@ -6790,12 +6790,19 @@ f4B_body:                                       ; DBF_LOAD comes in here
         call    f4B_inner               ; the block is the caller's, and so
         or      esi,esi                 ; is everything it points at
         jz      f4B_notail
+        ; A LINE LONGER THAN THE PSP HOLDS keeps its first 126
+        ; characters and says 7Fh for its length, which is how Windows
+        ; 95 tells a program to read the whole line from CMDLINE in its
+        ; environment.  The caller puts CMDLINE there; up to v0.69 the
+        ; 7Fh became 7Eh here and the child never knew to look.
         movzx   ecx,byte ptr [esi]
+        mov     al,cl
         cmp     ecx,7Eh
         jbe     f4B_tlen
         mov     ecx,7Eh
+        mov     al,7Fh
 f4B_tlen:
-        mov     [edi],cl
+        mov     [edi],al
         inc     edi
         inc     esi
         rep     movsb
@@ -6818,6 +6825,25 @@ f4B_notail:
         jz      f4B_noenv
         call    exec_cpenv
 f4B_noenv:
+
+        ; AND THE PROGRAM'S OWN PATH, which DOS 3 and later put after
+        ; the environment and every C runtime takes argv[0] from.  Fully
+        ; qualified, as the DOS box's (vdm_env): "PROG" typed at the
+        ; prompt arrives as C:\SOMEWHERE\PROG.EXE.  Truename can refuse
+        ; a path the load is about to refuse too; then it goes as typed
+        ; and the load's error is the one that matters.
+        mov     esi,OFFSET exec_path
+        mov     edi,OFFSET exec_qpath
+        mov     byte ptr [edi],0
+        xor     ecx,ecx                 ; CL = 0: the canonical form
+        mov     eax,7160h
+        call    k21
+        jnc     f4B_qnamed
+        mov     esi,OFFSET exec_path
+        mov     edi,OFFSET exec_qpath
+        mov     ecx,EXEC_PATH_MAX - 1
+        call    exec_cpz
+f4B_qnamed:
 
         ; AND WHAT THE CALLER GREW AND HAS SINCE FREED GOES BACK TO THE
         ; ARENA, for the child to have - a DOS program's 4Ah before an
@@ -7262,15 +7288,59 @@ ece_toobig:
 ; exec_setenv - put the copy into the child's slot, behind its PSP, and
 ;               point PSP_ENV at it.  Called after build_psp, which has
 ;               just zeroed the field.
+;
+; Behind the strings goes what DOS 3 and later put there: a word that
+; says how many strings follow, 1, and the program's path from
+; exec_qpath.  A program given no environment still gets a block, an
+; empty one, so that it can find itself.  A block too full for the
+; path gets a count of 0 instead, and one too full even for that gets
+; nothing - the strings are what it was asked for.  With no
+; environment and no path (exec_qpath empty) the field stays 0, as it
+; always did.
 ;---------------------------------------------------------------------
 exec_setenv:
         pushad
         mov     ecx,[exec_envlen]
+        cmp     byte ptr [exec_qpath],0
+        jne     ese_go
         jecxz   ese_out
+ese_go:
         mov     edi,[r3_base]
         add     edi,SLOT_ENV
+        mov     ebx,edi                 ; EBX = the block's start
         mov     esi,OFFSET exec_env
+        jecxz   ese_empty
+        rep     movsb                   ; the strings and the empty one
+        jmp     short ese_tail
+ese_empty:
+        mov     byte ptr [edi],0        ; no strings: the empty one alone
+        inc     edi
+ese_tail:
+        mov     esi,OFFSET exec_qpath
+        xor     eax,eax
+ese_len:
+        cmp     byte ptr [esi+eax],0
+        je      ese_measured
+        inc     eax
+        jmp     short ese_len
+ese_measured:
+        mov     edx,edi
+        sub     edx,ebx                 ; EDX = bytes used so far
+        mov     ecx,SLOT_ENVMAX
+        sub     ecx,edx                 ; ECX = bytes left
+        lea     edx,[eax+3]             ; the count, the path, its NUL
+        cmp     ecx,edx
+        jb      ese_nopath
+        mov     word ptr [edi],1
+        add     edi,2
+        lea     ecx,[eax+1]
         rep     movsb
+        jmp     short ese_point
+ese_nopath:
+        cmp     ecx,2
+        jb      ese_point
+        mov     word ptr [edi],0
+ese_point:
         mov     edi,[exec_psp]
         mov     dword ptr [edi+PSP_ENV],SLOT_ENV
 ese_out:
@@ -7586,12 +7656,14 @@ bp_noparent:
         add     edi,PSP_TAIL
         or      esi,esi
         jz      bp_empty
-        movzx   ecx,byte ptr [esi]
-        cmp     ecx,7Eh
-        jbe     bp_len_ok
+        movzx   ecx,byte ptr [esi]      ; 7Fh is fn4B's "longer than
+        mov     al,cl                   ; this": it stays 7Fh over 126
+        cmp     ecx,7Eh                 ; characters and the CR, which
+        jbe     bp_len_ok               ; fill 80h-FFh exactly
         mov     ecx,7Eh
+        mov     al,7Fh
 bp_len_ok:
-        mov     [edi],cl
+        mov     [edi],al
         inc     edi
         inc     esi
         rep     movsb
@@ -7902,7 +7974,10 @@ fn4D:
 
 ;=====================================================================
 ; 4Eh - find first.  EDX -> pattern, CX = attributes (ignored).
-;       Fills the DTA; CF/ERR_NOFILE when nothing matches.
+;       Fills the DTA; CF/ERR_NOMORE when nothing matches, as MS-DOS
+;       answers it (SEARCH.ASM) - and 4Fh the same at the end.  Both
+;       said ERR_NOFILE up to v0.69.  714Eh keeps 2 for "nothing",
+;       which is Windows 95's answer to that call.
 ;=====================================================================
 fn4E:
         call    dta_ok                  ; the search record is 43 bytes and
@@ -8044,7 +8119,7 @@ f4E_z:
         jmp     i21_ok
 
 f4E_none:
-        mov     ax,ERR_NOFILE
+        mov     ax,ERR_NOMORE
         cmp     byte ptr [rp_baddrv],0  ; ...unless the DRIVE is what
         je      f4E_nf                  ; could not be reached, which
         mov     ax,ERR_BADDRIVE         ; is a different sentence
@@ -8053,9 +8128,9 @@ f4E_nf:
 
 ; THE RESOLVER'S OWN ANSWER, KEPT.  A pattern whose DIRECTORY does not
 ; exist is "path not found" (3), and "nothing matched in a directory
-; that does" is "file not found" (2) - two sentences DOS has always had
-; and this call used to collapse into the second, because every
-; failure came through f4E_none and it wrote ERR_NOFILE over whatever
+; that does" is "no more files" (12h) - two sentences DOS has always
+; had and this call used to collapse into one, because every failure
+; came through f4E_none and it wrote ERR_NOFILE over whatever
 ; resolve_parent had said.  ATTRIB had to work round it by asking
 ; about the directory separately.  resolve_parent answers ERR_NOPATH
 ; for a missing or non-directory component on the way and
@@ -9528,7 +9603,26 @@ fn73:
         xor     eax,eax
         mov     ecx,F73_SIZE / 4
         rep     stosd
+        mov     word ptr [f73_rec+F73_RETSIZE],F73_SIZE
 
+        ; A SHARE HAS NO BPB, so it gets the figures 36h gives one
+        ; (net_info): 64 sectors of 512 bytes a cluster and 65,535
+        ; clusters, all free.  The redirector has no way to ask the
+        ; server, and 0 here was DIR's "0 bytes free".
+        cmp     byte ptr [vol_fs],FS_NET
+        jne     f73_local
+        mov     dword ptr [f73_rec+F73_SPC],64
+        mov     dword ptr [f73_rec+F73_BPS],512
+        mov     eax,0FFFFh
+        mov     dword ptr [f73_rec+F73_TOTCL],eax
+        mov     dword ptr [f73_rec+F73_TOTAU],eax
+        mov     dword ptr [f73_rec+F73_FREECL],eax
+        mov     dword ptr [f73_rec+F73_FREEAU],eax
+        shl     eax,6
+        mov     dword ptr [f73_rec+F73_TOTSEC],eax
+        mov     dword ptr [f73_rec+F73_FREESEC],eax
+        jmp     short f73_give
+f73_local:
         call    vol_lgeom               ; the volume's own sector size
         mov     dword ptr [f73_rec+F73_SPC],eax
         mov     dword ptr [f73_rec+F73_BPS],ecx
@@ -9546,6 +9640,7 @@ fn73:
         imul    eax,ebx
         mov     dword ptr [f73_rec+F73_FREESEC],eax
 
+f73_give:
         mov     ecx,[ebp+F_ECX]         ; never more than was offered
         cmp     ecx,F73_SIZE
         jbe     f73_len
@@ -9560,7 +9655,7 @@ f73_len:
         rep     movsb
         jmp     i21_ok
 f73_short:
-        mov     ax,ERR_FUNC             ; no room for even the version
+        mov     ax,ERR_FUNC             ; no room for even the size word
         jmp     i21_fail
 f73_bad:
         mov     ax,ERR_FUNC
@@ -12697,6 +12792,9 @@ exec_err    dd  0                       ; error code across a stack switch
 ; nested EXEC the caller's memory is the very slot about to be
 ; overwritten - so reading them later would read the new program.
 exec_path   db  EXEC_PATH_MAX dup(0)
+exec_qpath  db  LFN_MAX dup(0)          ; exec_path through 7160h, which
+                                        ; writes up to LFN_MAX: the tail
+                                        ; of the child's environment
 exec_tail   db  132 dup(0)
 exec_envlen dd  0                       ; and the environment, which has the
 exec_env    db  SLOT_ENVMAX dup(0)      ; same problem twice over - see

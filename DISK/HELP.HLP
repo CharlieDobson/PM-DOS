@@ -6492,15 +6492,19 @@ PM-DOS reports its own version number, the one VER shows.  Most DOS
 programs read a version below 2 as MS-DOS 1 and will not run.  Some
 older programs and drivers refuse to run on any version other than
 the one they were written for.  SETVER's table lists those programs
-and the version number each one is given.  The * entry is the
-version given to every other DOS program.  As supplied it is 6.22.
+and the version number each one is given.  As supplied, the table
+gives version 6.22 to the parts of Windows 3.1 that check the
+version, and Windows programs are given 6.22 as well.  Every other
+DOS program is told PM-DOS's own version, unless a * entry is added.
+The * entry is the version given to every DOS program not in the
+table.
 
 \bLoading the table\p
 
 Add DEVICE=C:\\SETVER.EXE to CONFIG.SYS to load the table.  Put the
 line above any driver listed in the table.  The table uses less than
 1K of memory.  The CONFIG.SYS that Setup writes already has this
-line.  Without it, DOS programs are told PM-DOS's own version.
+line.  Windows 3.1 will not start without it.
 
 \bChanges\p
 

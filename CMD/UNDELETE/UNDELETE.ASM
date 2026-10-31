@@ -1802,7 +1802,7 @@ msg_drive   db  'Drive ',0
 msg_colonsp db  ': ',0
 msg_holds   db  ': holds ',0
 msg_holdsnone db ': holds no deleted files.',13,10,0
-msg_pct1    db  'They may take up to ',0
+msg_pct1    db  'Deleted files may take up to ',0
 msg_pct2    db  '% of the free space.',13,10,0
 msg_purged  db  ' bytes deleted for good.',13,10,0
 msg_nokernel db 'This version of PM-DOS does not keep deleted files.',13,10,0
@@ -1814,18 +1814,15 @@ msg_toomany db  'Too many parameters - ',0
 msg_badsw   db  '/S goes with listing and recovering only.',13,10,0
 msg_driveonly db '/PURGE and /STATUS take a drive letter only.',13,10,0
 
-msg_usage   db  'Recovers deleted files.',13,10,13,10
+msg_usage   db  'Restores files previously deleted with the DEL or ERASE command.',13,10,13,10
             db  'UNDELETE [drive:][path][name] [/LIST | /ALL] [/S]',13,10
             db  'UNDELETE [drive:] /PURGE',13,10
             db  'UNDELETE [drive:] /STATUS',13,10,13,10
-            db  '  [drive:][path]  The directory the files were deleted from.',13,10
-            db  '                  The current directory if none is given.',13,10
-            db  '  name            Which files; wildcards allowed.  All if none.',13,10
-            db  '  /LIST           Lists them and recovers nothing.',13,10
-            db  '  /ALL            Recovers them all without asking.',13,10
-            db  '  /S              Takes in the directories below as well.',13,10
-            db  '  /PURGE          Deletes every kept file on the drive for good.',13,10
-            db  '  /STATUS         Shows what is being kept.',13,10,13,10
+            db  '  /LIST           Lists the deleted files available to be recovered.',13,10
+            db  '  /ALL            Recovers files without prompting for confirmation.',13,10
+            db  '  /S              Recursively undeletes from subdirectories.',13,10
+            db  '  /PURGE          Purges all deleted files.',13,10
+            db  '  /STATUS         Shows current UNDELETE status.',13,10,13,10
             db  'UNDELETE=OFF in CONFIG.SYS disables delete protection.',13,10,0
 
 img_end:                                ; the BSS begins here

@@ -1129,13 +1129,16 @@ static void to_kb( u32 cluster_bytes, u32 free_clusters, u32 total_clusters,
 }
 
 /* 7303h, which counts in 32 bits, and 36h where the kernel has not got
-   it - whose 16 bits are full at 65,535 clusters.  The record is
-   PM-DOS's (F73_* in PMDOS.INC): a word, then sectors a cluster, bytes
-   a sector, clusters free and clusters in all, a dword each. */
+   it - whose 16 bits are full at 65,535 clusters.  The record (F73_*
+   in PMDOS.INC) is DOS 7.1's: its size, its version, then sectors a
+   cluster, bytes a sector, clusters free and clusters in all, a dword
+   each.  Up to v0.69 the size word was missing and everything sat two
+   bytes early; a first word of 0 says which (SETUP's way). */
 int sys_disk_space( int drv, u32 *free_kb, u32 *total_kb )
 {
     static u8 ext[48];
     u32 spc, bps;
+    const u8 *at;
     static char root[4];
     REGS regs;
     u32 cluster;
@@ -1150,10 +1153,11 @@ int sys_disk_space( int drv, u32 *free_kb, u32 *total_kb )
     regs.edi = (u32)ext;
     regs.ecx = sizeof( ext );
     call21( &regs, 0x7303 );
-    spc = *(u32 *)(ext + 0x02);
-    bps = *(u32 *)(ext + 0x06);
+    at = *(u16 *)ext == 0 ? ext + 2 : ext + 4;
+    spc = *(u32 *)at;
+    bps = *(u32 *)(at + 4);
     if ( !CF( regs ) && spc && spc <= 0x100 && bps >= 128 && bps <= 0x1000 ) {
-        to_kb( spc * bps, *(u32 *)(ext + 0x0A), *(u32 *)(ext + 0x0E), free_kb, total_kb );
+        to_kb( spc * bps, *(u32 *)(at + 8), *(u32 *)(at + 12), free_kb, total_kb );
         return 1;
     }
     clear( &regs );

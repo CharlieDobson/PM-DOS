@@ -427,9 +427,17 @@ net_find:
         call    net_fire
         jc      net_err_general
         cmp     dword ptr [net_req+NR_STATUS],0
-        jne     net_err_status
+        jne     nf_status
         call    net_fill_dta
         jmp     i21_ok
+nf_status:
+        ; "Nothing matched" is the driver's ERR_NOFILE and 4Eh's
+        ; ERR_NOMORE, as fn4E says it on a local drive.  714Eh shares
+        ; the driver's answer and keeps the 2 (nlf_nomatch).
+        cmp     dword ptr [net_req+NR_STATUS],ERR_NOFILE
+        jne     net_err_status
+        mov     ax,ERR_NOMORE
+        jmp     i21_fail
 
 ;=====================================================================
 ; net_findnext - 4Fh on a net drive.  AL = the net drive, EDI = the
@@ -450,7 +458,7 @@ net_findnext:
         call    net_fill_dta
         jmp     i21_ok
 net_findnext_none:
-        mov     ax,ERR_NOFILE
+        mov     ax,ERR_NOMORE
         jmp     i21_fail
 
 ;---------------------------------------------------------------------
