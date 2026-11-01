@@ -63,6 +63,13 @@ FDS_LOGICAL     EQU     0001h
 FD_MAXARGS      EQU     6
 FD_ARGLEN       EQU     16
 
+;--- fd_typefor's flags: what kind of entry, and which file system ----
+NT_LOG          EQU     1               ; a logical drive, not a primary
+NT_FAT32        EQU     2               ; FAT32 asked for, where it may be
+FD_FAT32MIN     EQU     1048576         ; FAT32 is offered from 512MB, where
+                                        ; FORMAT's own choice starts
+FD_FAT12MAX     EQU     32680           ; DOS's FDISK: 01h at or below this
+
 ;--- /P's report, which is the screen's Details page -----------------
 PR_LABW         EQU     22              ; a label this wide, after two spaces,
 PR_NUMW         EQU     14              ; its value right-aligned in this,
@@ -4668,52 +4675,25 @@ rl_typebyte:
         pop     ebx
         ret
 rf_notcx:
-        cmp     byte ptr [pl_raw],0
-        je      rf_vol
+        ; THE WIDTH IT CAME OUT, or none for a partition never formatted,
+        ; and fd_typefor's rule from there - the one a new partition of
+        ; this shape gets, so the two can never disagree
+        push    ecx
         push    edx
+        xor     ecx,ecx
+        cmp     dword ptr [pl_log],0
+        je      rf_prim
+        mov     cl,NT_LOG
+rf_prim:
+        cmp     byte ptr [pl_raw],0
+        jne     rf_go
+        mov     ch,byte ptr [fg_exec+FG_BITS]
+rf_go:
         mov     eax,[pl_nstart]
         mov     edx,[pl_nlen]
-        call    fd_newtype
+        call    fd_typefor
         pop     edx
-        pop     ebx
-        ret
-rf_vol:
-        cmp     dword ptr [fg_exec+FG_BITS],12
-        jne     rf_not12
-        mov     al,PT_FAT12
-        pop     ebx
-        ret
-rf_not12:
-        cmp     dword ptr [fg_exec+FG_BITS],32
-        jne     rf_16
-        mov     eax,[pl_nstart]
-        add     eax,[pl_nlen]
-        cmp     eax,[phy_chs]
-        ja      rf_32lba
-        mov     al,PT_FAT32
-        pop     ebx
-        ret
-rf_32lba:
-        mov     al,PT_FAT32L
-        pop     ebx
-        ret
-rf_16:
-        mov     eax,[pl_nstart]
-        add     eax,[pl_nlen]
-        cmp     eax,[phy_chs]
-        ja      rf_lba                  ; part of it is past CHS's reach
-        mov     eax,[pl_nlen]
-        cmp     eax,10000h              ; 65536 sectors is the 32MB line
-        jae     rf_big
-        mov     al,PT_FAT16S
-        pop     ebx
-        ret
-rf_big:
-        mov     al,PT_FAT16B
-        pop     ebx
-        ret
-rf_lba:
-        mov     al,PT_FAT16L
+        pop     ecx
         pop     ebx
         ret
 
@@ -4984,6 +4964,65 @@ fsc_chs:
         ret
 
 ;---------------------------------------------------------------------
+; fd_dskend - EAX = one past the last sector a partition may use on the
+;             disk in dsk_rec.  Every free run, every new partition and
+;             the end of the screen's bar stop here.
+;
+; A DISK THE BIOS DESCRIBES WHOLE ENDS WHERE THE BIOS SAYS IT DOES.
+; IDENTIFY counts every sector the drive has, but INT 13h AH=08h, which
+; is all any DOS before Windows 95 OSR2 ever asked, usually keeps the
+; last cylinder back - the old diagnostic cylinder.  A partition that
+; runs into it ends on a cylinder the BIOS says is not there, and
+; PC DOS 7's FDISK, meeting one, calls the whole partition Non-DOS.  So
+; on such a disk the end is DSK_CHS, the BIOS's last cylinder, exactly
+; where DOS's own FDISK stops.
+;
+; THE TEST IS WHETHER THE DISK FITS UNDER 1024 CYLINDERS of the BIOS's
+; geometry, not the cylinder count itself.  A disk bigger than CHS can
+; describe is reported as 1024 cylinders by most BIOSes and 1023 by
+; some (they keep the diagnostic cylinder back there too), and on either
+; the rest of the disk is LBA's, with the LBA type bytes past the CHS
+; line.  A GPT disk is LBA's throughout.
+;---------------------------------------------------------------------
+fd_dskend:
+        mov     eax,dword ptr [dsk_rec+DSK_TOTAL]
+        cmp     byte ptr [gpt_on],0
+        jne     fde_out
+        push    ecx
+        call    fd_spcyl                ; ECX = a cylinder, 255*63 at most
+        shl     ecx,10                  ; 1024 of them: under 2^24
+        jz      fde_pop                 ; no geometry: the whole disk
+        cmp     eax,ecx
+        ja      fde_pop                 ; bigger than CHS: the whole disk
+        mov     ecx,dword ptr [dsk_rec+DSK_CHS]
+        jecxz   fde_pop
+        cmp     ecx,eax
+        jae     fde_pop
+        mov     eax,ecx                 ; the BIOS's last cylinder
+fde_pop:
+        pop     ecx
+fde_out:
+        ret
+
+;--- fd_endfor - EAX = one past where a partition ends now -> EAX = how
+;--- far it may reach: fd_dskend, or where it already is if a table
+;--- made elsewhere took it further.  Never past the disk.  Moving or
+;--- resizing such a partition is not refused for where it already is.
+fd_endfor:
+        push    edx
+        mov     edx,eax
+        call    fd_dskend
+        cmp     edx,eax
+        jbe     ffr_out
+        mov     eax,dword ptr [dsk_rec+DSK_TOTAL]
+        cmp     edx,eax
+        jae     ffr_out
+        mov     eax,edx
+ffr_out:
+        pop     edx
+        ret
+
+;---------------------------------------------------------------------
 ; fd_aligned - EAX = the first sector of an extent, EDX = one past its
 ;              last, EBX = the one start that is allowed not to be on
 ;              a cylinder boundary because something else had to be
@@ -5055,7 +5094,8 @@ fd_gap:
         jnz     fg_havefirst
         mov     ebx,1                   ; a geometry with no track length
 fg_havefirst:                           ; still may not have the MBR
-        mov     ebp,dword ptr [dsk_rec+DSK_TOTAL]
+        call    fd_dskend
+        mov     ebp,eax                 ; EBP = where the free space stops
 
 fg_scan:
         cmp     ebx,ebp
@@ -5148,44 +5188,86 @@ fg_none:
         ret
 
 ;---------------------------------------------------------------------
-; fd_newtype - the type byte a partition of this shape should carry
-;              when there is no filesystem in it yet.  EAX = start,
-;              EDX = length -> AL.
+; fd_newtype  - the type byte a primary partition of this shape should
+;               carry when there is no filesystem in it yet.  EAX =
+;               start, EDX = length -> AL.  FAT16 where FAT16 can be.
+; fd_typefor  - the same with a say in it.  CL = NT_* (NT_LOG for a
+;               logical drive, NT_FAT32 when FAT32 is wanted), CH = the
+;               FAT width the volume has, or 0 when it has none yet.
 ;
 ; IT IS A PROMISE ABOUT ADDRESSING AS MUCH AS ABOUT SIZE, which is
 ; rl_typebyte's argument and applies here for the same reason: 06h
 ; says "FAT16, reachable by CHS", and a BIOS that meets it on a
 ; partition ending past the CHS line will read the wrong sector and be
 ; certain it is right.  So the END is what decides between the CHS
-; spellings and the LBA ones.
+; spellings and the LBA ones, and only a partition that ends past the
+; CHS reach gets 0Eh or 0Ch.
 ;
-; It differs from rl_typebyte in what it can know.  That one is
-; resizing a volume that EXISTS and asks the FAT layout what width it
-; came out; this one is describing empty space, so the width is a
-; prediction from the size alone - and FORMAT is free to disagree,
-; which is why the type may be given explicitly.
+; INSIDE THE CHS REACH THE RULE IS DOS'S OWN (makepart.c): 06h when a
+; primary ends past sector 65535 or a logical drive is 65536 sectors or
+; more, 04h when it is over 32680 sectors, and 01h at or below that.
+; (DOS gives 04h to a logical drive of exactly 65536; 04h promises a
+; sector count that fits in 16 bits, and 65536 does not.)  PC DOS 7
+; and MS-DOS 6 call anything else Non-DOS, so a FAT16 partition that
+; either of them should see has to be one of the three.
+;
+; FAT32 IS GIVEN WHEN FAT16 CANNOT BE, past 2GB, and when it is asked
+; for on a partition of FD_FAT32MIN or more.  Under that FORMAT would
+; make FAT16 of it anyway, and the type would be a promise the volume
+; does not keep.
+;
+; A volume that exists says its own width, and is labelled by it: 01h
+; for FAT12, 04h or 06h for FAT16, by the same rule.  Empty space has
+; no width, so the label is the prediction above - and FORMAT is free
+; to disagree, which is why the type may be given explicitly.
 ;---------------------------------------------------------------------
 FAT16_MAXSECS   EQU     4193536         ; 65524 clusters of 64 sectors, the
                                         ; largest volume FAT16 can address
 
 fd_newtype:
+        push    ecx
+        xor     ecx,ecx                 ; a primary, the default width
+        call    fd_typefor
+        pop     ecx
+        ret
+
+fd_typefor:
         push    ebx
         push    edx
+        push    esi
         mov     ebx,eax
         add     ebx,edx                 ; EBX = one past the last sector
+        cmp     ch,32
+        je      fnt_32
+        or      ch,ch
+        jnz     fnt_small               ; 12 or 16: what it is
         cmp     edx,FAT16_MAXSECS
         ja      fnt_32
-        cmp     ebx,[phy_chs]
-        ja      fnt_16lba
-        cmp     edx,65536               ; 32MB, where 04h stops
-        ja      fnt_16big
-        mov     al,PT_FAT16S
-        jmp     short fnt_out
-fnt_16big:
-        mov     al,PT_FAT16B
-        jmp     short fnt_out
-fnt_16lba:
+        test    cl,NT_FAT32
+        jz      fnt_small
+        cmp     edx,FD_FAT32MIN
+        jae     fnt_32
+fnt_small:
         mov     al,PT_FAT16L
+        cmp     ebx,[phy_chs]
+        ja      fnt_out                 ; part of it is past CHS's reach
+        mov     esi,ebx                 ; DOS: a primary by where it ends,
+        test    cl,NT_LOG               ; a logical drive by its size
+        jz      fnt_dos
+        mov     esi,edx
+fnt_dos:
+        cmp     ch,12
+        je      fnt_12
+        mov     al,PT_FAT16B
+        cmp     esi,10000h
+        jae     fnt_out
+        mov     al,PT_FAT16S
+        or      ch,ch
+        jnz     fnt_out                 ; FAT16 under 32MB is 04h however small
+        cmp     edx,FD_FAT12MAX
+        ja      fnt_out
+fnt_12:
+        mov     al,PT_FAT12
         jmp     short fnt_out
 fnt_32:
         mov     al,PT_FAT32
@@ -5193,6 +5275,7 @@ fnt_32:
         jbe     fnt_out
         mov     al,PT_FAT32L
 fnt_out:
+        pop     esi
         pop     edx
         pop     ebx
         ret
@@ -5380,9 +5463,15 @@ fdn_startok:
         jbe     fdn_nogap               ; the alignment ate the whole gap
         mov     [cr_len],edx
 
+        ; A FILE SYSTEM IN PLACE OF THE SIZE is all of the gap, of that
+        ; kind - /C 0:1 FAT32 - so that the type can be had without first
+        ; working out to the sector how big the gap is.
+        mov     byte ptr [cr_nt],0
         cmp     dword ptr [fd_nargs],2
         jb      fdn_havelen
         mov     esi,OFFSET fd_args + FD_ARGLEN
+        call    fd_fsname
+        jnc     fdn_fsonly
         call    fd_atosz
         jc      fdn_usage
         or      eax,eax
@@ -5390,6 +5479,10 @@ fdn_startok:
         cmp     eax,[cr_len]
         ja      fdn_toobig
         mov     [cr_len],eax
+        jmp     short fdn_havelen
+fdn_fsonly:
+        cmp     dword ptr [fd_nargs],2  ; and nothing after it
+        ja      fdn_usage
 fdn_havelen:
 
         ; THE END GOES DOWN TO A CYLINDER BOUNDARY, always.  A
@@ -5404,10 +5497,14 @@ fdn_havelen:
         jbe     fdn_tooshort
         mov     [cr_len],eax
 
-        ; the type: asked for, or worked out from the shape
+        ; THE TYPE: asked for, or worked out from the shape.  It is asked
+        ; for as a byte in hex, or as a file system - FAT16 or FAT32 -
+        ; which is worked out from the shape as well, FAT32 wanted.
         cmp     dword ptr [fd_nargs],3
         jb      fdn_autotype
         mov     esi,OFFSET fd_args + FD_ARGLEN*2
+        call    fd_fsname               ; -> cr_nt
+        jnc     fdn_autotype
         call    fd_atohex
         jc      fdn_usage
         or      al,al
@@ -5415,9 +5512,10 @@ fdn_havelen:
         mov     [cr_type],al
         jmp     short fdn_havetype
 fdn_autotype:
+        movzx   ecx,byte ptr [cr_nt]
         mov     eax,[cr_start]
         mov     edx,[cr_len]
-        call    fd_newtype
+        call    fd_typefor
         mov     [cr_type],al
 fdn_havetype:
 
@@ -6240,7 +6338,8 @@ FF_MSGOFF   EQU $ - ff_code
             db  'No system on this volume.',13,10
             db  'Press a key to restart.',13,10,0
 FF_CODELEN  EQU $ - ff_code
-ff_oem      db  'PMDOS0.6'              ; as FORMAT names itself
+ff_oem      db  'MSDOS5.0'              ; as FORMAT and Setup name it: MS-DOS
+                                        ; trusts this BPB (FORMAT's boot_stub)
 ff_label    db  'NO NAME    '
 ff_name12   db  'FAT12   '
 ff_name16   db  'FAT16   '
@@ -6627,7 +6726,12 @@ fd_entptr:
         ; SECTOR ZERO IS THE MASTER BOOT RECORD and belongs to nobody,
         ; so the region starts at one and not at zero.
         mov     dword ptr [pl_lo],1
+        mov     eax,[esi+PE_START]      ; and it ends where the disk's
+        add     eax,[esi+PE_SECS]       ; partitions may (fd_endfor)
+        jnc     fep_end
         mov     eax,[phy_total]
+fep_end:
+        call    fd_endfor
         mov     [pl_hi],eax
         call    fd_nbprim
         ret
@@ -6799,6 +6903,10 @@ fd_lgap:
         mov     ebx,[chn_base]          ; EBX = the cursor
         mov     ebp,[chn_base]
         add     ebp,[chn_ext]           ; EBP = one past the container
+        call    fd_dskend               ; or the end of the disk, for a
+        cmp     ebp,eax                 ; container a table made elsewhere
+        jbe     lg_scan                 ; ran past it
+        mov     ebp,eax
 lg_scan:
         cmp     ebx,ebp
         jae     lg_done
@@ -6985,9 +7093,12 @@ fdl_havespt:
         jbe     fdn_nogapx              ; the alignment ate all of it
         mov     [lg_len],edx
 
-        cmp     dword ptr [fd_nargs],2
+        mov     byte ptr [cr_nt],0      ; a file system for the size, as
+        cmp     dword ptr [fd_nargs],2  ; for a primary
         jb      fdl_havelen
         mov     esi,OFFSET fd_args + FD_ARGLEN
+        call    fd_fsname
+        jnc     fdl_fsonly
         call    fd_atosz
         jc      fdn_usage
         or      eax,eax
@@ -6995,6 +7106,10 @@ fdl_havespt:
         cmp     eax,[lg_len]
         ja      fdl_toobig
         mov     [lg_len],eax
+        jmp     short fdl_havelen
+fdl_fsonly:
+        cmp     dword ptr [fd_nargs],2
+        ja      fdn_usage
 fdl_havelen:
         mov     eax,[lg_start]
         add     eax,[lg_len]
@@ -7004,9 +7119,11 @@ fdl_havelen:
         jbe     fdn_tooshort
         mov     [lg_len],eax
 
-        cmp     dword ptr [fd_nargs],3
+        cmp     dword ptr [fd_nargs],3  ; the type as fd_create takes it
         jb      fdl_autotype
         mov     esi,OFFSET fd_args + FD_ARGLEN*2
+        call    fd_fsname
+        jnc     fdl_autotype
         call    fd_atohex
         jc      fdn_usage
         or      al,al
@@ -7014,9 +7131,11 @@ fdl_havelen:
         mov     [cr_type],al
         jmp     fdl_havetype
 fdl_autotype:
+        movzx   ecx,byte ptr [cr_nt]
+        or      cl,NT_LOG               ; a logical drive goes by its size
         mov     eax,[lg_start]
         mov     edx,[lg_len]
-        call    fd_newtype
+        call    fd_typefor
         mov     [cr_type],al
 fdl_havetype:
         call    fd_lgprev               ; -> lg_prev, EBP = its number
@@ -7446,6 +7565,46 @@ fah_end:
 fah_bad:
         pop     edx
         pop     ecx
+        stc
+        ret
+
+;--- fd_fsname - ESI -> an argument.  CF clear if it names a FAT file
+;--- system, FAT, FAT16 or FAT32 in any case, and then cr_nt has
+;--- NT_FAT32 added for FAT32 and is left alone for the others.  CF set
+;--- otherwise.
+fd_fsname:
+        push    eax
+        push    esi
+        mov     al,[esi]
+        call    fd_upper
+        cmp     al,'F'
+        jne     ffs_no
+        mov     al,[esi+1]
+        call    fd_upper
+        cmp     al,'A'
+        jne     ffs_no
+        mov     al,[esi+2]
+        call    fd_upper
+        cmp     al,'T'
+        jne     ffs_no
+        add     esi,3
+        cmp     byte ptr [esi],0
+        je      ffs_yes                 ; FAT
+        cmp     byte ptr [esi+2],0
+        jne     ffs_no
+        cmp     word ptr [esi],'61'     ; FAT16, the bytes "16"
+        je      ffs_yes
+        cmp     word ptr [esi],'23'     ; FAT32
+        jne     ffs_no
+        or      byte ptr [cr_nt],NT_FAT32
+ffs_yes:
+        pop     esi
+        pop     eax
+        clc
+        ret
+ffs_no:
+        pop     esi
+        pop     eax
         stc
         ret
 
@@ -8057,7 +8216,8 @@ ff_iter     dd  0                       ; cluster sizes ff_layout may still try
 cr_start    dd  0                       ; what /C would write
 cr_len      dd  0
 cr_type     db  0
-            db  0,0,0
+cr_nt       db  0                       ; fd_typefor's flags for it: FAT32
+            db  0,0                     ; asked for by name (fd_fsname)
 
 ;--- the extended chain, as fd_chain read it -------------------------
 chn_slot    dd  0                       ; which primary slot is the container
@@ -8218,7 +8378,7 @@ msg_rawonly db  '  not formatted, so only the partition table entry changes',13,
 msg_cxmove  db  '  Every logical drive inside moves with the partition',13,10,'$'
 msg_cxsize  db  '  The logical drives inside stay where they are',13,10,'$'
 msg_bootwarn db 13,10,'  NOTE: it is the ACTIVE partition and part of it '
-            db  'would sit past',13,10,'  the 1024-cylinder line, where a '
+            db  'would sit past',13,10,'  the BIOS',27h,'s last cylinder, where a '
             db  'BIOS with only CHS cannot',13,10,'  boot from it.',13,10,'$'
 msg_dryrun  db  13,10,'  Nothing was written.',13,10,'$'
 msg_doing   db  13,10,'  Doing it$'
@@ -8263,7 +8423,7 @@ msg_delgone db  13,10,'  Everything stored in it becomes unreachable.  The '
             db  'start and length printed above.',13,10,'$'
 msg_delltr  db  13,10,'  It is drive $'
 msg_delltr2 db  ' to the running kernel, and will not be after a restart.$'
-msg_pastchs db  13,10,'  NOTE: part of it sits past the 1024-cylinder line, '
+msg_pastchs db  13,10,'  NOTE: part of it sits past the BIOS',27h,'s last cylinder, '
             db  'where a BIOS',13,10,'  with only CHS cannot boot from it.  '
             db  'It can still be read.',13,10,'$'
 

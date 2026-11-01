@@ -4,7 +4,7 @@ param(
     [string]$Cpu = '486',                        # DOSBox-X cputype: 386, 486, pentium...
     [string]$Name = '',                          # the baseline's name; <cpu>-<MB> if not given
     [string[]]$Cfg = @( 'DOS=HIGH,UMB', 'DEVICE=C:\TESTS\IOCDEV.SYS', 'DEVICE=C:\TESTS\TESTBLK.SYS',
-                        'DEVICE=C:\TESTS\NDTEST.SYS /I:11', 'DEVICE=C:\NE2000.SYS', 'DEVICE=C:\RAMDISK.SYS' ),
+                        'DEVICE=C:\TESTS\NDTEST.SYS /I:11', 'DEVICE=C:\NE2000.SYS', 'DEVICE=C:\RAMDISK.SYS 64' ),
                                                  # CONFIG.SYS - IOCDEV.SYS is
                                                  # what DRVTEST talks to,
                                                  # TESTBLK.SYS's RAM disk (D:)
@@ -14,9 +14,11 @@ param(
                                                  # NE2000.SYS drives the
                                                  # card DBXRUN puts in the
                                                  # machine, for NICTEST, and
-                                                 # RAMDISK.SYS's 64K (E:),
-                                                 # made with no parameters,
-                                                 # is what RDTEST writes on
+                                                 # RAMDISK.SYS's 64K (E:)
+                                                 # is what RDTEST writes on -
+                                                 # asked for by size since the
+                                                 # default became 256K
+                                                 # (2026-10-31)
     [int]$Seconds = 240,                         # DOSBox-X's -time-limit
     [string]$Exe = '',                           # DOSBox-X, if DBXRUN.PS1 would pick wrong
     [switch]$Update,                             # keep what this run said as the baseline

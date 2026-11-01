@@ -1,7 +1,7 @@
 ;=====================================================================
 ; CMD.ASM - CMD.EXE, the PM-DOS command interpreter
 ;
-; A D32 executable, loaded by PMDOS into the shell slot and re-loaded
+; A D32 executable, loaded by PMDOS into a slot of its own and re-loaded
 ; whenever it terminates.  Until v0.60 it was called COMMAND.COM.
 ;
 ; IT IS NOT THE SHELL DOS PROGRAMS GET, and that is why it was renamed.
@@ -119,7 +119,7 @@ _CMD    SEGMENT USE32 PUBLIC 'CODE'
 ;=====================================================================
 ; NO BANNER.  The interpreter says nothing on load - which matters
 ; more than it looks, because cmd_entry runs again on every reload of
-; the shell slot, so a banner is printed on every EXIT as well as at
+; the shell, so a banner would be printed on every EXIT as well as at
 ; boot.  VER still reports the version, and that is where a version
 ; belongs.
 cmd_entry:

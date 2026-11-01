@@ -4,7 +4,7 @@
 ;
 ;   DEVICE=RAMDISK.SYS [size [sector-size [entries]]] [/E | /A] [/L:x]
 ;
-;   size          kilobytes, 4 to 2096896; 64 if it is not given.  A
+;   size          kilobytes, 4 to 2096896; 256 if it is not given.  A
 ;                 bigger number is cut to the largest FAT16 volume
 ;   sector-size   128, 256, 512 or 1024, and every one of them makes
 ;                 512-byte sectors: the kernel's sectors and RMDOS's
@@ -57,7 +57,9 @@
         INCLUDE PMDOS.INC
         INCLUDE NDRV.INC
 
-RD_KBDEF        EQU     64              ; what RAMDRIVE.SYS makes unasked
+RD_KBDEF        EQU     256             ; RAMDRIVE.SYS made 64K unasked;
+                                        ; 256K is more use, and a smaller
+                                        ; size can still be given
 RD_KBMIN        EQU     4
 RD_KBMAX        EQU     2096896         ; the largest that FAT16 with 32K
                                         ; clusters covers whatever the root:

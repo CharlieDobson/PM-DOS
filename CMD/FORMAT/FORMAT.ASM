@@ -500,16 +500,39 @@ fm_nofit:
 
 ;---------------------------------------------------------------------
 ; fh_layout - g_* for a volume of [fh_len] sectors, from nothing:
-;             FAT32 from 512MB, FAT12 where FAT16 would have too few
-;             clusters, FAT16 between, and the cluster size Microsoft's
-;             FORMAT would have chosen for that size and width.  CF if
-;             no layout fits.
+;             the width /FS: names, or else the one the partition's
+;             type byte names; FAT12 where FAT16 would have too few
+;             clusters; and the cluster size Microsoft's FORMAT would
+;             have chosen for that size and width.  CF if no layout
+;             fits.
+;
+; THE TYPE BYTE IS FDISK'S ANSWER TO "FAT16 OR FAT32?", and FORMAT
+; keeps to it: 0Bh or 0Ch is FAT32, and every other type - 01h, 04h,
+; 06h, 0Eh, a GPT entry, a disk with no table - is FAT16 up to the 2GB
+; FAT16 can hold and FAT32 past that.  A FAT32 type on a partition too
+; small for FAT32 gets FAT16 rather than no format at all, and the type
+; is put right after (fm_fattype).
 ;---------------------------------------------------------------------
-FH_FAT32MIN     EQU     1048576         ; sectors: 512MB and up is FAT32
 FH_FAT16MIN     EQU     4085            ; clusters: fewer is FAT12
+FH_FAT16MAX     EQU     4193536         ; sectors: 65524 clusters of 32K,
+                                        ; where FAT16 stops
 
 fh_layout:
         pushad
+        mov     byte ptr [fh_bytype],0
+        cmp     byte ptr [want_fs],0
+        jne     fhl_start
+        mov     byte ptr [fh_bytype],FSW_FAT    ; the type byte decides
+        call    fm_gettype              ; -> AL
+        cmp     al,PT_FAT32
+        je      fhl_type32
+        cmp     al,PT_FAT32L
+        je      fhl_type32
+        cmp     dword ptr [fh_len],FH_FAT16MAX
+        jbe     fhl_start
+fhl_type32:
+        mov     byte ptr [fh_bytype],FSW_FAT32
+fhl_start:
         mov     dword ptr [g_nfats],2
         mov     byte ptr [g_media],0F8h
         mov     dword ptr [g_rootclus],0
@@ -530,11 +553,9 @@ fhl_heads:
         mov     eax,[fh_len]
         mov     [g_totsec],eax
         cmp     byte ptr [want_fs],FSW_FAT32    ; /FS: decides, if it was
-        je      fhl_32                          ; given; the size if not
-        cmp     byte ptr [want_fs],FSW_FAT
-        je      fhl_16
-        cmp     eax,FH_FAT32MIN
-        jae     fhl_32
+        je      fhl_32                          ; given; the type byte if
+        cmp     byte ptr [fh_bytype],FSW_FAT32  ; not
+        je      fhl_32
 fhl_16:
 
         ; FAT16, unless the clusters come out too few
@@ -609,6 +630,17 @@ fhl_ok:
         clc
         ret
 fhl_no:
+        ; FAT32 BY THE TYPE BYTE and too small for FAT32: FAT16 instead,
+        ; from the top, so that nothing FAT32 set up is left behind
+        cmp     byte ptr [fh_bytype],FSW_FAT32
+        jne     fhl_none
+        cmp     byte ptr [fat_kind],32
+        jne     fhl_none
+        cmp     dword ptr [fh_len],FH_FAT16MAX
+        ja      fhl_none
+        mov     byte ptr [fh_bytype],FSW_FAT
+        jmp     fhl_start
+fhl_none:
         popad
         stc
         ret
@@ -631,8 +663,7 @@ fhs_out:
         pop     eax
         ret
 
-; FAT16 past 512MB only when /FS:FAT asks for it; past 1GB that is 32K
-; clusters, which is where FAT16 stops
+; FAT16 past 1GB is 32K clusters, which is where FAT16 stops
 fh_tab16    dd  32680, 2, 262144, 4, 524288, 8, 1048576, 16
             dd  2097152, 32, 0FFFFFFFFh, 64
 fh_tab32    dd  16777216, 8, 33554432, 16, 67108864, 32
@@ -700,8 +731,8 @@ fhb_spf:
         mov     [edi+16h],ax
         cmp     byte ptr [fat_kind],16
         jne     fhb_ext
-        mov     dword ptr [edi+36h],'46TAF'    ; 'FAT16   '
-        mov     dword ptr [edi+3Ah],'  61'
+        mov     dword ptr [edi+36h],'1TAF'     ; 'FAT16   ' (a dword holds
+        mov     dword ptr [edi+3Ah],'   6'     ; four: five made 'FAT616')
         jmp     short fhb_ext
 fhb_32:
         ; the fields past 24h, and everything from there moved up
@@ -717,6 +748,9 @@ fhb_32:
         mov     [edi+24h],eax           ; sectors a FAT
         mov     word ptr [edi+28h],0    ; flags
         mov     word ptr [edi+2Ah],0    ; version
+        mov     dword ptr [edi+34h],0   ; 34h-3Fh are reserved, and still
+        mov     dword ptr [edi+38h],0   ; held the stub's 'FAT12' and code
+        mov     dword ptr [edi+3Ch],0
         mov     eax,[g_rootclus]
         mov     [edi+2Ch],eax
         mov     eax,[g_fsinfo]
@@ -724,8 +758,8 @@ fhb_32:
         mov     eax,[g_bkboot]
         mov     [edi+32h],ax
         mov     ebx,FH_EXT32
-        mov     dword ptr [edi+ebx+12h],'23TAF'  ; 'FAT32   '
-        mov     dword ptr [edi+ebx+16h],'  23'
+        mov     dword ptr [edi+ebx+12h],'3TAF'   ; 'FAT32   '
+        mov     dword ptr [edi+ebx+16h],'   2'
 fhb_ext:
         mov     byte ptr [edi+ebx],80h  ; a hard disk
         ; the serial number: the clock, as fd_newboot takes it
@@ -2862,23 +2896,58 @@ exf_rd:
 
 ;---------------------------------------------------------------------
 ; fm_fattype - the partition table, made to say the FAT fh_layout made
-;              (fat_kind): 01h, 04h or 06h, or 0Ch.
+;              (fat_kind), spelled as FDISK spells it: past the disk's
+;              CHS reach (fh_dsk's DSK_CHS) 0Ch for FAT32 and 0Eh for
+;              the others; inside it 0Bh, 01h for FAT12, and for FAT16
+;              DOS's own rule - 06h when a primary ends past sector
+;              65535 or a logical drive is 65536 sectors or more, 04h
+;              otherwise.  fm_gettype says which kind the entry is.
 ;---------------------------------------------------------------------
 fm_fattype:
         push    eax
-        mov     al,PT_FAT32L
+        push    edx
+        call    fm_gettype              ; -> st_log
+        mov     edx,[fh_start]
+        add     edx,[fh_len]            ; EDX = one past its end
+        jc      fft2_lba
+        cmp     edx,dword ptr [fh_dsk+DSK_CHS]
+        ja      fft2_lba
+        mov     al,PT_FAT32
         cmp     byte ptr [fat_kind],32
         je      fft2_set
         mov     al,PT_FAT12
         cmp     byte ptr [fat_kind],12
         je      fft2_set
+        cmp     byte ptr [st_log],0     ; a logical drive by its size, a
+        je      fft2_dos                ; primary by where it ends
+        mov     edx,[fh_len]
+fft2_dos:
         mov     al,PT_FAT16S
-        cmp     dword ptr [fh_len],10000h
+        cmp     edx,10000h
         jb      fft2_set
         mov     al,PT_FAT16B
+        jmp     short fft2_set
+fft2_lba:
+        mov     al,PT_FAT32L
+        cmp     byte ptr [fat_kind],32
+        je      fft2_set
+        mov     al,PT_FAT16L
 fft2_set:
         call    fm_settype
+        pop     edx
         pop     eax
+        ret
+
+;--- fm_gettype - AL = the type byte the table gives the volume at
+;--- fh_start, 0 when nothing says (a GPT entry, a disk with no table,
+;--- a read that failed); st_log = 1 when the entry is a logical
+;--- drive's.  fm_settype's walk, writing nothing.
+fm_gettype:
+        mov     byte ptr [st_get],1
+        xor     al,al
+        call    fm_settype
+        mov     byte ptr [st_get],0
+        mov     al,[st_type]
         ret
 
 ;---------------------------------------------------------------------
@@ -2894,6 +2963,7 @@ fft2_set:
 fm_settype:
         pushad
         mov     [st_type],al
+        mov     byte ptr [st_log],0
         cmp     dword ptr [fh_start],0
         je      fst_out
         xor     ebx,ebx
@@ -2924,12 +2994,18 @@ fst_notext:
         mov     eax,[edx+PE_START]
         cmp     eax,[fh_start]
         jne     fst_pnext
+        cmp     byte ptr [st_get],0     ; this one, only asked about
+        je      fst_pset
+        mov     al,[edx+PE_TYPE]
+        mov     [st_type],al
+        jmp     fst_out
+fst_pset:
         mov     al,[st_type]            ; this one: sector 0 is rewritten
         mov     [edx+PE_TYPE],al
         xor     ebx,ebx
         mov     edi,[scratch]
         call    fm_abswr
-        jmp     short fst_out
+        jmp     fst_out
 fst_pnext:
         add     edx,PE_LEN
         loop    fst_prim
@@ -2952,6 +3028,13 @@ fst_link:                               ; chain that loops ends here
         jne     fst_lnext
         cmp     byte ptr [esi+PART_OFF+PE_TYPE],0
         je      fst_lnext
+        mov     byte ptr [st_log],1
+        cmp     byte ptr [st_get],0
+        je      fst_lset
+        mov     al,[esi+PART_OFF+PE_TYPE]
+        mov     [st_type],al
+        jmp     short fst_out
+fst_lset:
         mov     al,[st_type]
         mov     [esi+PART_OFF+PE_TYPE],al
         call    fm_abswr
@@ -3129,7 +3212,10 @@ bflag       db  0                       ; /B
 fsize       db  NO_SIZE                 ; /F: - a row of fd_sizes
 want_fs     db  0                       ; /FS: - FSW_*
 st_type     db  0                       ; fm_settype's type
-            db  0,0
+st_get      db  0                       ; ...1: fm_gettype's, read not set
+st_log      db  0                       ; ...the entry was a logical drive's
+fh_bytype   db  0                       ; fh_layout: FSW_* by the type byte
+            db  0,0,0
 want_clus   dd  0                       ; /A: - bytes a cluster, 0 = the size's
 
 floppy      db  0                       ; the target is a diskette drive
@@ -3259,7 +3345,12 @@ fd_default  db  0, 3, 5, 4, 6, 7
 ; the BIOS to boot again.
 boot_stub:
         db      0EBh, 3Ch, 90h
-        db      'PMDOS0.6'
+        ; THE OEM NAME IS ONE MS-DOS TRUSTS, as Setup's is.  For a hard
+        ; disk MS-DOS 5 and 6 read bytes 8-10 as a version (msinit.asm):
+        ; "0." there is taken for OS/2's signature and anything but
+        ; "10." or "20." after it is "unknown media", so a volume named
+        ; PMDOS0.6 could not be read by any DOS but this one.
+        db      'MSDOS5.0'
         db      25 dup(0)               ; 0Bh-23h: the BPB, filled in
         db      0, 0, 29h               ; 24h drive, 25h, 26h signature
         dd      0                       ; 27h serial number

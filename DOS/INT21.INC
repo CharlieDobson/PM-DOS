@@ -2695,11 +2695,22 @@ ssd_out:
 ;---------------------------------------------------------------------
 ; sft_seldrv - load the volume the SFT entry at ESI lives on.
 ;              CF if that volume is gone.  Preserves registers.
+;
+; OR IF THE ENTRY WENT WITH IT.  vol_select's media check closes every
+; file on a disk that has been swapped (sft_dropdrv) and then mounts
+; the new one, so the call can succeed with this very entry closed
+; underneath its caller - and the caller would go on to read or write
+; the new disk along the old file's clusters.
 ;---------------------------------------------------------------------
 sft_seldrv:
         push    eax
         mov     eax,[esi+SFT_DRIVE]
         call    vol_select
+        jc      ssv_out
+        test    dword ptr [esi+SFT_FLAGS],SFTF_INUSE
+        jnz     ssv_out                 ; CF clear from the TEST
+        stc
+ssv_out:
         pop     eax                     ; flags survive the pop
         ret
 
@@ -7638,13 +7649,14 @@ build_psp:
         ; no address in this one that names it, so the honest answer is
         ; zero rather than a number pointing at nothing.  Either way
         ; the test everybody makes - "is my parent me?" - still works.
-        ; The slot decides, not [cur_psp]: a NESTED program is loaded
-        ; into its parent's slot and shares its PSP address, so
-        ; comparing the two would tell a program three levels deep that
-        ; it was the interpreter.  Only the interpreter runs in the
-        ; shell slot, and that is the whole test.
+        ; The depth of the slot being built in decides - r3_useslot set
+        ; it, and it is one more than [exec_depth] for a child, since
+        ; 4Bh counts the child in only after this.  Depth zero is the
+        ; interpreter, or the CHKDSK that runs in its place at boot.
+        ; Until 2026-10-31 the test was the shell's fixed PSP address;
+        ; its slot is out of the arena now and has no fixed address.
         mov     eax,SLOT_PSP
-        cmp     edi,SHELL_PSP
+        cmp     dword ptr [r3_depth],0
         je      bp_noparent
         xor     eax,eax
 bp_noparent:
@@ -12686,7 +12698,9 @@ ENDIF
 ;=====================================================================
 dta_ptr     dd  OFFSET default_dta
 default_dta db  43 dup(0)
-cur_psp     dd  SHELL_PSP               ; whose handles are being opened
+cur_psp     dd  0                       ; whose handles are being opened -
+                                        ; none until shell_restart makes
+                                        ; the interpreter's slot
 
 ; OWNER IDS.  Handles and memory blocks are tagged with one of these
 ; rather than with a PSP address, because a nested program is loaded
@@ -12797,13 +12811,27 @@ exec_qpath  db  LFN_MAX dup(0)          ; exec_path through 7160h, which
                                         ; of the child's environment
 exec_tail   db  132 dup(0)
 exec_envlen dd  0                       ; and the environment, which has the
-exec_env    db  SLOT_ENVMAX dup(0)      ; same problem twice over - see
-                                        ; exec_cpenv
-exec_sig    db  EXEC_SIGLEN dup(0)      ; the front of a file, where it says
+                                        ; same problem twice over - see
+                                        ; exec_cpenv.  exec_env itself is
+                                        ; in _KBSS2, below.
+exec_sig   db  EXEC_SIGLEN dup(0)      ; the front of a file, where it says
                                         ; whose kind of executable it is -
                                         ; see d32_find
 exec_skip   dd  0                       ; exec_load: how far into the cluster
                                         ; in clus_buf the image starts
+
+; THE ENVIRONMENT'S COPY IS NOT IN THE FILE: nearly 4K of nothing until
+; exec_cpenv fills it, so it is in _KBSS2 after clus_buf, where adding to
+; it moves nothing a bus master is pointed at (DOSMAIN.ASM).  It is
+; written before it is read on every EXEC, and dos_entry zeroes it.
+_DOS    ENDS
+_KBSS2  SEGMENT
+exec_env    db  SLOT_ENVMAX dup(?)
+IF SLOT_ENVMAX AND 3
+        .ERR    what follows exec_env in _KBSS2 is not on a dword
+ENDIF
+_KBSS2  ENDS
+_DOS    SEGMENT
 
 ; One record per nesting level, describing the program that is WAITING
 ; - not the one running.

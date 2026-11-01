@@ -329,6 +329,17 @@ mi_serial:
         movzx   ecx,byte ptr [ms_irq]
         mov     dword ptr [irq_vectors + ecx * 4],OFFSET irq_serial
         call    ms_irqon
+        ; ...and the BIOS is not to have the line during a call.  The
+        ; masks a BIOS call runs with are what the BIOS left at boot
+        ; (pic_down, IORM.ASM), and a BIOS that left IRQ 4 open sends
+        ; the mouse's interrupt to its own handler, which ends it
+        ; without reading the byte - see irq_serial for why that one
+        ; byte is the end of the mouse.  Masked, the request waits in
+        ; the 8259 for protected mode.  Nothing in the BIOS needs the
+        ; line: its INT 14h is polled.
+        mov     al,1
+        shl     al,cl                   ; IRQ 3 or 4: the master's bit
+        or      byte ptr ds:[GV_BIOSIMR],al
         mov     edx,dword ptr [ms_port]
         inc     edx                     ; IER: an interrupt for each byte
         mov     al,01h
@@ -957,7 +968,35 @@ sfd_irq:
 ;             power (it runs off DTR and RTS), and listen for the 'M'
 ;             it says on waking - with a '3' after it on a three-button
 ;             Logitech.  CF if nothing answered.
+;
+; THE 'M' IS NOT ALWAYS ALL IT SAYS.  A Plug and Play mouse follows it
+; with its ID, "(" to ")" with PNP0F0C or the like in the middle - up
+; to fifty bytes, most of half a second at 1200 baud.  This used to
+; stop listening two ticks after the 'M' and turn the mouse's
+; interrupt on, so the rest of the ID arrived as packets: its capital
+; letters have bit 6 set, the mark of a packet's first byte, and a 'P'
+; is a right button.  So after the 'M' everything is read and thrown
+; away until the line has been quiet for MS_SERQUIET ticks - longer
+; than any gap inside an ID - or MS_SERCAP ticks have gone by, which
+; is a mouse being moved while it is found.  Only the byte straight
+; after the 'M' can be the '3'; one further on is the ID, or movement.
+;
+; THE POWER IS OFF FOR MS_SEROFF TICKS.  The mouse runs on what DTR
+; and RTS give it and keeps running on its capacitors for a while
+; after they drop; two ticks was too short for some to notice, and a
+; mouse that never lost its power never says 'M'.
+;
+; AND THE FIFO, if the UART has one that works, is turned on with its
+; trigger at one byte: the interrupt comes as it did without one, and
+; sixteen bytes can wait through a long stretch with interrupts off
+; instead of the second one overwriting the first.  A 16550 without
+; the A answers 10b in the top of IIR - its FIFO is the broken one -
+; and an 8250 or 16450 answers 00b; both are left without.
 ;---------------------------------------------------------------------
+MS_SEROFF       EQU     5               ; the mouse's power off, in ticks
+MS_SERQUIET     EQU     5               ; the line quiet after the 'M'
+MS_SERCAP       EQU     18              ; ...or a second since it
+
 ms_sertry:
         pushad
         mov     ebx,edx
@@ -980,10 +1019,19 @@ ms_sertry:
         xor     al,al
         out     dx,al                   ; no interrupts yet
         lea     edx,[ebx+2]
-        out     dx,al                   ; and no FIFO
+        mov     al,07h                  ; the FIFO on and emptied, a byte
+        out     dx,al                   ; its trigger...
+        in      al,dx
+        and     al,0C0h
+        cmp     al,0C0h
+        je      mst_fifo
+        xor     al,al                   ; ...or none at all
+        out     dx,al
+mst_fifo:
         lea     edx,[ebx+4]
+        xor     al,al
         out     dx,al                   ; DTR and RTS down: the mouse off...
-        mov     ecx,2
+        mov     ecx,MS_SEROFF
         call    ms_ticks
         call    ms_serdrain
         lea     edx,[ebx+4]
@@ -992,9 +1040,11 @@ ms_sertry:
 
         pushfd
         sti
-        xor     ecx,ecx                 ; CL: an 'M' came, CH: then a '3'
+        xor     ecx,ecx                 ; CL: 1 the 'M' came, 2 and more
+                                        ; after it; CH: a '3' next to it
         mov     edi,6                   ; a third of a second to say it
-        mov     esi,dword ptr ds:[BDA_TICKS]
+        mov     esi,dword ptr ds:[BDA_TICKS]    ; since when, then the
+                                                ; line's last byte
 mst_poll:
         lea     edx,[ebx+5]
         in      al,dx
@@ -1003,18 +1053,28 @@ mst_poll:
         mov     edx,ebx
         in      al,dx
         and     al,7Fh
-        cmp     al,'M'
-        jne     mst_not_m
-        mov     cl,1
-        mov     edi,2                   ; and a little longer for a '3'
-        mov     esi,dword ptr ds:[BDA_TICKS]
-        jmp     short mst_poll
-mst_not_m:
-        cmp     al,'3'
-        jne     mst_poll
         or      cl,cl
-        jz      mst_poll
+        jnz     mst_after
+        cmp     al,'M'
+        jne     mst_poll                ; not yet the mouse's
+        inc     ecx                     ; CL = 1
+        mov     edi,MS_SERQUIET
+        mov     ebp,dword ptr ds:[BDA_TICKS]    ; the 'M': the cap counts
+        mov     esi,ebp                         ; from here
+        jmp     short mst_poll
+mst_after:
+        cmp     cl,1
+        jne     mst_rest
+        inc     ecx                     ; CL = 2: the next one is not the
+        cmp     al,'3'                  ; byte after the 'M'
+        jne     mst_rest
         mov     ch,1
+mst_rest:
+        mov     esi,dword ptr ds:[BDA_TICKS]    ; the quiet starts again
+        mov     eax,esi
+        sub     eax,ebp
+        cmp     eax,MS_SERCAP
+        jb      mst_poll
         jmp     short mst_heard
 mst_idle:
         mov     eax,dword ptr ds:[BDA_TICKS]
@@ -1025,6 +1085,7 @@ mst_heard:
         popfd
         or      cl,cl
         jz      mst_no
+        call    ms_serdrain             ; what came after the cap
         mov     byte ptr [ms_nbtn],2
         or      ch,ch
         jz      mst_two
@@ -1077,7 +1138,40 @@ mtk_lp:
         ret
 
 ;---------------------------------------------------------------------
-; irq_serial - IRQ 3 or 4: every byte the UART is holding.
+; irq_serial - IRQ 3 or 4: every byte the UART is holding.  And the
+;              timer's, once a tick (irq_timer): nothing, on a machine
+;              without a serial mouse.  Interrupts off either way, so
+;              the two never share a byte.
+;
+; ONE LOST INTERRUPT WAS THE END OF THE MOUSE.  A UART holds its
+; interrupt line up from the moment a byte comes in until the byte is
+; read, and the 8259 takes an interrupt from the line going UP - a
+; line that is already up is not asking again.  So if the interrupt
+; for a byte goes anywhere but here, nobody reads the byte, the line
+; stays up, and the mouse is never heard from again.  On a real 486
+; with a serial mouse that was a pointer drawn in every program and
+; moved in none.  There are two ways for it to go elsewhere:
+;
+;   Until CONFIG.SYS is finished every BIOS call moves the 8259s'
+;   vector bases, and the ICW1 that takes throws away what is waiting
+;   in them (pic_down, IORM.ASM).  A mouse moved while drivers load
+;   loses its byte there.
+;
+;   A BIOS call runs with the masks the BIOS left at boot, and a BIOS
+;   that left IRQ 4 open has its own handler take the interrupt and
+;   end it without a look at the UART.  ms_init masks the line for
+;   BIOS calls now, which closes this way; it does not close the
+;   first.
+;
+; So the clock asks as well.  Whatever the reason the byte was not
+; read, the next tick reads it, the line comes down, and the byte
+; after it raises it again as it should.  A tick is 55ms, and a
+; serial mouse sends seven bytes in that time: the poll is how the
+; mouse comes back, not how it is heard, and it costs one IN a tick.
+;
+; AN OVERRUN, bit 1 of the line status, is a byte lost before this
+; one.  The packet it was part of is thrown away; the next first byte
+; starts again.
 ;---------------------------------------------------------------------
 irq_serial:
         mov     ebx,dword ptr [ms_port]
@@ -1091,6 +1185,10 @@ isr_lp:
         in      al,dx
         test    al,1
         jz      isr_out
+        test    al,02h                  ; overrun
+        jz      isr_byte
+        mov     byte ptr [ms_pktn],0
+isr_byte:
         mov     edx,ebx
         in      al,dx
         call    ms_serbyte
@@ -1100,6 +1198,12 @@ isr_out:
 
 ;---------------------------------------------------------------------
 ; ms_serbyte - AL = a byte from a serial mouse.  All registers kept.
+;
+; ms_pktn is the bytes of the packet so far, and stays 3 when one is
+; complete: a Logitech mouse's fourth byte is taken only there, right
+; behind its packet.  Taken anywhere a packet was not open, a stray
+; byte - the second half of a packet whose first byte was lost - had
+; its bit 5 read as the middle button.
 ;---------------------------------------------------------------------
 ms_serbyte:
         pushad
@@ -1111,14 +1215,16 @@ ms_serbyte:
         jmp     msb_out
 msb_data:
         movzx   ebx,byte ptr [ms_pktn]
+        mov     byte ptr [ms_pktn],0    ; unless this is a packet's next
+        cmp     ebx,3
+        je      msb_extra               ; behind a whole packet
         or      ebx,ebx
-        jz      msb_extra
+        jz      msb_out                 ; no packet open: nobody's byte
         mov     byte ptr [ms_pkt+ebx],al
         inc     ebx
         mov     byte ptr [ms_pktn],bl
         cmp     ebx,3
         jb      msb_out
-        mov     byte ptr [ms_pktn],0
 
         movzx   esi,byte ptr [ms_pkt]
         mov     eax,esi                 ; X: bits 1-0 of the first byte are
@@ -1150,8 +1256,8 @@ msb_nor:
         call    ms_motion
         jmp     short msb_out
 msb_extra:
-        ; A byte with bit 6 clear and no packet open: a Logitech mouse's
-        ; middle button, in bit 5.
+        ; A byte with bit 6 clear straight after a packet: a Logitech
+        ; mouse's middle button, in bit 5.
         cmp     byte ptr [ms_nbtn],3
         jne     msb_out
         mov     bl,byte ptr [ms_btn]
@@ -2681,19 +2787,22 @@ ms_hwreset:
 mhr_usb:
         clc                             ; a USB mouse needs nothing done: it
         ret                             ; reports from the moment it is in
+        ; A serial mouse is found again as it was at boot, with the
+        ; timer's poll kept off its replies.  The interrupt goes back on
+        ; whether it answered or not: it was there, ms_sertry has left
+        ; the UART set for it, and a mouse that missed its cue - a
+        ; mouse being moved while it was asked - is otherwise silent
+        ; until the next reset.
 mhr_serial:
+        mov     byte ptr [ms_probing],1
         mov     edx,dword ptr [ms_port]
         call    ms_sertry
-        jc      mhr_out
-        push    eax
-        push    edx
-        inc     edx
+        pushfd
+        inc     edx                     ; IER: a byte an interrupt
         mov     al,01h
         out     dx,al
-        pop     edx
-        pop     eax
-        clc
-mhr_out:
+        mov     byte ptr [ms_probing],0
+        popfd
         ret
 
 ;=====================================================================
@@ -3471,7 +3580,9 @@ mpa_downser:
         inc     edx
         xor     al,al                   ; IER: no more interrupts
         out     dx,al
-        jmp     short mpa_out
+        inc     edx                     ; and no FIFO, which a mouse driver
+        out     dx,al                   ; down there may not expect: IIR
+        jmp     short mpa_out           ; reads C4h with one on, not 04h
 
 mpa_up:
         or      ebx,ebx

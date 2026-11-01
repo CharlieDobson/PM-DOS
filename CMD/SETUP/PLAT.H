@@ -64,6 +64,7 @@ typedef struct {
     int  removable;             /* a USB disk                            */
     u16  spt, heads;
     u32  total;                 /* its size in sectors                   */
+    u32  chs;                   /* as far as CHS reaches, 0 = unknown    */
 } DISKINFO;
 
 /* the program */

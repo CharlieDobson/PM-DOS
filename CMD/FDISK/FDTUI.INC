@@ -603,7 +603,7 @@ drg_mag:
         jbe     drg_cells               ; the division below cannot overflow
         mov     eax,BAR_W
 drg_cells:
-        mul     dword ptr [dsk_rec+DSK_TOTAL]
+        mul     dword ptr [tu_barend]
         mov     ecx,BAR_W
         div     ecx                     ; EAX = that many cells in sectors
         mov     edx,[dr_start0]
@@ -677,8 +677,12 @@ tu_region:
 trg_spt:
         cmp     dword ptr [esi+TR_KIND],TK_LOGICAL
         je      trg_log
-        mov     ebx,ecx                 ; a primary: past the first track
-        mov     edx,dword ptr [dsk_rec+DSK_TOTAL]
+        mov     ebx,ecx                 ; a primary: past the first track,
+        push    eax                     ; to where partitions may end
+        add     eax,[esi+TR_SECS]
+        call    fd_endfor
+        mov     edx,eax
+        pop     eax
         cmp     byte ptr [gpt_on],0
         je      trg_lo
         mov     ebx,[gpt_first]         ; a GPT entry: the usable sectors
@@ -786,7 +790,12 @@ tu_fits:
         inc     edi
         or      eax,eax
         jz      tfi_no
-        cmp     edx,dword ptr [dsk_rec+DSK_TOTAL]
+        push    eax                     ; no further than partitions may
+        mov     eax,[esi+TR_START]      ; end, or than this one does now
+        add     eax,[esi+TR_SECS]
+        call    fd_endfor
+        cmp     edx,eax
+        pop     eax
         ja      tfi_no
         cmp     byte ptr [gpt_on],0
         je      tfi_walls
@@ -1541,6 +1550,7 @@ tcr_num:
         add     eax,[esi+TR_SECS]
         mov     [cg_end],eax
         mov     byte ptr [dg_cval],0
+        mov     dword ptr [cr_fs32],0
         call    cr_avail                ; EAX = what there is room for
         mov     edi,OFFSET dg_fbuf
         call    mb_text
@@ -1597,12 +1607,44 @@ tcr_what:
         call    ln_new
         mov     edx,OFFSET msg_qcreate2
         call    lb_puts
+        ; WHICH FAT, WHEN THE SIZE LEAVES A CHOICE: from FD_FAT32MIN,
+        ; where FAT32 starts to be worth having, to FAT16's 2GB, where it
+        ; stops being a choice.  The buttons are the answer, FAT16 lit,
+        ; because FAT16 is the one every DOS can read.
+        mov     eax,[pv_len]
+        cmp     eax,FD_FAT32MIN
+        jb      tcr_question
+        cmp     eax,FAT16_MAXSECS
+        ja      tcr_question
+        call    ln_new
+        call    ln_new
+        mov     edx,OFFSET msg_qfs16
+        call    lb_puts
+        call    ln_new
+        mov     edx,OFFSET msg_qfs32
+        call    lb_puts
+        mov     dword ptr [dg_title],OFFSET msg_tcreate
+        mov     byte ptr [dg_attr],A_DLG
+        mov     edx,OFFSET msg_bfat16
+        call    dg_btn
+        mov     edx,OFFSET msg_bfat32
+        call    dg_btn
+        mov     edx,OFFSET msg_bcancel
+        call    dg_btn
+        mov     dword ptr [dg_focus],0
+        mov     dword ptr [dg_esc],2
+        call    dg_run
+        cmp     eax,2
+        jae     tcr_out
+        mov     [cr_fs32],eax           ; 0 FAT16, 1 FAT32
+        jmp     short tcr_stage
 tcr_question:
         mov     edx,OFFSET msg_tcreate
         mov     bl,A_DLG
         xor     ecx,ecx
         call    tu_ask
         jc      tcr_out
+tcr_stage:
         mov     eax,[pv_start]
         mov     [rs_start],eax
         call    cr_args
@@ -1764,7 +1806,10 @@ cr_args:
         mov     ebx,[cr_req]            ; more than there is
 cra_size:
         cmp     byte ptr [dg_cval],0
+        jne     cra_three
+        cmp     dword ptr [cr_fs32],0   ; FAT32 is a type too
         je      cra_sized
+cra_three:
         mov     dword ptr [fd_nargs],3  ; an extended one needs its type, and
 cra_sized:                              ; a type needs a size in front of it
         cmp     dword ptr [fd_nargs],1
@@ -1774,6 +1819,15 @@ cra_sized:                              ; a type needs a size in front of it
         call    tui_putdec0
         cmp     dword ptr [fd_nargs],3
         jne     cra_out
+        cmp     dword ptr [cr_fs32],0
+        je      cra_ext
+        ; FAT32, by name: fd_create spells it 0Bh or 0Ch by where it ends
+        mov     esi,OFFSET msg_afat32
+        mov     edi,OFFSET fd_args + FD_ARGLEN * 2
+        mov     ecx,6                   ; "FAT32" and its nought
+        rep     movsb
+        jmp     short cra_out
+cra_ext:
         ; 05h, or 0Fh when it ends where only LBA reaches
         mov     edi,OFFSET fd_args + FD_ARGLEN * 2
         mov     eax,[ca_start]
@@ -3112,6 +3166,29 @@ ttg_next:
         inc     ebp
         jmp     short ttg_one
 ttg_sweep:
+        ; THE BAR IS AS LONG AS THE PART OF THE DISK PARTITIONS MAY USE,
+        ; so that the free space at its end is the free space there is -
+        ; or as long as the furthest partition, if a table made elsewhere
+        ; went past that.  Never longer than the disk.
+        call    fd_dskend
+        mov     ecx,eax
+        xor     ebp,ebp
+ttg_far:
+        cmp     ebp,[iv_n]
+        jae     ttg_farok
+        mov     eax,[iv_tbl+ebp*8+4]
+        cmp     eax,ecx
+        jbe     ttg_farnext
+        mov     ecx,eax
+ttg_farnext:
+        inc     ebp
+        jmp     short ttg_far
+ttg_farok:
+        cmp     ecx,dword ptr [dsk_rec+DSK_TOTAL]
+        jbe     ttg_bar
+        mov     ecx,dword ptr [dsk_rec+DSK_TOTAL]
+ttg_bar:
+        mov     [tu_barend],ecx
         cmp     byte ptr [gpt_on],0
         jne     ttg_gpt
         movzx   eax,word ptr [dsk_rec+DSK_SPT]
@@ -3119,7 +3196,10 @@ ttg_sweep:
         jnz     ttg_lo
         inc     eax
 ttg_lo:
-        mov     ecx,dword ptr [dsk_rec+DSK_TOTAL]
+        push    eax
+        call    fd_dskend               ; the free space stops where fd_gap's
+        mov     ecx,eax                 ; does
+        pop     eax
         mov     edx,TK_FREE
         call    iv_sweep
         popad
@@ -3155,8 +3235,13 @@ tcg_next:
         inc     ebp
         jmp     short tcg_one
 tcg_sweep:
-        mov     eax,[tu_cbase]
+        call    fd_dskend               ; a container that a table made
+        mov     ecx,eax                 ; elsewhere ran past the end has no
+        cmp     ecx,[tu_cend]           ; free space there (fd_lgap)
+        jbe     tcg_hi
         mov     ecx,[tu_cend]
+tcg_hi:
+        mov     eax,[tu_cbase]
         mov     edx,TK_LFREE
         call    iv_sweep
         popad
@@ -3423,6 +3508,7 @@ tu_slot     dd  0                       ; the first empty primary slot, or 0
 tu_lnum     dd  0                       ; the number a new logical drive takes
 tu_cbase    dd  0                       ; the container, start to end
 tu_cend     dd  0
+tu_barend   dd  0                       ; where the bar ends (tl_topgaps)
 pv_mode     dd  0
 pv_start    dd  0
 pv_len      dd  0
@@ -3448,6 +3534,7 @@ sz_max      dd  0
 szs_req     dd  0
 cr_num      dd  0                       ; the create in hand
 cr_req      dd  0
+cr_fs32     dd  0                       ; 1: FAT32 was chosen for it
 cg_kind     dd  0
 cg_start    dd  0
 cg_end      dd  0
@@ -3547,6 +3634,11 @@ msg_qcrpart db  ' partition at $'
 msg_qcrext  db  ' extended partition at $'
 msg_qcrlog  db  ' logical drive at $'
 msg_qcreate2 db 'Once committed, the new partition can be formatted with F.$'
+msg_qfs16   db  'FAT16 works with every version of DOS.$'
+msg_qfs32   db  'FAT32 uses smaller clusters, and needs PM-DOS or MS-DOS 7.1 and up.$'
+msg_bfat16  db  'FAT16$'
+msg_bfat32  db  'FAT32$'
+msg_afat32  db  'FAT32',0               ; /C's type, by name (fd_fsname)
 msg_qdelete db  'Delete $'
 msg_qdelete2 db 'Everything stored on it will be lost.$'
 msg_qdelext db  'It holds no logical drives.$'

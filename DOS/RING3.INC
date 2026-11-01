@@ -68,14 +68,14 @@ R3_PAEAX        EQU     28
 ;              descriptors at the slot that depth means, and remember
 ;              its base and size for everything else here.
 ;
-; Depth zero is the interpreter, which has a slot of its own at
-; SHELL_SLOT.  EVERY DEEPER LEVEL HAS ONE OF ITS OWN TOO, out of the
-; arena, made by slot_new when 4Bh starts the program and freed by
-; slot_free when it ends.  Until v0.62 every level shared one slot at
-; PROG_SLOT and 4Bh copied the waiting program out of it into the
-; arena and 4Ch copied it back - half a megabyte each way, and a slot
-; that could never be bigger than the hole it lived in.  So this is a
-; table now, indexed by depth.
+; EVERY LEVEL HAS A SLOT OF ITS OWN, out of the arena, made by slot_new
+; when 4Bh starts the program and freed by slot_free when it ends.
+; Depth zero is the interpreter, whose slot shell_restart makes
+; (DOSMAIN.ASM) - a fixed one at 140000h until 2026-10-31.  Until v0.62
+; every deeper level shared one slot at 180000h and 4Bh copied the
+; waiting program out of it into the arena and 4Ch copied it back -
+; half a megabyte each way, and a slot that could never be bigger than
+; the hole it lived in.  So this is a table now, indexed by depth.
 ;=====================================================================
 r3_useslot:
         push    eax
@@ -93,10 +93,11 @@ r3_useslot:
         ret
 
 ;---------------------------------------------------------------------
-; slot_new - EAX = an EXEC depth, 1 or more.  Give that level a slot of
-;            its own: PROG_SIZE bytes of the arena on a page boundary,
-;            with its first page out of the map.  CF if the arena has
-;            not got one.  Everything preserved.
+; slot_new - EAX = an EXEC depth.  Give that level a slot of its own:
+;            SHELL_SIZE bytes of the arena for depth zero and PROG_SIZE
+;            for any other, on a page boundary, with its first page out
+;            of the map.  CF if the arena has not got one.  Everything
+;            preserved.
 ;
 ; THE BLOCK IS THE KERNEL'S, NOT THE PARENT'S.  arena_alloc stamps a
 ; block with [cur_own], which at 4Bh is the program asking, and 4Ch
@@ -118,7 +119,12 @@ slot_new:
         push    dword ptr [alloc_strat]
         mov     dword ptr [cur_own],0
         mov     dword ptr [alloc_strat],AF_LARGEST      ; the most room to grow
-        mov     ebx,PROG_SIZE + 0FF0h
+        mov     edi,PROG_SIZE
+        or      esi,esi
+        jnz     sln_size
+        mov     edi,SHELL_SIZE          ; the interpreter's
+sln_size:
+        lea     ebx,[edi + 0FF0h]
         call    arena_alloc
         pop     dword ptr [alloc_strat]
         pop     dword ptr [cur_own]
@@ -127,7 +133,7 @@ slot_new:
         add     eax,0FFFh
         and     eax,NOT 0FFFh
         mov     [r3_slbase + esi*4],eax
-        mov     dword ptr [r3_slsize + esi*4],PROG_SIZE
+        mov     [r3_slsize + esi*4],edi
         mov     dl,0                    ; the guard page goes
         call    dword ptr ds:[IOS_PGPRES]
         popad
@@ -151,7 +157,7 @@ slot_free:
         mov     esi,eax
         mov     edx,[r3_slblk + esi*4]
         or      edx,edx
-        jz      slf_out                 ; the shell's, or none
+        jz      slf_out                 ; none
         mov     eax,[r3_slbase + esi*4]
         mov     dl,1                    ; the guard page is memory again
         call    dword ptr ds:[IOS_PGPRES]
@@ -189,13 +195,14 @@ slf_out:
 ; not resize the arena for every call; an exact page count if 64K
 ; would not fit, so that the last of the memory can still be had.  A
 ; slot is always whole pages - the descriptor counts in them past 1MB.
-; The interpreter's slot is not an arena block and never grows.
+; The interpreter's slot grows too, since 2026-10-31: until then it
+; was fixed at 256K, and DIR /O sorted 960 names at most.
 ;---------------------------------------------------------------------
 slot_grow:
         pushad
         mov     esi,[r3_depth]
         cmp     dword ptr [r3_slblk + esi*4],0
-        je      slg_no                          ; the shell's: fixed
+        je      slg_no                          ; no slot at all
         ; THE HEAP'S OWN FREE TOP COUNTS.  48h passes the whole request,
         ; and a free block at the very end of the heap joins the one a
         ; grow puts above it (r3h_alloc's walk), so only what is missing
@@ -299,7 +306,7 @@ slot_trim:
         mov     esi,[r3_depth]
         mov     edx,[r3_slblk + esi*4]
         or      edx,edx
-        jz      slt_out                         ; the shell's: fixed
+        jz      slt_out                         ; no slot at all
         mov     edi,[r3_base]
         xor     ebx,ebx                         ; EBX+1 = the last block, 0 = none
         mov     ecx,[r3h_lo]
@@ -348,8 +355,7 @@ slt_out:
 ;             grow by, in whole pages, less the two headers a grow
 ;             costs, and with the heap's free top block on it (see
 ;             slot_grow) - which is the largest 48h could then answer.
-;             0 for the shell's slot or none at all.  Everything else
-;             preserved.
+;             0 for no slot at all.  Everything else preserved.
 ;
 ; 48h's "largest available" has to count it, or a program that asks
 ; how much there is - FFFFFFFFh, as most do - is told the size of its
@@ -1198,6 +1204,16 @@ r3_thunk:
         cmp     dword ptr [r3_active],0
         je      rt_ignore
 
+        ; A NATIVE HANDLER MAY RUN WHILE A DOS BOX HAS THE COPROCESSOR.
+        ; With the emulator, a box that uses one on a machine whose BIOS
+        ; left EM clear is given the bare hardware (IO\FPU.INC, fpu_lend),
+        ; and the handler's own coprocessor instructions must come back to
+        ; the emulator rather than run on that.
+        push    eax
+        mov     al,FPU_NATIVE
+        call    dword ptr ds:[IOS_FPU]
+        pop     eax
+
         ; The record that lets the return find its way back here, and
         ; put back what the excursion is about to change.
         mov     edi,[r3_calldep]
@@ -1976,9 +1992,9 @@ r3h_lo          dd  0                   ; the slot heap, as offsets
 r3h_hi          dd  0
 
 ; Every EXEC level's slot, by depth: where it is, how big, and the
-; arena block it was cut from (0 for the shell's, which is not one).
-r3_slbase       dd  SHELL_SLOT, EXEC_MAX dup(0)
-r3_slsize       dd  SHELL_SIZE, EXEC_MAX dup(0)
+; arena block it was cut from (0 for a level with no slot).
+r3_slbase       dd  EXEC_MAX + 1 dup(0)
+r3_slsize       dd  EXEC_MAX + 1 dup(0)
 r3_slblk        dd  EXEC_MAX + 1 dup(0)
 
 r3_fvec         dd  0

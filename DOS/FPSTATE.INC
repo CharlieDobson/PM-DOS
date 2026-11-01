@@ -31,15 +31,18 @@
 ;=====================================================================
 
 ;---------------------------------------------------------------------
-; fps_boot - once, from dos_entry, after arena_init.
+; fps_boot - once, from dos_entry, after arena_init; and once more on
+;            a machine with no coprocessor, when X87EMU.SYS has put the
+;            emulator in (ndsv_fpuemu) - fps_mem is still 0 then, since
+;            the first call found nothing to keep.
 ;---------------------------------------------------------------------
 fps_boot:
         pushad
         mov     al,FPU_INFO
         call    dword ptr ds:[IOS_FPU]
         mov     [fps_flags],eax
-        test    al,FPUF_X87
-        jz      fpb_out
+        test    al,FPUF_X87 OR FPUF_EMU         ; the emulator's state is
+        jz      fpb_out                         ; kept a level at a time too
         push    dword ptr [cur_own]
         mov     dword ptr [cur_own],0
         mov     ebx,FPS_SLOTS * FPU_AREA + 16

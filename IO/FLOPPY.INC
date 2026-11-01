@@ -32,10 +32,26 @@
 ; tracks are longer than a 1.44M drive's table says.  fpy_rwup and
 ; fpy_rwdown lengthen it for the length of one block-layer call.
 ;
+; AND IT COULD NOT SAY WHEN THE DISK HAD BEEN CHANGED.  FDF_CHANGED is
+; the volume layer's media check (DOS\FAT.INC, flp_chkmedia), answered
+; from the BIOS's 06h kept by bio_retry, the time of the last transfer,
+; the change line, and the boot sector FDF_MOUNTED kept.
+;
 ; Included by IOPM.ASM, after BLOCK.INC.
 ;=====================================================================
 
 IVT_INT1E       EQU     1Eh * 4
+
+; Until PMDOS.INC has these beside the other FDF_* numbers.  DOS\FAT.INC
+; carries the same lines, and the guard keeps both right once PMDOS.INC
+; does.
+IFNDEF FDF_CHANGED
+FDF_CHANGED     EQU     6       ; EDI -> the FAT's first sector or 0 ->
+                                ; AH = 0 the same disk, 1 another one
+FDF_MOUNTED     EQU     7       ; ESI -> the boot sector just mounted
+ENDIF
+FPY_SAME_TICKS  EQU     36      ; two seconds of the BIOS's 18.2 a second
+FPY_IDLEN       EQU     64      ; the boot sector bytes a disk is known by
 
 FPY_NTRIES       EQU     3
 FPY_DMFGAP       EQU     0Ch            ; DMF's format gap
@@ -66,6 +82,10 @@ fpy_svc:
         je      fpy_end
         cmp     ah,FDF_FORGET
         je      fpy_forget
+        cmp     ah,FDF_CHANGED
+        je      fpy_changed
+        cmp     ah,FDF_MOUNTED
+        je      fpy_mounted
 fpy_nodrive:
         mov     ah,01h                  ; the BIOS's "bad command"
         stc
@@ -218,6 +238,154 @@ fpy_fgout:
         pop     ebx
         clc
         ret
+
+;=====================================================================
+; FDF_CHANGED - is the disk in the drive still the one FDF_MOUNTED was
+;               shown?  EDI -> 512 bytes the first FAT sector (sector
+;               1) should hold, or 0 not to compare it.  -> AH = 0 the
+;               same disk, 1 another one or none that reads.  CF clear.
+;               Everything else kept.
+;
+; THREE WITNESSES FIRST, cheapest first, and the first two cost no BIOS
+; call.  The latch: the BIOS said 06h to a read (bio_retry), the one
+; certain notice there is.  The clock: a drive that answered within the
+; last two seconds holds the disk it held then, which is MS-DOS's rule
+; for a drive with no change line, and nobody has ever swapped one
+; faster.  The change line: INT 13h AH=16h, on a BIOS whose AH=15h says
+; the drive has one (type 2), asked once a drive and kept.
+;
+; WHERE ANY OF THEM SAYS "PERHAPS", THE DISK IS READ, and "changed" is
+; also only "perhaps": a door opened and shut on the same disk raises
+; the line as well, and that disk is still the one whose directory the
+; user is in.  Sector 0, and sector 1 with it when the caller has a FAT
+; to compare, in one transfer into the staging buffer, and the first
+; FPY_IDLEN bytes of the boot sector - the BPB, the serial at 27h and
+; the label after it - against the ones kept.  The latch is cleared
+; after the read, because a 06h that read met is this change and not
+; another one.
+;=====================================================================
+fpy_changed:
+        pushad
+        movzx   ecx,byte ptr [fpy_drive]
+        xor     dl,dl
+        xchg    dl,byte ptr [fpy_chg+ecx]       ; read and cleared
+        or      dl,dl
+        jnz     fch_look
+        mov     edx,dword ptr ds:[BDA_TICKS]
+        sub     edx,dword ptr [fpy_last+ecx*4]
+        cmp     edx,FPY_SAME_TICKS      ; past midnight it comes out huge,
+        jbe     fch_same                ; which is one look a day
+
+        mov     dl,byte ptr [fpy_line+ecx]
+        or      dl,dl
+        jnz     fch_known
+        call    rm_clear                ; AH=15h: does it have a line?
+        mov     byte ptr ds:[RMR_EAX+1],15h
+        mov     byte ptr ds:[RMR_EDX],cl
+        mov     al,13h
+        call    rm_int
+        mov     dl,1                    ; no, until the BIOS says type 2
+        call    rm_cf
+        jnz     fch_keep
+        cmp     byte ptr ds:[RMR_EAX+1],2
+        jne     fch_keep
+        mov     dl,2
+fch_keep:
+        mov     byte ptr [fpy_line+ecx],dl
+IFDEF FDD_DEBUG
+        mov     esi,OFFSET msgLine
+        call    con_str
+        movzx   eax,dl
+        call    con_hex8
+        mov     al,' '
+        call    con_out
+ENDIF
+fch_known:
+        cmp     dl,2
+        jne     fch_look
+        call    rm_clear                ; AH=16h: has it changed?
+        mov     byte ptr ds:[RMR_EAX+1],16h
+        mov     byte ptr ds:[RMR_EDX],cl
+        mov     al,13h
+        call    rm_int
+IFDEF FDD_DEBUG
+        mov     esi,OFFSET msgChg
+        call    con_str
+        movzx   eax,byte ptr ds:[RMR_EAX+1]
+        call    con_hex8
+        mov     al,' '
+        call    con_out
+ENDIF
+        call    rm_cf
+        jnz     fch_look                ; 06h, or a status that says nothing
+        cmp     byte ptr ds:[RMR_EAX+1],0
+        je      fch_same
+
+fch_look:
+        mov     ebp,edi                 ; EBP = the caller's FAT sector, or 0
+        mov     al,cl
+        xor     ebx,ebx
+        mov     cx,1
+        or      ebp,ebp
+        jz      fch_rd
+        inc     ecx
+fch_rd:
+        mov     edi,XFER_BUF            ; the staging buffer, lifted onto
+        call    blk_read                ; itself: nothing else is in it
+        movzx   ecx,byte ptr [fpy_drive]
+        mov     byte ptr [fpy_chg+ecx],0
+        jc      fch_new                 ; no disk, or none that reads
+        mov     esi,ecx
+        shl     esi,6                   ; * FPY_IDLEN
+        add     esi,OFFSET fpy_id
+        mov     edi,XFER_BUF
+        mov     ecx,FPY_IDLEN / 4
+        cld
+        repe    cmpsd
+        jne     fch_new
+        mov     esi,ebp
+        or      esi,esi
+        jz      fch_same
+        mov     edi,XFER_BUF + 512
+        mov     ecx,512 / 4
+        repe    cmpsd
+        jne     fch_new
+fch_same:
+        popad
+        xor     ah,ah
+        clc
+        ret
+fch_new:
+IFDEF FDD_DEBUG
+        mov     esi,OFFSET msgNew
+        call    con_str
+ENDIF
+        popad
+        mov     ah,1
+        clc
+        ret
+
+;=====================================================================
+; FDF_MOUNTED - ESI -> the boot sector the volume layer has just read
+;               and is mounting.  Its first FPY_IDLEN bytes are what
+;               FDF_CHANGED knows the disk by, and the latch is cleared:
+;               a 06h on that read was the change it is mounting for.
+;=====================================================================
+fpy_mounted:
+        pushad
+        movzx   edi,byte ptr [fpy_drive]
+        mov     byte ptr [fpy_chg+edi],0
+        shl     edi,6                   ; * FPY_IDLEN
+        add     edi,OFFSET fpy_id
+        mov     ecx,FPY_IDLEN / 4
+        cld
+        rep     movsd
+        popad
+        clc
+        ret
+IF FPY_IDLEN - 64
+        .ERR    fpy_changed and fpy_mounted multiply by FPY_IDLEN with SHL 6
+ENDIF
 
 ;=====================================================================
 ; FDF_BEGIN - CL = sectors a track, CH = cylinders, BL = FDM_*.
@@ -613,6 +781,19 @@ fpy_tries   db  0
 fpy_status  db  0
 fpy_dmf     db  0                       ; FDF_BEGIN was asked for DMF
             db  0
+fpy_last    dd  0, 0                    ; the tick of each drive's last good
+                                        ; transfer (bio_done)
+fpy_chg     db  0, 0                    ; the BIOS said 06h (bio_retry)
+fpy_line    db  0, 0                    ; AH=15h's answer: 0 not asked yet,
+                                        ; 1 no change line, 2 one
+            db  0, 0
+fpy_id      db  2 * FPY_IDLEN dup(0)    ; each drive's boot sector, as
+                                        ; FDF_MOUNTED was shown it
+IFDEF FDD_DEBUG
+msgLine     db  '[15 line=',0
+msgChg      db  '[16 ah=',0
+msgNew      db  '[new disk] ',0
+ENDIF
 
 ; by FDT_*: what the drive holds when it is full
 fpy_kindspt db  0, 9, 15, 9, 18, 36

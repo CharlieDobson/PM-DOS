@@ -30,18 +30,17 @@ ENDIF
 ;                       where the BIOS says conventional memory does
 ;   000A0000-000FFFFF   Video RAM and ROM
 ;   00100000-0010FFEF   the HMA, left empty for the A20 wrap
-;   00110000-0013FFFF   PMDOS.SYS (192K reserved)
-;   00140000-0017FFFF   shell slot: guard page, PSP at 141000, image at
-;                       142000, stack grows down from 180000 (CMD.EXE)
+;   00110000-0017FFFF   PMDOS.SYS (448K reserved)
 ;   00180000-001C8FFF   page directory, 64 page tables, 8 device tables
 ;   001C9000-001E0FFF   the kernel's buffers (_KBSS), and a trace's after
-;   00200000-0020FFFF   PMIO.SYS protected-mode body (64K reserved)
-;   00210000-002107FF   IDT (256 gates)
-;   00212000-00213FFF   Kernel stack (top = 00214000)
-;   00214000-0021606B   TSS and its I/O permission bitmap
-;   00218000-0021BFFF   a DPMI client's LDT, and the native ring-0 stack
-;   00220000-....       DOS arena: every other program's slot, 48h for
-;                       the kernel, XMS, DPMI, EMS, the disk cache
+;   00200000-0022FFFF   PMIO.SYS protected-mode body (192K reserved)
+;   00230000-002307FF   IDT (256 gates)
+;   00232000-00233FFF   Kernel stack (top = 00234000)
+;   00234000-0023606B   TSS and its I/O permission bitmap
+;   00238000-0023BFFF   a DPMI client's LDT, and the native ring-0 stack
+;   00240000-....       DOS arena: every program's slot, the shell's
+;                       included, 48h for the kernel, XMS, DPMI, EMS,
+;                       the disk cache
 ;   top of memory       page tables for memory above 256MB, if any
 ;
 ; WHY THE FIRST MEGABYTE LOOKS LIKE THIS.  Everything that does not
@@ -89,22 +88,29 @@ ENDIF
 ; A 512-byte boot sector can do one simple thing: read the file into
 ; one segment.  So it drops all of PMIO.SYS at IO_LOAD_SEG and jumps
 ; there, and the stub then puts itself where it actually wants to be -
-; it copies its own 4K down to IO_SEG, and once unreal mode is up it
-; blits its protected-mode half from IO_PM_LOAD to IO_PM_BASE above
-; 1MB.  The boot sector never needs to know any of that.
+; its cold start runs where it was loaded, blits the protected-mode
+; half to IO_PM_BASE above 1MB, and last of all copies the resident 4K
+; down to IO_SEG; the cold start itself is left behind.  The boot
+; sector never needs to know any of that.
 ;---------------------------------------------------------------------
 IO_LOAD_SEG     EQU     2000h                   ; where the boot loader puts it
 IO_LOAD_BASE    EQU     00020000h
-RMSTUB_SIZE     EQU     00001000h               ; IORM.BIN is exactly 4K
-IO_PM_LOAD      EQU     IO_LOAD_BASE + RMSTUB_SIZE
+RMSTUB_SIZE     EQU     00001000h               ; the stub's resident part is
+                                                ; exactly 4K; IORM.BIN is that
+                                                ; and the cold start after it
 
 IO_SEG          EQU     0100h                   ; where the stub lives for good
 IO_BASE         EQU     00001000h
 IO_PM_BASE      EQU     00200000h               ; and its 32-bit half, above 1M
-IO_PM_MAX       EQU     00020000h               ; how much of it is blitted up:
-                                                ; 128K since the USB drivers,
-                                                ; which took it past 64K
+IO_PM_MAX       EQU     00030000h               ; how much of it is blitted up:
+                                                ; 192K since the x87 emulator
+                                                ; and the AHCI tables left it
+                                                ; 10K (128K since USB)
 IO_LIMIT        EQU     IO_PM_BASE + IO_PM_MAX  ; PMIO must not grow past here
+                                                ; - and the IDT, the TSS, the
+                                                ; kernel stacks and the arena
+                                                ; are placed from it, so this
+                                                ; is the one number to change
 
 ;---------------------------------------------------------------------
 ; THE FIRST 64K ABOVE 1MB IS LEFT EMPTY ON PURPOSE.  It is the HMA -
@@ -121,10 +127,16 @@ HMA_BASE        EQU     00100000h               ; where extended memory starts
 HMA_PAGES       EQU     16                      ; 64K: all a 16-bit far
                                                 ; pointer can reach past 1MB
 DOS_BASE        EQU     00110000h               ; PMDOS.SYS load address
-DOS_LIMIT       EQU     00140000h               ; and it must end below this -
-                                                ; SHELL_PSP, spelled out because
+DOS_LIMIT       EQU     00180000h               ; and it must end below this -
+                                                ; PG_DIR, spelled out because
                                                 ; a forward EQU is not a value
                                                 ; to wasm, it is an error
+                                                ; (checked below PG_DIR)
+; 448K, AND NOT 192K, SINCE THE SHELL LEFT.  The interpreter had a
+; fixed 256K slot at 140000h until 2026-10-31, right above this, and
+; could never grow past it: DIR /O sorted 960 names and no more.  It
+; takes a slot out of the arena now, as every other program does, and
+; the kernel has the range up to the page tables.
 
 ;---------------------------------------------------------------------
 ; Paging, and it is here for ONE reason: to make the A20 gate honest.
@@ -151,6 +163,9 @@ DOS_LIMIT       EQU     00140000h               ; and it must end below this -
 ; machine the difference between one nested program and two.
 ;---------------------------------------------------------------------
 PG_DIR          EQU     00180000h               ; page directory, 4K
+IF DOS_LIMIT NE PG_DIR
+        .ERR    <DOS_LIMIT is the page directory: PMDOS.SYS runs up to it>
+ENDIF
 PG_TABS         EQU     00181000h               ; the page tables follow it
 PG_MAXTAB       EQU     64                      ; 64 * 4MB = 256MB in fixed tables
 PG_MAXLIN       EQU     PG_MAXTAB * 00400000h
@@ -199,7 +214,7 @@ PG_WRITABLE     EQU     2
 ; THE KERNEL'S BIG BUFFERS ARE HERE AND NOT IN PMDOS.SYS.  A sector, a
 ; cluster, CONFIG.SYS and the CD readers' blocks hold nothing until
 ; something is read into them, and as "dup(0)" in a raw binary they
-; were 62K of the 192K there is between DOS_BASE and the shell's slot.
+; were 62K of the 192K there was between DOS_BASE and the shell's slot.
 ; They are a segment of their own, _KBSS, which the link puts at
 ; KBSS_BASE and leaves out of the file; dos_entry clears it, because
 ; nothing loads it.  The labels are still labels and the code that
@@ -243,13 +258,13 @@ ENDIF
 ; below BIOS_IVT, the 1K under that - and does: at 1E9000h, or 1EF000h
 ; with the trace's buffers.  The arena
 ; starts above PMIO, the IDT, the TSS and the two ring-0 stacks, which
-; end at 230000h - the same for every build now, so nothing has to be
-; assembled to agree.  (220000h until the USB drivers, which took PMIO
-; from under 64K to over it: IO_PM_MAX is 128K now and everything above
-; it moved up by 64K.)
-ARENA_BASE      EQU     00230000h               ; start of the DOS memory arena:
-                                                ; 64K further on since the USB
-                                                ; drivers took PMIO past 64K
+; take the 64K at IO_LIMIT - the same for every build, so nothing has to
+; be assembled to agree.  (The arena was at 220000h until the USB
+; drivers took PMIO past 64K, and at 230000h until the x87 emulator took
+; IO_PM_MAX to 192K.  Each time everything above PMIO moved up by 64K,
+; and now it follows IO_LIMIT by itself.)
+ARENA_BASE      EQU     IO_LIMIT + 10000h       ; start of the DOS memory arena:
+                                                ; 240000h
 
 ;---------------------------------------------------------------------
 ; WHERE A CALLER'S BUFFER MAY NOT BE.
@@ -275,11 +290,11 @@ ARENA_BASE      EQU     00230000h               ; start of the DOS memory arena:
 ; Three ranges, and the gaps between them are deliberate.  The IVT, the
 ; BIOS data area and DOS's area at 500h are the guest's to ruin, as they are
 ; on a real machine; so is the DOS data segment at 4000h, which holds
-; the list of lists and which a program is invited to read.  The shell's
-; slot at 140000h-17FFFFh is a PROGRAM's memory and not the kernel's,
-; and its owner passes pointers into it all day - r3_xlat bounds those,
-; and it is the only thing that can, since one slot's pointer is
-; another slot's trespass.  So are the slots out of the arena.
+; the list of lists and which a program is invited to read.  The slots
+; out of the arena - the shell's among them - are a PROGRAM's memory
+; and not the kernel's, and their owners pass pointers into them all
+; day - r3_xlat bounds those, and it is the only thing that can, since
+; one slot's pointer is another slot's trespass.
 ;
 ; buf_ok asks the page tables as well (IOS_USRWOK), which is what
 ; covers the A20 alias of these, guard pages, and the page tables
@@ -527,20 +542,19 @@ SLOT_IMAGE      EQU     00002000h               ; D32 header lands here - and
                                                 ; every D32 program is linked
                                                 ; for this one offset now
 
-SHELL_SLOT      EQU     00140000h               ; the interpreter's slot
-SHELL_SIZE      EQU     00040000h               ; 256K
-PROG_SLOT       EQU     00180000h               ; where the transient slot was
-                                                ; until v0.62 - every level has
-                                                ; one out of the arena now
-PROG_SIZE       EQU     00080000h               ; 512K, each
-
-; The flat addresses the kernel itself uses to reach into them.  The
-; kernel is still flat and based at zero, so it adds what a program
-; never has to know about.
-SHELL_PSP       EQU     SHELL_SLOT + SLOT_PSP
-SHELL_TOP       EQU     SHELL_SLOT + SHELL_SIZE ; initial ESP for the shell
-PROG_PSP        EQU     PROG_SLOT + SLOT_PSP
-PROG_TOP        EQU     PROG_SLOT + PROG_SIZE   ; initial ESP for programs
+; How big a slot starts; every one of them grows (RING3.INC, slot_grow).
+; Each is a block out of the arena, made by slot_new - the shell's too,
+; since 2026-10-31.  It had a fixed one at 140000h until then, and the
+; transient programs one at 180000h until v0.62.
+;
+; THE SHELL STARTS WITH WHAT ITS FIXED SLOT HAD.  A slot grows above
+; its stack, and slot_trim gives back only what is above the stack, so
+; the heap below it is never less than this leaves: 158K behind
+; CMD.EXE's image and its 32K stack.  That is all the shell's heap
+; used to be, and it is still there when something in use sits right
+; above the slot and nothing can grow.
+SHELL_SIZE      EQU     00040000h               ; 256K, depth zero
+PROG_SIZE       EQU     00080000h               ; 512K, each deeper level
 
 ;---------------------------------------------------------------------
 ; D32 executable header - 32 bytes at the front of the IMAGE.  The
@@ -737,10 +751,14 @@ R3RET_LEN       EQU     2                       ; db 0CDh,21h
 R3RET_EIP       EQU     SLOT_PSP + PSP_R3RET + R3RET_LEN
 
 
-IDT_BASE        EQU     00220000h
+; THE 64K AT IO_LIMIT, below the arena: the IDT, the kernel stack below
+; the TSS, the TSS, the DPMI stack and LDT, and the native program's
+; ring-0 stack.  All of it is placed from IO_LIMIT (230000h with the
+; 192K PMIO window).
+IDT_BASE        EQU     IO_LIMIT
 IDT_LIMIT       EQU     07FFh                   ; 256 * 8 - 1
 
-KSTACK_TOP      EQU     00224000h               ; kernel ESP after PM switch
+KSTACK_TOP      EQU     IO_LIMIT + 4000h        ; kernel ESP after PM switch
 
 ;---------------------------------------------------------------------
 ; The TSS.  Virtual-8086 mode runs at CPL 3, so every fault out of a
@@ -764,7 +782,7 @@ KSTACK_TOP      EQU     00224000h               ; kernel ESP after PM switch
 ; disagree, and clearing the real line would unmap PMDOS.SYS from
 ; underneath itself.  See vio_in / vio_out in VM86.INC.
 ;---------------------------------------------------------------------
-TSS_BASE        EQU     00224000h
+TSS_BASE        EQU     IO_LIMIT + 4000h
 TSS_IOBASE      EQU     104                     ; bitmap starts right after
 TSS_TOTAL       EQU     8300                    ; 104 + 8192 + FFh, rounded
 TSS_LIMIT       EQU     TSS_TOTAL - 1
@@ -775,7 +793,7 @@ TSS_IOMAP       EQU     66h                     ; word: offset of the bitmap
 ;---------------------------------------------------------------------
 ; DPMI.  A protected-mode client runs at ring 3 out of an LDT of its
 ; own, and both of the things it needs live in the gap between the end
-; of the TSS (22606Ch) and the arena at 230000h.
+; of the TSS (TSS_BASE + 206Ch) and the arena 64K past IO_LIMIT.
 ;
 ; THE RING-0 STACK IS NOT OPTIONAL AND IT IS NOT THE KERNEL'S.  Any
 ; interrupt taken while ring-3 code is running switches stacks through
@@ -785,15 +803,15 @@ TSS_IOMAP       EQU     66h                     ; word: offset of the bitmap
 ; client needs somewhere that is valid whenever it is running and is
 ; not somebody else's live stack.
 ;---------------------------------------------------------------------
-DPMI_KSTACK     EQU     00228000h               ; ring-0 ESP for ring-3 entries
-DPMI_LDT        EQU     00228000h               ; the client's descriptor table
+DPMI_KSTACK     EQU     IO_LIMIT + 8000h        ; ring-0 ESP for ring-3 entries
+DPMI_LDT        EQU     IO_LIMIT + 8000h        ; the client's descriptor table
 
 ; And the same thing for a NATIVE ring-3 program, which needs its own
 ; rather than sharing: the shell is a ring-3 program that stays running
 ; while a DOS box and a DPMI client inside it come and go, so the two
 ; stacks are live at the same time.  It sits above the LDT (2K of the
 ; 32K between DPMI_LDT and the arena) and grows down.
-R3_KSTACK       EQU     0022C000h               ; ring-0 ESP while a native
+R3_KSTACK       EQU     IO_LIMIT + 0C000h       ; ring-0 ESP while a native
                                                 ; program is running
 DPMI_LDT_ENT    EQU     256                     ; descriptors in it
 DPMI_LDT_LIMIT  EQU     DPMI_LDT_ENT * 8 - 1
@@ -2753,6 +2771,8 @@ FDF_TRACK       EQU     3       ; CH = cylinder, DH = head, CL = sectors a
                                 ;    track: format it, and read it back
 FDF_END         EQU     4       ; the format is over
 FDF_FORGET      EQU     5       ; ask the BIOS again what the drive holds
+FDF_CHANGED     EQU     6       ; disk change functions: see IO\FLOPPY.INC
+FDF_MOUNTED     EQU     7
 
 FDT_NONE        EQU     0       ; what CMOS calls them
 FDT_360         EQU     1
@@ -3348,8 +3368,20 @@ FPU_KEEP        EQU     1       ; EDI -> FPU_AREA bytes, on a 16-byte
 FPU_BACK        EQU     2       ; ESI -> what FPU_KEEP filled in
 FPU_FRESH       EQU     3       ; as the processor's reset leaves it, with
                                 ;    every exception masked
+FPU_NATIVE      EQU     4       ; a native program is about to run: with
+                                ;    the emulator, CR0 is made to send its
+                                ;    coprocessor instructions there again
+                                ;    (FPU.INC, fpu_reclaim)
+FPU_SETEMU      EQU     5       ; X87EMU.SYS is in: EDX = its x87_trap,
+                                ;    ECX = its x87_init, EBX -> its dword
+                                ;    for fpu_uok's address; CF if refused,
+                                ;    EAX = FSE_* (FPU.INC, fpv_setemu;
+                                ;    NDS_FPUEMU)
+FSE_X87         EQU     1       ; FPU_SETEMU refused: a coprocessor
+FSE_HAVE        EQU     2       ;    ...an emulator is in already
+FSE_BAD         EQU     3       ;    ...an entry or EBX was 0
 
-FPU_AREA        EQU     512                     ; what FXSAVE writes; FNSAVE
+FPU_AREA       EQU     512                     ; what FXSAVE writes; FNSAVE
                                                 ; uses the first 108 of it
 
 ; FPU_INFO's answer, which is also 21h/F1h AL=13h's.
@@ -3361,6 +3393,10 @@ FPUF_MMX        EQU     10h                     ; ...and MMX
 FPUF_NE         EQU     20h                     ; a coprocessor error arrives as
                                                 ; exception 16
 FPUF_IRQ13      EQU     40h                     ; ...or on interrupt line 13
+FPUF_EMU        EQU     80h                     ; no coprocessor, and a native
+                                                ; program's instructions are
+                                                ; emulated (X87EMU.SYS, from
+                                                ; CONFIG.SYS time)
 
 FPU_IRQ         EQU     13                      ; the line, and the vector a DOS
 FPU_VEC         EQU     75h                     ; program knows it by

@@ -10,47 +10,50 @@ menu, or press F1.  To leave, press ALT, F, X.
 
 <\aAbout PM-DOS\vAbout PM-DOS\v>
 
-<\aAcroread\vACROREAD\v>                 <\aEdit\vEDIT\v>                     <\aPath\vPATH\v>
-<\aAhci\vAHCI=\v>                     <\aEms\vEMS=\v>                      <\aPause\vPAUSE\v>
-<\aAnsi.sys\vANSI.SYS\v>                 <\aExit\vEXIT\v>                     <\aPing\vPING\v>
-<\aAttrib\vATTRIB\v>                   <\aFc\vFC\v>                       <\aPmd\vPMD\v>
-<\aAutocheck\vAUTOCHECK=\v>                <\aFcbs\vFCBS=\v>                     <\aPrompt\vPROMPT\v>
-<\aBatch\vBatch Commands\v>                    <\aFdisk\vFDISK\v>                    <\aQbasic\vQBASIC\v>
-<\aBreak\vBREAK\v>                    <\aFiles\vFILES=\v>                    <\aRamdisk.sys\vRAMDISK.SYS\v>
-<\aBreak (CONFIG.SYS)\vBREAK=\v>       <\aFind\vFIND\v>                     <\aRd\vRD\v>
-<\aBuffers\vBUFFERS=\v>                  <\aFor\vFOR\v>                      <\aRem\vREM\v>
-<\aCache\vCACHE\v>                    <\aFormat\vFORMAT\v>                   <\aRen\vREN\v>
-<\aCache (CONFIG.SYS)\vCACHE=\v>       <\aGoto\vGOTO\v>                     <\aScandisk\vSCANDISK\v>
-<\aCall\vCALL\v>                     <\aHelp\vHELP\v>                     <\aScsi\vSCSI=\v>
-<\aCd\vCD\v>                       <\aIde32\vIDE32=\v>                    <\aSet\vSET\v>
-<\aCdex\vCDEX\v>                     <\aIdecable\vIDECABLE=\v>                 <\aSet (CONFIG.SYS)\vSET=\v>
-<\aCdrom\vCDROM=\v>                    <\aIdedma\vIDEDMA=\v>                   <\aSetup\vSETUP\v>
-<\aChcp\vCHCP\v>                     <\aIf\vIF\v>                       <\aSetver\vSETVER\v>
-<\aChkdsk\vCHKDSK\v>                   <\aInclude\vINCLUDE=\v>                  <\aShare\vSHARE=\v>
-<\aChoice\vCHOICE\v>                   <\aInstall\vINSTALL=\v>                  <\aShell\vSHELL=\v>
-<\aCls\vCLS\v>                      <\aInstallhigh\vINSTALLHIGH=\v>              <\aShift\vSHIFT\v>
-<\aCmd\vCMD\v>                      <\aInternational\vInternational Commands\v>            <\aShutdown\vSHUTDOWN\v>
-<\aCommand\vCOMMAND\v>                  <\aIpconfig\vIPCONFIG\v>                 <\aSort\vSORT\v>
-<\aCONFIG\vCONFIG.SYS Commands\v>                   <\aIsapnp\vISAPNP\v>                   <\aStacks\vSTACKS=\v>
-<\aCopy\vCOPY\v>                     <\aKeyb\vKEYB\v>                     <\aStarting\vStarting PM-DOS\v>
-<\aCountry\vCOUNTRY=\v>                  <\aKeyrate\vKEYRATE=\v>                  <\aSubmenu\vSUBMENU=\v>
-<\aCtty\vCTTY\v>                     <\aLabel\vLABEL\v>                    <\aSwitches\vSWITCHES=\v>
-<\aDate\vDATE\v>                     <\aLastdrive\vLASTDRIVE=\v>                <\aSys\vSYS\v>
-<\aDebug\vDEBUG\v>                    <\aLfn\vLFN=\v>                      <\aTcpip.sys\vTCPIP.SYS\v>
-<\aDefrag\vDEFRAG\v>                   <\aLoadhigh\vLOADHIGH\v>                 <\aTime\vTIME\v>
-<\aDel\vDEL\v>                      <\aMd\vMD\v>                       <\aTree\vTREE\v>
-<\aDeltree\vDELTREE\v>                  <\aMem\vMEM\v>                      <\aTreeView\vTREEVIEW\v>
-<\aDevice\vDEVICE=\v>                   <\aMenucolor\vMENUCOLOR=\v>                <\aType\vTYPE\v>
-<\aDevicehigh\vDEVICEHIGH=\v>               <\aMenudefault\vMENUDEFAULT=\v>              <\aUndelete\vUNDELETE\v>
-<\aDir\vDIR\v>                      <\aMenuitem\vMENUITEM=\v>                 <\aUndelete (CONFIG.SYS)\vUNDELETE=\v>
-<\aDiskcomp\vDISKCOMP\v>                 <\aMode\vMODE\v>                     <\aUsb\vUSB\v>
-<\aDiskcopy\vDISKCOPY\v>                 <\aMore\vMORE\v>                     <\aUsb (CONFIG.SYS)\vUSB=\v>
-<\aDos\vDOS=\v>                      <\aMount\vMOUNT\v>                    <\aVer\vVER\v>
-<\aDoskey\vDOSKEY\v>                   <\aMove\vMOVE\v>                     <\aVerify\vVERIFY\v>
-<\aDosshell\vDOSSHELL\v>                 <\aMulti-config\vMultiple Configurations\v>             <\aVol\vVOL\v>
-<\aDpmi\vDPMI=\v>                     <\aNetbeui.sys\vNETBEUI.SYS\v>              <\aWincache\vWINCACHE=\v>
-<\aDrivparm\vDRIVPARM=\v>                 <\aNulltrap\vNULLTRAP=\v>                 <\aXarc\vXARC\v>
-<\aEcho\vECHO\v>                     <\aNumlock\vNUMLOCK=\v>                  <\aXcopy\vXCOPY\v>
+<\aAcroread\vACROREAD\v>                 <\aFc\vFC\v>                       <\aPrompt\vPROMPT\v>
+<\aAhci\vAHCI=\v>                     <\aFcbs\vFCBS=\v>                     <\aQbasic\vQBASIC\v>
+<\aAnsi.sys\vANSI.SYS\v>                 <\aFdisk\vFDISK\v>                    <\aRamdisk.sys\vRAMDISK.SYS\v>
+<\aAttrib\vATTRIB\v>                   <\aFiles\vFILES=\v>                    <\aRd\vRD\v>
+<\aAutocheck\vAUTOCHECK=\v>                <\aFind\vFIND\v>                     <\aRem\vREM\v>
+<\aBatch\vBatch Commands\v>                    <\aFor\vFOR\v>                      <\aRen\vREN\v>
+<\aBreak\vBREAK\v>                    <\aFormat\vFORMAT\v>                   <\aScandisk\vSCANDISK\v>
+<\aBreak (CONFIG.SYS)\vBREAK=\v>       <\aFtp\vFTP\v>                      <\aScsi\vSCSI=\v>
+<\aBuffers\vBUFFERS=\v>                  <\aGoto\vGOTO\v>                     <\aSet\vSET\v>
+<\aCache\vCACHE\v>                    <\aHelp\vHELP\v>                     <\aSet (CONFIG.SYS)\vSET=\v>
+<\aCache (CONFIG.SYS)\vCACHE=\v>       <\aIde32\vIDE32=\v>                    <\aSetup\vSETUP\v>
+<\aCall\vCALL\v>                     <\aIdecable\vIDECABLE=\v>                 <\aSetver\vSETVER\v>
+<\aCd\vCD\v>                       <\aIdedma\vIDEDMA=\v>                   <\aShare\vSHARE=\v>
+<\aCdex\vCDEX\v>                     <\aIf\vIF\v>                       <\aShell\vSHELL=\v>
+<\aCdrom\vCDROM=\v>                    <\aInclude\vINCLUDE=\v>                  <\aShift\vSHIFT\v>
+<\aChcp\vCHCP\v>                     <\aInstall\vINSTALL=\v>                  <\aShutdown\vSHUTDOWN\v>
+<\aChkdsk\vCHKDSK\v>                   <\aInstallhigh\vINSTALLHIGH=\v>              <\aSmbfs.sys\vSMBFS.SYS\v>
+<\aChoice\vCHOICE\v>                   <\aInternational\vInternational Commands\v>            <\aSmbsrv\vSMBSRV\v>
+<\aCls\vCLS\v>                      <\aIpconfig\vIPCONFIG\v>                 <\aSntp\vSNTP\v>
+<\aCmd\vCMD\v>                      <\aIsapnp\vISAPNP\v>                   <\aSort\vSORT\v>
+<\aCommand\vCOMMAND\v>                  <\aKeyb\vKEYB\v>                     <\aStacks\vSTACKS=\v>
+<\aCONFIG\vCONFIG.SYS Commands\v>                   <\aKeyrate\vKEYRATE=\v>                  <\aStarting\vStarting PM-DOS\v>
+<\aCopy\vCOPY\v>                     <\aLabel\vLABEL\v>                    <\aSubmenu\vSUBMENU=\v>
+<\aCountry\vCOUNTRY=\v>                  <\aLastdrive\vLASTDRIVE=\v>                <\aSwitches\vSWITCHES=\v>
+<\aCtty\vCTTY\v>                     <\aLfn\vLFN=\v>                      <\aSys\vSYS\v>
+<\aDate\vDATE\v>                     <\aLoadhigh\vLOADHIGH\v>                 <\aTcpip.sys\vTCPIP.SYS\v>
+<\aDebug\vDEBUG\v>                    <\aMd\vMD\v>                       <\aTelnet\vTELNET\v>
+<\aDefrag\vDEFRAG\v>                   <\aMem\vMEM\v>                      <\aTime\vTIME\v>
+<\aDel\vDEL\v>                      <\aMenucolor\vMENUCOLOR=\v>                <\aTree\vTREE\v>
+<\aDeltree\vDELTREE\v>                  <\aMenudefault\vMENUDEFAULT=\v>              <\aTreeView\vTREEVIEW\v>
+<\aDevice\vDEVICE=\v>                   <\aMenuitem\vMENUITEM=\v>                 <\aType\vTYPE\v>
+<\aDevicehigh\vDEVICEHIGH=\v>               <\aMode\vMODE\v>                     <\aUndelete\vUNDELETE\v>
+<\aDir\vDIR\v>                      <\aMore\vMORE\v>                     <\aUndelete (CONFIG.SYS)\vUNDELETE=\v>
+<\aDiskcomp\vDISKCOMP\v>                 <\aMount\vMOUNT\v>                    <\aUsb\vUSB\v>
+<\aDiskcopy\vDISKCOPY\v>                 <\aMove\vMOVE\v>                     <\aUsb (CONFIG.SYS)\vUSB=\v>
+<\aDos\vDOS=\v>                      <\aMulti-config\vMultiple Configurations\v>             <\aVer\vVER\v>
+<\aDoskey\vDOSKEY\v>                   <\aNet\vNET\v>                      <\aVerify\vVERIFY\v>
+<\aDosshell\vDOSSHELL\v>                 <\aNetbeui.sys\vNETBEUI.SYS\v>              <\aVol\vVOL\v>
+<\aDpmi\vDPMI=\v>                     <\aNulltrap\vNULLTRAP=\v>                 <\aWget\vWGET\v>
+<\aDrivparm\vDRIVPARM=\v>                 <\aNumlock\vNUMLOCK=\v>                  <\aWincache\vWINCACHE=\v>
+<\aEcho\vECHO\v>                     <\aPath\vPATH\v>                     <\aX87emu.sys\vX87EMU.SYS\v>
+<\aEdit\vEDIT\v>                     <\aPause\vPAUSE\v>                    <\aXarc\vXARC\v>
+<\aEms\vEMS=\v>                      <\aPing\vPING\v>                     <\aXcopy\vXCOPY\v>
+<\aExit\vEXIT\v>                     <\aPmd\vPMD\v>
 
 Every command and every CONFIG.SYS statement PM-DOS has is listed.  A
 command's topic says what it does, how it is written, and what each
@@ -713,12 +716,12 @@ Type BREAK on its own to see the setting.
 \bParameters\p
 
 ON
-    Programs are told Ctrl+C is to be checked for during disk work as
-    well as during screen and keyboard work.
+    PM-DOS checks for Ctrl+C during disk work as well as during screen
+    and keyboard work.
 
 OFF
-    Ctrl+C is checked for during screen and keyboard work only.  This
-    is the setting at startup.
+    PM-DOS checks for Ctrl+C during screen and keyboard work only.
+    This is the setting at startup.
 
 \bRelated Commands\p
 
@@ -735,8 +738,12 @@ BREAK= in CONFIG.SYS sets the same flag at boot.  See <\aBREAK (CONFIG.SYS)\vBRE
  
 \bWhat the setting does here\p
 
-BREAK sets the flag that programs read with INT 21h AX=3300h. Ctrl+C
-stops a command or a batch file during operation.
+PM-DOS checks for Ctrl+C itself, as MS-DOS does.  Ctrl+C stops a
+command or a batch file during operation.  With BREAK ON, a program
+that is busy reading or writing files can be stopped as well.
+
+Ctrl+Break works like Ctrl+C, but goes ahead of any keys already
+typed.  Programs read the setting with INT 21h AX=3300h.
  
                                      
 .context BREAK--Examples
@@ -4455,6 +4462,8 @@ n
 
 tt
     A partition type, in hexadecimal: 06 for FAT16, 0B for FAT32.
+    FAT16 or FAT32 can be given instead, and FDISK picks the type
+    that suits the partition.
 
 \bSwitches\p
 
@@ -4467,7 +4476,8 @@ tt
 
 /C d:p [n [tt]]
     Creates partition p on disk d in the largest free gap, or only n
-    of it, and of type tt.
+    of it, and of type tt.  FAT16 or FAT32 in place of n fills the
+    gap.
 
 /D d:p
     Deletes the partition.
@@ -4526,6 +4536,16 @@ FDISK moves and resizes a partition with its file system inside, and
 refuses when the files would not survive it.  Back the disk up first
 all the same.
 
+\bFAT16 or FAT32\p
+
+A new partition between 512MB and 2GB can be either, and FDISK asks
+which, with FAT16 selected.  FAT16 works with every version of DOS.
+FAT32 uses smaller clusters, but needs PM-DOS or MS-DOS 7.1 and
+later.  Smaller partitions are always FAT16 and larger ones FAT32.
+
+FDISK does not use the last cylinder of the disk, which the BIOS
+keeps for itself.  Other versions of DOS leave it unused too.
+
 \bLetters\p
 
 Drive letters are given out at boot: a partition made or deleted
@@ -4573,6 +4593,10 @@ To see every disk's partitions:
 To make a 100MB FAT16 partition in the free space on the second disk:
 
     fdisk /c 1:1 100m 06
+
+To fill the free space on the second disk with a FAT32 partition:
+
+    fdisk /c 1:1 fat32
 
 To make the first partition of the first disk the one that boots:
 
@@ -4754,6 +4778,13 @@ has just made - gets one laid out for its size: FAT12, FAT16 or FAT32,
 with the cluster size MS-DOS and Windows would have chosen.  See
 <\aUSB\vUSB\v>.
 
+\bA new hard disk partition\p
+
+A partition with no file system gets the one its partition type
+names: FAT32 for type 0B or 0C, otherwise FAT16, or FAT12 when the
+partition is small.  Partitions over 2GB always get FAT32.  /FS:
+overrides this.
+
 \bA disk that has a format already\p
 
 The layout is kept and the tables are written afresh.  Every data
@@ -4811,6 +4842,142 @@ To make a bootable diskette:
 To format a hard disk partition quickly:
 
     format d: /q
+ 
+                                     
+.context FTP
+.context Ftp
+.topic FTP
+.freeze 3
+\i\aNotes\vFTP--Notes\v  \aExamples\vFTP--Examples\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                                     FTP
+ 
+Copies files to and from another computer with the File Transfer
+Protocol.
+
+\bSyntax\p
+
+    FTP [host] [/USER:name [password | *]]
+
+\bParameters\p
+
+host
+    The computer to connect to: a name or an IP address.  Without host,
+    FTP starts at its ftp> prompt, ready for the open command.
+
+\bSwitches\p
+
+/USER:name [password | *]
+    Logs in as name without asking for a user name.  The password
+    goes straight after the name.  With * or no password, FTP asks for
+    the password.  Without host, the name is used for the first open.
+
+\bCommands at the ftp> prompt\p
+
+open host [port]
+    Connects to host.  Port defaults to 21.
+
+ls [path]  or  dir [path]
+    Lists the files on the server.
+
+cd directory
+    Changes the directory on the server.
+
+pwd
+    Shows the directory on the server.
+
+get remote [local]
+    Copies a file from the server.  Without local, the copy has the
+    same name as the file on the server.
+
+put local [remote]
+    Copies a file to the server.  Without remote, the file keeps its
+    name.
+
+ascii
+    Copies files as text.
+
+binary  or  bin
+    Copies files byte for byte, for programs and other files that are
+    not text.  This is the default setting.
+
+user name [password | *]
+    Logs in again as a different user.  With * or no password, FTP
+    asks for the password.
+
+close
+    Disconnects from the server.  FTP keeps running.
+
+bye, quit  or  exit
+    Disconnects and leaves FTP.
+
+help  or  ?
+    Lists the commands.
+
+\bRelated Commands\p
+
+FTP needs <\aTCPIP.SYS\vTCPIP.SYS\v>.  To fetch a file from a web server, see
+<\aWGET\vWGET\v>.
+ 
+                                     
+.context FTP--Notes
+.topic FTP--Notes
+.freeze 3
+\i\aExamples\vFTP--Examples\v  \aSyntax\vFTP\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                                FTP컴Notes
+ 
+\bLogging in\p
+
+FTP asks for a user name and a password when it connects, unless
+/USER: gives them.  Press ENTER at the user name to log in as
+anonymous.  The password does not show on the screen as it is typed.
+
+A password on the command line can be seen by anyone who reads the
+batch file it is in.  Use * to type it instead.
+
+\bFiles that are already there\p
+
+GET replaces a file of the same name in the current directory without
+asking.
+
+\bPassive mode\p
+
+FTP always uses passive mode.  A server that does not allow passive
+mode cannot send listings or files to it.
+
+\bCommands from a file\p
+
+FTP reads its commands from standard input, so a file of commands can
+be redirected into it.  The first lines of the file answer the user
+name and password questions.
+
+    ftp ftp.example.com < getfile.txt
+ 
+                                     
+.context FTP--Examples
+.topic FTP--Examples
+.freeze 3
+\i\aSyntax\vFTP\v  \aNotes\vFTP--Notes\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                              FTP컴Examples
+ 
+To connect to a server:
+
+    ftp ftp.example.com
+
+Then, at the ftp> prompt, to copy README from the server as
+README.TXT and leave:
+
+    get README readme.txt
+    bye
+
+To log in as JSMITH and type the password when asked:
+
+    ftp ftp.example.com /user:jsmith *
  
                                      
 .context HELP
@@ -5759,6 +5926,106 @@ To rename a directory:
     move oldname newname
  
                                      
+.context NET
+.context Net
+.topic NET
+.freeze 3
+\i\aNotes\vNET--Notes\v  \aExamples\vNET--Examples\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                                     NET
+ 
+Connects a drive letter to a shared directory on another computer, or
+disconnects the drive letter.
+
+\bSyntax\p
+
+    NET USE drive: \\\\server\\share [password] [/USER:name] [/DOMAIN:name]
+            [/SMB1]
+    NET USE drive: /DELETE
+    NET USE
+
+NET USE on its own lists the drive letters that are connected.
+
+\bParameters\p
+
+drive:
+    The drive letter to use, from A: to P:.  The letter must not be in
+    use already.
+
+\\\\server\\share
+    The other computer's name or IP address, and the name of the
+    shared directory on it.
+
+password
+    The password for the share, or for the user named with /USER:.
+
+\bSwitches\p
+
+/USER:name
+    The user name to log in with.  /U: is the short form.
+
+/DOMAIN:name
+    The domain or workgroup of the user.  /D: is the short form.
+
+/SMB1
+    Uses the older SMB1 protocol without trying SMB2 and SMB3 first.
+
+/DELETE
+    Disconnects the drive letter.  /D is the short form.
+
+\bRelated Commands\p
+
+NET USE needs <\aSMBFS.SYS\vSMBFS.SYS\v>, and <\aTCPIP.SYS\vTCPIP.SYS\v> or <\aNETBEUI.SYS\vNETBEUI.SYS\v>.  To
+share this computer's files, see <\aSMBSRV\vSMBSRV\v>.
+ 
+                                     
+.context NET--Notes
+.topic NET--Notes
+.freeze 3
+\i\aExamples\vNET--Examples\v  \aSyntax\vNET\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                                NET컴Notes
+ 
+\bUsing the drive\p
+
+Once connected, the drive works like any other: DIR, TYPE, COPY, MD
+and the rest can be used on it.  See <\aSMBFS.SYS\vSMBFS.SYS\v> for how the server
+is found and what a network drive can do.
+
+\bHow long a connection lasts\p
+
+A drive stays connected until NET USE /DELETE or until the computer is
+restarted.  To connect the drive at every start, put the NET USE line
+in AUTOEXEC.BAT.
+ 
+                                     
+.context NET--Examples
+.topic NET--Examples
+.freeze 3
+\i\aSyntax\vNET\v  \aNotes\vNET--Notes\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                              NET컴Examples
+ 
+To connect K: to the FILES share on SERVER:
+
+    net use k: \\\\server\\files
+
+To log in as a user, with a password:
+
+    net use k: \\\\server\\files secret /user:jsmith /domain:office
+
+To see which drives are connected:
+
+    net use
+
+To disconnect K:
+
+    net use k: /delete
+ 
+                                     
 .context NETBEUI.SYS
 .context Netbeui.sys
 .topic NETBEUI.SYS
@@ -6128,7 +6395,7 @@ Uses part of the computer's memory as a disk drive.
 
 size
     Size of the RAM disk in kilobytes, from 4 to 2,096,896.  Default
-    is 64.  A larger size is reduced to 2,096,896.
+    is 256.  A larger size is reduced to 2,096,896.
 
 sector-size
     128, 256, 512 or 1024.  For backwards compatibility only.  PM-DOS
@@ -6397,7 +6664,8 @@ prepare and format a new hard disk.
 
 When the first hard disk has no partitions, Setup makes one partition
 of the free space and restarts the computer.  Setup then starts again
-by itself and formats the drive.  Disks of 512MB and more are
+by itself and formats the drive.  Disks up to 2GB are formatted
+FAT16, which every version of DOS can read.  Larger disks are
 formatted FAT32.  To divide the disk another way, leave Setup, run
 FDISK, and restart from the Setup disk.
 
@@ -6609,6 +6877,230 @@ machine off.
                             SHUTDOWN컴Examples
  
     shutdown
+ 
+                                     
+.context SMBFS.SYS
+.context Smbfs.sys
+.topic SMBFS.SYS
+.freeze 3
+\i\aNotes\vSMBFS.SYS--Notes\v  \aExamples\vSMBFS.SYS--Examples\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                                  SMBFS.SYS
+ 
+Lets PM-DOS use shared directories on other computers as drive
+letters.
+
+\bSyntax\p
+
+    DEVICE=[drive:][path]SMBFS.SYS
+
+\bParameters\p
+
+[drive:][path]
+    Location of the SMBFS.SYS file.
+
+\bRelated Commands\p
+
+Load the network card's driver, and <\aTCPIP.SYS\vTCPIP.SYS\v> or <\aNETBEUI.SYS\vNETBEUI.SYS\v>,
+on <\aDEVICE=\vDEVICE=\v> lines above this one.  To connect a drive letter, see
+<\aNET\vNET\v>.
+ 
+                                     
+.context SMBFS.SYS--Notes
+.topic SMBFS.SYS--Notes
+.freeze 3
+\i\aExamples\vSMBFS.SYS--Examples\v  \aSyntax\vSMBFS.SYS\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                             SMBFS.SYS컴Notes
+ 
+\bHow the server is found\p
+
+With TCP/IP, the server's name is looked up as <\aPING\vPING\v> looks it up.
+SMBFS.SYS connects with SMB2 or SMB3 first.  If the server does not
+answer, SMB1 is tried, for Windows for Workgroups, Windows NT 3.x and
+SMBSRV.
+
+When TCPIP.SYS is not loaded, or the server cannot be found with it,
+NetBEUI is used, with SMB1.  The server's name must then be up to 15
+letters with no dot.
+
+\bWhat a network drive can do\p
+
+Files can be read, written, copied, renamed and deleted, and
+directories made and removed.  Long names are cut to eight characters
+and a three-character extension.  Up to 16 files can be open on each
+drive, and a directory shows at most 256 entries.
+ 
+                                     
+.context SMBFS.SYS--Examples
+.topic SMBFS.SYS--Examples
+.freeze 3
+\i\aSyntax\vSMBFS.SYS\v  \aNotes\vSMBFS.SYS--Notes\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                           SMBFS.SYS컴Examples
+ 
+To use network drives over TCP/IP:
+
+    device=c:\\dos\\ne2000.sys
+    device=c:\\dos\\tcpip.sys
+    device=c:\\dos\\smbfs.sys
+ 
+                                     
+.context SMBSRV
+.context Smbsrv
+.topic SMBSRV
+.freeze 3
+\i\aNotes\vSMBSRV--Notes\v  \aExamples\vSMBSRV--Examples\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                                    SMBSRV
+ 
+Shares a directory of this computer with other computers on the
+network.
+
+\bSyntax\p
+
+    SMBSRV [drive:][path]
+
+\bParameters\p
+
+[drive:][path]
+    The directory to share.  Defaults to C:\\ if none specified.
+
+\bRelated Commands\p
+
+SMBSRV needs <\aTCPIP.SYS\vTCPIP.SYS\v> or <\aNETBEUI.SYS\vNETBEUI.SYS\v>, or both.  To use a
+directory shared by another computer, see <\aNET\vNET\v>.
+ 
+                                     
+.context SMBSRV--Notes
+.topic SMBSRV--Notes
+.freeze 3
+\i\aExamples\vSMBSRV--Examples\v  \aSyntax\vSMBSRV\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                              SMBSRV컴Notes
+ 
+\bConnecting to SMBSRV\p
+
+Other computers find SMBSRV by this computer's name, given to
+TCPIP.SYS or NETBEUI.SYS with /NAME=.  SMBSRV shows the name when it
+starts.  Any share name reaches the shared directory:
+
+    net use k: \\\\pmdos1\\c
+
+SMBSRV speaks SMB1 only.  Windows for Workgroups and other PM-DOS
+computers can connect to it.  Windows 10 and later have SMB1 turned
+off by default, so they cannot connect unless SMB1 is turned on.
+
+\bNo passwords\p
+
+SMBSRV accepts any user name and password.  Anyone on the network
+can read, change and delete the shared files, so share only a
+directory you are happy for others to change.
+
+\bOne computer at a time\p
+
+SMBSRV serves one computer at a time.
+
+\bStopping SMBSRV\p
+
+Press Ctrl+Break to stop SMBSRV.  A computer that is connected is
+disconnected.  Other keys are ignored.
+ 
+                                     
+.context SMBSRV--Examples
+.topic SMBSRV--Examples
+.freeze 3
+\i\aSyntax\vSMBSRV\v  \aNotes\vSMBSRV--Notes\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                             SMBSRV컴Examples
+ 
+To share drive C:
+
+    smbsrv
+
+To share only C:\\PUBLIC:
+
+    smbsrv c:\\public
+ 
+                                     
+.context SNTP
+.context Sntp
+.topic SNTP
+.freeze 3
+\i\aNotes\vSNTP--Notes\v  \aExamples\vSNTP--Examples\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                                     SNTP
+ 
+Sets the date and time from a time server on the network.
+
+\bSyntax\p
+
+    SNTP [server] [/S] [/Z:hours]
+
+\bParameters\p
+
+server
+    The time server: a name or an IP address.  Defaults to pool.ntp.org
+    if none specified.
+
+\bSwitches\p
+
+/S
+    Shows the server's time without setting the clock.
+
+/Z:hours
+    Hours to add to the server's time, which is UTC.  Use a minus sign
+    for places west of Greenwich, such as /Z:-5.
+
+\bRelated Commands\p
+
+SNTP needs <\aTCPIP.SYS\vTCPIP.SYS\v>.  To set the clock by hand, see <\aDATE\vDATE\v> and
+<\aTIME\vTIME\v>.
+ 
+                                     
+.context SNTP--Notes
+.topic SNTP--Notes
+.freeze 3
+\i\aExamples\vSNTP--Examples\v  \aSyntax\vSNTP\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                               SNTP컴Notes
+ 
+\bTime zones\p
+
+/Z: takes whole hours only.  Summer time is not allowed for, so add
+the extra hour to /Z: while it is in force.
+
+\bAt every start\p
+
+Put the SNTP line in AUTOEXEC.BAT to set the clock each time the
+computer starts.  SNTP waits up to five seconds for the server to
+answer.
+ 
+                                     
+.context SNTP--Examples
+.topic SNTP--Examples
+.freeze 3
+\i\aSyntax\vSNTP\v  \aNotes\vSNTP--Notes\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                              SNTP컴Examples
+ 
+To set the clock to UTC:
+
+    sntp
+
+To set the clock to US Eastern time from a server on the local
+network:
+
+    sntp 192.168.1.1 /z:-5
  
                                      
 .context SORT
@@ -6874,6 +7366,78 @@ To use a fixed address:
 To give the computer the name PMDOS1 on a Windows network:
 
     device=c:\\dos\\tcpip.sys /name=pmdos1
+ 
+                                     
+.context TELNET
+.context Telnet
+.topic TELNET
+.freeze 3
+\i\aNotes\vTELNET--Notes\v  \aExamples\vTELNET--Examples\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                                    TELNET
+ 
+Connects to another computer, so programs on that computer can be used
+from this one.
+
+\bSyntax\p
+
+    TELNET host [port] [/T:seconds]
+
+\bParameters\p
+
+host
+    The computer to connect to: a name or an IP address.
+
+port
+    The port to connect to.  Defaults to 23.
+
+\bSwitches\p
+
+/T:seconds
+    Disconnects when nothing has been typed or received for this many
+    seconds.
+
+\bRelated Commands\p
+
+TELNET needs <\aTCPIP.SYS\vTCPIP.SYS\v>.
+ 
+                                     
+.context TELNET--Notes
+.topic TELNET--Notes
+.freeze 3
+\i\aExamples\vTELNET--Examples\v  \aSyntax\vTELNET\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                              TELNET컴Notes
+ 
+\bLeaving TELNET\p
+
+Press Ctrl+] to disconnect.  TELNET also ends when the other computer
+closes the connection.
+
+\bThe screen\p
+
+What the other computer sends is shown as it arrives.  TELNET is not a
+full terminal, so a program that draws the whole screen may look
+wrong.  The arrow keys are sent as ANSI cursor keys.
+ 
+                                     
+.context TELNET--Examples
+.topic TELNET--Examples
+.freeze 3
+\i\aSyntax\vTELNET\v  \aNotes\vTELNET--Notes\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                             TELNET컴Examples
+ 
+To connect to a bulletin board:
+
+    telnet bbs.example.com
+
+To connect to port 2323 on another computer:
+
+    telnet 192.168.1.5 2323
  
                                      
 .context TREE
@@ -7213,6 +7777,165 @@ BIOS drives them, as it did before PM-DOS started.
                               USB컴Examples
  
     usb
+ 
+                                     
+.context WGET
+.context Wget
+.topic WGET
+.freeze 3
+\i\aNotes\vWGET--Notes\v  \aExamples\vWGET--Examples\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                                     WGET
+ 
+Fetches a file from a web server.
+
+\bSyntax\p
+
+    WGET url [/O:[drive:][path]filename] [/CA:[drive:][path]filename]
+         [/K] [/V]
+
+\bParameters\p
+
+url
+    The address of the file, starting http:// or https://, such as
+    http://example.com/index.html.
+
+\bSwitches\p
+
+/O:filename
+    Saves the file under this name.  Without /O:, the file is shown on
+    the screen, so it can be redirected or piped.
+
+/CA:filename
+    The file of root certificates to check HTTPS servers against.
+    Defaults to CACERT.BND.
+
+/K
+    Connects to an HTTPS server without checking its certificate.
+
+/V
+    Says whether the server's certificate was checked.
+
+\bRelated Commands\p
+
+WGET needs <\aTCPIP.SYS\vTCPIP.SYS\v>.  To copy files to and from an FTP server,
+see <\aFTP\vFTP\v>.
+ 
+                                     
+.context WGET--Notes
+.topic WGET--Notes
+.freeze 3
+\i\aExamples\vWGET--Examples\v  \aSyntax\vWGET\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                               WGET컴Notes
+ 
+\bCertificates\p
+
+For an https:// address, WGET checks the server's certificate against
+the root certificates in CACERT.BND.  If the check fails, nothing is
+fetched and the reason is shown.
+
+WGET looks for the file named by the CACERT environment variable, then
+for CACERT.BND in the current directory and in each directory on the
+PATH.  Setup puts CACERT.BND with the other PM-DOS files.  If no file
+is found, WGET
+fetches anyway and warns that the certificate was not checked.
+
+\bMoved files\p
+
+WGET does not follow a server that says a file has moved.  With /O:,
+the saved message shows the server's answer, such as HTTP 301: use the
+new address instead.
+ 
+                                     
+.context WGET--Examples
+.topic WGET--Examples
+.freeze 3
+\i\aSyntax\vWGET\v  \aNotes\vWGET--Notes\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                              WGET컴Examples
+ 
+To show a web page on the screen:
+
+    wget http://example.com/
+
+To save a file:
+
+    wget https://example.com/files/tools.zip /o:tools.zip
+
+To save a page with redirection:
+
+    wget http://example.com/ > page.htm
+ 
+                                     
+.context X87EMU.SYS
+.context X87emu.sys
+.topic X87EMU.SYS
+.freeze 3
+\i\aNotes\vX87EMU.SYS--Notes\v  \aExamples\vX87EMU.SYS--Examples\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                                  X87EMU.SYS
+ 
+Does the work of a math coprocessor for PM-DOS programs on a computer
+that has none.
+
+\bSyntax\p
+
+    DEVICE=[drive:][path]X87EMU.SYS
+
+\bParameters\p
+
+[drive:][path]
+    Location of the X87EMU.SYS file.
+
+\bRelated Commands\p
+
+X87EMU.SYS is loaded with <\aDEVICE=\vDEVICE=\v>.
+ 
+                                     
+.context X87EMU.SYS--Notes
+.topic X87EMU.SYS--Notes
+.freeze 3
+\i\aExamples\vX87EMU.SYS--Examples\v  \aSyntax\vX87EMU.SYS\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                            X87EMU.SYS컴Notes
+ 
+\bWhich computers need X87EMU.SYS\p
+
+A 386 without a 387, and a 486SX, have no math coprocessor.  On these
+computers X87EMU.SYS carries out the floating-point instructions of
+PM-DOS programs.  On a computer with a coprocessor, X87EMU.SYS does not
+stay loaded and shows no message, so one CONFIG.SYS works on any
+computer.  The CONFIG.SYS that PM-DOS comes with, and the one Setup
+writes, load X87EMU.SYS.
+
+\bPrograms written for MS-DOS\p
+
+X87EMU.SYS is for PM-DOS programs only.  Programs written for MS-DOS,
+and DPMI programs, use their own emulators, as they do under MS-DOS.
+
+\bMemory\p
+
+X87EMU.SYS uses about 20K of extended memory and no conventional
+memory.
+ 
+                                     
+.context X87EMU.SYS--Examples
+.topic X87EMU.SYS--Examples
+.freeze 3
+\i\aSyntax\vX87EMU.SYS\v  \aNotes\vX87EMU.SYS--Notes\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                           X87EMU.SYS컴Examples
+ 
+To load the emulator:
+
+    device=c:\\dos\\x87emu.sys
  
                                      
 .context XARC
@@ -7872,7 +8595,7 @@ boot drive.
 .context Break (CONFIG.SYS)
 .topic BREAK=
 .freeze 3
-\i\aExamples\vBREAK=--Examples\v\p
+\i\aNotes\vBREAK=--Notes\v  \aExamples\vBREAK=--Examples\v\p
 \b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
  
                                     BREAK=
@@ -7885,19 +8608,42 @@ Sets the extended Ctrl+C checking flag at startup.
 
 \bParameters\p
 
-ON | OFF
-    The flag programs read with INT 21h AX=3300h.  OFF without the
-    line.  PM-DOS itself does not yet look at the flag.
+ON
+    PM-DOS checks for Ctrl+C during disk work as well as during screen
+    and keyboard work, so Ctrl+C can stop a program that is busy with
+    files.
+
+OFF
+    PM-DOS checks for Ctrl+C during screen and keyboard work only.
+    This is the default setting.
 
 \bRelated Commands\p
 
-The <\aBREAK\vBREAK\v> command changes it at the prompt.
+The <\aBREAK\vBREAK\v> command changes the setting at the prompt.
+ 
+                                     
+.context BREAK=--Notes
+.topic BREAK=--Notes
+.freeze 3
+\i\aExamples\vBREAK=--Examples\v  \aSyntax\vBREAK=\v\p
+\b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
+ 
+                              BREAK=컴Notes
+ 
+\bCtrl+Break\p
+
+Ctrl+Break works like Ctrl+C, but goes ahead of any keys already
+typed.
+
+\bPrograms\p
+
+Programs read the setting with INT 21h AX=3300h.
  
                                      
 .context BREAK=--Examples
 .topic BREAK=--Examples
 .freeze 3
-\i\aSyntax\vBREAK=\v\p
+\i\aSyntax\vBREAK=\v  \aNotes\vBREAK=--Notes\v\p
 \b\i컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴컴\p
  
                              BREAK=컴Examples

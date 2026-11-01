@@ -505,7 +505,7 @@ br_scale:
         call    scr_at
         mov     al,'0'
         call    scr_putc
-        mov     eax,dword ptr [dsk_rec+DSK_TOTAL]
+        mov     eax,[tu_barend]
         shr     eax,1
         mov     ebx,1
         call    fmt_mb
@@ -516,7 +516,7 @@ br_scale:
         mov     ebx,ROW_SCALE
         call    scr_at
         call    scr_puts
-        mov     eax,dword ptr [dsk_rec+DSK_TOTAL]
+        mov     eax,[tu_barend]
         mov     ebx,1
         call    fmt_mb
         call    sd_len
@@ -540,7 +540,7 @@ br_cells:
         push    ebx
         push    edx
         push    esi
-        mov     ebx,dword ptr [dsk_rec+DSK_TOTAL]
+        mov     ebx,[tu_barend]
         cmp     ebx,BAR_W
         jae     brc_tot
         mov     ebx,BAR_W               ; a disk smaller than the bar is not

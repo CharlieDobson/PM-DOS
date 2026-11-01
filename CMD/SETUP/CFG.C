@@ -21,7 +21,10 @@
  *   - the lines of [config.add] are added if missing;
  *   - a DEVICE= line for SETVER.EXE is added if none loads it.  PM-DOS
  *     reports its own version, 0.x, and SETVER's table tells the DOS
- *     programs 6.22 (its "*" entry) - without it they refuse to run.
+ *     programs 6.22 (its "*" entry) - without it they refuse to run;
+ *   - and one for X87EMU.SYS, the coprocessor emulator for a 386 or a
+ *     486SX.  It stays loaded only on a machine that has no coprocessor,
+ *     and says nothing on one that has.
  * New lines go at the top of CONFIG.SYS, before any [menu] block, where
  * every configuration reads them.
  *
@@ -561,7 +564,7 @@ static int upgrade_config( int full, int *emm_ems )
     LINES lines;
     char path[PATHLEN], word[24], name[16], line[LINELEN];
     const char *val;
-    int i, j, top = 0, have_country = 0, have_setver = 0, rc;
+    int i, j, top = 0, have_country = 0, have_setver = 0, have_x87 = 0, rc;
 
     root_path( path, "CONFIG.SYS" );
     if ( lines_read( &lines, path ) ) {
@@ -597,6 +600,9 @@ static int upgrade_config( int full, int *emm_ems )
                 if ( !str_icmp( name, "SETVER.EXE" ) ) {
                     have_setver = 1;
                 }
+                if ( !str_icmp( name, "X87EMU.SYS" ) ) {
+                    have_x87 = 1;
+                }
                 device_path( &lines, i, val, name );
             }
         }
@@ -607,6 +613,10 @@ static int upgrade_config( int full, int *emm_ems )
         lines_insert( &lines, top++, line );
         if ( !have_setver ) {
             sfmt( line, sizeof( line ), "DEVICE=%s\\SETVER.EXE", opt.dosdir );
+            lines_insert( &lines, top++, line );
+        }
+        if ( !have_x87 ) {
+            sfmt( line, sizeof( line ), "DEVICE=%s\\X87EMU.SYS", opt.dosdir );
             lines_insert( &lines, top++, line );
         }
     }

@@ -2807,7 +2807,7 @@ msgCfgStep      db  'Step mode: confirm each line of CONFIG.SYS and AUTOEXEC.BAT
 msgDevNoFile    db  'Bad or missing device driver',13,10,0
 msgDevNoMem     db  'Not enough memory for device driver',13,10,0
 msgDevUnits     db  'Device driver has no units',13,10,0
-msgDevInit      db  'Device driver failed to initialise',13,10,0
+msgDevInit      db  'Device driver failed to initialize',13,10,0
 msgDevFull      db  'Too many device drivers',13,10,0
 msgNoUmb        db  'DOS=UMB: no upper memory is available on this machine',13,10,0
 msgNoEms        db  'EMS: no 64K page frame is available on this machine',13,10,0

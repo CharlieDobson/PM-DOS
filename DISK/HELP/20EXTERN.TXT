@@ -1,4 +1,4 @@
-#! 20EXTERN.TXT - the external commands, ACROREAD to FORMAT.  Each
+#! 20EXTERN.TXT - the external commands, ACROREAD to FTP.  Each
 #! topic's switches are the ones the program's own /? lists.
 #topic ACROREAD|Acroread
 Shows a PDF document on the screen, a page at a time, as a picture or
@@ -1075,6 +1075,8 @@ n
 
 tt
     A partition type, in hexadecimal: 06 for FAT16, 0B for FAT32.
+    FAT16 or FAT32 can be given instead, and FDISK picks the type
+    that suits the partition.
 
 {b}Switches{p}
 
@@ -1087,7 +1089,8 @@ tt
 
 /C d:p [n [tt]]
     Creates partition p on disk d in the largest free gap, or only n
-    of it, and of type tt.
+    of it, and of type tt.  FAT16 or FAT32 in place of n fills the
+    gap.
 
 /D d:p
     Deletes the partition.
@@ -1137,6 +1140,16 @@ FDISK moves and resizes a partition with its file system inside, and
 refuses when the files would not survive it.  Back the disk up first
 all the same.
 
+{b}FAT16 or FAT32{p}
+
+A new partition between 512MB and 2GB can be either, and FDISK asks
+which, with FAT16 selected.  FAT16 works with every version of DOS.
+FAT32 uses smaller clusters, but needs PM-DOS or MS-DOS 7.1 and
+later.  Smaller partitions are always FAT16 and larger ones FAT32.
+
+FDISK does not use the last cylinder of the disk, which the BIOS
+keeps for itself.  Other versions of DOS leave it unused too.
+
 {b}Letters{p}
 
 Drive letters are given out at boot: a partition made or deleted
@@ -1175,6 +1188,10 @@ To see every disk's partitions:
 To make a 100MB FAT16 partition in the free space on the second disk:
 
     fdisk /c 1:1 100m 06
+
+To fill the free space on the second disk with a FAT32 partition:
+
+    fdisk /c 1:1 fat32
 
 To make the first partition of the first disk the one that boots:
 
@@ -1309,6 +1326,13 @@ has just made - gets one laid out for its size: FAT12, FAT16 or FAT32,
 with the cluster size MS-DOS and Windows would have chosen.  See
 [[USB]].
 
+{b}A new hard disk partition{p}
+
+A partition with no file system gets the one its partition type
+names: FAT32 for type 0B or 0C, otherwise FAT16, or FAT12 when the
+partition is small.  Partitions over 2GB always get FAT32.  /FS:
+overrides this.
+
 {b}A disk that has a format already{p}
 
 The layout is kept and the tables are written afresh.  Every data
@@ -1357,3 +1381,111 @@ To make a bootable diskette:
 To format a hard disk partition quickly:
 
     format d: /q
+#topic FTP|Ftp
+Copies files to and from another computer with the File Transfer
+Protocol.
+
+{b}Syntax{p}
+
+    FTP [host] [/USER:name [password | *]]
+
+{b}Parameters{p}
+
+host
+    The computer to connect to: a name or an IP address.  Without host,
+    FTP starts at its ftp> prompt, ready for the open command.
+
+{b}Switches{p}
+
+/USER:name [password | *]
+    Logs in as name without asking for a user name.  The password
+    goes straight after the name.  With * or no password, FTP asks for
+    the password.  Without host, the name is used for the first open.
+
+{b}Commands at the ftp> prompt{p}
+
+open host [port]
+    Connects to host.  Port defaults to 21.
+
+ls [path]  or  dir [path]
+    Lists the files on the server.
+
+cd directory
+    Changes the directory on the server.
+
+pwd
+    Shows the directory on the server.
+
+get remote [local]
+    Copies a file from the server.  Without local, the copy has the
+    same name as the file on the server.
+
+put local [remote]
+    Copies a file to the server.  Without remote, the file keeps its
+    name.
+
+ascii
+    Copies files as text.
+
+binary  or  bin
+    Copies files byte for byte, for programs and other files that are
+    not text.  This is the default setting.
+
+user name [password | *]
+    Logs in again as a different user.  With * or no password, FTP
+    asks for the password.
+
+close
+    Disconnects from the server.  FTP keeps running.
+
+bye, quit  or  exit
+    Disconnects and leaves FTP.
+
+help  or  ?
+    Lists the commands.
+
+{b}Related Commands{p}
+
+FTP needs [[TCPIP.SYS]].  To fetch a file from a web server, see
+[[WGET]].
+#notes
+{b}Logging in{p}
+
+FTP asks for a user name and a password when it connects, unless
+/USER: gives them.  Press ENTER at the user name to log in as
+anonymous.  The password does not show on the screen as it is typed.
+
+A password on the command line can be seen by anyone who reads the
+batch file it is in.  Use * to type it instead.
+
+{b}Files that are already there{p}
+
+GET replaces a file of the same name in the current directory without
+asking.
+
+{b}Passive mode{p}
+
+FTP always uses passive mode.  A server that does not allow passive
+mode cannot send listings or files to it.
+
+{b}Commands from a file{p}
+
+FTP reads its commands from standard input, so a file of commands can
+be redirected into it.  The first lines of the file answer the user
+name and password questions.
+
+    ftp ftp.example.com < getfile.txt
+#examples
+To connect to a server:
+
+    ftp ftp.example.com
+
+Then, at the ftp> prompt, to copy README from the server as
+README.TXT and leave:
+
+    get README readme.txt
+    bye
+
+To log in as JSMITH and type the password when asked:
+
+    ftp ftp.example.com /user:jsmith *

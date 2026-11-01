@@ -84,7 +84,7 @@ if "%TGT%"=="" goto :gottgt
 for %%T in (debug ata ataq nohost iso fdd img move i13 vfy rmbisect rmmark rmexec rmlow rmhigh cap16 ^
   lptcap lpthigh lptpad rmlowm vdm vdmdbg v86 trace watch watchq nomode ^
   tracenm watchnm lpt stamp freeze stampfrz lptfrz lptfz lptq lpt0 lptnm ^
-  lptlow kbionm calls kbio rme9 rme9lpt rme9com irqtest fpuirq eager32 trust32 hang scsi6) do echo [%TGT%]| find /i "[%%T]" > nul && set TGT=%%T
+  lptlow kbionm calls kbio rme9 rme9lpt rme9com irqtest fpuirq x87emu eager32 trust32 hang scsi6) do echo [%TGT%]| find /i "[%%T]" > nul && set TGT=%%T
 :gottgt
 if "%TGT%"=="debug" set DEFS=-dPMDOS_DEBUG
 if "%TGT%"=="ata"   set DEFS=-dPMDOS_DEBUG -dATA_DEBUG
@@ -111,6 +111,18 @@ rem exception 16.  The line's half of IO\FPU.INC is otherwise run only
 rem on a 386 with a 387 in it, and no emulator here will boot as one
 rem unattended.  TOOLS\FPU86.PS1 is the rig for both kernels.
 if "%TGT%"=="fpuirq" set DEFS=-dFPU_BYIRQ
+rem "x87emu" treats the coprocessor as absent whatever is fitted, so
+rem that X87EMU.SYS loads and a native program's floating point goes
+rem through it (DRV\X87EMU): CONFIG.SYS needs DEVICE=X87EMU.SYS for this
+rem kernel as for a 386 or a 486SX.  Every machine and emulator here has a coprocessor, so
+rem this is the only way that emulator is ever run - and the real one
+rem is left to the DOS boxes, which is how a machine without one treats
+rem them too.  Left to them bare: its errors are not routed, its state
+rem is not kept across EXEC and MMX is an invalid opcode, so FPUTEST,
+rem FPU32, DPMIFPU and DPMIFP32 fail under this kernel, as they say why.
+rem TESTS\X87TEST.C in the PM-DOS SDK (S:\CPP\PMDOS-SDK, its own
+rem project) is the emulator's own test.
+if "%TGT%"=="x87emu" set DEFS=-dX87_FORCE
 rem "eager32" and "trust32" are a drive that says it does doubleword
 rem I/O, on every machine: IDE32=AUTO takes each disk as a candidate for
 rem 32-bit PIO, as it does one whose IDENTIFY word 48 is set.  "eager32"
@@ -371,7 +383,7 @@ if exist NLS\*.obj del /q NLS\*.obj
 rem ...and the 32-bit drivers under DRV\, the shared base and a
 rem directory each.
 if exist DRV\*.obj del /q DRV\*.obj
-for %%D in (NE2000 RTL8139 PCNET TULIP EEPRO100 E1000 WD80X3 EL3C501 EL3C509 EL3C90X TCPIP NETBEUI RAMDISK) do if exist DRV\%%D\*.obj del /q DRV\%%D\*.obj
+for %%D in (NE2000 RTL8139 PCNET TULIP EEPRO100 E1000 WD80X3 EL3C501 EL3C509 EL3C90X TCPIP NETBEUI RAMDISK X87EMU) do if exist DRV\%%D\*.obj del /q DRV\%%D\*.obj
 
 rem FSIZE asserts the sizes the checks below used to test with FOR's
 rem "~z" size modifier.  That modifier is a cmd.exe command EXTENSION:
@@ -429,20 +441,27 @@ wasm -q %DEFS% -i=..\INC -i=..\BOOT iorm.asm    || goto :fail
 wlink form raw bin option offset=0x0     name iorm.bin file iorm.obj  || goto :fail
 wasm -q %DEFS% -i=..\INC iopm.asm               || goto :fail
 rem 0x200000, not 0x22000: PMIO's protected-mode half lives above 1MB
-rem now, and the stub blits it up there - 128K of it since the USB
-rem drivers took the body past 64K, which is why the IDT and the arena
-rem sit 64K higher than they did.  See the map in PMDOS.INC.
+rem now, and the stub blits it up there - 192K of it (128K since the USB
+rem drivers took the body past 64K, 192K since the x87 emulator was in
+rem it for a day), and the IDT and the arena follow IO_LIMIT.  See the
+rem map in PMDOS.INC.  The emulator is X87EMU.SYS now (DRV\X87EMU).
 wlink form raw bin option offset=0x200000 name iopm.bin file iopm.obj || goto :fail
 cd ..
-rem 4096, not 8192: the stub was halved in 0.24 and the four kilobytes
-rem went to the DOS box.  The code is 2076 bytes, the GDT sits at 0C00h
-rem and the globals at 0F00h, so this is a real ceiling now and not a
-rem round number - if it trips, the stub has outgrown its home.
-TOOLS\FSIZE.EXE -eq 4096 IO\IORM.BIN "fix the ORG padding" || goto :fail
+rem The stub's RESIDENT part is exactly 4096 bytes - halved in 0.24, and
+rem the four kilobytes went to the DOS box - and IORM.ASM checks that
+rem with .ERRE (res_mark).  The cold start follows it in IORM.BIN and is
+rem never copied down, so the file is longer than 4K; this ceiling is
+rem only there to notice the cold start growing.  IOPM.BIN follows
+rem IORM.BIN with no padding, wherever it ends.
+TOOLS\FSIZE.EXE -max 8192 IO\IORM.BIN "the resident 4K and the cold start" || goto :fail
 rem The stub blits exactly IO_PM_MAX bytes up past 1MB.  If the body
 rem outgrows that, the tail is silently left behind and the failure
 rem happens later, somewhere else, in whatever routine fell off.
-TOOLS\FSIZE.EXE -max 131072 IO\IOPM.BIN "the IO_PM_MAX the stub blits" || goto :fail
+TOOLS\FSIZE.EXE -max 196608 IO\IOPM.BIN "the IO_PM_MAX the stub blits" || goto :fail
+rem ...and AHCI.INC's tables go in what the file leaves of that, 1K
+rem aligned: IO_PM_MAX - 400h - AHM_NEED, which IOPM.ASM works out and
+rem checks is this number (IOPMEND_MAX).
+TOOLS\FSIZE.EXE -max 177152 IO\IOPM.BIN "room past PMIO for the AHCI tables" || goto :fail
 copy /b IO\IORM.BIN+IO\IOPM.BIN BIN\PMIO.SYS >nul
 
 echo === PMDOS.SYS ===
@@ -462,10 +481,11 @@ rem _KBSS that has a value makes this file 1.4MB and the check below
 rem stops the build; with it, the value is dropped and nothing says so.
 wlink form raw bin name ..\BIN\PMDOS.SYS file dosmain.obj order clname CODE offset=0x110000 clname KBSS offset=0x1C9000 || goto :fail
 cd ..
-rem PMDOS.SYS runs from DOS_BASE to SHELL_PSP and the shell's slot is
-rem immediately above it.  Nothing complains if it overruns; the shell
-rem simply gets loaded over the end of the kernel.
-TOOLS\FSIZE.EXE -max 196608 BIN\PMDOS.SYS "the 192K between DOS_BASE and SHELL_PSP" || goto :fail
+rem PMDOS.SYS runs from DOS_BASE to DOS_LIMIT, and the page directory is
+rem immediately above it.  Nothing complains if it overruns; PMIO
+rem simply builds the page tables over the end of the kernel.  448K
+rem since the shell's slot left 140000h for the arena (2026-10-31).
+TOOLS\FSIZE.EXE -max 458752 BIN\PMDOS.SYS "the 448K between DOS_BASE and DOS_LIMIT" || goto :fail
 
 echo === D32STUB.EXE (the MS-DOS program in front of every command) ===
 rem What real MS-DOS runs when it is given a PM-DOS command: one
@@ -731,11 +751,14 @@ rem the PM-DOS SMB1 client, Samba).  SMBSRV is the transport- and FS-
 rem agnostic protocol core (NEGOTIATE..FIND..READ/WRITE); SMBSRVDOS is the
 rem INT 21h filesystem back end and the SOCKLIB listen/accept front end.
 rem SMBSRVHOST.C is the host proof (Win32 files + Winsock, wcl386 -bt=nt).
+rem SRVBRK.ASM is its INT 23h handler: Ctrl+Break stops it cleanly.
 cd CMD\NET\SMB
+if exist srvbrk.obj del srvbrk.obj
+wasm -q srvbrk.asm                               || goto :fail
 wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\..\INC smbsrv.c || goto :fail
 wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\..\INC -i=.. smbsrvdos.c || goto :fail
 wlink form raw bin option offset=0x2000 name ..\..\..\BIN\SMBSRV.EXE ^
-    file ..\netstart.obj,..\socklib.obj,smbsrvdos.obj,smbsrv.obj ^
+    file ..\netstart.obj,..\socklib.obj,smbsrvdos.obj,smbsrv.obj,srvbrk.obj ^
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
 cd ..\..\..
 
@@ -2176,6 +2199,22 @@ wlink form raw bin option offset=0x10000000 name DRV\SMBFS\smbfs_1.bin ^
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
 TOOLS\D32DRV.EXE BIN\SMBFS.SYS TOOLS\DRVSTUB.BIN DRV\SMBFS\smbfs_0.bin DRV\SMBFS\smbfs_1.bin || goto :fail
 
+echo === X87EMU.SYS (the coprocessor emulator, for a 386 or a 486SX) ===
+rem The emulator that was in PMIO.SYS for a day: X87DRV.ASM is the
+rem driver around it - header, table, INIT, fpu_uok - and is linked
+rem first so the header starts the image; the C behind it is built as
+rem it was in PMIO: flat, ring 0, no library and no stack probes
+rem (-zl -zls -s), its constant tables in the code (-zc).  Linked twice
+rem + D32DRV like RAMDISK.SYS.  INIT refuses quietly where there is a
+rem coprocessor (NDI_QUIET), so every CONFIG.SYS PM-DOS ships names it.
+cd DRV\X87EMU
+wasm -q -i=..\..\INC x87drv.asm                  || goto :fail
+for %%C in (x87emu x87ops x87fn x87num) do wcc386 -q -mf -3r -os -s -zl -zls -zc -wx -we %%C.c || goto :fail
+wlink form raw bin option offset=0x0 name x87emu0.bin file x87drv.obj,x87emu.obj,x87ops.obj,x87fn.obj,x87num.obj || goto :fail
+wlink form raw bin option offset=0x10000000 name x87emu1.bin file x87drv.obj,x87emu.obj,x87ops.obj,x87fn.obj,x87num.obj || goto :fail
+cd ..\..
+TOOLS\D32DRV.EXE BIN\X87EMU.SYS TOOLS\DRVSTUB.BIN DRV\X87EMU\X87EMU0.BIN DRV\X87EMU\X87EMU1.BIN || goto :fail
+
 echo === RAMDISK.SYS (a RAM disk above the megabyte: a 32-bit disk driver) ===
 rem The first NDTF_DISK driver (INC\NDRV.INC): its unit is a drive letter
 rem the kernel reads and writes by calling it, and RMDOS by moving the
@@ -2513,7 +2552,7 @@ TOOLS\MKDISK.EXE IMAGES\PMDOS.IMG BIN\BOOT.BIN -nolfn BIN\PMIO.SYS BIN\PMDOS.SYS
     BIN\CHOICE.COM BIN\MORE.COM BIN\SORT.COM BIN\SYS.COM BIN\FORMAT.COM BIN\MEM.EXE ^
     BIN\FDISK.EXE BIN\MOUNT.EXE BIN\CACHE.EXE BIN\UNDELETE.EXE BIN\CDEX.EXE BIN\MOVE.EXE BIN\DELTREE.EXE BIN\TREE.EXE BIN\ATTRIB.EXE BIN\CHKDSK.EXE BIN\LABEL.EXE BIN\XCOPY.EXE BIN\EDIT.EXE ^
     BIN\FC.EXE BIN\FIND.EXE BIN\DISKCOPY.COM BIN\DISKCOMP.COM BIN\ISAPNP.EXE BIN\SHUTDOWN.EXE BIN\PMD.EXE BIN\DOSSHELL.EXE BIN\SCANDISK.EXE BIN\DEFRAG.EXE ^
-    BIN\KEYB.COM BIN\COUNTRY.SYS BIN\KEYBOARD.SYS BIN\USB.EXE BIN\SETVER.EXE BIN\ANSI.SYS BIN\RAMDISK.SYS ^
+    BIN\KEYB.COM BIN\COUNTRY.SYS BIN\KEYBOARD.SYS BIN\USB.EXE BIN\SETVER.EXE BIN\ANSI.SYS BIN\RAMDISK.SYS BIN\X87EMU.SYS ^
     BIN\RMDOS.SYS BIN\RMCD.SYS README.TXT DISK\CONFIG.SYS DISK\SCANDISK.INI DISK\AUTOEXEC.BAT || goto :fail
 
 rem === PMDOS2.IMG - the help disk (HELP.IMG until 2026-10-25) ===

@@ -23,6 +23,15 @@
 
 FATBUF_SIZE     EQU     8192            ; whole-FAT cache (FAT12 only)
 
+; A diskette's media check (flp_chkmedia), until PMDOS.INC has these
+; beside the other FDF_* numbers.  IO\FLOPPY.INC carries the same
+; lines, and the guard keeps both right once PMDOS.INC does.
+IFNDEF FDF_CHANGED
+FDF_CHANGED     EQU     6       ; EDI -> the FAT's first sector or 0 ->
+                                ; AH = 0 the same disk, 1 another one
+FDF_MOUNTED     EQU     7       ; ESI -> the boot sector just mounted
+ENDIF
+
 ; What the entry an exFAT volume's dir_seek last made was made from
 ; (EXFAT.INC).  Here because de_getclus, below, asks.
 XVK_END         EQU     0               ; the end of the directory
@@ -1091,6 +1100,17 @@ fm_notcd:
         mov     al,[ebx+DRV_BIOS]
         mov     [fat_drive],al
 
+        ; A DISKETTE IS MOUNTED FROM NOTHING: the geometry FDF_SETGEO
+        ; gave the block layer for the last disk is the BIOS's to say
+        ; again, until this disk's boot sector says otherwise.  Without
+        ; it a disk whose BPB fails the checks below was read with the
+        ; previous disk's tracks.  Any other drive number is refused by
+        ; IOS_FLOPPY, harmlessly, which is cheaper than asking first.
+        push    eax
+        mov     ah,FDF_FORGET
+        call    dword ptr ds:[IOS_FLOPPY]
+        pop     eax
+
         ; A USB LETTER HAS NO FIXED PLACE ON ITS DISK: the disk in the
         ; slot now says where the volume is (usb_locate, USBDRV.INC),
         ; and reading its sector 0 is the first access, so an empty
@@ -1112,6 +1132,13 @@ fm_placed:
         mov     edi,OFFSET sec_buf
         call    disk_read
         jc      fm_iofail
+
+        ; and a diskette's is kept, for flp_chkmedia to know it by -
+        ; and a 06h this read met is the change being mounted for, and
+        ; spent.  AL is still the drive; IOS_FLOPPY refuses any other.
+        mov     ah,FDF_MOUNTED
+        mov     esi,OFFSET sec_buf
+        call    dword ptr ds:[IOS_FLOPPY]
 
 ;--- or no BPB at all, because it is exFAT ---------------------------
 ; Its boot sector is zero where a BPB would be, and says so in the
@@ -1993,12 +2020,82 @@ icm_same:
 icm_out:
         ret
 
+;---------------------------------------------------------------------
+; flp_chkmedia - a mounted diskette is asked whether it is still the
+;                same disk, and forgotten if it is not.  All registers
+;                preserved.
+;
+; A DISKETTE WAS MOUNTED ONCE AND NEVER AGAIN, and that was the 720K
+; disk and the Norton disk on a real 5x86: DIR of the first was right,
+; and DIR of the second, every time, was the second disk read with the
+; first one's layout - its root where the 720K root was, its FAT the
+; 720K FAT still in fat_buf, its tracks nine sectors long because
+; FDF_SETGEO had said so for the first.  Nothing ever asked.  Setup
+; was right only because it remounts through 21h/F1h AL=2 after every
+; disk it asks for, and emulators never showed it because a test swaps
+; images between boots, not between commands.
+;
+; THIS IS MS-DOS'S MEDIA CHECK, and the block layer does most of it,
+; because PMIO has the room and PMDOS.SYS has not (FDF_CHANGED, in
+; IO\FLOPPY.INC).  Where the disk cannot have changed - a transfer
+; within two seconds and no 06h from the BIOS since, or a change line
+; that says no - the cost is one call into PMIO and no BIOS call at
+; all.  Where it can, the boot sector is read, round the cache and with
+; no critical error, and compared with the one the letter was mounted
+; from (FDF_MOUNTED, in fat_mount): the BPB, and the serial and label
+; where the extended BPB has them.  A FAT12 volume with nothing owed to
+; its FAT has its first FAT sector compared with fat_buf as well, out
+; of the same transfer, because two disks formatted alike before
+; serial numbers existed have the same boot sector and different files
+; - and fat_buf is the copy that would be written back onto the wrong
+; one.
+;
+; A DIFFERENT DISK IS FORGOTTEN, writing nothing: what the volume layer
+; owes the old one must not be written onto the new one.  Its cache
+; blocks go here; its FAT state and its geometry go in fat_mount
+; (fm_start, fm_notcd), which vol_select reaches next because fat_ok is
+; 0, before anything can be flushed; and the mount puts the current
+; directory back at the root.  The files open on it are closed
+; from under their programs as a USB disk's are (sft_dropdrv), which
+; is what DOS's "Invalid disk change" came down to.
+;---------------------------------------------------------------------
+flp_chkmedia:
+        pushad
+        mov     ebx,OFFSET vol_state
+        cmp     byte ptr [ebx+(fat_ok-vol_state)],0
+        je      fkm_same                ; nothing mounted, nothing to lose
+        cmp     byte ptr [ebx+(vol_fs-vol_state)],FS_ISO
+        je      fkm_same                ; a CD's unit 0 is not drive 0
+        xor     edi,edi
+        cmp     byte ptr [ebx+(fat_type-vol_state)],12
+        jne     fkm_ask
+        cmp     byte ptr [ebx+(fat12_dirty-vol_state)],0
+        jne     fkm_ask
+        cmp     dword ptr [ebx+(fat_fatlba-vol_state)],1
+        jne     fkm_ask
+        mov     edi,OFFSET fat_buf      ; what the FAT's first sector says
+fkm_ask:
+        mov     al,[ebx+(fat_drive-vol_state)]
+        mov     ah,FDF_CHANGED          ; CF for every drive but 0 and 1
+        call    dword ptr ds:[IOS_FLOPPY]
+        jc      fkm_same
+        or      ah,ah
+        jz      fkm_same
+        call    cache_dropdrv           ; its sectors are the last disk's
+        mov     al,[cur_vol]
+        call    sft_dropdrv             ; and so are its open files
+        mov     byte ptr [fat_ok],0
+fkm_same:
+        popad
+        ret
+
 vol_select:
         pushad
         call    vol_swap
         call    iso_chkmedia            ; the disc may not be the one this
                                         ; letter was mounted from
         call    usb_chkmedia            ; nor the stick (USBDRV.INC)
+        call    flp_chkmedia            ; nor the diskette
         cmp     byte ptr [fat_ok],0
         jne     vs_ok
         call    fat_mount               ; not mounted - try it now.  Which

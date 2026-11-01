@@ -107,8 +107,8 @@ win_sdasync:
 
         ; THE CURRENT PROCESS, AS A REAL-MODE PSP SEGMENT, WHICH A
         ; NATIVE PROGRAM DOES NOT HAVE.  A DOS box's PSP is in
-        ; conventional memory and converts; a 32-bit program's is at
-        ; 140000h or 180000h and there is no segment:offset that names
+        ; conventional memory and converts; a 32-bit program's is in
+        ; the arena above 2MB and there is no segment:offset that names
         ; it.  So it reads 0000 rather than the bottom sixteen bits of
         ; an address above the megabyte, which is a number that means
         ; something else and would be followed.

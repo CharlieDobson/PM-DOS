@@ -15,6 +15,11 @@
 ; it put it.  PLOG_LEN bytes, laid out by the PLM_, PLI_ and PLP_
 ; equates in PMDOS.INC, and \TESTS\HWPROBE prints them.
 ;
+; An IDE position where nothing kept what was written to its sector
+; count and LBA 7:0 registers (ata_devchk) has what they read back in
+; PLI_SIG instead of a signature, and bit 20h of PLI_SEEN set rather
+; than 08h.
+;
 ; It is a record and nothing reads it to make a decision.
 ;
 ; Included by IOPM.ASM, before MOUSE.INC and ATA.INC.

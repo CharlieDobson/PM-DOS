@@ -146,12 +146,12 @@ Type BREAK on its own to see the setting.
 {b}Parameters{p}
 
 ON
-    Programs are told Ctrl+C is to be checked for during disk work as
-    well as during screen and keyboard work.
+    PM-DOS checks for Ctrl+C during disk work as well as during screen
+    and keyboard work.
 
 OFF
-    Ctrl+C is checked for during screen and keyboard work only.  This
-    is the setting at startup.
+    PM-DOS checks for Ctrl+C during screen and keyboard work only.
+    This is the setting at startup.
 
 {b}Related Commands{p}
 
@@ -159,8 +159,12 @@ BREAK= in CONFIG.SYS sets the same flag at boot.  See [[BREAK (CONFIG.SYS)|BREAK
 #notes
 {b}What the setting does here{p}
 
-BREAK sets the flag that programs read with INT 21h AX=3300h. Ctrl+C
-stops a command or a batch file during operation.
+PM-DOS checks for Ctrl+C itself, as MS-DOS does.  Ctrl+C stops a
+command or a batch file during operation.  With BREAK ON, a program
+that is busy reading or writing files can be stopped as well.
+
+Ctrl+Break works like Ctrl+C, but goes ahead of any keys already
+typed.  Programs read the setting with INT 21h AX=3300h.
 #examples
 To turn extended checking on:
 

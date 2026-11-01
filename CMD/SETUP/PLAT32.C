@@ -787,6 +787,7 @@ int plat_disk( int bios, DISKINFO *dk )
     dk->spt = RD16( rec + 2 );
     dk->heads = RD16( rec + 4 );
     dk->total = RD32( rec + 8 );
+    dk->chs = RD32( rec + 12 );
     return 0;
 }
 

@@ -337,8 +337,12 @@ ndl_nounits:
         jmp     ndl_fail
 
 ndl_refused:
+        push    eax                     ; INIT's answer
         mov     edx,[nd_blk]
         call    arena_free
+        pop     eax
+        cmp     eax,NDI_QUIET           ; not needed here, and nothing
+        je      ndl_up                  ; to say: CONFIG.SYS goes on
         mov     eax,DLERR_INIT
         jmp     ndl_fail
 ndl_full:
@@ -702,6 +706,7 @@ nds_table:
         dd      OFFSET ndsv_sockcall             ; NDS_SOCKCALL
         dd      OFFSET ndsv_stamp                ; NDS_STAMP
         dd      OFFSET ndsv_flagcall             ; NDS_FLAGCALL
+        dd      OFFSET ndsv_fpuemu               ; NDS_FPUEMU
 IF ($ - nds_table) NE NDS_LEN
         .ERR    <nds_table does not match NDS_LEN in NDRV.INC>
 ENDIF
@@ -819,6 +824,21 @@ ndsv_tickhook:
         jmp     dword ptr ds:[IOS_TICKHOOK]
 ndsv_tickunhook:
         jmp     dword ptr ds:[IOS_TICKUNHOOK]
+
+;--- ndsv_fpuemu - EDX = X87EMU.SYS's x87_trap, ECX = its x87_init, EBX
+;--- -> its dword for fpu_uok -> CF and EAX = FSE_* if PMIO said no
+;--- (FPU_SETEMU).  With the emulator
+;--- in, there is a state to keep a level at a time, which fps_boot
+;--- found no reason for when it ran at boot; it is asked again, and
+;--- 21h/F1h AL=13h answers FPUF_EMU from then on.
+ndsv_fpuemu:
+        mov     al,FPU_SETEMU
+        call    dword ptr ds:[IOS_FPU]
+        jc      nfe_out
+        call    fps_boot                ; everything preserved, and the
+        clc                             ; flags are its own
+nfe_out:
+        ret
 
 ;--- ndsv_niccount - -> EAX = loaded drivers that are NICs (NDTF_NIC)
 ndsv_niccount:

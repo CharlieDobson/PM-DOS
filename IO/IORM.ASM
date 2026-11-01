@@ -2,20 +2,23 @@
 ; IORM.ASM - PMIO.SYS real-mode stub
 ;
 ; This is the first half of PMIO.SYS.  It is linked as a standalone
-; raw binary of exactly RMSTUB_SIZE (4K) bytes at segment-relative
-; offset 0, and is concatenated with IOPM.BIN to form PMIO.SYS.
+; raw binary at segment-relative offset 0 - a resident part of exactly
+; RMSTUB_SIZE (4K) bytes, then the cold start - and is concatenated
+; with IOPM.BIN to form PMIO.SYS.
 ;
 ; The boot sector loads the whole thing at IO_LOAD_SEG:0000, which is
-; NOT where any of it ends up.  Moving it is this file's first job:
-; the stub copies itself down to IO_SEG, and once unreal mode is
-; running it blits its protected-mode half above 1MB to IO_PM_BASE.
+; NOT where any of it ends up.  Moving it is this file's job: the cold
+; start, running where it was loaded, blits the protected-mode half
+; above 1MB to IO_PM_BASE and then copies the resident 4K down to
+; IO_SEG.  The cold start is not copied; see "THE COLD START" below.
 ; That is what buys the DOS box its 624K, and it keeps the knowledge
 ; here rather than in 512 bytes of boot sector that cannot afford it.
 ;
 ; It has two entry points:
 ;
 ;   offset 0000h  rm_main   - cold start, called by the boot sector
-;                             in real mode with DL = BIOS drive.
+;                             in real mode with DL = BIOS drive, at
+;                             IO_LOAD_SEG and only there.
 ;   offset 0010h  pm2rm     - the protected-mode -> real-mode thunk,
 ;                             entered by a far JMP to SEL_CODE16:0010.
 ;
@@ -364,183 +367,6 @@ ata_dcr:
         ret
 
 ;=====================================================================
-; rm_main - cold start.  CS = IO_SEG, DL = BIOS boot drive.
-;=====================================================================
-rm_main:
-        cli
-        mov     ax,cs
-        mov     ds,ax
-        xor     ax,ax
-        mov     ss,ax
-        mov     sp,RM_STACK_TOP
-        sti
-
-        mov     [v_bootdrv],dl          ; DS = CS, so this works wherever
-                                        ; we happen to have been loaded
-
-        ; THE INTERRUPT MASK THE BIOS LEFT, before anything here touches
-        ; the controllers: the lines it opened at POST are the ones its
-        ; own code - and a SCSI card's ROM - will wait on.  pic_to_rm
-        ; keeps them open on every trip back into the BIOS.
-        in      al,PIC1_DATA
-        mov     [v_biosimr],al
-        in      al,PIC2_DATA
-        mov     [v_biosimr+1],al
-
-;--- get out of the transient program area ----------------------------
-; Everything above this point is position independent - a near jump,
-; CS-relative data, nothing else - because we are still running at
-; IO_LOAD_SEG, where the boot sector dropped us, and the code was
-; assembled for IO_SEG.  Copy ourselves down and jump to the copy.
-;
-; A hundred kilobytes of conventional memory rides on these fifteen
-; instructions: staying at 20000h would put the stub squarely in the
-; middle of what a DOS program wants to be one contiguous block.
-        mov     bx,cs
-        mov     ax,IO_SEG
-        cmp     ax,bx
-        je      rm_placed               ; already there - nothing to do
-        mov     es,ax
-        xor     si,si
-        xor     di,di
-        mov     cx,RMSTUB_SIZE / 2
-        cld
-        rep     movsw
-        db      0EAh                    ; JMP FAR IO_SEG:rm_placed
-        dw      OFFSET rm_placed
-        dw      IO_SEG
-rm_placed:
-        mov     ax,cs                   ; DS still names the old copy
-        mov     ds,ax
-
-        ; A release build says NOTHING in real mode.  The stub's whole
-        ; job is to get to protected mode, and the message that matters
-        ; is the one printed on the other side, on a screen con_init
-        ; has just cleared - so anything said here is a line the user
-        ; watches scroll away.  The fatal paths below still speak: a
-        ; machine that never reaches protected mode has no other voice.
-IFDEF PMDOS_DEBUG
-        mov     si,OFFSET msgBanner
-        call    rputs
-ENDIF
-
-;--- refuse to run on anything below a 386 ---------------------------
-        call    check386
-        jnc     cpu_ok
-        mov     si,OFFSET msg386
-        jmp     rm_fatal
-cpu_ok:
-
-;--- A20 --------------------------------------------------------------
-        call    enable_a20
-        jnc     a20_ok
-        mov     si,OFFSET msgA20
-        jmp     rm_fatal
-a20_ok:
-
-;--- memory sizing ----------------------------------------------------
-        call    get_e820
-        call    get_extmem
-
-;--- a hard disk image on a CD?  (GV_HDEMU, PMDOS.INC) ---------------
-        cmp     byte ptr [v_bootdrv],80h
-        jne     no_hdemu
-        mov     ax,4B01h                ; El Torito: what are you emulating?
-        mov     dl,80h
-        mov     si,OFFSET v_edp         ; DS = CS; nothing uses it yet
-        mov     byte ptr [v_edp],13h    ; the packet's size, which some
-                                        ; BIOSes look at before filling it
-        int     13h
-        jc      no_hdemu
-        mov     al,[v_edp+ET_MEDIA]
-        and     al,0Fh
-        cmp     al,ET_MEDIA_HD
-        jne     no_hdemu
-        cmp     byte ptr [v_edp+ET_DRIVE],80h
-        jne     no_hdemu
-        mov     byte ptr [v_hdemu],1
-no_hdemu:
-
-;--- unreal mode, so we can write above 1M while still in real mode ---
-        call    go_unreal
-
-;--- and move our own protected-mode half up there --------------------
-; It arrived directly behind us at IO_PM_LOAD because that is how the
-; boot sector reads a file.  From here on it lives at IO_PM_BASE, and
-; the far JMP at the end of this routine goes there.
-;
-; Source and destination both go through FS: unreal mode widened that
-; one descriptor and no other, so DS still cannot reach past 64K and
-; a plain "mov eax,[esi]" with ESI = 22000h would read the wrong
-; sixteen bytes rather than fault - the worst possible failure.
-;
-; Blitting a fixed IO_PM_MAX rather than the real length copies some
-; trailing rubbish, which costs nothing; the alternative is teaching
-; two boot sectors to pass a file size down.
-        mov     esi,IO_PM_LOAD
-        mov     edi,IO_PM_BASE
-        mov     cx,IO_PM_MAX / 4
-rm_pmblit:
-        mov     eax,fs:[esi]
-        mov     fs:[edi],eax
-        add     esi,4
-        add     edi,4
-        loop    rm_pmblit
-
-;--- load PMDOS.SYS to DOS_BASE --------------------------------------
-IFDEF PMDOS_DEBUG
-        mov     si,OFFSET msgLoadDos
-        call    rputs
-ENDIF
-        call    load_dos
-IFDEF PMDOS_DEBUG
-        mov     si,OFFSET msgOK
-        call    rputs
-ENDIF
-
-;--- into protected mode for good -------------------------------------
-        cli
-        lgdt    fword ptr [gdtr]
-        mov     eax,cr0
-        or      eax,1
-        mov     cr0,eax
-
-        db      66h,0EAh                ; JMP FAR SEL_CODE32:IO_PM_BASE
-        dd      IO_PM_BASE
-        dw      SEL_CODE32
-
-;=====================================================================
-; check386 - CF set if this is a 286 or older.
-;
-; On an 8086 bits 12-15 of FLAGS are always set; on a 286 in real mode
-; they are always clear.  Only a 386+ lets us change them.
-;=====================================================================
-check386:
-        pushf
-        pop     ax
-        mov     cx,ax
-        and     ax,0FFFh
-        push    ax
-        popf
-        pushf
-        pop     ax
-        and     ax,0F000h
-        cmp     ax,0F000h
-        je      c386_no                 ; stuck set -> 8086/8088
-        or      cx,0F000h
-        push    cx
-        popf
-        pushf
-        pop     ax
-        and     ax,0F000h
-        jz      c386_no                 ; stuck clear -> 286
-        clc
-        ret
-c386_no:
-        stc
-        ret
-
-;=====================================================================
 ; enable_a20 - try the fast gate first, then the keyboard controller.
 ;              CF set if A20 could not be enabled.
 ;=====================================================================
@@ -630,349 +456,10 @@ ta20_off:
         stc
         ret
 
-;=====================================================================
-; get_e820 - collect the INT 15h/E820 memory map at linear MEMMAP.
-;=====================================================================
-get_e820:
-        push    es
-        xor     ax,ax
-        mov     es,ax
-        mov     di,MEMMAP
-        xor     ebx,ebx
-        mov     dword ptr [v_e820cnt],0
-e820lp:
-        mov     eax,0E820h
-        mov     edx,534D4150h           ; 'SMAP'
-        mov     ecx,24
-        int     15h
-        jc      e820end
-        cmp     eax,534D4150h
-        jne     e820end
-        or      ecx,ecx
-        jz      e820nxt
-        inc     dword ptr [v_e820cnt]
-        add     di,24
-e820nxt:
-        cmp     dword ptr [v_e820cnt],MEMMAP_MAX
-        jae     e820end
-        or      ebx,ebx
-        jnz     e820lp
-e820end:
-        pop     es
-        ret
-
-;=====================================================================
-; get_extmem - extended memory size in KB into v_memkb, and the
-;              usable top of memory into v_memtop.
-;
-; THREE WAYS OF ASKING, NEWEST FIRST, and the carry flag is cleared
-; before each because a BIOS is entitled to leave it alone.  A 486's
-; Award BIOS answers AH=88h with the right count and the caller's own
-; CF handed back untouched; this routine used to arrive there with CF
-; still set from the E801h call that BIOS refuses, took the answer for
-; a failure, and sized an 18MB machine at 0K extended - the arena was
-; then the slack under the kernel and MEM showed 763K free.
-;
-; E820 is asked first when the BIOS gave a map, and the answer is the
-; end of the USABLE region that 1MB is in.  That is the only one of
-; the three that knows about a hole at 15MB: E801h reports the memory
-; either side of it as two numbers this routine would have to add,
-; and the arena is one block that cannot skip a megabyte.
-;=====================================================================
-get_extmem:
-        push    es
-        cmp     dword ptr [v_e820cnt],0
-        je      ext_e801
-        xor     ax,ax
-        mov     es,ax
-        mov     di,MEMMAP
-        mov     ecx,[v_e820cnt]
-ext_maplp:
-        cmp     dword ptr es:[di+16],1          ; usable RAM?
-        jne     ext_mapnext
-        cmp     dword ptr es:[di+4],0           ; below 4GB, whole entry
-        jne     ext_mapnext
-        cmp     dword ptr es:[di+12],0
-        jne     ext_mapnext
-        mov     eax,es:[di]                     ; base
-        cmp     eax,HMA_BASE
-        ja      ext_mapnext                     ; starts above 1MB
-        add     eax,es:[di+8]                   ; end
-        jc      ext_mapnext                     ; wraps past 4GB
-        cmp     eax,HMA_BASE
-        jbe     ext_mapnext                     ; ends at or below 1MB
-        sub     eax,HMA_BASE
-        shr     eax,10                          ; -> KB above 1MB
-        jmp     short ext_store
-ext_mapnext:
-        add     di,24
-        loop    ext_maplp
-        ; a map with no usable region at 1MB is no map at all
-
-ext_e801:
-        xor     ecx,ecx
-        xor     edx,edx
-        clc
-        mov     ax,0E801h
-        int     15h
-        jc      ext_88
-        ; some BIOSes answer in CX/DX rather than AX/BX
-        jcxz    ext_ax
-        mov     ax,cx
-        mov     bx,dx
-ext_ax:
-        movzx   eax,ax                  ; KB between 1M and 16M
-        movzx   ebx,bx                  ; 64K blocks above 16M
-        shl     ebx,6                   ; -> KB
-        add     eax,ebx
-        jnz     ext_store               ; CF clear and nothing counted is
-                                        ; a BIOS that never heard of it
-
-ext_88:
-        xor     ax,ax
-        clc
-        mov     ah,88h                  ; ancient fallback, caps at 64M
-        int     15h
-        jc      ext_88cf
-        movzx   eax,ax
-        jmp     short ext_store
-ext_88cf:
-        ; CF set: an error only if AH says so (80h invalid, 86h not
-        ; supported) - otherwise it is the caller's own flag coming back
-        cmp     ah,80h
-        je      ext_none
-        cmp     ah,86h
-        je      ext_none
-        movzx   eax,ax
-        jmp     short ext_store
-ext_none:
-        xor     eax,eax
-
-ext_store:
-        mov     [v_memkb],eax
-        shl     eax,10                  ; KB -> bytes
-        ; HMA_BASE, NOT DOS_BASE.  Extended memory starts at 1MB, and
-        ; this said DOS_BASE only because the kernel used to be loaded
-        ; there - the two constants had the same value and one of them
-        ; was standing in for the other.  Moving the kernel up 64K to
-        ; free the HMA made v_memtop 64K too high, which put the top of
-        ; the arena past the end of RAM: the end-of-arena header was
-        ; written into nothing, read back as rubbish, and every walk of
-        ; the chain ran off the end.  Harmless-looking until paging
-        ; arrived, at which point running off the end is a page fault.
-        add     eax,HMA_BASE
-        mov     [v_memtop],eax
-        pop     es
-        ret
-
-;=====================================================================
-; go_unreal - give FS a 4G limit so real-mode code can store above 1M.
-;=====================================================================
-go_unreal:
-        push    eax
-        cli
-        lgdt    fword ptr [gdtr]
-        mov     eax,cr0
-        or      al,1
-        mov     cr0,eax
-        jmp     short gu1               ; flush the prefetch queue
-gu1:
-        mov     ax,SEL_DATA32
-        mov     fs,ax                   ; descriptor cache keeps limit 4G
-        mov     eax,cr0
-        and     al,0FEh
-        mov     cr0,eax
-        jmp     short gu2
-gu2:
-        sti
-        pop     eax
-        ret
-
-;=====================================================================
-; load_dos - find PMDOS.SYS in the boot volume's root directory and
-;            copy it to DOS_BASE, following its cluster chain.
-;
-; The chain walking, the FAT12/16/32 arithmetic and the BIOS reads all
-; come from FATLOAD.INC, the same code the hard-disk stage 2 uses to
-; load us.  Nothing on any volume has to be contiguous.
-;
-; Clusters are staged through XFER_BUF (below 1M, where the BIOS can
-; reach) and then blitted above 1M through the unreal-mode FS
-; descriptor, which has to be re-armed after every INT 13h because
-; some BIOSes restore FS from the real-mode value on the way out.
-;=====================================================================
-load_dos:
-        cmp     byte ptr [v_cdboot],0   ; a CD start: BOOTCD.ASM read
-        jne     ld_cdboot               ; PMDOS.SYS and set v_dossize, as
-                                        ; there is no FAT here to walk
-        push    es
-
-        mov     al,[v_bootdrv]
-        mov     [fl_drive],al
-        call    fl_init
-
-        mov     si,OFFSET dosname
-        call    fl_find
-        jc      ld_missing
-
-        mov     eax,[fl_size]
-        mov     [v_dossize],eax
-
-        mov     edi,DOS_BASE            ; FS-relative destination
-        mov     eax,[fl_clus]
-ld_loop:
-        cmp     eax,2
-        jb      ld_done
-        cmp     eax,[fl_eoc]
-        jae     ld_done
-
-        push    eax
-        call    fl_c2l                  ; EAX = the cluster's first sector
-        mov     [ld_lba],eax
-        mov     eax,[fl_spc]
-        mov     [ld_left],eax
-
-;--- a cluster AT A TIME WAS THE BUG ---------------------------------
-; This read fl_spc sectors into XFER_BUF, which is XFER_SIZE - 8K -
-; and said nothing about what happens when a cluster is bigger than
-; that.  Nothing did, for eight releases, because MKDISK could only
-; build 1K-cluster images and every test disk had one.  A volume with
-; 16K clusters (which is what FORMAT lays down on anything over about
-; 512MB) overran the staging buffer by 8K into the memory just above
-; it, and PM-DOS booted off a kernel image that had been written over
-; while it was being loaded: exception 0E at DOS_BASE+15, every time.
-;
-; The cluster is now moved in XFER_SIZE-sized pieces, so the buffer
-; bounds the transfer rather than the cluster size doing it - the same
-; rule bio_loop in BLOCK.INC already followed.
-;---------------------------------------------------------------------
-ld_chunk:
-        mov     ecx,[ld_left]
-        cmp     ecx,XFER_SIZE / 512
-        jbe     ld_cap
-        mov     ecx,XFER_SIZE / 512
-ld_cap:
-        mov     [ld_this],ecx
-        mov     eax,[ld_lba]
-        push    es
-        mov     bx,XFER_SEG             ; stage it below 1M
-        mov     es,bx
-        xor     bx,bx
-        call    fl_read
-        pop     es
-        jc      ld_diskerr
-
-        call    go_unreal               ; INT 13h may have cost us FS
-
-        mov     ecx,[ld_this]           ; blit the piece past 1M
-        shl     ecx,7                   ; sectors * 512 / 4 = dwords
-        push    ds
-        mov     ax,XFER_SEG
-        mov     ds,ax
-        xor     si,si
-ld_blit:
-        lodsd
-        mov     fs:[edi],eax
-        add     edi,4
-        loop    ld_blit
-        pop     ds
-
-        mov     eax,[ld_this]
-        add     [ld_lba],eax
-        sub     [ld_left],eax
-        jnz     ld_chunk
-
-IFDEF PMDOS_DEBUG
-        mov     al,'.'                  ; crude progress indicator
-        call    rputc
-ENDIF
-        pop     eax
-        call    fl_next
-        jmp     ld_loop
-
-ld_done:
-        pop     es
-ld_cdboot:
-        ret
-
-ld_diskerr:
-        pop     eax
-        mov     si,OFFSET msgDisk
-        jmp     rm_fatal
-ld_missing:
-        mov     si,OFFSET msgNoDos
-        jmp     rm_fatal
-
-;=====================================================================
-        INCLUDE FATLOAD.INC
-
-;=====================================================================
-; Console helpers (BIOS teletype - real mode only)
-;=====================================================================
-rputs:
-        push    ax
-        push    si
-rputs1:
-        lodsb
-        or      al,al
-        jz      rputs2
-        call    rputc
-        jmp     short rputs1
-rputs2:
-        pop     si
-        pop     ax
-        ret
-
-rputc:
-        push    ax
-        push    bx
-        mov     ah,0Eh
-        mov     bx,0007h
-        int     10h
-        pop     bx
-        pop     ax
-        ret
-
-rm_fatal:
-        call    rputs
-        mov     si,OFFSET msgHalt
-        call    rputs
-rmf1:
-        hlt
-        jmp     short rmf1
-
-;=====================================================================
-; Messages and scratch
-;=====================================================================
-IFDEF PMDOS_DEBUG
-; No version number here: this file cannot see PMDOS_MINOR as text, so
-; a literal one only ever goes stale (it sat at v0.11 through four
-; releases).  The kernel banner carries the version; this says who is
-; speaking.
-msgBanner   db  13,10,'PM-DOS PMIO.SYS',13,10,0
-ENDIF
-msg386      db  'A 386 or better is required',0
-msgA20      db  'Cannot enable A20',0
-msgNoDos    db  'PMDOS.SYS not found',0
-msgDisk     db  'Disk error',0
-IFDEF PMDOS_DEBUG
-msgLoadDos  db  'Loading PMDOS.SYS',0
-msgOK       db  ' ok',13,10,0
-ENDIF
-msgHalt     db  13,10,'System halted.',13,10,0
-
-dosname     db  'PMDOS   SYS'   ; 8.3 padded to exactly 11 bytes
-
 t_es        dw  0                       ; thunk register staging
 t_ds        dw  0
 t_flg       dw  0
 t_eax       dd  0
-
-ld_lba      dd  0                       ; load_dos: the piece being moved
-ld_left     dd  0                       ; sectors of this cluster to go
-ld_this     dd  0                       ; sectors in the piece in hand
-
-; (the loader's own state lives in FATLOAD.INC)
 
 ;=====================================================================
 ; GDT.  Lives inside the resident stub so it stays valid forever.
@@ -1553,10 +1040,563 @@ v_hdemu    db  0                        ; GV_HDEMU: BIOS 80h is a disk image
                                         ; on the CD the machine started from
 
 ;=====================================================================
-; Pad the stub to exactly RMSTUB_SIZE so IOPM.BIN lands at IO_PM_BASE.
+; Pad the resident part to exactly RMSTUB_SIZE: rm_main copies that
+; much down to IO_SEG, and the fixed offsets above are counted from it.
 ;=====================================================================
+res_mark:
+.ERRE   (res_mark - rm_base) LE RMSTUB_SIZE - 1, <the globals have grown past the resident 4K>
         ORG     RMSTUB_SIZE - 1
         db      0
+
+;=====================================================================
+; THE COLD START, WHICH IS NEVER COPIED DOWN.
+;
+; Everything from here to cold_end runs once, at IO_LOAD_SEG where the
+; boot sector put the file, and is then left behind: rm_main copies
+; only the resident 4K above to IO_SEG, as its last act before
+; protected mode, and the memory this part sat in becomes the DOS
+; box's.  It used to be in the resident 4K, where it was more than
+; half of the code in front of RMT_PARK and left that part of the stub
+; 78 bytes, or 10 in a PMDOS_DEBUG build.
+;
+; IT RUNS WITH CS = DS = IO_LOAD_SEG, the whole file one image, so
+; every variable it sets - the boot drive, the memory size, v_hdemu,
+; a20_fast, and what BOOTCD.ASM wrote into the globals before jumping
+; here - is set in the load image's copy of the resident part, and the
+; copy-down at the end carries all of it to IO_SEG at once.  The
+; resident routines it calls (enable_a20 and what that calls) run from
+; the load image too, which is the same code.  Nothing in the resident
+; part may JMP FAR IO_SEG:x before the copy-down; none of these do.
+;
+; Offset 0's JMP comes here, and after the copy-down offset 0 of the
+; resident copy jumps into nothing.  Nothing enters the stub at
+; IO_SEG:0000 - the boot sectors and BOOTCD.ASM jump to IO_LOAD_SEG.
+;
+; The protected-mode half follows cold_end in the file directly, with
+; no padding, so its address in the load image is worked out from
+; cold_end below (rm_pmload) and not from RMSTUB_SIZE.
+;=====================================================================
+
+;=====================================================================
+; rm_main - cold start.  CS = IO_LOAD_SEG, DL = BIOS boot drive.
+;=====================================================================
+rm_main:
+        cli
+        mov     ax,cs
+        mov     ds,ax
+        xor     ax,ax
+        mov     ss,ax
+        mov     sp,RM_STACK_TOP
+        sti
+
+        mov     [v_bootdrv],dl          ; into the load image's globals,
+                                        ; which the copy-down carries
+
+        ; THE INTERRUPT MASK THE BIOS LEFT, before anything here touches
+        ; the controllers: the lines it opened at POST are the ones its
+        ; own code - and a SCSI card's ROM - will wait on.  pic_to_rm
+        ; keeps them open on every trip back into the BIOS.
+        in      al,PIC1_DATA
+        mov     [v_biosimr],al
+        in      al,PIC2_DATA
+        mov     [v_biosimr+1],al
+
+        ; A release build says NOTHING in real mode.  The stub's whole
+        ; job is to get to protected mode, and the message that matters
+        ; is the one printed on the other side, on a screen con_init
+        ; has just cleared - so anything said here is a line the user
+        ; watches scroll away.  The fatal paths below still speak: a
+        ; machine that never reaches protected mode has no other voice.
+IFDEF PMDOS_DEBUG
+        mov     si,OFFSET msgBanner
+        call    rputs
+ENDIF
+
+;--- refuse to run on anything below a 386 ---------------------------
+        call    check386
+        jnc     cpu_ok
+        mov     si,OFFSET msg386
+        jmp     rm_fatal
+cpu_ok:
+
+;--- A20 --------------------------------------------------------------
+        call    enable_a20
+        jnc     a20_ok
+        mov     si,OFFSET msgA20
+        jmp     rm_fatal
+a20_ok:
+
+;--- memory sizing ----------------------------------------------------
+        call    get_e820
+        call    get_extmem
+
+;--- a hard disk image on a CD?  (GV_HDEMU, PMDOS.INC) ---------------
+        cmp     byte ptr [v_bootdrv],80h
+        jne     no_hdemu
+        mov     ax,4B01h                ; El Torito: what are you emulating?
+        mov     dl,80h
+        mov     si,OFFSET v_edp         ; DS = CS; nothing uses it yet
+        mov     byte ptr [v_edp],13h    ; the packet's size, which some
+                                        ; BIOSes look at before filling it
+        int     13h
+        jc      no_hdemu
+        mov     al,[v_edp+ET_MEDIA]
+        and     al,0Fh
+        cmp     al,ET_MEDIA_HD
+        jne     no_hdemu
+        cmp     byte ptr [v_edp+ET_DRIVE],80h
+        jne     no_hdemu
+        mov     byte ptr [v_hdemu],1
+no_hdemu:
+
+;--- unreal mode, so we can write above 1M while still in real mode ---
+        call    go_unreal
+
+;--- and move our own protected-mode half up there --------------------
+; It arrived directly behind cold_end because that is how the boot
+; sector reads a file.  From here on it lives at IO_PM_BASE, and the
+; far JMP at the end of this routine goes there.
+;
+; Source and destination both go through FS: unreal mode widened that
+; one descriptor and no other, so DS still cannot reach past 64K and
+; a plain "mov eax,[esi]" with ESI = 22000h would read the wrong
+; sixteen bytes rather than fault - the worst possible failure.
+;
+; Blitting a fixed IO_PM_MAX rather than the real length copies some
+; trailing rubbish, which costs nothing; the alternative is teaching
+; two boot sectors to pass a file size down.
+        mov     esi,rm_pmload
+        mov     edi,IO_PM_BASE
+        mov     cx,IO_PM_MAX / 4
+.ERRE   (IO_PM_MAX / 4) LE 0FFFFh, <the blit's count no longer fits in CX>
+rm_pmblit:
+        mov     eax,fs:[esi]
+        mov     fs:[edi],eax
+        add     esi,4
+        add     edi,4
+        loop    rm_pmblit
+
+;--- load PMDOS.SYS to DOS_BASE --------------------------------------
+IFDEF PMDOS_DEBUG
+        mov     si,OFFSET msgLoadDos
+        call    rputs
+ENDIF
+        call    load_dos
+IFDEF PMDOS_DEBUG
+        mov     si,OFFSET msgOK
+        call    rputs
+ENDIF
+
+;--- get out of the transient program area ----------------------------
+; The resident 4K goes down to IO_SEG, globals and all, and this part
+; stays behind.  A hundred kilobytes of conventional memory rides on
+; it: staying at 20000h would put the stub squarely in the middle of
+; what a DOS program wants to be one contiguous block.
+        cli
+        mov     ax,IO_SEG
+        mov     es,ax
+        xor     si,si
+        xor     di,di
+        mov     cx,RMSTUB_SIZE / 2
+        cld
+        rep     movsw
+
+;--- into protected mode for good -------------------------------------
+; gdtr names the GDT at IO_BASE + GDT_OFF, which is there now; the far
+; JMP is to a flat selector, so it does not matter that CS is still
+; IO_LOAD_SEG and not IO_SEG when it is taken.
+        lgdt    fword ptr [gdtr]
+        mov     eax,cr0
+        or      eax,1
+        mov     cr0,eax
+
+        db      66h,0EAh                ; JMP FAR SEL_CODE32:IO_PM_BASE
+        dd      IO_PM_BASE
+        dw      SEL_CODE32
+
+;=====================================================================
+; check386 - CF set if this is a 286 or older.
+;
+; On an 8086 bits 12-15 of FLAGS are always set; on a 286 in real mode
+; they are always clear.  Only a 386+ lets us change them.
+;=====================================================================
+check386:
+        pushf
+        pop     ax
+        mov     cx,ax
+        and     ax,0FFFh
+        push    ax
+        popf
+        pushf
+        pop     ax
+        and     ax,0F000h
+        cmp     ax,0F000h
+        je      c386_no                 ; stuck set -> 8086/8088
+        or      cx,0F000h
+        push    cx
+        popf
+        pushf
+        pop     ax
+        and     ax,0F000h
+        jz      c386_no                 ; stuck clear -> 286
+        clc
+        ret
+c386_no:
+        stc
+        ret
+
+;=====================================================================
+; get_e820 - collect the INT 15h/E820 memory map at linear MEMMAP.
+;=====================================================================
+get_e820:
+        push    es
+        xor     ax,ax
+        mov     es,ax
+        mov     di,MEMMAP
+        xor     ebx,ebx
+        mov     dword ptr [v_e820cnt],0
+e820lp:
+        mov     eax,0E820h
+        mov     edx,534D4150h           ; 'SMAP'
+        mov     ecx,24
+        int     15h
+        jc      e820end
+        cmp     eax,534D4150h
+        jne     e820end
+        or      ecx,ecx
+        jz      e820nxt
+        inc     dword ptr [v_e820cnt]
+        add     di,24
+e820nxt:
+        cmp     dword ptr [v_e820cnt],MEMMAP_MAX
+        jae     e820end
+        or      ebx,ebx
+        jnz     e820lp
+e820end:
+        pop     es
+        ret
+
+;=====================================================================
+; get_extmem - extended memory size in KB into v_memkb, and the
+;              usable top of memory into v_memtop.
+;
+; THREE WAYS OF ASKING, NEWEST FIRST, and the carry flag is cleared
+; before each because a BIOS is entitled to leave it alone.  A 486's
+; Award BIOS answers AH=88h with the right count and the caller's own
+; CF handed back untouched; this routine used to arrive there with CF
+; still set from the E801h call that BIOS refuses, took the answer for
+; a failure, and sized an 18MB machine at 0K extended - the arena was
+; then the slack under the kernel and MEM showed 763K free.
+;
+; E820 is asked first when the BIOS gave a map, and the answer is the
+; end of the USABLE region that 1MB is in.  That is the only one of
+; the three that knows about a hole at 15MB: E801h reports the memory
+; either side of it as two numbers this routine would have to add,
+; and the arena is one block that cannot skip a megabyte.
+;=====================================================================
+get_extmem:
+        push    es
+        cmp     dword ptr [v_e820cnt],0
+        je      ext_e801
+        xor     ax,ax
+        mov     es,ax
+        mov     di,MEMMAP
+        mov     ecx,[v_e820cnt]
+ext_maplp:
+        cmp     dword ptr es:[di+16],1          ; usable RAM?
+        jne     ext_mapnext
+        cmp     dword ptr es:[di+4],0           ; below 4GB, whole entry
+        jne     ext_mapnext
+        cmp     dword ptr es:[di+12],0
+        jne     ext_mapnext
+        mov     eax,es:[di]                     ; base
+        cmp     eax,HMA_BASE
+        ja      ext_mapnext                     ; starts above 1MB
+        add     eax,es:[di+8]                   ; end
+        jc      ext_mapnext                     ; wraps past 4GB
+        cmp     eax,HMA_BASE
+        jbe     ext_mapnext                     ; ends at or below 1MB
+        sub     eax,HMA_BASE
+        shr     eax,10                          ; -> KB above 1MB
+        jmp     short ext_store
+ext_mapnext:
+        add     di,24
+        loop    ext_maplp
+        ; a map with no usable region at 1MB is no map at all
+
+ext_e801:
+        xor     ecx,ecx
+        xor     edx,edx
+        clc
+        mov     ax,0E801h
+        int     15h
+        jc      ext_88
+        ; some BIOSes answer in CX/DX rather than AX/BX
+        jcxz    ext_ax
+        mov     ax,cx
+        mov     bx,dx
+ext_ax:
+        movzx   eax,ax                  ; KB between 1M and 16M
+        movzx   ebx,bx                  ; 64K blocks above 16M
+        shl     ebx,6                   ; -> KB
+        add     eax,ebx
+        jnz     ext_store               ; CF clear and nothing counted is
+                                        ; a BIOS that never heard of it
+
+ext_88:
+        xor     ax,ax
+        clc
+        mov     ah,88h                  ; ancient fallback, caps at 64M
+        int     15h
+        jc      ext_88cf
+        movzx   eax,ax
+        jmp     short ext_store
+ext_88cf:
+        ; CF set: an error only if AH says so (80h invalid, 86h not
+        ; supported) - otherwise it is the caller's own flag coming back
+        cmp     ah,80h
+        je      ext_none
+        cmp     ah,86h
+        je      ext_none
+        movzx   eax,ax
+        jmp     short ext_store
+ext_none:
+        xor     eax,eax
+
+ext_store:
+        mov     [v_memkb],eax
+        shl     eax,10                  ; KB -> bytes
+        ; HMA_BASE, NOT DOS_BASE.  Extended memory starts at 1MB, and
+        ; this said DOS_BASE only because the kernel used to be loaded
+        ; there - the two constants had the same value and one of them
+        ; was standing in for the other.  Moving the kernel up 64K to
+        ; free the HMA made v_memtop 64K too high, which put the top of
+        ; the arena past the end of RAM: the end-of-arena header was
+        ; written into nothing, read back as rubbish, and every walk of
+        ; the chain ran off the end.  Harmless-looking until paging
+        ; arrived, at which point running off the end is a page fault.
+        add     eax,HMA_BASE
+        mov     [v_memtop],eax
+        pop     es
+        ret
+
+;=====================================================================
+; go_unreal - give FS a 4G limit so real-mode code can store above 1M.
+;=====================================================================
+go_unreal:
+        push    eax
+        cli
+        lgdt    fword ptr [cold_gdtr]   ; the load image's GDT: the
+                                        ; resident one is not down yet
+        mov     eax,cr0
+        or      al,1
+        mov     cr0,eax
+        jmp     short gu1               ; flush the prefetch queue
+gu1:
+        mov     ax,SEL_DATA32
+        mov     fs,ax                   ; descriptor cache keeps limit 4G
+        mov     eax,cr0
+        and     al,0FEh
+        mov     cr0,eax
+        jmp     short gu2
+gu2:
+        sti
+        pop     eax
+        ret
+
+;=====================================================================
+; load_dos - find PMDOS.SYS in the boot volume's root directory and
+;            copy it to DOS_BASE, following its cluster chain.
+;
+; The chain walking, the FAT12/16/32 arithmetic and the BIOS reads all
+; come from FATLOAD.INC, the same code the hard-disk stage 2 uses to
+; load us.  Nothing on any volume has to be contiguous.
+;
+; Clusters are staged through XFER_BUF (below 1M, where the BIOS can
+; reach) and then blitted above 1M through the unreal-mode FS
+; descriptor, which has to be re-armed after every INT 13h because
+; some BIOSes restore FS from the real-mode value on the way out.
+;=====================================================================
+load_dos:
+        cmp     byte ptr [v_cdboot],0   ; a CD start: BOOTCD.ASM read
+        jne     ld_cdboot               ; PMDOS.SYS and set v_dossize, as
+                                        ; there is no FAT here to walk
+        push    es
+
+        mov     al,[v_bootdrv]
+        mov     [fl_drive],al
+        call    fl_init
+
+        mov     si,OFFSET dosname
+        call    fl_find
+        jc      ld_missing
+
+        mov     eax,[fl_size]
+        mov     [v_dossize],eax
+
+        mov     edi,DOS_BASE            ; FS-relative destination
+        mov     eax,[fl_clus]
+ld_loop:
+        cmp     eax,2
+        jb      ld_done
+        cmp     eax,[fl_eoc]
+        jae     ld_done
+
+        push    eax
+        call    fl_c2l                  ; EAX = the cluster's first sector
+        mov     [ld_lba],eax
+        mov     eax,[fl_spc]
+        mov     [ld_left],eax
+
+;--- a cluster AT A TIME WAS THE BUG ---------------------------------
+; This read fl_spc sectors into XFER_BUF, which is XFER_SIZE - 8K -
+; and said nothing about what happens when a cluster is bigger than
+; that.  Nothing did, for eight releases, because MKDISK could only
+; build 1K-cluster images and every test disk had one.  A volume with
+; 16K clusters (which is what FORMAT lays down on anything over about
+; 512MB) overran the staging buffer by 8K into the memory just above
+; it, and PM-DOS booted off a kernel image that had been written over
+; while it was being loaded: exception 0E at DOS_BASE+15, every time.
+;
+; The cluster is now moved in XFER_SIZE-sized pieces, so the buffer
+; bounds the transfer rather than the cluster size doing it - the same
+; rule bio_loop in BLOCK.INC already followed.
+;---------------------------------------------------------------------
+ld_chunk:
+        mov     ecx,[ld_left]
+        cmp     ecx,XFER_SIZE / 512
+        jbe     ld_cap
+        mov     ecx,XFER_SIZE / 512
+ld_cap:
+        mov     [ld_this],ecx
+        mov     eax,[ld_lba]
+        push    es
+        mov     bx,XFER_SEG             ; stage it below 1M
+        mov     es,bx
+        xor     bx,bx
+        call    fl_read
+        pop     es
+        jc      ld_diskerr
+
+        call    go_unreal               ; INT 13h may have cost us FS
+
+        mov     ecx,[ld_this]           ; blit the piece past 1M
+        shl     ecx,7                   ; sectors * 512 / 4 = dwords
+        push    ds
+        mov     ax,XFER_SEG
+        mov     ds,ax
+        xor     si,si
+ld_blit:
+        lodsd
+        mov     fs:[edi],eax
+        add     edi,4
+        loop    ld_blit
+        pop     ds
+
+        mov     eax,[ld_this]
+        add     [ld_lba],eax
+        sub     [ld_left],eax
+        jnz     ld_chunk
+
+IFDEF PMDOS_DEBUG
+        mov     al,'.'                  ; crude progress indicator
+        call    rputc
+ENDIF
+        pop     eax
+        call    fl_next
+        jmp     ld_loop
+
+ld_done:
+        pop     es
+ld_cdboot:
+        ret
+
+ld_diskerr:
+        pop     eax
+        mov     si,OFFSET msgDisk
+        jmp     rm_fatal
+ld_missing:
+        mov     si,OFFSET msgNoDos
+        jmp     rm_fatal
+
+;=====================================================================
+        INCLUDE FATLOAD.INC
+
+;=====================================================================
+; Console helpers (BIOS teletype - real mode only)
+;=====================================================================
+rputs:
+        push    ax
+        push    si
+rputs1:
+        lodsb
+        or      al,al
+        jz      rputs2
+        call    rputc
+        jmp     short rputs1
+rputs2:
+        pop     si
+        pop     ax
+        ret
+
+rputc:
+        push    ax
+        push    bx
+        mov     ah,0Eh
+        mov     bx,0007h
+        int     10h
+        pop     bx
+        pop     ax
+        ret
+
+rm_fatal:
+        call    rputs
+        mov     si,OFFSET msgHalt
+        call    rputs
+rmf1:
+        hlt
+        jmp     short rmf1
+
+;=====================================================================
+; Messages and scratch
+;=====================================================================
+IFDEF PMDOS_DEBUG
+; No version number here: this file cannot see PMDOS_MINOR as text, so
+; a literal one only ever goes stale (it sat at v0.11 through four
+; releases).  The kernel banner carries the version; this says who is
+; speaking.
+msgBanner   db  13,10,'PM-DOS PMIO.SYS',13,10,0
+ENDIF
+msg386      db  'A 386 or better is required',0
+msgA20      db  'Cannot enable A20',0
+msgNoDos    db  'PMDOS.SYS not found',0
+msgDisk     db  'Disk error',0
+IFDEF PMDOS_DEBUG
+msgLoadDos  db  'Loading PMDOS.SYS',0
+msgOK       db  ' ok',13,10,0
+ENDIF
+msgHalt     db  13,10,'System halted.',13,10,0
+
+dosname     db  'PMDOS   SYS'   ; 8.3 padded to exactly 11 bytes
+
+ld_lba      dd  0                       ; load_dos: the piece being moved
+ld_left     dd  0                       ; sectors of this cluster to go
+ld_this     dd  0                       ; sectors in the piece in hand
+
+; (the loader's own state lives in FATLOAD.INC)
+
+; The GDT go_unreal loads: the same table, where the load image has it.
+; Only SEL_DATA32 is used through it, whose base is 0, so the
+; descriptors mean the same thing from either copy.
+cold_gdtr   dw  GDT_ENTRIES * 8 - 1
+            dd  IO_LOAD_BASE + GDT_OFF
+
+;=====================================================================
+; THE END OF IORM.BIN.  IOPM.BIN is concatenated straight onto it, so
+; this is where the protected-mode half starts in the load image.
+;=====================================================================
+cold_end:
+rm_pmload   EQU     IO_LOAD_BASE + (cold_end - rm_base)
 
 _RM     ENDS
         END

@@ -8,11 +8,18 @@
  * to PASV (passive mode only - a 32-bit client behind the kernel's one
  * address cannot usefully listen for the server to call back).
  *
- *   FTP [host]
+ *   FTP [host] [/USER:name [password | *]]
+ *
+ * /USER: logs in as that name without asking for it.  The word after it
+ * is the password; a * or no word asks for the password, which is read
+ * without being shown when it comes from the keyboard.  The user
+ * command at the prompt takes the same name and password.
  *
  * Built over CMD\NET\SOCKLIB.C, behind CMD\NET\NETSTART.ASM.
  */
 #include "socklib.h"
+
+#define CRED_MAX 64             /* a user name or a password, NUL included */
 
 static int  ctrl;               /* the control socket, 0 if not open */
 static int  binary = 1;         /* transfer type: 1 image, 0 ASCII */
@@ -20,7 +27,13 @@ static char reply[1024];
 static char linebuf[1024];
 static u8   xfer[4096];
 
+/* the /USER: login from the command line, for the first connection */
+static char cl_user[CRED_MAX];
+static char cl_pass[CRED_MAX];
+static int  cl_ask = 1;         /* 1: ask for the password */
+
 static int get_line( char *buf, int max );
+static int get_secret( char *buf, int max );
 
 /* ---- the control connection ---- */
 
@@ -108,10 +121,26 @@ static int ftp_pasv( void )
 
 /* ---- the commands ---- */
 
+/* USER, then PASS if the server asks for one.  ask: read the password
+   now rather than use pass */
+static void login( const char *user, const char *pass, int ask )
+{
+    char typed[CRED_MAX];
+
+    if ( ftp_cmd( "USER", user ) != 331 ) return;
+    if ( ask ) {
+        sl_puts( "Password: " ); sl_flush();
+        if ( get_secret( typed, sizeof( typed ) ) < 0 ) typed[0] = 0;
+        pass = typed;
+    }
+    if ( pass[0] == 0 && !sl_strcasecmp( user, "anonymous" ) ) pass = "pmdos@pm-dos";
+    ftp_cmd( "PASS", pass );
+}
+
 static void do_open( const char *host, u16 port )
 {
     u32 ip;
-    char user[64], pass[64];
+    char user[CRED_MAX];
 
     if ( ctrl ) { sl_puts( "Already connected; close first.\r\n" ); return; }
     ip = sl_resolve( host, 600 );
@@ -122,16 +151,16 @@ static void do_open( const char *host, u16 port )
     sl_puts( "Connected to " ); sl_puts( host ); sl_puts( ".\r\n" );
     ftp_reply();
 
-    /* log in: a name, then a password */
-    sl_puts( "User (" ); sl_puts( host ); sl_puts( ":anonymous): " ); sl_flush();
-    if ( get_line( user, sizeof( user ) ) < 0 ) user[0] = 0;
-    if ( user[0] == 0 ) sl_strcpy( user, "anonymous", sizeof( user ) );
-
-    if ( ftp_cmd( "USER", user ) == 331 ) {
-        sl_puts( "Password: " ); sl_flush();
-        if ( get_line( pass, sizeof( pass ) ) < 0 ) pass[0] = 0;
-        if ( pass[0] == 0 ) sl_strcpy( pass, "pmdos@pm-dos", sizeof( pass ) );
-        ftp_cmd( "PASS", pass );
+    /* log in: the /USER: name once, else a name asked for */
+    if ( cl_user[0] ) {
+        login( cl_user, cl_pass, cl_ask );
+        cl_user[0] = 0;
+        sl_memzero( cl_pass, sizeof( cl_pass ) );
+    } else {
+        sl_puts( "User (" ); sl_puts( host ); sl_puts( ":anonymous): " ); sl_flush();
+        if ( get_line( user, sizeof( user ) ) < 0 ) user[0] = 0;
+        if ( user[0] == 0 ) sl_strcpy( user, "anonymous", sizeof( user ) );
+        login( user, "", 1 );
     }
     ftp_cmd( "TYPE", binary ? "I" : "A" );
 }
@@ -236,14 +265,46 @@ static void do_close( void )
     ctrl = 0;
 }
 
-/* read a line from handle 0 a byte at a time (so a redirected script
-   feeds it as well as the keyboard, whose cooked read echoes itself);
-   -1 at end of input */
-static int get_line( char *buf, int max )
+/* 1 if handle 0 is the console (a character device that is standard
+   input), 0 if it is redirected */
+static int stdin_is_console( void )
 {
     REGS regs;
-    int  n = 0;
+
+    sl_memzero( &regs, sizeof( regs ) );
+    regs.eax = 0x4400;
+    regs.ebx = 0;
+    int21( &regs );
+    return !CF( regs ) && ( regs.edx & 0x81 ) == 0x81;
+}
+
+/* read a line from handle 0.  The keyboard is read a whole line in one
+   cooked read, which echoes and edits it: PM-DOS's console hands out a
+   fresh key on every read, so a byte at a time would get the CR with no
+   LF after it, and BACKSPACE could not take back a byte already given.
+   A redirected script is read a byte at a time, so that it is not read
+   past the line.  -1 at end of input */
+static int get_line( char *buf, int max )
+{
+    static char conl[258];
+    REGS regs;
+    int  n = 0, got, i;
     u8   ch;
+
+    if ( stdin_is_console() ) {
+        sl_memzero( &regs, sizeof( regs ) );
+        regs.eax = 0x3F00;
+        regs.ebx = 0;
+        regs.ecx = sizeof( conl ) - 2;
+        regs.edx = (u32)conl;
+        int21( &regs );
+        got = CF( regs ) ? 0 : (int)( regs.eax & 0xFFFF );
+        if ( got > (int)sizeof( conl ) - 2 ) got = (int)sizeof( conl ) - 2;
+        for ( i = 0; i < got && conl[i] != '\r' && conl[i] != '\n'; i++ )
+            if ( n < max - 1 ) buf[n++] = conl[i];
+        buf[n] = 0;
+        return n;
+    }
 
     for ( ;; ) {
         sl_memzero( &regs, sizeof( regs ) );
@@ -257,6 +318,27 @@ static int get_line( char *buf, int max )
         if ( ch != '\r' && n < max - 1 ) buf[n++] = (char)ch;
     }
     buf[n] = 0;
+    return n;
+}
+
+/* a password: from the keyboard without echo, a key at a time (ENTER
+   ends it, BACKSPACE takes one back); from a redirected file as a line,
+   as get_line reads it.  -1 at end of input */
+static int get_secret( char *buf, int max )
+{
+    int  n = 0, key;
+
+    if ( !stdin_is_console() ) return get_line( buf, max );
+
+    for ( ;; ) {
+        key = sl_getkey();
+        if ( key == '\r' ) break;
+        if ( key == 8 ) { if ( n > 0 ) n--; continue; }
+        if ( key >= 0x100 || key < ' ' ) continue;      /* arrows and the like */
+        if ( n < max - 1 ) buf[n++] = (char)key;
+    }
+    buf[n] = 0;
+    sl_puts( "\r\n" );
     return n;
 }
 
@@ -279,18 +361,64 @@ static int split( char *line, char **verb, char **a1, char **a2 )
     return n;
 }
 
+/* "/USER:name" or "-USER:name", any case: the name, else NULL */
+static const char *user_opt( const char *arg )
+{
+    static const char opt[] = "USER:";
+    int i;
+
+    if ( arg[0] != '/' && arg[0] != '-' ) return NULL;
+    for ( i = 0; opt[i]; i++ ) {
+        char ch = arg[i + 1];
+        if ( ch >= 'a' && ch <= 'z' ) ch = (char)( ch - 32 );
+        if ( ch != opt[i] ) return NULL;
+    }
+    return arg + 1 + i;
+}
+
+/* a password word: * (or none) means ask */
+static int ask_for( const char *word )
+{
+    return word == NULL || word[0] == 0 || ( word[0] == '*' && word[1] == 0 );
+}
+
 void __cdecl dos_entry( void )
 {
     char **argv, *verb, *a1, *a2;
     char cmd[1024];
-    int argc;
+    const char *host = NULL, *name;
+    int argc, i;
 
     argc = sl_args( &argv );
+    for ( i = 0; i < argc; i++ ) {
+        if ( argv[i][0] == '/' && argv[i][1] == '?' ) {
+            sl_puts( "FTP [host] [/USER:name [password | *]] - copy files to and from an FTP server.\r\n" );
+            sl_puts( "  A * or no password asks for the password.\r\n" );
+            sl_flush();
+            return;
+        }
+        name = user_opt( argv[i] );
+        if ( name ) {
+            if ( name[0] == 0 ) { sl_puts( "FTP: /USER: needs a name.\r\n" ); sl_flush(); return; }
+            sl_strcpy( cl_user, name, sizeof( cl_user ) );
+            if ( i + 1 < argc && argv[i + 1][0] != '/' && argv[i + 1][0] != '-' ) {
+                i++;
+                cl_ask = ask_for( argv[i] );
+                if ( !cl_ask ) sl_strcpy( cl_pass, argv[i], sizeof( cl_pass ) );
+            }
+        } else if ( argv[i][0] == '/' || argv[i][0] == '-' ) {
+            sl_puts( "FTP: unknown switch " ); sl_puts( argv[i] ); sl_puts( "\r\n" );
+            sl_flush();
+            return;
+        } else if ( host == NULL ) {
+            host = argv[i];
+        }
+    }
 
     if ( !sl_up( 800 ) ) { sl_puts( "FTP: the network is not up.\r\n" ); sl_flush(); return; }
     sl_puts( "PM-DOS FTP.  Type help for the commands, bye to leave.\r\n" );
 
-    if ( argc >= 1 ) do_open( argv[0], 21 );
+    if ( host ) do_open( host, 21 );
 
     for ( ;; ) {
         sl_puts( "ftp> " ); sl_flush();
@@ -321,7 +449,9 @@ void __cdecl dos_entry( void )
         } else if ( !sl_strcasecmp( verb, "binary" ) || !sl_strcasecmp( verb, "bin" ) ) {
             binary = 1; if ( ctrl ) ftp_cmd( "TYPE", "I" ); else sl_puts( "Type set to I.\r\n" );
         } else if ( !sl_strcasecmp( verb, "user" ) ) {
-            if ( ctrl ) ftp_cmd( "USER", a1 ); else sl_puts( "Not connected.\r\n" );
+            if ( !ctrl ) sl_puts( "Not connected.\r\n" );
+            else if ( *a1 == 0 ) sl_puts( "user name [password | *]\r\n" );
+            else login( a1, a2, ask_for( a2 ) );
         } else if ( !sl_strcasecmp( verb, "help" ) || *verb == '?' ) {
             sl_puts( "open close user ls dir get put cd pwd ascii binary bye\r\n" );
         } else {

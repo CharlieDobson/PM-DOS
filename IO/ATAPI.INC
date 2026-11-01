@@ -87,6 +87,8 @@ atapi_ident:
         mov     ah,10h
         mov     edi,PLI_ST3
         call    ata_plogb
+        or      al,al                   ; nothing, for as long as ata_wake
+        jz      apid_no                 ; waits: nobody is there
 
         ; ata_probedrq and not ata_waitdrq: since a device that signed
         ; nothing is asked this too, the question can be put to one
@@ -103,10 +105,10 @@ atapi_ident:
         pop     edx
 
         ; A PACKET DEVICE SAYS SO IN WORD 0: bits 15 and 14 are 10.  A
-        ; drive that signed itself is not asked - it has said what it
-        ; is already.  One that did not is, because a disk that failed
-        ; IDENTIFY DEVICE gets here as well now, and 512 bytes of
-        ; whatever it had to say are not a CD-ROM
+        ; drive that signed itself (stage K) is not asked - it has said
+        ; what it is already.  One that did not (k and z) is, because a
+        ; disk that failed IDENTIFY DEVICE gets here as well now, and
+        ; 512 bytes of whatever it had to say are not a CD-ROM
         cmp     byte ptr [ata_stage],'K'
         je      apid_is
         mov     ax,word ptr [ata_idbuf]

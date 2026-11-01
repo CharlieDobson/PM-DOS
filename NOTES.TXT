@@ -19190,6 +19190,233 @@ SETUP.INF's four size lines differ.  The VM's PMDOS.IMG, PMDOS2.IMG and
 HD16.IMG.  A copy of HD16 boots to the menu and the prompt (QEMU).
 
 
+A REAL 1995 MACHINE: FLOPPY, CD-ROM, SERIAL MOUSE, 3C509B, FDISK (2026-10-31)
+---------------------------------------------------------------------
+
+Charlie set up a Cyrix Cx5x86-100 (one PCI slot, Plug and Play BIOS,
+serial mouse on COM1, 3Com 3C509B, CD-ROM on the secondary cable) on a
+blank 850MB disk from the Setup floppies.  Setup worked.  Five things
+did not, and none of them could have shown on an emulator as the rigs
+were used.  Setup's new-system CONFIG.SYS also loses SWITCHES=/K
+(DISK\SETUP.LST), at his word; /K did nothing here anyway.
+
+A DISKETTE WAS MOUNTED ONCE AND NEVER AGAIN.  On the 5x86, DIR of a
+720K disk was right and DIR of the Norton disk put in after it was
+rubbish every time: the second disk read with the first one's BPB,
+FAT and nine-sector tracks.  Setup only worked because it remounts
+through 21h/F1h AL=2 after each disk.  vol_select now asks PMIO
+(FDF_CHANGED) whether the disk can have changed: the BIOS's 06h,
+which bio_retry used to throw away and now keeps; two seconds since
+the last transfer, MS-DOS's own rule; and the change line where
+AH=15h says there is one.  Inside two seconds it costs no BIOS call.
+Otherwise the boot sector, and the first FAT sector beside fat_buf,
+are read round the cache and compared with what was mounted; a
+different disk loses its cache blocks, geometry, open files and FAT
+state, written nowhere, and comes back at the root.  SeaBIOS has no
+change line and says 20h, not 06h, after a swap, so under QEMU it is
+the comparison that finds it.  A card reader had the same hole:
+UNIT ATTENTION now moves the unit's generation on, and USF_UNIT sends
+TEST UNIT READY after two idle seconds, because after a swap nothing
+reads.  The cache's "a disk-change line it does not have" (cco_clean)
+and the AH=16h item under WHAT IS NEXT further down are history now.
+
+A CD-ROM DRIVE ALONE ON THE SECONDARY CABLE WAS NOT FOUND.
+ata_identify read the status register before selecting anything and
+gave up on FFh, but what answers then is whichever drive was selected
+last: for a slave, the master.  With no master and no pull-down on
+DD7, which few boards of that time have, that is FFh and the slave was
+never asked.  Now each position is selected first, and "nothing there"
+is FFh from the drive just selected, or the sector count and LBA 7:0
+registers not keeping 55h and AAh (Linux's ata_devchk).  A packet
+device's power-on signature is read before anything clears it and
+goes straight to IDENTIFY PACKET DEVICE.  A status that stays zero
+after ECh is asked for its signature and then sent A1h, for the old
+drives that ignore ECh.  The zero wait is 30 ms by the refresh bit in
+port 61h (interrupts are off this early), so an empty slave behind a
+disk costs about 60 ms.  A CMD640 whose second channel the BIOS left
+off gets it switched on if nothing else answers at 170h.  No reset
+(SRST): it would cost seconds and a BIOS disk's geometry.  HWPROBE's
+stages are now S, F (readback shown), z, B, P, K, k, + and A, with a
+legend; the older legend in the v0.60 entry is history.  No emulator
+here reads FFh from an empty position, so the first fix rests on the
+reading and on QEMU and DOSBox-X finding every drive they found
+before.
+
+SERIAL MOUSE, POINTER NEVER MOVED.  "Mouse detected", a pointer in
+every program, and no movement at all.  A UART holds its interrupt
+line up until its byte is read, and the 8259 takes an interrupt from
+the line going up, so one interrupt that lands anywhere but irq_serial
+leaves the byte unread and the mouse silent for good.  Two places lost
+one: every BIOS call before rm_freeze re-initialises the 8259s, and
+ICW1 throws away what is waiting; and a BIOS call runs with the BIOS's
+own masks, so a BIOS that left IRQ 4 open had its handler end the
+interrupt without reading the UART.  Both were reproduced in QEMU.
+irq_timer now hands irq_serial a look once a tick, which brings the
+mouse back whatever lost the interrupt; ms_init also masks the mouse's
+line for BIOS calls.  While there: a Plug and Play mouse's ID after
+the 'M' is read and dropped instead of arriving as clicks, power is
+off five ticks, the FIFO is used if it works, a failed INT 33h 2Fh no
+longer leaves the interrupt off, and a Logitech fourth byte is taken
+only straight after a packet.
+
+THE 3C509B ON A PLUG AND PLAY BIOS.  EL3C509.SYS found nothing on the
+5x86.  The kernel's isolation pauses were counted in reads of port
+80h, which a PCI chipset may answer in a fraction of a microsecond;
+IO\ISAPNP.INC and the driver now time their pauses on the 8254.  The
+ID-port path read the EEPROM too soon and with word reads, and
+switched the card on at 200h; it now follows Linux's 3c509.c.  And
+the reason the 486 never received a frame (2026-10-24): the status
+mask (command 7800h) was never set, so after the reset RxComplete
+read 0 and interrupted nobody.  Also: the window-0 enable and the
+resource register are written, the transmit status stack is popped,
+two frames of one length no longer reset the receiver, a park keeps
+the card's CSN, base and line and keeps /POLL.  When no card is found
+the driver says, a line each, what Plug and Play, the port scan
+(200h-3E0h, window 0's 6D50h) and the ID port saw.  Not run on a
+3C509: no emulator has one.
+
+FDISK STOPS AT THE BIOS'S LAST CYLINDER, AND ASKS FAT16 OR FAT32.
+PM-DOS FDISK made one partition of the whole 850MB disk, PC DOS 7's
+FDISK called it Non-DOS, and PC DOS's own whole-disk partition left
+about 1MB unused.  THE MEGABYTE IS THE DIAGNOSTIC CYLINDER.  IDENTIFY
+counts every sector, INT 13h AH=08h - all a DOS before OSR2 asks -
+keeps the last cylinder back.  QEMU's SeaBIOS does the same, which
+made it the rig: 1654x16x63 is 826x32x63 to AH=08h, DSK_TOTAL
+1667232, DSK_CHS 1665216.  The free space ran to DSK_TOTAL, so the
+partition ended on cylinder 826, which the BIOS says is not there,
+and was typed 0Eh.  fd_dskend is now the one end: DSK_CHS on a disk
+that fits under 1024 cylinders of the BIOS's geometry, DSK_TOTAL on
+one bigger (1024 or 1023 cylinders; the test is the size, not the
+count) and on GPT.  fd_gap, fd_lgap, the free rows, the bar, and the
+move/resize limits all call it; fd_endfor lets a partition a table
+made elsewhere keep what it already has.  TYPE BYTES ARE DOS'S
+(makepart.c): 06h for a primary ending past sector 65535 or a logical
+drive of 65536 sectors and up, 04h over 32680, 01h below; 0Eh/0Ch
+only past the CHS reach - fd_typefor, rl_typebyte, FORMAT's
+fm_fattype and Setup all keep to it.  From 512MB to 2GB the create
+question has FAT16, FAT32 and Cancel, FAT16 lit (Charlie's call: the
+user chooses, FAT16 first, because FORMAT's old FAT32-from-512MB made
+volumes PC DOS 7 cannot read).  /C takes FAT16 or FAT32 for tt, or in
+place of the size: /C 0:1 FAT32.  FORMAT without /FS: keeps to the
+type byte - 0Bh/0Ch FAT32 (FAT16 if too small), anything else FAT16
+to 2GB - and Setup formats FAT16 to 2GB.  Real MS-DOS 6.22 in QEMU on
+the 850MB disk: "1 PRI DOS 813 FAT16 100%", DIR, CHKDSK and COPY.
+
+MS-DOS COULD NOT READ A VOLUME FORMAT MADE.  FORMAT and FDISK's F
+wrote the OEM name PMDOS0.6; MS-DOS 6 reads bytes 8-10 of a hard
+disk's boot sector as a version, takes "0." for OS/2's signature, and
+refused the drive ("Invalid media type").  Both now write MSDOS5.0,
+as Setup always has - the cure the SYS16 note above guessed at.  On
+the way: FAT16 and FAT32 boot sectors said "FAT616" and "FAT332"
+(five-character dword constants; also why ML refused FORMAT.ASM), and
+FAT32's reserved 34h-3Fh held the floppy stub's bytes.  Left for
+later: BOOT\BOOTHD.ASM and TOOLS\MKDISK.C still write "PM-DOS  ", and
+FORMAT's /V[:label] is in its usage but the parser refuses it.
+
+Sizes: PMIO.SYS 83,435 -> 84,449, PMDOS.SYS 196,336 -> 196,464 (144
+bytes under its limit), FDISK.EXE 73,375, FORMAT.COM 13,201,
+SETUP.EXE 168,040, EL3C509.SYS 10,688.  Each fix was made and tested
+in a tree of its own (scratchpad 0c6de115) and merged; the merged
+build's RUNTESTS differed only in RMTEST's free clusters and HWPROBE's
+new lines.  Charlie runs HWPROBE, ISAPNP and the new EL3C509.SYS on
+the 5x86 next.
+
+
+ROOM IN PMIO.SYS AND PMDOS.SYS; X87EMU.SYS; THE SHELL'S SLOT GROWS
+(2026-10-31)
+---------------------------------------------------------------------
+
+Charlie was concerned about the size of PMIO.SYS.  Its 32-bit body
+had about 10K left in its 128K window once the AHCI tables were
+counted, and the resident real-mode stub had 78 bytes before RMT_PARK
+(10 in a PMDOS_DEBUG build).  He chose all three of the remedies
+offered, then asked for PMDOS.SYS to be looked at, which had 101
+bytes under its limit and whose PMDOS_DEBUG build no longer fit.
+
+PMIO'S WINDOW IS 192K.  IO_PM_MAX is 30000h, and everything above
+PMIO - the IDT, the kernel stack, the TSS, the DPMI LDT and stack, the
+native ring-0 stack and ARENA_BASE - is now IO_LIMIT plus a constant,
+so the next resize is that one equate.  The arena starts at 240000h.
+The stub's blit count is checked to stay under FFFFh dwords (252K).
+
+THE COLD START LEFT THE RESIDENT 4K.  IORM.BIN is the 4K that stays at
+IO_SEG followed by the code that only runs once - rm_main, the CPU and
+memory checks, go_unreal, load_dos and FATLOAD, the messages.  That
+part runs in place at 2000:0, fills in the resident part's globals in
+the load image, and copies the 4K down to IO_SEG as its last act
+before LGDT and PE.  go_unreal has a GDTR of its own (cold_gdtr) for
+the same reason.  IOPM.BIN follows IORM.BIN with no padding, and the
+blit reads it from IO_LOAD_BASE + cold_end.  Room before RMT_PARK:
+1,914 bytes, release and debug.  Nothing may be put at IO_SEG:0000
+before that final copy now.
+
+THE x87 EMULATOR IS A DRIVER, X87EMU.SYS (DRV\X87EMU).  repos-c3's
+X87*.C left IO\ and IOPMEND.ASM went.  The kernel keeps the hook:
+IOS_FPU AL=FPU_SETEMU (5) takes the driver's trap and init entries
+and the address of a dword it fills with fpu_uok, then sets EM in the
+live CR0 - and only EM, MP and TS, since by CONFIG time CR0 has paging
+in it - and sets FPUF_EMU last.  Drivers reach it as NDS_FPUEMU
+(service table offset 60, NDS_VERSION 6).  A machine with a
+coprocessor, or a second copy, gets a quiet refusal: INIT returns
+NDI_QUIET with CF, which ndl_refused takes as "not loaded, say
+nothing", so one CONFIG.SYS serves every machine.  Without the driver
+a machine with no coprocessor behaves as it did before the emulator.
+CONFIG.SYS, SETUP.LST (new systems and upgrades, CFG.C's have_x87),
+MKHD and PMDOS.IMG all carry it.  HELP has an X87EMU.SYS topic
+(21EXTERN.TXT), in my wording - for Charlie to read.  The "Device
+driver failed to initialise" message is "initialize" now.
+
+PMDOS.SYS'S ZEROES WENT TO _KBSS2.  exec_env (3,840 bytes) and
+park_lowkeep (4,096) hold nothing until written, and are now in
+_KBSS2 after clus_buf.  AFTER, not before: clus_buf is a bus-master
+target that may not cross a 64K line, and 4K more in _KBSS ahead of
+it would have pushed it across 1E0000h.  park_lowkeep is safe there
+because RMDOS is only ever handed the arena's free memory, never the
+kernel's.  KBSS is now 98,080 of 98,304 bytes; the next room has to
+come from somewhere else.
+
+CMD.EXE'S SLOT IS AN ARENA SLOT LIKE ANY OTHER PROGRAM'S.  It was a
+fixed 256K at 140000h that slot_grow refused to grow, which left the
+shell 158K of heap: DIR /O sorted about 960 names and listed more
+unsorted, wildcard REN stopped at about 570.  shell_restart now gives
+the last round's slot back and asks slot_new for a new one at depth
+zero - SHELL_SIZE, 256K, where every deeper level gets PROG_SIZE -
+and the boot-time CHKDSK runs in that same slot.  It grows and is
+trimmed at 4Bh as any parent's is.  It cannot end up smaller than it
+was: a slot grows above its stack and slot_trim only gives back what
+is above the stack, so the 158K below it is always there.  If the
+arena has not got 256K the screen says "Not enough memory to start
+the command interpreter" and waits for a key.  SHELL_SLOT, SHELL_PSP,
+SHELL_TOP and the unused PROG_SLOT family are gone, and so is PAGING's
+fixed guard page with pg_absent, its only user.  build_psp's "no
+parent" test is r3_depth = 0 instead of the shell's PSP address, and
+cur_psp is 0 until shell_restart makes the slot.
+
+DOS_LIMIT IS 180000h, THE PAGE DIRECTORY, so PMDOS.SYS may be 448K.
+The cost is memory: the shell's 256K and 4K of alignment come out of
+the arena now, while 140000h-17FFFFh waits for the kernel to grow
+into it.  With the 64K of PMIO's window, a program can get 324K less
+than this morning - BIGMEM's largest on the 386-4 row went 927K ->
+603K.  Charlie accepted that ("the user can install more memory if
+needed") and chose to leave DOS_LIMIT where it is rather than slide
+the map down.
+
+Sizes: PMIO.SYS 105,183 -> 86,984 (IOPM.BIN 81,061 of 177,152,
+IORM.BIN 5,923), PMDOS.SYS 196,474 -> 188,645 (270,107 under its
+limit), X87EMU.SYS 20,667.  Built and tested in a mirror (scratchpad
+c08213a3 = repos-85).  RUNTESTS on seven rows differed only in memory
+and layout numbers - MEM, BIGMEM, VDSTEST, XMSREPT, XMSTEST, RMTEST's
+free clusters and "PMIO.SYS starts", and CACHETST's "a write is owed"
+4 -> 5, which moves with PMDOS.SYS's size, as on 2026-10-11; LOCKTEST
+(386-4) and HWPROBE flaked once each and ran clean alone.  The floppy,
+HD16 and the CD boot to the prompt in QEMU, the PMDOS_DEBUG PMIO too.
+X87T, LT and L2 under X87EMU.SYS match repos-c3's references on
+QEMU and on an 86Box 486SX with no coprocessor.  DIR /O-N of
+BIGDIR.ISO's 8,005 names sorts (the old kernel listed them unsorted),
+and MEM after it reads the same as after a fresh boot, so the grown
+slot was trimmed.  Not run on Windows/WfW or on real hardware.
+
+
 v0.61 - THE NUMBER CAUGHT UP (2026-09-30)
 ---------------------------------------------------------------------
 

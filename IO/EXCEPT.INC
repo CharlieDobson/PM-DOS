@@ -1080,6 +1080,13 @@ it_auxnext:
         loop    it_aux
 it_noaux:
 
+;--- and a serial mouse's --------------------------------------------
+; The same lesson on the other kind of mouse: a byte whose interrupt
+; went somewhere else is never read, and a UART whose byte is never
+; read never interrupts again.  irq_serial says how, and does the
+; reading; on a machine without a serial mouse it does nothing.
+        call    irq_serial
+
 ;--- the keyboard's lights -------------------------------------------
 ; The BIOS's INT 09h lit them and there is none; and its INT 16h put
 ; right a lock that a program had changed behind its back.  Both are

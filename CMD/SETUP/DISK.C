@@ -9,8 +9,9 @@
  * once the stick is gone; tgt.drive and tgt.final keep the two apart.
  *
  * THE PARTITION is the one 6.22 Setup would make: from the first track
- * boundary of the largest free area to the last whole cylinder but one,
- * written inactive and made active only when everything is installed,
+ * boundary of the largest free area to the last whole cylinder the BIOS
+ * reports (part_limit, FDISK's rule), written inactive and made active
+ * only when everything is installed,
  * so a machine stopped half way does not start from a half-made drive.
  * Its second sector gets a signed record, which is how Setup, started
  * again after the restart, knows the unformatted drive is its own and
@@ -18,9 +19,10 @@
  *
  * THE FORMAT is Setup's own, not FORMAT.COM's: FORMAT asks its
  * questions on the console, and gives a FAT16 drive one reserved
- * sector where the PM-DOS boot needs nine.  FAT16 below 512MB, with
- * the smallest cluster that keeps the count inside FAT16; FAT32 from
- * 512MB, as Windows 98 does.
+ * sector where the PM-DOS boot needs nine.  FAT16 up to the 2GB FAT16
+ * can hold, with the smallest cluster that keeps the count inside
+ * FAT16, so that every DOS can read the drive; FAT32 past that, or
+ * when the partition's type byte (0Bh, 0Ch) asks for it.
  *
  * THE BOOT CODE.  The volume boot record is stage 1 (BOOT\BOOTHD.ASM);
  * all it does is read the 8 sectors of stage 2, which walks the FAT to
@@ -43,6 +45,8 @@ TARGET tgt;
 #define S2_START32      9
 #define VBR_S2          0x1F8           /* BOOTHD.ASM's s2_where         */
 #define MARK            "PM-DOS Setup 1"
+#define FAT16_MAX       4193536ul       /* 65524 clusters of 32K: FAT16's  */
+                                        /* largest volume                  */
 
 /* the boot code, read from the Setup disk when Setup starts */
 static u8 *code_mbr, *code_fat16, *code_fat32, *code_s2;
@@ -251,11 +255,28 @@ static void examine_volume( void )
     }
 }
 
+/* Where partitions may end, as FDISK has it (fd_dskend).  A disk the
+   BIOS describes whole - one under 1024 cylinders of the BIOS's
+   geometry - ends at the BIOS's last cylinder, which is usually one
+   short of IDENTIFY's count: the BIOS keeps the old diagnostic cylinder
+   back, and a partition running into it ends on a cylinder the BIOS
+   says is not there, which PC DOS 7's FDISK calls Non-DOS.  A disk
+   bigger than CHS reaches is used to its end. */
+static u32 part_limit( void )
+{
+    u32 cyl = (u32)tgt.spt * tgt.heads;
+
+    if ( tgt.disk_secs <= 1024ul * cyl && tgt.chs_secs &&
+         tgt.chs_secs < tgt.disk_secs ) {
+        return tgt.chs_secs;
+    }
+    return tgt.disk_secs;
+}
+
 /* The largest free area of the disk outside every primary entry (an
    extended partition counts as used).  The first area starts on track
    1, as the MBR has track 0; the others on a cylinder.  Every area
-   ends on a cylinder, and the disk's last cylinder is left unused, as
-   6.22 left it. */
+   ends on a cylinder, and none past part_limit. */
 static void find_gap( const u8 *mbr, int table )
 {
     u32 start[5], end[5], lo, hi, best = 0, best_lba = 0, cyl, disk_end, tmp, size;
@@ -286,8 +307,7 @@ static void find_gap( const u8 *mbr, int table )
         }
     }
     cyl = (u32)tgt.spt * tgt.heads;
-    disk_end = tgt.disk_secs / cyl;
-    disk_end = (disk_end > 1 ? disk_end - 1 : disk_end) * cyl;
+    disk_end = tgt.part_end - tgt.part_end % cyl;
     start[n] = disk_end;                /* the end of the disk closes the */
     end[n] = disk_end;                  /* last area                      */
     lo = 0;
@@ -376,8 +396,10 @@ void disk_examine( void )
         return;
     }
     tgt.disk_secs = dk.total;
+    tgt.chs_secs = dk.chs;
     tgt.spt = dk.spt ? dk.spt : 63;
     tgt.heads = dk.heads ? dk.heads : 16;
+    tgt.part_end = part_limit();
     if ( plat_disk_read( tgt.bios, 0, 1, sec ) ) {
         tgt.state = TG_NODISK;
         return;
@@ -388,6 +410,7 @@ void disk_examine( void )
         if ( is_fat( ent[4] ) ) {
             tgt.part_lba = RD32( ent + 8 );
             tgt.part_secs = RD32( ent + 12 );
+            tgt.part_type = ent[4];
             tgt.slot = i;
             break;
         }
@@ -482,18 +505,23 @@ static void put_chs( u8 *at, u32 lba )
     at[2] = (u8)cyl;
 }
 
+/* The type byte, as FDISK gives it (fd_typefor): FAT32 only past the
+   2GB FAT16 holds; 0Ch or 0Eh only for a partition that ends past the
+   BIOS's CHS reach; and inside it 0Bh, or for FAT16 DOS's own rule -
+   06h when the partition ends past sector 65535, 04h below that.
+   Setup formats FAT16 at 8MB and up, never FAT12, so never 01h. */
 static u8 part_type( u32 lba, u32 secs )
 {
-    u32 chs_end = 1024ul * tgt.heads * tgt.spt;
+    u32 chs_end = tgt.chs_secs ? tgt.chs_secs : 1024ul * tgt.heads * tgt.spt;
     int beyond = lba + secs > chs_end;
 
-    if ( secs >= 1048576ul ) {          /* 512MB: FAT32 */
+    if ( secs > FAT16_MAX ) {
         return (u8)(beyond ? 0x0C : 0x0B);
     }
     if ( beyond ) {
         return 0x0E;
     }
-    return (u8)(secs < 65536ul ? 0x04 : 0x06);
+    return (u8)(lba + secs < 65536ul ? 0x04 : 0x06);
 }
 
 /* Write the partition into the gap disk_examine found.  0 = done */
@@ -525,6 +553,7 @@ int disk_partition( void )
     if ( plat_disk_write( tgt.bios, 0, 1, sec ) ) {
         return 1;
     }
+    tgt.part_type = ent[4];
     /* no old boot sector to be mistaken for a format, and Setup's mark */
     mem_set( sec, 0, SECSIZE );
     if ( plat_disk_write( tgt.bios, lba, 1, sec ) ) {
@@ -623,11 +652,14 @@ static u32 serial_now( void )
     return ((u32)(m * 256 + d) << 16) + (u32)y + (u32)(h * 256 + mi) * 31ul;
 }
 
-/* the layout of a new volume of "total" sectors */
+/* The layout of a new volume of "total" sectors: FAT16 where FAT16 can
+   be, FAT32 past that or when the type byte says FAT32 - unless the
+   partition is too small for FAT32, which then gets FAT16. */
 static int layout( BPB *bpb, u32 total )
 {
     u32 rootsecs, nclus, spf = 1;
-    int n, fat32 = total >= 1048576ul;
+    int n, fat32 = total > FAT16_MAX || (total >= 65536ul &&
+                   (tgt.part_type == 0x0B || tgt.part_type == 0x0C));
 
     mem_set( bpb, 0, sizeof( *bpb ) );
     bpb->total = total;
@@ -645,11 +677,16 @@ static int layout( BPB *bpb, u32 total )
             spf = ((nclus + 2) * 4 + SECSIZE - 1) / SECSIZE;
         }
         nclus = (total - bpb->rsvd - 2 * spf) / bpb->spc;
-        if ( nclus < 65525ul ) {
+        if ( nclus >= 65525ul ) {
+            bpb->fat = 32;
+        } else if ( total > FAT16_MAX ) {
             return 1;
+        } else {
+            fat32 = 0;                  /* too small for FAT32 */
         }
-        bpb->fat = 32;
-    } else {
+    }
+    if ( !fat32 ) {
+        spf = 1;
         bpb->rsvd = 1 + S2_SECTORS;
         bpb->rootents = 512;
         rootsecs = 32;

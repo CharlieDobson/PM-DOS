@@ -68,7 +68,11 @@
 ;           file saw it: the path and whatever followed it, ended by
 ;           CR, LF and a zero.  CF clear: installed.  CF set: refused,
 ;           and the driver's memory is given back - so a driver that
-;           refuses after hooking anything unhooks it first.
+;           refuses after hooking anything unhooks it first.  CF set
+;           with EAX = NDI_QUIET is the same refusal without the
+;           kernel's message: a driver that is not needed on this
+;           machine (X87EMU.SYS, where there is a coprocessor), so that
+;           one CONFIG.SYS can name it on any machine.
 ;           INIT runs once, at CONFIG.SYS time, with interrupts on;
 ;           it is the one entry that may take its time.
 ;           A DISK DRIVER (NDTF_DISK) is told ECX = how many drive
@@ -118,6 +122,8 @@ NDT_UNITS       EQU     36              ; dd - -> that many NDU_LEN records,
 NDT_DLEN        EQU     40
 
 NDT_SIGVAL      EQU     5652444Eh       ; 'N','D','R','V' as a dword
+NDI_QUIET       EQU     54495551h       ; 'Q','U','I','T': INIT's quiet
+                                        ; refusal, in EAX with CF
 NDT_VERSION     EQU     1
 NDT_DISKVER     EQU     2               ; a table with the disk fields
 
@@ -249,6 +255,18 @@ NDUF_MEMORY     EQU     01h             ; one block of memory, for life
 ;                   BIOS).  For a disk driver that writes a directory of
 ;                   its own, as RAMDISK.SYS does its label.  INIT and CALL
 ;                   time only.  Since NDS_VERSION 4
+;   NDS_FPUEMU      EDX = the coprocessor emulator's trap entry, ECX =
+;                   its init entry, EBX -> a dword of the driver's that
+;                   the kernel fills with fpu_uok's address before the
+;                   trap entry can be called - the routine the emulator
+;                   calls to ask whether a program may write a range
+;                   (IO\FPU.INC, FPU_SETEMU).  CF if refused, with EAX =
+;                   FSE_X87 (a coprocessor is fitted), FSE_HAVE (an
+;                   emulator is in already) or FSE_BAD.
+;                   For X87EMU.SYS (DRV\X87EMU), whose entries are then
+;                   called for good: a driver that has had CF clear from
+;                   this may not refuse its INIT afterwards.  INIT time
+;                   only.  Since NDS_VERSION 6
 ;---------------------------------------------------------------------
 NDS_VER         EQU     0
 NDS_ALLOC       EQU     4
@@ -265,9 +283,10 @@ NDS_NICCALL     EQU     44
 NDS_SOCKCALL    EQU     48
 NDS_STAMP       EQU     52
 NDS_FLAGCALL    EQU     56
-NDS_LEN         EQU     60
+NDS_FPUEMU      EQU     60
+NDS_LEN         EQU     64
 
-NDS_VERSION     EQU     5
+NDS_VERSION     EQU     6
 
 ;---------------------------------------------------------------------
 ; THE KERNEL'S ROW for a loaded driver - EDI at INIT and CALL, and what

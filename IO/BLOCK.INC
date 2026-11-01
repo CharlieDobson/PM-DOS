@@ -741,7 +741,23 @@ bio_advance:
         jmp     bio_loop
 
 ;--- error: reset the controller and retry the same chunk -------------
+;
+; A DISKETTE THAT SAYS 06h HAS BEEN CHANGED, and that is news and not a
+; fault.  The BIOS says it once, on the first command after the door
+; was opened, and the retry below then reads the new disk without a
+; murmur - so until this was kept, the one notice a machine gives that
+; the disk is another one was used up here and thrown away, and the
+; volume layer went on reading the new disk with the old one's layout.
+; The latch is the BIOS's notice, kept until FDF_CHANGED is asked
+; (FLOPPY.INC).
 bio_retry:
+        cmp     byte ptr [bio_drive],2
+        jae     bio_rtry
+        cmp     byte ptr ds:[RMR_EAX+1],06h
+        jne     bio_rtry
+        movzx   eax,byte ptr [bio_drive]
+        mov     byte ptr [fpy_chg+eax],1
+bio_rtry:
         inc     byte ptr [bio_tries]
         cmp     byte ptr [bio_tries],3
         jae     bio_fail
@@ -783,6 +799,12 @@ bio_nocyl:
 
 bio_done:
         call    fpy_rwdown
+        cmp     byte ptr [bio_drive],2  ; a diskette that answered is the
+        jae     bio_dnstamp             ; one in the drive as of now: the
+        movzx   eax,byte ptr [bio_drive]        ; two seconds FDF_CHANGED
+        mov     edx,dword ptr ds:[BDA_TICKS]    ; trusts are counted from
+        mov     dword ptr [fpy_last+eax*4],edx  ; here
+bio_dnstamp:
         popad
         xor     ah,ah
         clc

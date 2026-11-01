@@ -57,8 +57,10 @@ fl_init:
         ; table, a USB stick or a Zip disk calling itself something else
         ; from one machine to the next - then no longer has to match the
         ; BPB's.  A BIOS without them, and a diskette (41h fails for one),
-        ; is read by CHS as before.  Kept short: in PMIO.SYS this code
-        ; has to fit in front of the stub's fixed entry at RMT_PARK.
+        ; is read by CHS as before.  Kept short: it is in the second
+        ; stage's sector budget (BOOT2.ASM), and in PMIO.SYS it is part
+        ; of the cold start, which is not resident but is still read
+        ; from every boot disk.
         mov     dl,[fl_drive]
         mov     ah,41h
         mov     bx,55AAh

@@ -2056,11 +2056,25 @@ park_cdsel  db  0                       ; master or slave, the command
 park_cdbase dw  0                       ; block, and the control port
 park_cdctrl dw  0
 park_lowsaved db 0                      ; park_lowkeep holds the DOS data
-        ALIGN   4                       ; segment, until park_recover
-park_lowkeep db RL_SAVEMAX dup(0)       ; puts it back
+                                        ; segment, until park_recover puts
+                                        ; it back
+; park_lowkeep is 4K of nothing until a park fills it, so it is not in
+; the file: it is in _KBSS2 after clus_buf (DOSMAIN.ASM).  That is the
+; kernel's memory as much as this is - a park hands RMDOS the arena's
+; free memory and nothing else (RMH_XMSBASE), so what is kept there is
+; there when park_recover comes for it.
+_DOS    ENDS
+_KBSS2  SEGMENT
+IF ($ - kbss2_start) AND 3
+        .ERR    <PARK.INC: park_lowkeep in _KBSS2 is not on a dword>
+ENDIF
+park_lowkeep db RL_SAVEMAX dup(?)
 IF RL_SAVEMAX MOD 4
         .ERR    <PARK.INC: RL_SAVEMAX is copied a dword at a time>
 ENDIF
+_KBSS2  ENDS
+_DOS    SEGMENT
+        ALIGN   4                       ; for park_prog, as it was
 IF RL_SAVEMAX GT DOSDATA_SIZE
         .ERR    <PARK.INC: RMDOS builds past the DOS data segment>
 ENDIF

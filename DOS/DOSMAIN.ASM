@@ -21,12 +21,15 @@
 ; write - see KBSS_BASE in PMDOS.INC.  A file that has one closes _DOS,
 ; declares it in _KBSS with dup(?), and opens _DOS again.
 ;
-; _KBSS2 comes straight after _KBSS and holds clus_buf alone.  The
+; _KBSS2 comes straight after _KBSS and holds clus_buf FIRST.  The
 ; cluster buffer is where a bus master is pointed most, a transfer
 ; that crosses a 64K line is one the driver has to cut in two, and
-; where the buffer was in the file it crossed none.  Last of all it
-; starts past the line at 270000h and ends short of the next one, and
-; the end of this file will not assemble if that stops being true.
+; where the buffer was in the file it crossed none.  It must not cross
+; one here either, and the end of this file will not assemble if it
+; does.  What follows it in _KBSS2 (exec_env, park_lowkeep - the files
+; that hold them are included after FAT.INC) moves it nowhere, which
+; is why buffers are added there and not to _KBSS, where 4K more would
+; push clus_buf over the line at 1E0000h.
 ;=====================================================================
         .386P
 
@@ -282,8 +285,8 @@ ENDIF
                                         ; tail (MULTICFG.INC)
 
 ;=====================================================================
-; shell_restart - (re)load the command interpreter into the shell slot
-; and run it.  fn4C jumps back here whenever the shell terminates.
+; shell_restart - (re)load the command interpreter into a slot of its
+; own and run it.  fn4C jumps back here whenever the shell terminates.
 ;=====================================================================
 shell_restart:
         mov     esp,KSTACK_TOP          ; fresh kernel stack
@@ -305,41 +308,36 @@ shell_restart:
         mov     dword ptr ds:[dbx_state],DBST_NONE      ; so no program is
                                         ; held for a debugger (DBGAPI.INC)
 
-        mov     dword ptr ds:[cur_psp],SHELL_PSP
-        xor     eax,eax                 ; the boot check's slot, if the
-        call    slot_free               ; last round ran one (slot_sweep
-        mov     dword ptr ds:[r3_slbase],SHELL_SLOT    ; stops at depth 1),
-        mov     dword ptr ds:[r3_slsize],SHELL_SIZE    ; and the row is the
-                                                       ; interpreter's again
-
-        ; A DRIVE NOT SHUT DOWN PROPERLY IS CHECKED BEFORE THE SHELL
-        ; STARTS, by CHKDSK run in the shell's place: same start, and
-        ; its 4Ch at depth zero comes back to this label like the
-        ; shell's would - so the next drive comes round, and then the
-        ; shell (vfl_bootscan and ack_next, VOLFLAG.INC).
-        ;
-        ; NOT THE SAME SLOT, SINCE 2026-10-08.  The interpreter's slot
-        ; is SHELL_SIZE and fixed - slot_grow refuses depth zero's - and
-        ; CHKDSK keeps a byte a cluster and reads each directory whole,
-        ; so on a FAT32 volume of any size the check that ran there
-        ; said "Insufficient memory" and never finished (the real-
-        ; hardware test).  So the check gets a slot out of the arena at
-        ; depth zero, which grows as a program run from the prompt
-        ; does; it is taken before ack_next, which loads into whichever
-        ; slot is current, and given back if there is nothing to check.
-        ; If the arena has not got one, the interpreter's slot it is.
+        ; THE INTERPRETER'S SLOT IS OUT OF THE ARENA, as every other
+        ; program's is, and grows the same way (RING3.INC, slot_grow).
+        ; Until 2026-10-31 it was a fixed 256K at 140000h that never
+        ; grew, and the shell's 48h heap was whatever its image and
+        ; stack left of that.  The last round's slot goes back first -
+        ; slot_sweep stops at depth 1 - and a new one is made, at the
+        ; foot of the biggest free block, where there is most room above
+        ; it to grow into.
+        xor     eax,eax
+        call    slot_free
         xor     eax,eax
         call    slot_new
+        jc      no_shellmem
         xor     eax,eax
         call    r3_useslot              ; the slot, and its two descriptors
+        mov     eax,dword ptr ds:[r3_base]      ; and the PSP that is to be
+        add     eax,SLOT_PSP                    ; built there, for anything
+        mov     dword ptr ds:[cur_psp],eax      ; asked before it is
+
+        ; A DRIVE NOT SHUT DOWN PROPERLY IS CHECKED BEFORE THE SHELL
+        ; STARTS, by CHKDSK run in the shell's place: same start, same
+        ; slot, and its 4Ch at depth zero comes back to this label like
+        ; the shell's would - so the next drive comes round, and then
+        ; the shell (vfl_bootscan and ack_next, VOLFLAG.INC).  CHKDSK
+        ; keeps a byte a cluster and reads each directory whole, and on
+        ; a FAT32 volume of any size that needs the slot to grow, which
+        ; a fixed shell slot could not do (the real-hardware test,
+        ; 2026-10-08).
         call    ack_next                ; -> CF clear, ESI = CHKDSK's tail
         jnc     shell_go
-        xor     eax,eax                 ; nothing to check: the slot goes
-        call    slot_free               ; back, and depth zero is the
-        mov     dword ptr ds:[r3_slbase],SHELL_SLOT    ; interpreter's
-        mov     dword ptr ds:[r3_slsize],SHELL_SIZE
-        xor     eax,eax
-        call    r3_useslot
         mov     edx,OFFSET shell_name
         call    exec_load
         jnc     shell_loaded
@@ -372,7 +370,6 @@ shell_go:
         call    build_psp
         mov     eax,dword ptr ds:[exec_psp]     ; whose handles: the PSP just
         mov     dword ptr ds:[cur_psp],eax      ; built, wherever the slot is
-                                                ; (SHELL_PSP for the shell)
 
         ; AND THE MASTER ENVIRONMENT, which CONFIG.SYS's SET= lines
         ; filled in.  The interpreter is a program like any other and
@@ -408,6 +405,18 @@ no_shell:
         call    dword ptr ds:[IOS_CONSTR]
         call    dword ptr ds:[IOS_CONIN]        ; any key ...
         jmp     shell_restart                   ; ... and try again
+
+; NO ROOM FOR THE INTERPRETER'S SLOT.  Everything else is gone by now -
+; slot_sweep took every program's slot and arena_alloc asked the cache
+; for its chunks back - so what is left is held by the kernel and by
+; the drivers CONFIG.SYS loaded, and trying again will not change that.
+; The key goes round anyway, as no_shell's does, rather than leave the
+; machine stopped with nothing on the screen to say why.
+no_shellmem:
+        mov     esi,OFFSET msgNoShellMem
+        call    dword ptr ds:[IOS_CONSTR]
+        call    dword ptr ds:[IOS_CONIN]
+        jmp     shell_restart
 
 ;---------------------------------------------------------------------
 ; shell_try - ESI -> another name for the interpreter.  exec_load it;
@@ -835,6 +844,8 @@ msgNoMount  db  'WARNING: cannot mount the boot volume - no filesystem',13,10,0
 msgNoVolMem db  'no arena for the per-drive volume state',0
 msgNoShell  db  13,10,'Bad or missing command interpreter'
             db  13,10,'Insert a system diskette and press any key',13,10,0
+msgNoShellMem db 13,10,'Not enough memory to start the command interpreter'
+            db  13,10,'Press any key to try again',13,10,0
 msgKbss     db  'PMDOS.SYS: linked for the wrong KBSS address',13,10,0
 
 _DOS    ENDS

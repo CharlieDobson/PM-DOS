@@ -165,6 +165,8 @@ typedef struct {
     int  bios;                  /* its BIOS number, 80h or 81h           */
     int  state;                 /* TG_*                                  */
     u32  disk_secs;             /* its size                              */
+    u32  chs_secs;              /* as far as the BIOS's CHS reaches      */
+    u32  part_end;              /* where partitions may end (part_limit) */
     u16  spt, heads;            /* its geometry                          */
     u32  gap_lba, gap_secs;     /* the free area Setup would use         */
     int  slot;                  /* the partition slot for it, 0..3       */
@@ -172,6 +174,7 @@ typedef struct {
     int  drive;                 /* its letter NOW, 0 = A: (-1 = none)    */
     char final;                 /* its letter when PM-DOS starts: 'C'    */
     u32  part_lba, part_secs;   /* where the partition is                */
+    int  part_type;             /* its type byte                         */
     u32  free_kb;               /* free space, in KB                   */
     u16  reserved;              /* reserved sectors in its BPB           */
     int  fat;                   /* 12, 16, 32                            */

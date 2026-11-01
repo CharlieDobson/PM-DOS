@@ -6,13 +6,14 @@
 ; read as they go (IO\PROBELOG.INC) and this prints it: the bytes the
 ; keyboard controller and the mouse answered with, and for each of the
 ; eight IDE positions how far IDENTIFY got, the status register at
-; every step, and the signature the device left.  Between the two,
-; what ISA Plug and Play found: an IDE port on a sound card is one the
-; kernel has to switch on before there is anything to probe.  Then the
-; SCSI adapters and every device that answered on each (21h/F1h
-; AL=1Ch), which is the SCSI probe's report.  Last, what ACPI gave for
-; switching the power off (21h/F1h AL=1Eh, PWF_QUERY): the ports
-; SHUTDOWN writes and the sleep type it writes into them.
+; every step, and the signature the device left - or, where nothing
+; kept the 55h and AAh written to it, what was read back.  Between the
+; two, what ISA Plug and Play found: an IDE port on a sound card is
+; one the kernel has to switch on before there is anything to probe.
+; Then the SCSI adapters and every device that answered on each
+; (21h/F1h AL=1Ch), which is the SCSI probe's report.  Last, what ACPI
+; gave for switching the power off (21h/F1h AL=1Eh, PWF_QUERY): the
+; ports SHUTDOWN writes and the sleep type it writes into them.
 ;
 ; It tests nothing and cannot fail.  What it is for is a machine that
 ; is somewhere else: the screen it prints is the report.
@@ -278,6 +279,16 @@ hp_stage:
         call    phex2
         jmp     short hp_what
 hp_nosig:
+        test    byte ptr [esi+PLI_SEEN],20h
+        jz      hp_nothing
+        movzx   eax,byte ptr [esi+PLI_SIG+1]   ; what the register test
+        call    phex2                           ; read back
+        movzx   eax,byte ptr [esi+PLI_SIG]
+        call    phex2
+        mov     edx,OFFSET msg_test
+        call    puts
+        jmp     short hp_what
+hp_nothing:
         mov     edx,OFFSET msg_dash4
         call    puts
         mov     edx,OFFSET msg_err
@@ -711,9 +722,13 @@ msg_sig     db  '      ','$'
 msg_err     db  ' err ','$'
 msg_dash2   db  '--','$'
 msg_dash4   db  '----','$'
+msg_test    db  ' not 55AA','$'
 msg_isdisk  db  '  disk',13,10,'$'
 msg_iscd    db  '  CD-ROM',13,10,'$'
-msg_key     db  13,10,'status: before, after select, after IDENTIFY, after IDENTIFY PACKET',13,10,'$'
+msg_key     db  13,10,'status: before, after select, after IDENTIFY, after IDENTIFY PACKET',13,10
+            db  'stage: S nothing answered the select  F nothing kept what was written to it',13,10
+            db  '  z no answer to either IDENTIFY  B busy  P another signature  K, k IDENTIFY',13,10
+            db  '  PACKET refused, with and without a signature  + disk  A CD-ROM',13,10,'$'
 msg_crlf    db  13,10,'$'
 
 msg_scsi    db  13,10,'SCSI:',13,10,'$'

@@ -255,6 +255,7 @@ ata_init:
                                                 ; before any drive is touched:
                                                 ; see ata_number
         call    ata_prdinit
+        call    ata_cmd640                      ; a second channel switched off
         call    ata_bminit                      ; before the probe, because
                                                 ; a device decides how it
                                                 ; will transfer at the moment
@@ -440,20 +441,27 @@ ata_identify:
 
         movzx   edx,word ptr [esi+ATD_BASE]
 
-        ; nothing there at all reads back as a floating bus
-        mov     byte ptr [ata_stage],'F'
+        ; THE STATUS REGISTER AS IT WAS FOUND IS WRITTEN DOWN AND NOTHING
+        ; IS DECIDED ON IT.  Up to v0.69 an FFh here was "nothing on this
+        ; channel" - but the device answering at this moment is whichever
+        ; one was selected last, which for a slave is the master, and for
+        ; a master is whatever the BIOS left.  On a cable with nothing on
+        ; it but a slave, and a bus with no pull-down on its top data
+        ; line (most 1995 ISA and VLB boards have none; 86Box has one and
+        ; reads 7Fh), the master's place floats to FFh, and the slave was
+        ; skipped without ever being selected.  So the select comes first
+        mov     byte ptr [ata_stage],'S'
         add     dx,ATA_STATUS
         in      al,dx
+        sub     dx,ATA_STATUS
         mov     ah,01h
         mov     edi,PLI_ST0
         call    ata_plogb
-        cmp     al,0FFh
-        je      aid_none
-        sub     dx,ATA_STATUS
 
-        mov     byte ptr [ata_stage],'S'
+        ; FFh FROM THE DEVICE JUST SELECTED is a bus nobody drives, and
+        ; ata_select gives up on it at once
         call    ata_select
-        jc      aid_none
+        pushfd
         push    edx
         add     dx,ATA_STATUS
         in      al,dx
@@ -461,6 +469,33 @@ ata_identify:
         mov     ah,02h
         mov     edi,PLI_ST1
         call    ata_plogb
+        popfd
+        jc      aid_none
+
+        ; ...AND ANYTHING ELSE IT FLOATS TO, 7Fh on a bus with the pull-
+        ; down, is told from a device by writing two registers and reading
+        ; them back, which is how Linux asks (ata_devchk): a drive keeps
+        ; what is written to it and a bare bus does not
+        mov     byte ptr [ata_stage],'F'
+        call    ata_devchk
+        jc      aid_none
+
+        ; A PACKET DEVICE HAS ALREADY SAID WHAT IT IS, if nothing has
+        ; written over it since: the signature it leaves at power-on and
+        ; after a reset is the one it leaves when IDENTIFY DEVICE is
+        ; refused.  It is read before the address registers are cleared
+        ; for that command.  LBA 15:8 and 23:16 are a disk's last address
+        ; as well, and one could spell 14h EBh; that disk then refuses
+        ; IDENTIFY PACKET DEVICE, has no ATDF_ATAPI, and is asked again
+        ; the ordinary way
+        call    ata_sig
+        cmp     ax,ATAPI_SIG
+        jne     aid_ask
+        mov     byte ptr [ata_stage],'K'
+        call    atapi_ident
+        test    byte ptr [esi+ATD_FLAGS],ATDF_ATAPI
+        jnz     aid_none
+aid_ask:
 
         ; zero the address registers, then IDENTIFY
         push    edx
@@ -488,14 +523,26 @@ ata_identify:
         ; and an old one can be asked about a command it has not seen
         ; yet: its status then is the zero it idles at, and taking that
         ; for an empty position is how a drive that was there was not
-        ; found.  So zero is given a moment to become something else
+        ; found.  So zero is given a moment to become something else.
+        ;
+        ; AND A ZERO THAT STAYS IS NOT THE END OF IT EITHER.  A packet
+        ; drive older than the rule that it must refuse IDENTIFY DEVICE
+        ; can ignore the command altogether, and idle at zero through
+        ; it.  It is asked what it signed, and then the other question;
+        ; a place with no drive in it costs those two waits and no more
         mov     byte ptr [ata_stage],'Z'
         call    ata_wake
         mov     ah,04h
         mov     edi,PLI_ST2
         call    ata_plogb
         or      al,al
-        jz      aid_none
+        jnz     aid_busy
+        call    ata_sig
+        cmp     ax,ATAPI_SIG
+        je      aid_ispkt
+        mov     byte ptr [ata_stage],'z'
+        jmp     short aid_askpkt
+aid_busy:
 
         mov     byte ptr [ata_stage],'B'
         call    ata_waitbsy
@@ -511,32 +558,13 @@ ata_identify:
         ; carry means to ata_init - so a CD-ROM does not take a place
         ; in the 80h, 81h numbering that ata_slot hands out.
         mov     byte ptr [ata_stage],'P'
-        push    edx
-        add     dx,ATA_LBA1
-        in      al,dx
-        mov     ah,al                   ; AH = LBA1
-        inc     dx
-        in      al,dx                   ; AL = LBA2
-        pop     edx
+        call    ata_sig
         ; THE SIGNATURE IS TESTED BEFORE THE ZERO TEST, and that order
         ; is the whole of a bug this cost a boot to find: "or al,ah" is
         ; how the original asked "are both bytes zero", and it asks by
         ; WRITING AL.  Comparing AX afterwards compares 14FFh against
         ; 14EBh and a CD-ROM is not a CD-ROM.  cmp leaves the register
         ; alone, so it goes first and the destructive test second.
-        mov     word ptr [ata_pktsig],ax
-        push    eax
-        push    edi
-        mov     edi,dword ptr [ata_plog]
-        mov     word ptr [edi+PLI_SIG],ax
-        push    edx
-        add     dx,ATA_ERROR
-        in      al,dx
-        pop     edx
-        mov     byte ptr [edi+PLI_ERR],al
-        or      byte ptr [edi+PLI_SEEN],08h
-        pop     edi
-        pop     eax
         cmp     ax,ATAPI_SIG
         je      aid_ispkt
         or      al,ah
@@ -544,6 +572,7 @@ ata_identify:
         jmp     aid_none
 aid_ispkt:
         mov     byte ptr [ata_stage],'K'
+aid_askpkt:
         call    atapi_ident
         jmp     aid_none
 aid_nosig:
@@ -664,55 +693,143 @@ ata_plogb:
         ret
 
 ;---------------------------------------------------------------------
-; ata_wake - DX = base port -> AL = the status register, read until it
-;            is something other than zero or ATA_WAKESPIN reads have
-;            all been zero.  Everything else kept.
+; ata_sig - DX = base port -> AX = the signature, LBA 15:8 above LBA
+;           23:16, written into the probe log with the error register
+;           and into ata_pktsig.  Everything else kept.
 ;---------------------------------------------------------------------
-ATA_WAKESPIN    EQU     20000           ; a fiftieth of a second on the
-                                        ; slowest bus there is, and an
-                                        ; empty position costs no more
-ata_wake:
+ata_sig:
+        push    edx
+        push    edi
+        add     dx,ATA_LBA1
+        in      al,dx
+        mov     ah,al                   ; AH = LBA1
+        inc     dx
+        in      al,dx                   ; AL = LBA2
+        mov     word ptr [ata_pktsig],ax
+        mov     edi,dword ptr [ata_plog]
+        mov     word ptr [edi+PLI_SIG],ax
+        push    eax
+        sub     dx,ATA_LBA2 - ATA_ERROR
+        in      al,dx
+        mov     byte ptr [edi+PLI_ERR],al
+        pop     eax
+        or      byte ptr [edi+PLI_SEEN],08h
+        pop     edi
+        pop     edx
+        ret
+
+;---------------------------------------------------------------------
+; ata_devchk - DX = base port, the device selected.  CF set if the
+;              sector count and LBA 7:0 registers do not keep what is
+;              written to them, in which case PLI_SIG holds what they
+;              read back (sector count above LBA 7:0) and PLI_SEEN bit
+;              20h says so.  AX is lost.
+;
+; THE PATTERNS ALTERNATE BETWEEN THE TWO REGISTERS so that a bus which
+; only remembers the last byte driven onto it reads back the wrong one.
+; While a drive is busy every register reads as its status, which is
+; why this comes after ata_select and not before.
+;---------------------------------------------------------------------
+ata_devchk:
         push    ecx
         push    edx
-        add     dx,ATA_STATUS
-        mov     ecx,ATA_WAKESPIN
-awk_lp:
+        push    edi
+        add     dx,ATA_SECCNT
+        mov     ax,0AA55h
+        mov     ecx,3
+adc_lp:
+        out     dx,al                   ; 55h, AAh, 55h
+        inc     dx
+        xchg    al,ah
+        out     dx,al                   ; AAh, 55h, AAh
+        dec     dx
+        loop    adc_lp
         in      al,dx
-        or      al,al
-        jnz     awk_out
-        dec     ecx
-        jnz     awk_lp
-awk_out:
+        mov     ah,al
+        inc     dx
+        in      al,dx                   ; AH = sector count, AL = LBA 7:0
+        cmp     ax,55AAh
+        je      adc_out                 ; equal: CF clear
+        mov     edi,dword ptr [ata_plog]
+        mov     word ptr [edi+PLI_SIG],ax
+        or      byte ptr [edi+PLI_SEEN],20h
+        stc
+adc_out:
+        pop     edi
         pop     edx
         pop     ecx
         ret
 
 ;---------------------------------------------------------------------
-; ata_probedrq - ata_waitdrq for a question that may have nobody to
-;                answer it: the same test, given up on sooner, and at
-;                once if the status register reads zero throughout.
-;                DX = base port.  CF set if no data was offered.
+; ata_wake - DX = base port -> AL = the status register, read until it
+;            is something other than zero or ATA_WAKETIME has gone by
+;            with it zero throughout.  AH is lost, everything else kept.
+;
+; TIMED BY THE CLOCK AND NOT BY A COUNT OF READS, because interrupts are
+; off this early and the timer tick is not counting.  Bit 4 of port 61h
+; changes state with every memory refresh, every 15 microseconds on an
+; AT and everything since, whatever the processor's speed; the IBM AT's
+; own BIOS times its waits by it.  A board where it never changes is
+; still let go, after ATA_WAKECAP reads.  QEMU changes the bit on every
+; read, so there the wait is as short as the count.
 ;---------------------------------------------------------------------
-ATA_PROBESPIN   EQU     00200000h
-ata_probedrq:
-        push    eax
+ATA_WAKETIME    EQU     2000            ; changes of the bit: 30 ms, and
+                                        ; what an empty position costs
+ATA_WAKECAP     EQU     200000          ; reads, at least a microsecond each
+ata_wake:
         push    ebx
         push    ecx
         push    edx
         add     dx,ATA_STATUS
-        mov     ecx,ATA_PROBESPIN
-        mov     ebx,ATA_WAKESPIN
-apq_lp:
+        mov     ecx,ATA_WAKETIME
+        mov     ebx,ATA_WAKECAP
+        in      al,61h
+        and     al,10h
+        mov     ah,al                   ; AH = the refresh bit as last seen
+awk_lp:
         in      al,dx
-        cmp     al,0FFh
-        je      apq_fail
+        or      al,al
+        jnz     awk_out
+        dec     ebx
+        jz      awk_out                 ; AL = 0
+        in      al,61h
+        and     al,10h
+        cmp     al,ah
+        je      awk_lp
+        mov     ah,al
+        loop    awk_lp
+        xor     al,al
+awk_out:
+        pop     edx
+        pop     ecx
+        pop     ebx
+        ret
+
+;---------------------------------------------------------------------
+; ata_probedrq - ata_waitdrq for a question that may have nobody to
+;                answer it: the same test, given up on sooner, and if
+;                the status register reads zero for as long as
+;                ata_wake waits.  DX = base port.  CF set if no data
+;                was offered.
+;---------------------------------------------------------------------
+ATA_PROBESPIN   EQU     00200000h
+ata_probedrq:
+        push    eax
+        push    ecx
+        mov     ecx,ATA_PROBESPIN
+apq_lp:
+        push    edx
+        add     dx,ATA_STATUS
+        in      al,dx
+        pop     edx
         or      al,al
         jnz     apq_live
-        dec     ebx
+        call    ata_wake                ; AL = the status, 0 only if it
+        or      al,al                   ; stayed 0 for the whole wait
         jz      apq_fail
-        jmp     short apq_next
 apq_live:
-        mov     ebx,ATA_WAKESPIN
+        cmp     al,0FFh
+        je      apq_fail
         test    al,ATA_ST_BSY
         jnz     apq_next
         test    al,ATA_ST_ERR OR ATA_ST_DF
@@ -723,16 +840,12 @@ apq_next:
         dec     ecx
         jnz     apq_lp
 apq_fail:
-        pop     edx
         pop     ecx
-        pop     ebx
         pop     eax
         stc
         ret
 apq_ok:
-        pop     edx
         pop     ecx
-        pop     ebx
         pop     eax
         clc
         ret
@@ -1307,6 +1420,69 @@ ahs_lp:
         pop     esi
         pop     edx
         pop     ecx
+        ret
+
+;=====================================================================
+; ata_cmd640 - switch on a CMD640's secondary channel if the BIOS left
+;              it off and nothing else answers where it would.
+;
+; THE CMD640 HAS A BIT THAT SAYS WHETHER ITS SECOND CHANNEL IS THERE AT
+; ALL, bit 3 of configuration register 51h, and a BIOS of its time with
+; no drive of its own on that cable can leave it clear.  The channel
+; then decodes nothing, and a CD-ROM drive on it reads as an empty bus
+; however it is asked.  Linux's cmd640.c sets the bit on the same
+; terms: only when nothing is answering at 170h already, which is
+; asked by writing the drive select register for each drive and
+; reading it back, a tenth of a millisecond later.
+;
+; Only a CMD640 configuration space can reach.  The VESA local bus
+; ones are configured through ports of their own and are left alone.
+;=====================================================================
+CMD640_ID       EQU     06401095h       ; device:vendor
+CMD640_CNTRL    EQU     51h
+CMD640_ENA2ND   EQU     08h
+
+ata_cmd640:
+        pushad
+        mov     ecx,CMD640_ID
+        or      edx,-1
+        mov     edi,PCT_ID
+        xor     esi,esi
+        call    pcx_match               ; EBX = where it is
+        jc      a64_out
+        mov     dx,0100h + CMD640_CNTRL ; a byte at 51h
+        call    pcx_rd
+        test    al,CMD640_ENA2ND
+        jnz     a64_out                 ; on already
+        push    eax
+        push    edx
+        mov     dx,170h + ATA_DEVSEL
+        mov     al,0Ah                  ; master, then 1Ah, the slave
+a64_ask:
+        mov     ah,al
+        out     dx,al
+        mov     ecx,100
+a64_wait:
+        in      al,80h                  ; a microsecond each, near enough
+        loop    a64_wait
+        in      al,dx
+        and     al,1Fh
+        cmp     al,ah
+        je      a64_taken               ; somebody else is there
+        mov     al,ah
+        add     al,10h
+        cmp     al,1Ah
+        jbe     a64_ask
+        pop     edx
+        pop     ecx
+        or      cl,CMD640_ENA2ND
+        call    pcx_wr
+        jmp     short a64_out
+a64_taken:
+        pop     edx
+        pop     eax
+a64_out:
+        popad
         ret
 
 ;=====================================================================

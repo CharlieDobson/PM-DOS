@@ -665,6 +665,78 @@ To move a file to another drive under a new name:
 To rename a directory:
 
     move oldname newname
+#topic NET|Net
+Connects a drive letter to a shared directory on another computer, or
+disconnects the drive letter.
+
+{b}Syntax{p}
+
+    NET USE drive: \\server\share [password] [/USER:name] [/DOMAIN:name]
+            [/SMB1]
+    NET USE drive: /DELETE
+    NET USE
+
+NET USE on its own lists the drive letters that are connected.
+
+{b}Parameters{p}
+
+drive:
+    The drive letter to use, from A: to P:.  The letter must not be in
+    use already.
+
+\\server\share
+    The other computer's name or IP address, and the name of the
+    shared directory on it.
+
+password
+    The password for the share, or for the user named with /USER:.
+
+{b}Switches{p}
+
+/USER:name
+    The user name to log in with.  /U: is the short form.
+
+/DOMAIN:name
+    The domain or workgroup of the user.  /D: is the short form.
+
+/SMB1
+    Uses the older SMB1 protocol without trying SMB2 and SMB3 first.
+
+/DELETE
+    Disconnects the drive letter.  /D is the short form.
+
+{b}Related Commands{p}
+
+NET USE needs [[SMBFS.SYS]], and [[TCPIP.SYS]] or [[NETBEUI.SYS]].  To
+share this computer's files, see [[SMBSRV]].
+#notes
+{b}Using the drive{p}
+
+Once connected, the drive works like any other: DIR, TYPE, COPY, MD
+and the rest can be used on it.  See [[SMBFS.SYS]] for how the server
+is found and what a network drive can do.
+
+{b}How long a connection lasts{p}
+
+A drive stays connected until NET USE /DELETE or until the computer is
+restarted.  To connect the drive at every start, put the NET USE line
+in AUTOEXEC.BAT.
+#examples
+To connect K: to the FILES share on SERVER:
+
+    net use k: \\server\files
+
+To log in as a user, with a password:
+
+    net use k: \\server\files secret /user:jsmith /domain:office
+
+To see which drives are connected:
+
+    net use
+
+To disconnect K:
+
+    net use k: /delete
 #topic NETBEUI.SYS|Netbeui.sys
 Loads the NetBEUI network protocol, which older Windows networks use
 without TCP/IP.
@@ -913,7 +985,7 @@ Uses part of the computer's memory as a disk drive.
 
 size
     Size of the RAM disk in kilobytes, from 4 to 2,096,896.  Default
-    is 64.  A larger size is reduced to 2,096,896.
+    is 256.  A larger size is reduced to 2,096,896.
 
 sector-size
     128, 256, 512 or 1024.  For backwards compatibility only.  PM-DOS
@@ -1116,7 +1188,8 @@ prepare and format a new hard disk.
 
 When the first hard disk has no partitions, Setup makes one partition
 of the free space and restarts the computer.  Setup then starts again
-by itself and formats the drive.  Disks of 512MB and more are
+by itself and formats the drive.  Disks up to 2GB are formatted
+FAT16, which every version of DOS can read.  Larger disks are
 formatted FAT32.  To divide the disk another way, leave Setup, run
 FDISK, and restart from the Setup disk.
 
@@ -1263,6 +1336,146 @@ Any argument but /? is refused: a mistyped switch must not switch the
 machine off.
 #examples
     shutdown
+#topic SMBFS.SYS|Smbfs.sys
+Lets PM-DOS use shared directories on other computers as drive
+letters.
+
+{b}Syntax{p}
+
+    DEVICE=[drive:][path]SMBFS.SYS
+
+{b}Parameters{p}
+
+[drive:][path]
+    Location of the SMBFS.SYS file.
+
+{b}Related Commands{p}
+
+Load the network card's driver, and [[TCPIP.SYS]] or [[NETBEUI.SYS]],
+on [[DEVICE=]] lines above this one.  To connect a drive letter, see
+[[NET]].
+#notes
+{b}How the server is found{p}
+
+With TCP/IP, the server's name is looked up as [[PING]] looks it up.
+SMBFS.SYS connects with SMB2 or SMB3 first.  If the server does not
+answer, SMB1 is tried, for Windows for Workgroups, Windows NT 3.x and
+SMBSRV.
+
+When TCPIP.SYS is not loaded, or the server cannot be found with it,
+NetBEUI is used, with SMB1.  The server's name must then be up to 15
+letters with no dot.
+
+{b}What a network drive can do{p}
+
+Files can be read, written, copied, renamed and deleted, and
+directories made and removed.  Long names are cut to eight characters
+and a three-character extension.  Up to 16 files can be open on each
+drive, and a directory shows at most 256 entries.
+#examples
+To use network drives over TCP/IP:
+
+    device=c:\dos\ne2000.sys
+    device=c:\dos\tcpip.sys
+    device=c:\dos\smbfs.sys
+#topic SMBSRV|Smbsrv
+Shares a directory of this computer with other computers on the
+network.
+
+{b}Syntax{p}
+
+    SMBSRV [drive:][path]
+
+{b}Parameters{p}
+
+[drive:][path]
+    The directory to share.  Defaults to C:\ if none specified.
+
+{b}Related Commands{p}
+
+SMBSRV needs [[TCPIP.SYS]] or [[NETBEUI.SYS]], or both.  To use a
+directory shared by another computer, see [[NET]].
+#notes
+{b}Connecting to SMBSRV{p}
+
+Other computers find SMBSRV by this computer's name, given to
+TCPIP.SYS or NETBEUI.SYS with /NAME=.  SMBSRV shows the name when it
+starts.  Any share name reaches the shared directory:
+
+    net use k: \\pmdos1\c
+
+SMBSRV speaks SMB1 only.  Windows for Workgroups and other PM-DOS
+computers can connect to it.  Windows 10 and later have SMB1 turned
+off by default, so they cannot connect unless SMB1 is turned on.
+
+{b}No passwords{p}
+
+SMBSRV accepts any user name and password.  Anyone on the network
+can read, change and delete the shared files, so share only a
+directory you are happy for others to change.
+
+{b}One computer at a time{p}
+
+SMBSRV serves one computer at a time.
+
+{b}Stopping SMBSRV{p}
+
+Press Ctrl+Break to stop SMBSRV.  A computer that is connected is
+disconnected.  Other keys are ignored.
+#examples
+To share drive C:
+
+    smbsrv
+
+To share only C:\PUBLIC:
+
+    smbsrv c:\public
+#topic SNTP|Sntp
+Sets the date and time from a time server on the network.
+
+{b}Syntax{p}
+
+    SNTP [server] [/S] [/Z:hours]
+
+{b}Parameters{p}
+
+server
+    The time server: a name or an IP address.  Defaults to pool.ntp.org
+    if none specified.
+
+{b}Switches{p}
+
+/S
+    Shows the server's time without setting the clock.
+
+/Z:hours
+    Hours to add to the server's time, which is UTC.  Use a minus sign
+    for places west of Greenwich, such as /Z:-5.
+
+{b}Related Commands{p}
+
+SNTP needs [[TCPIP.SYS]].  To set the clock by hand, see [[DATE]] and
+[[TIME]].
+#notes
+{b}Time zones{p}
+
+/Z: takes whole hours only.  Summer time is not allowed for, so add
+the extra hour to /Z: while it is in force.
+
+{b}At every start{p}
+
+Put the SNTP line in AUTOEXEC.BAT to set the clock each time the
+computer starts.  SNTP waits up to five seconds for the server to
+answer.
+#examples
+To set the clock to UTC:
+
+    sntp
+
+To set the clock to US Eastern time from a server on the local
+network:
+
+    sntp 192.168.1.1 /z:-5
 #topic SORT|Sort
 Sorts lines of text and writes them to the screen, a file or another
 command.
@@ -1444,6 +1657,50 @@ To use a fixed address:
 To give the computer the name PMDOS1 on a Windows network:
 
     device=c:\dos\tcpip.sys /name=pmdos1
+#topic TELNET|Telnet
+Connects to another computer, so programs on that computer can be used
+from this one.
+
+{b}Syntax{p}
+
+    TELNET host [port] [/T:seconds]
+
+{b}Parameters{p}
+
+host
+    The computer to connect to: a name or an IP address.
+
+port
+    The port to connect to.  Defaults to 23.
+
+{b}Switches{p}
+
+/T:seconds
+    Disconnects when nothing has been typed or received for this many
+    seconds.
+
+{b}Related Commands{p}
+
+TELNET needs [[TCPIP.SYS]].
+#notes
+{b}Leaving TELNET{p}
+
+Press Ctrl+] to disconnect.  TELNET also ends when the other computer
+closes the connection.
+
+{b}The screen{p}
+
+What the other computer sends is shown as it arrives.  TELNET is not a
+full terminal, so a program that draws the whole screen may look
+wrong.  The arrow keys are sent as ANSI cursor keys.
+#examples
+To connect to a bulletin board:
+
+    telnet bbs.example.com
+
+To connect to port 2323 on another computer:
+
+    telnet 192.168.1.5 2323
 #topic TREE|Tree
 Shows the directories of a drive or path as a tree.
 
@@ -1671,6 +1928,109 @@ taken the controllers, which is just after CONFIG.SYS.  Until then the
 BIOS drives them, as it did before PM-DOS started.
 #examples
     usb
+#topic WGET|Wget
+Fetches a file from a web server.
+
+{b}Syntax{p}
+
+    WGET url [/O:[drive:][path]filename] [/CA:[drive:][path]filename]
+         [/K] [/V]
+
+{b}Parameters{p}
+
+url
+    The address of the file, starting http:// or https://, such as
+    http://example.com/index.html.
+
+{b}Switches{p}
+
+/O:filename
+    Saves the file under this name.  Without /O:, the file is shown on
+    the screen, so it can be redirected or piped.
+
+/CA:filename
+    The file of root certificates to check HTTPS servers against.
+    Defaults to CACERT.BND.
+
+/K
+    Connects to an HTTPS server without checking its certificate.
+
+/V
+    Says whether the server's certificate was checked.
+
+{b}Related Commands{p}
+
+WGET needs [[TCPIP.SYS]].  To copy files to and from an FTP server,
+see [[FTP]].
+#notes
+{b}Certificates{p}
+
+For an https:// address, WGET checks the server's certificate against
+the root certificates in CACERT.BND.  If the check fails, nothing is
+fetched and the reason is shown.
+
+WGET looks for the file named by the CACERT environment variable, then
+for CACERT.BND in the current directory and in each directory on the
+PATH.  Setup puts CACERT.BND with the other PM-DOS files.  If no file
+is found, WGET
+fetches anyway and warns that the certificate was not checked.
+
+{b}Moved files{p}
+
+WGET does not follow a server that says a file has moved.  With /O:,
+the saved message shows the server's answer, such as HTTP 301: use the
+new address instead.
+#examples
+To show a web page on the screen:
+
+    wget http://example.com/
+
+To save a file:
+
+    wget https://example.com/files/tools.zip /o:tools.zip
+
+To save a page with redirection:
+
+    wget http://example.com/ > page.htm
+#topic X87EMU.SYS|X87emu.sys
+Does the work of a math coprocessor for PM-DOS programs on a computer
+that has none.
+
+{b}Syntax{p}
+
+    DEVICE=[drive:][path]X87EMU.SYS
+
+{b}Parameters{p}
+
+[drive:][path]
+    Location of the X87EMU.SYS file.
+
+{b}Related Commands{p}
+
+X87EMU.SYS is loaded with [[DEVICE=]].
+#notes
+{b}Which computers need X87EMU.SYS{p}
+
+A 386 without a 387, and a 486SX, have no math coprocessor.  On these
+computers X87EMU.SYS carries out the floating-point instructions of
+PM-DOS programs.  On a computer with a coprocessor, X87EMU.SYS does not
+stay loaded and shows no message, so one CONFIG.SYS works on any
+computer.  The CONFIG.SYS that PM-DOS comes with, and the one Setup
+writes, load X87EMU.SYS.
+
+{b}Programs written for MS-DOS{p}
+
+X87EMU.SYS is for PM-DOS programs only.  Programs written for MS-DOS,
+and DPMI programs, use their own emulators, as they do under MS-DOS.
+
+{b}Memory{p}
+
+X87EMU.SYS uses about 20K of extended memory and no conventional
+memory.
+#examples
+To load the emulator:
+
+    device=c:\dos\x87emu.sys
 #topic XARC|Xarc|XArchive
 Lists, tests and extracts archives, and makes zip and 7z archives, on
 a screen of its own or from the command line.

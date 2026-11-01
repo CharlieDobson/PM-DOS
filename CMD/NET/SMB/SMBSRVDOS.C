@@ -308,8 +308,59 @@ static const srv_vfs DOSVFS = {
 /* the transport, over the accepted socket                               */
 /* ====================================================================== */
 
+/* ====================================================================== */
+/* stopping: Ctrl+Break only                                              */
+/* ====================================================================== */
+
+/* SRVBRK.ASM: the INT 23h handler counts into srv_breaks */
+extern void __cdecl srv_brkstub( void );
+extern volatile u32 __cdecl srv_breaks;
+
+static void brk_install( void )
+{
+    REGS regs;
+
+    sl_memzero( &regs, sizeof( regs ) );
+    regs.eax = 0x2523;
+    regs.edx = (u32)srv_brkstub;
+    int21( &regs );
+}
+
+/* 0Bh looks for a ^C itself, and a Ctrl+Break waiting runs srv_brkstub.
+   Any other key is read and dropped (07h: no echo, no ^C check), so a
+   key pressed by mistake neither stops SMBSRV nor sits in front of the
+   break where 0Bh would not see it.  At most 32 a call: standard input
+   redirected from a device that is always ready would never run dry. */
+static int stop_asked( void )
+{
+    REGS regs;
+    int  n;
+
+    for ( n = 0; n < 32 && srv_breaks == 0 && sl_kbhit(); n++ ) {
+        sl_memzero( &regs, sizeof( regs ) );
+        regs.eax = 0x0700;
+        int21( &regs );
+    }
+    return srv_breaks != 0;
+}
+
 static int srv_send( void *ctx, const unsigned char *buf, int len ) { return sl_send( (int)ctx, buf, (u32)len, 15000 ); }
-static int srv_recv( void *ctx, unsigned char *buf, int len ) { return sl_recvwait( (int)ctx, buf, (u32)len, 30000 ); }
+
+/* sl_recvwait's loop, with a look for Ctrl+Break: a client that is
+   connected and idle is dropped at once rather than after 300 seconds */
+static int srv_recv( void *ctx, unsigned char *buf, int len )
+{
+    u32 start = sl_now();
+    int got;
+
+    for ( ;; ) {
+        if ( stop_asked() ) return 0;
+        got = sl_recv( (int)ctx, buf, (u32)len );
+        if ( got ) return got;
+        if ( sl_closed( (int)ctx ) ) return 0;
+        if ( sl_since( start ) > 30000 ) return 0;
+    }
+}
 
 /* ====================================================================== */
 /* the transport over NetBEUI (NETBEUI.SYS, on its row: 21h/F1h AL=25h)  */
@@ -422,6 +473,7 @@ static int nb_recv( void *ctx, unsigned char *buf, int len )
     if ( len <= 0 ) return 0;
     if ( c->pendoff == c->pendn && c->left == 0 ) {
         for ( ;; ) {                    /* the next message */
+            if ( stop_asked() ) return 0;
             if ( nb_state( c->h, &st ) != NBX_UP && st.rxready == 0 ) return 0;
             if ( st.rxready ) break;
             if ( sl_since( start ) > 30000 ) return 0;
@@ -503,6 +555,9 @@ void __cdecl dos_entry( void )
         else if ( !tcp || sl_strcmp( smbsrv_name, "PMDOS" ) == 0 ) sl_strcpy( smbsrv_name, nbif.name, sizeof( smbsrv_name ) );
     }
 
+    /* from here on there is something to close before ending */
+    brk_install();
+
     if ( tcp ) {
         lh = sl_open( SOCK_STREAM );
         if ( lh == 0 || !sl_listen( lh, 139 ) ) { sl_puts( "SMBSRV: cannot listen on port 139.\r\n" ); tcp = 0; }
@@ -516,12 +571,13 @@ void __cdecl dos_entry( void )
     sl_puts( "SMBSRV: sharing " ); sl_puts( fs.root );
     sl_puts( " as \\\\" ); sl_puts( smbsrv_name );
     sl_puts( tcp && nb_row >= 0 ? " on TCP/IP and NetBEUI" : tcp ? " on TCP/IP" : " on NetBEUI" );
-    sl_puts( ".  Ctrl-Break to stop.\r\n" );
+    sl_puts( ".  Press Ctrl+Break to stop.\r\n" );
     sl_flush();
 
     for ( ;; ) {
         if ( tcp ) {
-            nh = sl_accept( lh, &peer_ip, &peer_port, nb_row >= 0 ? 20 : 2000 );
+            /* a fifth of a second, so a Ctrl+Break is seen promptly */
+            nh = sl_accept( lh, &peer_ip, &peer_port, 20 );
             if ( nh ) {
                 sl_puts( "SMBSRV: client " ); sl_putip( peer_ip ); sl_puts( " connected.\r\n" ); sl_flush();
                 smbsrv_serve( srv_send, srv_recv, (void *)nh, &DOSVFS, &fs, "PMSHARE" );
@@ -542,9 +598,11 @@ void __cdecl dos_entry( void )
             nbh = nb_listen();
             if ( nbh == 0 ) { sl_puts( "SMBSRV: cannot listen on NetBEUI.\r\n" ); nb_row = -1; }
         }
-        if ( sl_kbhit() ) break;
+        if ( stop_asked() ) break;
         if ( !tcp && nb_row < 0 ) break;
     }
     if ( tcp ) sl_sclose( lh );
     if ( nb_row >= 0 && nbh ) nbc( NB_HANGUP, &nbh, sizeof( nbh ), &err );
+    if ( srv_breaks ) sl_puts( "SMBSRV: stopped.\r\n" );
+    sl_flush();
 }

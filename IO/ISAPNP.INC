@@ -46,9 +46,13 @@
 ; BIOS's numbering and none of its work: a device the BIOS switched on
 ; stays on and stays where it was put.
 ;
-; Interrupts are off when this runs and the clock is not ticking, so
-; the pauses the specification asks for are counted in reads of port
-; 80h - a microsecond or so each on an ISA bus, and more is harmless.
+; THE PAUSES ARE TIMED BY THE TIMER.  Interrupts are off when this runs
+; and the clock is not ticking, but channel 0 of the 8254 counts on
+; regardless, and pnp_pause reads it.  They were counted in reads of
+; port 80h, a microsecond each only where the chipset hands port 80h to
+; the ISA bus; one that answers it on PCI answers it in a fraction of
+; that, and a 250 microsecond pause between the two reads of an
+; isolation bit was then too short for the card to drive the bit.
 ;
 ; Included by IOPM.ASM, after PROBELOG.INC and before ATA.INC, whose
 ; ata_ports it reads.
@@ -90,9 +94,9 @@ PNP_MAXCARD     EQU     8               ; cards given a number
 PNP_MAXIDE      EQU     2               ; IDE controllers remembered
 PNP_MAXRES      EQU     4096            ; bytes of one card's resources read
 
-PNP_T250        EQU     500             ; reads of port 80h: 250 microseconds
-PNP_T1MS        EQU     2000            ; a millisecond
-PNP_T2MS        EQU     4000
+PNP_T250        EQU     250             ; microseconds, for pnp_pause
+PNP_T1MS        EQU     1000
+PNP_T2MS        EQU     2000
 PNP_RESWAIT     EQU     20000           ; polls before a resource byte is
                                         ; given up on
 
@@ -200,17 +204,56 @@ pnp_rd16:
         ret
 
 ;---------------------------------------------------------------------
-; pnp_pause - ECX reads of port 80h.  Everything kept.
+; pnp_pause - ECX microseconds at least.  Everything kept.
+;
+; Channel 0 counts down at 1,193,182 a second.  In the square-wave mode
+; the BIOS leaves it in the count goes down by two a step, so five
+; counts in two are taken as a microsecond: longer than that in the
+; other mode, never shorter.  A count that goes up has been reloaded,
+; and only what was left before the reload is counted.  ESI is a guard
+; for a timer that does not move; reading it is three bus cycles, so on
+; a machine whose timer runs the guard is never what ends the pause.
 ;---------------------------------------------------------------------
 pnp_pause:
         push    eax
+        push    ebx
         push    ecx
+        push    edx
+        push    esi
+        lea     esi,[ecx*8+64]
+        lea     ecx,[ecx+ecx*4]
+        shr     ecx,1                           ; ECX = counts to wait
+        call    pnp_pit
+        mov     ebx,eax                         ; BX = the count before
 ppa_lp:
-        in      al,80h
-        dec     ecx
-        jnz     ppa_lp
+        call    pnp_pit
+        mov     edx,ebx
+        cmp     ax,bx
+        ja      ppa_turn                        ; reloaded: what was left
+        sub     edx,eax
+ppa_turn:
+        movzx   edx,dx                          ; EDX = counts gone by
+        mov     ebx,eax
+        dec     esi
+        jz      ppa_out
+        sub     ecx,edx
+        ja      ppa_lp
+ppa_out:
+        pop     esi
+        pop     edx
         pop     ecx
+        pop     ebx
         pop     eax
+        ret
+
+; pnp_pit - AX = channel 0's count, latched
+pnp_pit:
+        xor     al,al
+        out     PIT_CTRL,al
+        in      al,PIT_CH0
+        mov     ah,al
+        in      al,PIT_CH0
+        xchg    al,ah
         ret
 
 ;---------------------------------------------------------------------

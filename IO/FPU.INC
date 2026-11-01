@@ -47,6 +47,36 @@
 ; real DOS software and Windows, which look for the error on line 13
 ; and set CR4 for themselves (fpu_park, fpu_unpark).
 ;
+; WITH NO COPROCESSOR, A NATIVE PROGRAM'S ARE EMULATED - once
+; X87EMU.SYS is loaded.  A 386 on its own and a 486SX run no
+; floating-point instruction at all, and a native program has no
+; emulator of its own to fall back on.  The emulator is C
+; (DRV\X87EMU\X87*.C), 20K of it, and is a 32-bit driver rather than
+; part of this image, so that the machines with a coprocessor - most
+; of them - do not carry it.  Its INIT hands this file its two entries
+; (FPU_SETEMU, through NDS_FPUEMU); from then on EM is set in CR0,
+; every such instruction is exception 7, and for a native program that
+; comes to fpu_nm and through fpu_emtrap to the driver.  The state is
+; fpu_emst, kept a level at a time like a real one.
+;
+; WITHOUT THE DRIVER NOTHING HERE IS DIFFERENT from before there was an
+; emulator: CR0 is as the BIOS left it, FPUF_EMU is clear, and a native
+; program's coprocessor instruction is its own exception 7.
+;
+; A DOS box and a DPMI client are left as they were.  They have never
+; been given a coprocessor on such a machine; they bring emulators of
+; their own, which a BIOS that sets EM expects to find on INT 7, and
+; with that BIOS they still get exception 7 exactly as before.  With a
+; BIOS that left EM clear they ran their coprocessor instructions on
+; whatever was in the socket, and still do: the first one clears EM
+; (fpu_lend) and is run again, and EM is set once more before a native
+; program can next run (fpu_reclaim, from v86_leave and from IOS_FPU,
+; which the DOS side calls on its way back to one).
+;
+; BUILD x87emu emulates on a machine that has a coprocessor, which is
+; how the emulator is tested at all: this file then reports none, and
+; X87EMU.SYS loads; the real one is then a box's.
+;
 ; Included by IOPM.ASM, after VPIC.INC.
 ;=====================================================================
 
@@ -72,6 +102,11 @@ FPC_CPUID       EQU     02h
 FPC_CR4         EQU     04h                     ; there is one, and it is ours
 
 MXCSR_RESET     EQU     00001F80h               ; every exception masked
+
+X87_STATE       EQU     128             ; IO\X87EMU.H's x87state, which
+                                        ; X87EMU.C checks fits in this
+X87_SEGREC      EQU     12              ; ...and its x87seg: base, limit,
+                                        ; selector, and whether it is one
 
 ;=====================================================================
 ; fpu_init - once, from pm_entry, with interrupts off.
@@ -111,6 +146,9 @@ fpu_init:
 ; bit 12 clear.  With nothing in the socket the two stores store
 ; nothing, and what was put in the word beforehand is still there.
 fpi_probe:
+IFDEF X87_FORCE
+        jmp     fpi_none                        ; as though there were none
+ENDIF
         mov     eax,cr0
         and     eax,NOT (CR0_EM OR CR0_TS)
         mov     cr0,eax
@@ -193,7 +231,8 @@ fpi_fresh:
 
         ; No coprocessor.  CR0 goes back to what the BIOS decided about
         ; that - some set EM so that an emulator can be loaded, some do
-        ; not - and nothing else here is touched.
+        ; not - and nothing else here is touched until X87EMU.SYS asks
+        ; (fpv_setemu).
 fpi_none:
         mov     eax,dword ptr [fpu_cr0boot]
         mov     cr0,eax
@@ -232,6 +271,10 @@ fpu_flagbit:
 fpu_svc:
         cmp     al,FPU_INFO
         je      fpv_info
+        cmp     al,FPU_SETEMU
+        je      fpv_setemu
+        test    byte ptr [fpu_flags],FPUF_EMU
+        jnz     fpu_emsvc
         test    byte ptr [fpu_flags],FPUF_X87
         jz      fpv_out
         cmp     al,FPU_KEEP
@@ -398,10 +441,15 @@ fpu_line:
 ; fpu_unpark - and on its way back.  Everything preserved.
 ;=====================================================================
 fpu_park:
-        test    byte ptr [fpu_flags],FPUF_X87
+        test    byte ptr [fpu_flags],FPUF_X87 OR FPUF_EMU
         jz      fpk_out
         push    eax
         push    edi
+        ; The emulator's state is memory, and stays where it is; only
+        ; CR0 is the BIOS's again, which also ends any lending.
+        mov     byte ptr [fpu_lent],0
+        test    byte ptr [fpu_flags],FPUF_EMU
+        jnz     fpk_cr0
         mov     edi,dword ptr [fpu_parkat]
         mov     al,FPU_KEEP
         call    fpu_svc
@@ -424,7 +472,7 @@ fpk_out:
         ret
 
 fpu_unpark:
-        test    byte ptr [fpu_flags],FPUF_X87
+        test    byte ptr [fpu_flags],FPUF_X87 OR FPUF_EMU
         jz      fpu_upout
         push    eax
         push    esi
@@ -445,12 +493,167 @@ fpu_unpark:
         or      eax,esi
         db      0Fh,22h,0E0h                    ; MOV CR4,EAX
 fpu_upstate:
+        test    byte ptr [fpu_flags],FPUF_EMU
+        jnz     fpu_upemu                       ; nothing was put away
         mov     esi,dword ptr [fpu_parkat]
         mov     al,FPU_BACK
         call    fpu_svc
+fpu_upemu:
         pop     esi
         pop     eax
 fpu_upout:
+        ret
+
+;=====================================================================
+; fpv_setemu - IOS_FPU FPU_SETEMU: X87EMU.SYS is in.  EDX = its trap
+;              entry (x87_trap), ECX = its init entry (x87_init), both
+;              in the driver's image for good, EBX -> a dword of the
+;              driver's that is given fpu_uok's address - before FPUF_EMU
+;              is set, so the trap can never run with it still 0.  -> CF
+;              clear; or CF set, nothing done, and EAX = why: 1 there is
+;              a coprocessor, 2 an emulator is in already, 3 an entry or
+;              EBX is 0.
+;
+; From here on it is what fpi_none was while the emulator was part of
+; this image: EM set and MP clear, so that an ESC instruction is
+; exception 7 and an FWAIT is nothing at all; TS clear, because there
+; is no state switch for it to signal.  What the BIOS decided about EM
+; is still fpu_cr0boot, which is what a park gives back and what
+; fpu_lend goes by.
+;
+; CR0 IS CHANGED WHERE IT STANDS and not rebuilt from fpu_cr0boot as
+; fpi_none could: this is CONFIG.SYS time, paging is on, and the BIOS's
+; CR0 has PG clear.  fpu_cr0run is the same three bits on what it was,
+; which is all fpu_unpark reads of it.
+;=====================================================================
+.ERRNZ  (FSE_X87 - 1) OR (FSE_HAVE - 2) OR (FSE_BAD - 3), <fpv_setemu counts its FSE_ answers>
+fpv_setemu:
+        mov     eax,FSE_X87
+        test    byte ptr [fpu_flags],FPUF_X87
+        jnz     fse_no
+        inc     eax
+        test    byte ptr [fpu_flags],FPUF_EMU
+        jnz     fse_no
+        inc     eax
+        or      edx,edx
+        jz      fse_no
+        or      ecx,ecx
+        jz      fse_no
+        or      ebx,ebx
+        jz      fse_no
+        mov     dword ptr [ebx],OFFSET fpu_uok
+        pushad
+        mov     dword ptr [fpu_emtrap],edx
+        mov     dword ptr [fpu_eminit],ecx
+        mov     eax,OFFSET fpu_emst
+        call    ecx                             ; x87_init
+        mov     eax,cr0
+        and     eax,NOT (CR0_MP OR CR0_TS)
+        or      eax,CR0_EM
+        mov     cr0,eax
+        mov     eax,dword ptr [fpu_cr0run]
+        and     eax,NOT (CR0_MP OR CR0_TS)
+        or      eax,CR0_EM
+        mov     dword ptr [fpu_cr0run],eax
+        or      byte ptr [fpu_flags],FPUF_EMU   ; last: fpu_nm goes by it
+        popad
+        clc
+        ret
+fse_no:
+        stc
+        ret
+
+;=====================================================================
+; THE EMULATOR'S SIDE.  fpu_emsvc is IOS_FPU with FPUF_EMU: the state
+; is fpu_emst, and keeping it is a copy.  Every one of these calls is
+; the DOS side on its way to a program, which may be a native one, so
+; each makes sure EM is set again first.  Everything preserved.
+;=====================================================================
+fpu_emsvc:
+        call    fpu_reclaim
+        pushad
+        cld
+        cmp     al,FPU_KEEP
+        je      fes_keep
+        cmp     al,FPU_BACK
+        je      fes_back
+        cmp     al,FPU_FRESH
+        je      fes_fresh
+        jmp     short fes_out
+fes_keep:
+        mov     esi,OFFSET fpu_emst
+        mov     ecx,X87_STATE / 4
+        rep     movsd
+fes_fresh:
+        mov     eax,OFFSET fpu_emst
+        call    dword ptr [fpu_eminit]
+        jmp     short fes_out
+fes_back:
+        mov     edi,OFFSET fpu_emst
+        mov     ecx,X87_STATE / 4
+        rep     movsd
+fes_out:
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; fpu_lend    - a DOS box or a DPMI client has executed a coprocessor
+;               instruction, and the BIOS had left EM clear: clear it,
+;               so that the instruction runs again as it always did.
+; fpu_reclaim - and set it again, before native code can run.
+; Everything preserved by both.
+;---------------------------------------------------------------------
+fpu_lend:
+        push    eax
+        mov     eax,cr0
+        and     eax,NOT CR0_EM
+        mov     cr0,eax
+        mov     byte ptr [fpu_lent],1
+        pop     eax
+        ret
+
+fpu_reclaim:
+        cmp     byte ptr [fpu_lent],0
+        je      frc_out
+        push    eax
+        mov     eax,cr0
+        or      eax,CR0_EM
+        mov     cr0,eax
+        mov     byte ptr [fpu_lent],0
+        pop     eax
+frc_out:
+        ret
+
+;---------------------------------------------------------------------
+; fpu_boxnm - exception 7 out of a DOS box or a DPMI client.  CF clear
+;             if it has been lent the coprocessor and is to run the
+;             instruction again; CF set if the exception is its own, as
+;             it was before there was an emulator.  Everything preserved.
+;---------------------------------------------------------------------
+fpu_boxnm:
+        test    byte ptr [fpu_flags],FPUF_EMU
+        jz      fbn_own
+        test    byte ptr [fpu_cr0boot],CR0_EM
+        jnz     fbn_own
+        call    fpu_lend
+        clc
+        ret
+fbn_own:
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; fpu_uok - usr_wok, for the emulator: EAX = a linear address, ECX = a
+;           length.  -> EAX = 1 if ring 3 could write all of it, 0 if
+;           not.  Nothing else is changed.  X87EMU.SYS is given its
+;           address by FPU_SETEMU and calls it through that.
+;---------------------------------------------------------------------
+fpu_uok:
+        call    usr_wok
+        mov     eax,0
+        jc      fuo_out
+        inc     eax
+fuo_out:
         ret
 
 ;=====================================================================
@@ -458,6 +661,10 @@ fpu_upout:
 ;=====================================================================
 fpu_cr0boot     dd      0               ; CR0 as the BIOS left it
 fpu_cr0run      dd      0               ; ...and as PM-DOS runs with it
+fpu_emtrap      dd      0               ; X87EMU.SYS's x87_trap and
+fpu_eminit      dd      0               ; x87_init, once FPU_SETEMU has
+                                        ; them: 0 until then, and never
+                                        ; called while FPUF_EMU is clear
 fpu_cr4boot     dd      0
 fpu_cr4run      dd      0
 fpu_feat        dd      0               ; CPUID's EDX, 0 without one
@@ -469,5 +676,9 @@ fpu_flags       db      0               ; FPUF_*
 fpu_cpu         db      0               ; FPC_*
 fpu_owed        db      0               ; line 13 has interrupted, and the
                                         ; program has not been told
-                db      3 dup(0)
+fpu_lent        db      0               ; a box or a client has EM clear
+                db      2 dup(0)
 fpu_parkbuf     db      (FPU_AREA + 16) dup(0)
+
+fpu_emst        db      X87_STATE dup(0)        ; the emulator's coprocessor
+fpu_emseg       db      6 * X87_SEGREC dup(0)   ; fpu_nm's segments for it

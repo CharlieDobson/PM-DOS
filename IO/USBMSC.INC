@@ -156,10 +156,7 @@ uma_got:
         mov     byte ptr [esi+UN_SENSE],0
         mov     dword ptr [esi+UN_SECS],0
         mov     dword ptr [esi+UN_TAG],1
-        inc     byte ptr [esi+UN_GEN]
-        jnz     uma_gen
-        inc     byte ptr [esi+UN_GEN]   ; never zero: zero is "never"
-uma_gen:
+        call    usbm_newgen
         ; the model, blank until INQUIRY fills it
         lea     edi,[esi+UN_MODEL]
         mov     eax,20202020h
@@ -167,6 +164,16 @@ uma_gen:
         rep     stosd
         popad
         clc
+        ret
+
+;--- usbm_newgen - ESI -> a unit: its generation moves on, never to
+;--- zero, which is "never".  PMDOS unmounts a letter whose generation
+;--- is not the one it mounted (usb_chkmedia).
+usbm_newgen:
+        inc     byte ptr [esi+UN_GEN]
+        jnz     ung_out
+        inc     byte ptr [esi+UN_GEN]
+ung_out:
         ret
 
 usbm_detach:
@@ -200,6 +207,7 @@ usbm_funit:
         jae     umf_bad
         mov     al,dl
         call    unit_row
+        call    usbm_poke               ; the medium may have changed
         cmp     byte ptr [esi+UN_ALIAS],0
         jne     umf_taken               ; the BIOS's drive, with letters of
                                         ; its own: the USB letter stays empty
@@ -238,6 +246,65 @@ umf_taken:
         mov     ch,[esi+UN_ALIAS]
         pop     esi
         clc
+        ret
+
+;---------------------------------------------------------------------
+; usbm_poke - ESI -> a unit, DL = its number.  A unit that was ready
+;             and has not been asked about for two seconds is sent TEST
+;             UNIT READY, and a medium that has changed or gone since
+;             moves the generation on.  Everything preserved.
+;
+; A CARD SWAPPED IN A READER IS NOT NOTICED BY READING, because after a
+; swap nothing reads: the directory sector the volume layer holds, its
+; FAT and its free count answer DIR without a command reaching the
+; device, which is the lesson iso_chkmedia learnt for a CD.  So
+; usb_chkmedia's question (USF_UNIT) pokes the device - on the same
+; two-second terms as a diskette, so that a program reading a file a
+; sector a call pays for one command in two seconds and not one a call.
+;---------------------------------------------------------------------
+usbm_poke:
+        pushad
+        test    byte ptr [esi+UN_FLAGS],USBUF_READY
+        jz      upo_out
+        movzx   ecx,dl
+        mov     eax,dword ptr ds:[BDA_TICKS]
+        mov     edx,eax
+        sub     edx,dword ptr [usbm_seen+ecx*4]
+        mov     dword ptr [usbm_seen+ecx*4],eax
+        cmp     edx,36                  ; two seconds, as FPY_SAME_TICKS
+        jbe     upo_out
+        call    usbm_cdbclear           ; TEST UNIT READY is all zeros
+        mov     byte ptr [usbm_cdblen],6
+        xor     ecx,ecx
+        mov     dl,2
+        call    usbm_cmd
+IFDEF FDD_DEBUG
+        pushad
+        push    eax
+        mov     esi,OFFSET msgPoke
+        call    con_str
+        pop     eax
+        movzx   eax,al
+        call    con_hex8
+        popad
+        pushad
+        movzx   eax,byte ptr [esi+UN_SENSE]
+        call    con_hex8
+        popad
+ENDIF
+        cmp     al,MR_CHECK
+        jne     upo_out
+        cmp     byte ptr [esi+UN_SENSE],SK_ATTENTION
+        je      upo_new
+        cmp     byte ptr [esi+UN_SENSE],SK_NOTREADY
+        jne     upo_out
+        cmp     byte ptr [esi+UN_ASC],3Ah       ; MEDIUM NOT PRESENT
+        jne     upo_out
+upo_new:
+        and     byte ptr [esi+UN_FLAGS],NOT USBUF_READY
+        call    usbm_newgen
+upo_out:
+        popad
         ret
 
 usbm_fprobe:
@@ -1086,12 +1153,25 @@ urw_gone:
 urw_notready:
         mov     ah,31h                  ; no medium, or not a disk
         jmp     urw_fail
+; A MEDIUM THAT HAS GONE, OR CHANGED, IS A NEW GENERATION, just as a
+; device plugged in again is.  Counting only attaches missed the card
+; reader and the USB diskette drive, which stay attached while what is
+; in them is swapped: the next card said UNIT ATTENTION, the read
+; failed once, and PMDOS - whose generation had not moved - went on
+; with the first card's layout.  Whatever comes into the slot after a
+; NOT READY with MEDIUM NOT PRESENT (3Ah) is likewise not known to be
+; the medium that left it; a disk only spinning up again (04h) is.
 urw_nomedia:
         and     byte ptr [esi+UN_FLAGS],NOT USBUF_READY  ; ask it again next
-        mov     ah,31h                                    ; time
+        cmp     byte ptr [esi+UN_ASC],3Ah                 ; time
+        jne     urw_nm_same
+        call    usbm_newgen
+urw_nm_same:
+        mov     ah,31h
         jmp     urw_fail
 urw_changed:
         and     byte ptr [esi+UN_FLAGS],NOT USBUF_READY
+        call    usbm_newgen
         mov     ah,06h                  ; media changed
         jmp     urw_fail
 urw_protected:
@@ -1270,6 +1350,11 @@ uad_same:
 ; State
 ;=====================================================================
 usb_units   db  USB_MAXUNITS * UN_LEN dup(0)
+usbm_seen   dd  USB_MAXUNITS dup(0)     ; the tick each unit was last asked
+                                        ; about (usbm_poke)
+IFDEF FDD_DEBUG
+msgPoke     db  '[tur ',0
+ENDIF
 
 usbm_cdblen db  0
 usbm_dir    db  0

@@ -275,13 +275,27 @@ Sets the extended Ctrl+C checking flag at startup.
 
 {b}Parameters{p}
 
-ON | OFF
-    The flag programs read with INT 21h AX=3300h.  OFF without the
-    line.  PM-DOS itself does not yet look at the flag.
+ON
+    PM-DOS checks for Ctrl+C during disk work as well as during screen
+    and keyboard work, so Ctrl+C can stop a program that is busy with
+    files.
+
+OFF
+    PM-DOS checks for Ctrl+C during screen and keyboard work only.
+    This is the default setting.
 
 {b}Related Commands{p}
 
-The [[BREAK]] command changes it at the prompt.
+The [[BREAK]] command changes the setting at the prompt.
+#notes
+{b}Ctrl+Break{p}
+
+Ctrl+Break works like Ctrl+C, but goes ahead of any keys already
+typed.
+
+{b}Programs{p}
+
+Programs read the setting with INT 21h AX=3300h.
 #examples
     BREAK=ON
 #topic BUFFERS=|Buffers

@@ -2,16 +2,16 @@
 ; IOPM.ASM - PMIO.SYS protected-mode body
 ;
 ; The second half of PMIO.SYS.  Linked as a raw binary based at
-; IO_PM_BASE and concatenated onto IORM.BIN.  Because IORM.BIN is
-; padded to exactly RMSTUB_SIZE bytes, everything here lands where the
-; linker was told it would.
+; IO_PM_BASE and concatenated onto IORM.BIN.  The stub's cold start
+; blits it from wherever IORM.BIN ends (rm_pmload) to IO_PM_BASE, so
+; everything here lands where the linker was told it would.
 ;
 ; The image starts with a JMP to the entry point and a table of service
 ; routine addresses at IO_PM_BASE+10h.  PMDOS.SYS calls into PMIO
 ; only through that table, so the two files never need to be linked
 ; against each other.
 ;
-; Linked with:  wlink form raw bin option offset=0x22000
+; Linked with:  wlink form raw bin option offset=0x200000
 ;=====================================================================
         .386P
 
@@ -353,9 +353,15 @@ msgNoDos    db  'PMDOS.SYS was never loaded',0
 msgPanic    db  13,10,'PMIO PANIC: ',0
 
 ; THE END OF THE IMAGE.  The stub blits IO_PM_MAX bytes whatever the
-; file's length, and AHCI.INC keeps its tables in what is past here.
+; file's length, and AHCI.INC keeps its tables in what is past here -
+; so the image, 1K to align them and AHM_NEED must fit in IO_PM_MAX.
+; (The x87 emulator was linked in between here and an IOPMEND.ASM for a
+; day; it is X87EMU.SYS now, and the end is this file's again.)
+; BUILD.CMD checks the same ceiling on the file, IOPMEND_MAX.
 pm_end      LABEL BYTE
 .ERRE   ((pm_end - svc_table) + 10h + 400h + AHM_NEED) LE IO_PM_MAX, <PMIO leaves no room for the AHCI tables>
+IOPMEND_MAX     EQU     IO_PM_MAX - 400h - AHM_NEED
+.ERRE   IOPMEND_MAX EQ 177152, <BUILD.CMD's ceiling on IOPM.BIN is out of date>
 
 _PM     ENDS
         END

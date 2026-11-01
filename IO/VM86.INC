@@ -353,6 +353,9 @@ vl_noif:
         mov     al,1                    ; code again
         call    nt_arm
         pop     eax
+        call    fpu_reclaim             ; ...and send a native program's
+                                        ; coprocessor instructions to the
+                                        ; emulator again (FPU.INC)
         popad
         mov     eax,dword ptr ds:[v86_reason]
         mov     ebx,dword ptr ds:[v86_rvec]
@@ -687,6 +690,12 @@ ENDIF
         je      vf_isgp                 ; only #GP means "emulate me"
         cmp     eax,16                  ; the coprocessor's error, which a
         je      vf_exc                  ; DOS program knows as an interrupt
+        cmp     eax,7                   ; a coprocessor instruction with EM
+        jne     vf_not7                 ; set: the box's own, or lent the
+        call    fpu_boxnm               ; bare hardware and run again
+        jnc     v86_resume
+        jmp     vf_exc
+vf_not7:
         cmp     eax,7                   ; ...but some of the rest are the
         ja      vf_notgp                ; GUEST'S, and always were
         mov     ebx,1
@@ -1975,6 +1984,16 @@ pm3_fault:
         cmp     dword ptr [ebp+P3_VEC],13       ; only #GP is ever emulable
         je      pm3_gp
 
+        ; ...and #NM, a coprocessor instruction with EM set: a native
+        ; program's goes to the emulator (fpu_nm, below).
+        cmp     dword ptr [ebp+P3_VEC],7
+        jne     pm3_notnm
+        call    fpu_nm
+        jc      pm3_real
+        xor     ecx,ecx                         ; EIP is already past it
+        jmp     pm3_done
+pm3_notnm:
+
         ; The coprocessor's error in a DPMI client is its interrupt 13,
         ; as it is a DOS box's, and the DOS side - which has the
         ; client's vectors - delivers it.  What is kept here is the
@@ -2171,6 +2190,82 @@ pm3_done:
         popad
         add     esp,8                   ; the vector and the error code
         iretd
+
+;=====================================================================
+; fpu_nm - exception 7 in ring-3 protected mode, with EBP at the frame
+;          and the PUSHAD block below it.  CF clear: the instruction is
+;          done with, and the frame's EIP is where to resume.  CF set:
+;          the fault is the program's, and the frame's vector says which
+;          one it is now.
+;
+; A native program's selectors are the GDT's; one in the LDT is a DPMI
+; client's, which goes the way a DOS box does (IO\FPU.INC, fpu_boxnm).
+; For a native program the six segment registers are looked up here,
+; where pm3_base is, and the emulator (X87EMU.SYS, DRV\X87EMU\X87EMU.C,
+; through fpu_emtrap; FPUF_EMU says it is there) is given the base,
+; limit and selector of each.  One that describes nothing is marked so,
+; and an operand through it is a general protection fault.
+;=====================================================================
+fpu_nm:
+        test    byte ptr ds:[fpu_flags],FPUF_EMU
+        jz      fnm_real
+        test    byte ptr [ebp+P3_CS],4
+        jz      fnm_native
+        call    fpu_boxnm
+        ret
+fnm_native:
+        movzx   eax,word ptr [ebp+P3_CS]
+        and     eax,NOT 7
+        cmp     eax,GDT_IDX_PROGCS * 8
+        jne     fnm_real
+        mov     edi,OFFSET fpu_emseg            ; ES CS SS DS FS GS
+        mov     ax,word ptr ds:[exc_ses]
+        call    fnm_seg
+        mov     ax,word ptr [ebp+P3_CS]
+        call    fnm_seg
+        mov     ax,word ptr [ebp+P3_SS]
+        call    fnm_seg
+        mov     ax,word ptr ds:[exc_sds]
+        call    fnm_seg
+        mov     ax,word ptr ds:[exc_sfs]
+        call    fnm_seg
+        mov     ax,word ptr ds:[exc_sgs]
+        call    fnm_seg
+        push    ebp
+        cld                                     ; the program's DF is in the
+        lea     eax,[ebp-32]                    ; frame; the C is written for
+        mov     edx,OFFSET fpu_emseg            ; this one
+        mov     ebx,OFFSET fpu_emst
+        call    dword ptr ds:[fpu_emtrap]       ; x87_trap, in X87EMU.SYS
+        pop     ebp
+        or      eax,eax
+        jz      fnm_done
+        mov     [ebp+P3_VEC],eax
+        mov     dword ptr [ebp+P3_ERR],0
+fnm_real:
+        stc
+        ret
+fnm_done:
+        clc
+        ret
+
+;--- AX = a selector.  Its record at EDI, and EDI past it.
+fnm_seg:
+        push    ebx
+        mov     word ptr [edi+8],ax
+        mov     byte ptr [edi+10],0
+        call    pm3_base
+        jc      fns_none
+        mov     [edi],ebx
+        movzx   eax,ax
+        lsl     ebx,eax
+        jnz     fns_none
+        mov     [edi+4],ebx
+        mov     byte ptr [edi+10],1
+fns_none:
+        pop     ebx
+        add     edi,X87_SEGREC
+        ret
 
 ;--- a word port, as two bytes, exactly as the V86 side does it ------
 pm3_inw:

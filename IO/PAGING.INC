@@ -88,13 +88,10 @@ pgi_tab:
 ; BIOS data area, InDOS at 4F7h and the real-mode frame at 600h, and
 ; which NULLTRAP.INC argues at length cannot be taken away.
 ;
-; The interpreter's slot is the one that is fixed, so its guard is made
-; here, once.  Every other program's slot is a block of the arena and
-; gets its guard from slot_new, through pg_guard, wherever it lands.
-; (The second fixed slot that used to be at PROG_SLOT is the page
-; directory now - taking ITS first page away would unmap the map.)
-        mov     eax,SHELL_SLOT + SLOT_GUARD
-        call    pg_absent
+; NOTHING TO DO HERE ANY MORE.  Every program's slot is a block of the
+; arena and gets its guard from slot_new, through pg_guard, wherever it
+; lands - the interpreter's too since 2026-10-31, whose slot was fixed
+; at 140000h and had its guard made here, once.
 
 ;--- A20 starts OFF, which is how a PC starts ------------------------
 ; The gate is a switch software throws deliberately; a DOS box that
@@ -184,11 +181,10 @@ pgh_done:
 ;              page holding it out of the map, anything else to put it
 ;              back as itself.  CF if no 4K table covers it.
 ;
-; THE GUARD PAGE OF A SLOT THAT MOVES.  A transient program's slot is a
-; block of the arena now, somewhere new for every EXEC, so its first
-; page is taken out of the map when the slot is made and put back when
-; it is freed - before the arena can hand that memory to anybody else.
-; pg_absent below does the same for the shell's slot, once, at boot.
+; THE GUARD PAGE OF A SLOT THAT MOVES.  A program's slot is a block of
+; the arena now, somewhere new for every EXEC, so its first page is
+; taken out of the map when the slot is made and put back when it is
+; freed - before the arena can hand that memory to anybody else.
 ;
 ; The directory is walked rather than PG_TABS indexed, because a slot
 ; above 256MB is in one of pg_hiram's tables at the top of memory.  A
@@ -232,29 +228,6 @@ pgr_no:
         pop     ebx
         pop     eax
         stc
-        ret
-
-;=====================================================================
-; pg_absent - EAX = a linear address.  Take the page containing it out
-;             of the map, for good.
-;
-; Called before CR3 is loaded, so there is no TLB to flush: the two
-; pages this is used on are decided at build time and never come back.
-; The identity map means the entry to clear is simply the address
-; itself, shifted - table (addr / 4MB), entry (addr / 4K) within it,
-; which for one flat table array is one index.
-;=====================================================================
-pg_absent:
-        push    eax
-        push    edi
-        shr     eax,12
-        cmp     eax,PG_MAXTAB * 1024            ; past what we map at all?
-        jae     pga_nothing                     ; then it is already absent
-        mov     edi,PG_TABS
-        mov     dword ptr [edi+eax*4],0
-pga_nothing:
-        pop     edi
-        pop     eax
         ret
 
 ;=====================================================================
