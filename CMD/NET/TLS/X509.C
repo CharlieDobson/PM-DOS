@@ -262,13 +262,86 @@ int x509_verify_signed_by(const unsigned char *cert, int certlen,
     return X509_OK;
 }
 
+/* The ways a signature can be checked, once its message is hashed. */
+#define SIGK_PKCS1  1                   /* RSASSA-PKCS1-v1_5 */
+#define SIGK_PSS    2                   /* RSASSA-PSS, MGF1 + salt of the hash's size */
+#define SIGK_ECDSA  3                   /* ECDSA, DER Ecdsa-Sig-Value */
+
+/* The two INTEGERs of a DER Ecdsa-Sig-Value, sign padding stripped. */
+static int ecdsa_der(const unsigned char *sig, int siglen,
+                     const unsigned char **rp, int *rl,
+                     const unsigned char **sp, int *sl)
+{
+    der sd, inner;
+    int tag;
+    sd.p = sig; sd.end = sig + siglen;
+    if ( der_into( &sd, 0x30, &inner ) != 0 ) return -1;
+    if ( der_tlv( &inner, &tag, rp, rl ) != 0 || tag != 0x02 ) return -1;
+    if ( der_tlv( &inner, &tag, sp, sl ) != 0 || tag != 0x02 ) return -1;
+    while ( *rl > 1 && (*rp)[0] == 0x00 ) { (*rp)++; (*rl)--; }
+    while ( *sl > 1 && (*sp)[0] == 0x00 ) { (*sp)++; (*sl)--; }
+    return 0;
+}
+
+/* Check one signature over an already-hashed message (hlen 32, 48 or 64)
+   with 'key'.  The kind must suit the key: RSA for PKCS1 and PSS, an EC
+   point for ECDSA.  X509_OK or X509_ERR_*. */
+static int verify_hashed(const x509_pubkey *key, int kind,
+                         const unsigned char *hash, int hlen,
+                         const unsigned char *sig, int siglen)
+{
+    if ( kind == SIGK_PKCS1 || kind == SIGK_PSS ) {
+        rsa_pubkey k;
+        int bad;
+        if ( key->type != X509_KEY_RSA ) return X509_ERR_SIG;
+        rsa_pubkey_init( &k, key->n, key->nlen, key->e, key->elen );
+        if ( kind == SIGK_PKCS1 ) {
+            bad = rsa_pkcs1_verify( &k, hlen, hash, sig, siglen );
+        } else {
+            bad = rsa_pss_verify( &k, hlen, hash, sig, siglen );
+        }
+        return bad ? X509_ERR_SIG : X509_OK;
+    }
+    if ( kind == SIGK_ECDSA ) {
+        const unsigned char *rp, *sp;
+        int rl, sl;
+        if ( ecdsa_der( sig, siglen, &rp, &rl, &sp, &sl ) != 0 ) return X509_ERR_PARSE;
+        if ( key->type == X509_KEY_EC384 ) {
+            /* a digest longer than the curve's order is cut to 384 bits */
+            return ( ecdsa_verify_p384( key->point, hash, hlen > 48 ? 48 : hlen,
+                                        rp, rl, sp, sl ) == 0 )
+                   ? X509_OK : X509_ERR_SIG;
+        }
+        if ( key->type == X509_KEY_EC256 ) {
+            /* ecdsa_verify_p256 takes z = the leftmost 256 bits of the digest */
+            return ( ecdsa_verify_p256( key->point, hash, rp, rl, sp, sl ) == 0 )
+                   ? X509_OK : X509_ERR_SIG;
+        }
+        return X509_ERR_SIG;
+    }
+    return X509_ERR_SIG;
+}
+
+/* Hash a message with SHA-256, -384 or -512 by digest length. */
+static void hash_by_len(int hlen, const unsigned char *msg, int msglen,
+                        unsigned char *out)
+{
+    if ( hlen == 64 ) {
+        sha512( msg, (unsigned int)msglen, out );
+    } else if ( hlen == 48 ) {
+        sha384( msg, (unsigned int)msglen, out );
+    } else {
+        sha256( msg, (unsigned int)msglen, out );
+    }
+}
+
 int x509_verify_signed(const unsigned char *cert, int certlen,
                        const x509_pubkey *issuer)
 {
     der body, alg;
     const unsigned char *tbs, *v, *sig, *oid;
-    int tag, vl, tbslen, siglen, oidlen, is_rsa, is_ecdsa256, is_ecdsa384, is_pss;
-    unsigned char hash[32];
+    int tag, vl, tbslen, siglen, oidlen, kind, hlen;
+    unsigned char hash[64];
 
     if (cert_body(cert, certlen, &body) != 0) return X509_ERR_PARSE;
 
@@ -278,52 +351,52 @@ int x509_verify_signed(const unsigned char *cert, int certlen,
 
     if (der_into(&body, 0x30, &alg) != 0) return X509_ERR_PARSE;   /* signatureAlgorithm */
     if (der_tlv(&alg, &tag, &oid, &oidlen) != 0 || tag != 0x06) return X509_ERR_PARSE;
-    is_rsa      = (oidlen == 9 && memcmp(oid, OIDB_SHA256RSA,    9) == 0);
-    is_ecdsa256 = (oidlen == 8 && memcmp(oid, OIDB_ECDSA_SHA256, 8) == 0);
-    is_ecdsa384 = (oidlen == 8 && memcmp(oid, OIDB_ECDSA_SHA384, 8) == 0);
-    is_pss      = (oidlen == 9 && memcmp(oid, OIDB_RSA_PSS,      9) == 0);
+
+    /* sha256/384/512WithRSAEncryption differ only in the OID's last byte
+       (11, 12, 13).  RSASSA-PSS assumes the common SHA-256 / MGF1-SHA256 /
+       salt 32 parameters. */
+    if ( oidlen == 9 && memcmp( oid, OIDB_SHA256RSA, 8 ) == 0 &&
+         oid[8] >= 0x0b && oid[8] <= 0x0d ) {
+        kind = SIGK_PKCS1;
+        hlen = ( oid[8] == 0x0b ) ? 32 : ( oid[8] == 0x0c ) ? 48 : 64;
+    } else if ( oidlen == 9 && memcmp( oid, OIDB_RSA_PSS, 9 ) == 0 ) {
+        kind = SIGK_PSS; hlen = 32;
+    } else if ( oidlen == 8 && memcmp( oid, OIDB_ECDSA_SHA256, 8 ) == 0 ) {
+        kind = SIGK_ECDSA; hlen = 32;
+    } else if ( oidlen == 8 && memcmp( oid, OIDB_ECDSA_SHA384, 8 ) == 0 ) {
+        kind = SIGK_ECDSA; hlen = 48;
+    } else {
+        return X509_ERR_SIG;                                /* an algorithm we lack */
+    }
 
     if (der_tlv(&body, &tag, &v, &vl) != 0 || tag != 0x03) return X509_ERR_PARSE; /* sigValue */
     if (vl < 1 || v[0] != 0x00) return X509_ERR_PARSE;
     sig = v + 1; siglen = vl - 1;
 
-    sha256(tbs, (unsigned int)tbslen, hash);
+    hash_by_len( hlen, tbs, tbslen, hash );
+    return verify_hashed( issuer, kind, hash, hlen, sig, siglen );
+}
 
-    if (is_rsa && issuer->type == X509_KEY_RSA) {
-        rsa_pubkey k;
-        rsa_pubkey_init(&k, issuer->n, issuer->nlen, issuer->e, issuer->elen);
-        return (rsa_pkcs1_verify_sha256(&k, hash, sig, siglen) == 0)
-               ? X509_OK : X509_ERR_SIG;
+int x509_verify_scheme(const x509_pubkey *key, int scheme,
+                       const unsigned char *msg, int msglen,
+                       const unsigned char *sig, int siglen)
+{
+    unsigned char hash[64];
+    int kind, hlen;
+
+    switch ( scheme ) {
+    case 0x0401: kind = SIGK_PKCS1; hlen = 32; break;   /* rsa_pkcs1_sha256 */
+    case 0x0501: kind = SIGK_PKCS1; hlen = 48; break;   /* rsa_pkcs1_sha384 */
+    case 0x0601: kind = SIGK_PKCS1; hlen = 64; break;   /* rsa_pkcs1_sha512 */
+    case 0x0804: kind = SIGK_PSS;   hlen = 32; break;   /* rsa_pss_rsae_sha256 */
+    case 0x0805: kind = SIGK_PSS;   hlen = 48; break;   /* rsa_pss_rsae_sha384 */
+    case 0x0806: kind = SIGK_PSS;   hlen = 64; break;   /* rsa_pss_rsae_sha512 */
+    case 0x0403: kind = SIGK_ECDSA; hlen = 32; break;   /* ecdsa_secp256r1_sha256 */
+    case 0x0503: kind = SIGK_ECDSA; hlen = 48; break;   /* ecdsa_secp384r1_sha384 */
+    default:     return X509_ERR_SIG;
     }
-    if (is_pss && issuer->type == X509_KEY_RSA) {
-        /* RSASSA-PSS; assume the common SHA-256/MGF1-SHA256/salt=32 params. */
-        rsa_pubkey k;
-        rsa_pubkey_init(&k, issuer->n, issuer->nlen, issuer->e, issuer->elen);
-        return (rsa_pss_verify_sha256(&k, hash, sig, siglen) == 0)
-               ? X509_OK : X509_ERR_SIG;
-    }
-    if ((is_ecdsa256 || is_ecdsa384) &&
-        (issuer->type == X509_KEY_EC256 || issuer->type == X509_KEY_EC384)) {
-        der sd, inner;
-        const unsigned char *rp, *sp, *dg;
-        int rl, sl, dglen;
-        unsigned char h384[48];
-        sd.p = sig; sd.end = sig + siglen;
-        if (der_into(&sd, 0x30, &inner) != 0) return X509_ERR_PARSE;
-        if (der_tlv(&inner, &tag, &rp, &rl) != 0 || tag != 0x02) return X509_ERR_PARSE;
-        if (der_tlv(&inner, &tag, &sp, &sl) != 0 || tag != 0x02) return X509_ERR_PARSE;
-        while (rl > 1 && rp[0] == 0x00) { rp++; rl--; }
-        while (sl > 1 && sp[0] == 0x00) { sp++; sl--; }
-        if (is_ecdsa384) { sha384(tbs, (unsigned int)tbslen, h384); dg = h384; dglen = 48; }
-        else             { dg = hash; dglen = 32; }
-        if (issuer->type == X509_KEY_EC384)
-            return (ecdsa_verify_p384(issuer->point, dg, dglen, rp, rl, sp, sl) == 0)
-                   ? X509_OK : X509_ERR_SIG;
-        /* EC256 issuer: ecdsa_verify_p256 takes z = leftmost 256 bits of dg */
-        return (ecdsa_verify_p256(issuer->point, dg, rp, rl, sp, sl) == 0)
-               ? X509_OK : X509_ERR_SIG;
-    }
-    return X509_ERR_SIG;                                    /* alg/key mismatch */
+    hash_by_len( hlen, msg, msglen, hash );
+    return verify_hashed( key, kind, hash, hlen, sig, siglen );
 }
 
 /* Normalize a UTCTime/GeneralizedTime into "YYYYMMDDHHMMSS". */

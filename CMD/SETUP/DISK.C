@@ -211,6 +211,36 @@ static int msdos_sys_is_text( void )
     return text;
 }
 
+/* The release of the PM-DOS on the volume, major*256+minor: PMDOS.SYS
+   carries "PMDOSVER" and the two numbers (DOS\DOSMAIN.ASM ver_tag) from
+   0.70 on.  0 = no tag, a release before that. */
+static u16 installed_version( void )
+{
+    static const char tag[] = "PMDOSVER";
+    char path[16];
+    u8 *buf = (u8 *)xalloc( 2048 + 16 );
+    u16 handle, done, have, keep = 0, ver = 0, i;
+
+    sfmt( path, sizeof( path ), "%c:\\PMDOS.SYS", 'A' + tgt.drive );
+    if ( plat_open( path, 0, &handle ) == 0 ) {
+        while ( ver == 0 && plat_read( handle, buf + keep, 2048, &done ) == 0 && done ) {
+            have = (u16)(keep + done);
+            for ( i = 0; i + 10 <= have; i++ ) {
+                if ( buf[i] == 'P' && mem_cmp( buf + i, tag, 8 ) == 0 ) {
+                    ver = (u16)((buf[i + 8] << 8) | buf[i + 9]);
+                    break;
+                }
+            }
+            /* the last nine bytes go round again: a tag across two reads */
+            keep = have < 9 ? have : 9;
+            mem_cpy( buf, buf + have - keep, keep );
+        }
+        plat_close( handle );
+    }
+    xfree( buf );
+    return ver;
+}
+
 /* What is installed on the volume, now that it has a letter and a file
    system */
 static void examine_volume( void )
@@ -228,6 +258,7 @@ static void examine_volume( void )
     } else if ( root_has( "PMIO.SYS" ) && root_has( "PMDOS.SYS" ) ) {
         tgt.state = TG_PMDOS;
         str_cpyn( tgt.sysname, "PM-DOS", sizeof( tgt.sysname ) );
+        tgt.pmver = installed_version();
     } else if ( root_has( "IO.SYS" ) && root_has( "MSDOS.SYS" ) ) {
         if ( msdos_sys_is_text() ) {
             tgt.state = TG_WIN9X;

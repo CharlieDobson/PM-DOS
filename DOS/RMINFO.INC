@@ -119,14 +119,13 @@ rsi_jshare:
         mov     ax,[h_mcbhead]
         mov     word ptr es:[RL_LOL + LL_MCBSEG],ax
         mov     dword ptr es:[RL_LOL + LL_DPB],0FFFFFFFFh
-        mov     word ptr es:[RL_LOL + LL_SFT],OFFSET rd_sfthdr
+        mov     ax,[rd_sfthp]
+        mov     word ptr es:[RL_LOL + LL_SFT],ax
         mov     word ptr es:[RL_LOL + LL_SFT + 2],cs    ; a chain, and a
         ; walker follows a chain without checking its head - see
-        ; rd_sfthdr in RMFILE.INC for what FFFF:FFFF here cost.  And
-        ; two blocks long, the second empty, because VSHARE looks one
-        ; block further than the last (also at rd_sfthdr)
-        mov     word ptr [rd_sfthdr],OFFSET rd_sftend
-        mov     word ptr [rd_sfthdr + 2],cs
+        ; rd_sfthp in RMFILE.INC for what FFFF:FFFF here cost.  And
+        ; two blocks long, the second with one entry, because VSHARE
+        ; looks one block further than the last - rd_layout built both
         mov     dword ptr es:[RL_LOL + LL_CLOCK],0FFFFFFFFh
         mov     dword ptr es:[RL_LOL + LL_BUFFERS],0FFFFFFFFh
         mov     word ptr es:[RL_LOL + LL_CDS],RL_CDS     ; real now: DOSMGR

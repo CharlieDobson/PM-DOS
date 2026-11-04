@@ -173,7 +173,9 @@ int dsock_connect( int handle, u32 ip, u16 port, u32 ms )
 
     for ( ;; ) {
         state = dsock_state( handle, &st );
-        if ( state == SS_ESTABLISHED ) return 1;
+        /* SS_CLOSING too: a server that accepts and ends at once was
+           connected to, and the first read says it has ended */
+        if ( state == SS_ESTABLISHED || state == SS_CLOSING ) return 1;
         if ( state == SS_ERROR || state == SS_CLOSED ) return 0;
         if ( since( start ) > limit ) return 0;
         dsock_idle();
@@ -183,7 +185,7 @@ int dsock_connect( int handle, u32 ip, u16 port, u32 ms )
 int dsock_send( int handle, const void *data, u32 len, u32 ms )
 {
     const u8 *ptr = (const u8 *)data;
-    u32 start = nds_ticks(), limit = ms_ticks( ms ), done = 0;
+    u32 start = nds_ticks(), limit = ms_ticks( ms ), done = 0, state;
     int err;
     SOCK_STAT st;
     static u8 sbuf[2048];
@@ -201,7 +203,9 @@ int dsock_send( int handle, const void *data, u32 len, u32 ms )
         done += taken;
         if ( taken < chunk ) {
             if ( since( start ) > limit ) return (int)done;
-            if ( dsock_state( handle, &st ) != SS_ESTABLISHED ) return (int)done;
+            state = dsock_state( handle, &st );
+            /* the peer having ended (SS_CLOSING) does not stop our side */
+            if ( state != SS_ESTABLISHED && state != SS_CLOSING ) return (int)done;
             dsock_idle();
         } else {
             start = nds_ticks();

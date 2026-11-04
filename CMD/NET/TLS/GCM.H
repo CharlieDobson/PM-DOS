@@ -1,9 +1,10 @@
 /* ==========================================================================
- * GCM.H - AES-128-GCM AEAD for NETSPLOR (RFC 5288 GCM cipher suites).
+ * GCM.H - AES-GCM AEAD (the TLS 1.2 GCM suites of RFC 5288, and TLS 1.3's).
  * Win32s / MSVC 2.2 + Open Watcom 1.9 (portable C89).  Built on AES.C.
  * ==========================================================================
- * 96-bit (12-byte) IV only, as used by TLS 1.2.  rk is the expanded AES-128
- * key (aes128_expand_key); H is the GHASH subkey = AES_enc(key, 0^128).
+ * 96-bit (12-byte) IV only, as TLS uses.  rk is the expanded AES key
+ * (aes128_expand_key or aes256_expand_key); H is the GHASH subkey =
+ * AES_enc(key, 0^128).  'plain' and 'cipher' may be the same buffer.
  * ========================================================================== */
 #ifndef NETSPLOR_GCM_H
 #define NETSPLOR_GCM_H

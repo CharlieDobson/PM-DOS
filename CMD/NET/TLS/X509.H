@@ -50,10 +50,20 @@ typedef struct {
 /* Extract the subject public key (RSA or EC-P256) from a certificate. */
 int x509_get_pubkey(const unsigned char *cert, int certlen, x509_pubkey *out);
 
-/* Verify 'cert's signature (sha256WithRSAEncryption OR ecdsa-with-SHA256)
-   against the issuer's public key.  X509_OK if valid, else X509_ERR_*. */
+/* Verify 'cert's signature (sha256/384/512WithRSAEncryption, RSASSA-PSS with
+   SHA-256, ecdsa-with-SHA256 or -SHA384) against the issuer's public key.
+   X509_OK if valid, else X509_ERR_*. */
 int x509_verify_signed(const unsigned char *cert, int certlen,
                        const x509_pubkey *issuer);
+
+/* Verify a TLS signature: 'scheme' is the TLS SignatureScheme (0x0401/0501/
+   0601 rsa_pkcs1_sha256/384/512, 0x0804/0805/0806 rsa_pss_rsae_sha256/384/
+   512, 0x0403/0503 ecdsa_secp256r1_sha256 / secp384r1_sha384), 'msg' the
+   signed bytes (hashed here), 'sig' the signature as sent (DER for ECDSA).
+   X509_OK if valid, else X509_ERR_*. */
+int x509_verify_scheme(const x509_pubkey *key, int scheme,
+                       const unsigned char *msg, int msglen,
+                       const unsigned char *sig, int siglen);
 
 /* notBefore/notAfter as normalized "YYYYMMDDHHMMSS" (14 chars + NUL). */
 int x509_get_validity(const unsigned char *cert, int certlen,

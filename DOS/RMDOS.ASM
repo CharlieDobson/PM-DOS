@@ -169,6 +169,11 @@ rd_country:
         db  ',',0                       ; list separator
         db  10 dup(0)
 
+        ORG     RMH_FILES
+h_files     dw  0                       ; FILES= (rd_layout)
+h_cmseg     dw  0                       ; the cache tables' block, or 0
+h_cmparas   dw  0                       ; ...and its length (RMCACHE.INC)
+
 ;=====================================================================
 ; Code proper.  Everything above is a header PM-DOS writes into.
 ;=====================================================================
@@ -241,6 +246,7 @@ ENDIF
         mov     word ptr [h_why],RMW_NOTOURS
         jmp     rd_goback
 rd_lowok:
+        call    rd_layout               ; the file table, after the image
 
         call    rd_vecs                 ; the vectors a DOS owns
         call    rd_hook13               ; ...and IO.SYS's hook on the disk
@@ -1650,6 +1656,16 @@ rd_stks:                                ; slot 0 ends at rd_stks + RD_STKSIZE
 rd_lowkeep  db  RD_KEEPLEN dup(0)
             db  RD_STKSLOTS * RD_STKSIZE - RD_KEEPLEN dup(0)
 rd_stktop:                              ; ...and the last at rd_stktop
+
+;--- THE END OF THE IMAGE, and the start of the room rd_layout lays the
+;--- file table out in, with the sector cache's tables after it.  It has
+;--- to hold the most FILES= can ask for and an RMC_TAILKB cache's
+;--- tables, because that is what RMDOS.INC promises the kernel:
+;--- park_cmparas reserves no block of their own below it.
+rd_imgend:
+IF (rd_imgend - h_sig) + RMH_BASE + 15 + 12 + (SFT_MAX + 1) * SFT_LEN + RMC_HEAD + (RMC_TAILKB / 4) * RMC_ENTLEN GT RD_TAILEND
+        .ERR    <RMDOS.ASM: the room after the image is too small for FILES= and a 4M cache>
+ENDIF
 
 _RD     ENDS
         END

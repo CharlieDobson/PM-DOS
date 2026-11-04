@@ -271,6 +271,9 @@ ENDIF
         call    cd_announce             ; the CD-ROM drives and their
                                         ; letters, now that CONFIG.SYS
                                         ; has had its say about both
+        call    drv_fixletters          ; and how many letters there are,
+                                        ; now that every drive has one:
+                                        ; LASTDRIVE= from here on (FAT.INC)
         call    dword ptr ds:[IOS_RMFREEZE]     ; and the vector table BIOS
                                         ; calls run with: the machine as
                                         ; CONFIG.SYS left it, and nothing
@@ -847,6 +850,12 @@ msgNoShell  db  13,10,'Bad or missing command interpreter'
 msgNoShellMem db 13,10,'Not enough memory to start the command interpreter'
             db  13,10,'Press any key to try again',13,10,0
 msgKbss     db  'PMDOS.SYS: linked for the wrong KBSS address',13,10,0
+
+; Which release this file is, for Setup to read off the disk without
+; running it (CMD\SETUP\DISK.C installed_version): the eight letters,
+; then the major and minor numbers.  A PMDOS.SYS without the tag is
+; older than 0.70, the first to carry it.
+ver_tag     db  'PMDOSVER',PMDOS_MAJOR,PMDOS_MINOR
 
 _DOS    ENDS
 

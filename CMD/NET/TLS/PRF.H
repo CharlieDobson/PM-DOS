@@ -30,4 +30,20 @@ void tls12_prf_sha384(const unsigned char *secret, int secretlen,
                       const unsigned char *seed, int seedlen,
                       unsigned char *out, int outlen);
 
+/* TLS 1.3 (RFC 8446 7.1).  hlen is the suite's hash size: 32 for SHA-256,
+ * 48 for SHA-384.
+ *   tls13_hkdf_extract : out(hlen) = HMAC(salt, ikm); a NULL or empty salt or
+ *                        ikm means hlen zero bytes, as the schedule wants.
+ *   tls13_expand_label : out(outlen) = HKDF-Expand-Label(secret, label, ctx),
+ *                        the "tls13 " prefix added here.  secret is hlen bytes.
+ */
+#define TLS13_LABEL_MAX  32
+#define TLS13_CTX_MAX    64
+void tls13_hkdf_extract( int hlen, const unsigned char *salt, int saltlen,
+                         const unsigned char *ikm, int ikmlen, unsigned char *out );
+void tls13_expand_label( int hlen, const unsigned char *secret,
+                         const char *label,
+                         const unsigned char *ctx, int ctxlen,
+                         unsigned char *out, int outlen );
+
 #endif /* NETSPLOR_PRF_H */

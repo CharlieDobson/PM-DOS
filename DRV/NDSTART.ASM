@@ -358,6 +358,9 @@ nsc_out:
         ret
 
         .data
+        public  nds_services            ; for a driver's own bridge to a
+                                        ; service not bridged here
+                                        ; (DRV\TCPIP\TCPSVC.ASM)
 nds_services    dd      0               ; the kernel's table, for life
 nds_answer      dd      0               ; what nd_call answered
         public  _nds_row

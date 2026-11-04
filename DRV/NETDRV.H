@@ -89,6 +89,9 @@ extern char net_name[32];
 extern u32  net_opt_port;       /* /P: in hex, 0 = none */
 extern u32  net_opt_mem;        /* /M: in hex, 0 = none */
 extern u8   net_opt_irq;        /* /I:, NIC_NOIRQ = none */
+extern const char *net_line;    /* the whole DEVICE= line, for a card's own
+                                   switches: set while card_find and the
+                                   first card_setup run, 0 after */
 
 /* ---------------------------------------------------------------- */
 /* what NETCORE.C gives a card's source                              */

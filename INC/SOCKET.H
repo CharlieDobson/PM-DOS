@@ -49,18 +49,21 @@
 #define SOCK_NICSTATS  15     /* buf <- the card's NIC_STATBLOCK (INC\NIC.H);
                                  answer = NICS_LEN.  A window on tx/rx counts */
 #define SOCK_DHCP      16     /* buf -> a u32, DHCPOP_*; answer = 0.  ERR_BADDATA
-                                 when the address is static (TCPIP.SYS /IP=) */
+                                 for RELEASE or RENEW when the address is
+                                 static (TCPIP.SYS /IP=) */
 
 /* SOCK_DHCP's one word: what to do with the lease */
 #define DHCPOP_RELEASE 1      /* give the address back and stay without one */
 #define DHCPOP_RENEW   2      /* renew the lease, or ask for a new address */
+#define DHCPOP_REGDNS  3      /* send this computer's name to DNS again
+                                 (SOCK_IF.regstate says how it went) */
 
 /* a socket's kind, for SOCK_OPEN */
 #define SOCK_STREAM    1      /* TCP: a connection */
 #define SOCK_DGRAM     2      /* UDP: datagrams */
 
-/* OR this into SOCK_OPEN's type for a TLS stream: the stack runs the TLS 1.2
-   handshake itself (kernel-side, so the crypto is 32-bit correct) once the TCP
+/* OR this into SOCK_OPEN's type for a TLS stream: the stack runs the TLS (1.3
+   or 1.2) handshake itself (kernel-side, so the crypto is 32-bit correct) once the TCP
    connection is up, and SOCK_SEND/SOCK_RECV then carry the plaintext.  The
    caller watches SOCK_STATE: SS_ESTABLISHED means TLS is up, not merely TCP. */
 #define SOCK_TLS       0x0100
@@ -71,7 +74,9 @@
 #define SS_CONNECTING  2      /* TCP: the handshake is going */
 #define SS_LISTEN      3      /* TCP: waiting for somebody to connect */
 #define SS_ESTABLISHED 4      /* data may pass */
-#define SS_CLOSING     5      /* TCP: the close is going */
+#define SS_CLOSING     5      /* TCP: the close is going - ours, or the
+                                 peer's once everything it sent is read
+                                 (sending is still allowed then) */
 #define SS_ERROR       6      /* reset, or the handshake failed */
 
 /* how a lookup or an echo stands (SOCK_RESOLVE, SOCK_PING, and SOCK_STAT's
@@ -80,14 +85,33 @@
 #define NET_DONE       1
 #define NET_FAIL       2
 
+/* why a socket is SS_ERROR, in SOCK_STAT's err.  NET_FAIL is any other
+   reason, and the only one a TCPIP.SYS older than these gives */
+#define NET_REFUSED    3      /* TCP: the server said no (a reset to our SYN) */
+#define NET_TIMEOUT    4      /* TCP: the server stopped answering, or never did */
+#define NET_NOROUTE    5      /* TCP: the server, or the gateway to it, never
+                                 answered ARP - nothing at that address */
+#define NET_RESET      6      /* TCP: the server reset a connection that was up */
+#define NET_TLSCERT    7      /* TLS: the server's certificate was refused;
+                                 SOCK_STAT's why says which check failed */
+#define NET_TLSFAIL    8      /* TLS: the handshake failed some other way - an
+                                 alert, nothing in common, no memory */
+
+/* SOCK_STAT's why, with NET_TLSCERT */
+#define CERT_UNTRUSTED 1      /* no path to a root in the trust bundle */
+#define CERT_HOST      2      /* made out to another name */
+#define CERT_DATES     3      /* expired, or not valid yet */
+#define CERT_BAD       4      /* could not be read */
+
 /* how the interface got its address, in SOCK_IF.dhcp */
 #define DHS_DOWN       0      /* no address yet */
 #define DHS_BOUND      1      /* DHCP gave one */
 #define DHS_STATIC     2      /* set by hand */
 
-/* SOCK_IFSTAT - the interface and its address.  A caller gives SOCKIF_LEN
-   bytes or SOCKIF_LEN2; the stack fills what fits and answers how many.
-   The last three fields are only in the longer form */
+/* SOCK_IFSTAT - the interface and its address.  A caller gives SOCKIF_LEN,
+   SOCKIF_LEN2 or SOCKIF_LEN3 bytes; the stack fills the longest form that
+   fits and answers how many.  A stack older than the form a caller asked
+   for answers a shorter one */
 typedef struct {
     u32  ip;
     u32  mask;
@@ -105,9 +129,27 @@ typedef struct {
                                  a change means a lease was given or renewed */
     u32  wins;                /* the WINS server (NetBIOS names), 0 if none */
     char nbname[16];          /* this computer's NetBIOS name (/NAME=), "" if none */
+    /* SOCKIF_LEN3 on */
+    char hostname[64];        /* this computer's DNS host name, lower case */
+    char domain[64];          /* its DNS domain, "" if none: TCPIP.INI's or DHCP's */
+    u32  dns2, dns3;          /* more DNS servers, asked when the first is not */
+    u32  cabytes;             /* the trust bundle TLS checks against; 0: none,
+                                 and TLS connects without checking */
+    u16  regstate;            /* DREG_*: the name in DNS */
+    u16  regrcode;            /* the DNS server's answer to the last update */
 } SOCK_IF;
 #define SOCKIF_LEN   60
 #define SOCKIF_LEN2  92
+#define SOCKIF_LEN3  236
+
+/* SOCK_IF.regstate - this computer's name and address sent to DNS (RFC 2136) */
+#define DREG_OFF       0      /* not sent: RegisterDNS=No, or no domain */
+#define DREG_BUSY      1      /* being sent */
+#define DREG_DONE      2      /* the server took it */
+#define DREG_REFUSED   3      /* the server said no (regrcode says how) */
+#define DREG_NOANSWER  4      /* nobody answered */
+#define DREG_NOZONE    5      /* DNS knows no zone of the network's own that
+                                 the name could go in: none is sent to */
 
 /* SOCK_IF.dhstate */
 #define DHST_OFF       0      /* not asking: a static address, or released */
@@ -168,8 +210,11 @@ typedef struct {
     u32 rxready;              /* out: bytes waiting to be read */
     u32 txfree;               /* out: room in the send buffer now */
     u32 err;                  /* out: NET_FAIL and the like when SS_ERROR */
+    u32 why;                  /* out: CERT_* with NET_TLSCERT, else 0.  Only
+                                 when SOCKSTAT_LEN2 bytes were given */
 } SOCK_STAT;
-#define SOCKSTAT_LEN 20
+#define SOCKSTAT_LEN  20
+#define SOCKSTAT_LEN2 24
 
 /* SOCK_RESOLVE - a host name to an address.  A name of 1 to 15 characters
    with no dot is a NetBIOS name first: the WINS server is asked, then the
@@ -207,7 +252,10 @@ typedef struct {
    few hundred bytes per call.  offset 0 starts a fresh bundle of 'total'
    bytes; each call copies 'len' bytes of it at 'offset'.  Once the whole
    bundle is in, TLS sockets verify the server chain against it; with no
-   bundle, a TLS socket connects without checking the certificate. */
+   bundle, a TLS socket connects without checking the certificate.
+   TCPIP.SYS loads a bundle of its own at INIT (TCPIP.INI's CACerts=, or
+   CACERT.BND beside TCPIP.SYS), so a program need not; one sent here
+   replaces it for every socket opened after. */
 typedef struct {
     u32 offset;               /* in: where this chunk goes in the bundle */
     u32 total;                /* in: the whole bundle's length */

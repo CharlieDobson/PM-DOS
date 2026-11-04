@@ -58,11 +58,12 @@
 ;=====================================================================
 
 RMDOS_SIG       EQU     00444D52h               ; 'RMD' as the dword reads in memory
-RMDOS_VER       EQU     0105h                   ; 1.05 - this contract.  1.00 had no
+RMDOS_VER       EQU     0106h                   ; 1.06 - this contract.  1.00 had no
                                         ; extended memory in it, 1.01 no
                                         ; RMH_STUBS, 1.02 no RMH_LOWSEG, 1.03
                                         ; no RMH_WINCACHE, 1.04 no country
-                                        ; (RMH_CTRY).  RMDOS
+                                        ; (RMH_CTRY), 1.05 no RMH_FILES or
+                                        ; cache tables' block.  RMDOS
                                         ; checks it: an image built for another
                                         ; layout would read the header wrong,
                                         ; and says so instead
@@ -207,6 +208,23 @@ RMH_WINCACHE    EQU     RMH_BASE + 34h  ; dw  kilobytes of cache, 0 for none
 RMH_WCFLAGS     EQU     RMH_BASE + 36h  ; dw  RMWC_*
 RMWC_LOG        EQU     0001h           ; write RMCACHE.LOG when Windows exits
 
+; WHERE THE CACHE'S TABLES GO (1.06).  The chain heads, the read-ahead
+; element and a 10-byte entry for each 4K element of cache.  RMDOS puts
+; them in its own segment, in the room after the image and the file
+; table (rd_layout), which costs no memory the park has not taken
+; already; a cache of RMC_TAILKB or less always fits there.  Only a
+; WINCACHE= line asking for more gets a block of its own, reserved with
+; RMDOS's segment (park_cmparas), so the memory a DOS box loses to it is
+; paid only by a machine that asked for the bigger cache - there are no
+; UMBs to put it in, because the park turns paging off.  One block is
+; one segment, which is the RMC_MAXKB ceiling.
+RMC_HEAD        EQU     6144            ; the chain heads (2K) and the
+                                        ; read-ahead element (4K)
+RMC_ENTLEN      EQU     10              ; an entry, RMCACHE.INC's CE_LEN
+RMC_TAILKB      EQU     4096            ; what RMDOS's own segment holds
+RMC_MAXEL       EQU     (10000h - RMC_HEAD) / RMC_ENTLEN
+RMC_MAXKB       EQU     RMC_MAXEL * 4   ; 23,756K: a whole segment of tables
+
 ; The register frame RMDOS IRETs to when RMH_RUNSEG is zero.  This is
 ; how Windows is resumed: WIN386 is already loaded and already running
 ; when it broadcasts 1605h, so there is nothing to start - the handover
@@ -266,7 +284,14 @@ RMH_CTRYYES     EQU     RMH_CTRYSYS + 2 ; db  6523h's letter for yes
 RMH_CTRYNO      EQU     RMH_CTRYYES + 1 ; db  ...and for no
 RMH_CTRY        EQU     RMH_CTRYNO + 1  ; 34 bytes: 38h's block
 RMH_CTRYLEN     EQU     34
-IF RMH_CTRY + RMH_CTRYLEN GT RM_ORG + 100h
+;--- the file table and the cache's tables (1.06) ----------------------
+RMH_FILES       EQU     RMH_CTRY + RMH_CTRYLEN  ; dw  FILES=, the kernel's
+                                        ; files_max: RMDOS's file table has
+                                        ; that many entries (rd_layout)
+RMH_CMSEG       EQU     RMH_FILES + 2   ; dw  the cache tables' own block,
+                                        ; or 0: they go in RMDOS's segment
+RMH_CMPARAS     EQU     RMH_CMSEG + 2   ; dw  ...and its length
+IF RMH_CMPARAS + 2 GT RM_ORG + 100h
         .ERR    <RMDOS.INC: the handoff block runs into RMDOS's code>
 ENDIF
 

@@ -50,6 +50,7 @@ typedef struct {
 
     unsigned long  last_status;         /* NTSTATUS of the last response */
     const char    *stage;               /* where we are, for error reports */
+    int            smb1_only;           /* the opening was answered in SMB1 */
 } smb2_client;
 
 /* Connect TCP must already be done; these drive the SMB2 conversation over
@@ -127,5 +128,6 @@ void smb2_disconnect( smb2_client *cl );
 int  smb2_dialect( const smb2_client *cl );     /* negotiated DialectRevision */
 const char *smb2_stage( const smb2_client *cl );
 unsigned long smb2_status( const smb2_client *cl );
+int  smb2_smb1_only( const smb2_client *cl );   /* 1: the server speaks SMB1 alone */
 
 #endif /* PMDOS_SMB2_H */

@@ -75,7 +75,7 @@ typedef struct {
     char  name[13];                 /* its 8.3 name */
     char  packed[13];               /* the name on the Setup disk */
     char  where[8];                 /* ROOT DOS SETUP */
-    char  flags[8];                 /* S F U from the list, P when packed */
+    char  flags[8];                 /* S F U R from the list, P when packed */
     int   first;                    /* on disk 1, as it is */
     int   nopack;
     unsigned char *data;            /* what goes on the disk */
@@ -332,13 +332,15 @@ static void read_list(const char *path)
             char c = (char)toupper((unsigned char)flags[n]);
             if (c == '1') e->first = 1;
             else if (c == 'N') e->nopack = 1;
-            else if (c == 'S' || c == 'F' || c == 'U') {
+            else if (c == 'S' || c == 'F' || c == 'U' || c == 'R') {
                 size_t l = strlen(e->flags);
                 if (l < 6) { e->flags[l] = c; e->flags[l + 1] = 0; }
             } else die("an unknown flag in", section[SEC_FILES][i]);
         }
         if (strcmp(e->where, "ROOT") && strcmp(e->where, "DOS") && strcmp(e->where, "SETUP"))
             die("where must be ROOT, DOS or SETUP", section[SEC_FILES][i]);
+        if (strchr(e->flags, 'R') && strcmp(e->where, "DOS"))
+            die("R (a copy in the root too) is for a DOS file", section[SEC_FILES][i]);
     }
 }
 

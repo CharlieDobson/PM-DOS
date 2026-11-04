@@ -89,13 +89,22 @@ static int write_text( const char *path, const char *text )
     return plat_close( handle ) || rc;
 }
 
-/* the lines of UNINSTAL.DAT, built once: a line for every file and
-   eight more, each no longer than a path and its "del=" */
+/* the lines of UNINSTAL.DAT, built once: a line for every file, one
+   more for each root copy (copy_rootdest), one for each directory Setup
+   made and eight more, each no longer than a path and its "del=" */
 static char *dat_text( void )
 {
-    u16 size = (u16)((inf.nfiles + 8) * (PATHLEN + 8));
-    char *dat = (char *)xalloc( size ), line[PATHLEN + 8], dest[PATHLEN];
-    int i;
+    u16 size;
+    char *dat, line[PATHLEN + 8], dest[PATHLEN];
+    int i, nlines = inf.nfiles + nmade_dirs + 8;
+
+    for ( i = 0; i < inf.nfiles; i++ ) {
+        if ( copy_rootdest( &inf.file[i], dest, sizeof( dest ) ) ) {
+            nlines++;
+        }
+    }
+    size = (u16)(nlines * (PATHLEN + 8));
+    dat = (char *)xalloc( size );
 
     dat[0] = 0;
     sfmt( line, sizeof( line ), "product=%s\r\n", inf.product );
@@ -112,6 +121,11 @@ static char *dat_text( void )
         dest[0] = tgt.final;
         sfmt( line, sizeof( line ), "del=%s\r\n", dest );
         str_catn( dat, line, size );
+        if ( copy_rootdest( &inf.file[i], dest, sizeof( dest ) ) ) {
+            dest[0] = tgt.final;
+            sfmt( line, sizeof( line ), "del=%s\r\n", dest );
+            str_catn( dat, line, size );
+        }
     }
     sfmt( line, sizeof( line ), "del=%c:\\PMBOOT.SYS\r\n", tgt.final );
     str_catn( dat, line, size );

@@ -430,7 +430,9 @@ int sl_connect( int handle, u32 ip, u16 port, u32 ms )
 
     for ( ;; ) {
         state = (u32)sl_state( handle, &st );
-        if ( state == SS_ESTABLISHED ) return 1;
+        /* SS_CLOSING too: a server that accepts and ends at once was
+           connected to, and the first read says it has ended */
+        if ( state == SS_ESTABLISHED || state == SS_CLOSING ) return 1;
         if ( state == SS_ERROR || state == SS_CLOSED ) return 0;
         if ( sl_since( start ) > ms ) return 0;
     }
@@ -442,7 +444,7 @@ static u8 *io_buf;                      /* lazily grown send/recv staging */
 int sl_send( int handle, const void *data, u32 len, u32 ms )
 {
     const u8 *p = (const u8 *)data;
-    u32 start = sl_now(), done = 0;
+    u32 start = sl_now(), done = 0, state;
     int err;
     SOCK_STAT st;
 
@@ -464,7 +466,9 @@ int sl_send( int handle, const void *data, u32 len, u32 ms )
         if ( taken < chunk ) {
             /* the send buffer is full: let it drain, watch the state */
             if ( sl_since( start ) > ms ) return (int)done;
-            if ( (u32)sl_state( handle, &st ) != SS_ESTABLISHED ) return (int)done;
+            state = (u32)sl_state( handle, &st );
+            /* the peer having ended (SS_CLOSING) does not stop our side */
+            if ( state != SS_ESTABLISHED && state != SS_CLOSING ) return (int)done;
         } else {
             start = sl_now();
         }

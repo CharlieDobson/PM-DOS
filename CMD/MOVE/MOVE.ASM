@@ -902,8 +902,11 @@ mva_delerr:
 ; overwrites destroys one file AND takes away the only other copy of
 ; the one that replaced it.
 ;
-; The key is read with 0Ch/01h - flush, then read - so that a keystroke
-; typed before the question was asked cannot answer it.
+; The key is read with 0Ch/08h - flush, then read - so that a keystroke
+; typed before the question was asked cannot answer it.  08h and not
+; 01h: the answer is echoed below, once, as the capital the code
+; matched, and 01h echoed it as well - "yY" on the 5x86 (2026-11-01).
+; A key that answers nothing is not shown at all.
 ;=====================================================================
 mv_ask:
         push    eax
@@ -920,7 +923,7 @@ mv_ask:
         mov     edx,OFFSET msg_over2
         call    puts
 mvk_key:
-        mov     eax,0C01h
+        mov     eax,0C08h
         int     21h
         cmp     al,'a'
         jb      mvk_kup
@@ -944,6 +947,7 @@ mvk_ky:
         call    crlf
         jmp     short mvk_yes
 mvk_kn:
+        mov     al,'N'                  ; Escape is shown as the No it is
         call    putc
         call    crlf
         pop     edx

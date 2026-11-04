@@ -181,11 +181,29 @@ const char tx_h_upg_text[] =
 const char tx_re_1[] =
     "PM-DOS is already installed on drive %c:. Setup will copy this version's "
     "files over it. Your CONFIG.SYS and AUTOEXEC.BAT stay as they are.";
+const char tx_re_newer[] =
+    "PM-DOS %s, a newer version than this one, is installed on drive %c:. "
+    "Setup will copy this version's files over it. Your CONFIG.SYS and "
+    "AUTOEXEC.BAT stay as they are.";
 const char tx_re_item[] = "Reinstall PM-DOS (recommended).";
+const char tx_re_newer_item[] = "Reinstall PM-DOS.";
 const char tx_h_re[] = "Reinstalling PM-DOS";
 const char tx_h_re_text[] =
     "Setup replaces the PM-DOS files with the ones on the Setup disks and "
     "makes drive C: start PM-DOS again. Nothing else on the disk is changed.";
+
+const char tx_up_1[] =
+    "PM-DOS %s is installed on drive %c:. Setup will upgrade it to PM-DOS "
+    "%s. Your CONFIG.SYS and AUTOEXEC.BAT stay as they are.";
+const char tx_up_old[] =
+    "An older version of PM-DOS is installed on drive %c:. Setup will upgrade "
+    "it to PM-DOS %s. Your CONFIG.SYS and AUTOEXEC.BAT stay as they are.";
+const char tx_up_item[] = "Upgrade PM-DOS (recommended).";
+const char tx_h_up[] = "Upgrading PM-DOS";
+const char tx_h_up_text[] =
+    "Setup replaces the PM-DOS files with the newer ones on the Setup disks "
+    "and makes drive C: start PM-DOS again. Nothing else on the disk is "
+    "changed.";
 
 const char tx_cant_nodisk[] =
     "Setup can't find a hard disk in this computer. To put PM-DOS on a floppy "

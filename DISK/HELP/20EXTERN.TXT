@@ -964,6 +964,67 @@ To edit a file:
 To open every .TXT file in the directory, read-only, in 50 lines:
 
     edit *.txt /r /h
+#topic EL3C515.SYS|El3c515.sys
+Loads the driver for a 3Com Fast EtherLink ISA (3C515) network card.
+
+{b}Syntax{p}
+
+    DEVICE=[drive:][path]EL3C515.SYS [/P:port] [/I:irq] [/POLL] [/10 | /100]
+           [/T]
+
+{b}Parameters{p}
+
+[drive:][path]
+    Location of the EL3C515.SYS file.
+
+{b}Switches{p}
+
+/P:port
+    The card's I/O port in hex, such as /P:280.  Without /P:, the
+    driver sets up a Plug and Play card itself, or finds a card that is
+    already switched on.
+
+/I:irq
+    The card's interrupt line, 0 to 15.
+
+/POLL
+    Runs the card without an interrupt line, checking it on the timer.
+
+/10
+    Uses 10BASE-T, on a card that has the 10BASE-T connector.
+
+/100
+    Uses 100BASE-TX, on a card that has the 100BASE-TX connector.
+
+/T
+    Tests the card as the driver loads: sends one frame, listens for
+    five seconds, and shows the card's counts.
+
+{b}Related Commands{p}
+
+Load [[TCPIP.SYS]] on a [[DEVICE=]] line below this one.
+#notes
+{b}Choosing the connector{p}
+
+Without /10 or /100, the driver uses the connector the card's setup
+names.  When the setup says to choose automatically, the driver tries
+the connectors the card has until one has a link.  On a card with an
+MII connector, the driver and the transceiver agree on the speed and
+duplex between them, and the speed found is shown.
+
+{b}Not the 3C509{p}
+
+The 3C515 is a different card from the 3C509, even though both are
+3Com ISA cards.  EL3C509.SYS does not work with a 3C515.
+#examples
+To let Plug and Play choose the port and line:
+
+    device=c:\dos\el3c515.sys
+    device=c:\dos\tcpip.sys
+
+To use a card set to port 280 and line 3:
+
+    device=c:\dos\el3c515.sys /p:280 /i:3
 #topic FC|Fc
 Compares two files, or two sets of files, and shows where they differ.
 

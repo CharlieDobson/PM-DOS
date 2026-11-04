@@ -15,6 +15,7 @@
  *   AL=2          remount a letter whose sectors were rewritten
  *   AL=14h        a diskette track at a time (FDF_*), FORMAT's way
  *   AL=16h        commit the cache
+ *   AL=19h        a delete that UNDELETE=ON does not keep
  *   AL=1Bh        the cache committed, then the restart
  *   21h/7305h     a volume's sectors by letter
  *
@@ -553,9 +554,18 @@ static int path_call( u32 func, const char *path )
     return result( &regs );
 }
 
+/* F1h AL=19h: a delete that UNDELETE=ON does not keep.  What Setup
+   deletes is its own (a file it is about to write again, a half-copied
+   one, an old backup), and an older copy brought back from \RECYCLED
+   would be the wrong version of a PM-DOS file.  A file Setup writes
+   over is truncated by 3Ch, which is never kept.  A kernel older than
+   AL=19h says "invalid function", and gets the plain 41h. */
 int plat_delete( const char *path )
 {
-    return path_call( 0x4100, path );
+    int rc = path_call( F1( 0x19, 0 ), path );
+
+    if ( rc == 1 ) rc = path_call( 0x4100, path );
+    return rc;
 }
 
 int plat_mkdir( const char *path )

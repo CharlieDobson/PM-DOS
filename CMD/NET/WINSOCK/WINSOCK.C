@@ -75,6 +75,20 @@ extern unsigned FAR PASCAL GlobalDosFree( unsigned );
 #define K_NET_DONE     1
 #define K_NET_FAIL     2
 
+/* why a socket is KS_ERROR (SOCK_STAT's err); an older TCPIP.SYS gives
+   K_NET_FAIL for all of them */
+#define KE_REFUSED     3
+#define KE_TIMEOUT     4
+#define KE_NOROUTE     5
+#define KE_RESET       6
+#define KE_TLSCERT     7
+#define KE_TLSFAIL     8
+
+/* SOCK_IFSTAT's long form: its length, and where the host name is in it */
+#define K_IFLEN3       236
+#define K_IF_HOSTNAME  92
+#define K_IF_CABYTES   228      /* a dword: the stack's own trust bundle */
+
 #define K_IO_HDR   16
 #define KBUF_MAX   512         /* data bytes per bridge send/recv */
 
@@ -86,7 +100,7 @@ typedef struct { unsigned long handle; unsigned short port, spare; } KLISTEN;
 typedef struct { unsigned long handle, newh, ip; unsigned short port, spare; } KACCEPT;
 typedef struct { unsigned long handle, ip; unsigned short port, spare;
                  unsigned long len; } KIO;
-typedef struct { unsigned long handle, state, rxready, txfree, err; } KSTAT;
+typedef struct { unsigned long handle, state, rxready, txfree, err, why; } KSTAT;
 typedef struct { unsigned long ip, state; char name[128]; } KRES;
 typedef struct { unsigned long handle; char name[128]; } KTLSHOST;
 typedef struct { unsigned long offset, total, len; } KCA;   /* then the bytes */
@@ -209,11 +223,26 @@ static int sk_state( SOCKET s, KSTAT FAR *out )
     KSTAT FAR *st = (KSTAT FAR *)g_buf;
     WORD cf;
     st->handle = s;
-    st->state = st->rxready = st->txfree = st->err = 0;
+    st->state = st->rxready = st->txfree = st->err = st->why = 0;
     sk_op( K_STATE, sizeof( KSTAT ), &cf );
     if ( cf ) return -1;
     *out = *st;
     return 0;
+}
+
+/* the Winsock error for why a socket failed.  Winsock 1.1 has no word
+   for a certificate: a TLS failure is "connection aborted", so a program
+   can at least tell it from a server that said no or never answered */
+static int sk_failerr( KSTAT FAR *st )
+{
+    switch ( (WORD)st->err ) {
+    case KE_TIMEOUT: return WSAETIMEDOUT;
+    case KE_NOROUTE: return WSAEHOSTUNREACH;
+    case KE_RESET:   return WSAECONNRESET;
+    case KE_TLSCERT:
+    case KE_TLSFAIL: return WSAECONNABORTED;
+    default:         return WSAECONNREFUSED;
+    }
 }
 
 /* =================================================================== */
@@ -327,7 +356,9 @@ int __loadds PASCAL FAR closesocket( SOCKET s )
 
 /* hand the parked stack the trust bundle (CACERT.BND), once, in chunks the
    bridge can carry.  It is looked for beside WINSOCK.DLL, then in C:\.  With
-   no bundle a TLS socket still connects, but the certificate is not checked. */
+   no bundle a TLS socket still connects, but the certificate is not checked.
+   A TCPIP.SYS that loaded its own at boot (since 2026-11-02) is left with
+   that one */
 static void push_ca( void )
 {
     char path[ 160 ];
@@ -339,6 +370,10 @@ static void push_ca( void )
 
     if ( g_cadone ) return;
     g_cadone = 1;
+
+    for ( i = 0; i < K_IFLEN3; i++ ) g_buf[ i ] = 0;
+    if ( sk_op( K_IFSTAT, K_IFLEN3, &cf ) >= K_IFLEN3 && !cf &&
+         *(unsigned long FAR *)( g_buf + K_IF_CABYTES ) != 0 ) return;
 
     n = GetModuleFileName( g_hinst, path, sizeof( path ) - 16 );
     while ( n > 0 && path[ n - 1 ] != '\\' && path[ n - 1 ] != '/' && path[ n - 1 ] != ':' ) n--;
@@ -415,9 +450,14 @@ int __loadds PASCAL FAR connect( SOCKET s, const struct sockaddr FAR *name, int 
     g_inblock = 1; g_cancel = 0;
     for ( ;; ) {
         if ( sk_state( s, &kst ) == 0 ) {
-            if ( (WORD)kst.state == KS_ESTABLISHED ) { g_inblock = 0; return 0; }
+            /* KS_CLOSING too: a server that accepts and ends at once was
+               connected to; recv then returns 0 */
+            if ( (WORD)kst.state == KS_ESTABLISHED || (WORD)kst.state == KS_CLOSING ) {
+                g_inblock = 0;
+                return 0;
+            }
             if ( (WORD)kst.state == KS_ERROR ) {
-                g_inblock = 0; g_lasterr = WSAECONNREFUSED; return SOCKET_ERROR;
+                g_inblock = 0; g_lasterr = sk_failerr( &kst ); return SOCKET_ERROR;
             }
         }
         if ( sk_wait() ) { g_inblock = 0; return SOCKET_ERROR; }
@@ -822,11 +862,20 @@ struct hostent FAR * __loadds PASCAL FAR gethostbyaddr( const char FAR *addr, in
     return (struct hostent FAR *)&g_he;
 }
 
+/* TCPIP.SYS's host name (SOCK_IFSTAT's long form); "pmdos" from a stack
+   too old to say */
 int __loadds PASCAL FAR gethostname( char FAR *name, int namelen )
 {
-    static const char hn[] = "pmdos";
+    static const char fallback[] = "pmdos";
+    const char FAR *hn = fallback;
+    WORD cf;
     int i;
     if ( name == 0 || namelen <= 0 ) { g_lasterr = WSAEFAULT; return SOCKET_ERROR; }
+    if ( g_buf ) {
+        for ( i = 0; i < K_IFLEN3; i++ ) g_buf[ i ] = 0;
+        if ( sk_op( K_IFSTAT, K_IFLEN3, &cf ) >= K_IFLEN3 && !cf && g_buf[ K_IF_HOSTNAME ] )
+            hn = g_buf + K_IF_HOSTNAME;
+    }
     for ( i = 0; i < namelen - 1 && hn[ i ]; i++ ) name[ i ] = hn[ i ];
     if ( namelen > 0 ) name[ i ] = 0;
     return 0;
@@ -1037,13 +1086,13 @@ void __loadds FAR PASCAL ws_ontimer( HWND hw, UINT msg, UINT id, DWORD t )
         if ( sk_state( s, &kst ) != 0 ) continue;
 
         if ( ( want & FD_CONNECT ) && !( g_sk[ s ].afired & FD_CONNECT ) ) {
-            if ( (WORD)kst.state == KS_ESTABLISHED ) {
+            if ( (WORD)kst.state == KS_ESTABLISHED || (WORD)kst.state == KS_CLOSING ) {
                 PostMessage( g_sk[ s ].awnd, g_sk[ s ].amsg, s,
                              WSAMAKESELECTREPLY( FD_CONNECT, 0 ) );
                 g_sk[ s ].afired |= FD_CONNECT;
             } else if ( (WORD)kst.state == KS_ERROR ) {
                 PostMessage( g_sk[ s ].awnd, g_sk[ s ].amsg, s,
-                             WSAMAKESELECTREPLY( FD_CONNECT, WSAECONNREFUSED ) );
+                             WSAMAKESELECTREPLY( FD_CONNECT, sk_failerr( &kst ) ) );
                 g_sk[ s ].afired |= FD_CONNECT;
             }
         }

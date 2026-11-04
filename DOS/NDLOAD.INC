@@ -707,6 +707,7 @@ nds_table:
         dd      OFFSET ndsv_stamp                ; NDS_STAMP
         dd      OFFSET ndsv_flagcall             ; NDS_FLAGCALL
         dd      OFFSET ndsv_fpuemu               ; NDS_FPUEMU
+        dd      OFFSET ndsv_readfile             ; NDS_READFILE
 IF ($ - nds_table) NE NDS_LEN
         .ERR    <nds_table does not match NDS_LEN in NDRV.INC>
 ENDIF
@@ -923,6 +924,58 @@ ndsv_stamp:
         shl     eax,16
         or      eax,edx
         pop     edx
+        ret
+
+;--- ndsv_readfile - EDX -> an ASCIIZ path, EDI -> where the bytes go,
+;--- ECX = room -> EAX = bytes read, ECX = the file's whole size, or CF
+;--- and AX = ERR_*.  A file longer than the room gives its first ECX
+;--- bytes; the caller sees that by the size.  INIT only: the line a
+;--- driver is loaded by is the one time the kernel is not in the middle
+;--- of somebody's call, so open_core and file_read are free to use.  A
+;--- device name (CON, NUL) is refused - a file is what was asked for.
+ndsv_readfile:
+        cmp     byte ptr [nd_ininit],0
+        je      nrf_notnow
+        pushad                          ; [esp+28] EAX, [esp+24] ECX, [esp] EDI
+        mov     esi,edx
+        xor     eax,eax                 ; read only, deny none
+        call    open_core
+        jc      nrf_fail                ; AX = why
+        test    dword ptr [esi+SFT_FLAGS],SFTF_DEVICE
+        jnz     nrf_device
+        mov     ecx,[esp+24]            ; the room
+        mov     eax,[esi+SFT_SIZE]
+        mov     [esp+24],eax            ; ECX out: the whole file
+        cmp     ecx,eax
+        jbe     nrf_room
+        mov     ecx,eax
+nrf_room:
+        mov     edi,[esp]               ; the caller's buffer
+        push    esi
+        call    file_read               ; -> EDX bytes
+        pop     esi
+        jc      nrf_ioerr
+        mov     [esp+28],edx
+        call    sft_close
+        popad
+        clc
+        ret
+nrf_ioerr:
+        call    sft_close
+        mov     eax,ERR_GENERAL
+        jmp     short nrf_fail
+nrf_device:
+        call    sft_close
+        mov     eax,ERR_ACCESS
+nrf_fail:
+        movzx   eax,ax
+        mov     [esp+28],eax
+        popad
+        stc
+        ret
+nrf_notnow:
+        mov     eax,ERR_FUNC
+        stc
         ret
 
 ;=====================================================================

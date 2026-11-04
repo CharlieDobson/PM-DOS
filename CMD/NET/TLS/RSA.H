@@ -56,4 +56,14 @@ int  rsa_pss_verify_sha256(const rsa_pubkey *k,
                            const unsigned char hash[32],
                            const unsigned char *sig, int siglen);
 
+/* The same two checks for any SHA-2 digest the TLS signature schemes use:
+ * hlen is 32 (SHA-256), 48 (SHA-384) or 64 (SHA-512).  PSS takes MGF1 over
+ * the same hash and a salt of hlen bytes.  0 if valid, -1 otherwise. */
+int  rsa_pkcs1_verify( const rsa_pubkey *k, int hlen,
+                       const unsigned char *hash,
+                       const unsigned char *sig, int siglen );
+int  rsa_pss_verify( const rsa_pubkey *k, int hlen,
+                     const unsigned char *hash,
+                     const unsigned char *sig, int siglen );
+
 #endif /* NETSPLOR_RSA_H */

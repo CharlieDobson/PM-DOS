@@ -6,12 +6,16 @@
  * name the server, SOCK_CONNECT to its 443, then - once SOCK_STATE says
  * SS_ESTABLISHED, which for a TLS socket means the handshake is done -
  * an ordinary SOCK_SEND of a plaintext GET and SOCK_RECV of the
- * plaintext reply.  All the TLS 1.2 handshake and record crypto runs in
+ * plaintext reply.  All the TLS handshake and record crypto runs in
  * the stack; the program sends and reads cleartext and never sees a
  * record.  A healthy run shows the reply beginning "HTTP/1".
  *
  * It fetches https://example.com/ over the emulator's SLiRP NAT (the
- * reliable outbound path WGET and SOCKTEST use).  Built as SOCKTEST is:
+ * reliable outbound path WGET and SOCKTEST use), or https://host/ for
+ * TLSTEST host, on another port for TLSTEST host:port.  A handshake that
+ * fails says why, as SOCK_STATE gives it (err and why): a certificate
+ * refused, and which check refused it, is
+ * told apart from a server that never answered.  Built as SOCKTEST is:
  * CSTART.ASM is the startup and the INT 21h thunk.
  */
 #include "ndrv.h"
@@ -28,7 +32,8 @@ void __cdecl int21( REGS *regs );
 /* how long to wait, in hundredths of a second */
 #define WAIT_UP    600
 #define WAIT_DNS   400
-#define WAIT_CONN  1800        /* a TLS handshake is several round trips */
+#define WAIT_CONN  4500        /* a TLS handshake is several round trips, and
+                                  TCP takes about 30 s to give up on a server */
 #define WAIT_DATA  1000
 
 static u8   out_buf[OUT_BUF];
@@ -36,6 +41,9 @@ static u32  out_len;
 static u32  failures;
 
 static u8   io[2048];          /* a SOCK_IO header and its data */
+static char host[128] = "example.com";      /* or the first word of the tail */
+static u16  port = 443;                     /* or the :port after the host */
+static u32  fail_err, fail_why;             /* SOCK_STATE's, when it was SS_ERROR */
 
 static void mem_zero( void *to, u32 len )
 {
@@ -209,6 +217,19 @@ static u32 resolve( const char *name )
     }
 }
 
+/* a socket that will not be used: closed, so the stack lets it go - the
+   stack does not know when a program ends */
+static int give_up( u32 handle, u32 *why, u32 code )
+{
+    SOCK_HANDLE hreq;
+    int err;
+
+    hreq.handle = handle;
+    sk( SOCK_CLOSE, &hreq, sizeof( hreq ), &err );
+    *why = code;
+    return 0;
+}
+
 /* open a TLS socket to host/ip:port, naming the server for SNI and the
    certificate, and wait for the handshake to finish */
 static int tls_connect( u32 ip, u16 port, const char *host, u32 *why )
@@ -229,47 +250,127 @@ static int tls_connect( u32 ip, u16 port, const char *host, u32 *why )
     hreq.handle = handle;
     str_set( hreq.name, host, sizeof( hreq.name ) );
     sk( SOCK_TLSHOST, &hreq, SOCKTLSHOST_LEN, &err );
-    if ( err ) { *why = 2; return 0; }
+    if ( err ) return give_up( handle, why, 2 );
 
     mem_zero( &creq, sizeof( creq ) );
     creq.handle = handle;
     creq.ip = ip;
     creq.port = port;
     sk( SOCK_CONNECT, &creq, sizeof( creq ), &err );
-    if ( err ) { *why = 3; return 0; }
+    if ( err ) return give_up( handle, why, 3 );
 
     start = now_cs();
     for ( ;; ) {
         mem_zero( &st, sizeof( st ) );
         st.handle = handle;
-        state = sk( SOCK_STATE, &st, SOCKSTAT_LEN, &err );
-        if ( err ) { *why = 4; return 0; }
+        state = sk( SOCK_STATE, &st, SOCKSTAT_LEN2, &err );
+        if ( err ) return give_up( handle, why, 4 );
         if ( state == SS_ESTABLISHED ) return (int)handle;
-        if ( state == SS_ERROR ) { *why = 5; return 0; }
-        if ( since( start ) > WAIT_CONN ) { *why = 6; return 0; }
+        if ( state == SS_ERROR ) {
+            fail_err = st.err;
+            fail_why = st.why;
+            return give_up( handle, why, 5 );
+        }
+        if ( since( start ) > WAIT_CONN ) return give_up( handle, why, 6 );
+    }
+}
+
+/* SOCK_STATE's err and why, in words */
+static void out_failure( void )
+{
+    static const char *const errs[] = {
+        "", "", "failed", "refused by the server", "the server did not answer",
+        "nothing at that address (no ARP answer)", "reset by the server",
+        "certificate refused", "TLS handshake failed"
+    };
+    static const char *const whys[] = {
+        "", "not trusted (no path to a root in the bundle)", "made out to another name",
+        "expired or not yet valid", "could not be read"
+    };
+
+    out_str( fail_err < 9 ? errs[fail_err] : "failed" );
+    out_str( " (err=" ); out_dec( fail_err );
+    if ( fail_why ) {
+        out_str( " why=" ); out_dec( fail_why ); out_str( ": " );
+        out_str( fail_why < 5 ? whys[fail_why] : "?" );
+    }
+    out_str( ")" );
+}
+
+/* an address written a.b.c.d, so a failure can be had without DNS; 0 if
+   the host is a name */
+static u32 dotted( const char *text )
+{
+    u32 ip = 0, part, i;
+
+    for ( i = 0; i < 4; i++ ) {
+        if ( *text < '0' || *text > '9' ) return 0;
+        for ( part = 0; *text >= '0' && *text <= '9'; text++ ) part = part * 10 + (u32)( *text - '0' );
+        if ( part > 255 ) return 0;
+        ip = ( ip << 8 ) | part;
+        if ( i < 3 && *text++ != '.' ) return 0;
+    }
+    return *text ? 0 : ip;
+}
+
+/* the first word of the command tail, if there is one (21h/62h gives the
+   PSP's address), as host or host:port */
+static void take_host( void )
+{
+    REGS regs;
+    const u8 *psp;
+    u32 len, i = 0, n = 0, num = 0;
+
+    clear( &regs );
+    regs.eax = 0x6200;
+    int21( &regs );
+    psp = (const u8 *)regs.ebx;
+    len = psp[0x80];
+    if ( len > 127 ) len = 127;
+    while ( i < len && psp[0x81 + i] == ' ' ) i++;
+    while ( i < len && psp[0x81 + i] != ' ' && psp[0x81 + i] != '\r' &&
+            psp[0x81 + i] != ':' && n + 1 < sizeof( host ) ) {
+        host[n++] = (char)psp[0x81 + i++];
+    }
+    if ( n ) host[n] = 0;
+    if ( i < len && psp[0x81 + i] == ':' ) {
+        i++;
+        while ( i < len && psp[0x81 + i] >= '0' && psp[0x81 + i] <= '9' && num <= 65535 ) {
+            num = num * 10 + (u32)( psp[0x81 + i++] - '0' );
+        }
+        if ( num > 0 && num <= 65535 ) port = (u16)num;
     }
 }
 
 static void test_tls( void )
 {
-    static const char request[] =
-        "GET / HTTP/1.0\r\nHost: example.com\r\nConnection: close\r\n\r\n";
+    static char request[256];
     SOCK_IO *msg = (SOCK_IO *)io;
     SOCK_HANDLE hreq;
     SOCK_STAT st;
-    u32 start, got, total = 0, state, ip, why;
+    u32 start, got, total = 0, state, ip, why, reqlen;
     int handle, err, i;
     static u8 reply[4096];
 
-    out_str( "  resolve example.com ... " );
-    ip = resolve( "example.com" );
+    str_set( request, "GET / HTTP/1.0\r\nHost: ", sizeof( request ) );
+    for ( reqlen = 0; request[reqlen]; reqlen++ ) ;
+    str_set( request + reqlen, host, sizeof( request ) - reqlen );
+    for ( ; request[reqlen]; reqlen++ ) ;
+    str_set( request + reqlen, "\r\nConnection: close\r\n\r\n", sizeof( request ) - reqlen );
+    for ( ; request[reqlen]; reqlen++ ) ;
+
+    out_str( "  resolve " ); out_str( host ); out_str( " ... " );
+    ip = dotted( host );
+    if ( ip == 0 ) ip = resolve( host );
     if ( ip == 0 ) { out_str( "could not resolve" ); out_nl(); failures++; return; }
     out_ip( ip ); out_nl();
 
-    out_str( "  TLS handshake to :443 ... " );
-    handle = tls_connect( ip, 443, "example.com", &why );
+    out_str( "  TLS handshake to :" ); out_dec( port ); out_str( " ... " );
+    handle = tls_connect( ip, port, host, &why );
     if ( handle == 0 ) {
-        out_str( "FAILED (why=" ); out_dec( why ); out_str( ")" ); out_nl();
+        out_str( "FAILED (why=" ); out_dec( why ); out_str( ")" );
+        if ( why == 5 ) { out_str( ": " ); out_failure(); }
+        out_nl();
         failures++;
         return;
     }
@@ -277,7 +378,7 @@ static void test_tls( void )
 
     mem_zero( msg, SOCK_IO_HDR );
     msg->handle = handle;
-    msg->len = sizeof( request ) - 1;
+    msg->len = reqlen;
     for ( i = 0; i < (int)msg->len; i++ ) io[SOCK_IO_HDR + i] = (u8)request[i];
     sk( SOCK_SEND, io, SOCK_IO_HDR + msg->len, &err );
     if ( err ) { out_str( "  send failed" ); out_nl(); failures++; }
@@ -315,7 +416,10 @@ static void test_tls( void )
 
 void __cdecl dos_entry( void )
 {
-    out_str( "TLSTEST - the kernel-side TLS socket: https://example.com/ over the bridge-less stack" );
+    take_host();
+    out_str( "TLSTEST - the kernel-side TLS socket: https://" );
+    out_str( host );
+    out_str( "/ over the bridge-less stack" );
     out_nl();
 
     if ( !stack_here() ) {

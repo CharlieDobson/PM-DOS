@@ -267,6 +267,13 @@ NDUF_MEMORY     EQU     01h             ; one block of memory, for life
 ;                   called for good: a driver that has had CF clear from
 ;                   this may not refuse its INIT afterwards.  INIT time
 ;                   only.  Since NDS_VERSION 6
+;   NDS_READFILE    EDX -> an ASCIIZ path, EDI -> a buffer, ECX = its
+;                   room -> EAX = bytes read, ECX = the file's whole
+;                   size (more than EAX: the room was short), or CF and
+;                   AX = ERR_*.  A device name is ERR_ACCESS.  For a
+;                   driver that keeps a file of settings or data, as
+;                   TCPIP.SYS does TCPIP.INI and CACERT.BND.  INIT time
+;                   only: ERR_FUNC at any other.  Since NDS_VERSION 7
 ;---------------------------------------------------------------------
 NDS_VER         EQU     0
 NDS_ALLOC       EQU     4
@@ -284,9 +291,10 @@ NDS_SOCKCALL    EQU     48
 NDS_STAMP       EQU     52
 NDS_FLAGCALL    EQU     56
 NDS_FPUEMU      EQU     60
-NDS_LEN         EQU     64
+NDS_READFILE    EQU     64
+NDS_LEN         EQU     68
 
-NDS_VERSION     EQU     6
+NDS_VERSION     EQU     7
 
 ;---------------------------------------------------------------------
 ; THE KERNEL'S ROW for a loaded driver - EDI at INIT and CALL, and what

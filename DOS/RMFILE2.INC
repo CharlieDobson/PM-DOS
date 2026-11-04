@@ -17,8 +17,8 @@ rd_sftinit:
         push    es
         mov     ax,cs
         mov     es,ax
-        mov     di,OFFSET rd_sfts
-        mov     cx,SFT_COUNT * SFT_LEN
+        mov     di,[rd_sftp]
+        imul    cx,word ptr [rd_nsft],SFT_LEN
         xor     al,al
         cld
         rep     stosb
@@ -26,7 +26,7 @@ rd_sftinit:
         ; The three devices, opened once and shared.  CON is two
         ; handles because standard input and standard output are two
         ; handles, and closing one must not close the other.
-        mov     si,OFFSET rd_sfts
+        mov     si,[rd_sftp]
         call    sfti_con                ; 0 - stdin
         add     si,SFT_LEN
         call    sfti_con                ; 1 - stdout
@@ -398,7 +398,7 @@ sft_get:
         mov     al,es:[bx+di]
         cmp     al,0FFh
         je      sg_bad
-        cmp     al,SFT_COUNT
+        cmp     al,byte ptr [rd_nsft]
         jae     sg_bad
         ; IMUL, AND THAT IS THE WHOLE POINT OF IT.  This was MUL SI,
         ; which is a 16-bit multiply and therefore writes DX:AX - so
@@ -413,7 +413,7 @@ sft_get:
         ; half of that accident is written down.
         movzx   si,al
         imul    si,si,SFT_LEN
-        add     si,OFFSET rd_sfts
+        add     si,[rd_sftp]
         cmp     word ptr [si+SFT_REF],0
         je      sg_bad
         pop     di
@@ -455,9 +455,9 @@ sft_isnet:
 ;--- sft_alloc - a free table entry -> SI, AL = its index.  CF if full
 sft_alloc:
         push    cx
-        mov     si,OFFSET rd_sfts
+        mov     si,[rd_sftp]
         xor     al,al
-        mov     cx,SFT_COUNT
+        mov     cx,[rd_nsft]
 sa_loop:
         cmp     word ptr [si+SFT_REF],0
         je      sa_got
@@ -493,13 +493,11 @@ sa_got:
 sft_addref:
         push    si
         push    ax
-        cmp     al,SFT_COUNT
+        cmp     al,byte ptr [rd_nsft]
         jae     sar_done
         movzx   si,al
-        mov     ax,SFT_LEN
-        mul     si
-        mov     si,ax
-        add     si,OFFSET rd_sfts
+        imul    si,si,SFT_LEN           ; not MUL: see sft_get
+        add     si,[rd_sftp]
         inc     word ptr [si+SFT_REF]
 sar_done:
         pop     ax

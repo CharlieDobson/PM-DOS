@@ -35,7 +35,7 @@ void __cdecl fib_enter( void );
 void __cdecl fib_yield( void );
 
 /* ---- limits ---- */
-#define NET_DRIVES     16          /* = LASTDRIVE */
+#define NET_DRIVES     26          /* = LASTDRIVE, A: to Z: */
 #define NET_OPEN_MAX   16          /* open files per mounted share */
 #define NET_FIND_MAX   256         /* directory entries cached per find */
 
@@ -448,6 +448,33 @@ static void drop_session( int drive )
     g_sess[drive] = (session *)0;
 }
 
+/* a failed mount: the DOS error, and for NET USE the step (MNT_*) and
+   the server's status at it */
+static int mount_fail( redir_req *r, u32 err, u32 step, u32 srvstatus )
+{
+    r->status = err;
+    r->count = step;
+    r->result = srvstatus;
+    return 0;
+}
+
+static int starts( const char *text, const char *head )
+{
+    while ( *head ) if ( *text++ != *head++ ) return 0;
+    return 1;
+}
+
+/* the engine's stage when it gave up -> MNT_*.  SMB2 says "negotiate",
+   "session-setup(n)", "tree-connect"; SMB1 "negotiate", "session
+   request", "session setup", "tree connect". */
+static u32 mount_step( const char *stage )
+{
+    if ( starts( stage, "session r" ) ) return MNT_NETBIOS;
+    if ( starts( stage, "session" ) )   return MNT_LOGON;
+    if ( starts( stage, "tree" ) )      return MNT_SHARE;
+    return MNT_DIALECT;
+}
+
 /* the server is not found over TCP/IP (or there is none): NetBEUI, if
    NETBEUI.SYS is loaded, with SMB1 - the only SMB that runs over it */
 static int mount_netbeui( redir_req *r, int drive )
@@ -457,24 +484,22 @@ static int mount_netbeui( redir_req *r, int drive )
     u32 seed;
 
     for ( i = 0; r->server[i]; i++ ) if ( r->server[i] == '.' || i >= 15 ) break;
-    if ( r->server[i] || i == 0 || !dnb_here( smb1_calling ) ) {     /* our NetBEUI name calls */
-        r->status = E_NOFILE;           /* unknown server */
-        return 0;
-    }
+    if ( r->server[i] || i == 0 || !dnb_here( smb1_calling ) )      /* our NetBEUI name calls */
+        return mount_fail( r, E_NOFILE, MNT_NONAME, 0 );
     s = (session *)nds_alloc( sizeof( session ) );
-    if ( s == (session *)0 ) { r->status = E_GENERAL; return 0; }
+    if ( s == (session *)0 ) return mount_fail( r, E_GENERAL, MNT_MEMORY, 0 );
     memset( s, 0, sizeof( *s ) );
     s->proto = 1;
     s->nbh = dnb_call( r->server, 0x20, 8000 );         /* the server service */
-    if ( s->nbh == 0 ) { nds_free( s ); r->status = E_NOFILE; return 0; }
+    if ( s->nbh == 0 ) { nds_free( s ); return mount_fail( r, E_NOFILE, MNT_NONAME, 0 ); }
     seed = nds_ticks() * 2654435761UL + (u32)drive;
     rc = smb1_connect( &s->u.c1, nb_smb_send, nb_smb_recv, (void *)s, seed,
                        r->server, r->share, r->user, r->pass, r->domain );
     if ( rc != 0 ) {
+        u32 step = mount_step( smb1_stage( &s->u.c1 ) ), srvstatus = s->u.c1.last_status;
         dnb_hangup( s->nbh );
         nds_free( s );
-        r->status = E_ACCESS;           /* auth or share refused */
-        return 0;
+        return mount_fail( r, E_ACCESS, step, srvstatus );     /* auth or share refused */
     }
     g_sess[drive] = s;
     r->status = 0;
@@ -487,7 +512,7 @@ static int do_mount( redir_req *r )
     session *s;
     u32 ip;
 
-    if ( drive < 0 || drive >= NET_DRIVES ) { r->status = E_BADDRIVE; return 0; }
+    if ( drive < 0 || drive >= NET_DRIVES ) return mount_fail( r, E_BADDRIVE, 0, 0 );
     if ( g_sess[drive] ) drop_session( drive );
 
     /* TCP/IP first, when it is loaded and has an address: the name by
@@ -497,12 +522,12 @@ static int do_mount( redir_req *r )
     if ( ip == 0 ) return mount_netbeui( r, drive );
 
     s = (session *)nds_alloc( sizeof( session ) );
-    if ( s == (session *)0 ) { r->status = E_GENERAL; return 0; }
+    if ( s == (session *)0 ) return mount_fail( r, E_GENERAL, MNT_MEMORY, 0 );
     memset( s, 0, sizeof( *s ) );
     s->proto = ( r->spare == 1 ) ? 1 : 2;       /* NR_SPARE from NET USE /SMB1 */
 
     s->sock = dsock_open( SOCK_STREAM );
-    if ( s->sock == 0 ) { nds_free( s ); r->status = E_GENERAL; return 0; }
+    if ( s->sock == 0 ) { nds_free( s ); return mount_fail( r, E_GENERAL, MNT_MEMORY, 0 ); }
     if ( !dsock_connect( s->sock, ip, (u16)( ( s->proto == 1 ) ? 139 : 445 ), 5000 ) ) {
         /* nothing on 445: a server that speaks only SMB1 (Windows for
            Workgroups, NT 3.x, SMBSRV) is tried on 139, as with /SMB1 */
@@ -513,22 +538,40 @@ static int do_mount( redir_req *r )
             s->sock = dsock_open( SOCK_STREAM );
             if ( s->sock && !dsock_connect( s->sock, ip, 139, 5000 ) ) { dsock_close( s->sock ); s->sock = 0; }
         }
-        if ( s->sock == 0 ) { nds_free( s ); r->status = E_GENERAL; return 0; }
+        if ( s->sock == 0 ) { nds_free( s ); return mount_fail( r, E_GENERAL, MNT_CONNECT, 0 ); }
     }
     {
         u32 seed = nds_ticks() * 2654435761UL + (u32)drive;
-        int rc;
+        u32 step, srvstatus;
+        int rc = -1;
+        if ( s->proto == 2 ) {
+            rc = smb2_connect( &s->u.c2, drv_smb_send, drv_smb_recv, (void *)s->sock, seed,
+                               r->server, r->share, r->user, r->pass, r->domain );
+            if ( rc != 0 && smb2_smb1_only( &s->u.c2 ) ) {
+                /* the server answered in SMB1 (Windows Server 2003, an
+                   older NAS): SMB1 on 139, as with /SMB1 */
+                dsock_close( s->sock );
+                s->proto = 1;
+                s->sock = dsock_open( SOCK_STREAM );
+                if ( s->sock && !dsock_connect( s->sock, ip, 139, 5000 ) ) { dsock_close( s->sock ); s->sock = 0; }
+                if ( s->sock == 0 ) { nds_free( s ); return mount_fail( r, E_GENERAL, MNT_CONNECT, 0 ); }
+            }
+        }
         if ( s->proto == 1 ) {
             dsock_nbname( smb1_calling );       /* introduce ourselves by /NAME= */
             rc = smb1_connect( &s->u.c1, drv_smb_send, drv_smb_recv, (void *)s->sock, seed,
                                r->server, r->share, r->user, r->pass, r->domain );
-        } else
-            rc = smb2_connect( &s->u.c2, drv_smb_send, drv_smb_recv, (void *)s->sock, seed,
-                               r->server, r->share, r->user, r->pass, r->domain );
+        }
         if ( rc != 0 ) {
+            if ( s->proto == 1 ) {
+                step = mount_step( smb1_stage( &s->u.c1 ) );
+                srvstatus = s->u.c1.last_status;
+            } else {
+                step = mount_step( smb2_stage( &s->u.c2 ) );
+                srvstatus = smb2_status( &s->u.c2 );
+            }
             dsock_close( s->sock ); nds_free( s );
-            r->status = E_ACCESS;               /* auth or share refused */
-            return 0;
+            return mount_fail( r, E_ACCESS, step, srvstatus );     /* auth or share refused */
         }
     }
     g_sess[drive] = s;

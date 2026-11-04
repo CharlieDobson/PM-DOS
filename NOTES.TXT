@@ -19417,6 +19417,792 @@ and MEM after it reads the same as after a fresh boot, so the grown
 slot was trimmed.  Not run on Windows/WfW or on real hardware.
 
 
+THE 5x86'S CARD IS A 3C515: EL3C515.SYS (2026-11-01)
+---------------------------------------------------------------------
+
+EL3C509.SYS still found nothing on the 5x86, and its new lines said
+why: "Plug and Play: 1 card, not a 3C509B".  ISAPNP named the card
+TCM5051, "3Com Fast EtherLink ISA" - a 3C515-TX, the 10/100 ISA card,
+at 280h, IRQ 3 and DMA 7.  DEBUG's I 280 and I 281 read 1B 00, not
+3Com's 50 6D.  3Com's own 3C515CFG.EXE went straight back to the prompt
+on PM-DOS; that was not looked into.
+
+THE 3C515 IS NOT A FAST 3C509.  3Com's Corkscrew is a 3C59x/3C90x put
+on the ISA bus.  What it shares with the 3C509: the command and status
+register at base+0Eh, the commands, windows 2, 3 and 4 for the station
+address, the configuration and the media, the transmit status stack,
+the EEPROM's words.  What it does not: the operating registers sit at
+base+10h-1Fh in every window (the FIFO at 10h, receive status 18h,
+transmit status 1Bh, free count 1Ch), so the card takes 20h ports; the
+EEPROM's command and data registers and the resource configuration
+are 2000h above the base, outside the windows; the FIFO is read and
+written in doublewords; and there are two speeds.  The DMA channel is
+for its ISA bus master.
+
+DRV\EL3C515\EL3C515.C is the driver, on NETCORE like the others,
+written to Linux's 3c515.c (v6.1; the driver is gone from Linux since).
+Frames go through the FIFO by the processor, so the DMA channel is
+never used.  The card is found by /P:, then Plug and Play (TCM5051,
+given its port and line and switched on, as EL3C509.SYS does a
+3C509B), then a scan of 100h-3E0h for a 3C515 with Plug and Play off in
+its EEPROM.  As Linux's check_device does, nothing is written to a port
+until its resource configuration register names that base; 0000 counts
+as nobody there, like FFFF.  At the first start, an EEPROM that says
+"choose" gets 100BASE-TX and then 10BASE-T, each kept if window 4 shows
+a link within two seconds; otherwise the EEPROM's transceiver.  The
+name said at the load has the result ("3Com 3C515, 100BASE-TX").  No
+TotalReset (Linux's open has none), statistics off, TX-available
+neither enabled nor tested as an interrupt (EL3C509's storm).  When
+nothing is found, a line for each way says what came back.
+
+EL3C509.SYS now names the first card it passed over ("1 card,
+TCM5051, not a 3C509B") and sends a TCM5051 to EL3C515.SYS.
+
+THE FIRST ONE SENT AND HEARD NOTHING.  On the 5x86 it loaded as
+"3Com 3C515, 10BASE-T at 0280h, IRQ 3", and NICTEST had 4 frames out,
+0 in, 0 interrupts.  It had chosen the transceiver LAST, after the
+transmitter and receiver were reset and enabled; Linux's open sets it
+before the resets, and 3Com's notes (quoted in Linux's 3c59x.c) want
+both reset after a change of transceiver.  Now the transceiver is
+chosen first, 100BASE-TX gets three seconds (the card does not
+negotiate, and a switch that does is slow to fall back to sensing the
+line), the name says ", no link" when neither came up, and a line at
+the load gives InternalConfig, the transceivers fitted and the media
+register as the card had them.  With no cable the load can take
+seven seconds.
+
+THE SECOND ONE HEARD NOTHING EITHER: NICTEST 8 frames out, 0 in, 0
+interrupts, still 10BASE-T with a link.  The tick drains the card
+whether or not its line fires (NETCORE's nd_tick), so 0 in is the
+card's receiver giving nothing, not a lost interrupt.  Read against
+Linux's corkscrew_open and corkscrew_rx line by line, the setup and
+the receive path match.  So the driver now asks the card: /T runs
+el_test at the load - statistics on, one broadcast frame of the
+Ethernet loopback protocol (type 9000h) sent, five seconds listened
+to, then the card's own counts (window 6: sent, carrier lost,
+collisions, heard, overruns), the transmit status, the status bits
+seen and window 4's diagnostic, FIFO and media registers.  /10 and
+/100 set the speed whatever the EEPROM says.  The switches are the
+driver's own: NETCORE keeps the DEVICE= line in net_line while
+card_find and the first card_setup run (every NETCORE driver links
+it; RTL8139 passed NICTEST on QEMU with it).  Only S:\BIN's
+EL3C515.SYS (12,528 bytes) was replaced for the test; the images
+still have the one before.
+
+ON THE 5x86 THE TEST FILES DID NOT ARRIVE WHOLE.  EL3C515.SYS gave
+"Bad or missing device driver" (on QEMU the same file loads, says what
+it tried and fails to initialize), and DSTRACE.EXE (DOSSHELL with
+exit markers) stopped at once with exception 0E at 000122BA, through
+a null pointer - 122BA is dos_entry in its map, whose code reads no
+memory at all, so the bytes there were not the ones built.  Both went
+from a floppy to C:\DOS by MOVE.  QEMU moved both byte for byte: a
+plain floppy, the door changed mid-session to another disk with the
+same boot sector, and the same after MOVE had deleted a file from the
+first disk.  Not explained yet; he is asked for sizes and FC /B.
+
+/T SAID WHY: THE CARD HAS NO 10BASE-T OF ITS OWN.  On the 5x86:
+InternalConfig 0102001B (autoselect, transceiver 0), W3_OPTIONS F040
+- of Linux's media masks only 40h, MII: the card's one way onto the
+wire is a PHY chip on the MII, for both speeds.  The driver tried
+100BASE-TX and 10BASE-T, neither fitted, and fell back to the
+EEPROM's transceiver 0, 10BASE-T, which is not there: "card sent 0",
+the frame never left the FIFO.  Linux's autoselect, walking its
+media_tbl from 100BASE-TX, reaches MII before 10BASE-T and would
+have chosen it.  el_choose now walks the same order among the fitted
+ones, and an MII PHY is read through W4_PHYMGMT (base+8 in window 4,
+clocked by hand as Linux's 3c59x.c mdio_read does; 3c515.c itself has
+no MII code and lets the PHY agree alone): found at the first address
+whose ID answers, three seconds for its negotiation, then BMCR, BMSR,
+ANAR and ANLPAR said on a line.  When the two ends agreed full duplex
+the card's MAC is put in full duplex (W3_MACCTRL 20h), and the name
+says the speed: "3Com 3C515, 100BASE-TX full".  /10 and /100 apply
+only to a card with that transceiver.
+
+And "read 6D-50-97-B6-67-24": the first EEPROM read after Plug and
+Play switched the card on came back stale, the maker's word, the
+address was refused as a multicast, and the port scan found the card
+instead (it read the address right).  find_pnp now throws one read
+away and checks the maker's word, as Linux's check_device does,
+before it reads the address.  EL3C515.SYS 13,876 bytes; QEMU loads it
+and it says "not found"; nothing else can be run without the card.
+
+BRK32 FAILED FOUR CHECKS ON ALL SEVEN ROWS IN ONE -Update RUN of this
+build ("a ^C behind a key", ^S, ^P, Ctrl+PrtSc), and in a two-row run
+straight after - then passed in nine runs since, with the same files.
+Not this build: the failing results were NOT recorded, and the full
+run against S:'s baselines is 101 x 7.  The host's own keyboard state
+reaching DOSBox-X (Caps Lock would make the test's "a" an "A") is the
+guess, not proved.  Charlie's SCANDISK help text (the switches lined
+up) is in this delivery: BIN EL3C515.SYS + SCANDISK.EXE, Setup
+images, PMDOS.IMG, HD32, both HD16s; backups scratchpad 0c6de115
+bakmii.
+
+IT WORKS: the PHY agreed 100Mbit, TCPIP.SYS got an address.  Then
+NET USE S: \\TROLLA-STORAGE\STORAGE said "Name the drive letter, like
+K:." - PM-DOS has A: to P: only, and NET.C gave a letter past P: the
+message meant for no letter at all.  It now says "S: is past P:, the
+last drive letter PM-DOS has.  Use a letter from A: to P:."  NET.EXE
+15,824 bytes; RUNTESTS 101 x 7, no baseline moved; delivered (BIN,
+Setup images, PMDOS.IMG, HD32, both HD16s; backups baknet).
+
+NICTEST FAILED A GOOD CARD FOR A BUSY NETWORK: everything passed on
+the 5x86 but "nothing dropped" - 103 frames lost to a full queue while
+NICTEST waited for its own, the 3C515 taking every multicast or none.
+Dropped frames are counted on the last line now ("dropped for a full
+queue"), and errors and overflows alone fail the check.  NICTEST.EXE
+10,636 bytes; QEMU RTL8139 all pass; RUNTESTS 101 x 7, no baseline
+moved (RUNTESTS's NICTEST runs with no card); delivered (backups
+baknict).
+
+LETTERS TO Z:, AND LASTDRIVE= DECIDES (0.70).  Charlie asked why not
+past P:, chose "the MS-DOS way": LASTDRIVE (PMDOS.INC) is 26 now, the
+most there can be, and LASTDRIVE= in CONFIG.SYS says how many this
+machine has - P: without the line (LD_DEFAULT), never fewer than the
+drives.  Read on CONFIG.SYS's FIRST walk with DOS=, so it is in force
+before any DEVICE= takes a letter.  Once the machine has started
+(drv_fixletters, DOSMAIN after cd_announce) a new letter stops there:
+NET USE, MOUNT, a 32-bit disk driver's unit, a USB stick (drv_ceil).
+21h/0Eh answers the count, as MS-DOS does; 29h says FFh past it, and
+for a letter with no drive (MS-DOS's MakeFcb asks GetVisDrv - under
+LASTDRIVE=Z, Q: is still no drive).  CDROM= past it falls back like a
+taken letter.  NET.EXE asks 0Eh and says "S: is past LASTDRIVE=P in
+CONFIG.SYS.  Use a letter up to P:, or raise LASTDRIVE= and restart."
+WHAT IT COSTS, only when asked for: the current directory array a DOS
+program reads moves out of the DOS data segment (sixteen fit) into a
+block of its own below 640K, owner 8, taken right after the first walk
+(vdm_cdsgrow) - 58h a letter, 2,288 bytes + the MCB for Z:, the price
+MS-DOS charges; letters past P: keep their parameter blocks where the
+array was (vdm_dpbaddr).  The kernel's parked volume states (9K each)
+start at sixteen; letters past them get a second arena block
+(vol_slotp2, vol_slot finds a slot) - 89K for Z:.  The first try moved
+all of them to one bigger block and freed the old: a 146K hole at the
+bottom of the arena, XMSTEST's block landed in it under LASTDRIVE=Z
+and could not grow.  vol_swap gives a letter past the slots a never-
+mounted state and parks nothing for it.  The park copies the first
+eight entries back to RL_CDS for RMDOS when the array has moved.
+TESTED: RUNTESTS 101 x 7 default (only the version lines moved: PMD,
+HELLO, RMTEST - 21 baselines); the whole suite under LASTDRIVE=Z on
+486-32 and pentium-3072 (no new failure; CDSTEST walks 26 entries on
+both DOSes; arena +90h paragraphs); MOUNT S: and DIR S: work under Z,
+are refused without the line and under LASTDRIVE=R; a scratch check
+(not shipped) followed 32h for S:, the DPB chain and S:'s entry to
+0400:0642.  Help: LASTDRIVE=, NET USE, CONFIG.TXT, and a new
+EL3C515.SYS topic.  Version 0.70.  Delivered (BIN 12, baselines 21,
+Setup images, floppies, HD32, both HD16s; backups scratchpad bakld).
+
+SETUP PUTS CMD.EXE IN THE ROOT TOO (Charlie): with the startup files
+bypassed there is no SHELL= line, and the kernel looks for CMD.EXE in
+the root, where Setup had put none.  A new SETUP.LST flag, R - a DOS
+file with a copy in the root - carried by MKSETUP into SETUP.INF and
+by Setup as FF_ROOTTOO: copy_all writes the root copy from the same
+disk right after the C:\DOS one (copy_rootdest), copy_total counts it
+for the gauge and the free-space check, and UNINSTAL.DAT gets a del=
+for it (dat_text's buffer now also counts the rmdir= lines, which it
+did not).  An upgrade keeps no old C:\CMD.EXE: no DOS has one there.
+The startup floppy has everything in its root already.  TESTED (QEMU):
+Install from PMDOSCD.ISO onto a blank 200MB disk, C:\CMD.EXE and
+C:\DOS\CMD.EXE both 63,108; started with F5, "Safe mode: skipping
+CONFIG.SYS and AUTOEXEC.BAT." and a C:\> prompt.  The upgrade path is
+read, not run.  SEEN THERE, NOT CHANGED: in safe mode COMSPEC says
+C:\COMMAND.COM, and COMMAND.COM is only in C:\DOS.  SETUP.EXE 168,904;
+delivered (BIN, DISK1, PMDOSCD.ISO, SETUPUSB, SETUPZIP; backups
+bakroot).
+
+NET USE SAYS WHICH STEP FAILED; /USER:DOMAIN\NAME; PING TO THE
+MILLISECOND (Charlie, 2026-11-01).  On the 5x86, NET USE to his server
+answered only "The connection could not be made - check the name, the
+user and the password", while PING reached the server.  SMBFS.SYS gave
+the kernel one DOS error (5) for every failure after the name was
+found, so nobody could tell a closed port from a refused password.  A
+failed REDIR_MOUNT now also answers the step in NR_COUNT and the
+server's status in NR_RESULT (REDIR.H MNT_*: name not found, no TCP
+answer on 445/139, no dialect, NetBIOS session refused, sign-in
+refused, share refused, no driver, no memory), the kernel's fnu_mapfail
+copies both into two new netuse_req fields (NU_STEP, NU_SRVSTATUS;
+NU_SIZE 348 -> 356), and NET.EXE names the step, with the NTSTATUS
+(LOGON_FAILURE, BAD_NETWORK_NAME and the other usual ones in words;
+"Server status: C000006D" under it).  Both SMB engines clear
+last_status before each receive, so a step that times out reports 0
+("stopped answering"), not the status of the step before it.  The SMB2
+sign-in also finds the NTLM CHALLENGE inside a SPNEGO-wrapped answer
+(scan for "NTLMSSP\0" type 2, cut at its last field so the MIC covers
+the CHALLENGE alone); a raw answer, Windows', takes the same path as
+before.  /DOMAIN: is gone: the domain goes in front of the name,
+/USER:domain\name, as on Windows NT; any other switch is now "Invalid
+switch" instead of being ignored.  PING: TCPIP.SYS timed the echo by
+nds_ticks, so every LAN reply was "<55ms" or "55ms".  fine_now reads
+channel 0 of the 8254 with the read-back command (count and status
+together; mode 3 counts down by two twice a tick, output high for the
+first half), adds the tick, and stands still rather than go back when
+a tick is owed but not yet counted.  Round trips are whole ms, "<1ms"
+under one, as on Windows.  TESTED (QEMU, RTL8139): PING 10.0.2.2
+2ms then <1ms; NET USE against this PC's Windows 11 SMB server with a
+made-up user -> "The server did not accept the user name or password."
++ C000006D; 10.0.2.99 -> no connection on 445 or 139; NOSUCHHOST ->
+not found; /DOMAIN:FOO -> invalid switch; smb1peer.pl /SMB1 with
+/USER:WORKGROUP\pmdostest mounts, DIR and TYPE work.  Not tested: a
+positive SMB2 mount (no test account on this PC), a SPNEGO server.
+CACHE's "Largest cache size: 3,883,008 bytes" on 32MB is 3.7MB, an
+eighth of the arena (cap 8MB) - not changed.
+
+HIS SERVER SPEAKS ONLY SMB1; SMBFS NOW OPENS AS WINDOWS DOES.  SETUP:
+UPGRADE OR REINSTALL, AND NOTHING KEPT FOR UNDELETE; 3C515 ON ONE LINE;
+MEM SHORTER (Charlie, 2026-11-01).  With the step messages, his NET USE
+S: \\trolla-storage\storage /user:trolla\Charlie said "The server
+stopped answering while the SMB version was agreed."  Sent from this
+PC, the same SMB2 NEGOTIATE got no answer from trolla-storage
+(192.168.7.30) at all - not a reply, not a close - while Eternia-Storage
+answered it with 3.0.2.  An SMB1 NEGOTIATE got "NT LM 0.12" from it on
+445 and 139 even with "SMB 2.002" offered: security mode 03,
+capabilities 0001F3FD, maximum buffer 16,644, domain TROLLA - Windows
+Server 2003 or 2000, which never learned SMB2 and ignores it.  SMBFS
+only fell back to SMB1 when nothing listened on 445.  SMB2.C now opens
+as Windows does: an SMB1 NEGOTIATE offering only "SMB 2.002" and
+"SMB 2.???" (do_opening).  An SMB2 server answers in SMB2 - 02FF, and
+the SMB2 NEGOTIATE follows as MessageId 1; 0202 is the whole negotiate
+- and an SMB1-only one answers in SMB1 (trolla-storage: index FFFF, 41
+bytes, shorter than an SMB2 header, so not recv_msg), which sets
+smb1_only; SMBFS then closes and connects to 139 with the SMB1 engine,
+as /SMB1 does.  TESTED: QEMU with smb1peer.pl on 445 AND 139 (two
+peers: a guestfwd is ONE connection made when QEMU starts, so one peer
+behind two forwards serves only one of them) - NET USE without /SMB1
+mounts, DIR and TYPE work; this PC's Windows SMB server still gets to
+the sign-in (C000006D for a made-up user); the exact opening bytes
+from this PC: trolla-storage SMB1 FFFF, Eternia-Storage SMB2 02FF.
+The SMB1 sign-in is still LM + NTLMv1 (fine with a default domain;
+NTLMv2 if he gets C000006D with the right password).
+SETUP: every delete is now F1h AL=19h, the delete UNDELETE=ON does not
+keep (PLAT32 plat_delete; 41h if the kernel says invalid function).
+Files Setup writes over are truncated by 3Ch, which was never kept;
+what it deletes is PMBOOT.SYS on a volume without reserved room,
+CONFIG.OLD/AUTOEXEC.OLD, a half-copied file, and Uninstall's files.
+Reinstall over a disk from the delivered Setup: no \RECYCLED made.
+UPGRADE: PMDOS.SYS now ends in ver_tag, "PMDOSVER" + major + minor
+(DOSMAIN.ASM); Setup's installed_version (DISK.C) finds it in the
+installed PMDOS.SYS.  No tag (before 0.70) or an older one = "Upgrade
+PM-DOS (recommended)" (tx_up_old / tx_up_1 "PM-DOS 0.69 is installed
+... upgrade it to PM-DOS 0.70"); the same = the reinstall page as
+before; newer = tx_re_newer and a plain "Reinstall PM-DOS." - all four
+seen in QEMU (the tag patched to 69 and 71 for two of them).
+EL3C515.SYS: the bring-up lines are gone (PnP card, read address,
+configuration, MII PHY, the not-found reports); the load says NETCORE's
+one line, "3Com 3C515, 100BASE-T at 280h, IRQ 3, <address>" - the speed
+named 10BASE-T or 100BASE-T only; /T still prints its test.  MEM: no
+"XMS blocks in use/free", no "EMS page frame" (PMD shows the frame).
+RMTEST's baseline delivered at 17:17 said 000E blocks / 6AA2 free, out
+of line with the one before it (000F) and every run since: RMTEST's
+numbers differ when it runs alone (-Run) from a full run, so it is
+re-recorded from a FULL -Update run (000F/6A42), with MEM's.
+Charlie's own rewording of ISAPNP /? (CMD\ISAPNP\ISAPNP.C msg_help)
+went in after it, built and delivered the same evening.
+
+RMDOS'S CACHE TABLES AND FILE TABLE LEAVE THE IMAGE; FILES= UNDER
+WINDOWS; WINCACHE= PAST 4M (Charlie, 2026-11-01).  Half of RMDOS.SYS
+(33,956 of 64,025 bytes, measured from a wasm listing's symbol table)
+was zeros: the sector cache's directory (1,024 x 10), its 4K bounce
+and 2K of chain heads, six 1K stacks, an 80-entry file table and the
+sector buffers.  Charlie asked for the cache tables to go in a block
+of their own, UMBs first, and for the file table to follow FILES=.
+THERE ARE NO UMBs UNDER WINDOWS - the park turns paging off and cuts
+the chain at 640K (park_chaincut) - so a block of their own is always
+conventional memory, which every DOS box loses; inside RMDOS's fixed
+64K they cost nothing.  His choice, the hybrid: the tables stay in
+RMDOS's segment, now in the room after the image, and only a WINCACHE=
+line asking for more than RMC_TAILKB (4M) gets a block of its own.
+RMDOS (1.06 header: RMH_FILES, RMH_CMSEG, RMH_CMPARAS): rd_layout
+(RMFILE.INC) builds the file table after the image - the DOS block
+header, FILES= entries (8..64), and the one-entry second block VSHARE
+and IFSMGR need - and rd_tailfree after it; cm_place (RMCACHE.INC) puts
+the heads, bounce and directory at FS:[cmv_hashp/bncp/dirp], in that
+room or in RMH_CMSEG's block, and cuts the cache to what fits; every
+way into RMCACHE (cm_init, cm_xfer, cm_dropdrive, cm_api, cm_winexit)
+loads FS and gives the caller's back.  RMDOS.ASM checks at build time
+that the room holds 64 files and a 4M cache's tables.  The log line
+says "tables=seg:off fit=n files=n".  Kernel: park_cmparas (PARK.INC)
+= the tables' paragraphs when cfgc_winkb > RMC_TAILKB; vl_winres
+(VDM.INC) and plr_fresh reserve RMDOS's 64K + RMCD's room + the tables
+in one block below WIN386, dropping the tables first and RMCD's room
+next when there is not room for all; park_loadrm recognises all four
+lengths (the tables are always more than RMCD's 512 paragraphs);
+park_fillhdr caps an explicit WINCACHE= at RMC_MAXKB (23,756K: a
+segment of tables) and the default at 4M.  The kernel's file table is
+unchanged (FILES= still picks how many of its 64 it hands out - his
+choice).  Also fixed: sft_addref's MUL SI cleared DX (sft_get's old
+defect, fixed there but not here), now IMUL.  RMDOS.SYS 64,025 ->
+43,278.  TESTED (WfW 3.11 enhanced mode, QEMU 64MB, SETVER loaded,
+scratchpad wfw\cachetest.ps1): default - tables=07DC:B818 (RMDOS's
+segment), 1,024 elements, fit 1,224, files 64, 7,422 hits; WINCACHE=16M
+FILES=30 - tables=19DC:0000 (RMDOS 07DC + 64K + RMCD's 8K), 4,096
+elements, files 30; 32-bit disk + file access (LRGDISK.386 + VFAT.386)
+- IFSMGR asks BX=3 for every letter, turns C: writes then reads off
+(DL=4, DL=2) at start and on (1, 3) at exit, hits fall to 1,043: YES,
+32-bit file access still turns the real-mode cache off, drive by drive.
+A DOS box copied 20 files twice in each case; afterwards the kernel's
+FC /B found no differences.  RMTEST (free clusters) and SFTSCAN (RMDOS's
+table moved up its segment; the first triple, 0802, unchanged) re-recorded.
+
+THE FILES WERE FINE, COPIED AGAIN; THE DOSSHELL "FREEZE" WAS A WAIT.
+Recopied, both ran.  DSTRACE showed its EXIT mark and, after two to
+two and a half minutes, reached the prompt; DOSSHELL the same.  It was
+never hung: it was writing DOSSHELL.INI.  The shell wrote the file a
+piece at a time - an indent, a key, " = ", a value, a line end each a
+40h call of their own, some 720 for a 3,448-byte file - and the
+kernel's file_wchunk wrote the WHOLE CLUSTER back for every one of
+them, followed (cache on or off: this path writes through) by a FLUSH
+CACHE command.  Counted on QEMU with -trace ide_bus_exec_cmd/
+ide_dma_cb on a FAT16 disk with 16K clusters: leaving the shell wrote
+22,727 sectors (11MB) in 717 write commands and 717 flushes.  QEMU's
+disk does that in a blink; the 5x86's 850MB disk through the BIOS
+does it in minutes.  CACHE=OFF changed nothing, as Charlie found.
+
+Two fixes, each worth having alone.  DOSSHELL gathers the file in a
+2K buffer (progs.c out/out_flush).  The kernel writes only the sectors
+a write touched, from the first to the last, out of clus_buf, which
+holds the whole cluster already (INT21.INC fw_copy) - a full-cluster
+write still writes all of them.  Leaving the shell now writes 14
+sectors in 8 commands, and the INI is byte for byte the one before.
+RUNTESTS 101 x 7; RMTEST's free clusters (6A4A -> 6A48, DOSSHELL.EXE
+two clusters longer) re-recorded from a full -Update run.  Charlie
+reworded the INI's first line while this was done; kept.
+
+Delivered: BIN (PMDOS.SYS 188,677, DOSSHELL.EXE 131,768, the NETCORE
+drivers with net_line), BASELINE 7, the Setup images, PMDOS.IMG,
+HD32, both HD16s (backups: scratchpad 0c6de115 bakwr).  Built in a
+mirror with CMD\SCANDISK\text.c at HEAD: another session's edit of it
+is in the tree, uncommitted, and is not in this delivery.
+
+MOVE ECHOED THE ANSWER TWICE, "yY": mv_ask read the key with 0C01h,
+which echoes it, and then wrote the capital itself.  Now 0C08h, the
+capital once, nothing for a key that answers nothing, and Escape
+shown as N.  BIN\MOVE.EXE 7,197 bytes; the images not remade.
+
+No emulator has a 3C515 or ISA Plug and Play, so on QEMU only the
+other path was run: EL3C515.SYS, EL3C515.SYS /P:280 and EL3C509.SYS
+each said what they tried, failed to load, and the boot went on.
+EL3C515.SYS is 10,172 bytes, EL3C509.SYS 10,916.  RUNTESTS: 101 the
+same on all seven rows.  RMTEST's free clusters (6A4D -> 6A4A) and
+CACHETST's "a write is owed" (5 -> 4) were re-recorded: neither driver
+is on the test disk, which is made from BIN's programs, and this run's
+BIN was the one delivered, so the 2026-10-31 recording came from a tree
+whose programs differed slightly from it.  Delivered: S:\BIN, the
+Setup images, HD32 (MKHD), both HD16s (the driver added beside
+EL3C509.SYS: the root on S:'s, C:\DOS on the VM's).
+
+OPEN, NOT FOUND HERE: DOSSHELL FREEZES ON EXIT ON THE 5x86.  File >
+Exit or Alt+F4 straight after the start, text mode or /G, every time,
+after an F5 boot too: the screen stays, the pointer still moves in
+text mode, Ctrl+Alt+Del works.  It stops while creating
+DOSSHELL.INI - no file is left in C:\DOS, and with DSINI=A:\DS.INI the
+floppy light stays on and nothing is written - yet ECHO and COPY write
+files at the prompt.  His CONFIG.SYS has LFN=OFF.  QEMU never froze:
+text and /G, mouse and keyboard, 8, 16 and 32MB, a kernel forced onto
+the serial mouse, a lone CD-ROM drive on the secondary channel, LFN=OFF
+on FAT16 and FAT32, a copy of the VM's C:\DOS disk - DOSSHELL.INI was
+written every time.  NOT the video BIOS: PMD makes the same VBE calls
+at its start, and after PMD on the 5x86 ECHO TEST > C:\DOS\T2.TXT
+wrote the file.
+
+DIR OF HIS SMB1 SERVER WAS EMPTY: TWO WORDS SWAPPED IN FIND_FIRST2;
+OPEN_ANDX ASKS FOR THE SIZE (Charlie, 2026-11-02).  NET USE to
+\\trolla-storage\storage mounted, but DIR showed nothing.  Run from
+this PC against the server (SMB1.C over Winsock, a list-only harness),
+every FIND_FIRST2 came back ERRSRV/ERRerror - 0x00010002, Windows's
+"invalid SMB" - whatever the info level, count or flags.  smb1_list_dir
+wrote DataOffset into the DataCount word (w+22) and 0 into DataOffset
+(w+24): the request promised 83 data bytes with TotalDataCount 0.
+smb1peer.pl never reads those words, so it passed every test.  SMBFS
+took the failed list as "path not found" and DIR printed no entries.
+Second, with the listing fixed: OPEN_ANDX sent Flags 0, and Windows
+then gives back no attributes, date or SIZE (0), so every file opened
+0 bytes long; Flags bit 0 asks for them (the Perl peer filled them in
+anyway).  SMBSRV reads neither data word and was right already.
+TESTED against trolla-storage (Windows Server 2003, TROLLA\Charlie):
+host harness - root 91 entries in one reply and in 20-entry
+FIND_NEXT2 batches, PM-DOS\ 4 entries, 791- and 67,584-byte reads with
+the right size, a scratch file created, written, read back, deleted;
+QEMU (RTL8139 + TCPIP.SYS + SMBFS.SYS, NET USE without /SMB1, by IP) -
+DIR K:\ 88 files, DIR K:\PM-DOS, TYPE, COPY K:\XMS3.DOC C:\ 67,584.
+SEEN, NOT CHANGED: long names come out cut to 8.3 by SMBFS's to83, so
+"Family Guy - S04E06 - Petarded.mp4" is FAMILY G.MP4, two files show
+as DUSOURCE.ZIP, and a cut name does not open (the server's own short
+name, GETMEM~1.VBS, does).  Info level 0x104 carries the server's short
+names.  Dates are the server's UTC, not local time.  Not run: WfW
+with the new OPEN_ANDX flag (LAN Manager 1.0 defined it).
+NET USE ... * asks for the password (same day).  "*" went to the
+server as the password.  NET.C get_secret is FTP.EXE's: no echo, a key
+at a time, BACKSPACE takes one back; from a redirected file, its first
+line.  "Password for trolla\Charlie on \\server\share: ".  The typed
+password is wiped from req once the kernel has it.  TESTED (QEMU,
+against trolla): typed with a mistake and BACKSPACE (keys by the QEMU
+monitor) - mounted, the password not on screen; "* < PW.TXT", with
+and without /SMB1 - mounted.  /SMB1 after /USER: WAS parsed (a /X
+after it is reported, under CMD.EXE and COMMAND.COM); against trolla
+it changes nothing anyone can see, since NET USE falls back to SMB1
+there anyway.  Without a password the answer is C000006D either way.
+
+TCPIP.SYS SAYS WHY A CONNECTION FAILED, LOADS THE TRUST BUNDLE ITSELF,
+NAMES THE COMPUTER AND PUTS IT IN DNS; TCPIP.INI; CHOICE /T (2026-11-02)
+---------------------------------------------------------------------
+
+Charlie's list: a refused certificate looked the same as a server that
+never answered; TLS was unchecked for any program that did not send
+CACERT.BND itself; CHOICE /T:Y,4 once returned after two ticks in QEMU;
+and how the computer is named on the network and in DNS.  He chose: a
+kernel service to read the bundle, plus the certificate's dates; DHCP
+options 12/81 AND updates sent by PM-DOS itself (RFC 2136); a settings
+file; a name made from the card's address when none is given.
+
+WHY A SOCKET FAILED.  SOCK_STAT's err was NET_FAIL for everything.  It
+is now NET_REFUSED (a RST to our SYN), NET_TIMEOUT, NET_NOROUTE (the SYN
+gave up and the next hop never answered ARP), NET_RESET (a RST on a
+connection that was up), NET_TLSCERT with the reason in the new why
+field (CERT_UNTRUSTED/HOST/DATES/BAD from tls_verify_error), and
+NET_TLSFAIL for any other handshake failure.  SOCKSTAT_LEN2 24 brings
+why; the 20-byte call still works and every err is still non-zero.
+WINSOCK.DLL maps them: WSAECONNREFUSED, WSAETIMEDOUT, WSAEHOSTUNREACH,
+WSAECONNRESET, and WSAECONNABORTED for both TLS ones - Winsock 1.1 has
+no word for a certificate, but "aborted" at least is not "refused".
+
+A FAILED HANDSHAKE KEPT ITS MEMORY.  Found by the first test run:
+wrong.host and self-signed.badssl.com reported NET_TLSFAIL, not the
+certificate, because expired.badssl.com before them had failed and
+TLSTEST never closed that socket - its ~200K of crypto state stayed in
+the 320K TLS pool until SOCK_CLOSE, so the next tls_begin got no
+memory.  tls_service now does tls_release as soon as a socket is
+TLSX_FAIL; the reason stays in err/why.  The stack still does not know
+when a program ends, so a socket a program never closes keeps its slot
+(8 in all) - left as it is.  TLSTEST closes on failure now.
+
+THE BUNDLE AT INIT.  New kernel service NDS_READFILE (NDS_VERSION 7, at
+the END of the table, offset 64 - the SDK copies the offsets): EDX path,
+EDI buffer, ECX room -> EAX read, ECX whole size; INIT only (nd_ininit),
+open_core/file_read/sft_close as nd_load uses them; a device name is
+ERR_ACCESS.  NOT bridged in NDSTART.ASM: a bridge there changes every C
+driver for a service one uses.  NDSTART makes nds_services public, and
+DRV\TCPIP\TCPSVC.ASM bridges NDS_READFILE and NDS_STAMP.  ca_load reads
+/CA:file, CACerts=, or CACERT.BND beside TCPIP.SYS (the DEVICE= line's
+path) into the TLS pool once; without it "TCP/IP: no C:\...\CACERT.BND -
+HTTPS certificates will not be checked".  WINSOCK.DLL's push_ca now
+leaves a stack that has a bundle alone (SOCK_IF cabytes).  SOCK_SETCA
+still replaces it.
+
+CERTIFICATE DATES.  "No wall clock in a driver" was not so: NDS_STAMP
+(since NDS_VERSION 4) gives the DOS date and time at CALL time.  But a
+socket call under Windows comes through the WfW bridge with the kernel
+parked, and the BIOS is Windows's then, so the stamp is taken at INIT
+and at every connect while running, with ticks() beside it, and a
+parked connect counts on from the last one (clock_now14, Hinnant's
+civil-date arithmetic).  The clock is local time taken as UTC: hours
+out at the very edge of a certificate's life.
+
+ticks(): IOS_TICKS IS 40:6C, AND IT GOES BACK TO 0 AT MIDNIGHT.  Every
+deadline in TCPIP.C is a tick count compared by difference, so one set
+before midnight for after it was not met until the same time the next
+day - a 24-hour lease taken in the afternoon was never renewed (T1 past
+1,573,040 is never reached), a TCP retransmission due at 23:59:59
+waited a day.  Found while making the date clock.  ticks() counts on
+across midnight (interrupts off while it adds; a step back of more than
+an hour is the clock being set and counts as nothing), and every
+nds_ticks() in TCPIP.C goes through it.  NOT RUN across a real midnight.
+
+THE NAME.  One name: /NAME= (NetBIOS, 15) makes the host name (lower
+case, anything DNS cannot carry -> '-'); HostName= (DNS, 63) makes the
+NetBIOS name (its first 15, as Windows).  Neither: PMDOS-xxxxxx from the
+card's last three bytes - the same as NETBEUI.SYS's own default, so
+both drivers agree.  SMBSRV/NET/NETBEUI see it through nbname as before,
+so "the computer has no name of its own" is gone.  A lookup of our own
+name (host, NetBIOS, or host.domain) answers if_ip at once, and PING of
+our own address answers without the wire (it used to ARP for itself).
+
+DHCP NOW SENDS option 12 (the host name) and 81 (RFC 4702, canonical
+encoding; flags 04 = we add the A record, the server the PTR, when
+RegisterDNS=Yes and a domain is known; otherwise 05 = the server adds
+both; a partial name - no root label - before the domain is known),
+asks for 15 (the domain) and takes up to three DNS servers from
+option 6.  The resolver asks them round and round (SERVFAIL/REFUSED
+moves on at once) and puts the domain after a name with no dot.
+bootp_build zeroes 548 bytes now (the options outgrew 300).
+
+DNS UPDATE (RFC 2136), reg_* in TCPIP.C: SOA query for host.domain
+(answer or authority section) -> the zone and its primary's name -> an
+A query for that name (or the server that answered) -> UPDATE: delete
+the name's A set, add ours, TTL 1200.  For an address of our own
+(/IP=) the PTR in in-addr.arpa follows, since no DHCP server adds it.
+On the first ACK, on an address change, once a day, ten minutes after
+no answer, and for IPCONFIG /REGISTERDNS (SOCK_DHCP DHCPOP_REGDNS 3).
+Not signed: an AD zone as it comes says REFUSED, and IPCONFIG shows the
+rcode.  NOT SENT to a zone without a dot (the root's or a TLD's SOA
+comes back for a name in no zone of the network's own - early Windows
+clients sent updates there) or to a primary called localhost (RFC 6303
+empty zones).  NOT DONE: removing the record at /RELEASE (the address
+is gone before an update could be sent from it); a prerequisite so a
+second machine with the same name is not overwritten.
+
+TCPIP.INI, read at INIT through NDS_READFILE from beside TCPIP.SYS or
+/INI:file: [TCPIP] (or before any section), Name=value, ; comments, ^Z
+ends it.  HostName, Domain, IPAddress, SubnetMask, Gateway, DNSServers
+(up to 3, commas), WINSServer, CACerts, RegisterDNS (default Yes).
+Empty or missing = the default; a switch on the DEVICE= line wins.  A
+wrong address stops the load as a wrong switch does; other bad lines
+are said with the line number and passed over.  /DNS= also takes up to
+three addresses now.  INC\SOCKET.H: SOCK_IF long form SOCKIF_LEN3 236
+(hostname, domain, dns2, dns3, cabytes, regstate, regrcode), DREG_*.
+IPCONFIG /ALL shows Host Name, DNS Suffix, every DNS server, Name in
+DNS and HTTPS Certificates; IPCONFIG /REGISTERDNS waits up to 15 s.
+WINSOCK.DLL's gethostname answers the host name ("pmdos" before).
+
+CHOICE /T: THE WAIT IS ADDED UP.  It was the clock less the clock at
+the start.  2Ch is set to the clock chip once a minute when the two
+are more than 2 s apart (INT21.INC clk_now), and QEMU loses timer
+ticks: CLKSTEP (a scratch poller) saw +2.08 s once in each 150 s run.
+A step forward ended the wait early, a step back looked like midnight
+and ended it at once.  Now each poll adds what the clock moved, and a
+move back or of more than 2 s counts as nothing; /T is capped at a day
+(the hundredths fit a register).  LEFT AS IT IS, FOR CHARLIE: SOCKLIB's
+sl_since has the same hazard (a step back makes every network wait end
+at once) and the kernel's step is the root - MS-DOS's 2Ch never steps.
+
+TESTED (QEMU; dhcppeer.pl taught --domain/--host/--deaddns/--update,
+an SOA/A/PTR/UPDATE server that logs every message): DHCP domain + a
+dead first DNS server - options 12/81 seen, the A record sent and
+accepted at boot and by /REGISTERDNS, "srv1" found as srv1.pmtest.lan;
+TCPIP.INI - long HostName (PMBOX1-LONG-NAM), its Domain over DHCP's,
+"line 8: Bogus= is not a TCPIP.INI setting", a missing CACerts= said,
+the root-SOA zone refused ("No zone in DNS for the domain"); RTL8139
+on user-net - example.com verified with the bundle loaded at boot and
+again by /CA:C:\MYCA.BND, expired (err 7 why 3), wrong.host (why 2),
+self-signed and untrusted-root (why 1) - after an unclosed failure;
+10.0.2.2:443 err 4 (SLiRP drops the SYN), 10.0.2.77 err 5; PING of the
+own name; CHOICE /T:N,5 and /T:Y,12 took 5 and 12 s.  NOT RUN:
+WINSOCK.DLL under WfW (built only), a real DNS server (Windows DNS,
+BIND), REFUSED from a server, a real midnight, 86Box, real hardware.
+Delivered: BIN PMDOS.SYS 189,791 (the tree's kernel less this change
+builds byte-identical to the old one), TCPIP.SYS 111,420, IPCONFIG.EXE
+18,668, CHOICE.COM 1,410, WINSOCK.DLL 10,838, TESTS\TLSTEST.EXE 14,908;
+HELP.HLP regenerated (the IPCONFIG and TCPIP.SYS topics only).  The
+images and the VM are NOT updated, and RUNTESTS was not run.  Every
+program that includes SOCKET.H moves by 12 or 144 bytes (SOCK_STAT and
+SOCK_IF grew) with no change in what it does; those were not delivered.
+
+TLS 1.3 AND ECDSA IN THE TLS CORE; P-384 KEY EXCHANGE; WGET'S 4K
+RECORD LIMIT; TCP WINDOW UPDATES AND THE PEER'S CLOSE (2026-11-03)
+---------------------------------------------------------------------
+
+Charlie asked for TLS 1.3 and ECDSA.  All of it is in the shared core
+(CMD\NET\TLS), so TCPIP.SYS's TLS sockets, WINSOCK.DLL's port 443 and
+WGET get it at once; no caller changed, TLSHS.H's API is the same
+(tls_get_version can now say 0x0304).  No new object file: HKDF went
+into PRF.C, so BUILD.CMD's link lines are as they were.
+
+ONE CLIENTHELLO FOR BOTH.  supported_versions offers 1.3 then 1.2; the
+suites are TLS_AES_128_GCM_SHA256, TLS_AES_256_GCM_SHA384, then the
+1.2 ones, ECDHE_ECDSA and ECDHE_RSA with AES-GCM and AES-CBC (C02B,
+C02F, C02C, C030, C009, C013, C00A, C014) and plain RSA 002F last.
+supported_groups P-256, P-384; one key share, P-256, made once and
+reused for 1.2's ECDHE.  signature_algorithms: ecdsa_secp256r1_sha256,
+secp384r1_sha384, rsa_pss_rsae_sha256/384/512, rsa_pkcs1_sha256/384/
+512 - each one X509.C's new x509_verify_scheme can check.  A 32-byte
+session id and a dummy ChangeCipherSpec before the second flight, for
+middleboxes (RFC 8446 D.4); no psk_key_exchange_modes, so no tickets
+are asked for (OpenSSL sends two anyway; they are dropped).  A dotted
+address is no longer sent as the server name (RFC 6066 3).
+
+TLS 1.3 (RFC 8446).  TLSREC.C: tls_keys_init13, is_gcm 2 - the type
+inside the encryption, nonce = iv XOR seq, AAD the record header,
+padding stripped on the way in.  PRF.C: tls13_hkdf_extract and
+tls13_expand_label (the "tls13 " labels), checked against RFC 8448's
+early, derived and handshake secrets by the host test.  TLSHS.C: the
+records of the server's flight are taken one at a time, because the one
+after ServerHello is under the handshake key and the one after Finished
+under the application key; EncryptedExtensions, [CertificateRequest],
+Certificate (1.3 form, per-certificate extensions skipped),
+CertificateVerify, Finished, in that order and no other.  hbuf_next no
+longer folds a message into the transcript: CertificateVerify and
+Finished are checked against the transcript BEFORE them, so the caller
+folds.  The certificate chain is checked before CertificateVerify, so a
+refused certificate still says which check refused it.  PKCS#1 v1.5 is
+refused in CertificateVerify and an ECDSA scheme must match the key's
+curve, as 1.3 says.  A CertificateRequest gets an empty Certificate
+(1.2 too: before, it sent nothing, which RFC 5246 does not allow; the
+old code was not tried against such a server).
+HelloRetryRequest: the transcript restarts as message_hash(Hash(CH1)),
+the cookie (up to 400 bytes) is echoed, and a request for a P-384
+share gets one; a second retry, or one that changes nothing, ends the
+handshake.  A 1.2 answer whose random ends "DOWNGRD" 00/01 is refused.
+KeyUpdate: the read key is stepped; update_requested sends ours, under
+the old key, in front of the next record we send (protect_out).
+
+ECDSA.  In 1.2 the ServerKeyExchange signature is checked with the
+leaf's key - ECDSA for ECDHE_ECDSA, RSA (PKCS#1 or PSS) for ECDHE_RSA,
+and the key must suit the suite.  The leaf is now read with
+x509_get_pubkey (RSA or EC) rather than x509_extract_rsa_pubkey (RSA
+only).  RSA.C: rsa_pkcs1_verify and rsa_pss_verify take SHA-256, -384
+or -512 (the old _sha256 names call them).  X509.C: certificates signed
+sha384/sha512WithRSAEncryption are checked now (Sectigo's chains are).
+
+P-384 KEY EXCHANGE.  ECP384.C had only the verify; ecp384_keygen and
+ecp384_ecdh are added on the same point code.  Needed twice over: a 1.2
+server offers an ECDSA certificate only on a curve the client lists
+(OpenSSL refused our P-384 leaves with only P-256 listed), and some
+servers do ECDHE only on P-384 (ecc384.badssl.com refuses OpenSSL held
+to P-256 too).  A 1.2 server that picks P-384 gets a new P-384 key in
+the ClientKeyExchange; a 1.3 one asks by HelloRetryRequest.
+
+WGET'S RECORD LIMIT - defect: TLSGLUE's tls_recv decrypted straight
+into the caller's buffer, and tls_read_app needs room for a whole
+record (16K); WGET passes 4K.  Effect: any server sending a record of
+more than 4,096 bytes ended the fetch as "HTTP 0" - s_server's 4.2K
+status page did, nginx's 16K records would; Google worked by the luck
+of its record sizes.  Fix: TLSGLUE keeps one record's plaintext (16K +
+256 for 1.3's type byte and padding, from the TLS heap, freed by
+tls_close and on every failed open; tls_open drops a stale connection
+first) and hands it out.  Also: an empty application-data record no
+longer reads as the end (tls_read_app skips it), and records that came
+in behind the server's Finished are read before the socket (raw_read) -
+the blocking path used to lose them.
+
+CHOICE.ASM line 185 named no size for imul's memory operand (wasm
+W095); DWORD PTR added, CHOICE.COM byte-identical.  TLSTEST takes
+host:port.
+
+TESTED.  Host first (scratch t13\tlshost.exe: the core built for Win32
+with Winsock): example.com, www.cloudflare.com, github.com, google,
+letsencrypt.org, wikipedia (1.3, 1301), www.microsoft.com (1.3, 1302),
+ecc256.badssl.com (1.2 C02B), rsa2048/4096 (C02F), tls-v1-2:1012
+(C030), all verified against DISK\CACERT.BND; sha384/sha512.badssl.com
+"dates" (their certificates ran out in 2022).  OpenSSL 3.5 s_server,
+25 cases: 1.3 with RSA-PSS 256/384/512, P-256, P-384 + AES-256, a
+cookie retry, a P-384 retry, both at once, a certificate request,
+sha384/sha512WithRSA leaves; 1.2 ECDSA GCM and CBC at both key sizes,
+ECDSA-SHA256 by a P-384 key, an ECDSA leaf under an RSA CA, RSA-PSS,
+RSA-SHA384/512, P-384 ECDHE, RSA key exchange, a certificate request;
+wrong name and untrusted CA refused as such.  KeyUpdate both ways
+(s_server's K and k; its -msg trace shows ours come back).  The largest
+ClientHello: a 253-character name with a cookie and a P-384 share.
+QEMU (RTL8139, TCPIP.SYS /CA: the bundle + the test CAs): TLSTEST to
+example.com and www.cloudflare.com (1.3, ECDSA), ecc256 and ecc384
+.badssl.com, and to s_servers at 10.0.2.2 - 1.3 AES-256 P-384, a P-384
+retry with cookie, 1.2 ECDSA CBC, 1.3 with a certificate request; eight
+TLS sockets in one boot, so none keeps its ~110K of the 320K pool.
+WGET: google, 1.3 against five server variants, ecc384, and a 68,400-
+byte file over 1.3 AES-256 and 1.2 ECDSA CBC - full 16K records - FC
+/B equal to the original both times.  The test certificates have to be
+dated back: the guest takes the PC's local time as UTC.
+
+Also left: no X25519 (every 1.3 server must take P-256), no ChaCha20,
+no session resumption, no OCSP/CRL.  NOT RUN: WINSOCK.DLL under WfW,
+86Box, real hardware, NETSPLOR / NSTLS32.DLL (their copies of the core
+are not changed).
+
+THE RECEIVE SPEED WAS THE CODE (same day).  TCPIP.SYS took about 0.57
+KB/s under QEMU - 68,400 bytes in 119.5 s over plain HTTP, TLS adding
+only 3 s.  A capture (netrun -Pcap; scratch t13\pcaptcp.pl lists the
+segments) showed it, one round every 5.5 s: the host sends ~4K, the
+window falls to 1215 / 1 / 0, WGET reads it all at once - and nothing
+says so.  The window went out only on the ACK for arriving data, so
+the peer waited for its persist timer (5.5 s in SLiRP; a real stack
+starts lower and backs off to a minute), probed, and sent the next 4K.
+Fix: tcp_rx_pop - now the only way bytes leave the TCP ring, do_recv's
+copy of its loop gone - sends a window update once the window has grown
+by a segment or half the ring (RFC 1122 4.2.3.3); SOCKET.wnd_adv is
+what the peer last heard.  68,400 bytes now arrive in 0.05 s.
+
+AND THE END WAS NEVER SEEN.  With the stall gone the fetch still took
+15 s: CLOSE_WAIT reported SS_ESTABLISHED however little was left, so
+sl_closed ("1 once the peer has sent FIN and nothing waits", its own
+header says) never fired and WGET's plain read waited out its 15 s;
+WINSOCK.DLL's recv never returned 0 at an orderly close nor posted
+FD_CLOSE (it looks for a state above established).  TLS sockets did
+say SS_CLOSING after close_notify, but not after a bare FIN.  Fix:
+sock_ss gives SS_CLOSING in CLOSE_WAIT once the ring is empty, and for
+a TLS socket once nothing is left at any level; sending is still
+allowed there.  Because a connect wait could now see SS_CLOSING first
+(a server that accepts and ends at once), SOCKLIB's sl_connect,
+DRVSOCK's dsock_connect and WINSOCK.DLL's connect and FD_CONNECT take
+it as connected, and the send loops of SOCKLIB and DRVSOCK keep
+waiting on it.  INC\SOCKET.H's SS_CLOSING comment says so.
+
+TESTED (QEMU, RTL8139): 1,008,000 bytes over plain HTTP 0.95 s, TLS
+1.3 AES-256 ~23 s, TLS 1.2 ECDSA AES-128-CBC ~22 s, all three FC /B
+equal.  So TLS is now the cost: ~43 KB/s under QEMU against ~3 MB/s
+for the same core built native - AES.C is byte-wise (xtime in the
+rounds) and GHASH bit-serial (128 steps a block); on a real 486 that
+is likely tens of KB/s at best.  Not changed - a separate job (T-table
+AES, 4-bit GHASH tables).  SMB1 redirector against smb1peer.pl
+(session cff88fcd's), both with the new SMBFS.SYS and with BIN's:
+NET USE, DIR, TYPE, COPY, MD, DEL, RD, 1 MB down and up, FC and the
+host's hash equal, the whole boot 15 s.  SOCKTEST, FTP ftp.gnu.org
+(the listing's data connection ends with "226"), TELNET telehack, and
+the TLS run again (8 TLSTEST + 3 WGET; google's page now whole, 86,548
+bytes - the earlier 20-32K were cut short by the stall).
+
+Delivered: BIN TCPIP.SYS 119,732, WGET.EXE 122,268, IPCONFIG.EXE
+18,680, WINSOCK.DLL 10,862, TESTS\TLSTEST.EXE 15,044; HELP.HLP
+regenerated (a sentence each in TCPIP.SYS and WGET).  Each delivered
+program but TCPIP.SYS was first built with today's SOCKLIB/WINSOCK
+edits taken out, and that build matched BIN byte for byte, so the new
+copies differ by today's work only.  NOT delivered: NET, FTP, PING,
+SNTP, TELNET, SMBSRV, SMBFS.SYS, TESTS\SMBTEST - BIN's copies are older
+than their sources, which carry other sessions' uncommitted edits.  The
+window and the end are TCPIP.SYS's, so those programs have both fixes
+already; what they lack is SOCKLIB/DRVSOCK's two edge cases (a server
+that ends at once, a full send after the peer ended).  The images and
+the VM are NOT updated, and RUNTESTS was not run.
+
+THE TLS CRYPTO, AND WHERE THE TLS TIME REALLY WENT (same day).  AES.C
+now does a round with one 1K table each way (te[] and td[], made by
+scratch t13\mktab.pl from AES.C's own S-boxes) on 32-bit column words;
+the byte schedule becomes words once per call, decryption is FIPS-197's
+equivalent inverse cipher (InvMixColumns on the middle round keys, also
+once per call), and the new aes_ctr32 is GCM's counter mode, so a whole
+record pays the set-up once.  The API is otherwise the same (SMBSIGN's
+AES-CMAC uses it).  GCM.C's GHASH is Shoup's 4-bit method: a 16-entry
+table of H's multiples per record, 32 table steps a block instead of 128
+bit steps; the table and the word schedules are wiped after use.
+Native (-3r -ox): AES-128-GCM 4.7 -> 74 MB/s, AES-256-GCM 4.1 -> 65,
+AES-128-CBC decrypt 2.4 -> 105.
+
+And under QEMU the 1 MB TLS fetch went from ~23 s to ~21 s: the "43
+KB/s" above was wrong.  Natively the 1 MB comes over in 16 ms (62
+records); the handshake took 1.3-1.5 s, and the request brackets
+include it.  BIGNUM.C was the cost: every number 4096 bits (128 limbs)
+whatever the curve, bn_mulmod reducing bit by bit (512 shift-compare
+steps for a P-256 product), bn_addmod and bn_submod going through the
+same reduction, ~5,000 of those in one P-256 k*G.  Fix: BIGNUM.C gains
+word-array Montgomery arithmetic (bn_w_mont is Koc's CIOS; bn_w_addmod,
+bn_w_submod, bn_w_mont_pow), its 32x32 multiply-accumulate one MUL by
+#pragma aux under Open Watcom; bn_modexp takes the Montgomery way for an
+odd modulus (every RSA modulus, both curve orders), with R mod m its one
+bit-by-bit reduction and R^2 got by powering 2R.  ECP256.C and ECP384.C
+keep their formulas and public functions, on 8- and 12-word coordinates
+in Montgomery form, and k*P goes 4 bits at a time from a table of 0P..
+15P; the scalars mod n stay bignums.  No header's existing call changed,
+and BUILD.CMD did not change.  Native: P-256 k*G 52 -> ~1.5 ms, P-384
+k*G 156 -> 3.9 ms, P-384 ECDSA verify 281 -> 8.6 ms, RSA-2048 verify
+(e = 65537) 10.7 -> 0.8 ms; OpenSSL handshakes (srv.ps1) 110-843 ms ->
+16 ms or less.  The stack the curve code needs went from ~24K to ~10K.
+
+TESTED: scratch t13\cbench.c (mkbench.cmd) - FIPS-197 C.1 and C.3, the
+GCM spec's cases 2, 4 and 16, and the new code against the old (kept in
+t13\old) at every length 0-1100 and the record sizes up to 16,656, GCM
+and CBC, in place too; t13\ectest.c (mkec.cmd) - modexp new against old
+at moduli of 1 to 128 words, odd and even, base 0, 1 and m-1; P-256 and
+P-384 k*G at 1, 2, 15, 16, 17, 256, n-1, n-2, 2^bits-1 and at random;
+ECDH; ECDSA signatures made in the test (SHA-256, -384 and -512 sized
+hashes) accepted by new and old; SMBCTEST's known answers (AES-CMAC
+too); tlshost -kat and srv.ps1's 25 cases.  QEMU: 1,008,000 bytes over
+HTTP ~1 s, over TLS 1.3 (P-384 certificate) and TLS 1.2 ECDSA ~2.5 s
+each, down from 21 and 18.5, FC /B equal; guest.ps1's 8 TLSTEST (real
+servers and local) and 3 WGET (google's page) all pass.
+
+Delivered: BIN TCPIP.SYS 121,484 (+1,752), WGET.EXE 123,496 (+1,228);
+the copies they replace are in scratch binbak4.  Only today's crypto
+sources had changed since the build those came from.  SMBFS.SYS and
+TESTS\SMBTEST link AES.C too and are NOT delivered, as above.  The
+NETSPLOR / NSTLS32 copies of the core are not changed.  The images and
+the VM are NOT updated, and RUNTESTS was not run.
+
+
 v0.61 - THE NUMBER CAUGHT UP (2026-09-30)
 ---------------------------------------------------------------------
 

@@ -397,6 +397,22 @@ void copy_dest( const INFFILE *file, char *dest, int max )
     path_join( dest, dir, file->dst, max );
 }
 
+/* The root copy of a file installed in the DOS directory (R in
+   SETUP.LST): CMD.EXE, which the kernel looks for in the root when the
+   startup files are bypassed.  -> 1 and its path, or 0 if it has none */
+int copy_rootdest( const INFFILE *file, char *dest, int max )
+{
+    INFFILE root;
+
+    if ( file->where != WH_DOS || !(file->flags & FF_ROOTTOO) ) {
+        return 0;
+    }
+    root = *file;
+    root.where = WH_ROOT;
+    copy_dest( &root, dest, max );
+    return 1;
+}
+
 int copy_error_box( const char *fmt, const char *name )
 {
     static const int keys[] = { K_ENTER, 0 };
@@ -488,6 +504,10 @@ u32 copy_total( int floppy )
             continue;
         }
         total += inf.file[i].size;
+        /* the root copy, written twice on drive C: (a floppy has one) */
+        if ( !floppy && (inf.file[i].flags & FF_ROOTTOO) && inf.file[i].where == WH_DOS ) {
+            total += inf.file[i].size;
+        }
     }
     return total;
 }
@@ -533,6 +553,11 @@ int copy_all( void )
             }
             if ( copy_one( file, dest, 0 ) ) {
                 gauge_done += file->size;       /* skipped: count it anyway */
+            }
+            /* ...and its root copy, from the same disk.  An upgrade does
+               not keep an old file of that name: no DOS has one there */
+            if ( copy_rootdest( file, dest, sizeof( dest ) ) && copy_one( file, dest, 0 ) ) {
+                gauge_done += file->size;
             }
             copy_screen();
         }

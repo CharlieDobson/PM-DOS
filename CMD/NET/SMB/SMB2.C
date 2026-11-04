@@ -1,7 +1,8 @@
 /* ==========================================================================
  * SMB2.C - the SMB2/3 client engine.  See SMB2.H.  C89.
  * ==========================================================================
- * The conversation: NEGOTIATE (2.0.2..3.1.1) -> SESSION_SETUP x2 (raw
+ * The conversation: an SMB1 NEGOTIATE offering the SMB2 dialects, as
+ * Windows opens -> NEGOTIATE (2.0.2..3.1.1) -> SESSION_SETUP x2 (raw
  * NTLMSSP / NTLMv2 with a MIC) -> TREE_CONNECT -> CREATE (the share root as
  * a directory) -> QUERY_DIRECTORY.  Transport is Direct TCP (the 4-byte
  * length header); the crypto is SMBCRYPT's.  No signing in this cut.
@@ -96,6 +97,7 @@ static int recv_msg( smb2_client *cl )
 {
     unsigned char hdr[4];
     int len;
+    cl->last_status = 0;                    /* no answer stays "no status" */
     if ( read_n( cl, hdr, 4 ) != 0 ) return -1;
     len = ( (int)hdr[1] << 16 ) | ( (int)hdr[2] << 8 ) | (int)hdr[3];
     if ( len < 64 || len > SMB2_RECVBUF ) return -1;
@@ -138,6 +140,56 @@ static unsigned char *build_header( smb2_client *cl, int cmd )
     cl->msgid_lo++;
     if ( cl->msgid_lo == 0 ) cl->msgid_hi++;
     return msg;
+}
+
+/* ==========================================================================
+ * The opening: an SMB1 NEGOTIATE offering only the SMB2 dialects, as
+ * Windows sends.  An SMB2 server answers it in SMB2: dialect 02FF asks for
+ * the SMB2 NEGOTIATE proper next, with MessageId 1; 0202 is a server that
+ * stops at 2.0.2, and that answer is the whole negotiate.  A server that
+ * speaks only SMB1 answers in SMB1, and cl->smb1_only says so - Windows
+ * Server 2003 and 2000 say nothing at all to an SMB2 NEGOTIATE.
+ * 1: negotiated; 0: the SMB2 NEGOTIATE follows; -1: failed.
+ * ========================================================================== */
+static int do_opening( smb2_client *cl )
+{
+    static const char dialects[] = "\002SMB 2.002\000\002SMB 2.\?\?\?";
+    unsigned char *msg = cl->sendbuf + 4;
+    unsigned char hdr[4];
+    int dlen = (int)sizeof( dialects );         /* the last NUL counts */
+    int len, dialect;
+
+    cl->stage = "negotiate";
+    memset( msg, 0, 35 );
+    msg[0] = 0xFF; msg[1] = 'S'; msg[2] = 'M'; msg[3] = 'B';
+    msg[4] = 0x72;                              /* SMB_COM_NEGOTIATE */
+    msg[9] = 0x18;                              /* Flags */
+    put16( msg + 10, 0xC801 );                  /* Flags2: Unicode, NT status, long names */
+    put16( msg + 26, 0xFEFF );                  /* PID */
+    put16( msg + 33, (unsigned int)dlen );      /* WordCount 0, ByteCount */
+    memcpy( msg + 35, dialects, dlen );
+    if ( send_msg( cl, 35 + dlen ) != 0 ) return -1;
+
+    /* not recv_msg: an SMB1 answer can be shorter than an SMB2 header */
+    cl->last_status = 0;
+    if ( read_n( cl, hdr, 4 ) != 0 ) return -1;
+    len = ( (int)hdr[1] << 16 ) | ( (int)hdr[2] << 8 ) | (int)hdr[3];
+    if ( len < 4 || len > SMB2_RECVBUF ) return -1;
+    if ( read_n( cl, cl->recvbuf, len ) != 0 ) return -1;
+    cl->recvlen = len;
+    if ( cl->recvbuf[1] != 'S' || cl->recvbuf[2] != 'M' || cl->recvbuf[3] != 'B' ) return -1;
+    if ( cl->recvbuf[0] == 0xFF ) { cl->smb1_only = 1; return -1; }
+    if ( cl->recvbuf[0] != 0xFE || len < 72 ) return -1;
+    cl->last_status = get32( cl->recvbuf + 8 );
+    if ( cl->last_status != ST_SUCCESS ) return -1;
+
+    cl->msgid_lo = 1;                           /* the opening was MessageId 0 */
+    dialect = (int)get16( cl->recvbuf + 64 + 4 );
+    if ( dialect == 0x02FF ) return 0;
+    if ( dialect != 0x0202 ) return -1;
+    cl->dialect = dialect;
+    cl->signing_required = ( get16( cl->recvbuf + 64 + 2 ) & 0x0002 ) ? 1 : 0;
+    return 1;
 }
 
 /* ==========================================================================
@@ -446,7 +498,34 @@ static int do_session_setup( smb2_client *cl, const char *user, const char *pass
     b = cl->recvbuf + 64;
     secoff = (int)get16( b + 4 );
     blen = (int)get16( b + 6 );
-    if ( secoff < 0 || blen < 0 || secoff + blen > cl->recvlen || blen > (int)sizeof( cl->ntlm_challenge ) ) return -1;
+    if ( secoff < 0 || blen < 0 || secoff > cl->recvlen || blen > cl->recvlen - secoff ) return -1;
+    /* Windows answers the raw NTLMSSP NEGOTIATE with a raw CHALLENGE; a
+       server that wraps it in SPNEGO puts it further in.  Its offsets
+       count from its own "NTLMSSP" signature, so start there. */
+    {
+        const unsigned char *blob = cl->recvbuf + secoff;
+        int at;
+        for ( at = 0; at + 12 <= blen; at++ ) {
+            if ( blob[at] == 'N' && blob[at + 1] == 'T' && blob[at + 2] == 'L' && blob[at + 3] == 'M' &&
+                 blob[at + 4] == 'S' && blob[at + 5] == 'S' && blob[at + 6] == 'P' && blob[at + 7] == 0 &&
+                 get32( blob + at + 8 ) == 2 ) break;
+        }
+        if ( at + 12 > blen ) return -1;
+        secoff += at;
+        blen -= at;
+        if ( at > 0 && blen >= 48 ) {
+            /* SPNEGO may follow it (a mechListMIC), and the MIC covers
+               the CHALLENGE alone: it ends where its last field ends */
+            long end = 48, tn, ti;
+            tn = (long)get32( cl->recvbuf + secoff + 16 ) + (long)get16( cl->recvbuf + secoff + 12 );
+            ti = (long)get32( cl->recvbuf + secoff + 44 ) + (long)get16( cl->recvbuf + secoff + 40 );
+            if ( blen >= 56 ) end = 56;
+            if ( tn > end ) end = tn;
+            if ( ti > end ) end = ti;
+            if ( end < blen ) blen = (int)end;
+        }
+    }
+    if ( blen > (int)sizeof( cl->ntlm_challenge ) ) return -1;
     memcpy( cl->ntlm_challenge, cl->recvbuf + secoff, blen );
     cl->ntlm_challenge_len = blen;
 
@@ -857,12 +936,16 @@ int smb2_connect( smb2_client *cl, smb_send_fn send, smb_recv_fn recv, void *ioc
                   const char *server, const char *share,
                   const char *user, const char *password, const char *domain )
 {
+    int rc;
+
     memset( cl, 0, sizeof( *cl ) );
     cl->send = send; cl->recv = recv; cl->ioctx = ioctx;
     cl->seed = seed ? seed : 0x2545F491UL;
     cl->stage = "start";
 
-    if ( do_negotiate( cl ) != 0 ) return -1;
+    rc = do_opening( cl );
+    if ( rc < 0 ) return -1;
+    if ( rc == 0 && do_negotiate( cl ) != 0 ) return -1;
     if ( do_session_setup( cl, user, password, domain ) != 0 ) return -1;
     if ( do_tree_connect( cl, server, share ) != 0 ) return -1;
     cl->stage = "connected";
@@ -892,3 +975,4 @@ void smb2_disconnect( smb2_client *cl )
 int           smb2_dialect( const smb2_client *cl ) { return cl->dialect; }
 const char   *smb2_stage( const smb2_client *cl )   { return cl->stage ? cl->stage : "?"; }
 unsigned long smb2_status( const smb2_client *cl )  { return cl->last_status; }
+int           smb2_smb1_only( const smb2_client *cl ) { return cl->smb1_only; }

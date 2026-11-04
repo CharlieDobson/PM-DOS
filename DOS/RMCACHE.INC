@@ -83,11 +83,21 @@
 ; this file never sees, because 1605h is what parks PM-DOS and this
 ; file comes into existence AFTER it.  So there is one size, the
 ; Windows one, and the shrink SMARTDRV did at 1605h is done here by
-; never being bigger.  The directory names CM_MAXEL elements and the
-; kernel caps the request to match.  The directory, the chain heads
-; and the bounce buffer are in this image, which has the room - the
-; segment is 64K and the image was 37K - and so cost no conventional
-; memory beyond what the park already takes.
+; never being bigger.
+;
+; WHERE THE TABLES ARE (2026-11-01).  The chain heads, the bounce
+; buffer and the directory are no longer in the image: 16K of it, for
+; a 4MB cache whatever size was asked for.  cm_place puts them in the
+; room rd_layout leaves after the file table in this segment, which
+; costs nothing the park has not taken already and holds the tables of
+; an RMC_TAILKB cache at least (RMDOS.ASM checks that at build time) -
+; or, when WINCACHE= asked for more, in the block the kernel reserved
+; for them after this segment (RMH_CMSEG), the one case that costs a
+; DOS box conventional memory, and only for the machine that asked.
+; Either way they are at FS:[cmv_hashp], FS:[cmv_bncp] and
+; FS:[cmv_dirp], and every way into this file - cm_init, cm_xfer,
+; cm_dropdrive, cm_api, cm_winexit - loads FS and gives the caller's
+; back.  A cache bigger than the room it got is cut to fit.
 ;
 ;---------------------------------------------------------------------
 ; REPLACEMENT is the clock: a reference bit an element gets when it is
@@ -110,7 +120,6 @@
 
 CM_ESECS        EQU 8                   ; sectors an element holds
 CM_EBYTES       EQU CM_ESECS * SECSIZE  ; 4K
-CM_MAXEL        EQU 1024                ; the most elements: 4MB
 CM_HASHN        EQU 1024                ; chain heads, a power of two
 CM_NONE         EQU 0FFFFh              ; no entry; the end of a chain
 CM_LOGN       EQU 32                  ; 4A10h calls the log remembers
@@ -126,6 +135,13 @@ CE_SPARE        EQU 7                   ; db
 CE_NEXT         EQU 8                   ; dw  next on the chain, CM_NONE
 CE_LEN          EQU 10
 
+IF CE_LEN NE RMC_ENTLEN
+        .ERR    <RMCACHE.INC: an entry is not the size RMDOS.INC tells the kernel>
+ENDIF
+IF CM_HASHN * 2 + CM_EBYTES NE RMC_HEAD
+        .ERR    <RMCACHE.INC: the heads and bounce are not RMDOS.INC's RMC_HEAD>
+ENDIF
+
 CEF_REF         EQU 01h                 ; used since the hand went by
 
 ;=====================================================================
@@ -136,6 +152,7 @@ CEF_REF         EQU 01h                 ; used since the hand went by
 cm_init:
         pusha
         push    es
+        push    fs
         mov     byte ptr [cmv_on],0
         mov     byte ptr [cmv_tested],0
         mov     byte ptr [cmv_mover],0
@@ -144,16 +161,19 @@ cm_init:
         mov     [cmv_kb],ax
         mov     ax,[h_wcflags]
         mov     [cmv_flags],ax
+        call    cm_place                ; where the tables go, how many fit
         mov     ax,[cmv_kb]
         shr     ax,2                    ; KB -> elements of 4K
         jz      cmi_out
-        cmp     ax,CM_MAXEL
+        cmp     ax,[cmv_nmax]
         jbe     cmi_sized
-        mov     ax,CM_MAXEL
+        mov     ax,[cmv_nmax]
+        or      ax,ax
+        jz      cmi_out                 ; no room at all: no cache
 cmi_sized:
         mov     [cmv_nel],ax
         imul    ax,ax,CE_LEN
-        add     ax,OFFSET cmv_dir
+        add     ax,[cmv_dirp]
         mov     [cmv_dirend],ax
 
         ; One element more than the directory names: the self-test's.
@@ -175,15 +195,71 @@ cmi_sized:
                                         ; will ever use it)
         mov     word ptr [cmv_base],bx
         mov     word ptr [cmv_base+2],dx
+        mov     fs,[cmv_tseg]
         call    cm_dropall
         mov     byte ptr [cmv_on],1
 cmi_out:
+        pop     fs
         pop     es
         popa
         ret
 cmi_nomem:
         mov     word ptr [cmv_nel],0
         jmp     short cmi_out
+
+;---------------------------------------------------------------------
+; cm_place - where the tables go: the block the kernel reserved for
+;            them (RMH_CMSEG, which it does only when WINCACHE= asked
+;            for more than this segment holds), else the room after
+;            the file table in this segment (rd_tailfree, RD_TAILEND).
+;            -> cmv_tseg, the three offsets in it, and cmv_nmax = the
+;            entries that fit, 0 if none do.
+;---------------------------------------------------------------------
+cm_place:
+        pushad
+        mov     ax,[h_cmseg]
+        or      ax,ax
+        jz      cmp_tail
+        mov     [cmv_tseg],ax
+        movzx   edx,word ptr [h_cmparas]
+        cmp     edx,1000h
+        jbe     cmp_blklen
+        mov     edx,1000h               ; one segment's worth, at most
+cmp_blklen:
+        shl     edx,4                   ; where the room ends
+        xor     ax,ax                   ; the block is all theirs
+        jmp     short cmp_lay
+cmp_tail:
+        mov     [cmv_tseg],cs
+        mov     ax,[rd_tailfree]
+        inc     ax
+        and     ax,0FFFEh               ; words in it
+        mov     edx,RD_TAILEND
+cmp_lay:
+        mov     [cmv_hashp],ax
+        add     ax,CM_HASHN * 2
+        mov     [cmv_bncp],ax
+        add     ax,CM_EBYTES
+        mov     [cmv_dirp],ax
+        movzx   eax,ax
+        cmp     edx,eax
+        jbe     cmp_none
+        sub     edx,eax
+        mov     eax,edx
+        xor     edx,edx
+        mov     ecx,CE_LEN
+        div     ecx
+        cmp     eax,RMC_MAXEL
+        jbe     cmp_fits
+        mov     eax,RMC_MAXEL
+cmp_fits:
+        mov     [cmv_nmax],ax
+        popad
+        ret
+cmp_none:
+        mov     word ptr [cmv_nmax],0
+        popad
+        ret
 
 ;=====================================================================
 ; cm_xfer - rd_xfer's one call: EAX = first sector, ECX = how many,
@@ -202,6 +278,10 @@ cm_xfer:
         cmp     byte ptr [rd_bios],80h
         jb      cmx_raw
 
+        ; The tables, at FS, for the length of the transfer
+        push    fs
+        mov     fs,[cmv_tseg]
+
         ; Under a monitor the mover is INT 15h's, and it is proved once
         push    ax
         smsw    ax
@@ -211,13 +291,21 @@ cm_xfer:
         cmp     byte ptr [cmv_tested],0
         jne     cmx_mode
         call    cm_selftest
-        jc      cmx_raw
+        jc      cmx_rawfs
 cmx_mode:
         cmp     byte ptr [rd_rw],0
-        jne     cm_write
+        jne     cmx_write
         test    byte ptr [rd_vflags],VF_NOREAD
-        jnz     cmx_raw
-        jmp     cm_read
+        jnz     cmx_rawfs
+        call    cm_read
+        pop     fs                      ; the carry is cm_read's
+        ret
+cmx_write:
+        call    cm_write
+        pop     fs
+        ret
+cmx_rawfs:
+        pop     fs
 cmx_raw:
         mov     byte ptr [cmv_last],'.'
         jmp     rd_raw
@@ -237,13 +325,13 @@ cmr_loop:
         call    cm_find                 ; -> DI, or CM_NONE
         jc      cmr_miss
         call    cm_mask                 ; DL = the sectors wanted
-        mov     dh,[di+CE_VALID]
+        mov     dh,fs:[di+CE_VALID]
         not     dh                      ; DH = the sectors NOT held
         test    dh,dl                   ; any of them wanted?
         jnz     cmr_miss
         call    cm_fromcache
         jc      cmr_dead                ; the mover failed: no cache now
-        or      byte ptr [di+CE_FLAGS],CEF_REF
+        or      byte ptr fs:[di+CE_FLAGS],CEF_REF
         jmp     short cmr_next
 cmr_dead:
         call    cm_off
@@ -311,9 +399,9 @@ cmq_cnt:
         push    eax
         push    es
         push    bx
-        push    cs
+        push    fs
         pop     es
-        mov     bx,OFFSET cmv_bounce
+        mov     bx,[cmv_bncp]
         mov     eax,[cmv_elba]
         call    rd_raw
         pop     bx
@@ -324,12 +412,16 @@ cmq_cnt:
         ; The piece, from the bounce to the caller
         mov     si,[cmv_sub]
         shl     si,9
-        add     si,OFFSET cmv_bounce
+        add     si,[cmv_bncp]
         mov     di,bx
         mov     cx,[cmv_n]
         shl     cx,7                    ; sectors -> dwords
         cld
+        push    ds
+        push    fs
+        pop     ds
         rep     movsd
+        pop     ds
 
         ; ...and the whole element into the cache, from the bounce
         push    word ptr [cmv_sub]
@@ -337,10 +429,7 @@ cmq_cnt:
         mov     word ptr [cmv_sub],0
         mov     ax,[cmv_ecnt]
         mov     [cmv_n],ax
-        mov     ax,cs
-        movzx   esi,ax
-        shl     esi,4
-        add     esi,OFFSET cmv_bounce
+        call    cm_bncflat              ; ESI = the bounce, flat
         mov     eax,[cmv_elba]
         mov     di,[cmv_ent]
         call    cm_fill
@@ -429,10 +518,10 @@ cdr_loop:
         jc      cdr_next
         call    cm_mask
         not     dl
-        and     byte ptr [di+CE_VALID],dl
+        and     byte ptr fs:[di+CE_VALID],dl
         jnz     cdr_next
         call    cm_unlink               ; nothing left in it
-        mov     byte ptr [di+CE_BIOS],0FFh
+        mov     byte ptr fs:[di+CE_BIOS],0FFh
 cdr_next:
         call    cm_advance
         jmp     cdr_loop
@@ -512,7 +601,7 @@ cm_hash:
         xor     eax,ebx
         and     ax,CM_HASHN - 1
         shl     ax,1
-        add     ax,OFFSET cmv_hash
+        add     ax,[cmv_hashp]
         mov     bx,ax
         pop     edx
         pop     eax
@@ -529,16 +618,16 @@ cm_find:
         and     eax,NOT (CM_ESECS - 1)
         mov     dl,[rd_bios]
         call    cm_hash
-        mov     si,[bx]
+        mov     si,fs:[bx]
 cmf_walk:
         cmp     si,CM_NONE
         je      cmf_none
-        cmp     dword ptr [si+CE_LBA],eax
+        cmp     dword ptr fs:[si+CE_LBA],eax
         jne     cmf_next
-        cmp     [si+CE_BIOS],dl
+        cmp     fs:[si+CE_BIOS],dl
         je      cmf_found
 cmf_next:
-        mov     si,[si+CE_NEXT]
+        mov     si,fs:[si+CE_NEXT]
         jmp     short cmf_walk
 cmf_found:
         mov     di,si
@@ -563,12 +652,12 @@ cm_link:
         push    eax
         push    bx
         push    dx
-        mov     eax,dword ptr [di+CE_LBA]
-        mov     dl,[di+CE_BIOS]
+        mov     eax,dword ptr fs:[di+CE_LBA]
+        mov     dl,fs:[di+CE_BIOS]
         call    cm_hash
-        mov     ax,[bx]
-        mov     [di+CE_NEXT],ax
-        mov     [bx],di
+        mov     ax,fs:[bx]
+        mov     fs:[di+CE_NEXT],ax
+        mov     fs:[bx],di
         pop     dx
         pop     bx
         pop     eax
@@ -580,11 +669,11 @@ cm_unlink:
         push    bx
         push    dx
         push    si
-        mov     eax,dword ptr [di+CE_LBA]
-        mov     dl,[di+CE_BIOS]
+        mov     eax,dword ptr fs:[di+CE_LBA]
+        mov     dl,fs:[di+CE_BIOS]
         call    cm_hash
 cmu_walk:
-        mov     si,[bx]
+        mov     si,fs:[bx]
         cmp     si,CM_NONE
         je      cmu_out                 ; not on it: nothing to do
         cmp     si,di
@@ -592,9 +681,9 @@ cmu_walk:
         lea     bx,[si+CE_NEXT]
         jmp     short cmu_walk
 cmu_got:
-        mov     ax,[di+CE_NEXT]
-        mov     [bx],ax
-        mov     word ptr [di+CE_NEXT],CM_NONE
+        mov     ax,fs:[di+CE_NEXT]
+        mov     fs:[bx],ax
+        mov     word ptr fs:[di+CE_NEXT],CM_NONE
 cmu_out:
         pop     si
         pop     dx
@@ -612,7 +701,7 @@ cm_take:
         jae     cmt_clock
         inc     word ptr [cmv_used]
         imul    ax,ax,CE_LEN
-        add     ax,OFFSET cmv_dir
+        add     ax,[cmv_dirp]
         mov     di,ax
         jmp     short cmt_out
 cmt_clock:
@@ -622,13 +711,13 @@ cmt_turn:
         add     si,CE_LEN
         cmp     si,[cmv_dirend]
         jb      cmt_nowrap
-        mov     si,OFFSET cmv_dir
+        mov     si,[cmv_dirp]
 cmt_nowrap:
-        cmp     byte ptr [di+CE_BIOS],0FFh
+        cmp     byte ptr fs:[di+CE_BIOS],0FFh
         je      cmt_free                ; dropped earlier: nothing to unlink
-        test    byte ptr [di+CE_FLAGS],CEF_REF
+        test    byte ptr fs:[di+CE_FLAGS],CEF_REF
         jz      cmt_victim
-        and     byte ptr [di+CE_FLAGS],NOT CEF_REF
+        and     byte ptr fs:[di+CE_FLAGS],NOT CEF_REF
         jmp     short cmt_turn          ; ends: every bit it clears, it
                                         ; takes on the next pass
 cmt_victim:
@@ -645,7 +734,7 @@ cm_slot:
         push    bx
         push    dx
         movzx   eax,di
-        sub     ax,OFFSET cmv_dir
+        sub     ax,[cmv_dirp]
         xor     dx,dx
         mov     bx,CE_LEN
         div     bx                      ; AX = the index
@@ -666,41 +755,58 @@ cm_flat:
         pop     eax
         ret
 
+;--- cm_bncflat - ESI = the bounce buffer, flat
+cm_bncflat:
+        push    eax
+        mov     ax,fs
+        movzx   esi,ax
+        shl     esi,4
+        movzx   eax,word ptr [cmv_bncp]
+        add     esi,eax
+        pop     eax
+        ret
+
 ;--- cm_dropall - start empty.  Also BX=2, and what cm_init calls.
+;--- FS = the tables.
 cm_dropall:
         pusha
         push    es
-        push    cs
+        push    fs
         pop     es
-        mov     di,OFFSET cmv_hash
+        mov     di,[cmv_hashp]
         mov     cx,CM_HASHN
         mov     ax,CM_NONE
         cld
         rep     stosw
-        mov     di,OFFSET cmv_dir
-        mov     cx,CM_MAXEL * CE_LEN / 2
+        mov     di,[cmv_dirp]
+        imul    cx,word ptr [cmv_nel],CE_LEN / 2
         rep     stosw                   ; every drive byte FFh: all free
         mov     word ptr [cmv_used],0
-        mov     word ptr [cmv_hand],OFFSET cmv_dir
+        mov     ax,[cmv_dirp]
+        mov     [cmv_hand],ax
         pop     es
         popa
         ret
 
-;--- cm_dropdrive - AL = a BIOS drive: forget everything held for it
+;--- cm_dropdrive - AL = a BIOS drive: forget everything held for it.
+;--- A way in from RMDISK.INC, so it loads FS itself.
 cm_dropdrive:
         pusha
-        mov     di,OFFSET cmv_dir
+        push    fs
+        mov     fs,[cmv_tseg]
+        mov     di,[cmv_dirp]
         mov     cx,[cmv_used]
         jcxz    cmd_out
 cmd_one:
-        cmp     [di+CE_BIOS],al
+        cmp     fs:[di+CE_BIOS],al
         jne     cmd_next
         call    cm_unlink
-        mov     byte ptr [di+CE_BIOS],0FFh
+        mov     byte ptr fs:[di+CE_BIOS],0FFh
 cmd_next:
         add     di,CE_LEN
         loop    cmd_one
 cmd_out:
+        pop     fs
         popa
         ret
 
@@ -826,11 +932,11 @@ cm_fill:
         jne     cmg_have
         call    cm_take
         and     eax,NOT (CM_ESECS - 1)
-        mov     dword ptr [di+CE_LBA],eax
+        mov     dword ptr fs:[di+CE_LBA],eax
         mov     dl,[rd_bios]
-        mov     [di+CE_BIOS],dl
-        mov     byte ptr [di+CE_VALID],0
-        mov     byte ptr [di+CE_FLAGS],0
+        mov     fs:[di+CE_BIOS],dl
+        mov     byte ptr fs:[di+CE_VALID],0
+        mov     byte ptr fs:[di+CE_FLAGS],0
         call    cm_link
 cmg_have:
         call    cm_slot                 ; EAX = the element
@@ -845,8 +951,8 @@ cmg_have:
         pop     di
         jc      cmg_bad
         call    cm_mask
-        or      [di+CE_VALID],dl
-        or      byte ptr [di+CE_FLAGS],CEF_REF
+        or      fs:[di+CE_VALID],dl
+        or      byte ptr fs:[di+CE_FLAGS],CEF_REF
         popad
         ret
 cmg_bad:
@@ -899,9 +1005,9 @@ cms_ok:
 cm_roundtrip:
         pushad
         push    es
-        push    cs
+        push    fs
         pop     es
-        mov     di,OFFSET cmv_bounce
+        mov     di,[cmv_bncp]
         mov     cx,256
         mov     ax,0A55Ah
         cld
@@ -913,26 +1019,26 @@ cmt_pat:
         xor     ax,ax
         rep     stosw                   ; the second half: where it comes back
 
-        mov     ax,cs
-        movzx   esi,ax
-        shl     esi,4
-        add     esi,OFFSET cmv_bounce
+        call    cm_bncflat              ; ESI = the bounce
         mov     edi,[cmv_elba]
         mov     ecx,512
         call    cm_move
         jc      cmt_bad
-        mov     ax,cs
-        movzx   edi,ax
-        shl     edi,4
-        add     edi,OFFSET cmv_bounce + 512
+        call    cm_bncflat
+        mov     edi,esi
+        add     edi,512                 ; its second half
         mov     esi,[cmv_elba]
         mov     ecx,512
         call    cm_move
         jc      cmt_bad
-        mov     si,OFFSET cmv_bounce
-        mov     di,OFFSET cmv_bounce + 512
+        mov     si,[cmv_bncp]
+        lea     di,[si+512]
         mov     cx,256
+        push    ds
+        push    fs
+        pop     ds
         repe    cmpsw
+        pop     ds
         jne     cmt_bad
         pop     es
         popad
@@ -966,6 +1072,8 @@ cm_api:
         push    ds
         push    cs
         pop     ds
+        push    fs
+        mov     fs,[cmv_tseg]
         call    cm_apilog
         cmp     bx,0
         je      cma_stats
@@ -978,6 +1086,7 @@ cm_api:
         cmp     bx,4
         je      cma_info
 cma_done:
+        pop     fs
         pop     ds
 cma_none:
         iret
@@ -1090,7 +1199,8 @@ cm_winexit:
         test    word ptr [cmv_flags],RMWC_LOG
         jz      cme_out
         mov     byte ptr [cmv_nora],1   ; the bounce is the text's now
-        mov     di,OFFSET cmv_bounce
+        mov     es,[cmv_tseg]
+        mov     di,[cmv_bncp]
         mov     si,OFFSET cme_m1
         call    cm_puts
         mov     ax,[cmv_nel]
@@ -1122,6 +1232,22 @@ cm_winexit:
         mov     si,OFFSET cme_m7
         call    cm_puts
         mov     ax,[cmv_used]
+        call    cm_puthex
+        mov     si,OFFSET cme_m16       ; where the tables were, and how
+        call    cm_puts                 ; many entries fit there
+        mov     ax,[cmv_tseg]
+        call    cm_puthex
+        mov     al,':'
+        stosb
+        mov     ax,[cmv_hashp]
+        call    cm_puthex
+        mov     si,OFFSET cme_m17
+        call    cm_puts
+        mov     ax,[cmv_nmax]
+        call    cm_puthex
+        mov     si,OFFSET cme_m18       ; and the file table's size
+        call    cm_puts
+        mov     ax,[rd_nsft]
         call    cm_puthex
         call    cm_putcrlf
 
@@ -1213,10 +1339,13 @@ cme_drvnext:
         jc      cme_done
         mov     bx,ax
         mov     cx,di
-        sub     cx,OFFSET cmv_bounce
-        mov     dx,OFFSET cmv_bounce
+        sub     cx,[cmv_bncp]
+        mov     dx,[cmv_bncp]
+        push    ds
+        mov     ds,[cmv_tseg]
         mov     ah,40h
         int     21h
+        pop     ds
         mov     ah,3Eh
         int     21h
 cme_done:
@@ -1242,6 +1371,9 @@ cme_m12     db  'DRV ',0
 cme_m13     db  ' bios=',0
 cme_m14     db  ' flags=',0
 cme_m15     db  ' mover=',0
+cme_m16     db  ' tables=',0
+cme_m17     db  ' fit=',0
+cme_m18     db  ' files=',0
 
 ;--- the text helpers: DS = ES = CS, DI -> where the next byte goes
 cm_puts:
@@ -1321,6 +1453,11 @@ cmv_alog    dw  CM_LOGN * 3 dup(0)    ; BX, DX, BP of the last CM_LOGN
 cmv_logname db  'C:\RMCACHE.LOG',0      ; the letter patched in
 cmv_xdesc   db  XM_SIZE dup(0)          ; the move, as the XMS entry takes it
 
-cmv_hash    dw  CM_HASHN dup(0)
-cmv_dir     db  CM_MAXEL * CE_LEN dup(0)
-cmv_bounce  db  CM_EBYTES dup(0)        ; a whole element, read ahead
+; The tables (cm_place): the segment they are in, which FS holds inside
+; this file, and where each starts in it - CM_HASHN chain heads, the
+; bounce buffer (a whole element, read ahead), the directory
+cmv_tseg    dw  0
+cmv_hashp   dw  0
+cmv_bncp    dw  0
+cmv_dirp    dw  0
+cmv_nmax    dw  0                       ; directory entries the room holds

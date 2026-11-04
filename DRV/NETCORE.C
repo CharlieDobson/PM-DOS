@@ -27,6 +27,7 @@ u32  net_opt_port;
 u32  net_opt_mem;
 u8   net_opt_irq = NIC_NOIRQ;
 u8   net_opt_poll;              /* /POLL: run the card on the clock, no IRQ */
+const char *net_line;           /* the DEVICE= line, while nd_init runs */
 
 NIC_STATBLOCK net_stats;
 
@@ -342,9 +343,12 @@ static void say_found( void )
 int __cdecl nd_init( const char *line )
 {
     char msg[64];
+    int  failed;
 
     parse_line( line );
+    net_line = line;
     if ( card_find() ) {
+        net_line = 0;
         msg[0] = 0;
         add_str( msg, net_name[0] ? net_name : "This card" );
         add_str( msg, ": not found\r\n" );
@@ -368,7 +372,9 @@ int __cdecl nd_init( const char *line )
     polled = (u8)( net_irq == NIC_NOIRQ );
     if ( polled ) net_flags |= NICF_POLLED;
     nds_tickhook();
-    if ( card_setup() ) {
+    failed = card_setup();
+    net_line = 0;
+    if ( failed ) {
         net_print( "the card would not start\r\n" );
         /* the kernel frees this driver: let go of the line, the clock
            and the queue first */

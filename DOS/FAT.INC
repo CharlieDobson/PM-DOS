@@ -111,13 +111,14 @@ DE_SIZE         EQU     28
 ;=====================================================================
 fat_init:
         pushad
-        mov     ebx,MAX_DRIVES * VOL_STATE_SIZE
-        call    arena_alloc
+        mov     ebx,LD_DEFAULT * VOL_STATE_SIZE ; more if LASTDRIVE= asks
+        call    arena_alloc                     ; (vol_grow)
         jc      fi_none
         mov     [vol_slotp],eax
+        mov     dword ptr [vol_slotn],LD_DEFAULT
         mov     edi,eax
         xor     eax,eax
-        mov     ecx,(MAX_DRIVES * VOL_STATE_SIZE) / 4
+        mov     ecx,(LD_DEFAULT * VOL_STATE_SIZE) / 4
         rep     stosd
         popad
         clc
@@ -127,6 +128,110 @@ fi_none:
         ; through here - so this is fatal rather than degraded.
         mov     esi,OFFSET msgNoVolMem
         call    dword ptr ds:[IOS_PANIC]
+
+;=====================================================================
+; vol_grow - EAX = letters the parked states should hold, at most
+;            MAX_DRIVES.  CF if the arena has no room, and the table
+;            is as it was.  Everything else preserved.
+;
+; LD_DEFAULT OF THEM AT START, AND MORE ONLY WHEN LASTDRIVE= ASKS
+; (2026-11-01).  A state is VOL_STATE_SIZE, nine kilobytes, so Z: for
+; everybody would have been ninety more of the arena on every machine
+; for letters most never use.  cfg_lastdrv calls this, while CONFIG.SYS
+; is read and nothing is mounted part-way.
+;
+; THE FIRST SIXTEEN STAY WHERE THEY ARE and the letters past them get a
+; block of their own (vol_slotp2), which is why every slot is found
+; through vol_slot.  The first version moved all of them to one bigger
+; block and gave the old one back, and that left a 146K hole at the
+; bottom of the arena: XMSTEST's block landed in it under LASTDRIVE=Z
+; and could not grow there.  A second LASTDRIVE= asking for still more
+; moves only the second block, which nothing else is beside yet.
+;
+; A LETTER PAST vol_slotn HAS NO SLOT, and vol_swap knows it: drv_ceil
+; keeps every volume below it, so such a letter never has a drive, and
+; the API only ever selects one to find that out.
+;=====================================================================
+vol_grow:
+        pushad
+        cmp     eax,MAX_DRIVES
+        jbe     vg_capped
+        mov     eax,MAX_DRIVES
+vg_capped:
+        cmp     eax,[vol_slotn]
+        jbe     vg_ok
+        mov     ebp,eax                         ; EBP = how many in all
+        lea     ebx,[eax-LD_DEFAULT]
+        imul    ebx,VOL_STATE_SIZE
+        push    dword ptr [cur_own]
+        mov     dword ptr [cur_own],0           ; the kernel's, whoever runs
+        call    arena_alloc                     ; -> EAX
+        pop     dword ptr [cur_own]
+        jc      vg_none
+        mov     edi,eax
+        mov     esi,[vol_slotp2]
+        mov     ecx,[vol_slotn]
+        sub     ecx,LD_DEFAULT
+        imul    ecx,VOL_STATE_SIZE / 4
+        rep     movsd                           ; the states there are...
+        mov     ecx,ebp
+        sub     ecx,[vol_slotn]
+        imul    ecx,VOL_STATE_SIZE / 4
+        xor     edx,edx
+        xchg    eax,edx                         ; EDX = the new block
+        rep     stosd                           ; ...and new ones, never mounted
+        xchg    edx,[vol_slotp2]                ; EDX = the old one, or 0
+        mov     [vol_slotn],ebp
+        or      edx,edx
+        jz      vg_ok
+        call    arena_free
+vg_ok:
+        popad
+        clc
+        ret
+vg_none:
+        popad
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; vol_slot - EAX = a letter below vol_slotn -> EAX = its parked state.
+;            Everything else preserved.  The first LD_DEFAULT are in
+;            fat_init's block and the rest in vol_grow's.
+;---------------------------------------------------------------------
+vol_slot:
+        cmp     eax,LD_DEFAULT
+        jae     vsl_past
+        imul    eax,VOL_STATE_SIZE
+        add     eax,[vol_slotp]
+        ret
+vsl_past:
+        sub     eax,LD_DEFAULT
+        imul    eax,VOL_STATE_SIZE
+        add     eax,[vol_slotp2]
+        ret
+
+;=====================================================================
+; drv_fixletters - how many letters there are, settled once the
+;                  machine has started: LASTDRIVE=, or LD_DEFAULT with
+;                  no line, never fewer than the drives, and never more
+;                  than the current directory array a DOS program reads
+;                  has (vdm_cdsn).  From here on a new letter - NET USE,
+;                  MOUNT - has to be below it (drv_ceil), as under
+;                  MS-DOS a letter past LASTDRIVE is no letter at all.
+;                  Everything preserved.
+;=====================================================================
+drv_fixletters:
+        push    eax
+        call    ld_count
+        cmp     eax,[vdm_cdsn]
+        jbe     dfl_fits
+        mov     eax,[vdm_cdsn]
+dfl_fits:
+        mov     [lastdrive_n],eax
+        mov     [drv_ceil],eax
+        pop     eax
+        ret
 
 ;=====================================================================
 ; THE PARTITION SCAN
@@ -212,7 +317,7 @@ drv_add:
         push    ebx
         push    edi
         movzx   edi,byte ptr [drv_count]
-        cmp     edi,MAX_DRIVES
+        cmp     edi,[drv_ceil]                  ; LASTDRIVE=, or the tables
         jae     da_full
         imul    edi,DRV_LEN
         add     edi,OFFSET drv_tbl
@@ -440,8 +545,7 @@ ddc_clear:
         mov     byte ptr [fat_ok],0     ; the loaded one
         jmp     short ddc_clnext
 ddc_parked:
-        imul    eax,VOL_STATE_SIZE
-        add     eax,[vol_slotp]
+        call    vol_slot
         mov     byte ptr [eax],0        ; a parked one
 ddc_clnext:
         inc     ebp
@@ -503,8 +607,8 @@ dac_loop:
         jz      dac_next_free
         dec     eax                     ; cd_letter is 1 = A; slots are 0 = A
         add     eax,ebp
-        cmp     eax,MAX_DRIVES
-        jae     dac_none
+        cmp     eax,[drv_ceil]                  ; past LASTDRIVE=: as if
+        jae     dac_next_free                   ; taken, not left out
         call    drv_slot                        ; EBX = that slot
         test    byte ptr [ebx+DRV_FLAGS],DRVF_PRESENT
         jnz     dac_next_free                   ; taken: fall back
@@ -527,7 +631,7 @@ dac_counted:
 
 dac_next_free:
         movzx   eax,byte ptr [drv_count]
-        cmp     eax,MAX_DRIVES
+        cmp     eax,[drv_ceil]
         jae     dac_none
         call    drv_slot
         mov     byte ptr [ebx+DRV_FLAGS],DRVF_PRESENT OR DRVF_CDROM
@@ -1907,20 +2011,43 @@ vol_swap:
 
         ; park the loaded volume in its slot...
         movzx   edi,byte ptr [cur_vol]
-        imul    edi,VOL_STATE_SIZE
-        add     edi,[vol_slotp]
+        cmp     edi,[vol_slotn]
+        jae     vsw_noslot                      ; a letter with none (below)
+        push    eax
+        mov     eax,edi
+        call    vol_slot
+        mov     edi,eax
+        pop     eax
         mov     esi,OFFSET vol_state
         mov     ecx,VOL_STATE_SIZE / 4
         rep     movsd
+vsw_noslot:
 
         ; ...and pull the requested one in
         mov     [cur_vol],al
         movzx   esi,al
-        imul    esi,VOL_STATE_SIZE
-        add     esi,[vol_slotp]
+        cmp     esi,[vol_slotn]
+        jae     vsw_blank
+        push    eax
+        mov     eax,esi
+        call    vol_slot
+        mov     esi,eax
+        pop     eax
         mov     edi,OFFSET vol_state
         mov     ecx,VOL_STATE_SIZE / 4
         rep     movsd
+        jmp     short vsw_in
+vsw_blank:
+        ; A LETTER PAST THE PARKED STATES (vol_grow), which has no drive
+        ; behind it: the API selects one only to find that out, after a
+        ; bounds check against MAX_DRIVES.  It gets the state of a
+        ; volume never mounted, which is what a slot starts as, and
+        ; parks nowhere when it goes out.
+        mov     edi,OFFSET vol_state
+        mov     ecx,VOL_STATE_SIZE / 4
+        xor     eax,eax
+        rep     stosd
+vsw_in:
 
         ; caches keyed by LBA / cluster now describe the wrong disk
         mov     dword ptr [sec_lba],-1
@@ -2596,8 +2723,7 @@ vsd_one:
         cmp     bl,[cur_vol]
         je      vsd_islive
         mov     eax,ebx
-        imul    eax,VOL_STATE_SIZE
-        add     eax,[vol_slotp]
+        call    vol_slot
         cmp     byte ptr [eax],0
         je      vsd_next
         jmp     short vsd_take
@@ -4276,6 +4402,12 @@ ENDIF
 ; allocation and makes the drive count free to grow.
 ;---------------------------------------------------------------------
 vol_slotp   dd  0
+vol_slotp2  dd  0                       ; ...the letters past LD_DEFAULT, in
+                                        ; a block of their own (vol_grow)
+vol_slotn   dd  0                       ; ...and how many letters there are
+                                        ; slots for: LD_DEFAULT, or
+                                        ; LASTDRIVE= if more.  vol_slot
+                                        ; finds one
 
 ;---------------------------------------------------------------------
 ; The volume table: one entry per drive letter, built once by

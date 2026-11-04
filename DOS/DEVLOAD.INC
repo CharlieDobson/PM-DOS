@@ -2308,7 +2308,7 @@ dl_unitroom:
         mov     ecx,DLU_MAX
         sub     ecx,[dl_nunits]
         movzx   ebx,byte ptr [drv_count]
-        mov     eax,MAX_DRIVES
+        mov     eax,[drv_ceil]
         sub     eax,ebx
         jae     dur_some
         xor     eax,eax
@@ -2336,6 +2336,8 @@ dl_freemask:
 dfm_lp:
         call    drv_slot
         shl     ebp,1
+        cmp     eax,[drv_ceil]          ; past what LASTDRIVE= allows
+        jae     dfm_taken
         test    byte ptr [ebx+DRV_FLAGS],DRVF_PRESENT
         jnz     dfm_taken
         or      ebp,1
@@ -2453,7 +2455,7 @@ dnu_row:
         ; CDROM= can (drv_addcds).
         movzx   eax,byte ptr [edi+NDU_WANT]
         dec     eax                     ; 0, "no wish", wraps past the top
-        cmp     eax,MAX_DRIVES
+        cmp     eax,[drv_ceil]
         jae     dnu_nextfree
         push    ebx
         call    drv_slot                ; EBX = that row

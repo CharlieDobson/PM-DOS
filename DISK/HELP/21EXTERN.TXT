@@ -52,13 +52,14 @@ address a DHCP server lent it.
 
 {b}Syntax{p}
 
-    IPCONFIG [/ALL | /RELEASE | /RENEW]
+    IPCONFIG [/ALL | /RELEASE | /RENEW | /REGISTERDNS]
 
 {b}Switches{p}
 
 /ALL
-    Also shows the computer's name, the network card's physical
-    address, the DHCP, DNS and WINS servers, and when the lease was
+    Also shows the computer's names, the network card's physical
+    address, the DHCP, DNS and WINS servers, whether the name is in
+    DNS, whether HTTPS certificates are checked, and when the lease was
     obtained and when it expires.
 
 /RELEASE
@@ -68,6 +69,11 @@ address a DHCP server lent it.
 /RENEW
     Renews the lease, or asks for a new address if there is none.
     IPCONFIG waits up to 10 seconds for the answer.
+
+/REGISTERDNS
+    Sends this computer's name and IP address to DNS again, and shows
+    whether the DNS server took them.  IPCONFIG waits up to 15 seconds
+    for the answer.
 
 {b}Related Commands{p}
 
@@ -89,10 +95,18 @@ is asked for.
 An address set with TCPIP.SYS /IP= has no lease.  /RELEASE and /RENEW
 say so and change nothing.
 
+{b}The name in DNS{p}
+
+TCPIP.SYS sends the computer's name and address to DNS itself when it
+gets an address, and again once a day.  "Name in DNS" in IPCONFIG /ALL
+shows how that went.  A DNS server that accepts only secure updates
+refuses the name.  The name needs a DNS suffix, which comes from the
+DHCP server or from Domain= in TCPIP.INI.
+
 {b}The exit code{p}
 
-0, or 1 when TCPIP.SYS is not loaded, a switch is wrong, or the address
-could not be released or renewed.
+0, or 1 when TCPIP.SYS is not loaded, a switch is wrong, the address
+could not be released or renewed, or DNS did not take the name.
 #examples
 To see the address:
 
@@ -105,6 +119,10 @@ To see every setting:
 To ask the DHCP server for the address again:
 
     IPCONFIG /RENEW
+
+To put the computer's name in DNS now:
+
+    IPCONFIG /REGISTERDNS
 #topic ISAPNP|Isapnp
 Lists the ISA Plug and Play cards in the machine, and switches their
 devices on.
@@ -671,7 +689,7 @@ disconnects the drive letter.
 
 {b}Syntax{p}
 
-    NET USE drive: \\server\share [password] [/USER:name] [/DOMAIN:name]
+    NET USE drive: \\server\share [password] [/USER:[domain\]name]
             [/SMB1]
     NET USE drive: /DELETE
     NET USE
@@ -681,8 +699,8 @@ NET USE on its own lists the drive letters that are connected.
 {b}Parameters{p}
 
 drive:
-    The drive letter to use, from A: to P:.  The letter must not be in
-    use already.
+    The drive letter to use, up to the LASTDRIVE= letter in CONFIG.SYS
+    (P: without the line).  The letter must not be in use already.
 
 \\server\share
     The other computer's name or IP address, and the name of the
@@ -693,14 +711,13 @@ password
 
 {b}Switches{p}
 
-/USER:name
-    The user name to log in with.  /U: is the short form.
-
-/DOMAIN:name
-    The domain or workgroup of the user.  /D: is the short form.
+/USER:[domain\]name
+    The user name to log in with, with the domain or workgroup in front
+    if the server needs one.  /U: is the short form.
 
 /SMB1
     Uses the older SMB1 protocol without trying SMB2 and SMB3 first.
+    A server that has only SMB1 is found without this switch.
 
 /DELETE
     Disconnects the drive letter.  /D is the short form.
@@ -728,7 +745,11 @@ To connect K: to the FILES share on SERVER:
 
 To log in as a user, with a password:
 
-    net use k: \\server\files secret /user:jsmith /domain:office
+    net use k: \\server\files secret /user:jsmith
+
+The same user in the OFFICE domain:
+
+    net use k: \\server\files secret /user:office\jsmith
 
 To see which drives are connected:
 
@@ -830,9 +851,10 @@ short name nobody answers for, is looked up with DNS.
 
 {b}Times{p}
 
-Times are measured with the computer's clock tick, so they go up in
-steps of 55 milliseconds.  "time<55ms" means the answer came within one
-tick.
+Times are measured to the millisecond.  "time<1ms" means the answer came
+in less than one millisecond, which is usual on a local network.  A
+network card that runs without an interrupt (polled) is read once a
+clock tick, so its times can be up to 55 milliseconds longer.
 
 {b}The exit code{p}
 
@@ -1358,9 +1380,9 @@ on [[DEVICE=]] lines above this one.  To connect a drive letter, see
 {b}How the server is found{p}
 
 With TCP/IP, the server's name is looked up as [[PING]] looks it up.
-SMBFS.SYS connects with SMB2 or SMB3 first.  If the server does not
-answer, SMB1 is tried, for Windows for Workgroups, Windows NT 3.x and
-SMBSRV.
+SMBFS.SYS uses SMB2 or SMB3 when the server has them, and SMB1 with a
+server that has only SMB1, such as Windows Server 2003, Windows for
+Workgroups, Windows NT and SMBSRV.
 
 When TCPIP.SYS is not loaded, or the server cannot be found with it,
 NetBEUI is used, with SMB1.  The server's name must then be up to 15
@@ -1578,7 +1600,8 @@ NET USE use.
 {b}Syntax{p}
 
     DEVICE=[drive:][path]TCPIP.SYS [/IP=address [/MASK=mask] [/GW=address]]
-           [/DNS=address] [/WINS=address] [/NAME=name]
+           [/DNS=address[,address[,address]]] [/WINS=address] [/NAME=name]
+           [/INI:file] [/CA:file]
 
 {b}Parameters{p}
 
@@ -1600,18 +1623,29 @@ NET USE use.
     The default gateway: the router to other networks.  Used only with
     /IP=, and must be on the same network as the address.
 
-/DNS=address
-    The DNS server that looks up names.  With DHCP, this server is used
-    in place of the one the DHCP server names.
+/DNS=address[,address[,address]]
+    The DNS servers that look up names, up to three.  The next one is
+    asked when the first does not answer.  With DHCP, these servers are
+    used in place of the ones the DHCP server names.
 
 /WINS=address
     The WINS server that looks up Windows computer names.  With DHCP,
     this server is used in place of the one the DHCP server names.
 
 /NAME=name
-    This computer's name on a Windows network, up to 15 letters and
-    digits.  Other computers can then find it by the name, as
-    \\name.  Without /NAME=, the computer has no name of its own.
+    This computer's name, up to 15 letters and digits.  Other computers
+    find it by the name, as \\name on a Windows network and as the name
+    in DNS.  Without /NAME=, the name is HostName= in TCPIP.INI, or
+    PMDOS- and six digits from the network card's address.
+
+/INI:file
+    The settings file to read.  Defaults to TCPIP.INI in the same
+    directory as TCPIP.SYS.
+
+/CA:file
+    The trusted certificates that HTTPS connections are checked
+    against.  Defaults to CACERT.BND in the same directory as
+    TCPIP.SYS.
 
 {b}Related Commands{p}
 
@@ -1636,13 +1670,56 @@ lease runs out.
 A name of up to 15 letters with no dot, such as \\SERVER in NET USE,
 is looked up as a Windows computer name first: the WINS server is
 asked if there is one, then the other computers on the network.  DNS
-is asked last, and for every other name.
+is asked last, and for every other name.  DNS is asked for a name with
+no dot with the DNS suffix after it, so SERVER is looked up as
+server.example.com.
+
+{b}TCPIP.INI{p}
+
+TCPIP.INI holds the same settings as the switches, one to a line,
+under [TCPIP].  A ; starts a comment.  A setting that is left out or
+left empty takes its default, and a switch on the DEVICE= line is used
+in place of the same setting in the file.
+
+    HostName=     The computer's name, up to 63 letters, digits and
+                  hyphens.  Windows networks see the first 15.
+    Domain=       The DNS suffix, such as example.com.  Defaults to the
+                  one the DHCP server gives.
+    IPAddress=    A fixed IP address, as /IP=.
+    SubnetMask=   As /MASK=.
+    Gateway=      As /GW=.
+    DNSServers=   Up to three, with commas between, as /DNS=.
+    WINSServer=   As /WINS=.
+    CACerts=      The trusted certificates, as /CA:.
+    RegisterDNS=  Yes or No: whether TCPIP.SYS puts the name in DNS
+                  itself.  Defaults to Yes.
+
+{b}Names in DNS{p}
+
+TCPIP.SYS gives its name to the DHCP server, so the server can list it
+and put it in DNS.  With a DNS suffix, TCPIP.SYS also sends the name
+and address to the DNS server itself, as Windows does.  A DNS server
+that accepts only secure updates refuses it.  The name is sent again
+once a day.  To see how it went, or to send it now, see [[IPCONFIG]].
+
+{b}HTTPS certificates{p}
+
+When TCPIP.SYS makes an HTTPS connection for a program, as it does for
+Windows programs, it checks the server's certificate against the
+trusted certificates: the server's name, its dates, and that a trusted
+authority signed it.  A server that fails the check is not connected
+to.  Without the file, connections are not checked, and TCPIP.SYS says
+so when it loads.  The dates are checked against this computer's clock.
+[[WGET]] checks certificates itself, with the same file.
+
+Connections use TLS 1.3 when the server offers it, and TLS 1.2
+otherwise.  Servers with RSA and with ECDSA certificates both work.
 
 {b}Mistakes on the line{p}
 
 An address or mask that is not valid stops TCPIP.SYS from loading, and
 the reason is shown.  A switch TCPIP.SYS does not know is shown and
-skipped.
+skipped.  The same goes for TCPIP.INI, with its line number.
 #examples
 To get the address from a DHCP server:
 
@@ -1657,6 +1734,13 @@ To use a fixed address:
 To give the computer the name PMDOS1 on a Windows network:
 
     device=c:\dos\tcpip.sys /name=pmdos1
+
+A TCPIP.INI that names the computer and puts it in example.com, and
+leaves the address to DHCP:
+
+    [TCPIP]
+    HostName=pmdos1
+    Domain=example.com
 #topic TELNET|Telnet
 Connects to another computer, so programs on that computer can be used
 from this one.
@@ -1967,7 +2051,8 @@ see [[FTP]].
 
 For an https:// address, WGET checks the server's certificate against
 the root certificates in CACERT.BND.  If the check fails, nothing is
-fetched and the reason is shown.
+fetched and the reason is shown.  WGET uses TLS 1.3 or TLS 1.2, as the
+server allows, with RSA or ECDSA certificates.
 
 WGET looks for the file named by the CACERT environment variable, then
 for CACERT.BND in the current directory and in each directory on the

@@ -35,9 +35,11 @@ typedef struct {
     unsigned char rk[240];          /* expanded AES key (176 or 240 used)  */
     int           nr;               /* AES round count: 10 = 128, 14 = 256 */
     unsigned char seq[8];           /* 64-bit big-endian sequence number   */
-    int           is_gcm;           /* 1 = AES-GCM (AEAD), 0 = CBC+HMAC     */
+    int           is_gcm;           /* 2 = TLS 1.3 AES-GCM, 1 = TLS 1.2
+                                       AES-GCM (AEAD), 0 = CBC+HMAC        */
     unsigned char implicit_iv[4];   /* GCM salt (client/server write IV)    */
     unsigned char H[16];            /* GCM GHASH subkey                    */
+    unsigned char iv[12];           /* TLS 1.3 per-record nonce base       */
 } tls_keys;
 
 /* Initialise one direction for CBC+HMAC: install keys, zero the sequence.
@@ -51,6 +53,14 @@ void tls_keys_init(tls_keys *k,
 void tls_keys_init_gcm(tls_keys *k,
                        const unsigned char *enc_key, int keylen,
                        const unsigned char iv4[4]);
+
+/* Initialise one direction for TLS 1.3 AES-GCM: key + the 12-byte IV that
+   each record's nonce is made from (iv XOR the sequence number).  Records
+   then carry the real content type inside the encryption, and go out as
+   application_data. */
+void tls_keys_init13(tls_keys *k,
+                     const unsigned char *enc_key, int keylen,
+                     const unsigned char iv12[12]);
 
 /* Build a plaintext (unprotected) record: header || data.  Used before the
    cipher is active.  Returns total bytes, or -1 if it won't fit. */

@@ -4906,14 +4906,43 @@ DRX_NOVEC       EQU     0FFFFFFFFh              ; LOAD's: it has not run
 ; could reach through the API and would not parse on the command line
 ; - DIR E: listed E: and headed it with the label and free space of
 ; the default drive, which is a wrong answer that looks like a right
-; one.  21h/0Eh reports this number; nothing should assume it.
+; one.  21h/0Eh reports how many there are; nothing should assume it.
+;
+; Z: SINCE 2026-11-01, AND LASTDRIVE= DECIDES, as in MS-DOS.  This is
+; the most there can ever be, which is what a program parsing "X:"
+; checks against; how many THIS machine has is LASTDRIVE= (lastdrive_n,
+; INT21.INC), P: without the line, and a letter past it is refused as
+; a drive with nothing behind it.  Charlie's 5x86 asked for NET USE S:
+; and was told there was no such letter.
+;
+; WHAT A LETTER PAST P: COSTS is why it is not simply always there.
+; The current directory array a DOS program reads is conventional
+; memory, and sixteen entries are all the DOS data segment has room
+; for; past that the array moves into a block of its own below 640K,
+; 58h bytes a letter, set aside at boot when LASTDRIVE= asks for it
+; (vdm_cdsgrow) - which is the price MS-DOS charges for the same line.
+; The kernel's own per-letter state grows with it, in the arena above
+; 1MB (vol_grow).  A machine without the line pays for neither.
 ;---------------------------------------------------------------------
-LASTDRIVE       EQU     16              ; A: to P:
-IF GCDS_OFF + LASTDRIVE * GCDS_LEN GT GSFT2_OFF
+LASTDRIVE       EQU     26              ; A: to Z:, the most there can be
+LD_DEFAULT      EQU     16              ; ...and without LASTDRIVE=, A: to P:
+GCDS_NLOW       EQU     16              ; current directories the DOS data
+                                        ; segment holds at GCDS_OFF
+GDPB_NLOW       EQU     16              ; ...and drive parameter blocks at
+                                        ; GDPB_OFF.  Letters past these keep
+                                        ; theirs where the array was, once
+                                        ; it has moved (vdm_dpbaddr)
+IF GCDS_OFF + GCDS_NLOW * GCDS_LEN GT GSFT2_OFF
         .ERR    <GCDS: the current directories run into block 2 of the file table>
 ENDIF
-IF GDPB_OFF + LASTDRIVE * GDPB_LEN GT DOSDATA_SIZE
-        .ERR    <GDPB: a drive parameter block for every letter does not fit in the DOS data segment>
+IF GDPB_OFF + GDPB_NLOW * GDPB_LEN GT DOSDATA_SIZE
+        .ERR    <GDPB: the drive parameter blocks do not fit in the DOS data segment>
+ENDIF
+IF (LASTDRIVE - GDPB_NLOW) * GDPB_LEN GT GCDS_NLOW * GCDS_LEN
+        .ERR    <GDPB: the letters past GDPB_NLOW have no room where the current directories were>
+ENDIF
+IF LD_DEFAULT GT GCDS_NLOW
+        .ERR    <LD_DEFAULT: more letters by default than the DOS data segment has current directories for>
 ENDIF
                                         ;
                                         ; RAISED FROM 8 WHEN CD-ROMs GOT

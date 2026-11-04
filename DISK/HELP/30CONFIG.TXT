@@ -651,7 +651,8 @@ Sets how many files can be open at once, across the whole system.
 {b}Parameters{p}
 
 n
-    8 to 64.  Default is 64.
+    8 to 64.  Default is 64.  The same number applies while Windows
+    is running.
 #examples
     FILES=40
 #topic IDE32=|Ide32
@@ -856,9 +857,10 @@ Sets the highest drive letter programs should look for.
 {b}Parameters{p}
 
 x
-    A letter, up to P.  LASTDRIVE never goes below the drives the
-    machine has, and adds none.  Default setting makes every letter
-    available.
+    A letter, up to Z.  LASTDRIVE never goes below the drives the
+    machine has, and adds none.  NET USE, MOUNT and the rest can only
+    use letters up to LASTDRIVE.  The default setting is P.  Each
+    letter past P uses 88 bytes of conventional memory.
 
 {b}Related Commands{p}
 
@@ -866,8 +868,8 @@ x
 #notes
 {b}Under Windows{p}
 
-Under Windows the letters go up to Z, and network drives Windows for
-Workgroups connects can only use letters up to LASTDRIVE.
+Network drives Windows for Workgroups connects can only use letters up
+to LASTDRIVE.  Under Windows, the default setting is Z.
 #examples
     LASTDRIVE=Z
 #topic LFN=|Lfn
@@ -1269,8 +1271,10 @@ Sets the cache used while Windows runs.
 {b}Parameters{p}
 
 size
-    In KB, or with K or M after it, up to 4M.  Without the line, an
-    eighth of free extended memory is used.
+    In KB, or with K or M after it, up to 23M.  Without the line, an
+    eighth of free extended memory is used, up to 4M.  A size over 4M
+    also uses conventional memory for the cache's tables: 6K plus
+    about 2.5K for each megabyte of cache.
 
 LOG
     Writes RMCACHE.LOG on the boot drive when Windows exits, with the

@@ -13,7 +13,8 @@
  *     Setup disk runs, can leave Setup for the prompt to change the
  *     partitions with FDISK whenever the disk has partitions already,
  *     and it installs on a FAT drive with nothing on it;
- *   - a PM-DOS already on the disk is reinstalled over;
+ *   - a PM-DOS already on the disk is upgraded, or reinstalled over when
+ *     it is the same version (tgt.pmver);
  *   - the system files go in the root and everything else in the DOS
  *     directory, with SHELL= saying where (see CFG.C).
  *
@@ -256,6 +257,18 @@ static void size_text( char *buf, int max, u32 kb )
     }
 }
 
+/* "0.70" -> major*256+minor, the form of tgt.pmver */
+static u16 version_number( const char *text )
+{
+    const char *end;
+    u32 major = parse_u32( text, &end ), minor = 0;
+
+    if ( *end == '.' ) {
+        minor = parse_u32( end + 1, (const char **)0 );
+    }
+    return (u16)((major << 8) | (minor & 0xFF));
+}
+
 /* Get drive C: ready, or decide it is.  Comes back when the settings
    are next; restarts or leaves otherwise. */
 static void prepare_disk( void )
@@ -336,16 +349,31 @@ static void prepare_disk( void )
         opt.upgrade = 1;
         break;
     }
-    case TG_PMDOS:
-        sfmt( para, sizeof( para ), tx_re_1, 'A' + tgt.drive );
-        items[0] = tx_re_item;
+    case TG_PMDOS: {
+        /* an older PM-DOS is upgraded, the same one reinstalled */
+        u16 mine = version_number( inf.version );
+        int up = tgt.pmver < mine;
+        char was[8];
+
+        sfmt( was, sizeof( was ), "%u.%02u", tgt.pmver >> 8, tgt.pmver & 0xFF );
+        if ( tgt.pmver == 0 ) {
+            sfmt( para, sizeof( para ), tx_up_old, 'A' + tgt.drive, inf.version );
+        } else if ( up ) {
+            sfmt( para, sizeof( para ), tx_up_1, was, 'A' + tgt.drive, inf.version );
+        } else if ( tgt.pmver > mine ) {
+            sfmt( para, sizeof( para ), tx_re_newer, was, 'A' + tgt.drive );
+        } else {
+            sfmt( para, sizeof( para ), tx_re_1, 'A' + tgt.drive );
+        }
+        items[0] = up ? tx_up_item : tgt.pmver > mine ? tx_re_newer_item : tx_re_item;
         items[1] = full_32 ? tx_item_fdisk : tx_item_exit;
         if ( choice_page( para, NULL, items, 2, tx_keys_ehx,
-                          tx_h_re, tx_h_re_text ) != 0 ) {
+                          up ? tx_h_up : tx_h_re, up ? tx_h_up_text : tx_h_re_text ) != 0 ) {
             leave( 2 );
         }
         opt.upgrade = 1;
         break;
+    }
     case TG_WIN9X:
         cannot( tx_cant_win9x );
         break;

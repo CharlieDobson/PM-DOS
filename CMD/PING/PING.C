@@ -9,8 +9,10 @@
  *     -w timeout   how long to wait for each answer, in milliseconds;
  *                  the default is 1000
  *
- * A round trip is timed by the clock tick, so it is a multiple of 55ms.
- * The exit code is 0 when any echo was answered, 1 otherwise.
+ * TCPIP.SYS times a round trip by the timer chip, to the millisecond;
+ * under one shows as "<1ms", as on Windows.  (By the clock tick it was
+ * a multiple of 55ms, until 2026-11-01.)  The exit code is 0 when any
+ * echo was answered, 1 otherwise.
  *
  * Built over CMD\NET\SOCKLIB.C, behind CMD\NET\NETSTART.ASM.
  */
@@ -130,7 +132,7 @@ void __cdecl dos_entry( void )
             got++;
             sl_puts( "Reply from " );
             sl_putip( ip );
-            if ( rtt == 0 ) sl_puts( ": time<55ms\r\n" );
+            if ( rtt == 0 ) sl_puts( ": time<1ms\r\n" );
             else { sl_puts( ": time=" ); sl_putu( rtt ); sl_puts( "ms\r\n" ); }
         } else {
             sl_puts( "Request timed out.\r\n" );

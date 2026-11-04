@@ -791,7 +791,14 @@ static void stats( void )
     NIC_STATBLOCK st;
     u32 answer, err;
 
-    check( "NIC_STATS: nothing dropped, no errors, no overflow" );
+    /* FRAMES DROPPED FOR A FULL QUEUE ARE COUNTED, NOT FAILED.  This
+       test reads only the frames it waits for, and a real network sends
+       broadcasts and multicasts all the while; on the 5x86's 3C515,
+       which takes every multicast or none, 103 were dropped during a
+       run that passed everything else (2026-11-01).  The emulators'
+       networks are silent, which is why nothing was ever dropped there.
+       Errors and the card's own buffer running over still fail. */
+    check( "NIC_STATS: no errors, no overflow" );
     err = nd_call( NIC_STATS, &st, sizeof( st ), &answer );
     if ( err || answer != NICS_LEN ) {
         out_str( "error " );
@@ -799,16 +806,16 @@ static void stats( void )
         fail();
         return;
     }
-    out_dec( st.rxdropped );
-    out_str( ", " );
     out_dec( st.rxerrors + st.txerrors );
     out_str( ", " );
     out_dec( st.overflows );
-    if ( st.rxdropped == 0 && st.rxerrors == 0 && st.txerrors == 0 && st.overflows == 0 ) ok(); else fail();
+    if ( st.rxerrors == 0 && st.txerrors == 0 && st.overflows == 0 ) ok(); else fail();
     out_str( "  frames out " );
     out_dec( st.txframes );
     out_str( ", in " );
     out_dec( st.rxframes );
+    out_str( ", dropped for a full queue " );
+    out_dec( st.rxdropped );
     out_str( ", interrupts " );
     out_dec( st.irqs );
     out_nl();

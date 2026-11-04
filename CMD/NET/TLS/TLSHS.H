@@ -1,11 +1,14 @@
 /* ==========================================================================
- * TLSHS.H - TLS 1.2 client handshake + application data for NETSPLOR.
+ * TLSHS.H - TLS 1.3 / 1.2 client handshake + application data for NETSPLOR.
  * Win32s / MSVC 2.2 + Open Watcom 1.9 (portable C89).
  * ==========================================================================
- * Implements a TLS 1.2 client for the single suite
- * TLS_RSA_WITH_AES_128_CBC_SHA (0x002F): ClientHello .. Finished, RSA key
- * exchange (PKCS#1 v1.5), key schedule via the TLS 1.2 PRF, and CBC record
- * protection.  Trust-on-first-use (see X509.C) - no chain validation yet.
+ * A TLS client that offers 1.3 and 1.2 in one ClientHello:
+ *   TLS 1.3 : TLS_AES_128_GCM_SHA256, TLS_AES_256_GCM_SHA384; P-256 key share;
+ *             HelloRetryRequest (cookie), KeyUpdate; no PSK or early data.
+ *   TLS 1.2 : ECDHE_ECDSA and ECDHE_RSA with AES-GCM or AES-CBC, and plain
+ *             RSA key exchange (TLS_RSA_WITH_AES_128_CBC_SHA).
+ * Server signatures: ECDSA P-256/P-384, RSA-PSS and RSA PKCS#1 v1.5, with
+ * SHA-256/384/512.  Certificate chains are checked by tls_set_verify.
  *
  * I/O-agnostic: the caller supplies blocking send/recv callbacks.  A blocking
  * socket drives it today (testable against openssl s_server); the same engine
@@ -74,7 +77,7 @@ int  tls_hs_leftover(tls_conn *c, unsigned char **ptr);    /* inbound bytes past
  * The suite/version accessors return 0 until the handshake completes.
  * ------------------------------------------------------------------------ */
 int tls_get_suite(const tls_conn *c);          /* IANA cipher suite number   */
-int tls_get_version(const tls_conn *c);        /* 0x0303 = TLS 1.2           */
+int tls_get_version(const tls_conn *c);        /* 0x0304 = TLS 1.3, 0x0303 = 1.2 */
 int tls_is_established(const tls_conn *c);
 int tls_get_cert_count(const tls_conn *c);     /* certs the peer presented   */
 /* Copy chain[index] (0 = leaf) into 'out'.  Pass out=NULL to query the size.

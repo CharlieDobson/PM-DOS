@@ -858,6 +858,19 @@ f29_noscan:
         jbe     f29_baddrv
         cmp     al,LASTDRIVE
         ja      f29_baddrv
+        call    ld_past                 ; and LASTDRIVE= (INT21.INC)
+        jc      f29_baddrv
+        ; ...AND A DRIVE BEHIND IT, as MS-DOS's MakeFcb asks GetVisDrv:
+        ; under LASTDRIVE=Z, Q: is a letter and still no drive, and 29h
+        ; says FFh for it (DOS6SRC dos/fcb.asm).
+        push    eax
+        push    ebx
+        dec     al
+        call    drv_slot
+        test    byte ptr [ebx+DRV_FLAGS],DRVF_PRESENT
+        pop     ebx
+        pop     eax
+        jz      f29_baddrv
         mov     [edi+FCB_DRIVE],al
         add     esi,2
         jmp     short f29_name
@@ -1063,6 +1076,8 @@ fcb_mkpath:
 fcb_mletter:
         cmp     al,LASTDRIVE
         ja      fcb_mbad
+        call    ld_past
+        jc      fcb_mbad
         add     al,'A'-1
         mov     [edi],al
         mov     byte ptr [edi+1],':'
@@ -1137,6 +1152,8 @@ fcb_setdir:
 fcb_sdhave:
         cmp     al,LASTDRIVE
         ja      fcb_sdbad
+        call    ld_past
+        jc      fcb_sdbad
         mov     [fq_drv],al
         add     al,'A'-1
         mov     byte ptr [fq_path],al

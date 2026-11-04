@@ -569,11 +569,11 @@ imm_gotslot:
         cmp     al,0FFh
         jne     imm_named
         movzx   eax,byte ptr [drv_count]
-        cmp     eax,MAX_DRIVES
+        cmp     eax,[drv_ceil]                  ; LASTDRIVE= (drv_fixletters)
         jae     imm_nodrive
         jmp     short imm_haveltr
 imm_named:
-        cmp     eax,MAX_DRIVES
+        cmp     eax,[drv_ceil]
         jae     imm_nodrive
         call    drv_slot
         test    byte ptr [ebx+DRV_FLAGS],DRVF_PRESENT

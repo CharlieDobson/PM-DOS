@@ -122,6 +122,8 @@ static u8  pnp_line;            /* ...and the line it was given */
    finds it */
 static u32 rep_pnp_cards;       /* Plug and Play cards the kernel numbered */
 static u32 rep_pnp_3com;        /* ...of them 3C509Bs */
+static u8  rep_pnp_id[4];       /* the first other card's id */
+static u8  rep_id_kept;         /* ...is in rep_pnp_id */
 static u16 rep_id_word;         /* EEPROM word 7 through the first ID port */
 static u16 rep_id_port;         /* the ID port a card answered at, or 0 */
 static u16 rep_id_base;         /* ...the base it was put at */
@@ -593,7 +595,13 @@ static int find_pnp( int first )
             if ( devices > 1 ) break;
             pos += size;
         }
-        if ( !ours ) continue;
+        if ( !ours ) {
+            if ( !rep_id_kept ) {               /* the first other card's id */
+                net_memcpy( rep_pnp_id, res, 4 );
+                rep_id_kept = 1;
+            }
+            continue;
+        }
         rep_pnp_3com++;
 
         /* Where it should live.  A card CTCM or a Plug and Play BIOS has
@@ -674,7 +682,15 @@ static void el_report( void )
         say_text( "no cards" );
     } else if ( rep_pnp_3com == 0 ) {
         say_dec( rep_pnp_cards );
-        say_text( rep_pnp_cards == 1 ? " card, not a 3C509B" : " cards, no 3C509B" );
+        say_text( rep_pnp_cards == 1 ? " card, " : " cards, " );
+        say_eisa( rep_pnp_id );
+        say_text( rep_pnp_cards == 1 ? ", not a 3C509B" : " and others, no 3C509B" );
+        /* the 3C515 answers to 3Com's name and is nothing like a 3C509
+           to drive: Charlie's 5x86, 2026-11-01 */
+        if ( rep_pnp_id[0] == 0x50 && rep_pnp_id[1] == 0x6D && rep_pnp_id[2] == 0x50 && rep_pnp_id[3] == 0x51 ) {
+            say_end();
+            say_begin( "TCM5051 is a 3C515: use EL3C515.SYS" );
+        }
     } else {
         say_text( "no station address read from the 3C509B" );
     }

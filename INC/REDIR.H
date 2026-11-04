@@ -52,6 +52,20 @@
 #define REDIR_RESUME   0x1000  /* OR into the op: run resumably on the fibre */
 #define REDIR_PENDING  0xFF    /* status: not finished this slice; poll again */
 
+/* A REDIR_MOUNT that fails says where: `count` = a MNT_* step and
+   `result` = the server's status for it (an NTSTATUS, or LAN Manager's
+   (code << 16) | class), 0 when the server never answered.  NET USE on
+   the 5x86 against a real server said only "could not be made"
+   (2026-11-01). */
+#define MNT_NONAME     1       /* the server's name was not found */
+#define MNT_CONNECT    2       /* nothing answered on TCP port 445 or 139 */
+#define MNT_DIALECT    3       /* no SMB dialect agreed (negotiate) */
+#define MNT_NETBIOS    4       /* the NetBIOS session was refused (port 139) */
+#define MNT_LOGON      5       /* the user was not accepted (session setup) */
+#define MNT_SHARE      6       /* the share was refused (tree connect) */
+#define MNT_NODRIVER   7       /* no redirector driver is loaded (kernel) */
+#define MNT_MEMORY     8       /* the driver had no memory for the session */
+
 /* THE REQUEST BLOCK - fixed layout, shared with INC\REDIR.INC.  All the
    u32 fields first so the offsets are easy to fill from assembly. */
 typedef struct {
@@ -99,6 +113,8 @@ typedef struct {
     char user[64];
     char pass[64];
     char domain[64];
+    u32  step;           /* out, MAP failed: the MNT_* step */
+    u32  srvstatus;      /* out, MAP failed: the server's status, or 0 */
 } netuse_req;
 
 #endif /* REDIR_H */

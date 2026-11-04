@@ -9,6 +9,8 @@
 #ifndef NETSPLOR_ECP384_H
 #define NETSPLOR_ECP384_H
 
+#include "rng.h"
+
 /* Force the one-off curve-constant setup.  See ecp256_init(). */
 void ecp384_init(void);
 
@@ -22,5 +24,14 @@ int ecdsa_verify_p384(const unsigned char pub[97],
                       const unsigned char *hash, int hashlen,
                       const unsigned char *r, int rlen,
                       const unsigned char *s, int slen);
+
+/* ECDH on P-384, for a server that offers no other group.
+ *   ecp384_keygen : priv(48) random in [1, n-1], pub(97) = priv*G (SEC1).
+ *   ecp384_ecdh   : out(48) = X of priv * peer; peer must be on the curve.
+ * Both return 0, or -1 on failure.
+ */
+int ecp384_keygen( nst_rng *rng, unsigned char priv[48], unsigned char pub[97] );
+int ecp384_ecdh( const unsigned char priv[48], const unsigned char peer[97],
+                 unsigned char out[48] );
 
 #endif /* NETSPLOR_ECP384_H */

@@ -35,9 +35,56 @@
 #include "nic.h"
 #include "socket.h"
 #include "tlshs.h"            /* kernel-side TLS: the vendored NSTLS core */
+#include "x509.h"             /* ...and its reasons a certificate is refused */
+
+/* TCPSVC.ASM: the two kernel services NDSTART.ASM does not bridge */
+int __cdecl nds_readfile( const char *path, void *buf, u32 room, u32 *got, u32 *size );
+u32 __cdecl nds_stamp( void );
 #include "rng.h"
 
 #define NULL ((void *)0)
+
+/* the timer's ports and the interrupt flag, for fine_now - the one
+   piece of hardware the stack reads itself */
+u8   inb( u16 port );
+#pragma aux inb = "in al,dx" parm [dx] value [al] modify exact [al];
+void outb( u16 port, u8 value );
+#pragma aux outb = "out dx,al" parm [dx] [al] modify exact [];
+u32  int_off( void );
+#pragma aux int_off = "pushfd" "pop eax" "cli" value [eax] modify exact [eax];
+void int_back( u32 flags );
+#pragma aux int_back = "push eax" "popfd" parm [eax] modify exact [];
+
+/* A TICK COUNT THAT DOES NOT GO BACK.  nds_ticks() is the BIOS's count
+   at 40:6C, and that goes back to 0 at midnight.  Every deadline here is
+   a count compared by difference, so a deadline set before midnight for
+   after it was not met until the same time the next day: a 24-hour lease
+   taken in the afternoon was never renewed, and a TCP retransmission due
+   at 23:59:59 waited a day (2026-11-02).  This counts on across midnight
+   instead.  A count that goes back by more than an hour's worth is not
+   midnight but a program setting the clock, and counts as no time.  Ticks
+   and socket calls both ask, so the interrupts are off while it adds. */
+#define TICKS_PER_DAY 1573040UL
+#define TICKS_HOUR    65543UL
+
+static u32 tk_bios, tk_count;
+
+static u32 ticks( void )
+{
+    u32 flags = int_off();
+    u32 bios = nds_ticks(), step;
+
+    if ( bios >= tk_bios ) step = bios - tk_bios;
+    else {
+        step = TICKS_PER_DAY - tk_bios + bios;
+        if ( step > TICKS_HOUR ) step = 0;
+    }
+    tk_bios = bios;
+    tk_count += step;
+    bios = tk_count;
+    int_back( flags );
+    return bios;
+}
 
 /* ---------------------------------------------------------------- */
 /* the wire                                                          */
@@ -91,7 +138,8 @@ typedef struct {
     u8   used;
     u8   type;                  /* SOCK_STREAM or SOCK_DGRAM */
     u8   tstate;                /* T_* */
-    u8   err;                   /* NET_FAIL when the peer reset us */
+    u8   err;                   /* why it failed: NET_REFUSED, NET_TLSCERT... */
+    u8   why;                   /* CERT_* with NET_TLSCERT */
 
     u32  lip, rip;              /* local and remote address */
     u16  lport, rport;
@@ -108,6 +156,7 @@ typedef struct {
     u32  txstart, txlen;
     u8  *rxbuf;                 /* bytes arrived, waiting to be read */
     u32  rxstart, rxlen;
+    u32  wnd_adv;               /* the receive window the peer last heard */
 
     u8   finsent;               /* our FIN has gone out */
     u32  finseq;                /* ...occupying this sequence */
@@ -136,6 +185,8 @@ typedef struct {
     u8  *tapp;                  /* decrypted plaintext waiting for the app */
     u32  tapstart, taplen;
     char host[128];             /* server name: SNI and the cert to match */
+    char now14[15];             /* the time the certificate is checked
+                                   against, YYYYMMDDHHMMSS; "" unchecked */
 } SOCKET;
 
 /* tls_state */
@@ -185,7 +236,12 @@ static u8   if_dhcp;            /* DHS_* */
 static u8   if_static;          /* /IP= was given: DHCP never runs */
 static char if_name[32];
 static u32  if_wins;            /* the WINS server: /WINS=, or DHCP option 44 */
-static char nb_name[16];        /* our NetBIOS name (/NAME=), upper case; "" none */
+static u32  if_dns2, if_dns3;   /* more DNS servers, asked when if_dns is not */
+static char nb_name[16];        /* our NetBIOS name (/NAME=), upper case */
+static char host_name[64];      /* our DNS host name, lower case: the same name */
+static char dom_name[64];       /* our DNS domain: TCPIP.INI's, else DHCP's; "" none */
+static u8   dom_fixed;          /* TCPIP.INI named the domain: DHCP's is not taken */
+static u8   reg_dns = 1;        /* RegisterDNS=: send our name to DNS ourselves */
 static const u8 *rx_srcmac;     /* the station that sent the frame being read */
 
 static u16  ip_id = 1;
@@ -212,6 +268,7 @@ static struct {
     u16  id, seq;
     u32  state;
     u32  sent_at;
+    u32  sent_fine;             /* fine_now() when the echo went */
     u32  rtt;
     u32  give_up;
     u8   tries;
@@ -227,6 +284,7 @@ static struct {
     u32  give_up;
     u8   tries;
     char name[128];
+    char qname[192];            /* what DNS is asked: name, or name.domain */
 } res;
 
 /* a lookup is over, found or not: callers asking for the same name are
@@ -236,12 +294,47 @@ static u32 res_done_at;
 static void res_end( void )
 {
     res.active = 0;
-    res_done_at = nds_ticks();
+    res_done_at = ticks();
 }
 
 #define RS_WINS      0          /* the WINS server, by NetBIOS name */
 #define RS_BCAST     1          /* the network, by NetBIOS broadcast */
 #define RS_DNS       2          /* the DNS server */
+
+/* our name sent to DNS (RFC 2136), one record at a time: find the zone
+   the name is in and its primary server (SOA), that server's address,
+   then send the update.  The address record always; the reverse one too
+   when the address is our own (/IP=), since then no DHCP server adds it */
+static struct {
+    u8   want;                  /* send when the chance comes */
+    u8   active;
+    u8   step;                  /* RG_* */
+    u8   job;                   /* RJ_* */
+    u8   tries;
+    u16  id, lport;
+    u32  give_up;
+    u32  asked;                 /* the DNS server the zone question went to */
+    u32  master;                /* the zone's primary server */
+    u32  ip;                    /* the address being sent */
+    u32  done_ip;               /* the address last taken; 0 none */
+    u32  done_at;               /* ticks() when it was */
+    u32  retry_at;              /* after no answer: try again then; 0 not */
+    u16  state, rcode;          /* DREG_*, and the server's answer */
+    char owner[128];            /* the name the record is for */
+    char zone[128];             /* the zone it is in */
+    char mname[128];            /* the zone's primary server, by name */
+} reg;
+
+#define RG_SOA       0          /* asking which zone, and its primary */
+#define RG_MASTER    1          /* asking the primary's address */
+#define RG_UPDATE    2          /* the update is out */
+
+#define RJ_A         0          /* name -> address */
+#define RJ_PTR       1          /* address -> name, in in-addr.arpa */
+
+#define REG_TTL      1200       /* what Windows gives the records it adds */
+#define REG_REFRESH  TICKS_PER_DAY      /* sent again once a day */
+#define REG_RETRY    ( 10UL * 60 * 18 ) /* ...or ten minutes after no answer */
 
 /* ---------------------------------------------------------------- */
 /* what a library would have supplied                                */
@@ -299,6 +392,25 @@ static int str_same( const char *one, const char *two )
 {
     while ( *one && *one == *two ) { one++; two++; }
     return *one == *two;
+}
+
+static u32 str_len( const char *text )
+{
+    u32 n = 0;
+    while ( text[n] ) n++;
+    return n;
+}
+
+static u8 lower( u8 ch )
+{
+    return ( ch >= 'A' && ch <= 'Z' ) ? (u8)( ch + 32 ) : ch;
+}
+
+/* the same but for case, as names are */
+static int str_samei( const char *one, const char *two )
+{
+    while ( *one && lower( (u8)*one ) == lower( (u8)*two ) ) { one++; two++; }
+    return lower( (u8)*one ) == lower( (u8)*two );
 }
 
 static void put16( u8 *buf, u16 value )
@@ -406,7 +518,7 @@ static void arp_put( u32 ip, const u8 *mac )
     arp[slot].ip = ip;
     mem_copy( arp[slot].mac, mac, 6 );
     arp[slot].valid = 1;
-    arp[slot].at = nds_ticks();
+    arp[slot].at = ticks();
 }
 
 static void arp_send( u16 op, u32 target_ip, const u8 *target_mac )
@@ -462,6 +574,12 @@ static int same_subnet( u32 ip )
     return if_mask && ( ( ip ^ if_ip ) & if_mask ) == 0;
 }
 
+/* where a frame for dst goes first: dst itself, or the gateway */
+static u32 next_hop( u32 dst )
+{
+    return same_subnet( dst ) ? dst : if_gw;
+}
+
 static int ip_send( u32 dst, u8 proto, u32 plen )
 {
     u8 *mac, *ih = tx_frame + ETH_HDR;
@@ -471,7 +589,7 @@ static int ip_send( u32 dst, u8 proto, u32 plen )
     if ( dst == IP_BCAST || ( if_mask && same_subnet( dst ) && ( dst | if_mask ) == IP_BCAST ) ) {
         mac = (u8 *)bcast;              /* everyone, or everyone on our network */
     } else {
-        nexthop = same_subnet( dst ) ? dst : if_gw;
+        nexthop = next_hop( dst );
         mac = arp_find( nexthop );
         if ( mac == NULL ) { arp_request( nexthop ); return 0; }
     }
@@ -535,6 +653,7 @@ static int udp_send( u32 dst, u16 dport, u16 sport, const u8 *data, u32 dlen )
 /* forward */
 static void dhcp_input( const u8 *bootp, u32 len );
 static void dns_input( const u8 *dns, u32 len );
+static void reg_input( u32 src, const u8 *dns, u32 len );
 #define NBNS_PORT 137
 static void nbns_input( u32 src, u16 sport, const u8 *data, u32 dlen );
 static SOCKET *udp_socket_for( u16 port );
@@ -561,6 +680,10 @@ static void udp_input( u32 src, const u8 *uh, u32 len )
         dns_input( data, dlen );
         return;
     }
+    if ( reg.active && dport == reg.lport && sport == 53 ) {
+        reg_input( src, data, dlen );
+        return;
+    }
     s = udp_socket_for( dport );
     if ( s ) udp_queue( s, src, sport, data, dlen );
 }
@@ -568,6 +691,47 @@ static void udp_input( u32 src, const u8 *uh, u32 len )
 /* ---------------------------------------------------------------- */
 /* ICMP                                                              */
 /* ---------------------------------------------------------------- */
+
+/* A CLOCK FINER THAN THE TICK, FOR PING.  A reply on a LAN takes well
+   under a millisecond, and timed by the 55ms tick every round trip read
+   "<55ms" or "55ms" (2026-11-01).  Channel 0 of the timer says how far
+   into the tick it is.  The 8254's read-back command latches the count
+   and the status together; in the square-wave mode the BIOS sets, the
+   count runs down by two twice a tick, the output high for the first
+   half.  The answer is in timer counts, 1,193,182 a second, and wraps
+   after an hour.  A tick not yet counted (interrupts off) would make the
+   clock go back, so it stands still instead. */
+#define FINE_PER_MS  1193UL
+
+static u32 fine_last;
+
+static u32 fine_now( void )
+{
+    u32 flags, tick, into, now, count;
+    u8  status, low, high;
+
+    do {
+        tick = ticks();
+        flags = int_off();
+        outb( 0x43, 0xC2 );             /* read-back: count + status, channel 0 */
+        status = inb( 0x40 );
+        low = inb( 0x40 );
+        high = inb( 0x40 );
+        int_back( flags );
+    } while ( ticks() != tick );
+    count = ( (u32)high << 8 ) | low;
+    if ( count == 0 ) count = 0x10000UL;
+    if ( ( status & 0x06 ) == 0x06 ) {          /* mode 3, the square wave */
+        into = ( 0x10000UL - count ) / 2;
+        if ( !( status & 0x80 ) ) into += 0x8000UL;     /* output low: second half */
+    } else {                                    /* mode 2, the rate generator */
+        into = 0x10000UL - count;
+    }
+    now = tick * 0x10000UL + into;
+    if ( (long)( now - fine_last ) < 0 && fine_last - now < 0x10000UL ) now = fine_last;
+    fine_last = now;
+    return now;
+}
 
 static int icmp_echo( u32 dst, u16 id, u16 seq )
 {
@@ -601,8 +765,7 @@ static void icmp_input( u32 src, const u8 *ic, u32 len )
     }
     if ( ic[0] == ICMP_ECHOREP && ping.active ) {
         if ( get16( ic + 4 ) == ping.id && get16( ic + 6 ) == ping.seq ) {
-            u32 now = nds_ticks();
-            ping.rtt = ( now - ping.sent_at ) * 55;     /* ~55ms a tick */
+            ping.rtt = ( fine_now() - ping.sent_fine ) / FINE_PER_MS;
             ping.state = NET_DONE;
             ping.active = 0;
         }
@@ -653,6 +816,117 @@ static void eth_input( const u8 *frame, u32 len )
 }
 
 /* ---------------------------------------------------------------- */
+/* NAMES: this computer's, and its domain's                          */
+/* ---------------------------------------------------------------- */
+
+/* One name serves both: NetBIOS's, up to 15 characters in upper case, and
+   DNS's host name, up to 63 in lower case.  /NAME= gives the NetBIOS one
+   and the host name follows from it; TCPIP.INI's HostName= gives the host
+   name and the NetBIOS one is its first 15 characters, as Windows does.
+   With neither, the name is made from the card's address, PMDOS-0A1B2C,
+   which no other PM-DOS machine on the network has. */
+
+static u8 nb_upper( u8 ch );
+
+static int is_alnum( u8 ch )
+{
+    return ( ch >= 'a' && ch <= 'z' ) || ( ch >= 'A' && ch <= 'Z' ) || ( ch >= '0' && ch <= '9' );
+}
+
+/* a DNS host name: 1 to 63 letters, digits and hyphens, not starting or
+   ending with a hyphen.  0 if it is not one */
+static int host_ok( const char *name )
+{
+    u32 n;
+
+    for ( n = 0; name[n]; n++ ) {
+        if ( n >= 63 || !( is_alnum( (u8)name[n] ) || name[n] == '-' ) ) return 0;
+    }
+    return n > 0 && name[0] != '-' && name[n - 1] != '-';
+}
+
+/* a DNS domain such as corp.example.com: host names with a dot between,
+   63 characters at most, kept in lower case; a dot at the end (or a NUL,
+   as some DHCP servers send) is dropped.  0 if it is not one */
+static int take_domain( const char *src, char *dst )
+{
+    char out[64];
+    u32 n = 0, label = 0;
+    u8  ch;
+
+    for ( ; ( ch = (u8)*src ) != 0; src++ ) {
+        if ( n >= sizeof( out ) - 1 ) return 0;
+        if ( ch == '.' ) {
+            if ( label == 0 || out[n - 1] == '-' ) return 0;
+            label = 0;
+        } else if ( is_alnum( ch ) || ch == '-' ) {
+            if ( label == 0 && ch == '-' ) return 0;
+            if ( ++label > 63 ) return 0;
+        } else return 0;
+        out[n++] = (char)lower( ch );
+    }
+    if ( n && out[n - 1] == '.' ) n--;
+    if ( n == 0 || out[n - 1] == '-' ) return 0;
+    out[n] = 0;
+    str_copy( dst, out, 64 );
+    return 1;
+}
+
+/* the host name from the NetBIOS name: lower case, and what DNS cannot
+   carry (_, !, $ and the like) a hyphen */
+static void host_from_nb( void )
+{
+    u32 n;
+
+    for ( n = 0; nb_name[n]; n++ ) {
+        u8 ch = (u8)nb_name[n];
+        host_name[n] = (char)( is_alnum( ch ) ? lower( ch ) : '-' );
+    }
+    host_name[n] = 0;
+}
+
+/* the NetBIOS name from the host name: its first 15, upper case */
+static void nb_from_host( void )
+{
+    u32 n;
+
+    for ( n = 0; n < 15 && host_name[n]; n++ ) nb_name[n] = (char)nb_upper( (u8)host_name[n] );
+    nb_name[n] = 0;
+}
+
+/* whichever name was given makes the other; with none, PMDOS- and the
+   last three bytes of the card's address */
+static void names_settle( void )
+{
+    static const char hex[] = "0123456789ABCDEF";
+    u32 i;
+
+    if ( nb_name[0] == 0 && host_name[0] == 0 ) {
+        str_copy( nb_name, "PMDOS-", sizeof( nb_name ) );
+        for ( i = 0; i < 3; i++ ) {
+            nb_name[6 + 2 * i] = hex[if_mac[3 + i] >> 4];
+            nb_name[7 + 2 * i] = hex[if_mac[3 + i] & 15];
+        }
+        nb_name[12] = 0;
+    }
+    if ( nb_name[0] ) host_from_nb();
+    else nb_from_host();
+}
+
+/* is a name to be looked up this computer's own? */
+static int name_is_us( const char *name )
+{
+    u32 n = str_len( host_name ), i;
+
+    if ( str_samei( name, host_name ) || str_samei( name, nb_name ) ) return 1;
+    if ( dom_name[0] == 0 || n == 0 ) return 0;
+    for ( i = 0; i < n; i++ ) {         /* host.domain: a short name stops here */
+        if ( lower( (u8)name[i] ) != (u8)host_name[i] ) return 0;
+    }
+    return name[n] == '.' && str_samei( name + n + 1, dom_name );
+}
+
+/* ---------------------------------------------------------------- */
 /* DHCP - the first answer waited for at INIT, the rest on the clock */
 /* ---------------------------------------------------------------- */
 
@@ -695,6 +969,7 @@ static u32 dhcp_bound_at;        /* the tick the lease was given or renewed */
 static u32 dhcp_t1, dhcp_t2, dhcp_end;      /* deadlines, in ticks */
 static u8  dhcp_timed;           /* 0: the lease has no end */
 static u32 dns_fixed;            /* /DNS= - used whatever DHCP says */
+static u32 dns_fixed2, dns_fixed3;
 static u32 wins_fixed;           /* /WINS= - the same for the WINS server */
 static u16 dhcp_acks;            /* ACKs taken: IPCONFIG /RENEW watches it move */
 
@@ -710,12 +985,49 @@ static u32 ticks_secs( u32 ticks )
     return ( ticks / 91 ) * 5 + ( ( ticks % 91 ) * 5 ) / 91;
 }
 
+static u32 dns_put_name( u8 *q, u32 n, const char *name );
+
+/* Our name, for the DHCP server to put in DNS and in its list of leases:
+   option 12, the host name, which home routers take; and option 81 (RFC
+   4702), the full name, which a Windows DHCP server takes.  Option 81's
+   flags say who adds what to DNS: with RegisterDNS= on and a domain
+   known, we add the address record ourselves (reg_*) and the server adds
+   only the reverse one; otherwise the server is asked to add both.  With
+   no domain known the name is a partial one, and the server adds its own
+   domain to it */
+static u32 dhcp_names( u8 *b, u32 n )
+{
+    u32 len = str_len( host_name ), at;
+
+    if ( len == 0 ) return n;
+    b[n++] = 12; b[n++] = (u8)len;
+    mem_copy( b + n, host_name, len );
+    n += len;
+
+    b[n++] = 81;
+    at = n++;                           /* the length, when it is known */
+    b[n++] = (u8)( ( reg_dns && dom_name[0] ) ? 0x04 : 0x05 );     /* E, and S or not */
+    b[n++] = 0;                         /* RCODE1 and RCODE2: not used */
+    b[n++] = 0;
+    if ( dom_name[0] ) {
+        char full[128];
+        str_copy( full, host_name, sizeof( full ) );
+        str_copy( full + len, ".", sizeof( full ) - len );
+        str_copy( full + len + 1, dom_name, sizeof( full ) - len - 1 );
+        n = dns_put_name( b, n, full );
+    } else {
+        n = dns_put_name( b, n, host_name ) - 1;        /* partial: no root */
+    }
+    b[at] = (u8)( n - at - 1 );
+    return n;
+}
+
 static u32 bootp_build( u8 type, u32 client_ip, u32 request_ip, u32 server_ip )
 {
     u8 *b = tx_frame + 34 + 8;   /* past the UDP header, filled by udp_send */
     u32 n;
 
-    mem_zero( b, 300 );
+    mem_zero( b, 548 );          /* the most a DHCP message need be */
     b[0] = 1;                    /* BOOTREQUEST */
     b[1] = 1;                    /* Ethernet */
     b[2] = 6;
@@ -732,9 +1044,11 @@ static u32 bootp_build( u8 type, u32 client_ip, u32 request_ip, u32 server_ip )
         b[n++] = 54; b[n++] = 4; put32( b + n, server_ip ); n += 4;
     }
     if ( type != DHCP_RELEASE ) {
-        b[n++] = 55; b[n++] = 5;        /* parameter request list */
+        b[n++] = 55; b[n++] = 6;        /* parameter request list */
         b[n++] = 1; b[n++] = 3; b[n++] = 6; b[n++] = 51;    /* mask, gw, dns, lease */
         b[n++] = 44;                                        /* WINS */
+        b[n++] = 15;                                        /* the domain */
+        n = dhcp_names( b, n );
     }
     b[n++] = 255;                       /* end */
     return n;
@@ -768,6 +1082,8 @@ static void dhcp_drop( void )
     if_mask = 0;
     if_gw = 0;
     if_dns = dns_fixed;
+    if_dns2 = dns_fixed2;
+    if_dns3 = dns_fixed3;
     if_wins = wins_fixed;
     if_up = 0;
     if_dhcp = DHS_DOWN;
@@ -785,13 +1101,13 @@ static void dhcp_start( void )
     dhcp_state = DH_DISCOVER;
     dhcp_send( DHCP_DISCOVER );
     dhcp_wait = TICKS_SEC;              /* 1s, 2s, 4s ... up to DH_BACKOFF */
-    dhcp_next = nds_ticks() + dhcp_wait;
+    dhcp_next = ticks() + dhcp_wait;
 }
 
 /* the lease's three deadlines, from the ACK's lease, T1 and T2 */
 static void dhcp_schedule( u32 lease, u32 t1, u32 t2 )
 {
-    u32 now = nds_ticks();
+    u32 now = ticks();
 
     dhcp_bound_at = now;
     if ( lease == DH_FOREVER || lease >= DH_LONGEST ) {
@@ -828,9 +1144,12 @@ static void dhcp_input( const u8 *uh, u32 len )
     u32 blen, n;
     u8  type = 0;
     u32 yiaddr, server = 0, mask = 0, gw = 0, dns = 0, wins = 0;
+    u32 dns2 = 0, dns3 = 0;
+    char dom[64];
     u32 lease = 0, t1 = 0, t2 = 0;
     u8  have_lease = 0;
 
+    dom[0] = 0;
     if ( dhcp_state == DH_OFF || dhcp_state == DH_BOUND ) return;
     if ( len < 8 + 240 ) return;
     blen = len - 8;
@@ -852,7 +1171,17 @@ static void dhcp_input( const u8 *uh, u32 len )
         case 53: if ( olen >= 1 ) type = b[n + 2]; break;
         case 1:  if ( olen >= 4 ) mask = get32( b + n + 2 ); break;
         case 3:  if ( olen >= 4 ) gw = get32( b + n + 2 ); break;
-        case 6:  if ( olen >= 4 ) dns = get32( b + n + 2 ); break;
+        case 6:                         /* up to three DNS servers */
+            if ( olen >= 4 ) dns = get32( b + n + 2 );
+            if ( olen >= 8 ) dns2 = get32( b + n + 6 );
+            if ( olen >= 12 ) dns3 = get32( b + n + 10 );
+            break;
+        case 15:                        /* the domain, maybe with a NUL */
+            if ( olen > 0 && olen < sizeof( dom ) ) {
+                mem_copy( dom, b + n + 2, olen );
+                dom[olen] = 0;
+            }
+            break;
         case 44: if ( olen >= 4 ) wins = get32( b + n + 2 ); break;
         case 51: if ( olen >= 4 ) { lease = get32( b + n + 2 ); have_lease = 1; } break;
         case 54: if ( olen >= 4 ) server = get32( b + n + 2 ); break;
@@ -869,14 +1198,19 @@ static void dhcp_input( const u8 *uh, u32 len )
         dhcp_state = DH_REQUEST;
         dhcp_tries = 0;
         dhcp_send( DHCP_REQUEST );
-        dhcp_next = nds_ticks() + 2 * TICKS_SEC;
+        dhcp_next = ticks() + 2 * TICKS_SEC;
     } else if ( type == DHCP_ACK && dhcp_state != DH_DISCOVER ) {
         if ( yiaddr == 0 ) return;
         if_ip = yiaddr;
         if ( mask ) if_mask = mask;
         if ( gw ) if_gw = gw;
-        if_dns = dns_fixed ? dns_fixed : ( dns ? dns : if_dns );
+        if ( !dns_fixed && dns ) {
+            if_dns = dns;
+            if_dns2 = dns2;
+            if_dns3 = dns3;
+        }
         if_wins = wins_fixed ? wins_fixed : ( wins ? wins : if_wins );
+        if ( !dom_fixed && dom[0] ) take_domain( dom, dom_name );
         if ( server ) dhcp_server_ip = server;
         if ( !have_lease ) lease = DH_FOREVER;
         if_lease = lease;
@@ -886,6 +1220,7 @@ static void dhcp_input( const u8 *uh, u32 len )
         dhcp_state = DH_BOUND;
         dhcp_acks++;
         arp_request( if_gw );           /* learn the gateway's address early */
+        if ( if_ip != reg.done_ip ) reg.want = 1;   /* a new address for DNS */
     } else if ( type == DHCP_NAK && dhcp_state != DH_DISCOVER ) {
         dhcp_start();                   /* the server says no: begin again */
     }
@@ -894,7 +1229,7 @@ static void dhcp_input( const u8 *uh, u32 len )
 /* every tick: resend what is unanswered, and keep the lease */
 static void dhcp_tick( void )
 {
-    u32 now = nds_ticks();
+    u32 now = ticks();
 
     switch ( dhcp_state ) {
     case DH_DISCOVER:
@@ -959,7 +1294,7 @@ static void dhcp_renew( void )
         if ( dhcp_state == DH_BOUND ) dhcp_state = DH_RENEW;
         dhcp_xid = rnd();
         dhcp_send( DHCP_REQUEST );
-        dhcp_next = nds_ticks() + 4 * TICKS_SEC;    /* one more try soon */
+        dhcp_next = ticks() + 4 * TICKS_SEC;    /* one more try soon */
     } else {
         dhcp_start();
     }
@@ -969,31 +1304,44 @@ static void dhcp_renew( void )
 /* DNS                                                               */
 /* ---------------------------------------------------------------- */
 
-static u32 dns_build( const char *name )
+/* a name as DNS carries it: each label after its length, 0 at the end.
+   An empty label (a.b. or a..b) is left out rather than ending the name */
+static u32 dns_put_name( u8 *q, u32 n, const char *name )
 {
-    u8 *q = tx_frame + 34 + 8;
-    u32 n = 12;
     const char *p = name;
 
-    put16( q, res.id );
-    put16( q + 2, 0x0100 );              /* recursion desired */
-    put16( q + 4, 1 );                   /* one question */
-    put16( q + 6, 0 );
-    put16( q + 8, 0 );
-    put16( q + 10, 0 );
     while ( *p ) {
         const char *start = p;
         u32 label;
         while ( *p && *p != '.' ) p++;
         label = (u32)( p - start );
         if ( label > 63 ) label = 63;
-        q[n++] = (u8)label;
-        mem_copy( q + n, start, label );
-        n += label;
+        if ( label ) {
+            q[n++] = (u8)label;
+            mem_copy( q + n, start, label );
+            n += label;
+        }
         if ( *p == '.' ) p++;
     }
-    q[n++] = 0;                          /* end of the name */
-    put16( q + n, 1 ); n += 2;           /* type A */
+    q[n++] = 0;                          /* the root */
+    return n;
+}
+
+/* one question - a name and a record type - with recursion asked for,
+   placed where udp_send expects it */
+static u32 dns_query( u16 id, const char *name, u16 type )
+{
+    u8 *q = tx_frame + 34 + 8;
+    u32 n;
+
+    put16( q, id );
+    put16( q + 2, 0x0100 );              /* recursion desired */
+    put16( q + 4, 1 );                   /* one question */
+    put16( q + 6, 0 );
+    put16( q + 8, 0 );
+    put16( q + 10, 0 );
+    n = dns_put_name( q, 12, name );
+    put16( q + n, type ); n += 2;
     put16( q + n, 1 ); n += 2;           /* class IN */
     return n;
 }
@@ -1009,13 +1357,85 @@ static u32 dns_skip_name( const u8 *dns, u32 len, u32 at )
     return len;
 }
 
+/* a name in a reply as dotted text, its pointers followed; the offset
+   just past it in the message, or 0 if it is not a name or is longer
+   than max */
+static u32 dns_get_name( const u8 *dns, u32 len, u32 at, char *out, u32 max )
+{
+    u32 o = 0, after = 0, hops = 0;
+    u8  label;
+
+    for ( ;; ) {
+        if ( at >= len ) return 0;
+        label = dns[at];
+        if ( ( label & 0xC0 ) == 0xC0 ) {
+            if ( at + 1 >= len || ++hops > 16 ) return 0;   /* a loop of pointers */
+            if ( after == 0 ) after = at + 2;
+            at = ( (u32)( label & 0x3F ) << 8 ) | dns[at + 1];
+            continue;
+        }
+        if ( label & 0xC0 ) return 0;
+        if ( label == 0 ) break;
+        if ( at + 1 + label > len ) return 0;
+        if ( o ) {
+            if ( o + 1 >= max ) return 0;
+            out[o++] = '.';
+        }
+        if ( o + label >= max ) return 0;
+        mem_copy( out + o, dns + at + 1, label );
+        o += label;
+        at += 1 + label;
+    }
+    out[o] = 0;
+    return after ? after : at + 1;
+}
+
+/* the DNS servers we have, the n'th of them, round and round */
+static u32 dns_server( u32 n )
+{
+    u32 list[3], count = 0;
+
+    if ( if_dns ) list[count++] = if_dns;
+    if ( if_dns2 ) list[count++] = if_dns2;
+    if ( if_dns3 ) list[count++] = if_dns3;
+    return count ? list[n % count] : 0;
+}
+
+/* what a lookup asks DNS for: the name as given, or a short one (no
+   dot) with our domain after it, as Windows adds its DNS suffix */
+static void dns_qname( void )
+{
+    u32 i, n;
+
+    str_copy( res.qname, res.name, sizeof( res.qname ) );
+    for ( i = 0; res.name[i] && res.name[i] != '.'; i++ ) ;
+    if ( res.name[i] == 0 && dom_name[0] ) {
+        n = str_len( res.qname );
+        str_copy( res.qname + n, ".", sizeof( res.qname ) - n );
+        str_copy( res.qname + n + 1, dom_name, sizeof( res.qname ) - n - 1 );
+    }
+}
+
+static int dns_send( void )
+{
+    return udp_send( dns_server( res.tries ), 53, res.lport, NULL,
+                     dns_query( res.id, res.qname, 1 ) );
+}
+
 static void dns_input( const u8 *dns, u32 len )
 {
-    u32 at, answers, i;
+    u32 at, answers, i, rcode;
 
     if ( len < 12 ) return;
     if ( get16( dns ) != res.id ) return;
-    if ( ( get16( dns + 2 ) & 0x000F ) != 0 ) { res.state = NET_FAIL; res_end(); return; }
+    rcode = get16( dns + 2 ) & 0x000F;
+    if ( rcode == 2 || rcode == 5 ) {
+        /* this server could not, or would not: the next one has a turn */
+        if ( ++res.tries > 3 ) { res.state = NET_FAIL; res_end(); }
+        else res.give_up = ticks() + ( dns_send() ? 18 : ARP_RETRY );
+        return;
+    }
+    if ( rcode != 0 ) { res.state = NET_FAIL; res_end(); return; }
     answers = get16( dns + 6 );
     at = dns_skip_name( dns, len, 12 ) + 4;         /* past the question */
     for ( i = 0; i < answers && at + 10 <= len; i++ ) {
@@ -1036,9 +1456,252 @@ static void dns_input( const u8 *dns, u32 len )
     res_end();
 }
 
-static int dns_send( void )
+/* ---------------------------------------------------------------- */
+/* DNS UPDATE: our name and address sent to DNS (RFC 2136)           */
+/* ---------------------------------------------------------------- */
+
+/* A DHCP server that adds names to DNS takes option 81 and does; many
+   do not, and an address set by /IP= has no DHCP server at all.  So, as
+   Windows does, the computer sends its own address record to its zone's
+   primary server: when an address is first held or changes, once a day
+   after that, and for IPCONFIG /REGISTERDNS.  The update is not signed:
+   a zone that takes only secure updates (an Active Directory zone, as it
+   comes) answers REFUSED, and IPCONFIG /ALL says so.  The record put in
+   replaces whatever address the name had.
+
+   NOT A ZONE OUT ON THE INTERNET.  A name in no zone of the network's
+   own gets the SOA of the root or a top-level domain back, and early
+   Windows clients sent their updates there; a zone without a dot in it
+   is never sent to.  Nor is a primary called localhost, which is what a
+   resolver's own empty zones for private reverse addresses (RFC 6303)
+   name. */
+
+/* host.domain */
+static void reg_fqdn( char *out, u32 max )
 {
-    return udp_send( if_dns, 53, res.lport, NULL, dns_build( res.name ) );
+    u32 n;
+
+    str_copy( out, host_name, max );
+    n = str_len( out );
+    str_copy( out + n, ".", max - n );
+    str_copy( out + n + 1, dom_name, max - n - 1 );
+}
+
+static char *put_dec( char *p, u32 value )
+{
+    char digits[10];
+    u32 n = 0;
+
+    do {
+        digits[n++] = (char)( '0' + value % 10 );
+        value /= 10;
+    } while ( value );
+    while ( n ) *p++ = digits[--n];
+    return p;
+}
+
+/* the question or the update for the step reg is at, sent */
+static void reg_send( void )
+{
+    u8 *q = tx_frame + 34 + 8;
+    u32 n, dst, at;
+    u16 type = reg.job == RJ_A ? 1 : 12;
+    char full[128];
+
+    reg.id = (u16)rnd();
+    if ( reg.step == RG_UPDATE ) {
+        dst = reg.master;
+        put16( q, reg.id );
+        put16( q + 2, 0x2800 );         /* opcode 5: UPDATE */
+        put16( q + 4, 1 );              /* the zone */
+        put16( q + 6, 0 );              /* nothing that must hold first */
+        put16( q + 8, 2 );              /* two changes */
+        put16( q + 10, 0 );
+        n = dns_put_name( q, 12, reg.zone );
+        put16( q + n, 6 );              /* SOA, IN */
+        put16( q + n + 2, 1 );
+        n += 4;
+        /* every record of the type the name has goes out... */
+        n = dns_put_name( q, n, reg.owner );
+        put16( q + n, type );
+        put16( q + n + 2, 255 );        /* class ANY: delete the set */
+        put32( q + n + 4, 0 );
+        put16( q + n + 8, 0 );
+        n += 10;
+        /* ...and ours goes in */
+        n = dns_put_name( q, n, reg.owner );
+        put16( q + n, type );
+        put16( q + n + 2, 1 );
+        put32( q + n + 4, REG_TTL );
+        n += 10;
+        if ( reg.job == RJ_A ) {
+            put16( q + n - 2, 4 );
+            put32( q + n, reg.ip );
+            n += 4;
+        } else {
+            at = n;
+            reg_fqdn( full, sizeof( full ) );
+            n = dns_put_name( q, n, full );
+            put16( q + at - 2, (u16)( n - at ) );
+        }
+    } else if ( reg.step == RG_MASTER ) {
+        dst = reg.asked;
+        n = dns_query( reg.id, reg.mname, 1 );
+    } else {
+        dst = dns_server( reg.tries );
+        reg.asked = dst;
+        n = dns_query( reg.id, reg.owner, 6 );
+    }
+    reg.give_up = ticks() + ( !udp_send( dst, 53, reg.lport, NULL, n ) ? ARP_RETRY :
+                              reg.step == RG_UPDATE ? 36 : 18 );
+}
+
+/* begin one record: the address one (RJ_A) or the reverse one (RJ_PTR) */
+static void reg_begin( u8 job )
+{
+    char *p;
+    u32 shift;
+
+    reg.job = job;
+    reg.ip = if_ip;
+    if ( job == RJ_A ) reg_fqdn( reg.owner, sizeof( reg.owner ) );
+    else {                              /* d.c.b.a.in-addr.arpa */
+        p = reg.owner;
+        for ( shift = 0; shift < 32; shift += 8 ) {
+            p = put_dec( p, ( reg.ip >> shift ) & 0xFF );
+            *p++ = '.';
+        }
+        str_copy( p, "in-addr.arpa", 16 );
+    }
+    reg.zone[0] = 0;
+    reg.mname[0] = 0;
+    reg.master = 0;
+    reg.step = RG_SOA;
+    reg.tries = 0;
+    reg.lport = (u16)( 0xC000 + ( rnd() & 0x3FFF ) );
+    reg.active = 1;
+    reg_send();
+}
+
+/* one record is done with.  The address record's fate is what IPCONFIG
+   shows; the reverse one, sent after it for an address of our own, is
+   taken or not without a word */
+static void reg_end( u16 state, u16 rcode )
+{
+    reg.active = 0;
+    if ( reg.job != RJ_A ) return;
+    reg.state = state;
+    reg.rcode = rcode;
+    reg.retry_at = 0;
+    if ( state == DREG_DONE ) {
+        reg.done_ip = reg.ip;
+        reg.done_at = ticks();
+        if ( if_static ) reg_begin( RJ_PTR );
+    } else if ( state == DREG_NOANSWER ) {
+        reg.retry_at = ticks() + REG_RETRY;
+    }
+}
+
+/* a zone we will send to: one with a dot in it, whose primary is not a
+   resolver's own empty zone */
+static int reg_zone_ok( void )
+{
+    u32 i;
+
+    for ( i = 0; reg.zone[i] && reg.zone[i] != '.'; i++ ) ;
+    if ( reg.zone[i] == 0 ) return 0;
+    return !str_samei( reg.mname, "localhost" );
+}
+
+/* the primary's address, or the server that answered when it has none
+   (or one no update should go to) */
+static void reg_to_master( u32 ip )
+{
+    if ( ip == 0 || ( ip >> 24 ) == 127 || ip == IP_BCAST ) ip = reg.asked;
+    reg.master = ip;
+    reg.step = RG_UPDATE;
+    reg.tries = 0;
+    reg_send();
+}
+
+static void reg_input( u32 src, const u8 *dns, u32 len )
+{
+    u32 at, i, count, rcode, type, rdlen, name_at;
+
+    if ( len < 12 || get16( dns ) != reg.id || !( get16( dns + 2 ) & 0x8000 ) ) return;
+    rcode = get16( dns + 2 ) & 0x000F;
+
+    if ( reg.step == RG_UPDATE ) {
+        reg_end( (u16)( rcode == 0 ? DREG_DONE : DREG_REFUSED ), (u16)rcode );
+        return;
+    }
+    if ( rcode != 0 && rcode != 3 ) {   /* not this server: the next, when time is up */
+        reg.give_up = ticks();
+        return;
+    }
+
+    at = 12;
+    for ( i = get16( dns + 4 ); i > 0 && at < len; i-- ) at = dns_skip_name( dns, len, at ) + 4;
+    count = get16( dns + 6 );           /* the answers ... */
+    if ( reg.step == RG_SOA ) count += get16( dns + 8 );    /* ... and who is in charge */
+    for ( i = 0; i < count; i++ ) {
+        name_at = at;
+        at = dns_skip_name( dns, len, at );
+        if ( at + 10 > len ) break;
+        type = get16( dns + at );
+        rdlen = get16( dns + at + 8 );
+        if ( at + 10 + rdlen > len ) break;
+        if ( reg.step == RG_SOA && type == 6 ) {
+            if ( dns_get_name( dns, len, name_at, reg.zone, sizeof( reg.zone ) ) == 0 ||
+                 dns_get_name( dns, len, at + 10, reg.mname, sizeof( reg.mname ) ) == 0 ) break;
+            if ( !reg_zone_ok() ) { reg_end( DREG_NOZONE, 0 ); return; }
+            reg.asked = src;
+            reg.step = RG_MASTER;
+            reg.tries = 0;
+            reg_send();
+            return;
+        }
+        if ( reg.step == RG_MASTER && type == 1 && rdlen == 4 ) {
+            reg_to_master( get32( dns + at + 10 ) );
+            return;
+        }
+        at += 10 + rdlen;
+    }
+    if ( reg.step == RG_MASTER ) reg_to_master( 0 );
+    else reg_end( DREG_NOZONE, 0 );
+}
+
+/* a step's time is up: ask again (the zone question round the servers),
+   or move on, or give up */
+static void reg_timeout( void )
+{
+    if ( ++reg.tries < ( reg.step == RG_MASTER ? 2 : 3 ) ) { reg_send(); return; }
+    if ( reg.step == RG_MASTER ) { reg_to_master( 0 ); return; }
+    reg_end( DREG_NOANSWER, 0 );
+}
+
+/* on the clock: a step's deadline, the daily refresh, a retry after no
+   answer, and a send that was asked for */
+static void reg_poll( u32 now )
+{
+    if ( reg.active ) {
+        if ( (long)( now - reg.give_up ) >= 0 ) reg_timeout();
+        return;
+    }
+    if ( reg.done_ip && reg.done_ip == if_ip && now - reg.done_at >= REG_REFRESH ) reg.want = 1;
+    if ( reg.retry_at && (long)( now - reg.retry_at ) >= 0 ) {
+        reg.retry_at = 0;
+        reg.want = 1;
+    }
+    if ( !reg.want || !if_up ) return;
+    reg.want = 0;
+    if ( !reg_dns || dom_name[0] == 0 || if_dns == 0 ) {
+        reg.state = DREG_OFF;
+        return;
+    }
+    reg.state = DREG_BUSY;
+    reg.rcode = 0;
+    reg_begin( RJ_A );
 }
 
 /* ---------------------------------------------------------------- */
@@ -1209,11 +1872,14 @@ static void res_next( u8 step )
     res.step = step;
     res.tries = 0;
     res.id = (u16)rnd();
-    if ( step == RS_DNS ) sent = dns_send();
+    if ( step == RS_DNS ) {
+        dns_qname();
+        sent = dns_send();
+    }
     else sent = nbns_send();
     /* a send that is waiting on ARP goes again as soon as the answer
        can be in */
-    res.give_up = nds_ticks() + ( !sent ? ARP_RETRY : step == RS_BCAST ? 14 : 18 );
+    res.give_up = ticks() + ( !sent ? ARP_RETRY : step == RS_BCAST ? 14 : 18 );
 }
 
 /* a lookup's time is up: ask again, or move on */
@@ -1260,7 +1926,8 @@ static void tcp_xmit( SOCKET *s, u32 seq, u8 flags, u32 off, u32 dlen )
     put32( th + 8, s->rcv_nxt );
     th[12] = 5 << 4;                     /* a 20-byte header */
     th[13] = flags;
-    put16( th + 14, (u16)rx_free( s ) );
+    s->wnd_adv = rx_free( s );
+    put16( th + 14, (u16)s->wnd_adv );
     put16( th + 16, 0 );
     put16( th + 18, 0 );
     for ( i = 0; i < dlen; i++ ) {
@@ -1290,7 +1957,7 @@ static void tcp_rst( u32 dst, u16 lport, u16 rport, u32 seq, u32 ack, u8 have_ac
 static void tcp_arm( SOCKET *s )
 {
     if ( s->rto == 0 ) s->rto = 18;
-    s->rto_at = nds_ticks() + s->rto;
+    s->rto_at = ticks() + s->rto;
 }
 
 /* send whatever data the window now allows, and a FIN if it is time */
@@ -1403,8 +2070,10 @@ static void tcp_input( u32 src, u32 dst, const u8 *th, u32 len )
     }
 
     if ( flags & TCP_RST ) {
+        /* a reset to our SYN is "nobody is listening there"; to a
+           connection that was up, the server dropping it */
+        s->err = s->tstate == T_SYNSENT ? NET_REFUSED : NET_RESET;
         s->tstate = T_CLOSED;
-        s->err = NET_FAIL;
         s->rto_at = 0;
         return;
     }
@@ -1480,16 +2149,16 @@ static void tcp_input( u32 src, u32 dst, const u8 *th, u32 len )
         switch ( s->tstate ) {
         case T_ESTAB:    s->tstate = T_CLOSEWAIT; break;
         case T_FINWAIT1: s->tstate = s->finacked ? T_TIMEWAIT : T_CLOSING;
-                         if ( s->tstate == T_TIMEWAIT ) s->wait_at = nds_ticks() + 36;
+                         if ( s->tstate == T_TIMEWAIT ) s->wait_at = ticks() + 36;
                          break;
-        case T_FINWAIT2: s->tstate = T_TIMEWAIT; s->wait_at = nds_ticks() + 36; break;
+        case T_FINWAIT2: s->tstate = T_TIMEWAIT; s->wait_at = ticks() + 36; break;
         }
     }
 
     /* our FIN's acknowledgement moves the close along */
     if ( s->finacked ) {
         if ( s->tstate == T_FINWAIT1 ) s->tstate = T_FINWAIT2;
-        else if ( s->tstate == T_CLOSING ) { s->tstate = T_TIMEWAIT; s->wait_at = nds_ticks() + 36; }
+        else if ( s->tstate == T_CLOSING ) { s->tstate = T_TIMEWAIT; s->wait_at = ticks() + 36; }
         else if ( s->tstate == T_LASTACK ) { s->tstate = T_CLOSED; s->used = 0; }
     }
 
@@ -1500,7 +2169,7 @@ static void tcp_input( u32 src, u32 dst, const u8 *th, u32 len )
 static void tcp_timers( void )
 {
     int i;
-    u32 now = nds_ticks();
+    u32 now = ticks();
 
     for ( i = 0; i < SOCK_MAX; i++ ) {
         SOCKET *s = &sock[i];
@@ -1514,8 +2183,11 @@ static void tcp_timers( void )
         if ( s->rto_at == 0 || (long)( now - s->rto_at ) < 0 ) continue;
 
         if ( ++s->retries > 6 ) {
+            /* nothing came back.  A SYN that never left, because the
+               server or the gateway never answered ARP, is no route */
+            s->err = ( s->tstate == T_SYNSENT && arp_find( next_hop( s->rip ) ) == NULL )
+                     ? NET_NOROUTE : NET_TIMEOUT;
             s->tstate = T_CLOSED;
-            s->err = NET_FAIL;
             s->used = ( s->tstate == T_CLOSED && s->closing ) ? 0 : s->used;
             s->rto_at = 0;
             continue;
@@ -1610,7 +2282,9 @@ static u32 sock_ss( SOCKET *s )
             u32 left = s->taplen - s->tapstart;
             if ( left == 0 ) {
                 if ( s->tls_eof ) return SS_CLOSING;
-                if ( s->tstate != T_ESTAB && s->tstate != T_CLOSEWAIT &&
+                /* a server that sends its FIN without close_notify has
+                   ended too (CLOSE_WAIT counts, as for plain TCP below) */
+                if ( s->tstate != T_ESTAB &&
                      s->trxlen == 0 && s->rxlen == 0 ) return SS_CLOSING;
             }
             return SS_ESTABLISHED;
@@ -1623,8 +2297,14 @@ static u32 sock_ss( SOCKET *s )
     case T_LISTEN:   return SS_LISTEN;
     case T_SYNSENT:
     case T_SYNRCVD:  return SS_CONNECTING;
-    case T_ESTAB:
-    case T_CLOSEWAIT: return SS_ESTABLISHED;
+    case T_ESTAB:    return SS_ESTABLISHED;
+    /* THE PEER HAS ENDED: SAY SO ONCE ITS DATA IS READ.  CLOSE_WAIT was
+       "established" whatever was left, so a program reading to the end
+       could not tell a finished server from a slow one - SOCKLIB's
+       sl_closed never fired and WGET waited out its 15 s on every plain
+       fetch; WINSOCK.DLL's recv never returned 0 nor posted FD_CLOSE
+       (2026-11-03).  Sending is still allowed here; do_send says so */
+    case T_CLOSEWAIT: return s->rxlen ? SS_ESTABLISHED : SS_CLOSING;
     default:         return SS_CLOSING;
     }
 }
@@ -1638,6 +2318,89 @@ static u32 sock_rxready( SOCKET *s )
         return 0;
     }
     return s->rxlen;
+}
+
+/* ---------------------------------------------------------------- */
+/* the date and time, for a certificate's dates                      */
+/* ---------------------------------------------------------------- */
+
+/* NDS_STAMP gives the date and the time - the clock chip's, through the
+   BIOS - but only while the kernel is not parked: under Windows the WfW
+   bridge makes the socket calls, and the BIOS is Windows's then.  So the
+   stamp is taken whenever it safely can be, with the tick count beside
+   it, and the time is that stamp and the ticks counted since.  The clock
+   is the machine's own local time and is taken as UTC, which is what a
+   certificate's dates are in: a few hours out at the very edges of a
+   certificate's life, which are weeks or years apart. */
+static u32 clk_stamp;           /* NDS_STAMP: the date << 16 | the time; 0 none */
+static u32 clk_at;              /* ticks() when it was taken */
+
+static void clock_take( void )
+{
+    clk_stamp = nds_stamp();
+    clk_at = ticks();
+}
+
+/* days from 1970-01-01 to a date, and back - H. Hinnant's civil calendar
+   arithmetic, here for the years a DOS date holds (1980 to 2107) */
+static u32 days_of( u32 y, u32 m, u32 d )
+{
+    u32 era, yoe, doy, doe;
+
+    if ( m <= 2 ) y--;
+    era = y / 400;
+    yoe = y - era * 400;
+    doy = ( 153 * ( m > 2 ? m - 3 : m + 9 ) + 2 ) / 5 + d - 1;
+    doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    return era * 146097UL + doe - 719468UL;
+}
+
+static void date_of( u32 days, u32 *y, u32 *m, u32 *d )
+{
+    u32 z = days + 719468UL, era, doe, yoe, doy, mp;
+
+    era = z / 146097UL;
+    doe = z - era * 146097UL;
+    yoe = ( doe - doe / 1460 + doe / 36524 - doe / 146096 ) / 365;
+    doy = doe - ( 365 * yoe + yoe / 4 - yoe / 100 );
+    mp = ( 5 * doy + 2 ) / 153;
+    *d = doy - ( 153 * mp + 2 ) / 5 + 1;
+    *m = mp < 10 ? mp + 3 : mp - 9;
+    *y = yoe + era * 400 + ( *m <= 2 );
+}
+
+static char *put_num( char *p, u32 value, u32 width )
+{
+    u32 i;
+
+    for ( i = width; i-- > 0; ) {
+        p[i] = (char)( '0' + value % 10 );
+        value /= 10;
+    }
+    return p + width;
+}
+
+/* now, as YYYYMMDDHHMMSS for the TLS core; "" if the kernel gave no date */
+static void clock_now14( char *out )
+{
+    u32 date = clk_stamp >> 16, time = clk_stamp & 0xFFFF;
+    u32 secs, days, y, m, d;
+    char *p = out;
+
+    out[0] = 0;
+    if ( ( ( date >> 5 ) & 15 ) == 0 || ( ( date >> 5 ) & 15 ) > 12 || ( date & 31 ) == 0 ) return;
+    secs = ( time >> 11 ) * 3600UL + ( ( time >> 5 ) & 63 ) * 60 + ( time & 31 ) * 2;
+    secs += ticks_secs( ticks() - clk_at );
+    days = days_of( 1980 + ( date >> 9 ), ( date >> 5 ) & 15, date & 31 ) + secs / 86400UL;
+    secs %= 86400UL;
+    date_of( days, &y, &m, &d );
+    p = put_num( p, y, 4 );
+    p = put_num( p, m, 2 );
+    p = put_num( p, d, 2 );
+    p = put_num( p, secs / 3600, 2 );
+    p = put_num( p, secs / 60 % 60, 2 );
+    p = put_num( p, secs % 60, 2 );
+    *p = 0;
 }
 
 /* ---------------------------------------------------------------- */
@@ -1713,18 +2476,43 @@ static void tls_release( SOCKET *s )
     s->trxlen = s->tapstart = s->taplen = 0;
 }
 
-/* pop up to 'want' bytes off the TCP receive ring into a linear buffer */
+/* pop up to 'want' bytes off the TCP receive ring into a linear buffer.
+   SAY SO WHEN THE WINDOW OPENS AGAIN.  The window went out only on an ACK
+   for arriving data, so once the ring had filled, the peer never heard it
+   had been read: it waited for its persist timer, sent a probe, got the
+   new window, sent 4K, and waited again.  Under QEMU that was 5.5 s a
+   round - 0.57 KB/s, the same with TLS or without (2026-11-03).  Now the
+   window goes out as soon as it has grown by a segment, or by half the
+   ring if that is less (RFC 1122 4.2.3.3), which also keeps the peer from
+   being told of every few bytes */
 static u32 tcp_rx_pop( SOCKET *s, u8 *dst, u32 want )
 {
     u32 got = s->rxlen < want ? s->rxlen : want;
-    u32 i;
+    u32 i, step = TCP_MSS < RXCAP / 2 ? TCP_MSS : RXCAP / 2;
     for ( i = 0; i < got; i++ ) dst[i] = s->rxbuf[( s->rxstart + i ) % RXCAP];
     s->rxstart = ( s->rxstart + got ) % RXCAP;
     s->rxlen -= got;
+    if ( got && ( s->tstate == T_ESTAB || s->tstate == T_FINWAIT1 || s->tstate == T_FINWAIT2 ) &&
+         rx_free( s ) >= s->wnd_adv + step ) {
+        tcp_xmit( s, s->snd_nxt, TCP_ACK, s->snd_nxt - s->snd_una, 0 );
+    }
     return got;
 }
 
 static u8 tls_feedbuf[1024];        /* handshake bytes, off the scratch stack */
+
+/* the TLS core's reason a certificate was refused, as SOCK_STAT's CERT_*;
+   0 if it was not refused */
+static u8 cert_why( int verr )
+{
+    switch ( verr ) {
+    case 0:                return 0;
+    case X509_ERR_SIG:     return CERT_UNTRUSTED;
+    case X509_ERR_HOST:    return CERT_HOST;
+    case X509_ERR_EXPIRED: return CERT_DATES;
+    default:               return CERT_BAD;
+    }
+}
 
 /* begin the TLS handshake once the TCP connection is up */
 static void tls_begin( SOCKET *s )
@@ -1733,23 +2521,23 @@ static void tls_begin( SOCKET *s )
 
     if ( tls_stk == NULL ) {
         tls_stk = (u8 *)malloc( TLS_STK_SIZE );
-        if ( tls_stk == NULL ) { s->tls_state = TLSX_FAIL; s->err = NET_FAIL; return; }
+        if ( tls_stk == NULL ) { s->tls_state = TLSX_FAIL; s->err = NET_TLSFAIL; return; }
         tls_stktop = ( (u32)tls_stk + TLS_STK_SIZE ) & ~15u;
     }
     s->rng  = (nst_rng *)malloc( sizeof( nst_rng ) );
     s->trx  = (u8 *)malloc( TLS_RECCAP );
     s->tapp = (u8 *)malloc( TLS_REC_MAX );
     if ( s->rng == NULL || s->trx == NULL || s->tapp == NULL ) {
-        s->tls_state = TLSX_FAIL; s->err = NET_FAIL; return;
+        s->tls_state = TLSX_FAIL; s->err = NET_TLSFAIL; return;
     }
     rng_init( s->rng );
     rng_stir( s->rng, (const u8 *)&s->iss, 4 );     /* a little extra entropy */
     s->tc = tls_new( s->rng );
-    if ( s->tc == NULL ) { s->tls_state = TLSX_FAIL; s->err = NET_FAIL; return; }
+    if ( s->tc == NULL ) { s->tls_state = TLSX_FAIL; s->err = NET_TLSFAIL; return; }
     if ( tls_ca && tls_catotal > 0 && tls_calen == tls_catotal ) {
-        /* chain and host verified against the bundle; no wall clock in a
-           driver, so the certificate's dates are not checked */
-        tls_set_verify( s->tc, host, "", tls_ca, (int)tls_calen );
+        /* chain, host and dates verified against the bundle; the time was
+           taken at the connect (clock_now14), "" if the kernel had none */
+        tls_set_verify( s->tc, host, s->now14, tls_ca, (int)tls_calen );
     }
     tls_hs_start( s->tc, host );
     s->trxlen = 0;
@@ -1772,7 +2560,7 @@ static void tls_fill( SOCKET *s )
     if ( s->trxlen < 5 ) return;                    /* record header not in yet */
 
     reclen = 5 + ( ( (u32)s->trx[3] << 8 ) | s->trx[4] );
-    if ( reclen > TLS_RECCAP ) { s->tls_state = TLSX_FAIL; s->err = NET_FAIL; return; }
+    if ( reclen > TLS_RECCAP ) { s->tls_state = TLSX_FAIL; s->err = NET_TLSFAIL; return; }
     if ( s->trxlen < reclen )
         s->trxlen += tcp_rx_pop( s, s->trx + s->trxlen, reclen - s->trxlen );
     if ( s->trxlen < reclen ) return;               /* record body not in yet */
@@ -1782,7 +2570,7 @@ static void tls_fill( SOCKET *s )
     if ( extra ) mem_copy( s->trx, s->trx + reclen, extra );
     s->trxlen = extra;
 
-    if ( plen < 0 ) { s->tls_state = TLSX_FAIL; s->err = NET_FAIL; return; }
+    if ( plen < 0 ) { s->tls_state = TLSX_FAIL; s->err = NET_TLSFAIL; return; }
     if ( ct == TLS_CT_APPLICATION_DATA ) { s->tapstart = 0; s->taplen = (u32)plen; }
     else if ( ct == TLS_CT_ALERT ) s->tls_eof = 1;
     /* else a post-handshake handshake message (a session ticket): drop it */
@@ -1791,9 +2579,9 @@ static void tls_fill( SOCKET *s )
 /* advance one TLS socket: start it, run the handshake, keep records flowing */
 static void tls_drive( SOCKET *s )
 {
-    if ( !s->tls ) return;
+    if ( !s->tls || s->tls_state == TLSX_FAIL ) return;     /* over: err says why */
     if ( s->tls_state != TLSX_IDLE && ( s->tc == NULL || s->trx == NULL || s->tapp == NULL ) ) {
-        s->tls_state = TLSX_FAIL; s->err = NET_FAIL; return;
+        s->tls_state = TLSX_FAIL; s->err = NET_TLSFAIL; return;
     }
 
     if ( s->tls_state == TLSX_IDLE ) {
@@ -1811,7 +2599,7 @@ static void tls_drive( SOCKET *s )
             u32 got = tcp_rx_pop( s, tls_feedbuf, sizeof( tls_feedbuf ) );
             if ( got == 0 ) break;
             if ( tls_hs_feed( s->tc, tls_feedbuf, (int)got ) < 0 ) {
-                s->tls_state = TLSX_FAIL; s->err = NET_FAIL; return;
+                s->tls_state = TLSX_FAIL; s->err = NET_TLSFAIL; return;
             }
         }
         st = run_pump( s->tc );
@@ -1838,8 +2626,11 @@ static void tls_drive( SOCKET *s )
             }
             s->tls_state = TLSX_UP;
         } else if ( st == TLS_HS_ERROR ) {
+            /* the certificate refused, or the handshake itself gone
+               wrong: the caller tells the user which */
             s->tls_state = TLSX_FAIL;
-            s->err = NET_FAIL;
+            s->why = cert_why( tls_verify_error( s->tc ) );
+            s->err = s->why ? NET_TLSCERT : NET_TLSFAIL;
         }
         return;
     }
@@ -1850,8 +2641,16 @@ static void tls_drive( SOCKET *s )
 static void tls_service( void )
 {
     int i;
-    for ( i = 0; i < SOCK_MAX; i++ )
-        if ( sock[i].used && sock[i].tls ) tls_drive( &sock[i] );
+    for ( i = 0; i < SOCK_MAX; i++ ) {
+        if ( !sock[i].used || !sock[i].tls ) continue;
+        tls_drive( &sock[i] );
+        /* A FAILED HANDSHAKE KEEPS ITS REASON, NOT ITS MEMORY.  The crypto
+           state is most of the 320K TLS pool, and it was let go only at
+           SOCK_CLOSE: a program that ended without closing a socket that
+           had failed (TLSTEST did) left the next TLS socket no memory, and
+           its failure looked like the certificate's (2026-11-02) */
+        if ( sock[i].tls_state == TLSX_FAIL ) tls_release( &sock[i] );
+    }
 }
 
 /* ---------------------------------------------------------------- */
@@ -1873,16 +2672,20 @@ static void pump( void )
 
 static void timers( void )
 {
-    u32 now = nds_ticks();
+    u32 now = ticks();
 
     dhcp_tick();
     tcp_timers();
 
     if ( ping.active && (long)( now - ping.give_up ) >= 0 ) {
         if ( ++ping.tries > 3 ) { ping.state = NET_FAIL; ping.active = 0; }
-        else ping.give_up = now + ( icmp_echo( ping.ip, ping.id, ping.seq ) ? 18 : ARP_RETRY );
+        else {
+            ping.sent_fine = fine_now();        /* the round trip of the echo now sent */
+            ping.give_up = now + ( icmp_echo( ping.ip, ping.id, ping.seq ) ? 18 : ARP_RETRY );
+        }
     }
     if ( res.active && (long)( now - res.give_up ) >= 0 ) res_timeout( now );
+    reg_poll( now );
 }
 
 /* ---------------------------------------------------------------- */
@@ -1896,7 +2699,7 @@ static int do_ifstat( void *buf, u32 len, u32 *answer )
                                 DHST_BOUND, DHST_RENEWING, DHST_REBINDING };
 
     if ( len < SOCKIF_LEN ) return ERR_BADLEN;
-    len = len < SOCKIF_LEN2 ? SOCKIF_LEN : SOCKIF_LEN2;
+    len = len >= SOCKIF_LEN3 ? SOCKIF_LEN3 : len >= SOCKIF_LEN2 ? SOCKIF_LEN2 : SOCKIF_LEN;
     mem_zero( info, len );
     info->ip = if_ip;
     info->mask = if_mask;
@@ -1907,10 +2710,19 @@ static int do_ifstat( void *buf, u32 len, u32 *answer )
     info->up = if_up;
     info->dhcp = if_dhcp;
     str_copy( info->nic, if_name, sizeof( info->nic ) );
-    if ( len == SOCKIF_LEN2 ) {
+    if ( len >= SOCKIF_LEN3 ) {
+        str_copy( info->hostname, host_name, sizeof( info->hostname ) );
+        str_copy( info->domain, dom_name, sizeof( info->domain ) );
+        info->dns2 = if_dns2;
+        info->dns3 = if_dns3;
+        info->cabytes = ( tls_ca && tls_calen == tls_catotal ) ? tls_calen : 0;
+        info->regstate = reg.state;
+        info->regrcode = reg.rcode;
+    }
+    if ( len >= SOCKIF_LEN2 ) {
         if ( if_up && if_dhcp == DHS_BOUND ) {
             info->dhcpsrv = dhcp_server_ip;
-            info->leaseage = ticks_secs( nds_ticks() - dhcp_bound_at );
+            info->leaseage = ticks_secs( ticks() - dhcp_bound_at );
         }
         info->dhstate = dhcp_state < 6 ? dhst[dhcp_state] : DHST_OFF;
         info->acks = dhcp_acks;
@@ -1928,6 +2740,13 @@ static int do_dhcp( void *buf, u32 len, u32 *answer )
 
     if ( len < 4 ) return ERR_BADLEN;
     op = *(u32 *)buf;
+    if ( op == DHCPOP_REGDNS ) {            /* IPCONFIG /REGISTERDNS: the tick sends it */
+        reg.want = 1;
+        reg.retry_at = 0;
+        if ( !reg.active && if_up && reg_dns && dom_name[0] && if_dns ) reg.state = DREG_BUSY;
+        *answer = 0;
+        return 0;
+    }
     if ( if_static ) return ERR_BADDATA;    /* /IP= on the DEVICE= line: no lease */
     if ( op == DHCPOP_RELEASE ) dhcp_release();
     else if ( op == DHCPOP_RENEW ) dhcp_renew();
@@ -2000,6 +2819,11 @@ static int do_connect( void *buf, u32 len )
     s->rcv_nxt = 0;
     s->tstate = T_SYNSENT;
     s->err = 0;
+    s->why = 0;
+    if ( s->tls ) {                     /* the time its certificate must be good at */
+        if ( running ) clock_take();    /* parked: counted on from the last stamp */
+        clock_now14( s->now14 );
+    }
     tcp_xmit( s, s->iss, TCP_SYN, 0, 0 );
     s->snd_nxt = s->iss + 1;
     tcp_arm( s );
@@ -2149,13 +2973,7 @@ static int do_recv( void *buf, u32 len, u32 *answer )
         return 0;
     }
 
-    got = s->rxlen < want ? s->rxlen : want;
-    {
-        u32 i;
-        for ( i = 0; i < got; i++ ) room[i] = s->rxbuf[( s->rxstart + i ) % RXCAP];
-    }
-    s->rxstart = ( s->rxstart + got ) % RXCAP;
-    s->rxlen -= got;
+    got = tcp_rx_pop( s, room, want );
     io->len = got;
     *answer = got;
     return 0;
@@ -2173,6 +2991,7 @@ static int do_state( void *buf, u32 len, u32 *answer )
     st->rxready = sock_rxready( s );
     st->txfree = s->type == SOCK_STREAM ? tx_free( s ) : 1472;
     st->err = s->err;
+    if ( len >= SOCKSTAT_LEN2 ) st->why = s->why;
     *answer = st->state;
     return 0;
 }
@@ -2183,6 +3002,12 @@ static int do_resolve( void *buf, u32 len, u32 *answer )
 
     if ( len < SOCKRES_LEN ) return ERR_BADLEN;
     req->name[sizeof( req->name ) - 1] = 0;
+    if ( if_up && name_is_us( req->name ) ) {   /* our own name: no need to ask */
+        req->ip = if_ip;
+        req->state = NET_DONE;
+        *answer = NET_DONE;
+        return 0;
+    }
     if ( !if_up || ( if_dns == 0 && !nb_able( req->name ) ) ) {
         req->state = NET_FAIL;
         *answer = NET_FAIL;
@@ -2191,7 +3016,7 @@ static int do_resolve( void *buf, u32 len, u32 *answer )
 
     if ( res.active == 0 && str_same( res.name, req->name ) &&
          ( res.state == NET_DONE ||
-           ( res.state == NET_FAIL && nds_ticks() - res_done_at < RES_HOLD ) ) ) {
+           ( res.state == NET_FAIL && ticks() - res_done_at < RES_HOLD ) ) ) {
         req->ip = res.ip;
         req->state = res.state;
         *answer = res.state;
@@ -2217,6 +3042,14 @@ static int do_ping( void *buf, u32 len, u32 *answer )
 
     if ( len < SOCKPING_LEN ) return ERR_BADLEN;
     if ( !if_up ) { req->state = NET_FAIL; *answer = NET_FAIL; return 0; }
+    if ( req->ip == if_ip || ( req->ip >> 24 ) == 127 ) {
+        /* ourselves - PING of our own name, now that it resolves: no wire
+           to cross, and an ARP for our own address is never answered */
+        req->state = NET_DONE;
+        req->rttms = 0;
+        *answer = NET_DONE;
+        return 0;
+    }
 
     if ( ping.state != NET_PENDING && ping.active == 0 &&
          ping.ip == req->ip && ping.seq == (u16)req->seq ) {
@@ -2233,7 +3066,8 @@ static int do_ping( void *buf, u32 len, u32 *answer )
         ping.rtt = 0;
         ping.tries = 0;
         ping.active = 1;
-        ping.sent_at = nds_ticks();
+        ping.sent_at = ticks();
+        ping.sent_fine = fine_now();
         ping.give_up = ping.sent_at + ( icmp_echo( ping.ip, ping.id, ping.seq ) ? 18 : ARP_RETRY );
     }
     req->state = ping.state;
@@ -2291,11 +3125,70 @@ static int do_setca( void *buf, u32 len )
 }
 
 /* ---------------------------------------------------------------- */
-/* the DEVICE= line: /IP=, /MASK=, /GW=, /DNS=                       */
+/* the DEVICE= line: /IP=, /MASK=, /GW=, /DNS=, /INI:, /CA:          */
 /* ---------------------------------------------------------------- */
 
 static u32 opt_ip, opt_mask, opt_gw, opt_dns, opt_wins;
+static u32 opt_dns2, opt_dns3;
 static u8  opt_bad;
+static char drv_dir[128];       /* where TCPIP.SYS was loaded from, \ and all */
+static char ini_path[128];      /* /INI: - the settings file, if not beside it */
+static char ca_path[128];       /* /CA: or CACerts= - the trust bundle */
+
+/* drv_dir: the DEVICE= line's path up to its last \ or : ("" for none) */
+static void drv_dir_from( const char *line )
+{
+    u32 n = 0, cut = 0;
+
+    while ( line[n] && line[n] != ' ' && line[n] != '\t' && line[n] != '\r' &&
+            line[n] != '\n' && n < sizeof( drv_dir ) - 1 ) {
+        drv_dir[n] = line[n];
+        n++;
+        if ( line[n - 1] == '\\' || line[n - 1] == ':' ) cut = n;
+    }
+    drv_dir[cut] = 0;
+}
+
+/* a file beside TCPIP.SYS */
+static void path_beside( char *path, const char *name )
+{
+    u32 n;
+
+    str_copy( path, drv_dir, 128 );
+    n = str_len( path );
+    str_copy( path + n, name, 128 - n );
+}
+
+/* "TCP/IP: " and up to three pieces, to the console */
+static void say3( const char *one, const char *two, const char *three )
+{
+    char text[200];
+    u32 n;
+
+    str_copy( text, "TCP/IP: ", sizeof( text ) );
+    n = str_len( text );
+    str_copy( text + n, one, sizeof( text ) - n );
+    n = str_len( text );
+    str_copy( text + n, two, sizeof( text ) - n );
+    n = str_len( text );
+    str_copy( text + n, three, sizeof( text ) - n );
+    nds_print( text );
+}
+
+/* a path after /INI: or /CA:, to the next space or switch; 0 if there is
+   none or it is too long */
+static int take_path( const char *p, char *out, u32 max, const char **after )
+{
+    u32 n = 0;
+
+    while ( *p && *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n' && *p != '/' ) {
+        if ( n + 1 >= max ) return 0;
+        out[n++] = *p++;
+    }
+    out[n] = 0;
+    *after = p;
+    return n > 0;
+}
 
 /* /NAME=: 1 to 15 of the characters a NetBIOS name may safely have,
    kept in upper case; 0 if the name is not one */
@@ -2341,9 +3234,27 @@ static u32 parse_ip( const char *p, const char **after )
             p++;
         }
     }
-    if ( *p && *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n' && *p != '/' ) return 0;
+    if ( *p && *p != ' ' && *p != '\t' && *p != '\r' && *p != '\n' && *p != '/' && *p != ',' ) return 0;
     *after = p;
     return ip;
+}
+
+/* one to three addresses with commas between (spaces after a comma are
+   let by), for /DNS= and DNSServers=; how many, or 0 if one is wrong */
+static u32 parse_ips( const char *p, u32 *list, const char **after )
+{
+    u32 n = 0;
+
+    for ( ;; ) {
+        if ( n == 3 ) return 0;
+        list[n] = parse_ip( p, &p );
+        if ( list[n++] == 0 ) return 0;
+        if ( *p != ',' ) break;
+        p++;
+        while ( *p == ' ' || *p == '\t' ) p++;
+    }
+    *after = p;
+    return n;
 }
 
 /* does the switch at p (just past the '/') read 'name' then '=' or ':'? */
@@ -2389,10 +3300,35 @@ static void parse_line( const char *line )
             p = after - 1;
             continue;
         }
+        if ( ( value = switch_is( p + 1, "ini" ) ) != NULL ||
+             ( value = switch_is( p + 1, "ca" ) ) != NULL ) {
+            char *path = ( p[1] | 0x20 ) == 'i' ? ini_path : ca_path;
+            if ( !take_path( value, path, sizeof( ini_path ), &after ) ) {
+                path[0] = 0;
+                say_switch( " is not a file name\r\n", p );
+                opt_bad = 1;
+                continue;
+            }
+            p = after - 1;
+            continue;
+        }
+        if ( ( value = switch_is( p + 1, "dns" ) ) != NULL ) {
+            u32 list[3];
+            u32 n = parse_ips( value, list, &after );
+            if ( n == 0 ) {
+                say_switch( " is not up to three addresses such as 192.168.1.1,192.168.1.2\r\n", p );
+                opt_bad = 1;
+                continue;
+            }
+            opt_dns = list[0];
+            opt_dns2 = n > 1 ? list[1] : 0;
+            opt_dns3 = n > 2 ? list[2] : 0;
+            p = after - 1;
+            continue;
+        }
         if ( ( value = switch_is( p + 1, "ip" ) ) != NULL ) slot = &opt_ip;
         else if ( ( value = switch_is( p + 1, "mask" ) ) != NULL ) slot = &opt_mask;
         else if ( ( value = switch_is( p + 1, "gw" ) ) != NULL ) slot = &opt_gw;
-        else if ( ( value = switch_is( p + 1, "dns" ) ) != NULL ) slot = &opt_dns;
         else if ( ( value = switch_is( p + 1, "wins" ) ) != NULL ) slot = &opt_wins;
         if ( slot == NULL ) {
             say_switch( " is not a TCPIP.SYS switch\r\n", p );
@@ -2406,6 +3342,217 @@ static void parse_line( const char *line )
         }
         p = after - 1;
     }
+}
+
+/* ---------------------------------------------------------------- */
+/* TCPIP.INI: the same settings, kept in a file                      */
+/* ---------------------------------------------------------------- */
+
+/* TCPIP.INI is read at INIT from beside TCPIP.SYS, or from /INI:file.
+   One setting a line, Name=value, in a [TCPIP] section or before any
+   section; a ; starts a comment.  A setting left out, or left empty,
+   takes its default, the same as a switch left off the DEVICE= line:
+   an address from DHCP, the name made from the card's address, and so
+   on.  A switch on the DEVICE= line wins over the file.  A wrong address
+   stops the load, as a wrong switch does; any other wrong line is said
+   and passed over. */
+
+#define INI_MAX   4096
+
+static const char *ini_name;    /* the file, for what is said about it */
+static u32 ini_line;
+
+/* "TCP/IP: C:\DOS\TCPIP.INI line 4: Gateway= is not ..." */
+static void ini_say( const char *key, const char *what )
+{
+    char text[200], num[12];
+    u32 n;
+
+    str_copy( text, ini_name, sizeof( text ) );
+    n = str_len( text );
+    str_copy( text + n, " line ", sizeof( text ) - n );
+    n = str_len( text );
+    *put_dec( num, ini_line ) = 0;
+    str_copy( text + n, num, sizeof( text ) - n );
+    n = str_len( text );
+    str_copy( text + n, ": ", sizeof( text ) - n );
+    n = str_len( text );
+    str_copy( text + n, key, sizeof( text ) - n );
+    n = str_len( text );
+    str_copy( text + n, "= ", sizeof( text ) - n );
+    say3( text, what, "\r\n" );
+}
+
+/* an address setting, into a slot a switch has not filled */
+static void ini_ip( const char *key, const char *val, u32 *slot, const char *like )
+{
+    const char *after;
+    u32 ip;
+
+    if ( *slot ) return;
+    ip = parse_ip( val, &after );
+    if ( ip == 0 || *after ) {
+        ini_say( key, like );
+        opt_bad = 1;
+        return;
+    }
+    *slot = ip;
+}
+
+static void ini_set( const char *key, const char *val )
+{
+    u32 i, list[3], n;
+    const char *after;
+
+    if ( val[0] == 0 ) return;                  /* empty: the default */
+    if ( str_samei( key, "HostName" ) ) {
+        if ( nb_name[0] ) return;               /* /NAME= wins */
+        if ( !host_ok( val ) ) {
+            ini_say( key, "is not a name of 1 to 63 letters, digits and hyphens" );
+            return;
+        }
+        for ( i = 0; val[i]; i++ ) host_name[i] = (char)lower( (u8)val[i] );
+        host_name[i] = 0;
+    } else if ( str_samei( key, "Domain" ) ) {
+        if ( take_domain( val, dom_name ) ) dom_fixed = 1;
+        else ini_say( key, "is not a domain such as corp.example.com" );
+    } else if ( str_samei( key, "IPAddress" ) ) {
+        ini_ip( key, val, &opt_ip, "is not an address such as 192.168.1.20" );
+    } else if ( str_samei( key, "SubnetMask" ) ) {
+        ini_ip( key, val, &opt_mask, "is not a network mask such as 255.255.255.0" );
+    } else if ( str_samei( key, "Gateway" ) ) {
+        ini_ip( key, val, &opt_gw, "is not an address such as 192.168.1.1" );
+    } else if ( str_samei( key, "WINSServer" ) ) {
+        ini_ip( key, val, &opt_wins, "is not an address such as 192.168.1.1" );
+    } else if ( str_samei( key, "DNSServers" ) ) {
+        if ( opt_dns ) return;
+        n = parse_ips( val, list, &after );
+        if ( n == 0 || *after ) {
+            ini_say( key, "is not up to three addresses such as 192.168.1.1, 192.168.1.2" );
+            opt_bad = 1;
+            return;
+        }
+        opt_dns = list[0];
+        opt_dns2 = n > 1 ? list[1] : 0;
+        opt_dns3 = n > 2 ? list[2] : 0;
+    } else if ( str_samei( key, "CACerts" ) ) {
+        if ( ca_path[0] ) return;               /* /CA: wins */
+        if ( str_len( val ) >= sizeof( ca_path ) ) ini_say( key, "is too long a file name" );
+        else str_copy( ca_path, val, sizeof( ca_path ) );
+    } else if ( str_samei( key, "RegisterDNS" ) ) {
+        if ( str_samei( val, "yes" ) || str_samei( val, "on" ) || str_samei( val, "1" ) ) reg_dns = 1;
+        else if ( str_samei( val, "no" ) || str_samei( val, "off" ) || str_samei( val, "0" ) ) reg_dns = 0;
+        else ini_say( key, "is not Yes or No" );
+    } else {
+        ini_say( key, "is not a TCPIP.INI setting" );
+    }
+}
+
+/* spaces and tabs off both ends, in place */
+static char *trim( char *text )
+{
+    u32 n;
+
+    while ( *text == ' ' || *text == '\t' ) text++;
+    n = str_len( text );
+    while ( n && ( text[n - 1] == ' ' || text[n - 1] == '\t' ) ) text[--n] = 0;
+    return text;
+}
+
+/* the file's text, NUL at the end: one line at a time */
+static void ini_parse( char *text )
+{
+    char *line, *eq, *close;
+    int ours = 1;                       /* before any section: [TCPIP]'s */
+
+    ini_line = 0;
+    while ( *text ) {
+        line = text;
+        while ( *text && *text != '\n' && *text != 0x1A ) text++;
+        if ( *text == 0x1A ) *text = 0;         /* ^Z: the end of a DOS text */
+        else if ( *text ) *text++ = 0;
+        ini_line++;
+        for ( eq = line; *eq && *eq != ';' && *eq != '\r'; eq++ ) ;
+        *eq = 0;                                /* the comment off */
+        line = trim( line );
+        if ( *line == 0 ) continue;
+        if ( *line == '[' ) {
+            for ( close = line + 1; *close && *close != ']'; close++ ) ;
+            *close = 0;
+            ours = str_samei( trim( line + 1 ), "TCPIP" );
+            continue;
+        }
+        if ( !ours ) continue;
+        for ( eq = line; *eq && *eq != '='; eq++ ) ;
+        if ( *eq == 0 ) {
+            ini_say( line, "is not Name=value" );
+            continue;
+        }
+        *eq = 0;
+        ini_set( trim( line ), trim( eq + 1 ) );
+    }
+}
+
+/* TCPIP.INI, if there is one.  The one beside TCPIP.SYS may well not be
+   there, and that is no matter; one named by /INI: has to be */
+static void ini_read( void )
+{
+    char path[128];
+    char *text;
+    u32 got, size;
+
+    if ( ini_path[0] ) str_copy( path, ini_path, sizeof( path ) );
+    else path_beside( path, "TCPIP.INI" );
+    ini_name = path;
+    text = (char *)nds_alloc( INI_MAX + 1 );
+    if ( text == NULL ) return;
+    if ( nds_readfile( path, text, INI_MAX, &got, &size ) != 0 ) {
+        if ( ini_path[0] ) say3( "cannot read ", path, "\r\n" );
+    } else {
+        if ( size > INI_MAX ) say3( path, " is longer than 4096 bytes: the rest is not read", "\r\n" );
+        text[got] = 0;
+        ini_parse( text );
+    }
+    nds_free( text );
+    ini_name = "TCPIP.INI";
+}
+
+/* THE TRUST BUNDLE, read once here so that every TLS socket checks the
+   server's certificate - before this, a socket checked only when the
+   program (WINSOCK.DLL) had sent the bundle itself, and the rest went
+   unchecked without a word.  CACerts= or /CA: names it; otherwise it is
+   CACERT.BND beside TCPIP.SYS.  Kept in the TLS pool, as SOCK_SETCA's is.
+   Without one, TLS still connects, unchecked, and that is said. */
+static void ca_load( void )
+{
+    char path[128];
+    u8  probe[1];
+    u8 *bundle;
+    u32 got, size;
+
+    if ( ca_path[0] ) str_copy( path, ca_path, sizeof( path ) );
+    else path_beside( path, "CACERT.BND" );
+    if ( nds_readfile( path, probe, 0, &got, &size ) != 0 ) {
+        say3( "no ", path, " - HTTPS certificates will not be checked\r\n" );
+        return;
+    }
+    if ( size == 0 || size > 65536UL ) {
+        say3( path, " is not a trust bundle - HTTPS certificates will not be checked", "\r\n" );
+        return;
+    }
+    bundle = (u8 *)malloc( size );
+    if ( bundle == NULL ) {
+        say3( "no memory for ", path, " - HTTPS certificates will not be checked\r\n" );
+        return;
+    }
+    if ( nds_readfile( path, bundle, size, &got, &size ) != 0 || got != size || bundle[0] != 0x30 ) {
+        free( bundle );
+        say3( path, " is not a trust bundle - HTTPS certificates will not be checked", "\r\n" );
+        return;
+    }
+    tls_ca = bundle;
+    tls_calen = size;
+    tls_catotal = size;
 }
 
 /* a mask is ones then zeros */
@@ -2430,6 +3577,8 @@ static int take_static( void )
     if ( opt_ip == 0 ) {
         if ( opt_mask || opt_gw ) nds_print( "TCP/IP: /MASK= and /GW= are used only with /IP=\r\n" );
         dns_fixed = opt_dns;
+        dns_fixed2 = opt_dns2;
+        dns_fixed3 = opt_dns3;
         wins_fixed = opt_wins;
         if_wins = opt_wins;
         return 1;
@@ -2452,8 +3601,12 @@ static int take_static( void )
     if_mask = opt_mask;
     if_gw = opt_gw;
     if_dns = opt_dns;
+    if_dns2 = opt_dns2;
+    if_dns3 = opt_dns3;
     if_lease = 0;
     dns_fixed = opt_dns;
+    dns_fixed2 = opt_dns2;
+    dns_fixed3 = opt_dns3;
     wins_fixed = opt_wins;
     if_wins = opt_wins;
     return 1;
@@ -2554,12 +3707,15 @@ int __cdecl nd_init( const char *line )
     mem_copy( if_mac, info.mac, 6 );
     str_copy( if_name, info.name, sizeof( if_name ) );
 
-    /* the switches first: a wrong address stops the load before any
-       memory is taken */
+    /* the switches first, then TCPIP.INI for what they left out: a wrong
+       address in either stops the load before any memory is kept */
+    drv_dir_from( line );
     parse_line( line );
+    ini_read();
+    names_settle();
     if ( !take_static() ) return 1;
 
-    rnd_state = nds_ticks() ^ ( (u32)if_mac[5] << 16 ) ^ get32( if_mac + 1 );
+    rnd_state = ticks() ^ ( (u32)if_mac[5] << 16 ) ^ get32( if_mac + 1 );
 
     /* the socket buffers, once, from the arena (never freed, never from
        a tick) */
@@ -2577,6 +3733,8 @@ int __cdecl nd_init( const char *line )
        is nearly gone.  Without it, TLS sockets just fail to open. */
     if ( tlsrt_init( TLS_POOL ) == 0 )
         nds_print( "TCP/IP: no memory for TLS; HTTPS sockets will not open\r\n" );
+    else ca_load();
+    clock_take();
 
     nds_tickhook();
     running = 1;
@@ -2585,6 +3743,7 @@ int __cdecl nd_init( const char *line )
         if_up = 1;
         if_dhcp = DHS_STATIC;
         dhcp_state = DH_OFF;
+        reg.want = 1;                       /* our name to DNS, on the clock */
         if ( if_gw ) arp_request( if_gw );  /* learn the gateway's address early */
         say_address();
         return 0;
@@ -2594,8 +3753,8 @@ int __cdecl nd_init( const char *line )
        lease, so the address can be shown; without one the clock keeps
        asking, more slowly, and IPCONFIG shows when one arrives */
     dhcp_start();
-    start = nds_ticks();
-    while ( dhcp_state != DH_BOUND && nds_ticks() - start < 5 * TICKS_SEC + 1 ) ;
+    start = ticks();
+    while ( dhcp_state != DH_BOUND && ticks() - start < 5 * TICKS_SEC + 1 ) ;
     if ( dhcp_state == DH_BOUND ) say_address();
     else nds_print( "Failed to get IP address\r\n" );
     return 0;

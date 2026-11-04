@@ -14,8 +14,11 @@
  *                 flags,bytes
  *                 flags: S read-only + hidden + system, P SZDD-packed
  *                 (the name on the disk ends in '_'), F on a startup
- *                 floppy (F7), U on the Uninstall disk.  SETUP is Setup's
- *                 own: the boot code it writes, never installed.
+ *                 floppy (F7), U on the Uninstall disk, R a DOS file
+ *                 copied to the root as well (CMD.EXE: with the startup
+ *                 files bypassed, the kernel looks for it there).  SETUP
+ *                 is Setup's own: the boot code it writes, never
+ *                 installed.
  *   [countries]   code,name,date order,date separator,time separator,
  *                 12|24,code pages
  *   [keyboards]   code,id,name,code pages
@@ -154,6 +157,7 @@ static int parse_file( char *line )
         case 'P': file->flags |= FF_PACKED; break;
         case 'F': file->flags |= FF_FLOPPY; break;
         case 'U': file->flags |= FF_UNINST; break;
+        case 'R': file->flags |= FF_ROOTTOO; break;
         }
     }
     file->size = parse_u32( field[5], NULL );

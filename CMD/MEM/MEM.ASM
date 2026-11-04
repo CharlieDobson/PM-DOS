@@ -18,7 +18,7 @@
 ;   21h/38h         the country's thousands separator
 ;   21h/F1h AL=4    extended memory size, as the BIOS reported it
 ;   21h/F1h AL=8    one block of one arena, by index
-;   21h/F1h AL=9    the EMS page frame and page counts, which it has
+;   21h/F1h AL=9    the EMS page counts, which it has
 ;                   to ask for rather than call INT 67h: expanded
 ;                   memory is served to V86 guests and this is a
 ;                   native program at ring 3
@@ -249,14 +249,6 @@ no_upper:
         shr     eax,10
         call    line_kb
 
-        mov     edx,OFFSET msg_blocks
-        mov     eax,[n_used]
-        call    line_num
-
-        mov     edx,OFFSET msg_bfree
-        mov     eax,[n_free]
-        call    line_num
-
         ; Expanded memory, and only when there is any.  MEM.EXE is a
         ; native program at ring 3 and cannot make an INT 67h call, so
         ; the kernel is asked instead - see 21h/F1h AL=9.
@@ -264,7 +256,6 @@ no_upper:
         int     21h
         or      eax,eax
         jz      me_noems
-        mov     [e_frame],ebx
         mov     [e_total],ecx
         mov     [e_free],edx
         call    crlf
@@ -278,14 +269,6 @@ no_upper:
         shl     eax,4
         call    line_kb
 
-        ; The frame is a segment and prints as one - four hex digits,
-        ; right-aligned to the same edge as the numbers above it.
-        mov     edx,OFFSET msg_emspf
-        mov     ebx,LINE_W + NUM_W - 4
-        call    print_pad
-        mov     eax,[e_frame]
-        call    puthex16
-        call    crlf
 me_noems:
 
         cmp     byte ptr [want_list],0
@@ -352,7 +335,6 @@ sv_lp:
         cmp     eax,SIG_USED
         je      sv_used
 
-        inc     dword ptr [n_free]
         mov     eax,dword ptr [blk+F8_SIZE]
         add     [a_free],eax
         cmp     eax,[a_largest]
@@ -360,7 +342,6 @@ sv_lp:
         mov     [a_largest],eax
         jmp     short sv_next
 sv_used:
-        inc     dword ptr [n_used]
         mov     eax,dword ptr [blk+F8_SIZE]
         add     [a_used],eax
 sv_next:
@@ -811,15 +792,10 @@ col_kb:
 
 ; line_kb  - the label at EDX (LINE_W wide), EAX right-aligned in
 ;            NUM_W, ' KB' and a new line
-; line_num - the same without the unit
 line_kb:
         call    line_fig
         mov     edx,OFFSET msg_kb
         call    print
-        ret
-line_num:
-        call    line_fig
-        call    crlf
         ret
 line_fig:
         mov     ebx,LINE_W
@@ -950,8 +926,6 @@ a_total     dd  0
 a_used      dd  0
 a_free      dd  0
 a_largest   dd  0
-n_used      dd  0
-n_free      dd  0
 c_total     dd  0                   ; the conventional arena, below 1M
 c_used      dd  0
 c_free      dd  0
@@ -959,8 +933,7 @@ c_largest   dd  0
 u_total     dd  0                   ; upper memory, when DOS=UMB
 u_used      dd  0                   ; built any
 u_free      dd  0
-e_frame     dd  0                   ; expanded memory, when EMS=
-e_total     dd  0                   ; found a page frame
+e_total     dd  0                   ; expanded memory, when EMS=
 e_free      dd  0
 u_largest   dd  0
 ld_region   db  0
@@ -984,12 +957,9 @@ msg_row_tot   db 'Total memory','$'
 
 msg_xms     db  'Extended memory reported by the BIOS','$'
 msg_largest db  'Largest free XMS block','$'
-msg_blocks  db  'XMS blocks in use','$'
-msg_bfree   db  'XMS blocks free','$'
 msg_kb      db  ' KB',13,10,'$'
 msg_ems     db  'Expanded memory (EMS)','$'
 msg_emsfr   db  'Free expanded memory','$'
-msg_emspf   db  'EMS page frame','$'
 
 ;--- the block list: 8 hex, 2, 15 for the size, 2, 6 for the owner ---
 msg_bhead1  db  'Address',6 dup(' '),'Size (bytes)',3 dup(' '),'Owner'

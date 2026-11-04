@@ -189,6 +189,8 @@ ENDIF
         mov     dword ptr [cfg_pass],CFG_PASS_DOS
         call    cfg_walk
         call    cfg_upper
+        call    vdm_cdsgrow             ; and LASTDRIVE='s letters, in an
+                                        ; arena no driver has used yet
         mov     dword ptr [cfg_pass],CFG_PASS_MAIN
         call    cfg_walk
         mov     dword ptr [cfg_pass],CFG_PASS_INST
@@ -632,6 +634,10 @@ cfg_phaseof:
                                         ; for (sys_open, DOSMAIN.ASM), and a
                                         ; COUNTRY= line above the SHELL= one
                                         ; has to find COUNTRY.SYS there too
+        cmp     eax,OFFSET cfg_lastdrv  ; how many letters, before any
+        je      cph_first               ; DEVICE= line takes one, and
+                                        ; before vdm_cdsgrow sizes the
+                                        ; current directories for them
         cmp     eax,OFFSET cfg_install
         je      cph_last
         cmp     eax,OFFSET cfg_insthigh
@@ -1453,12 +1459,17 @@ ci32_go:
 ; at least the number of drives there really are: a LASTDRIVE below
 ; the last mounted volume would be a machine hiding one of its own
 ; disks from anything that asked politely.  Real DOS raises it for the
-; same reason.  The ceiling is MAX_DRIVES, which is what the volume
-; table was built with at assembly time.
+; same reason.  The ceiling is Z:, MAX_DRIVES.
 ;
 ; PM-DOS's letters come from scanning partitions rather than from this
 ; statement, so raising it does not create drives - it says how far a
-; program should bother looking, which is all it ever said.
+; program should bother looking, and since 2026-11-01 how far a letter
+; can be GIVEN once the machine has started: NET USE, MOUNT and a USB
+; stick stop at it, as under MS-DOS (drv_fixletters).  Without the line
+; that is P:.  Past P: costs 58h bytes of conventional memory a letter
+; for the current directory array (vdm_cdsgrow), which is why it is
+; asked for rather than always there.  Read on the first walk, with
+; DOS=, so that it is in force before any DEVICE= line takes a letter.
 ;---------------------------------------------------------------------
 ;---------------------------------------------------------------------
 ; CDROM=<letter> - which drive letter the first CD-ROM takes.
@@ -1470,7 +1481,8 @@ ci32_go:
 ;
 ; A letter that is already a hard disk is not stolen - the drive falls
 ; back to where the scan would have put it - because a CONFIG.SYS line
-; should not be able to make a partition unreachable.
+; should not be able to make a partition unreachable.  A letter past
+; LASTDRIVE= falls back the same way.
 ;
 ; AFTER A START FROM A CD, the drive started from takes this letter and
 ; the others follow it (dac_unit), and the boot letter moves with it
@@ -1624,12 +1636,19 @@ cfg_lastdrv:
         jbe     cfg_badparm
         cmp     al,26
         ja      cfg_badparm             ; past Z: is not a letter
-        mov     [lastdrive_cfg],al      ; as written, for RMDOS - which
-        movzx   eax,al                  ; has letters to Z: for a network
-        cmp     eax,MAX_DRIVES
+        mov     [lastdrive_cfg],al      ; as written, for RMDOS
+        movzx   eax,al
+        ; PAST P:, THE KERNEL'S TABLES GROW TO IT (vol_grow), and the
+        ; current directory array a DOS program reads follows when
+        ; this walk is done (vdm_cdsgrow).  No room leaves them where
+        ; they are, and the letters at what they hold.
+        call    vol_grow
+        cmp     eax,[vol_slotn]
         jbe     cld_ceil
-        mov     eax,MAX_DRIVES
+        mov     eax,[vol_slotn]
 cld_ceil:
+        mov     edx,[vol_slotn]         ; and a drive a DEVICE= line adds
+        mov     [drv_ceil],edx          ; can have any of them
         movzx   edx,byte ptr ds:[drv_count]
         cmp     eax,edx
         jae     cld_floor
@@ -2455,8 +2474,11 @@ cz_bad:
 ; WINCACHE=size[,LOG] / WINCACHE=OFF - the cache RMDOS keeps while
 ; Windows runs (DOS\RMCACHE.INC).  One size, because RMDOS only exists
 ; while Windows does: in KB, or with K or M as CACHE= takes them, and
-; at most 4M.  Without the line the park sizes it from what it hands
-; over - an eighth.  LOG writes RMCACHE.LOG on the boot drive when
+; at most RMC_MAXKB (23,756K).  Past RMC_TAILKB (4M) its tables take a
+; block of conventional memory of their own (RMDOS.INC).  Without the
+; line the park sizes it from what it hands over - an eighth, and at
+; most 4M, so the tables stay in RMDOS's segment.  LOG writes
+; RMCACHE.LOG on the boot drive when
 ; Windows exits: the hit count and every SMARTDRV call that was made,
 ; which is how a file system's use of the interface is read without a
 ; debugger.
@@ -2482,9 +2504,9 @@ cfg_wincache:
         call    cfg_size                ; -> EAX bytes
         jc      cfg_badparm
         shr     eax,10
-        cmp     eax,4096
+        cmp     eax,RMC_MAXKB
         jbe     cfw_size
-        mov     eax,4096
+        mov     eax,RMC_MAXKB
 cfw_size:
         mov     [cfgc_winkb],eax
         jmp     short cfw_more

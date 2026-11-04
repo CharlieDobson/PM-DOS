@@ -1745,8 +1745,43 @@ fn0E:
                                         ; back into a BIOS drive here and
                                         ; converted again at every use
 f0E_out:
-        mov     byte ptr [ebp+F_EAX],MAX_DRIVES
+        call    ld_count                ; LASTDRIVE=, as MS-DOS answers it
+        mov     [ebp+F_EAX],al
         jmp     i21_ok
+
+;---------------------------------------------------------------------
+; ld_count - EAX = how many letters there are now: LASTDRIVE=, and
+;            never fewer than the drives (drv_count).  The second
+;            matters only while CONFIG.SYS is still being read, when a
+;            DEVICE= line can add a drive past a LASTDRIVE= line above
+;            it; drv_fixletters makes the two agree once it is done.
+;---------------------------------------------------------------------
+ld_count:
+        push    edx
+        mov     eax,[lastdrive_n]
+        movzx   edx,byte ptr ds:[drv_count]
+        cmp     eax,edx
+        jae     ldc_out
+        mov     eax,edx
+ldc_out:
+        pop     edx
+        ret
+
+;---------------------------------------------------------------------
+; ld_past - AL = a drive counted from 1, as an FCB counts them -> CF
+;           set if it is past the letters there are (ld_count).  The
+;           FCB calls' test: Q: is no drive at all on a machine
+;           without LASTDRIVE=Q or more.  Everything preserved.
+;---------------------------------------------------------------------
+ld_past:
+        push    edx
+        push    eax
+        movzx   edx,al
+        call    ld_count
+        cmp     eax,edx                 ; fewer letters than the drive: CF
+        pop     eax
+        pop     edx
+        ret
 
 ;=====================================================================
 ; 19h - get current drive -> AL (0 = A:)
@@ -5232,10 +5267,26 @@ fw_copy:
         pop     ecx
         pop     esi
 
+        ; ONLY THE SECTORS THE BYTES LANDED IN go to the disk, not the
+        ; whole cluster: clus_buf holds all of it, but the rest is what
+        ; the disk has already.  Writing the cluster cost a 16K cluster's
+        ; 32 sectors for a two-byte write, and DOSSHELL's 700 small writes
+        ; of DOSSHELL.INI took over two minutes on the 5x86 (2026-11-01).
         push    eax
+        pushad
+        lea     ecx,[edx+eax-1]
+        shr     ecx,9                   ; the last sector touched
+        shr     edx,9                   ; the first
+        sub     ecx,edx
+        inc     ecx                     ; ECX = how many
         mov     eax,[esi+SFT_CURCLUS]
-        mov     edi,OFFSET clus_buf
-        call    fat_writeclus
+        call    clus2lba
+        lea     ebx,[eax+edx]           ; EBX = the first one's LBA
+        shl     edx,9
+        lea     edi,[clus_buf+edx]
+        mov     al,[fat_drive]
+        call    disk_write
+        popad                           ; CF stays the disk's
         pop     eax
         jc      fw_ioerr
 
@@ -12202,9 +12253,10 @@ f32_sel:
         pop     esi
         jc      f32_bad
         call    vdm_dpbfresh            ; the chain, this one included
-        imul    ebx,GDPB_LEN
-        add     ebx,GDPB_BASE
-        mov     [ebp+F_EBX],ebx
+        push    edi
+        call    vdm_dpbaddr             ; -> EDI, flat
+        mov     [ebp+F_EBX],edi
+        pop     edi
         mov     byte ptr [ebp+F_EAX],0
         jmp     i21_ok
 f32_bad:
@@ -12853,9 +12905,15 @@ f8_rec      db  F8_LEN dup(0)           ; and F1h/08's, likewise
 
 sft_tbl     db  MAX_HANDLES * SFT_LEN dup(0)
 files_max   dd  MAX_HANDLES             ; how many of it FILES= hands out
-lastdrive_n dd  MAX_DRIVES              ; and how far LASTDRIVE= says to look
+lastdrive_n dd  LD_DEFAULT              ; the letters there are: LASTDRIVE=,
+                                        ; never fewer than the drives, and
+                                        ; P: with no line.  Final once
+                                        ; drv_fixletters has run
+drv_ceil    dd  LD_DEFAULT              ; how far a NEW letter may go: what
+                                        ; the kernel's tables hold while the
+                                        ; machine starts (vol_slotn), and
+                                        ; lastdrive_n from then on - NET USE,
+                                        ; MOUNT and the rest stop there
 lastdrive_cfg db 0                      ; ...and what it said, uncapped: 26
                                         ; for Z:, 0 for no line.  RMDOS's
-                                        ; count (PARK.INC, RMH_LASTDRV),
-                                        ; which goes past this kernel's
-                                        ; sixteen for Windows' network
+                                        ; count (PARK.INC, RMH_LASTDRV)

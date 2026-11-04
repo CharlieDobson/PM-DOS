@@ -1,11 +1,10 @@
 /* ==========================================================================
- * AES.H - AES-128 block cipher + CBC mode (FIPS-197 / SP800-38A) for NETSPLOR.
- * Win32s / MSVC 2.2 + Open Watcom 1.9 (portable C89, no OS dependency).
+ * AES.H - AES-128/256 block cipher, CBC and counter mode (FIPS-197 /
+ * SP800-38A).  Portable C89, no OS dependency.
  * ==========================================================================
- * First primitive of the TLS 1.2 crypto stack (suite
- * TLS_RSA_WITH_AES_128_CBC_SHA).  Pure C for now; the block loop is the hot
- * path and is the prime candidate for a later hand-asm (MASM/wasm) rewrite -
- * but the C version is the reference that the asm must match, KAT-for-KAT.
+ * The rounds are table-driven (one 1K table each way; see AES.C).  The
+ * multi-block calls - CBC and counter mode - turn the schedule into words
+ * once per call, so a whole record costs that once.
  * ========================================================================== */
 #ifndef NETSPLOR_AES_H
 #define NETSPLOR_AES_H
@@ -49,5 +48,11 @@ int  aes128_cbc_encrypt(const unsigned char rk[176], const unsigned char iv[16],
                         const unsigned char *in, unsigned char *out, int len);
 int  aes128_cbc_decrypt(const unsigned char rk[176], const unsigned char iv[16],
                         const unsigned char *in, unsigned char *out, int len);
+
+/* Counter mode from the counter block icb, adding 1 to its last 32 bits for
+ * each block (GCM's inc32).  len need not be a multiple of 16.  'in' and
+ * 'out' may be the same buffer. */
+void aes_ctr32(const unsigned char *rk, int nr, const unsigned char icb[16],
+               const unsigned char *in, int len, unsigned char *out);
 
 #endif /* NETSPLOR_AES_H */

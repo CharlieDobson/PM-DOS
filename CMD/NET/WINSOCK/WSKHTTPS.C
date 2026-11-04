@@ -5,7 +5,7 @@
  * 80.  Nothing else differs - it uses the ordinary Windows Sockets 1.1
  * calls (WSAStartup / gethostbyname / socket / connect / send / recv)
  * and sends and reads cleartext.  WINSOCK.DLL's port map opens a TLS
- * socket for port 443, so the parked PM-DOS stack runs the whole TLS 1.2
+ * socket for port 443, so the parked PM-DOS stack runs the whole TLS
  * handshake and record crypto and the program never knows: it speaks
  * HTTPS without a line of TLS code.  This proves Stage C, C4 (the
  * HTTP/TLS proxy and port map) end to end over the bridge.

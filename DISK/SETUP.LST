@@ -13,6 +13,8 @@
 ;   SETUP   Setup's own, never installed (the boot code it writes)
 ;   S       read-only, hidden and system
 ;   F       goes on a startup floppy (F7 at Setup's first screen)
+;   R       a DOS file that also goes in the root: CMD.EXE, which the
+;           kernel looks for there when the startup files are bypassed
 ;   1       on Setup disk 1 as it is, in this order: what disk 1 starts
 ;           from, and what Setup needs before it can ask for a disk.
 ;           PMIO.SYS and PMDOS.SYS must be the first two.
@@ -33,7 +35,7 @@ label=PM-DOS
 [files]
 BIN\PMIO.SYS        ROOT    SF1
 BIN\PMDOS.SYS       ROOT    SF1
-BIN\CMD.EXE         DOS     F1
+BIN\CMD.EXE         DOS     FR1
 BIN\SETUP.EXE       SETUP   1
 BIN\FDISK.EXE       DOS     F1
 BIN\FORMAT.COM      DOS     F1
@@ -105,6 +107,7 @@ BIN\TULIP.SYS       DOS
 BIN\E1000.SYS       DOS
 BIN\EEPRO100.SYS    DOS
 BIN\EL3C509.SYS     DOS
+BIN\EL3C515.SYS     DOS
 BIN\EL3C90X.SYS     DOS
 BIN\WD80X3.SYS      DOS
 BIN\NET.EXE         DOS

@@ -436,11 +436,11 @@ f55_ref:
 ; task ends DOS closes nothing of the shell's.  Measured here at
 ; TASKMAN's exit: eighteen handles closed, every one of them Windows'.
 ; See misc.asm, $CREATE_PROCESS_DATA_BLOCK, and NOTES.TXT v0.57.
-        cmp     al,SFT_COUNT
+        cmp     al,byte ptr [rd_nsft]
         jae     f55_drop
         movzx   si,al
         imul    si,si,SFT_LEN
-        add     si,OFFSET rd_sfts
+        add     si,[rd_sftp]
         cmp     word ptr [si+SFT_REF],0
         je      f55_drop                ; not open any more
         test    byte ptr [si+SFT_MODE],80h

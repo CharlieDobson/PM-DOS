@@ -22,15 +22,15 @@ const char help_text[] =
     "For [drive:], specify the drive containing your Undo disk.\r\n"
     "\r\n"
 
-    "  /ALL         Checks and repairs all local drives.\r\n"
-    "  /AUTOFIX     Fixes damage without prompting.\r\n"
-    "  /CHECKONLY   Checks a drive, but does not repair any damage.\r\n"
-    "  /CUSTOM      Configures and runs ScanDisk according to SCANDISK.INI settings.\r\n"
-    "  /NOSAVE      With /AUTOFIX, deletes lost clusters rather than saving as files.\r\n"
-    "  /NOSUMMARY   With /CHECKONLY or /AUTOFIX, prevents ScanDisk from stopping at\r\n"
-    "                      summary screens.\r\n"
-    "  /SURFACE     Performs a surface scan after other checks.\r\n"
-    "  /G           Uses a EGA or VGA graphics mode.\r\n";
+    "  /ALL        Checks and repairs all local drives.\r\n"
+    "  /AUTOFIX    Fixes damage without prompting.\r\n"
+    "  /CHECKONLY  Checks a drive, but does not repair any damage.\r\n"
+    "  /CUSTOM     Configures and runs ScanDisk according to SCANDISK.INI settings.\r\n"
+    "  /NOSAVE     With /AUTOFIX, deletes lost clusters rather than saving as files.\r\n"
+    "  /NOSUMMARY  With /CHECKONLY or /AUTOFIX, prevents ScanDisk from stopping at\r\n"
+    "                     summary screens.\r\n"
+    "  /SURFACE    Performs a surface scan after other checks.\r\n"
+    "  /G          Uses a EGA or VGA graphics mode.\r\n";
 
 /* ------------------------------------------------------------------ */
 /* the checks                                                          */

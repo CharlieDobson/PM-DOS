@@ -307,6 +307,7 @@ park_loadrm:
         mov     word ptr [park_seg],0
         mov     word ptr [park_pspseg],0
         mov     byte ptr [park_cdroom],0
+        mov     byte ptr [park_cmroom],0
 
         ; Open it.  It lives in the root of the boot volume, next to
         ; PMIO.SYS and PMDOS.SYS, where SYS puts it - and that is not
@@ -469,9 +470,23 @@ plr_low:
         jz      plr_fresh
         lea     esi,[eax-1]
         shl     esi,4
-        cmp     word ptr [esi+RMCB_LEN],PARK_RMPARAS
-        je      plr_ressize
-        cmp     word ptr [esi+RMCB_LEN],PARK_RMPARAS + PARK_CDPARAS
+        ; Which of what vl_winres asks for it holds: RMDOS's 64K, and
+        ; RMCD's room and the cache tables' block, either or both.  The
+        ; tables are always more than RMCD's room, so the length says.
+        movzx   ecx,word ptr [esi+RMCB_LEN]
+        sub     ecx,PARK_RMPARAS
+        jb      plr_fresh
+        call    park_cmparas            ; EBX = the tables', or 0
+        or      ebx,ebx
+        jz      plr_rescd
+        cmp     ecx,ebx
+        jb      plr_rescd
+        sub     ecx,ebx
+        mov     byte ptr [park_cmroom],1        ; reserved with the tables
+plr_rescd:
+        or      ecx,ecx
+        jz      plr_ressize
+        cmp     ecx,PARK_CDPARAS
         jne     plr_fresh
         mov     byte ptr [park_cdroom],1        ; reserved with RMCD's room
 plr_ressize:
@@ -498,31 +513,55 @@ plr_fresh:
         ; not short of memory: KRNL386.EXE asks for MAXALLOC 0000, so 73K
         ; is image-plus-nothing and is the RIGHT answer.  Low it stays.
         ;
-        ; With RMCD.SYS's room after it when there is a CD-ROM for it -
-        ; the same block vl_winres reserves, the same size.
+        ; With RMCD.SYS's room after it when there is a CD-ROM for it,
+        ; and the cache tables' block after that when WINCACHE= asked
+        ; for one - the same block vl_winres reserves, the same size.
+        ; What does not fit is left out, the tables first (RMDOS then
+        ; keeps the cache its own segment holds), RMCD's room next.
         mov     byte ptr [park_cdroom],0
+        mov     byte ptr [park_cmroom],0
+        call    park_cmparas
+        mov     edi,ebx                 ; EDI = the tables' paragraphs, or 0
+        mov     esi,PARK_RMPARAS        ; ESI = RMDOS's, and RMCD's room
         call    park_cdfind
-        jc      plr_nocdroom
-        add     ebx,PARK_CDPARAS
+        jc      plr_try
+        add     esi,PARK_CDPARAS
+plr_try:
+        lea     ebx,[esi+edi]
+        call    lm_alloc                ; -> AX = segment
+        jnc     plr_fits
+        or      edi,edi
+        jz      plr_lesscd
+        xor     edi,edi
+        jmp     short plr_try
+plr_lesscd:
+        cmp     esi,PARK_RMPARAS
+        je      plr_nolow
+        mov     esi,PARK_RMPARAS
+        jmp     short plr_try
+plr_fits:
+        cmp     esi,PARK_RMPARAS
+        je      plr_fitcm
         mov     byte ptr [park_cdroom],1
-        call    lm_alloc                ; -> AX = segment
-        jnc     plr_got
-        mov     byte ptr [park_cdroom],0        ; no room for both: RMDOS,
-        mov     ebx,PARK_RMPARAS                ; and no CD this time
-plr_nocdroom:
-        call    lm_alloc                ; -> AX = segment
+plr_fitcm:
+        or      edi,edi
+        jz      plr_got
+        mov     byte ptr [park_cmroom],1
+        jmp     short plr_got
+plr_nolow:
 IFDEF RMDOS_LOW
-        jc      plr_bad                 ; BUILD rmlow - low or nothing, so
+        jmp     plr_bad                 ; BUILD rmlow - low or nothing, so
                                         ; that a failure here is loud
 ELSE
-        jc      plr_hma
+        jmp     plr_hma
 ENDIF
 plr_got:
         mov     word ptr [park_seg],ax
         jmp     short plr_placed
 
 plr_hma:
-        mov     byte ptr [park_cdroom],0        ; nowhere for RMCD up there
+        mov     byte ptr [park_cdroom],0        ; nowhere for RMCD up there,
+        mov     byte ptr [park_cmroom],0        ; nor for the cache's tables
         mov     eax,dword ptr [park_size]
         add     eax,256                 ; and a little room to grow into
         cmp     eax,10000h
@@ -586,6 +625,36 @@ plr_nofile:
         pop     ecx
         pop     ebx
         stc
+        ret
+
+;---------------------------------------------------------------------
+; park_cmparas - EBX = the paragraphs of RMDOS's cache tables when they
+;               want a block of their own, after RMDOS's 64K and RMCD's
+;               room; 0 when RMDOS's segment holds them.  Only a
+;               WINCACHE= line asking for more than RMC_TAILKB gets one
+;               - without the line the park never sizes the cache past
+;               that (park_fillhdr) - so no conventional memory goes to
+;               it unasked.  See RMDOS.INC, RMC_*.  Everything else kept.
+;---------------------------------------------------------------------
+park_cmparas:
+        push    eax
+        xor     ebx,ebx
+        mov     eax,dword ptr [cfgc_winkb]
+        cmp     eax,-1
+        je      pcm_out
+        cmp     eax,RMC_TAILKB
+        jbe     pcm_out
+        cmp     eax,RMC_MAXKB
+        jbe     pcm_size
+        mov     eax,RMC_MAXKB
+pcm_size:
+        shr     eax,2                   ; KB -> 4K elements
+        imul    eax,eax,RMC_ENTLEN
+        add     eax,RMC_HEAD + 15
+        shr     eax,4
+        mov     ebx,eax
+pcm_out:
+        pop     eax
         ret
 
 ;---------------------------------------------------------------------
@@ -1044,14 +1113,11 @@ pfh_psp:
         mov     al,[cur_drive]
         mov     byte ptr [edi + RMH_CURDRV],al
         mov     al,[drv_count]
-        cmp     al,LASTDRIVE
-        jbe     pfh_ndrv
-        mov     al,LASTDRIVE
-pfh_ndrv:
+        cmp     al,RMH_DRVROWS          ; the rows RMDOS's header has; the
+        jbe     pfh_ndrv                ; kernel can have more since
+        mov     al,RMH_DRVROWS          ; LASTDRIVE= went to Z:, and RMDOS
+pfh_ndrv:                               ; reads fewer still (RL_NDRV)
         mov     byte ptr [edi + RMH_NDRV],al
-IF LASTDRIVE GT RMH_DRVROWS
-        .ERR    <PARK.INC: more drive rows than RMDOS's header has room for>
-ENDIF
         ; LASTDRIVE= AS IT WAS WRITTEN, past this kernel's sixteen if it
         ; said so: RMDOS keeps current directory structures to Z: for
         ; the letters Windows for Workgroups maps network drives to.
@@ -1175,23 +1241,48 @@ pfh_drives:
         mov     dword ptr [edi + RMH_STUBS],eax
 
         ; The cache RMDOS keeps under Windows: WINCACHE= in CONFIG.SYS,
-        ; or an eighth of the pool when the line is absent, and never
-        ; more than RMCACHE.INC's directory can name.  Sized from the
+        ; up to RMC_MAXKB, or an eighth of the pool when the line is
+        ; absent - and then never more than RMDOS's own segment holds
+        ; the tables for, so that a machine that did not ask for a big
+        ; cache gives no conventional memory to one.  Sized from the
         ; pool AFTER park_xmsgrab, which is why it is here and not in
         ; the config pass.  See RMDOS.INC, RMH_WINCACHE.
         mov     eax,dword ptr [cfgc_winkb]
+        mov     ecx,RMC_MAXKB
         cmp     eax,-1
         jne     pfh_wcgiven
         mov     eax,dword ptr [park_xmslen]
         shr     eax,13                  ; bytes -> an eighth, in KB
+        mov     ecx,RMC_TAILKB
 pfh_wcgiven:
-        cmp     eax,4096
+        cmp     eax,ecx
         jbe     pfh_wcfits
-        mov     eax,4096
+        mov     eax,ecx
 pfh_wcfits:
         mov     word ptr [edi + RMH_WINCACHE],ax
         mov     ax,word ptr [cfgc_winflg]
         mov     word ptr [edi + RMH_WCFLAGS],ax
+
+        ; ...and where its tables go: the block reserved after RMDOS's
+        ; segment and RMCD's room, or 0 for RMDOS's own segment
+        xor     eax,eax
+        xor     ebx,ebx
+        cmp     byte ptr [park_cmroom],0
+        je      pfh_cmset
+        call    park_cmparas            ; EBX = its length
+        movzx   eax,word ptr [park_seg]
+        add     eax,PARK_RMPARAS
+        cmp     byte ptr [park_cdroom],0
+        je      pfh_cmset
+        add     eax,PARK_CDPARAS
+pfh_cmset:
+        mov     word ptr [edi + RMH_CMSEG],ax
+        mov     word ptr [edi + RMH_CMPARAS],bx
+
+        ; FILES=: RMDOS's file table has as many entries as the kernel
+        ; hands out
+        mov     eax,dword ptr [files_max]
+        mov     word ptr [edi + RMH_FILES],ax
 
         ; The block below 64K that RMDOS builds its published DOS data
         ; in - the kernel's own DOS data segment, which RMDOS saves and
@@ -1222,6 +1313,19 @@ pfh_wcfits:
         cld
         rep     movsd
         mov     byte ptr [park_lowsaved],1
+        ; ...AND THE CURRENT DIRECTORIES WHERE RMDOS LOOKS FOR THEM.
+        ; Past sixteen letters the array is in a block of its own
+        ; (vdm_cdsgrow), and RMDOS reads its drives' starting
+        ; directories at RL_CDS, which then holds parameter blocks.
+        ; The copy is over bytes just kept, and they come back with
+        ; the rest (park_recover).
+        mov     esi,[vdm_cdsbase]
+        cmp     esi,GCDS_BASE
+        je      pfh_cdshere
+        mov     edi,GCDS_BASE
+        mov     ecx,(RL_NDRV * GCDS_LEN) / 4
+        rep     movsd
+pfh_cdshere:
         pop     ecx
         pop     edi
         pop     esi
@@ -1394,8 +1498,7 @@ pfh_isexfat:
         cmp     byte ptr [vol_fs],FS_EXFAT
         jmp     short pxe_ask
 pxe_parked:
-        imul    eax,VOL_STATE_SIZE
-        add     eax,[vol_slotp]
+        call    vol_slot                ; a row RMDOS has: below sixteen
         cmp     byte ptr [eax],0        ; fat_ok, the first byte of a slot
         je      pxe_type
         cmp     byte ptr [eax + (vol_fs - vol_state)],FS_EXFAT
@@ -2036,6 +2139,7 @@ prl_wasHMA:
         mov     word ptr [park_seg],0
         mov     word ptr [park_cdseg],0         ; RMCD went with the block
         mov     byte ptr [park_cdroom],0
+        mov     byte ptr [park_cmroom],0        ; and so did the cache's tables
 prl_none:
         popad
         ret
@@ -2049,6 +2153,8 @@ park_name   db  'A:\RMDOS.SYS',0      ; park_loadrm: the name from +3, and
 park_cdname db  'RMCD.SYS',0
 park_cdroom db  0                       ; the block has RMCD's room after
                                         ; RMDOS's 64K
+park_cmroom db  0                       ; ...and the cache tables' block
+                                        ; after that (park_cmparas)
 park_cdseg  dw  0                       ; RMCD.SYS is loaded there, or 0
 park_cdsize dd  0
 park_cdlet  db  0                       ; park_cdfind's answer: the letter,

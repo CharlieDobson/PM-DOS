@@ -733,7 +733,7 @@ fF1_netuse:
 ;--- NETUSE_MAP: \\server\share -> a drive letter -------------------
 fnu_map:
         mov     eax,[edi+NU_DRIVE]
-        cmp     eax,MAX_DRIVES
+        cmp     eax,[drv_ceil]                  ; past LASTDRIVE= is no letter
         jae     fnu_baddrv
         mov     [net_nudrive],al
         call    drv_slot                        ; EBX -> the row (AL in)
@@ -805,14 +805,22 @@ fnu_counted:
         jmp     i21_ok
 
 fnu_mapfail:
-        mov     eax,[net_req+NR_STATUS]
+        ; which step failed and what the server said, for NET.EXE to
+        ; name (REDIR.H MNT_*)
         mov     edi,[ebp+F_EDI]
+        mov     eax,[net_req+NR_COUNT]
+        mov     [edi+NU_STEP],eax
+        mov     eax,[net_req+NR_RESULT]
+        mov     [edi+NU_SRVSTATUS],eax
+        mov     eax,[net_req+NR_STATUS]
         mov     [edi+NU_STATUS],eax
         mov     ax,word ptr [net_req+NR_STATUS]
         jmp     i21_fail
 fnu_nodrv:
         mov     edi,[ebp+F_EDI]
         mov     dword ptr [edi+NU_STATUS],ERR_GENERAL
+        mov     dword ptr [edi+NU_STEP],MNT_NODRIVER
+        mov     dword ptr [edi+NU_SRVSTATUS],0
         mov     ax,ERR_GENERAL
         jmp     i21_fail
 fnu_inuse:

@@ -79,4 +79,10 @@ NU_SHARE        EQU     76              ; char[80]
 NU_USER         EQU     156             ; char[64]
 NU_PASS         EQU     220             ; char[64]
 NU_DOMAIN       EQU     284             ; char[64]
-NU_SIZE         EQU     348
+NU_STEP         EQU     348             ; out, MAP failed: MNT_*
+NU_SRVSTATUS    EQU     352             ; out, MAP failed: the server's status
+NU_SIZE         EQU     356
+
+; REDIR_MOUNT failed: NR_COUNT = the step, NR_RESULT = the server's
+; status (REDIR.H has the list)
+MNT_NODRIVER    EQU     7

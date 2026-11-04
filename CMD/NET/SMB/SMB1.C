@@ -122,6 +122,7 @@ static int smb1_txrx( smb1_client *cl, unsigned char *end )
     cl->sendbuf[1] = (unsigned char)( ( smblen >> 16 ) & 1 );
     cl->sendbuf[2] = (unsigned char)( smblen >> 8 );
     cl->sendbuf[3] = (unsigned char)smblen;
+    cl->last_status = 0;                        /* no answer stays "no status" */
     if ( send_all( cl, cl->sendbuf, smblen + 4 ) < 0 ) return -1;
 
     cl->recvlen = nbt_recv( cl, cl->recvbuf, (int)sizeof( cl->recvbuf ) );
@@ -695,7 +696,7 @@ int smb1_list_dir( smb1_client *cl, const char *dir, const char *pattern,
         put32( w + 12, 0 );                          /* Timeout */
         put16( w + 16, 0 );                          /* Reserved */
         /* ParameterCount/Offset, DataCount/Offset at w+18..25 (filled below) */
-        put16( w + 24, 0 );                          /* DataCount = 0 */
+        put16( w + 22, 0 );                          /* DataCount = 0 */
         w[26] = 1; w[27] = 0;                         /* SetupCount=1 / Reserved */
         put16( w + 28, first ? 1 : 2 );              /* Setup[0]: FIND_FIRST2/NEXT2 */
 
@@ -726,7 +727,9 @@ int smb1_list_dir( smb1_client *cl, const char *dir, const char *pattern,
         put16( w + 0, (unsigned int)plen );          /* TotalParameterCount */
         put16( w + 18, (unsigned int)plen );         /* ParameterCount */
         put16( w + 20, (unsigned int)parmoff );      /* ParameterOffset */
-        put16( w + 22, (unsigned int)( parmoff + plen ) ); /* DataOffset */
+        /* DataOffset after DataCount: swapped, Windows answers every FIND
+           with "invalid SMB" (0x00010002) */
+        put16( w + 24, (unsigned int)( parmoff + plen ) ); /* DataOffset */
         put16( bc, (unsigned int)( ( parm + plen ) - ( bc + 2 ) ) ); /* ByteCount */
 
         cl->stage = first ? "find first" : "find next";
@@ -785,7 +788,8 @@ int smb1_open_disp( smb1_client *cl, const char *path, int write,
 
     p[0] = 15;                                        /* WordCount */
     w[0] = 0xFF; w[1] = 0; put16( w + 2, 0 );         /* AndX none */
-    put16( w + 4, 0 );                                /* Flags */
+    put16( w + 4, 0x0001 );                           /* Flags: send the size and attributes
+                                                         (Windows answers 0 without) */
     put16( w + 6, access );                           /* AccessMode */
     put16( w + 8, 0 );                                /* SearchAttributes */
     put16( w + 10, 0 );                               /* FileAttributes */

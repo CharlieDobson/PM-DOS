@@ -168,24 +168,21 @@ static u32     out_len;
 static const char hexdig[] = "0123456789ABCDEF";
 
 static const char msg_help[] =
-    "Lists the ISA Plug and Play cards and switches their devices on.\r\n"
+    "Lists and optionally configures or enables ISA devices.\r\n"
     "\r\n"
-    "ISAPNP\r\n"
-    "ISAPNP /A\r\n"
+    "ISAPNP [/A]\r\n"
     "ISAPNP card.device [IO=port[,port...]] [IRQ=n[,n]] [DMA=n[,n]]\r\n"
-    "       [MEM=address[,address...]] [ON | OFF]\r\n"
+    "                   [MEM=address[,address...]] [ON | OFF]\r\n"
     "\r\n"
-    "  (none)  Lists every card and device, and what each one is using.\r\n"
-    "  /A      Switches on every device that is off, with resources that\r\n"
-    "          nothing else in the machine is known to be using.\r\n"
-    "  card.device\r\n"
-    "          The device to set, numbered as the list numbers it.  With\r\n"
-    "          resources it is given those and switched on; ON or OFF\r\n"
-    "          alone switches it as it is.\r\n"
+    "  /A            Turns on all ISA devices currently off.\r\n"
+    "  card.device   Specifies the device to configure.  Use ISAPNP\r\n"
+    "                without arguments to see a list of cards and\r\n"
+    "                devices.\r\n"
     "\r\n"
-    "Ports and addresses are in hexadecimal, IRQ and DMA numbers in\r\n"
-    "decimal.  A card that is not Plug and Play cannot be seen by /A: give\r\n"
-    "a device its resources by hand if one of them is taken.\r\n";
+    "I/O ports and memory addresses are in hexadecimal.\r\n"
+    "\r\n"
+    "ISAPNP will attempt to assign resources to ISA devices automatically.\r\n"
+    "Resource conflicts will need to be reconfigured manually.\r\n";
 
 /* ---------------------------------------------------------------- */
 /* small routines a C library would have supplied                    */

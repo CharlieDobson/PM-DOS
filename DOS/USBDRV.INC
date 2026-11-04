@@ -96,7 +96,7 @@ dau_lp:
         cmp     ebp,ecx
         jae     dau_out
         movzx   eax,byte ptr [drv_count]
-        cmp     eax,MAX_DRIVES
+        cmp     eax,[drv_ceil]
         jae     dau_out
         call    drv_slot                ; -> EBX
         mov     byte ptr [ebx+DRV_FLAGS],DRVF_PRESENT OR DRVF_USB

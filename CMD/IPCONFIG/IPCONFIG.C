@@ -4,9 +4,10 @@
  * TCPIP.SYS gets the address itself - from DHCP at INIT, or from /IP= on
  * its DEVICE= line - and keeps the lease on the clock.  This shows what
  * it holds (21h/F1h AL=26h SOCK_IFSTAT, the long form) and asks it to
- * give the lease back or renew it (SOCK_DHCP).
+ * give the lease back or renew it, or to send its name to DNS again
+ * (SOCK_DHCP).
  *
- *   IPCONFIG [/ALL | /RELEASE | /RENEW]
+ *   IPCONFIG [/ALL | /RELEASE | /RENEW | /REGISTERDNS]
  *
  * The lease's times are worked out here: the stack counts seconds since
  * the lease was given, and the clock (21h/2Ah, 2Ch) says when that was.
@@ -20,6 +21,10 @@
 #include "socklib.h"
 
 #define RENEW_WAIT  1000                /* hundredths: how long /RENEW waits */
+#define REG_WAIT    1500                /* ...and /REGISTERDNS */
+
+static u32  if_len;                     /* how much SOCK_IFSTAT gave: an older
+                                           TCPIP.SYS gives no SOCKIF_LEN3 part */
 
 /* the country's way with dates and times (21h/38h) */
 static u32  date_fmt;                   /* 0 m-d-y, 1 d-m-y, 2 y-m-d */
@@ -64,8 +69,10 @@ static int get_if( SOCK_IF *info )
 {
     u32 got = 0;
 
-    sl_memzero( info, SOCKIF_LEN2 );
-    return sock_call( SOCK_IFSTAT, info, SOCKIF_LEN2, &got ) == 0;
+    sl_memzero( info, SOCKIF_LEN3 );
+    if ( sock_call( SOCK_IFSTAT, info, SOCKIF_LEN3, &got ) != 0 ) return 0;
+    if_len = got;
+    return 1;
 }
 
 /* ---------------------------------------------------------------- */
@@ -179,12 +186,48 @@ static void line_ip( const char *name, u32 ip )
     sl_puts( "\r\n" );
 }
 
+/* one more address under the last, in the column label() leaves */
+static void more_ip( u32 ip )
+{
+    u32 col;
+
+    if ( ip == 0 ) return;
+    for ( col = 0; col < 3 + 28 + 2; col++ ) sl_putc( ' ' );
+    sl_putip( ip );
+    sl_puts( "\r\n" );
+}
+
+/* how this computer's name stands in DNS (SOCK_IF.regstate) */
+static void show_reg( const SOCK_IF *info )
+{
+    switch ( info->regstate ) {
+    case DREG_BUSY:     sl_puts( "Being sent" ); break;
+    case DREG_DONE:     sl_puts( "Registered" ); break;
+    case DREG_REFUSED:
+        sl_puts( "Refused by the DNS server (error " );
+        sl_putu( info->regrcode );
+        sl_putc( ')' );
+        break;
+    case DREG_NOANSWER: sl_puts( "No DNS server answered" ); break;
+    case DREG_NOZONE:   sl_puts( "No zone in DNS for the domain" ); break;
+    default:            sl_puts( info->domain[0] ? "Not sent" : "Not sent: no DNS suffix" ); break;
+    }
+}
+
 static void show( const SOCK_IF *info, int all )
 {
     int i;
 
     if ( all ) {
         sl_puts( "\r\n" );
+        if ( if_len >= SOCKIF_LEN3 ) {
+            label( "Host Name" );
+            sl_puts( info->hostname );
+            sl_puts( "\r\n" );
+            label( "DNS Suffix" );
+            sl_puts( info->domain );
+            sl_puts( "\r\n" );
+        }
         label( "Computer Name" );
         sl_puts( info->nbname );
         sl_puts( "\r\n" );
@@ -214,12 +257,23 @@ static void show( const SOCK_IF *info, int all )
     if ( !all ) return;
 
     if ( info->dhcp == DHS_BOUND && info->dhcpsrv ) line_ip( "DHCP Server", info->dhcpsrv );
-    label( "DNS Server" );
+    label( "DNS Servers" );
     if ( info->dns ) sl_putip( info->dns );
     sl_puts( "\r\n" );
+    if ( if_len >= SOCKIF_LEN3 ) {
+        more_ip( info->dns2 );
+        more_ip( info->dns3 );
+        label( "Name in DNS" );
+        show_reg( info );
+        sl_puts( "\r\n" );
+    }
     label( "WINS Server" );
     if ( info->wins ) sl_putip( info->wins );
     sl_puts( "\r\n" );
+    if ( if_len >= SOCKIF_LEN3 ) {
+        label( "HTTPS Certificates" );
+        sl_puts( info->cabytes ? "Checked\r\n" : "Not checked: no trust bundle\r\n" );
+    }
 
     if ( info->up && info->dhcp == DHS_BOUND ) {
         u32 now = clock_now();
@@ -299,6 +353,57 @@ static int do_renew( void )
     return 1;
 }
 
+/* /REGISTERDNS: TCPIP.SYS sends the name on its clock; this waits to
+   say how that went */
+static int do_regdns( void )
+{
+    SOCK_IF info;
+    u32 op = DHCPOP_REGDNS, start;
+
+    if ( !get_if( &info ) ) return 0;
+    if ( if_len < SOCKIF_LEN3 ) {
+        sl_puts( "This TCPIP.SYS cannot send its name to DNS.\r\n" );
+        return 0;
+    }
+    if ( !info.up ) {
+        sl_puts( "There is no IP address to send to DNS.\r\n" );
+        return 0;
+    }
+    if ( info.domain[0] == 0 ) {
+        sl_puts( "There is no DNS suffix to put the name under.  Set Domain= in TCPIP.INI.\r\n" );
+        return 0;
+    }
+    if ( sock_call( SOCK_DHCP, &op, sizeof( op ), NULL ) != 0 || !get_if( &info ) ) {
+        sl_puts( "TCPIP.SYS could not do this.\r\n" );
+        return 0;
+    }
+    if ( info.regstate != DREG_BUSY ) {
+        sl_puts( "Sending the name to DNS is turned off: RegisterDNS=No in TCPIP.INI.\r\n" );
+        return 0;
+    }
+    start = sl_now();
+    while ( info.regstate == DREG_BUSY && sl_since( start ) < REG_WAIT ) {
+        if ( !get_if( &info ) ) return 0;
+    }
+    switch ( info.regstate ) {
+    case DREG_DONE:
+        sl_puts( info.hostname );
+        sl_putc( '.' );
+        sl_puts( info.domain );
+        sl_puts( " is now " );
+        sl_putip( info.ip );
+        sl_puts( " in DNS.\r\n" );
+        return 1;
+    case DREG_BUSY:
+        sl_puts( "The DNS server has not answered yet.\r\n" );
+        return 0;
+    default:
+        show_reg( &info );
+        sl_puts( ".\r\n" );
+        return 0;
+    }
+}
+
 /* ---------------------------------------------------------------- */
 
 static void finish( int code )
@@ -314,7 +419,7 @@ static void finish( int code )
 void __cdecl dos_entry( void )
 {
     char **argv;
-    int argc, i, all = 0, release = 0, renew = 0;
+    int argc, i, all = 0, release = 0, renew = 0, regdns = 0;
     SOCK_IF info;
 
     argc = sl_args( &argv );
@@ -324,14 +429,16 @@ void __cdecl dos_entry( void )
             if ( sl_strcasecmp( opt, "ALL" ) == 0 ) all = 1;
             else if ( sl_strcasecmp( opt, "RELEASE" ) == 0 ) release = 1;
             else if ( sl_strcasecmp( opt, "RENEW" ) == 0 ) renew = 1;
+            else if ( sl_strcasecmp( opt, "REGISTERDNS" ) == 0 ) regdns = 1;
             else if ( opt[0] == '?' ) {
                 sl_puts( "Shows the TCP/IP settings, and gives back or renews the DHCP lease.\r\n"
                          "\r\n"
-                         "IPCONFIG [/ALL | /RELEASE | /RENEW]\r\n"
+                         "IPCONFIG [/ALL | /RELEASE | /RENEW | /REGISTERDNS]\r\n"
                          "\r\n"
-                         "  /ALL      Shows every setting, with the lease's times.\r\n"
-                         "  /RELEASE  Gives the IP address back to the DHCP server.\r\n"
-                         "  /RENEW    Renews the lease, or asks for a new IP address.\r\n" );
+                         "  /ALL          Shows every setting, with the lease's times.\r\n"
+                         "  /RELEASE      Gives the IP address back to the DHCP server.\r\n"
+                         "  /RENEW        Renews the lease, or asks for a new IP address.\r\n"
+                         "  /REGISTERDNS  Sends this computer's name and IP address to DNS again.\r\n" );
                 finish( 0 );
                 return;
             } else {
@@ -349,8 +456,8 @@ void __cdecl dos_entry( void )
             return;
         }
     }
-    if ( all + release + renew > 1 ) {
-        sl_puts( "Use only one of /ALL, /RELEASE and /RENEW.\r\n" );
+    if ( all + release + renew + regdns > 1 ) {
+        sl_puts( "Use only one of /ALL, /RELEASE, /RENEW and /REGISTERDNS.\r\n" );
         finish( 1 );
         return;
     }
@@ -364,6 +471,7 @@ void __cdecl dos_entry( void )
 
     if ( release ) { finish( do_release() ? 0 : 1 ); return; }
     if ( renew ) { finish( do_renew() ? 0 : 1 ); return; }
+    if ( regdns ) { finish( do_regdns() ? 0 : 1 ); return; }
     show( &info, all );
     finish( 0 );
 }

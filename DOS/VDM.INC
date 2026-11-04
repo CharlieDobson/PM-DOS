@@ -1067,21 +1067,32 @@ vwr_up:
         inc     esi
         jmp     short vwr_cmp
 vwr_match:
-        ; RMDOS's 64K, and RMCD.SYS's room after it when there is a
-        ; CD-ROM for it to serve (PARK.INC, park_loadcd) - in the same
-        ; block, so that it too is below WIN386 and global to every
-        ; virtual machine, as MSCDEX loaded before Windows was.  Without
-        ; the room for both, RMDOS's alone.
-        mov     ebx,PARK_RMPARAS
+        ; RMDOS's 64K, RMCD.SYS's room after it when there is a CD-ROM
+        ; for it to serve (PARK.INC, park_loadcd), and the cache tables'
+        ; block after that when WINCACHE= asked for more than RMDOS's
+        ; segment holds (park_cmparas) - in the one block, so that all of
+        ; it is below WIN386 and global to every virtual machine, as
+        ; MSCDEX and SMARTDRV loaded before Windows were.  What does not
+        ; fit is left out: the tables first, then RMCD's room.
+        call    park_cmparas
+        mov     edi,ebx                         ; EDI = the tables', or 0
+        mov     esi,PARK_RMPARAS                ; ESI = RMDOS's, and RMCD's
         call    park_cdfind
-        jc      vwr_alloc
-        add     ebx,PARK_CDPARAS
-        call    lm_alloc
-        jnc     vwr_have
-        mov     ebx,PARK_RMPARAS
-vwr_alloc:
+        jc      vwr_try
+        add     esi,PARK_CDPARAS
+vwr_try:
+        lea     ebx,[esi+edi]
         call    lm_alloc                        ; -> AX = the segment
-        jc      vwr_out                         ; no room: the park will say
+        jnc     vwr_have
+        or      edi,edi
+        jz      vwr_lesscd
+        xor     edi,edi
+        jmp     short vwr_try
+vwr_lesscd:
+        cmp     esi,PARK_RMPARAS
+        je      vwr_out                         ; no room: the park will say
+        mov     esi,PARK_RMPARAS
+        jmp     short vwr_try
 vwr_have:
         mov     word ptr ds:[park_resseg],ax
         movzx   edi,ax
@@ -1696,7 +1707,7 @@ vdm_lolinit:
         mov     word ptr [edi+GLOL_MAXSEC],512
         mov     word ptr [edi+GLOL_PROTFCB],0
         mov     byte ptr [edi+GLOL_NBLOCK],0    ; vdm_lol fills all three of
-        mov     byte ptr [edi+GLOL_LASTDRV],MAX_DRIVES
+        mov     byte ptr [edi+GLOL_LASTDRV],LD_DEFAULT
         mov     byte ptr [edi+GLOL_NJOIN],0
 
         ; THE DOS 5 TAIL.  Four of these are "nothing here", said at
@@ -3639,7 +3650,8 @@ vdm_seldrv:
         jz      vsl_out
         mov     byte ptr ds:[cur_drive],al
 vsl_out:
-        mov     byte ptr [vdm_ctx+V86C_EAX],MAX_DRIVES  ; as fn0E answers
+        call    ld_count                        ; as fn0E answers
+        mov     byte ptr [vdm_ctx+V86C_EAX],al
         jmp     vdm_loop
 
 vdm_lol:
@@ -3701,11 +3713,10 @@ vdm_lolfresh:
         ; this release that a register looked free and already held the
         ; answer.  The symptom was a guest reading its LASTDRIVE out of
         ; whatever segment this number happened to name.
-        mov     dl,byte ptr [lastdrive_n]       ; and LASTDRIVE=, for the same
-                                                ; reason: CONFIG.SYS is read
-                                                ; long after vdm_lolinit ran
-
-        ; ...RAISED AGAIN HERE, because a DRIVE CAN APPEAR AFTER THE
+        ; and LASTDRIVE=, for the same reason: CONFIG.SYS is read long
+        ; after vdm_lolinit ran.
+        ;
+        ; ...RAISED TO THE DRIVES, because a DRIVE CAN APPEAR AFTER THE
         ; STATEMENT DID.  cfg_lastdrv already clamps the number up to
         ; the drives that exist when the line is read - but a
         ; DEVICE= block driver further down the file adds a letter
@@ -3713,10 +3724,21 @@ vdm_lolfresh:
         ; DEVICE= lines is the ordinary way round.  The rule is "never
         ; fewer than there really are", and the only place that can be
         ; true at the moment somebody asks is the moment somebody asks.
-        cmp     dl,byte ptr ds:[drv_count]
-        jae     vl_lastok
-        mov     dl,byte ptr ds:[drv_count]
+        ; ld_count says it.
+        ;
+        ; ...AND NEVER PAST THE ARRAY (2026-11-01).  The number is what
+        ; a walker of the current directories counts to, and an entry
+        ; it reads past the end is the file table behind it.  Only a
+        ; driver asking while CONFIG.SYS is read could see the two
+        ; differ, as vdm_cdsgrow has sized the array by then.
+        push    eax
+        call    ld_count
+        cmp     eax,[vdm_cdsn]
+        jbe     vl_lastok
+        mov     eax,[vdm_cdsn]
 vl_lastok:
+        mov     dl,al
+        pop     eax
         mov     byte ptr [edi+GLOL_LASTDRV],dl
 
         ; AND THE FILE COUNT, for the same reason the two above are
@@ -3771,6 +3793,78 @@ vlf_none:
         ret
 
 ;---------------------------------------------------------------------
+; vdm_cdsgrow - room in the current directory array for every letter
+;               the kernel's tables hold (vol_slotn), once LASTDRIVE=
+;               has been read.  Everything preserved.
+;
+; SIXTEEN FIT IN THE DOS DATA SEGMENT AND NO MORE: the array is at
+; GCDS_OFF with the second file table block right behind it.  Past
+; that the whole array moves into a block of its own below 640K, as
+; MS-DOS keeps its own, owned by DOS (8) so that no program's exit
+; takes it, and the list of lists points there.  It has to be ONE
+; array - a walker steps through it 58h bytes at a time - which is why
+; it moves rather than continuing somewhere else.  Where it was, the
+; drive parameter blocks of the letters past GDPB_NLOW go
+; (vdm_dpbaddr).
+;
+; CALLED AFTER CONFIG.SYS'S FIRST WALK (config_run), which is where
+; LASTDRIVE= is read, and before the second loads any driver: the
+; block is taken while the arena is empty, so it sits at the bottom as
+; DOS's own does, and a driver that asks 52h at its INIT is shown the
+; array that stays.  Once only; vol_slotn does not grow after this.
+;
+; NO ROOM - which an empty arena cannot really be - leaves the array
+; where it is and the letters at sixteen.
+;---------------------------------------------------------------------
+vdm_cdsgrow:
+        pushad
+        mov     ecx,[vol_slotn]
+        cmp     ecx,[vdm_cdsn]
+        jbe     vcg_out                         ; room already
+        cmp     word ptr ds:[vdm_lolseg],0
+        je      vcg_out                         ; no list of lists at all
+        mov     ebx,ecx
+        imul    ebx,GCDS_LEN
+        add     ebx,15
+        shr     ebx,4                           ; paragraphs
+        call    lm_alloc                        ; -> AX
+        jc      vcg_none
+        mov     dx,8                            ; DOS's own, like dl_seg
+        call    lm_setown
+        movzx   edx,ax
+        mov     edi,edx
+        shl     edi,4
+        mov     [vdm_cdsbase],edi
+        push    ecx
+        imul    ecx,GCDS_LEN
+        shr     ecx,2
+        xor     eax,eax
+        rep     stosd                           ; GCDS_LEN is a dword multiple
+        pop     ecx
+        mov     [vdm_cdsn],ecx
+        shl     edx,16                          ; segment:0
+        mov     dword ptr ds:[DOSDATA + GLOL_CDS],edx
+        mov     edi,GCDS_BASE                   ; and where it was is clean
+        mov     ecx,(GCDS_NLOW * GCDS_LEN) / 4  ; for the parameter blocks
+        xor     eax,eax
+        rep     stosd
+vcg_out:
+        popad
+        ret
+vcg_none:
+        mov     eax,GCDS_NLOW
+        cmp     [lastdrive_n],eax
+        jbe     vcg_ldok
+        mov     [lastdrive_n],eax
+vcg_ldok:
+        mov     [drv_ceil],eax
+        popad
+        ret
+IF GCDS_LEN MOD 4
+        .ERR    <VDM.INC: vdm_cdsgrow clears the array a dword at a time>
+ENDIF
+
+;---------------------------------------------------------------------
 ; vdm_cdsfresh - the current directory array, rewritten from what the
 ;                kernel knows now.  Everything preserved.
 ;
@@ -3798,13 +3892,16 @@ vlf_none:
 ; Refreshed on 52h, which is when a program finds the array.  RMDOS
 ; starts each drive where this left it (RMINFO.INC, rd_sysinit).
 ;---------------------------------------------------------------------
+; WHERE THE ARRAY IS: in the DOS data segment for sixteen letters, and
+; in vdm_cdsgrow's block below 640K when LASTDRIVE= wants more.
+;---------------------------------------------------------------------
 vdm_cdsfresh:
         pushad
         xor     ebx,ebx                         ; the drive
 vcf_one:
         mov     edi,ebx
         imul    edi,GCDS_LEN
-        add     edi,GCDS_BASE
+        add     edi,[vdm_cdsbase]
         push    edi
         xor     eax,eax
         mov     ecx,GCDS_LEN / 4
@@ -3833,9 +3930,9 @@ vcf_one:
 vcf_notcd:
         call    vdm_dpbstate                    ; a drive parameter block?
         jc      vcf_nodpb
-        mov     eax,ebx
-        imul    eax,GDPB_LEN
-        add     eax,(DOSDATA_SEG SHL 16) + GDPB_OFF
+        push    edi
+        call    vdm_dpbaddr                     ; -> EAX, where it is
+        pop     edi
         mov     [edi+GCDS_DPB],eax
 vcf_nodpb:
 
@@ -3843,9 +3940,9 @@ vcf_nodpb:
         mov     esi,OFFSET vol_state
         cmp     bl,byte ptr ds:[cur_vol]
         je      vcf_state
-        mov     esi,ebx
-        imul    esi,VOL_STATE_SIZE
-        add     esi,[vol_slotp]
+        mov     eax,ebx
+        call    vol_slot
+        mov     esi,eax
 vcf_state:
         mov     eax,[esi + (cwd_clus - vol_state)]
         mov     [edi+GCDS_CLUS],eax
@@ -3859,7 +3956,7 @@ vcf_state:
         pop     edi
 vcf_next:
         inc     ebx
-        cmp     ebx,LASTDRIVE
+        cmp     ebx,[vdm_cdsn]
         jb      vcf_one
         popad
         ret
@@ -3883,21 +3980,42 @@ vdm_dpbfresh:
 vdf_one:
         call    vdm_dpbstate                    ; -> ESI
         jc      vdf_next
-        mov     edi,ebx
-        imul    edi,GDPB_LEN
-        add     edi,GDPB_BASE
+        call    vdm_dpbaddr                     ; -> EAX and EDI
         call    vdm_dpbone
-        mov     eax,ebx
-        imul    eax,GDPB_LEN
-        add     eax,(DOSDATA_SEG SHL 16) + GDPB_OFF
         mov     [ecx],eax
         lea     ecx,[edi+EDPB_NEXT]
 vdf_next:
         inc     ebx
-        cmp     ebx,LASTDRIVE
+        cmp     ebx,[vdm_cdsn]
         jb      vdf_one
         mov     dword ptr [ecx],0FFFFFFFFh      ; and there the chain ends
         popad
+        ret
+
+;---------------------------------------------------------------------
+; vdm_dpbaddr - EBX = a drive vdm_dpbstate gave a block -> EAX = where
+;               its drive parameter block is, as a segment and an
+;               offset, and EDI = the same place flat.
+;
+; The first GDPB_NLOW are at GDPB_OFF.  A letter past them has a block
+; only once the current directories have moved out of the DOS data
+; segment (vdm_cdsgrow), and has it where they were: the space is
+; there, and vdm_dpbstate refuses one until it is.
+;---------------------------------------------------------------------
+vdm_dpbaddr:
+        mov     eax,ebx
+        cmp     eax,GDPB_NLOW
+        jae     vda_past
+        imul    eax,GDPB_LEN
+        add     eax,GDPB_OFF
+        jmp     short vda_out
+vda_past:
+        sub     eax,GDPB_NLOW
+        imul    eax,GDPB_LEN
+        add     eax,GCDS_OFF
+vda_out:
+        lea     edi,[eax+DOSDATA]
+        add     eax,DOSDATA_SEG SHL 16
         ret
 
 ;---------------------------------------------------------------------
@@ -3908,6 +4026,8 @@ vdf_next:
 ;                is destroyed.
 ;---------------------------------------------------------------------
 vdm_dpbstate:
+        cmp     ebx,[vdm_cdsn]                  ; a letter the array has
+        jae     vds_none                        ; (vdm_dpbaddr)
         movzx   eax,byte ptr ds:[drv_count]
         cmp     ebx,eax
         jae     vds_none
@@ -3920,9 +4040,9 @@ vdm_dpbstate:
         mov     esi,OFFSET vol_state
         cmp     bl,byte ptr ds:[cur_vol]
         je      vds_state
-        mov     esi,ebx
-        imul    esi,VOL_STATE_SIZE
-        add     esi,[vol_slotp]
+        mov     eax,ebx
+        call    vol_slot
+        mov     esi,eax
 vds_state:
         cmp     byte ptr [esi + (fat_ok - vol_state)],0
         je      vds_ok                          ; not read yet
@@ -6167,7 +6287,11 @@ vdm_err     dw  ERR_NOFILE              ; why the last load failed
 vdm_fcbax   dw  0                       ; the two FCB codes, guest AX
 vdm_pspseg  dw  0
 vdm_lolseg  dw  0                       ; the guest's list of lists, below 1MB
-vdm_jftmade db  0                       ; vdm_psp built a table - see vl_undo
+vdm_cdsbase dd  GCDS_BASE               ; the current directory array, flat:
+vdm_cdsn    dd  GCDS_NLOW               ; in the DOS data segment, and this
+                                        ; many entries, until vdm_cdsgrow
+                                        ; moves it for LASTDRIVE=
+vdm_jftmade db  0                      ; vdm_psp built a table - see vl_undo
 vdm_curpsp  dw  0                       ; what 51h/62h answer - 50h moves
                                         ; this and not the block we free
 sv_initver  dw  0                       ; 30h's answer while a driver's INIT

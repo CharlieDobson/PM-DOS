@@ -85,6 +85,8 @@
 #define FF_PACKED       0x02    /* SZDD-compressed on the Setup disk     */
 #define FF_FLOPPY       0x04    /* part of the system a floppy gets (F7) */
 #define FF_UNINST       0x08    /* goes on the Uninstall disk too        */
+#define FF_ROOTTOO      0x10    /* a DOS file with a copy in the root:   */
+                                /* CMD.EXE, for a bypassed start         */
 
 typedef struct {
     u8   disk;                  /* 1..                                   */
@@ -182,6 +184,7 @@ typedef struct {
     char sysname[24];           /* "MS-DOS 6.22", for the screens        */
     char sysfile[2][13];        /* IO.SYS / MSDOS.SYS, or IBM's names    */
     char olddir[PATHLEN];       /* where its commands are                */
+    u16  pmver;                 /* TG_PMDOS: major*256+minor, 0 = before 0.70 */
 } TARGET;
 
 extern TARGET tgt;
@@ -336,6 +339,7 @@ void source_better( void );             /* a source with every disk      */
 int  disk_wanted( int disk );           /* 0 = the disk is in the drive  */
 u32  copy_total( int floppy );
 void copy_dest( const INFFILE *file, char *dest, int max );
+int  copy_rootdest( const INFFILE *file, char *dest, int max );  /* 1 = has one */
 int  copy_error_box( const char *fmt, const char *name );
 void disk_forget( void );
 

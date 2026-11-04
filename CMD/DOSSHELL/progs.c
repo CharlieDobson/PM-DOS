@@ -1106,12 +1106,41 @@ void ini_load( void )
 static u32 out_handle;
 static int out_failed;
 
-static void out( const char *text )
+/* The file is gathered here and written 2K at a time.  Every piece of
+   it - an indent, a key, " = ", a value, a line end - was a write call
+   of its own, some 700 for an ordinary file, and on the 5x86 leaving
+   the shell took over two minutes (2026-11-01). */
+static char out_buf[2048];
+static u32  out_used;
+
+static void out_flush( void )
 {
     u32 done;
 
-    if ( !out_failed && sys_write( out_handle, text, str_len( text ), &done ) != 0 ) {
-        out_failed = 1;
+    if ( !out_failed && out_used ) {
+        if ( sys_write( out_handle, out_buf, out_used, &done ) != 0 || done != out_used ) {
+            out_failed = 1;
+        }
+    }
+    out_used = 0;
+}
+
+static void out( const char *text )
+{
+    u32 len = str_len( text ), part;
+
+    while ( len ) {
+        if ( out_used == sizeof( out_buf ) ) {
+            out_flush();
+        }
+        part = sizeof( out_buf ) - out_used;
+        if ( part > len ) {
+            part = len;
+        }
+        mem_cpy( out_buf + out_used, text, part );
+        out_used += part;
+        text += part;
+        len -= part;
     }
 }
 
@@ -1196,7 +1225,8 @@ void ini_save( void )
         return;                         /* a disk that cannot be written: no matter */
     }
     out_failed = 0;
-    out( "; PM-DOS Shell settings.  The shell writes this file when it is left.\r\n" );
+    out_used = 0;
+    out( "; PM-DOS Shell settings.  This file is created on exit if it doesn't exist.\r\n" );
     out( "[savestate]\r\n" );
     out_line( 0, "display", dmodes[opt.display].tag );
     out_line( 0, "scheme", scheme_name( opt.scheme ) );
@@ -1215,6 +1245,7 @@ void ini_save( void )
     }
     out( "\r\n[programstarter]\r\n" );
     write_item( 0, 0 );
+    out_flush();
     sys_close( out_handle );
     sys_crit_seen();
 }

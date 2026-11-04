@@ -26,6 +26,9 @@
 
 KEYS_MAX        EQU     32
 TEXT_MAX        EQU     128
+CS_DAY          EQU     8640000         ; hundredths in a day
+CS_STEP         EQU     200             ; the most the clock moves between
+                                        ; two polls; more is the clock set
 
 _CHOICE SEGMENT USE32 PUBLIC 'CODE'
         ASSUME  CS:_CHOICE, DS:_CHOICE, ES:_CHOICE, SS:_CHOICE
@@ -129,6 +132,10 @@ sw_t:
 sw_tnum:
         call    parse_num
         jc      sw_lp
+        cmp     eax,CS_DAY / 100        ; a day at most: the wait is counted
+        jbe     sw_tset                 ; in hundredths, and more would not
+        mov     eax,CS_DAY / 100        ; fit in a register
+sw_tset:
         mov     [tmo_secs],eax
         jmp     sw_lp
 
@@ -162,23 +169,39 @@ li_done:
         call    putch
 
 ;--- wait for one of them --------------------------------------------
+; THE WAIT IS ADDED UP, NOT SUBTRACTED.  It was the clock now less the
+; clock at the start, and the clock is not a stopwatch: the kernel sets
+; its 2Ch time to the clock chip's once a minute when the two have come
+; more than two seconds apart, and an emulator that loses timer ticks
+; makes them come apart.  A step forward ended the wait that much early,
+; and a step back looked like midnight and ended it at once - /T:Y,4
+; once gave up after two ticks in QEMU (2026-11-02).  Now each poll adds
+; what the clock moved since the last one, and a move back, or one of
+; more than two seconds, is the clock being set and counts as nothing.
+; Midnight still counts: past it the move is taken modulo a day.
 ask:
         cmp     dword ptr [tmo_secs],0
         je      ask_wait
-        call    secs_now
-        mov     [tmo_start],eax
+        imul    eax,dword ptr [tmo_secs],100
+        mov     [tmo_left],eax          ; hundredths still to wait
+        call    cs_now
+        mov     [tmo_last],eax
 ask_poll:
         mov     ah,06h                  ; direct console input, no wait
         mov     dl,0FFh
         int     21h
         jnz     ask_have
-        call    secs_now
-        sub     eax,[tmo_start]
-        jns     ask_nowrap
-        add     eax,86400               ; the clock went past midnight
-ask_nowrap:
-        cmp     eax,[tmo_secs]
-        jb      ask_poll
+        call    cs_now
+        mov     edx,eax
+        sub     eax,[tmo_last]          ; how far the clock moved
+        mov     [tmo_last],edx
+        jns     ask_fwd
+        add     eax,CS_DAY              ; past midnight, or set back
+ask_fwd:
+        cmp     eax,CS_STEP
+        ja      ask_poll                ; the clock was set: no time passed
+        sub     [tmo_left],eax
+        ja      ask_poll                ; still some to wait
         mov     al,[tmo_key]            ; timed out: take the default
         jmp     short ask_have
 ask_wait:
@@ -341,19 +364,22 @@ pn_none:
         stc
         ret
 
-; secs_now - EAX = seconds since midnight
-secs_now:
+; cs_now - EAX = hundredths of a second since midnight
+cs_now:
         push    ebx
         push    ecx
         push    edx
         mov     ah,2Ch
         int     21h
         movzx   eax,ch
-        imul    eax,3600
+        imul    eax,60
         movzx   ebx,cl
-        imul    ebx,60
-        add     eax,ebx
+        add     eax,ebx                 ; minutes
+        imul    eax,60
         movzx   ebx,dh
+        add     eax,ebx                 ; seconds
+        imul    eax,100
+        movzx   ebx,dl
         add     eax,ebx
         pop     edx
         pop     ecx
@@ -379,7 +405,8 @@ case_sens   db  0
 tmo_key     db  0
 got         db  0
 tmo_secs    dd  0
-tmo_start   dd  0
+tmo_left    dd  0                       ; hundredths of /T's wait still to go
+tmo_last    dd  0                       ; the clock at the last poll
 tail        db  TEXT_MAX dup(0)
 
 _CHOICE ENDS

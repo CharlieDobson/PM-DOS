@@ -74,10 +74,13 @@ NF_CLEAN        EQU 40h                 ; devid_file_clean, the LOW byte
 NC_ISNET        EQU 80h                 ; curdir_isnet, the high byte of
                                         ; CDS_FLAGS: the redirector's drive
 
-SFT_COUNT       EQU 80                  ; Windows keeps seventeen files open
-                                        ; at once before the shell has even
-                                        ; started; forty was the number a
-                                        ; test program needed
+SFT_MIN         EQU 8                   ; the file table is FILES= entries
+SFT_MAX         EQU 64                  ; (rd_layout): DOS's floor, and the
+                                        ; kernel's MAX_HANDLES, which FILES=
+                                        ; never says more than.  Windows
+                                        ; keeps seventeen files open at once
+                                        ; before the shell has even started
+RD_TAILEND      EQU 0FFF0h              ; the end of the room after the image
 JFT_COUNT       EQU 20                  ; what fits in a PSP, and what a
                                         ; process starts with.  It is NOT the
                                         ; limit: 67h moves the table into a
@@ -1380,7 +1383,7 @@ rp_drv      db  0
 rp_vol      dw  0
 rp_indir    db  0
 
-; BUILD lptpad - pushes rd_sfts 1000h bytes up the image.  It was
+; BUILD lptpad - pushes the file table 1000h bytes up.  It was
 ; built to ask whether the DI in the Windows fault dump follows the
 ; SFT, and the answer was NO: DI stayed 9030 with the table moved
 ; 1000h and the image 4K larger, and every other register in that
@@ -1432,14 +1435,69 @@ ENDIF
 ; of 0 is four thousand million entries, and it wrote over ring-0
 ; memory until it faulted - Windows' silent halt with IFSHLP.SYS in
 ; CONFIG.SYS.  One entry is enough.  RMDOS never hands it out (sft_alloc
-; looks in rd_sfts only), and its zero reference count says free to
+; looks in the first block only), and its zero reference count says free to
 ; anything else that looks.
-rd_sfthdr   dd  0FFFFFFFFh              ; next: rd_sftend, from rd_sysinit
-            dw  SFT_COUNT               ; the entries in this one
-rd_sfts     db  (SFT_COUNT * SFT_LEN) dup(0)
-rd_sftend   dd  0FFFFFFFFh              ; the last block: no next
-            dw  1                       ; and one entry, unused
-            db  SFT_LEN dup(0)
+;
+; AND IT IS NOT IN THE IMAGE (2026-11-01).  It was eighty entries here
+; whatever FILES= said - 4.7K of the segment.  rd_layout builds both
+; blocks in the room after the image instead, the first with as many
+; entries as FILES= hands out, and these say where.
+rd_sfthp    dw  0                       ; the first block's header
+rd_sftp     dw  0                       ; ...its entries
+rd_nsft     dw  0                       ; ...how many: FILES=
+rd_sftep    dw  0                       ; the second block, one entry
+rd_tailfree dw  0                       ; the room after both (RMCACHE.INC)
+
+;=====================================================================
+; rd_layout - the room after the image: the file table, as many entries
+;             as FILES= said, laid out as DOS lays out its blocks - a
+;             header (next, count), the entries, and a second block of
+;             one entry that ends the chain (see above for why both).
+;             What is left after it, from rd_tailfree, is the sector
+;             cache's to use (cm_init).  Runs before anything opens a
+;             file or publishes the list of lists.
+;=====================================================================
+rd_layout:
+        pusha
+        push    es
+        push    cs
+        pop     es
+        mov     ax,[h_files]
+        cmp     ax,SFT_MIN
+        jae     rdl_notlow
+        mov     ax,SFT_MIN
+rdl_notlow:
+        cmp     ax,SFT_MAX
+        jbe     rdl_nothigh
+        mov     ax,SFT_MAX
+rdl_nothigh:
+        mov     [rd_nsft],ax
+        mov     di,OFFSET rd_imgend + 15
+        and     di,0FFF0h
+        mov     [rd_sfthp],di
+        lea     bx,[di+6]
+        mov     [rd_sftp],bx
+        imul    cx,ax,SFT_LEN
+        add     bx,cx
+        mov     [rd_sftep],bx
+        lea     cx,[bx+6+SFT_LEN]
+        mov     [rd_tailfree],cx
+        sub     cx,di                   ; all of it, zeroed
+        xor     al,al
+        cld
+        rep     stosb
+        mov     di,[rd_sfthp]
+        mov     ax,[rd_sftep]
+        mov     [di],ax                 ; next: the second block
+        mov     [di+2],cs
+        mov     ax,[rd_nsft]
+        mov     [di+4],ax
+        mov     di,[rd_sftep]
+        mov     dword ptr [di],0FFFFFFFFh       ; the last block: no next
+        mov     word ptr [di+4],1       ; and one entry, unused
+        pop     es
+        popa
+        ret
 
 ; THE FCB TABLE THE LIST OF LISTS NAMES (LL_FCB): MS-DOS 5's default,
 ; FCBS=4,0, as SYSINIT builds it - each entry 'A' throughout but for

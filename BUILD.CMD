@@ -383,7 +383,7 @@ if exist NLS\*.obj del /q NLS\*.obj
 rem ...and the 32-bit drivers under DRV\, the shared base and a
 rem directory each.
 if exist DRV\*.obj del /q DRV\*.obj
-for %%D in (NE2000 RTL8139 PCNET TULIP EEPRO100 E1000 WD80X3 EL3C501 EL3C509 EL3C90X TCPIP NETBEUI RAMDISK X87EMU) do if exist DRV\%%D\*.obj del /q DRV\%%D\*.obj
+for %%D in (NE2000 RTL8139 PCNET TULIP EEPRO100 E1000 WD80X3 EL3C501 EL3C509 EL3C515 EL3C90X TCPIP NETBEUI RAMDISK X87EMU) do if exist DRV\%%D\*.obj del /q DRV\%%D\*.obj
 
 rem FSIZE asserts the sizes the checks below used to test with FOR's
 rem "~z" size modifier.  That modifier is a cmd.exe command EXTENSION:
@@ -660,8 +660,8 @@ cd CMD\NET
 wasm -q -i=..\..\INC netstart.asm                || goto :fail
 wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC socklib.c || goto :fail
 cd ..\..
-rem the TLS port (CMD\NET\TLS): the vendored NSTLS core (ECDHE-RSA-
-rem AES-GCM TLS 1.2), the little C library it needs (PMCLIB), and the
+rem the TLS port (CMD\NET\TLS): the vendored NSTLS core (TLS 1.3 and
+rem 1.2, ECDHE with ECDSA or RSA), the little C library it needs (PMCLIB), and the
 rem glue that drives it over SOCKLIB.  The core is third-party C, so it
 rem is built without -w4 -we; PMCLIB and TLSGLUE are ours and are not.
 cd CMD\NET\TLS
@@ -2117,6 +2117,16 @@ wlink form raw bin option offset=0x10000000 name el3c509_1.bin file ..\ndstart.o
 cd ..\..
 TOOLS\D32DRV.EXE BIN\EL3C509.SYS TOOLS\DRVSTUB.BIN DRV\EL3C509\el3c509_0.bin DRV\EL3C509\el3c509_1.bin || goto :fail
 
+echo === EL3C515.SYS (3Com Fast EtherLink ISA, 10/100; written, Charlie's card) ===
+cd DRV\EL3C515
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=.. el3c515.c || goto :fail
+wlink form raw bin option offset=0x0 name el3c515_0.bin file ..\ndstart.obj,..\netcore.obj,el3c515.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+wlink form raw bin option offset=0x10000000 name el3c515_1.bin file ..\ndstart.obj,..\netcore.obj,el3c515.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+TOOLS\D32DRV.EXE BIN\EL3C515.SYS TOOLS\DRVSTUB.BIN DRV\EL3C515\el3c515_0.bin DRV\EL3C515\el3c515_1.bin || goto :fail
+
 echo === WD80X3.SYS (WD/SMC shared-memory 8390, ISA; written) ===
 cd DRV\WD80X3
 wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=.. wd80x3.c || goto :fail
@@ -2148,15 +2158,18 @@ rem runtime (TLSRT, malloc/free over one arena pool - a driver cannot call
 rem DOS like PMCLIB) and a stack switch (TLSSTK) that runs the handshake
 rem crypto on a big private stack, since the WfW bridge's scratch stack is
 rem far too small.  WINSOCK.DLL's port map opens 443 as TLS transparently.
+rem TCPSVC bridges the two kernel services only this driver uses
+rem (NDS_READFILE for TCPIP.INI and CACERT.BND, NDS_STAMP for the date).
 cd DRV\TCPIP
 wasm -q tlsstk.asm || goto :fail
+wasm -q -i=..\..\INC tcpsvc.asm || goto :fail
 wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC tlsrt.c || goto :fail
 wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=.. -i=..\..\CMD\NET\TLS tcpip.c || goto :fail
 wlink form raw bin option offset=0x0 name tcpip_0.bin ^
-    file ..\ndstart.obj,tcpip.obj,tlsrt.obj,tlsstk.obj,..\..\CMD\NET\TLS\aes.obj,..\..\CMD\NET\TLS\gcm.obj,..\..\CMD\NET\TLS\sha.obj,..\..\CMD\NET\TLS\sha512.obj,..\..\CMD\NET\TLS\prf.obj,..\..\CMD\NET\TLS\bignum.obj,..\..\CMD\NET\TLS\rsa.obj,..\..\CMD\NET\TLS\ecp256.obj,..\..\CMD\NET\TLS\ecp384.obj,..\..\CMD\NET\TLS\rng.obj,..\..\CMD\NET\TLS\x509.obj,..\..\CMD\NET\TLS\tlsrec.obj,..\..\CMD\NET\TLS\tlshs.obj ^
+    file ..\ndstart.obj,tcpip.obj,tlsrt.obj,tlsstk.obj,tcpsvc.obj,..\..\CMD\NET\TLS\aes.obj,..\..\CMD\NET\TLS\gcm.obj,..\..\CMD\NET\TLS\sha.obj,..\..\CMD\NET\TLS\sha512.obj,..\..\CMD\NET\TLS\prf.obj,..\..\CMD\NET\TLS\bignum.obj,..\..\CMD\NET\TLS\rsa.obj,..\..\CMD\NET\TLS\ecp256.obj,..\..\CMD\NET\TLS\ecp384.obj,..\..\CMD\NET\TLS\rng.obj,..\..\CMD\NET\TLS\x509.obj,..\..\CMD\NET\TLS\tlsrec.obj,..\..\CMD\NET\TLS\tlshs.obj ^
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
 wlink form raw bin option offset=0x10000000 name tcpip_1.bin ^
-    file ..\ndstart.obj,tcpip.obj,tlsrt.obj,tlsstk.obj,..\..\CMD\NET\TLS\aes.obj,..\..\CMD\NET\TLS\gcm.obj,..\..\CMD\NET\TLS\sha.obj,..\..\CMD\NET\TLS\sha512.obj,..\..\CMD\NET\TLS\prf.obj,..\..\CMD\NET\TLS\bignum.obj,..\..\CMD\NET\TLS\rsa.obj,..\..\CMD\NET\TLS\ecp256.obj,..\..\CMD\NET\TLS\ecp384.obj,..\..\CMD\NET\TLS\rng.obj,..\..\CMD\NET\TLS\x509.obj,..\..\CMD\NET\TLS\tlsrec.obj,..\..\CMD\NET\TLS\tlshs.obj ^
+    file ..\ndstart.obj,tcpip.obj,tlsrt.obj,tlsstk.obj,tcpsvc.obj,..\..\CMD\NET\TLS\aes.obj,..\..\CMD\NET\TLS\gcm.obj,..\..\CMD\NET\TLS\sha.obj,..\..\CMD\NET\TLS\sha512.obj,..\..\CMD\NET\TLS\prf.obj,..\..\CMD\NET\TLS\bignum.obj,..\..\CMD\NET\TLS\rsa.obj,..\..\CMD\NET\TLS\ecp256.obj,..\..\CMD\NET\TLS\ecp384.obj,..\..\CMD\NET\TLS\rng.obj,..\..\CMD\NET\TLS\x509.obj,..\..\CMD\NET\TLS\tlsrec.obj,..\..\CMD\NET\TLS\tlshs.obj ^
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
 cd ..\..
 TOOLS\D32DRV.EXE BIN\TCPIP.SYS TOOLS\DRVSTUB.BIN DRV\TCPIP\tcpip_0.bin DRV\TCPIP\tcpip_1.bin || goto :fail

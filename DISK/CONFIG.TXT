@@ -38,15 +38,15 @@ DOS=HIGH|LOW[,UMB|NOUMB]
 
 FILES=n
     How many files can be open at once across the whole system.  8 to
-    64.  The default is 64.
+    64.  The default is 64.  The same number applies under Windows.
 
 LASTDRIVE=x
-    The highest drive letter programs should look for, up to P.
-    LASTDRIVE never goes below the drives you actually have, and
-    doesn't add new ones.  Under Windows the letters go up to Z,
-    and network drives Windows for Workgroups connects can only
-    use letters up to LASTDRIVE.  Without the line, that's all of
-    them.
+    The highest drive letter there is, up to Z.  LASTDRIVE never
+    goes below the drives you actually have, and doesn't add new
+    ones.  NET USE, MOUNT and network drives Windows for Workgroups
+    connects can only use letters up to LASTDRIVE.  Without the
+    line, that's P: (Z: under Windows).  Each letter past P: uses
+    88 bytes of conventional memory.
 
 SET name=value
     Sets an environment variable before AUTOEXEC.BAT runs.  Every
@@ -87,7 +87,11 @@ DEVICEHIGH=file [options]
     asking in the background.  /IP=address gives a fixed address
     instead, with /MASK=, /GW= and /DNS= for the rest.  /NAME=PMDOS1
     gives the computer a name other Windows computers can find it by,
-    and /WINS= names a WINS server.  IPCONFIG shows the settings.
+    and puts it in DNS; without one the name is PMDOS- and six digits
+    from the card.  /WINS= names a WINS server.  The same settings can
+    be kept in TCPIP.INI beside TCPIP.SYS; HELP TCPIP.SYS lists them.
+    HTTPS is checked against CACERT.BND beside it.  IPCONFIG shows the
+    settings.
     Without a card loaded first it says so and does not load.
     NETBEUI.SYS is the NetBEUI protocol, for Windows networks without
     TCP/IP.  Load it after the card driver too, beside TCPIP.SYS or
@@ -413,8 +417,10 @@ WINCACHE=OFF
     own, built the way SMARTDRV would have been: Windows programs
     that look for SMARTDRV find it, and Windows for Workgroups' 32-bit
     file access turns it off for the drives it takes over.  Size in
-    KB, or K or M, up to 4M.  Without the line it's an eighth of the
-    free extended memory.  Writes always go straight through.  LOG
+    KB, or K or M, up to 23M.  Without the line it's an eighth of the
+    free extended memory, up to 4M.  Over 4M, the cache's tables also
+    take 6K plus about 2.5K per megabyte of conventional memory.
+    Writes always go straight through.  LOG
     writes RMCACHE.LOG on the boot drive when Windows exits, with the
     hit counts.
 

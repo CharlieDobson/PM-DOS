@@ -42,6 +42,17 @@ void tls_keys_init_gcm(tls_keys *k,
     k->is_gcm = 1;
 }
 
+void tls_keys_init13(tls_keys *k,
+                     const unsigned char *enc_key, int keylen,
+                     const unsigned char iv12[12])
+{
+    install_key( k, enc_key, keylen );
+    gcm_calc_h( k->rk, k->nr, k->H );
+    memcpy( k->iv, iv12, 12 );
+    memset( k->seq, 0, 8 );
+    k->is_gcm = 2;
+}
+
 static void seq_inc(unsigned char seq[8])
 {
     int i;
@@ -204,11 +215,82 @@ static int tls_unprotect_gcm(tls_keys *k, const unsigned char *rec, int reclen,
     return clen;
 }
 
+/* TLS 1.3 record (RFC 8446 5.2): the content type goes inside, after the
+   data, and the record goes out as application_data:
+     record = 17 03 03 len(2) || AES-GCM(data || type) || tag(16)
+   nonce = iv XOR (0000 || seq), AAD = the 5-byte record header.  No
+   padding is sent. */
+static void nonce13(const tls_keys *k, unsigned char nonce[12])
+{
+    int i;
+    memcpy( nonce, k->iv, 12 );
+    for ( i = 0; i < 8; i++ ) {
+        nonce[4 + i] ^= k->seq[i];
+    }
+}
+
+static int tls_protect13(tls_keys *k, int content_type,
+                         const unsigned char *plain, int plen,
+                         unsigned char *out, int outcap)
+{
+    unsigned char nonce[12], tag[16];
+    int rl = plen + 1 + 16;                     /* inner plaintext + tag */
+    int reclen = TLS_REC_HDR + rl;
+
+    if ( plen < 0 || reclen > outcap ) return -1;
+
+    out[0] = TLS_CT_APPLICATION_DATA;
+    out[1] = TLS_VER_HI; out[2] = TLS_VER_LO;
+    out[3] = (unsigned char)( ( rl >> 8 ) & 0xFF );
+    out[4] = (unsigned char)( rl & 0xFF );
+    if ( plen > 0 ) memmove( out + TLS_REC_HDR, plain, plen );
+    out[TLS_REC_HDR + plen] = (unsigned char)content_type;
+
+    nonce13( k, nonce );
+    /* in place: GCM counter mode reads each byte before writing it */
+    gcm_encrypt( k->rk, k->nr, k->H, nonce, out, TLS_REC_HDR,
+                 out + TLS_REC_HDR, plen + 1, out + TLS_REC_HDR, tag );
+    memcpy( out + TLS_REC_HDR + plen + 1, tag, 16 );
+
+    seq_inc( k->seq );
+    return reclen;
+}
+
+static int tls_unprotect13(tls_keys *k, const unsigned char *rec, int reclen,
+                           int *content_type, unsigned char *out, int outcap)
+{
+    unsigned char nonce[12];
+    int len, clen;
+
+    if ( reclen < TLS_REC_HDR + 1 + 16 ) return -1;
+    if ( rec[0] != TLS_CT_APPLICATION_DATA ) return -1;
+    len = ( rec[3] << 8 ) | rec[4];
+    if ( TLS_REC_HDR + len != reclen ) return -1;
+    clen = len - 16;
+    if ( clen > outcap ) return -1;
+
+    nonce13( k, nonce );
+    if ( gcm_decrypt( k->rk, k->nr, k->H, nonce, rec, TLS_REC_HDR,
+                      rec + TLS_REC_HDR, clen, rec + TLS_REC_HDR + clen, out ) != 0 ) {
+        return -1;
+    }
+    seq_inc( k->seq );
+
+    /* the real type is the last non-zero byte; zeros after it are padding */
+    while ( clen > 0 && out[clen - 1] == 0 ) clen--;
+    if ( clen == 0 ) return -1;                 /* no type at all */
+    clen--;
+    *content_type = out[clen];
+    return clen;
+}
+
 int tls_protect(tls_keys *k, int content_type,
                 const unsigned char *plain, int plen,
                 nst_rng *rng, unsigned char *out, int outcap)
 {
     unsigned char iv[16];
+    if (k->is_gcm == 2)
+        return tls_protect13(k, content_type, plain, plen, out, outcap);
     if (k->is_gcm)
         return tls_protect_gcm(k, content_type, plain, plen, out, outcap);
     rng_bytes(rng, iv, 16);
@@ -222,6 +304,8 @@ int tls_unprotect(tls_keys *k, const unsigned char *rec, int reclen,
     unsigned char *padded, mac[20], mac2[20];
     int type, len, clen, padval, i, contentlen, plen, bad;
 
+    if (k->is_gcm == 2)
+        return tls_unprotect13(k, rec, reclen, content_type, out, outcap);
     if (k->is_gcm)
         return tls_unprotect_gcm(k, rec, reclen, content_type, out, outcap);
 
