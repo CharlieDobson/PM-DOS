@@ -2626,9 +2626,8 @@ rem files, where they go, Setup's CONFIG.SYS and AUTOEXEC.BAT rules), the
 rem version and the NLS lists, packs the files, shares them out over
 rem 1.44MB disks and writes STAGE\ (every disk's files in one directory,
 rem SETUP.INF among them - a CD or a network directory is that) and
-rem MKIMG.CMD, which makes DISK1.IMG on, SETUPUSB.IMG and SETUPZIP.IMG
-rem (bootable hard-disk images for a USB stick and a Zip disk) and
-rem PMDOSCD.ISO: the PM-DOS CD, which starts from BIN\BOOTCD.BIN with
+rem MKIMG.CMD, which makes DISK1.IMG on, SETUPUSB.IMG (a bootable
+rem hard-disk image for a USB stick) and PMDOSCD.ISO: the PM-DOS CD, which starts from BIN\BOOTCD.BIN with
 rem no emulation and offers PM-DOS from the disc or Setup.  Its tree is
 rem CD\ - the stage in the root and every file Setup installs, unpacked,
 rem in \PMDOS.  It took the place of SETUPCD.ISO, which started from
@@ -2646,7 +2645,6 @@ TOOLS\MKSETUP.EXE DISK\SETUP.LST IMAGES\SETUP   || goto :fail
 call IMAGES\SETUP\MKIMG.CMD
 if not exist IMAGES\SETUP\DISK1.IMG goto :fail
 if not exist IMAGES\SETUP\SETUPUSB.IMG goto :fail
-if not exist IMAGES\SETUP\SETUPZIP.IMG goto :fail
 if not exist IMAGES\SETUP\PMDOSCD.ISO goto :fail
 
 echo.

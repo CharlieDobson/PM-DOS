@@ -38,8 +38,8 @@
  *     -geom H S     the disk's geometry, H heads of S sectors (16 and
  *                   63 unless given): the partition starts on track 1
  *                   of it, and the BPB and the table's CHS fields carry
- *                   it.  SETUP's Zip image is -geom 64 32, which is
- *                   what a BIOS makes of a Zip disk
+ *                   it.  -geom 64 32 is what a BIOS makes of a Zip
+ *                   disk
  *
  * Floppy images take their boot sector from boot.bin.  On floppies,
  * and on bootable hard disks, the first two files IN THE ROOT are

@@ -19,11 +19,10 @@
  *                      list's [cd.config] and [cd.autoexec]: PM-DOS or
  *                      Setup), and in \PMDOS every file Setup installs,
  *                      unpacked, for PM-DOS started from the disc.
- *   <outdir>\MKIMG.CMD MKDISK lines for the diskettes (DISK1.IMG ...),
- *                      the USB image (SETUPUSB.IMG, 16MB, 16 heads of
- *                      63 sectors) and the Zip image (SETUPZIP.IMG, the
- *                      same at 64 heads of 32), then this program's
- *                      -iso line for PMDOSCD.ISO, which starts from
+ *   <outdir>\MKIMG.CMD MKDISK lines for the diskettes (DISK1.IMG ...)
+ *                      and the USB image (SETUPUSB.IMG, 16MB, 16 heads
+ *                      of 63 sectors), then this program's -iso line
+ *                      for PMDOSCD.ISO, which starts from
  *                      BIN\BOOTCD.BIN.  BUILD.CMD calls it.
  *
  * PACKING is SZDD, the format MS-DOS 5's EXPAND reads (and SETUP's own
@@ -656,18 +655,15 @@ static void make_set(const char *outdir)
             fprintf(cmd, " %s\\%s", stage, ent[i].packed);
         fprintf(cmd, "\r\n");
     }
-    for (s = 0; s < 2; s++) {
-        fprintf(cmd, "TOOLS\\MKDISK.EXE -hd16 16 %s\\%s.IMG%s -mbr BIN\\MBRBOOT.BIN -vbr BIN\\BOOT16.BIN"
-                     " -s2 BIN\\BOOT2.BIN -label \"PMDOS SETUP\"",
-                outdir, s ? "SETUPZIP" : "SETUPUSB", s ? " -geom 64 32" : "");
-        for (i = 0; i < nent; i++) if (ent[i].first)
-            fprintf(cmd, " %s\\%s", stage, ent[i].packed);
-        fprintf(cmd, " %s\\SETUP.INF %s\\CONFIG.SYS %s\\AUTOEXEC.BAT", stage, stage, stage);
-        for (d = 1; d <= ndisks; d++) fprintf(cmd, " %s\\DISK%d", stage, d);
-        for (i = 0; i < nent; i++) if (!ent[i].first)
-            fprintf(cmd, " %s\\%s", stage, ent[i].packed);
-        fprintf(cmd, "\r\n");
-    }
+    fprintf(cmd, "TOOLS\\MKDISK.EXE -hd16 16 %s\\SETUPUSB.IMG -mbr BIN\\MBRBOOT.BIN -vbr BIN\\BOOT16.BIN"
+                 " -s2 BIN\\BOOT2.BIN -label \"PMDOS SETUP\"", outdir);
+    for (i = 0; i < nent; i++) if (ent[i].first)
+        fprintf(cmd, " %s\\%s", stage, ent[i].packed);
+    fprintf(cmd, " %s\\SETUP.INF %s\\CONFIG.SYS %s\\AUTOEXEC.BAT", stage, stage, stage);
+    for (d = 1; d <= ndisks; d++) fprintf(cmd, " %s\\DISK%d", stage, d);
+    for (i = 0; i < nent; i++) if (!ent[i].first)
+        fprintf(cmd, " %s\\%s", stage, ent[i].packed);
+    fprintf(cmd, "\r\n");
     fprintf(cmd, "TOOLS\\MKSETUP.EXE -iso %s\\PMDOSCD.ISO BIN\\BOOTCD.BIN %s \"PMDOS_%s\"\r\n",
             outdir, cdroot, version);
     fclose(cmd);

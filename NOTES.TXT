@@ -19499,6 +19499,8 @@ from a floppy to C:\DOS by MOVE.  QEMU moved both byte for byte: a
 plain floppy, the door changed mid-session to another disk with the
 same boot sector, and the same after MOVE had deleted a file from the
 first disk.  Not explained yet; he is asked for sizes and FC /B.
+RESOLVED (Charlie, 2026-11-03): moved files arrive whole with MOVE's
+later edits, the ones in 1b0d2b4.
 
 /T SAID WHY: THE CARD HAS NO 10BASE-T OF ITS OWN.  On the 5x86:
 InternalConfig 0102001B (autoselect, transceiver 0), W3_OPTIONS F040
@@ -20200,7 +20202,24 @@ the copies they replace are in scratch binbak4.  Only today's crypto
 sources had changed since the build those came from.  SMBFS.SYS and
 TESTS\SMBTEST link AES.C too and are NOT delivered, as above.  The
 NETSPLOR / NSTLS32 copies of the core are not changed.  The images and
-the VM are NOT updated, and RUNTESTS was not run.
+the VM are NOT updated, and RUNTESTS was not run.  (All of it was
+delivered and committed the same evening, 1b0d2b4.)
+
+
+NO ZIP SETUP IMAGE (2026-11-03)
+---------------------------------------------------------------------
+
+Charlie: the floppies, the USB image and the hard-disk images are
+enough.  MKSETUP's MKIMG.CMD no longer makes SETUPZIP.IMG (the USB
+image at 64 heads of 32 sectors), and BUILD.CMD no longer looks for
+it.  The CD (PMDOSCD.ISO) stays, as he chose.  MKDISK keeps -geom: a
+Zip disk is still 64 heads of 32 sectors to a BIOS, and DISK.C and
+FATLOAD.INC still start from one.  The four images left built byte for
+byte as delivered (the ISO apart from its directory-record dates);
+S:\IMAGES\SETUP\SETUPZIP.IMG deleted and its MKIMG.CMD replaced.
+
+The 5x86's bad copies after a MOVE (above) are resolved by MOVE's
+later edits, Charlie says.
 
 
 v0.61 - THE NUMBER CAUGHT UP (2026-09-30)
