@@ -14,7 +14,9 @@
  * files and folders (Space, Ins, the right button) go into a new .ZIP or
  * .7Z with F8, and F5 unpacks the highlighted or marked archive files
  * whole.  In an archive F5 extracts the marked entries, or all of them.
- * On the wrong side each key says which side it works on.
+ * On the wrong side each key says which side it works on.  Del takes the
+ * marked entries, or the highlighted one, out of the archive on show -
+ * not out of one opened from inside another, which is a temp copy.
  *
  * An entry that is itself an archive or a disk image opens with Enter -
  * it is unpacked to TEMP and browsed in place, up to four deep - and a
@@ -550,6 +552,26 @@ static int tui_comp_progress( void *user, int idx, int total, const char *name,
     shorten_tail( nm, PB_ROOM - len, name );
     strcat( line, nm );
     return prog_update( line, done_kb, total_kb > 0 ? total_kb : 1 );
+}
+
+/* Delete: the name the backend passes - an entry copied across, one
+   going, or "" - and the work in KB; a total of 0 is an empty bar */
+static int tui_del_progress( void *user, int idx, int total, const char *name,
+                             UInt32 done_kb, UInt32 total_kb )
+{
+    char line[PB_ROOM + 2];
+
+    (void)user;
+    (void)idx;
+    (void)total;
+    if ( !prog_is_open() ) {
+        return 1;
+    }
+    shorten_tail( line, PB_ROOM, name ? name : "" );
+    if ( total_kb == 0 ) {
+        return prog_update( line, 0, 1 );
+    }
+    return prog_update( line, done_kb, total_kb );
 }
 
 static const char *mem_hint( int rc )
@@ -1192,6 +1214,204 @@ static void act_compress( void )
     /* and open it: what was just made is what will be looked at next */
     if ( rc == SZ_OK ) {
         open_path( res.archive );
+    }
+}
+
+/* ------------------------------------------------------------------ */
+/* deleting                                                            */
+/* ------------------------------------------------------------------ */
+
+/* Is the folder on show still in the archive - an entry under it, or
+   its own stored entry ("SUB", "SUB/" or "SUB\")?  The view would show
+   one that has gone as an empty folder with only the way up in it. */
+static int cwd_still_there( void )
+{
+    const char *cwd = view_cwd(), *name;
+    int len = (int)strlen( cwd ) - 1, at, pos, count = ArcNumEntries( g_arc );
+
+    if ( len <= 0 ) {
+        return 1;                   /* the root always is */
+    }
+    for ( at = 0; at < count; at++ ) {
+        name = ArcEntryName( g_arc, at );
+        if ( name == NULL ) {
+            continue;
+        }
+        while ( *name == '\\' || *name == '/' ) {
+            name++;
+        }
+        for ( pos = 0; pos < len && name[pos]; pos++ ) {
+            if ( (name[pos] == '/' ? '\\' : toupper( (u8)name[pos] ))
+                 != (cwd[pos] == '/' ? '\\' : toupper( (u8)cwd[pos] )) ) {
+                break;
+            }
+        }
+        if ( pos == len && (name[pos] == 0 || name[pos] == '\\' || name[pos] == '/') ) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* The list again, from the ArcFile as it is now: the folder kept if it
+   is still there, else up until one is, and the highlight on the same
+   row number unless the folder changed. */
+static void delete_relist( int sel )
+{
+    int moved = 0, count;
+
+    while ( view_cwd()[0] && !cwd_still_there() ) {
+        if ( !view_up() ) {
+            break;
+        }
+        moved = 1;
+    }
+    count = view_rebuild();
+    list_data( &list, count, fill_row, NULL );
+    list.row_icon = arc_row_icon;
+    if ( moved || sel < 0 || count <= 0 ) {
+        list_select( &list, 0 );
+    } else {
+        list_select( &list, sel < count ? sel : count - 1 );
+    }
+    repaint();
+}
+
+static void delete_report( int rc )
+{
+    if ( rc == SZ_ERR_UNSUPPORTED ) {
+        msg( "Delete", ArcDeleteHint() );
+    } else if ( rc == SZ_ERR_NORAM || rc == SZ_ERR_MEMORY ) {
+        msg( "Delete", mem_hint( rc ) );
+    } else if ( rc == SZ_ERR_WRITE ) {
+        msg( "Delete", "The archive could not be written.  It may be read-only, open in "
+                       "another program, or on a full disk." );
+    } else {
+        msg( "Delete", ArcErrorText( rc ) );
+    }
+}
+
+/* Del: the marked rows, or the highlighted one, out of the archive.  The
+   backend is asked first whether this selection can go (a refusal comes
+   before the question, not after it), then the user, with No unless Yes
+   is meant; then the Compress progress box captioned "Delete", where Esc
+   leaves the archive as it was.  The list is built again after the
+   backend returns, whatever it returned: on success the ArcFile was
+   reopened in place and every row of the view points into its old entry
+   table, so nothing may paint the list before that. */
+static void act_delete( void )
+{
+    char text[160], shown[48], arc_name[48], num[NUM_FMT_MAX], leaf[SZ_MAX_NAME];
+    int *rows, *idx, nrows, count, at, kept, has_dir = 0, sel, rc, max;
+
+    if ( g_arc == NULL ) {
+        msg( "Delete", "Open an archive first." );
+        return;
+    }
+    /* a temp file unpacked from the archive above: what was deleted from
+       it would go with it when Backspace deleted it */
+    if ( g_nest_depth > 0 ) {
+        msg( "Delete", "Files cannot be deleted from an archive that is open inside another "
+                       "archive.  Extract the inner archive, then open the copy." );
+        return;
+    }
+    if ( list.count <= 0 ) {
+        return;
+    }
+    /* the marked rows, or the highlighted one - never "..", which takes
+       no mark but can have the highlight */
+    nrows = list.mark_count;
+    rows = (int *)malloc( (size_t)(nrows > 0 ? nrows : 1) * sizeof( int ) );
+    if ( rows == NULL ) {
+        msg( "Delete", "Out of memory." );
+        return;
+    }
+    if ( nrows > 0 ) {
+        nrows = list_get_marked( &list, rows, nrows );
+    } else {
+        rows[0] = list.sel;
+        nrows = 1;
+    }
+    for ( at = 0, kept = 0; at < nrows; at++ ) {
+        if ( rows[at] < 0 || rows[at] >= view_count() || view_is_up( rows[at] ) ) {
+            continue;
+        }
+        if ( view_is_dir( rows[at] ) ) {
+            has_dir = 1;
+        }
+        rows[kept++] = rows[at];
+    }
+    nrows = kept;
+    if ( nrows == 0 ) {
+        free( rows );
+        return;
+    }
+    /* as archive entries, a folder row being everything under it */
+    max = view_max_expanded();
+    idx = (int *)malloc( (size_t)(max > 0 ? max : 1) * sizeof( int ) );
+    if ( idx == NULL ) {
+        free( rows );
+        msg( "Delete", "Out of memory." );
+        return;
+    }
+    count = view_expand( rows, nrows, idx, max );
+    shown[0] = 0;
+    if ( nrows == 1 ) {
+        view_row_name( rows[0], leaf, sizeof( leaf ) );
+        shorten_tail( shown, 40, leaf );
+    }
+    free( rows );
+    if ( count < 0 ) {
+        free( idx );
+        msg( "Delete", "Out of memory." );
+        return;
+    }
+    if ( count == 0 ) {
+        free( idx );
+        return;
+    }
+    rc = ArcDeleteCheck( g_arc, idx, count );
+    if ( rc != SZ_OK ) {
+        free( idx );
+        delete_report( rc );
+        return;
+    }
+    shorten_tail( arc_name, 40, base_name( g_path ) );
+    if ( nrows == 1 ) {
+        sprintf( text, "Delete %s from %s?", shown, arc_name );
+    } else {
+        sprintf( text, "Delete these %s items from %s?", NumFmt( (UInt32)nrows, num ), arc_name );
+    }
+    if ( has_dir ) {
+        strcat( text, "\n\nA folder is deleted with everything in it." );
+    }
+    if ( msg_box( FG_BLACK, BG_WHITE, "Delete", text, DB_YESNO_NO ) != ANS_YES ) {
+        free( idx );
+        return;
+    }
+    sel = list.sel;
+    for ( ;; ) {
+        prog_open( "Delete" );
+        crit_clear();
+        rc = ArcDeleteItems( g_arc, idx, count, tui_del_progress, NULL );
+        prog_close();
+        delete_relist( sel );       /* before anything else paints */
+        if ( rc != SZ_ERR_PASSWORD && rc != SZ_ERR_BADPASS ) {
+            break;
+        }
+        /* the archive is as it was, so the same entries are still these */
+        if ( !ask_password( rc == SZ_ERR_BADPASS ) ) {
+            rc = SZ_ERR_CANCEL;
+            break;
+        }
+        ArcSetPassword( g_arc, g_password );
+    }
+    free( idx );
+    if ( rc != SZ_OK && crit_hit() ) {
+        rc = SZ_ERR_CANCEL;         /* the disk was asked about already */
+    }
+    if ( rc != SZ_OK && rc != SZ_ERR_CANCEL ) {
+        delete_report( rc );
     }
 }
 
@@ -1886,6 +2106,7 @@ static void act_help( void )
                "Enter    Opens a drive, archive, or text file.  When in\n"
                "         an archive, it extracts all or selected files.\n"
                "Bksp     Go back one level.\n"
+               "Del      Delete the marked rows, or the highlighted one.\n"
                "Spc/Ins  Mark or unmark      +  mark all\n"
                "*        Invert the marks    -  unmark all\n"
                "Esc      Quit\n"
@@ -2030,6 +2251,11 @@ static void handle( const EVENT *ev )
     case KEY_F6:    act_full_name();    break;
     case KEY_F7:    act_test();         break;
     case KEY_F8:    act_compress();     break;
+    case KEY_DEL:                       /* in an archive; on the disk, not a key */
+        if ( !disk_mode() ) {
+            act_delete();
+        }
+        break;
     case KEY_ESC:   running = 0;        break;
     }
 }
@@ -2062,6 +2288,7 @@ int tui_run( const char *open_first, int graphics )
     menu_item( menu, "Info           F4", 'I', act_info );
     menu_item( menu, "Extract...     F5", 'E', act_extract );
     menu_item( menu, "Extract All...",    'A', act_extract_all );
+    menu_item( menu, "Delete...     Del", 'D', act_delete );
     menu_item( menu, "Compress...    F8", 'P', act_compress );
     menu_item( menu, "Full Name      F6", 'N', act_full_name );
     menu_item( menu, "Test           F7", 'T', act_test );

@@ -344,9 +344,10 @@ static void dlg_hotkeys( const char *const *labels, int count, char *keys )
 
 /* The box, sized to its text and centred; the text in it, as lines
    centred one by one or (block) sharing a left edge; buttons on the
-   bottom row; and the answer - Enter the first button, Esc the last. */
+   bottom row; and the answer - Enter the button "enter" (the first,
+   except where Yes cannot be taken back), Esc the last. */
 static int dlg_run( int fg, int bg, const char *title, const char *text, int block,
-                    const char *const *labels, int count )
+                    const char *const *labels, int count, int enter )
 {
     POPUP box;
     BUTTON btn[DLG_MAX_BUTTONS];
@@ -429,7 +430,7 @@ static int dlg_run( int fg, int bg, const char *title, const char *text, int blo
             }
         } else if ( ev.kind == EV_KEY ) {
             if ( ev.key == KEY_ENTER ) {
-                result = 0;
+                result = enter;
             } else if ( ev.key == KEY_ESC ) {
                 result = count - 1;
             } else if ( ev.key > 0 && ev.key < 0x100 ) {
@@ -454,15 +455,15 @@ int msg_box( int fg, int bg, const char *title, const char *text, int buttons )
     static const char *const yesno[] = { "Yes", "No" };
     int picked;
 
-    if ( buttons == DB_YESNO ) {
-        picked = dlg_run( fg, bg, title, text, 0, yesno, 2 );
+    if ( buttons == DB_YESNO || buttons == DB_YESNO_NO ) {
+        picked = dlg_run( fg, bg, title, text, 0, yesno, 2, buttons == DB_YESNO_NO ? 1 : 0 );
         return picked == 0 ? ANS_YES : ANS_NO;
     }
     if ( buttons == DB_OKCANCEL ) {
-        picked = dlg_run( fg, bg, title, text, 0, okcancel, 2 );
+        picked = dlg_run( fg, bg, title, text, 0, okcancel, 2, 0 );
         return picked == 0 ? ANS_OK : ANS_CANCEL;
     }
-    dlg_run( fg, bg, title, text, 0, ok, 1 );
+    dlg_run( fg, bg, title, text, 0, ok, 1, 0 );
     return ANS_OK;
 }
 
@@ -470,7 +471,7 @@ void msg_block( const char *title, const char *text )
 {
     static const char *const ok[] = { "OK" };
 
-    dlg_run( FG_BLACK, BG_WHITE, title, text, 1, ok, 1 );
+    dlg_run( FG_BLACK, BG_WHITE, title, text, 1, ok, 1, 0 );
 }
 
 int msg_choose( int fg, int bg, const char *title, const char *text,
@@ -479,7 +480,7 @@ int msg_choose( int fg, int bg, const char *title, const char *text,
     if ( count > DLG_MAX_BUTTONS ) {
         count = DLG_MAX_BUTTONS;
     }
-    return dlg_run( fg, bg, title, text, 0, labels, count );
+    return dlg_run( fg, bg, title, text, 0, labels, count, 0 );
 }
 
 /* ------------------------------------------------------------------ */

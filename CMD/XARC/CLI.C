@@ -5,11 +5,13 @@
  *   XARC T <archive>                test
  *   XARC X <archive> [dir]          extract all
  *   XARC A <archive> <items...>     make a .ZIP or .7Z
+ *   XARC D <archive> <specs...>     delete entries
  *   XARC MEM                        the memory report
  *   XARC /?                         this
  *
  * No screen is set up and nothing waits for a key but A's question about
- * replacing an archive, so the output can be sent to a file.  The exit
+ * replacing an archive and D's about deleting (both on stderr, both
+ * answered by /y), so the output can be sent to a file.  The exit
  * codes are the DOS build's: 0 done, 1 a mistake on the command line,
  * 2 the archive could not be opened (or nothing matched), 3 the work
  * failed.
@@ -78,6 +80,7 @@ void cli_usage( void )
     printf( "XARC mem\n\n" );
     printf( "Options:\n" );
     printf( "  a <archive> <dir>    Add to archive.\n" );
+    printf( "  d <archive> <filespec> Delete files from archive.\n" );
     printf( "  l <archive>          List archive contents.\n" );
     printf( "  t <archive>          Test archive integrity.\n" );
     printf( "  x <archive> [dir]    Extract files from archive.\n" );
@@ -105,14 +108,14 @@ int cli_is_mem( const char *arg )
     return !stricmp( arg, "mem" ) || !stricmp( arg, "/mem" ) || !stricmp( arg, "-mem" );
 }
 
-/* a lone l, t, x or a; anything else is an archive for the screen */
+/* a lone l, t, x, a or d; anything else is an archive for the screen */
 int cli_is_cmd( const char *arg )
 {
     int ch;
 
     if ( arg[0] && arg[1] == 0 ) {
         ch = tolower( (u8)arg[0] );
-        return ch == 'l' || ch == 't' || ch == 'x' || ch == 'a';
+        return ch == 'l' || ch == 't' || ch == 'x' || ch == 'a' || ch == 'd';
     }
     return 0;
 }
@@ -407,15 +410,292 @@ static int cli_add( int argc, char **argv )
     return rc == SZ_ERR_NOFILES ? 2 : 3;
 }
 
+/* The archive a command names, or why it will not open: 0 with *out
+   set, or the exit code 2.  The memory warning goes to stderr before
+   the command, because L will work where X will not. */
+static int cli_open( const char *path, const char *pw, ArcFile **out )
+{
+    char warn[400];
+    int rc;
+
+    *out = NULL;
+    if ( !ArcMemStartupOk( NULL, NULL ) ) {
+        mem_warn_text( warn, sizeof( warn ) );
+        fprintf( stderr, "%s\n\n", warn );
+    }
+    rc = ArcOpenPw( path, pw, out );
+    if ( rc == SZ_ERR_PASSWORD ) {
+        printf( "Cannot open '%s': it is encrypted.\n"
+                "Give the password with /p, e.g.  XARC L %s /pSECRET\n", path, path );
+    } else if ( rc == SZ_ERR_BADPASS ) {
+        printf( "Cannot open '%s': wrong password.\n", path );
+    } else if ( rc != SZ_OK ) {
+        printf( "Cannot open '%s': %s\n", path, ArcErrorText( rc ) );
+    }
+    if ( rc != SZ_OK ) {
+        *out = NULL;
+        return 2;
+    }
+    if ( pw ) {
+        ArcSetPassword( *out, pw );
+    }
+    printf( "Archive: %s\nFormat : %s   (%d entries)\n\n", path, ArcFormatName( *out ),
+            ArcNumEntries( *out ) );
+    return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* XARC D                                                              */
+/* ------------------------------------------------------------------ */
+
+/* A filespec is an entry name, either case, '/' and '\' alike, with *
+   and ? that stop at a folder separator - "*.TXT" is the root's text
+   files and "DOCS\*.TXT" the ones in DOCS.  One that names a folder
+   takes everything under it, whether or not the archive stored an
+   entry for the folder itself; "*.*" is "*", as DOS has it. */
+static int is_sep( int ch )
+{
+    return ch == '\\' || ch == '/';
+}
+
+static int fold( int ch )
+{
+    return ch == '/' ? '\\' : toupper( (u8)ch );
+}
+
+/* does "pat" match the "len" characters at "name"? */
+static int wild( const char *pat, const char *name, int len )
+{
+    int at = 0;
+
+    for ( ; *pat; pat++ ) {
+        if ( *pat == '*' ) {
+            while ( pat[1] == '*' ) {
+                pat++;
+            }
+            for ( ;; ) {
+                if ( wild( pat + 1, name + at, len - at ) ) {
+                    return 1;
+                }
+                if ( at >= len || is_sep( (u8)name[at] ) ) {
+                    return 0;
+                }
+                at++;
+            }
+        }
+        if ( at >= len ) {
+            return 0;
+        }
+        if ( *pat == '?' ) {
+            if ( is_sep( (u8)name[at] ) ) {
+                return 0;
+            }
+        } else if ( fold( *pat ) != fold( name[at] ) ) {
+            return 0;
+        }
+        at++;
+    }
+    return at == len;
+}
+
+/* the filespec as wild() wants it, into "dst" (SZ_MAX_NAME): no
+   separator at either end, and each "*.*" a "*" */
+static void spec_prep( const char *spec, char *dst )
+{
+    int len = 0;
+
+    while ( is_sep( (u8)*spec ) ) {
+        spec++;
+    }
+    while ( *spec && len < SZ_MAX_NAME - 1 ) {
+        if ( spec[0] == '*' && spec[1] == '.' && spec[2] == '*'
+             && (len == 0 || is_sep( (u8)dst[len - 1] ))
+             && (spec[3] == 0 || is_sep( (u8)spec[3] )) ) {
+            dst[len++] = '*';
+            spec += 3;
+            continue;
+        }
+        dst[len++] = *spec++;
+    }
+    while ( len > 0 && is_sep( (u8)dst[len - 1] ) ) {
+        len--;
+    }
+    dst[len] = 0;
+}
+
+/* the entry, or any folder its stored path runs through */
+static int spec_matches( const char *spec, const char *name )
+{
+    int len, at;
+
+    if ( name == NULL ) {
+        return 0;
+    }
+    while ( is_sep( (u8)*name ) ) {
+        name++;
+    }
+    len = (int)strlen( name );
+    while ( len > 0 && is_sep( (u8)name[len - 1] ) ) {
+        len--;
+    }
+    if ( len == 0 || !spec[0] ) {
+        return 0;
+    }
+    if ( wild( spec, name, len ) ) {
+        return 1;
+    }
+    for ( at = 1; at < len; at++ ) {
+        if ( is_sep( (u8)name[at] ) && wild( spec, name, at ) ) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int cli_delete( int argc, char **argv )
+{
+    ArcFile *arc = NULL;
+    const char *archive = NULL, *pw = NULL, *found, *first_miss = NULL, *arg;
+    const char **typed;
+    char **specs, num[NUM_FMT_MAX];
+    int *idx = NULL;
+    int at, one, count = 0, nspecs = 0, misses = 0, hits = 0, yes = 0, rc = SZ_OK, code = 0, key;
+
+    /* one per argument at most, so argc of them is enough; "typed" keeps
+       each as written, for the warning */
+    specs = (char **)malloc( (size_t)(argc > 0 ? argc : 1) * sizeof( char * ) );
+    typed = (const char **)malloc( (size_t)(argc > 0 ? argc : 1) * sizeof( const char * ) );
+    if ( specs == NULL || typed == NULL ) {
+        free( specs );
+        free( (void *)typed );
+        printf( "Out of memory.\n" );
+        return 3;
+    }
+    for ( at = 2; at < argc && code == 0; at++ ) {
+        arg = argv[at];
+        if ( arg[0] == '/' || arg[0] == '-' ) {
+            if ( !stricmp( arg + 1, "y" ) ) {
+                yes = 1;
+            } else if ( (found = cli_password( arg )) != NULL ) {
+                pw = found;
+            } else {
+                printf( "Unknown switch '%s'.\n\n", arg );
+                cli_usage();
+                code = 1;
+            }
+            continue;
+        }
+        if ( archive == NULL ) {
+            archive = arg;
+            continue;
+        }
+        specs[nspecs] = (char *)malloc( SZ_MAX_NAME );
+        if ( specs[nspecs] == NULL ) {
+            printf( "Out of memory.\n" );
+            code = 3;
+            continue;
+        }
+        spec_prep( arg, specs[nspecs] );
+        typed[nspecs] = arg;
+        nspecs++;
+    }
+    if ( code == 0 && (archive == NULL || !nspecs) ) {
+        printf( "Name the archive, then what to delete from it.\n\n" );
+        cli_usage();
+        code = 1;
+    }
+    if ( code == 0 ) {
+        code = cli_open( archive, pw, &arc );
+    }
+    if ( code == 0 ) {
+        count = ArcNumEntries( arc );
+        idx = (int *)malloc( (size_t)(count > 0 ? count : 1) * sizeof( int ) );
+        if ( idx == NULL ) {
+            printf( "Out of memory.\n" );
+            code = 3;
+        }
+    }
+    if ( code == 0 ) {
+        for ( at = 0; at < count; at++ ) {
+            for ( one = 0; one < nspecs && !spec_matches( specs[one], ArcEntryName( arc, at ) ); one++ ) {
+            }
+            if ( one < nspecs ) {
+                idx[hits++] = at;
+            }
+        }
+        for ( one = 0; one < nspecs; one++ ) {
+            for ( at = 0; at < count && !spec_matches( specs[one], ArcEntryName( arc, at ) ); at++ ) {
+            }
+            if ( at == count ) {
+                if ( !misses ) {
+                    first_miss = typed[one];
+                }
+                misses++;
+            }
+        }
+        if ( misses ) {
+            printf( "Warning: %d name%s matched nothing (the first: %s).\n", misses,
+                    misses == 1 ? "" : "s", first_miss );
+        }
+        if ( hits == 0 ) {
+            printf( "Nothing to delete: no entry matched.\n" );
+            code = 2;
+        }
+    }
+    if ( code == 0 ) {
+        rc = ArcDeleteCheck( arc, idx, hits );
+        if ( rc == SZ_OK && !yes ) {
+            /* on stderr: with the output in a file, a question on stdout
+               is a program that seems to hang */
+            fprintf( stderr, "Delete %s entr%s from %s (Y/N)? ", NumFmt( (UInt32)hits, num ),
+                     hits == 1 ? "y" : "ies", base_name( archive ) );
+            key = read_key();
+            fprintf( stderr, "%c\n", key >= 32 && key < 127 ? key : ' ' );
+            if ( key != 'y' && key != 'Y' ) {
+                printf( "Not deleted.\n" );
+                code = 2;
+            }
+        }
+    }
+    if ( code == 0 ) {
+        if ( rc == SZ_OK ) {
+            rc = ArcDeleteItems( arc, idx, hits, NULL, NULL );
+        }
+        if ( rc == SZ_OK ) {
+            printf( "Done.  %s entr%s deleted.\n", NumFmt( (UInt32)hits, num ), hits == 1 ? "y" : "ies" );
+        } else if ( rc == SZ_ERR_UNSUPPORTED ) {
+            printf( "FAILED: %s\n", ArcDeleteHint() );
+        } else if ( rc == SZ_ERR_WRITE ) {
+            printf( "FAILED: The archive could not be written.  It may be read-only, open in "
+                    "another program, or on a full disk.\n" );
+        } else {
+            cli_report( arc, rc, "" );
+        }
+        code = rc == SZ_OK ? 0 : 3;
+    }
+    if ( arc ) {
+        ArcClose( arc );
+    }
+    free( idx );
+    for ( one = 0; one < nspecs; one++ ) {
+        free( specs[one] );
+    }
+    free( specs );
+    free( (void *)typed );
+    return code;
+}
+
 int cli_run( int argc, char **argv )
 {
     ArcFile *arc;
     const char *cmd = argv[1], *path, *dest, *pos[4], *pw = NULL, *found;
-    char warn[400];
     int npos = 0, at, rc;
 
     if ( tolower( (u8)cmd[0] ) == 'a' ) {
         return cli_add( argc, argv );
+    }
+    if ( tolower( (u8)cmd[0] ) == 'd' ) {
+        return cli_delete( argc, argv );
     }
     /* the switches out of the way, wherever they were written */
     for ( at = 2; at < argc; at++ ) {
@@ -442,30 +722,10 @@ int cli_run( int argc, char **argv )
         return 1;
     }
     path = pos[0];
-    /* on stderr, before the command: L will work and X will not */
-    if ( !ArcMemStartupOk( NULL, NULL ) ) {
-        mem_warn_text( warn, sizeof( warn ) );
-        fprintf( stderr, "%s\n\n", warn );
+    rc = cli_open( path, pw, &arc );
+    if ( rc != 0 ) {
+        return rc;
     }
-    rc = ArcOpenPw( path, pw, &arc );
-    if ( rc == SZ_ERR_PASSWORD ) {
-        printf( "Cannot open '%s': it is encrypted.\n"
-                "Give the password with /p, e.g.  XARC L %s /pSECRET\n", path, path );
-        return 2;
-    }
-    if ( rc == SZ_ERR_BADPASS ) {
-        printf( "Cannot open '%s': wrong password.\n", path );
-        return 2;
-    }
-    if ( rc != SZ_OK ) {
-        printf( "Cannot open '%s': %s\n", path, ArcErrorText( rc ) );
-        return 2;
-    }
-    if ( pw ) {
-        ArcSetPassword( arc, pw );
-    }
-    printf( "Archive: %s\nFormat : %s   (%d entries)\n\n", path, ArcFormatName( arc ),
-            ArcNumEntries( arc ) );
     switch ( tolower( (u8)cmd[0] ) ) {
     case 'l':
         rc = cli_list( arc );

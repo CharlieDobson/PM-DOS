@@ -218,8 +218,8 @@ void  button_row( BUTTON *btn, int row, int col );     /* from 0 */
 void  button_draw( const BUTTON *btn );
 int   button_hit( const BUTTON *btn, int x, int y );
 
-/* message boxes */
-enum { DB_OK, DB_OKCANCEL, DB_YESNO };
+/* message boxes; DB_YESNO_NO is Yes and No with Enter answering No */
+enum { DB_OK, DB_OKCANCEL, DB_YESNO, DB_YESNO_NO };
 enum { ANS_OK, ANS_CANCEL, ANS_YES, ANS_NO };
 
 int   msg_box( int fg, int bg, const char *title, const char *text, int buttons );

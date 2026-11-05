@@ -31177,3 +31177,42 @@ THE NEXT THINGS, in the order they are worth doing:
   what kind of program called it.
     Writing 7305h is what found INT 25h and 26h broken since v0.33 -
   see the release notes, which is the paragraph to read.]
+
+
+
+XARC: DELETING FROM AN ARCHIVE OR A DISK IMAGE (2026-11-04)
+---------------------------------------------------------------------
+
+Charlie: delete files from inside an archive or image, with a prompt and
+a progress bar, in every XArc.  The backend half (zip, 7z, RAR 3/5,
+cabinet, FAT image - and what each one costs) is in CMD\XARC\ARC, copied
+byte for byte from DU32; the full account is S:\CPP\DU32\XARCHIVE\
+BUILD-NOTES.txt, "DELETING FROM AN ARCHIVE OR A DISK IMAGE".
+
+Here: File > "Delete...     Del" and the Del key in an archive (marked
+rows, else the highlighted one; a folder takes its contents), a Yes/No
+box where Enter and Esc mean No (UI.C DB_YESNO_NO, dlg_run takes the Enter
+button), the Compress progress box captioned Delete, the password prompt
+when a solid 7z folder needs one, and XARC D <archive> <filespec>... [/y]
+[/p] on the command line (CLI.C cli_delete; cli_open split out of
+cli_run).  A nested archive is refused.
+
+SIZE: XARC.EXE 337,332 (from 308,268); image + BSS + the 128K stack
+476,596 of the 524,288-byte slot.
+
+A KERNEL DEFECT FOUND, NOT FIXED: 716Ch with access 2 opens a READ-ONLY
+file for writing; real DOS refuses 3D02h on one.  XARC no longer relies on
+the open failing (it reads the R bit with a directory search), but any
+program that does will overwrite a read-only file.
+
+DISK\HELP\21EXTERN.TXT is untouched - Charlie's wording.  Built and tested
+from scratchpad 69fd8e59 (pmx\mkxarc.cmd, pmrun.ps1).
+
+DELIVERED the same day from a mirror build (scratchpad 69fd8e59 rel\):
+only XARC.EXE differed in BIN (337,460, the tested image plus the D32
+stub).  RUNTESTS 101 x 7; RMTEST.OUT x 7 re-recorded (free clusters
+6A46h -> 6A23h, XARC's 35 clusters).  Put: S:\BIN XARC.EXE, BASELINE x 7,
+the four Setup images (MKSETUP moved HELP and RTL8139 to DISK1, LRGDISK
+and TREEVIEW to DISK2), HD32 (MKHD), HD16 by FATREPL on S: and in the
+VM (C:\DOS\XARC.EXE there), the floppies unchanged.  pmrun.ps1's CLI
+cases passed again on the delivered file.
