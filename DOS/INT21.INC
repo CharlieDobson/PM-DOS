@@ -2552,7 +2552,7 @@ f3C_go:
         mov     dword ptr [open_share],OM_COMPAT OR OM_RDWR
 f3C_go2:                                ; 716C, which set open_share itself
         mov     esi,[ebp+F_EDX]
-        call    net_drive_num           ; a net create goes to the redirector
+        call    net_drive_file          ; a net create goes to the redirector
         jnc     net_create              ; (AL = the net drive)
         mov     esi,[ebp+F_EDX]
         mov     ecx,[ebp+F_ECX]         ; requested attributes
@@ -2606,6 +2606,9 @@ f3C_file:
         jnz     f3C_deny                ; a directory wears that name
         cmp     byte ptr [create_new],0
         jne     f3C_exists              ; 5Bh: that is the whole point
+        test    byte ptr [esi+DE_ATTR],ATTR_READONLY
+        jnz     f3C_deny                ; DOS will not truncate a read-only
+                                        ; file either (mknode.asm)
 
         ; SHARE, before the file is truncated: a create is an open in
         ; compatibility mode for reading and writing, and somebody
@@ -2938,6 +2941,8 @@ f60_devend:
 
 f60_file:
         mov     esi,[ebp+F_ESI]
+        call    net_drive_num           ; a share's names are the server's:
+        jnc     f60_net                 ; the driver says (NETFS.INC)
         call    resolve_core
         jc      f60_bad
 
@@ -2972,6 +2977,15 @@ f60_file:
         mov     ecx,[rp_cnt]
         call    names_string
         jmp     i21_ok
+f60_net:
+        push    eax
+        mov     eax,[ebp+F_EDI]
+        mov     ecx,128                 ; the API's ceiling, as below
+        call    cbuf_ok
+        pop     eax
+        jc      buf_deny
+        xor     edx,edx                 ; the 8.3 form
+        jmp     net_canon               ; ESI -> the path still
 f60_bad:
         cmp     byte ptr [rp_baddrv],0
         je      f60_nopath
@@ -3502,6 +3516,8 @@ f3A_curdir:
 ;=====================================================================
 fn3B:
         mov     esi,[ebp+F_EDX]
+        call    net_drive_num           ; a share's directories are the
+        jnc     net_chdir               ; server's (NETFS.INC)
         call    resolve_core
         jc      f3B_fail
         mov     ecx,[rp_cnt]
@@ -3553,7 +3569,7 @@ fn3D:
         cmp     al,3
         je      f3D_deny                ; 3 is not a valid access mode
         mov     esi,[ebp+F_EDX]         ; a file on a network drive is opened
-        call    net_drive_num           ; by the redirector, not fat_search
+        call    net_drive_file          ; by the redirector, not fat_search
         jnc     net_open                ; (AL = the net drive)
         movzx   eax,byte ptr [ebp+F_EAX]
         and     al,3
@@ -3623,6 +3639,22 @@ f3D_file:
         mov     edi,OFFSET name_buf
         call    fat_search
         jc      f3D_isdir
+
+        ; A READ-ONLY FILE OPENS FOR READING OR NOT AT ALL, as DOS's
+        ; open.asm has it: write or read/write on one is "access
+        ; denied".  Until 2026-11-04 the attribute was never looked at
+        ; here, so 3Dh, 6Ch and 716Ch all handed out a handle that could
+        ; write a read-only file, and a program that asked the open
+        ; whether it may write was told yes.  An FCB open is the one
+        ; exception DOS makes - it cannot know at the open whether the
+        ; program will write - so fcb_openx sets oc_fcb and is let by.
+        test    byte ptr [esi+DE_ATTR],ATTR_READONLY
+        jz      f3D_rwok
+        cmp     dword ptr [open_mode],0
+        je      f3D_rwok
+        cmp     byte ptr [oc_fcb],0
+        je      f3D_ro
+f3D_rwok:
 
         ; SHARE, before anything is committed: the entry is known and
         ; so is every open of it.  A refusal has been through INT 24h
@@ -3724,6 +3756,10 @@ f3D_locked:
         mov     ax,ERR_ACCESS           ; it is mounted as a drive letter
         stc
         ret
+f3D_ro:
+        mov     ax,ERR_ACCESS           ; read-only, and asked to write
+        stc
+        ret
 f3D_share:                              ; AX = ERR_SHARING already, and
         stc                             ; INT 24h has had its say
         ret
@@ -3734,6 +3770,8 @@ f3D_deny:
 
 oc_long     dd  0                       ; srch_long and srch_llen, as
 oc_llen     dd  0                       ; open_core's search found them
+oc_fcb      db  0                       ; 1 while fcb_openx calls: a
+            db  0,0,0                   ; read-only file may open to write
 
 ;=====================================================================
 ; WAITING FOR A KEY, AND INT 28h
@@ -6066,6 +6104,9 @@ f47_expl:
 f47_sel:
         call    vol_select
         jc      f47_bad
+        xor     edx,edx                 ; a share's is the driver's, in
+        cmp     byte ptr [vol_fs],FS_NET        ; 8.3 (NETFS.INC)
+        je      net_getcwd
         mov     eax,[ebp+F_ESI]         ; 64 bytes is the promise, so 64
         mov     ecx,64                  ; is what is measured - see buf_ok
         call    cbuf_ok
@@ -7007,7 +7048,9 @@ f4B_kindok:
         ; critical error was answered Fail without the program asked.
         mov     eax,[exec_depth]
         inc     eax
-        call    r3_useslot
+        mov     dl,byte ptr [r3_lent]   ; a DPMI client starting it has
+        mov     byte ptr [r3_lentx+eax],dl      ; entry 8 as its 0040h,
+        call    r3_useslot              ; and has it back at 4Ch (r3_lend40)
         mov     edx,OFFSET exec_path
         call    exec_load
         jc      f4B_loadfail            ; AX holds the code
@@ -7053,6 +7096,7 @@ f4B_loadfail:
         mov     [exec_err],eax
         mov     eax,[exec_depth]        ; the caller's slot back under its
         call    r3_useslot              ; feet before it is resumed
+        call    r3_lendback             ; (or a DPMI client's 0040h)
         mov     eax,[exec_depth]        ; and its floating-point state in
         call    fps_back                ; the registers
         mov     edi,[exec_depth]
@@ -7448,7 +7492,10 @@ ecz_end:
 ; with nobody's handle table to open a file in.
 ;---------------------------------------------------------------------
 exec_load:
+        mov     dword ptr [exec_nh],-1
         mov     esi,edx
+        call    net_drive_num           ; a program on a share has no
+        jnc     xl_net                  ; clusters: it is read by handle
         call    resolve_parent
         jc      xl_nofile
         cmp     byte ptr [rp_noname],0
@@ -7576,6 +7623,8 @@ xl_stkok:
         jc      xl_nomem
         cmp     ebx,[r3_size]
         ja      xl_nomem
+        cmp     dword ptr [exec_nh],-1
+        jne     xl_netblit
 
 ;--- stream the file, cluster by cluster ------------------------------
 xl_blit:
@@ -7626,20 +7675,92 @@ xl_heap:
         mov     ebx,[exec_stack]
         call    r3h_init
 xl_done:
+        call    xl_netclose
         clc
         ret
 
 xl_nofile:
         mov     ax,ERR_NOFILE
-        stc
-        ret
+        jmp     short xl_fail
 xl_badfmt:
         mov     ax,ERR_EXEFMT
-        stc
-        ret
+        jmp     short xl_fail
 xl_nomem:
         mov     ax,ERR_NOMEM
+xl_fail:
+        call    xl_netclose
         stc
+        ret
+
+;--- a program on a network drive -------------------------------------
+; THE SAME FILE, READ BY HANDLE.  A share has no clusters to follow, so
+; the file is opened like any other (3Dh, which NETFS.INC takes to the
+; redirector), d32_find says where the image starts, its header goes
+; into clus_buf where the checks above look for it, and once they have
+; passed the whole image is read into the slot in one 3Fh.  The handle
+; is the caller's for the length of the load and closed on every way
+; out (xl_netclose).
+xl_net:
+        mov     eax,3D00h               ; EDX -> the path still
+        call    k21
+        jc      xl_nofile
+        movzx   ebx,ax
+        mov     [exec_nh],ebx
+        call    d32_find                ; EAX = where the image starts
+        jc      xl_badfmt
+        mov     [exec_noff],eax
+        xor     ecx,ecx
+        mov     eax,4202h               ; EAX = the file's size
+        call    k21
+        jc      xl_nofile
+        sub     eax,[exec_noff]
+        jb      xl_badfmt
+        cmp     eax,D32H_SIZE
+        jb      xl_badfmt
+        mov     [exec_left],eax         ; the image's length
+        mov     ecx,[exec_noff]
+        mov     eax,4200h
+        call    k21
+        jc      xl_nofile
+        mov     edx,OFFSET clus_buf
+        mov     ecx,D32H_SIZE
+        mov     eax,3F00h
+        call    k21
+        jc      xl_nofile
+        cmp     eax,D32H_SIZE
+        jb      xl_badfmt
+        mov     dword ptr [clusbuf_clus],-1     ; buffer no longer file cache
+        xor     edx,edx
+        jmp     xl_image
+xl_netblit:
+        mov     ebx,[exec_nh]
+        mov     ecx,[exec_noff]
+        mov     eax,4200h
+        call    k21
+        jc      xl_nofile
+        mov     edx,[exec_cursor]
+        mov     ecx,[exec_left]
+        mov     eax,3F00h
+        call    k21
+        jc      xl_nofile
+        cmp     eax,[exec_left]
+        jne     xl_badfmt               ; shorter than it was a moment ago
+        add     [exec_cursor],eax
+        mov     dword ptr [exec_left],0
+        jmp     xl_loaded
+
+; close the share's handle, if a load opened one.  Preserves everything
+; but the flags.
+xl_netclose:
+        cmp     dword ptr [exec_nh],-1
+        je      xnc_out
+        pushad
+        mov     ebx,[exec_nh]
+        mov     dword ptr [exec_nh],-1
+        mov     eax,3E00h
+        call    k21
+        popad
+xnc_out:
         ret
 
 ;---------------------------------------------------------------------
@@ -7864,6 +7985,7 @@ f4C_next:
         mov     esp,KSTACK_TOP
         mov     eax,[exec_depth]        ; the waiting program's slot, and
         call    r3_useslot              ; its descriptors, back
+        call    r3_lendback             ; (or a DPMI client's 0040h)
         mov     eax,[edi+XN_HLO]        ; and its heap - see 4Bh
         mov     [r3h_lo],eax
         mov     eax,[edi+XN_HHI]
@@ -8222,6 +8344,8 @@ attr_core:
         call    dev_hide                ; a device has no attributes, and
         jnc     i21_fail                ; MS-DOS says so with "not found"
         mov     esi,[ebp+F_EDX]
+        call    net_drive_num           ; a share's are the server's
+        jnc     net_attr                ; (NETFS.INC)
         call    resolve_parent
         jc      f43_err                 ; AX = the resolver's verdict
         cmp     byte ptr [rp_noname],0
@@ -8787,6 +8911,9 @@ f747_expl:
 f747_sel:
         call    vol_select
         jc      f747_bad
+        mov     edx,1                   ; a share's is the driver's, in
+        cmp     byte ptr [vol_fs],FS_NET        ; long names (NETFS.INC)
+        je      net_getcwd
 
         ; seed the resolver arrays from the cwd: all 8.3, no long
         ; text, nothing stale left pointing anywhere
@@ -8851,6 +8978,8 @@ f760_m:
         call    cbuf_ok                 ; bytes out of the kernel
         jc      buf_deny
         mov     esi,[ebp+F_ESI]
+        call    net_drive_num           ; a share's names are the server's:
+        jnc     f760_net                ; the driver says (NETFS.INC)
         call    resolve_core
         jc      f760_err
         mov     edi,[ebp+F_EDI]
@@ -8872,6 +9001,10 @@ f760_bad:
         jmp     i21_fail
 f760_err:
         jmp     i21_fail
+f760_net:
+        mov     ecx,LFN_MAX             ; checked above
+        movzx   edx,byte ptr [prd_mode] ; 1: CL=2, the long form
+        jmp     net_canon
 
 ;---------------------------------------------------------------------
 ; path_render - walk rp_names[0..rp_cnt-1] from the volume root and
@@ -9093,7 +9226,7 @@ fn716C:
         mov     [f6c_dx],eax
 
         mov     esi,[ebp+F_ESI]         ; a net drive opens through the
-        call    net_drive_num           ; redirector, by the action code
+        call    net_drive_file          ; redirector, by the action code
         jnc     net_lopen               ; (AL = the net drive)
 
         ; A device short-circuits the whole exists/create/truncate
@@ -9668,12 +9801,15 @@ fn73:
         rep     stosd
         mov     word ptr [f73_rec+F73_RETSIZE],F73_SIZE
 
-        ; A SHARE HAS NO BPB, so it gets the figures 36h gives one
-        ; (net_info): 64 sectors of 512 bytes a cluster and 65,535
-        ; clusters, all free.  The redirector has no way to ask the
-        ; server, and 0 here was DIR's "0 bytes free".
+        ; A SHARE HAS NO BPB, so its figures are the server's (net_f73,
+        ; NETFS.INC).  A server that will not say gets 64 sectors of
+        ; 512 bytes a cluster and 65,535 clusters, all free, as 36h
+        ; gives it - 0 here was DIR's "0 bytes free".
         cmp     byte ptr [vol_fs],FS_NET
         jne     f73_local
+        mov     al,[cur_vol]
+        call    net_f73
+        jnc     f73_give
         mov     dword ptr [f73_rec+F73_SPC],64
         mov     dword ptr [f73_rec+F73_BPS],512
         mov     eax,0FFFFh
@@ -12845,6 +12981,8 @@ std_ch      db  0                       ; one-byte bounce for std_in/out
 exec_psp    dd  0                       ; the child's PSP, flat
 exec_stack  dd  0                       ; the stack its header asked for
 exec_entry  dd  0                       ; its entry point, as a slot offset
+exec_nh     dd  -1                      ; exec_load: the share's handle, or -1
+exec_noff   dd  0                       ; ...and where in the file the image is
 exec_cursor dd  0
 exec_left   dd  0
 exec_clus   dd  0

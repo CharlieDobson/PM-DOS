@@ -400,6 +400,12 @@ rem real-mode stub in front (INC\NDRV.INC).  Used under "NDTEST.SYS".
 wcl386 -q -bt=nt -fe=d32drv.exe d32drv.c        || goto :fail
 rem MKSETUP makes the Setup disks, at the very end ("the Setup disks").
 wcl386 -q -bt=nt -fe=mksetup.exe mksetup.c      || goto :fail
+rem ...with a manifest saying it runs as the user: Windows Vista and later
+rem take a program with "setup" in its name and no manifest for an
+rem installer, and refuse it without elevation ("Access is denied" at the
+rem Setup disks, 2026-11-11).  NT 3.51 ignores the resource.
+wrc -q -r -bt=nt mksetup.rc                     || goto :fail
+wrc -q -bt=nt mksetup.res mksetup.exe           || goto :fail
 cd ..
 
 rem === WHICH VERSION IS THIS? ===
@@ -2203,12 +2209,14 @@ wasm -q drvfib.asm || goto :fail
 wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=. drvrt.c || goto :fail
 wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=. drvsock.c || goto :fail
 wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=..\..\CMD\NET\SMB -i=. smbfs.c || goto :fail
+rem PWL.C: the password list behind NET LOGON (SHA-256, AES-256 in GCM).
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=..\..\CMD\NET\TLS -i=. pwl.c || goto :fail
 cd ..\..
 wlink form raw bin option offset=0x0 name DRV\SMBFS\smbfs_0.bin ^
-    file DRV\ndstart.obj,DRV\SMBFS\drvfib.obj,DRV\SMBFS\smbfs.obj,DRV\SMBFS\drvsock.obj,DRV\SMBFS\drvrt.obj,CMD\NET\SMB\smb2.obj,CMD\NET\SMB\smb1.obj,CMD\NET\SMB\smbcrypt.obj,CMD\NET\SMB\smbsign.obj,CMD\NET\TLS\sha.obj,CMD\NET\TLS\sha512.obj,CMD\NET\TLS\aes.obj ^
+    file DRV\ndstart.obj,DRV\SMBFS\drvfib.obj,DRV\SMBFS\smbfs.obj,DRV\SMBFS\drvsock.obj,DRV\SMBFS\drvrt.obj,DRV\SMBFS\pwl.obj,CMD\NET\SMB\smb2.obj,CMD\NET\SMB\smb1.obj,CMD\NET\SMB\smbcrypt.obj,CMD\NET\SMB\smbsign.obj,CMD\NET\TLS\sha.obj,CMD\NET\TLS\sha512.obj,CMD\NET\TLS\aes.obj,CMD\NET\TLS\gcm.obj ^
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
 wlink form raw bin option offset=0x10000000 name DRV\SMBFS\smbfs_1.bin ^
-    file DRV\ndstart.obj,DRV\SMBFS\drvfib.obj,DRV\SMBFS\smbfs.obj,DRV\SMBFS\drvsock.obj,DRV\SMBFS\drvrt.obj,CMD\NET\SMB\smb2.obj,CMD\NET\SMB\smb1.obj,CMD\NET\SMB\smbcrypt.obj,CMD\NET\SMB\smbsign.obj,CMD\NET\TLS\sha.obj,CMD\NET\TLS\sha512.obj,CMD\NET\TLS\aes.obj ^
+    file DRV\ndstart.obj,DRV\SMBFS\drvfib.obj,DRV\SMBFS\smbfs.obj,DRV\SMBFS\drvsock.obj,DRV\SMBFS\drvrt.obj,DRV\SMBFS\pwl.obj,CMD\NET\SMB\smb2.obj,CMD\NET\SMB\smb1.obj,CMD\NET\SMB\smbcrypt.obj,CMD\NET\SMB\smbsign.obj,CMD\NET\TLS\sha.obj,CMD\NET\TLS\sha512.obj,CMD\NET\TLS\aes.obj,CMD\NET\TLS\gcm.obj ^
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
 TOOLS\D32DRV.EXE BIN\SMBFS.SYS TOOLS\DRVSTUB.BIN DRV\SMBFS\smbfs_0.bin DRV\SMBFS\smbfs_1.bin || goto :fail
 

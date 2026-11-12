@@ -1956,22 +1956,31 @@ psp_out:
 ;           separator if [fn_sep] says so.  SI -> the digits, CX = how
 ;           many characters.
 ; put_num - the same, printed right-justified in a field of BX.
+; put_numw - put_num for EDX:EAX: DIR's free space, which on a network
+;           share or a large disk is more than 32 bits of bytes.
 ; put_dec - EAX, plain, no field.
 ; put_2d  - AL as two digits, zero-filled.
 ;---------------------------------------------------------------------
 fmt_num:
+        mov     dword ptr [fn_hi],0
+fmt_numw:                               ; EDX:EAX, [fn_hi] = EDX already
         push    eax
         push    edx
         push    ebx
         push    di
         push    bp
-        mov     di,OFFSET num_buf + 19
+        mov     di,OFFSET num_end - 1
         mov     byte ptr [di],0
         xor     cx,cx                   ; characters
         xor     bp,bp                   ; digits since the last separator
         mov     ebx,10
 fn_digit:
+        push    eax                     ; EDX:EAX / 10 as two 32-bit
+        mov     eax,[fn_hi]             ; divisions: the high half,
         xor     edx,edx
+        div     ebx
+        mov     [fn_hi],eax
+        pop     eax                     ; then its remainder and the low
         div     ebx
         cmp     bp,3
         jne     fn_nosep
@@ -1992,6 +2001,8 @@ fn_nosep:
         inc     bp
         or      eax,eax
         jnz     fn_digit
+        cmp     dword ptr [fn_hi],0
+        jne     fn_digit
         mov     si,di
         pop     bp
         pop     di
@@ -2000,10 +2011,17 @@ fn_nosep:
         pop     eax
         ret
 
+put_numw:
+        push    cx
+        push    si
+        mov     [fn_hi],edx
+        call    fmt_numw
+        jmp     short pnm_pad
 put_num:
         push    cx
         push    si
         call    fmt_num
+pnm_pad:
         push    cx
         neg     cx
         add     cx,bx
@@ -2868,7 +2886,9 @@ pa_name     db  NAME_MAX dup(0)
 pb_name     db  NAME_MAX dup(0)
 env_name    db  PATH_MAX dup(0)
 pm_cwd      db  68 dup(0)
-num_buf     db  20 dup(0)
+num_buf     db  28 dup(0)               ; 26 characters of a 64-bit figure, NUL
+num_end     label byte
+fn_hi       dd  0                       ; fmt_numw: the figure's high half
 
 ;=====================================================================
 ; resident_end - everything above this line stays in memory.  The

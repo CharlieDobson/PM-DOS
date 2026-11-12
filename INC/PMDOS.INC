@@ -5223,12 +5223,18 @@ SHELLTAIL_MAX   EQU     130             ; length byte + 126 + CR + slack
 ;
 ; THE REAL VERSION IS 0.x, WHICH SOFTWARE READS AS DOS 1 - DOS 1 had no
 ; 30h and left AL zero - so nearly every DOS program refuses it: the C
-; runtimes want 2.0, COMMAND.COMs 3.0, Windows 3.1.  SETVER's table
-; therefore has a default entry, named "*", for every program it does
-; not name, and the CONFIG.SYS PM-DOS ships loads it with * = 6.22.
-; Without SETVER, a DOS program is told the truth (sv_find, VDM.INC).
+; runtimes want 2.0, COMMAND.COMs 3.0, Windows 3.1.  For two releases
+; the answer was SETVER's "*" entry, and then a table naming Windows'
+; files.  Neither was enough: CauseWay (the Open Watcom installer) said
+; "DOS 3.1 or better required", and the PKSFX inside Wolfenstein 3-D's
+; installer quit without a word.  Charlie, 2026-11-10: 6.22 by default.
 ;
-; 3306h is never lied to, and 30h without SETVER agrees with it.
+; So COMPAT_* below is what 30h tells a DOS program - in a box, or a
+; DPMI client - that SETVER says nothing about, with no table loaded
+; or with one (sv_find, sv_caller; RMDOS's fn30 and sv_ver).  SETVER's
+; entries, "*" among them, still win.  PM-DOS's own native programs and
+; the kernel get DOSVER_*, and so does every caller of 3306h, which is
+; never lied to: that is how a program tells PM-DOS from MS-DOS 6.22.
 ;
 ; AND IT WENT STALE FOR TWO RELEASES, which is worth a line because it
 ; is the failure mode of a version number that only one call reports.
@@ -5251,3 +5257,5 @@ SHELLTAIL_MAX   EQU     130             ; length byte + 126 + CR + slack
 
 DOSVER_MAJOR    EQU     PMDOS_MAJOR
 DOSVER_MINOR    EQU     PMDOS_MINOR
+COMPAT_MAJOR    EQU     6                       ; 30h to a DOS program SETVER
+COMPAT_MINOR    EQU     22                      ; does not name: 6.22

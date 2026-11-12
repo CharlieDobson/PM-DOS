@@ -44,6 +44,7 @@ NR_POSHI        EQU     20              ; ...its high dword (0 for files < 4GB)
 NR_COUNT        EQU     24              ; a find's next index / a read or write's count
 NR_RESULT       EQU     28              ; bytes a read moved
 NR_SIZELO       EQU     32
+NR_SIZEHI       EQU     36
 NR_ATTR         EQU     40
 NR_TIMEDATE     EQU     44              ; (date << 16) | time
 NR_BUFPTR       EQU     48              ; a read's destination, a flat linear address
@@ -65,6 +66,8 @@ REDIR_DELETE    EQU     10
 REDIR_MKDIR     EQU     11
 REDIR_RMDIR     EQU     12
 REDIR_RENAME    EQU     13
+REDIR_INFO      EQU     9               ; NR_SIZELO/HI, NR_POSLO/HI, NR_COUNT, NR_RESULT
+REDIR_ISDIR     EQU     14
 REDIR_RESUME    EQU     1000h
 REDIR_PENDING   EQU     0FFh
 N2_SRCH_FILTER  EQU     80h             ; SMBFS: a directory search (native's SRCH_FILTER)
@@ -253,25 +256,77 @@ nfn_nomore:
         jmp     n2_fail
 
 ;---------------------------------------------------------------------
-; 0Ch DISK INFO - a share has no geometry, so a large plausible one, as
-; the kernel's own net_info answers it (NETFS.INC): DIR turns it into a
-; free-bytes figure and nothing else reads it.
+; 0Ch DISK INFO - the server's figures (REDIR_INFO), as the kernel's own
+; net_info gives them (NETFS.INC): 32K clusters of 64 sectors, 512 bytes
+; a sector, in 16-bit counts - so a share over 2GB says 2GB, as on
+; MS-DOS 7.  A server that will not say gets 65,535 clusters, all free.
 ;---------------------------------------------------------------------
 n2_diskinfo:
+        push    esi
+        push    edi
+        call    n2_reqzero
+        mov     dword ptr [n2_req+NR_OP],REDIR_INFO
+        call    n2_pdapi
+        jc      ndi_guess
+        cmp     dword ptr [n2_req+NR_STATUS],0
+        jne     ndi_guess
+        mov     eax,dword ptr [n2_req+NR_COUNT]         ; sectors per unit
+        mul     dword ptr [n2_req+NR_RESULT]            ; x bytes per sector
+        jc      ndi_guess
+        or      eax,eax
+        jz      ndi_guess
+        mov     ebx,eax                                 ; EBX = bytes per unit
+        mov     esi,dword ptr [n2_req+NR_SIZELO]
+        mov     edi,dword ptr [n2_req+NR_SIZEHI]
+        call    n2_clus
+        push    ax                                      ; total clusters
+        mov     esi,dword ptr [n2_req+NR_POSLO]
+        mov     edi,dword ptr [n2_req+NR_POSHI]
+        call    n2_clus
+        mov     dx,ax                                   ; free clusters
+        pop     bx
+        jmp     short ndi_out
+ndi_guess:
+        mov     bx,0FFFFh               ; total clusters
+        mov     dx,0FFFFh               ; free clusters
+ndi_out:
         mov     al,64                   ; sectors per cluster
         mov     ah,0F8h                 ; media
-        mov     bx,0FFFFh               ; total clusters
         mov     cx,512                  ; bytes per sector
-        mov     dx,0FFFFh               ; free clusters
+        pop     edi
+        pop     esi
         jmp     n2_ok
 
+; EDI:ESI = allocation units, EBX = bytes per unit -> AX = 32K clusters,
+; at most 0FFFFh.  ECX and EDX are lost.
+n2_clus:
+        mov     eax,edi
+        mul     ebx                     ; the high units' bytes
+        or      edx,edx
+        jnz     n2c_full
+        mov     ecx,eax
+        mov     eax,esi
+        mul     ebx                     ; the low units' bytes
+        add     edx,ecx
+        jc      n2c_full
+        shrd    eax,edx,15              ; bytes -> 32K clusters
+        shr     edx,15
+        or      edx,edx
+        jnz     n2c_full
+        cmp     eax,0FFFFh
+        jbe     n2c_out
+n2c_full:
+        mov     ax,0FFFFh
+n2c_out:
+        ret
+
 ;---------------------------------------------------------------------
-; 05h CHDIR - is the SDA's name a directory?  For now the answer is yes:
-; DIR of the root does not chdir, and the root is always there.  A real
-; check (a find of the name) comes with the sub-directory work.
+; 05h CHDIR - is the SDA's name a directory?  The server says
+; (REDIR_ISDIR); DOS makes it the drive's current directory when it is.
 ;---------------------------------------------------------------------
 n2_chdir:
-        jmp     n2_ok
+        mov     dword ptr [n2_pathfn],REDIR_ISDIR
+        jmp     n2_pathop
 
 ;---------------------------------------------------------------------
 ; 1113h DELETE / 1103h MAKE DIRECTORY / 1101h REMOVE DIRECTORY - a call

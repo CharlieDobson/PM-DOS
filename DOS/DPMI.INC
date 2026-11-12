@@ -416,19 +416,10 @@ dsw_noenv:
         mov     dword ptr ds:[dpmi_segcnt],0
 
         ; SELECTOR 0040h IS THE BIOS DATA AREA, for as long as the client
-        ; runs.  Windows' host gives every client that, extenders count
-        ; on it, and DOS/4GW Professional reads the clock as PUSH 40h /
-        ; POP ES / ES:[6Eh] - which here is GDT entry 8, SEL_PROG_DS, a
-        ; native program's slot: Rise of the Triad page-faulted reading
-        ; one.  No native program runs while a client does (the shell is
-        ; waiting in its 4Bh), so the entry is lent out and dpmi_drop
-        ; gives it back (r3_setdesc).
-        mov     edi,GDT_BASE + GDT_IDX_PROGDS * 8
-        mov     ebx,400h
-        mov     ecx,0FFFFh
-        mov     dl,DACC_DATA
-        xor     dh,dh
-        call    r3_wrdesc
+        ; runs: GDT entry 8, SEL_PROG_DS, is lent out (RING3.INC,
+        ; r3_lend40, which says why and when it is taken back) and
+        ; dpmi_drop gives it back to the native slot (r3_setdesc).
+        call    r3_lend40
 
 ;--- and go ----------------------------------------------------------
         mov     dword ptr ds:[dpmi_active],1
@@ -3392,9 +3383,32 @@ dpmi_veclist:
 ;
 ; The originals are put back on the way out (dpmi_unxlat), because a
 ; client that passed DS:DX expects DX to still be DX afterwards.
+;
+; 42h IS A NUMBER, NOT A POINTER, and it is split across two registers
+; at each end: CX:DX in, DX:AX out, as in a DOS box (vdm_seek).  The
+; kernel's 42h takes the whole offset in ECX and answers in EAX, and a
+; client's went to it as it came, so every seek landed on CX - 0 for
+; any file under 64K - and DX came back as the offset asked for.
+; CauseWay seeks through the host to read its own .EXE, and stopped
+; with "error 11: DOS reported an error or corrupt file found".
 ;=====================================================================
 dpmi_xlat:
         pushad
+        mov     byte ptr ds:[dpmi_seek],0
+        cmp     byte ptr [ebp+F_EAX+1],42h
+        jne     dxl_noseek
+        mov     byte ptr ds:[dpmi_seek],1
+        mov     eax,dword ptr [ebp+F_EAX]
+        mov     dword ptr ds:[dpmi_sax],eax
+        mov     eax,dword ptr [ebp+F_ECX]
+        mov     dword ptr ds:[dpmi_scx],eax
+        mov     eax,dword ptr [ebp+F_EDX]
+        mov     dword ptr ds:[dpmi_sdx],eax
+        movzx   eax,word ptr [ebp+F_ECX]        ; CX:DX, as one number
+        shl     eax,16
+        mov     ax,word ptr [ebp+F_EDX]
+        mov     dword ptr [ebp+F_ECX],eax
+dxl_noseek:
         mov     al,byte ptr [ebp+F_EAX+1]       ; AH: the function
         mov     ah,byte ptr [ebp+F_EAX]         ; AL: the subfunction
         call    vdm_flags
@@ -3555,6 +3569,27 @@ dof_out:
 ;--- did not put an answer in them.
 dpmi_unxlat:
         pushad
+        ; A seek's answer, back in DX:AX (dpmi_xlat).  The upper halves
+        ; are the client's, as real DOS under a host leaves them; CX was
+        ; never an answer.  A failure has its code in AX and DX as it was.
+        cmp     byte ptr ds:[dpmi_seek],0
+        je      dux_noseek
+        mov     byte ptr ds:[dpmi_seek],0
+        mov     eax,dword ptr ds:[dpmi_scx]
+        mov     dword ptr [ebp+F_ECX],eax
+        mov     edx,dword ptr [ebp+F_EAX]       ; the position, or the error
+        mov     eax,dword ptr ds:[dpmi_sdx]
+        test    byte ptr [ebp+F_FLAGS],FL_CF
+        jnz     dux_seekdx
+        mov     ecx,edx
+        shr     ecx,16
+        mov     ax,cx                           ; DX: the position's high half
+dux_seekdx:
+        mov     dword ptr [ebp+F_EDX],eax
+        mov     eax,dword ptr ds:[dpmi_sax]
+        mov     ax,dx                           ; AX: its low half, or the code
+        mov     dword ptr [ebp+F_EAX],eax
+dux_noseek:
         mov     bl,byte ptr ds:[dpmi_pf]
         test    bl,P_DX
         jz      dux_nodx
@@ -4345,7 +4380,11 @@ dpmi_fpeip      dd  -1                  ; the last coprocessor error a client
 dpmi_fpcs       dd  -1                  ; was sent, and the tick the run of
 dpmi_fpwhen     dd  0                   ; them began on - see dfa_fperr
 dpmi_pf         db  0                  ; the pointer flags of the call in hand
-                db  0,0,0
+dpmi_seek       db  0                   ; the call in hand is a 42h
+                db  0,0
+dpmi_sax        dd  0                   ; and the client's EAX, ECX and EDX
+dpmi_scx        dd  0                   ; for it (dpmi_xlat, dpmi_unxlat)
+dpmi_sdx        dd  0
 dpmi_odx        dd  0                   ; and what the client had in those
 dpmi_osi        dd  0                   ; registers before we converted them
 dpmi_odi        dd  0

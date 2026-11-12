@@ -48,6 +48,8 @@ typedef struct {
     unsigned long  last_status;       /* NTSTATUS of the last response, or
                                          (code << 16) | class from LAN Manager */
     const char    *stage;             /* where we are, for error reports */
+    int            broken;            /* the connection failed under a call:
+                                         a send or a receive came to nothing */
 
     unsigned char  sendbuf[SMB1_SENDBUF];
     unsigned char  recvbuf[SMB1_RECVBUF];
@@ -57,6 +59,11 @@ typedef struct {
 /* our NetBIOS name, sent as the CALLING name of the session request:
    "PMDOS" unless the program sets it (SMBFS takes TCPIP.SYS /NAME=) */
 extern char smb1_calling[16];
+
+/* the VcNumber the next smb1_connect's session setup says: 0 for the first
+   logon to a server, 1 for another to the same one (0 tells Windows Server
+   2003 the client has restarted, and it ends the client's other connections) */
+extern unsigned int smb1_vc_number;
 
 /* Open the NetBIOS session, negotiate (NT LM 0.12, else a LAN Manager
    dialect), authenticate and tree-connect \\server\share.  The TCP
@@ -92,6 +99,19 @@ int  smb1_delete( smb1_client *cl, const char *path );
 int  smb1_mkdir( smb1_client *cl, const char *path );
 int  smb1_rmdir( smb1_client *cl, const char *path );
 int  smb1_rename( smb1_client *cl, const char *oldpath, const char *newpath );
+
+/* 0 when 'path' is a directory (CHECK_DIRECTORY), <0 otherwise. */
+int  smb1_isdir( smb1_client *cl, const char *path );
+
+/* The share's size (SMB2.H's smb_fs_size): TRANS2 QUERY_FS_INFORMATION's
+   64-bit SMB_QUERY_FS_SIZE_INFO from an NT server, else the core
+   QUERY_INFORMATION_DISK's 16-bit counts.  0, or <0. */
+int  smb1_fs_size( smb1_client *cl, smb_fs_size *fs );
+
+/* Connect one more share on a connection smb1_connect made: the new TID is
+   left in cl->tree_id.  0, or <0.  smb1_disconnect ends cl->tree_id's. */
+int  smb1_tree_connect( smb1_client *cl, const char *server, const char *share,
+                        const char *password );
 
 void smb1_disconnect( smb1_client *cl );
 

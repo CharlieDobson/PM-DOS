@@ -210,8 +210,17 @@ dl_leave:
 ; The live V86 context is parked on the kernel stack for the duration.
 ; A driver call can happen with a DOS box running and usually does:
 ; every TYPE of a device from inside a box arrives here.
+;
+; THE CALLER'S FLAGS ARE PUT BACK.  v86_run returns through the trap
+; gate the guest left by, with interrupts off, and this used to pass
+; that on: after any 16-bit DEVICE= line, the rest of CONFIG.SYS
+; ran with the clock stopped.  A 32-bit driver whose INIT waits on
+; ticks waited for ever - TCPIP.SYS's five seconds for a DHCP lease,
+; with SETVER.EXE or ANSI.SYS on a line above it - and Ctrl-Alt-Del
+; could not get in either.
 ;=====================================================================
 dl_excur:
+        pushfd
         pushad
 
         ; THE PER-CALL DRIVER STATE IS A SET OF SINGLE GLOBALS.  dl_prep
@@ -454,6 +463,7 @@ dlx_out:
         pop     dword ptr [dl_entry]
 
         popad
+        popfd                           ; the caller's interrupt flag
         ret
 
 ;=====================================================================

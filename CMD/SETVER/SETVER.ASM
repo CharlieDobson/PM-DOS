@@ -124,16 +124,16 @@ dvi_unknown:
 ; ones MS-DOS 6.22 ships: programs of the period that would not run on
 ; a DOS newer than the one they were written for.
 ;
-; AND WINDOWS 3.1x, PM-DOS's own.  PM-DOS's real version is 0.x, which
-; a program reads as DOS 1 and refuses, and Windows refuses it: these
-; are the files of Windows 3.1 and Windows for Workgroups 3.11 that
-; ask, told 6.22.  The tasks Windows runs inherit the kernel's version
-; (55h, RMMEM.INC).
+; AND WINDOWS 3.1x, PM-DOS's own: the files of Windows 3.1 and Windows
+; for Workgroups 3.11 that ask, told 6.22.  Since 2026-11-10 a program
+; the table does not name is told 6.22 anyway (COMPAT_*, PMDOS.INC), so
+; these matter only when a "*" entry says something else.  The tasks
+; Windows runs inherit the kernel's version (55h, RMMEM.INC).
 ;
 ; "*" is a name only PM-DOS uses: the version for every program the
-; table does not name (sv_find, VDM.INC).  The table does not start
-; with one; SETVER * 6.22 adds it.  MS-DOS's SETVER lists the entry and
-; never matches it, since no file can be called "*".
+; table does not name, in place of 6.22 (sv_find, VDM.INC).  The table
+; does not start with one; SETVER * 5.00 adds one.  MS-DOS's SETVER
+; lists the entry and never matches it, since no file can be called "*".
 ;=====================================================================
 ver_tab     db  7,'WIN.COM',6,22
             db  10,'WIN386.EXE',6,22
@@ -263,11 +263,6 @@ start:
         jmp     short sv_exit
 
 st_work:
-        cmp     byte ptr [op],OP_ADD    ; the caution comes first, as it
-        jne     st_read                 ; does on MS-DOS: before the file
-        mov     dx,OFFSET msg_warn      ; is even opened
-        call    say
-st_read:
         call    tbl_read
         jc      fail
         cmp     byte ptr [op],OP_LIST
@@ -1303,8 +1298,6 @@ msg_help    db  'Sets the DOS version number reported to a program.',13,10,13,10
             db  'The table is in use only when CONFIG.SYS loads SETVER.EXE with a',13,10
             db  'DEVICE= line.  A change takes effect when the computer restarts.',13,10,0
 
-msg_warn    db  13,10,'A program told a version it was not written for can misbehave',13,10
-            db  'and damage its files.  Check with the program''s maker first.',13,10,0
 msg_done    db  13,10,'The version table has been updated.',13,10,0
 msg_restart db  'The change takes effect when the computer restarts.',13,10,0
 msg_notload db  'SETVER.EXE is not loaded, so the table is not in use.  To use the',13,10

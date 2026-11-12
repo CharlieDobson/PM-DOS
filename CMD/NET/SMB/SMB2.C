@@ -41,7 +41,7 @@ static int send_all( smb2_client *cl, const unsigned char *buf, int len )
     int off = 0, n;
     while ( off < len ) {
         n = cl->send( cl->ioctx, buf + off, len - off );
-        if ( n <= 0 ) return -1;
+        if ( n <= 0 ) { cl->broken = 1; return -1; }
         off += n;
     }
     return 0;
@@ -52,7 +52,7 @@ static int read_n( smb2_client *cl, unsigned char *buf, int n )
     int off = 0, got;
     while ( off < n ) {
         got = cl->recv( cl->ioctx, buf + off, n - off );
-        if ( got <= 0 ) return -1;
+        if ( got <= 0 ) { cl->broken = 1; return -1; }
         off += got;
     }
     return 0;
@@ -100,7 +100,7 @@ static int recv_msg( smb2_client *cl )
     cl->last_status = 0;                    /* no answer stays "no status" */
     if ( read_n( cl, hdr, 4 ) != 0 ) return -1;
     len = ( (int)hdr[1] << 16 ) | ( (int)hdr[2] << 8 ) | (int)hdr[3];
-    if ( len < 64 || len > SMB2_RECVBUF ) return -1;
+    if ( len < 64 || len > SMB2_RECVBUF ) { cl->broken = 1; return -1; }   /* out of step */
     if ( read_n( cl, cl->recvbuf, len ) != 0 ) return -1;
     cl->recvlen = len;
     cl->last_status = get32( cl->recvbuf + 8 );
@@ -118,6 +118,7 @@ static int recv_msg( smb2_client *cl )
 #define CMD_READ             8
 #define CMD_WRITE            9
 #define CMD_QUERY_DIRECTORY  14
+#define CMD_QUERY_INFO       16
 #define CMD_SET_INFO         17
 
 #define ST_SUCCESS           0x00000000UL
@@ -761,6 +762,64 @@ int smb2_rmdir( smb2_client *cl, const char *path )
     return smb2_close_file( cl, &fh );
 }
 
+int smb2_isdir( smb2_client *cl, const char *path )
+{
+    smb2_fh fh;
+    cl->stage = "isdir";
+    memset( &fh, 0, sizeof( fh ) );
+    /* READ_ATTRIBUTES|SYNCHRONIZE, FILE_DIRECTORY_FILE, FILE_OPEN: a file
+       by that name is refused (NOT_A_DIRECTORY), as is no name at all */
+    if ( do_create( cl, path, 0x00100080UL, 0x00000001UL, 0x00000001UL,
+                    fh.file_id, (unsigned long *)0, (unsigned long *)0, (unsigned long *)0 ) != 0 )
+        return -1;
+    return smb2_close_file( cl, &fh );
+}
+
+/* QUERY_INFO of the share root: SMB2_0_INFO_FILESYSTEM, FileFsSizeInformation
+   (class 3) - TotalAllocationUnits (8), AvailableAllocationUnits (8, what
+   the user may still use), SectorsPerAllocationUnit (4), BytesPerSector (4). */
+int smb2_fs_size( smb2_client *cl, smb_fs_size *fs )
+{
+    smb2_fh fh;
+    unsigned char *msg, *b;
+    int outoff, outlen, rc = -1;
+
+    cl->stage = "fs-size";
+    memset( fs, 0, sizeof( *fs ) );
+    memset( &fh, 0, sizeof( fh ) );
+    if ( do_create( cl, "", 0x00100080UL, 0x00000001UL, 0x00000001UL,
+                    fh.file_id, (unsigned long *)0, (unsigned long *)0, (unsigned long *)0 ) != 0 )
+        return -1;
+
+    msg = build_header( cl, CMD_QUERY_INFO );
+    b = msg + 64;
+    memset( b, 0, 41 );
+    put16( b + 0, 41 );                     /* StructureSize (40 fixed + 1 buffer) */
+    b[2] = 0x02;                            /* InfoType = SMB2_0_INFO_FILESYSTEM */
+    b[3] = 3;                               /* FileInfoClass = FileFsSizeInformation */
+    put32( b + 4, 24 );                     /* OutputBufferLength */
+    memcpy( b + 24, fh.file_id, 16 );       /* FileId */
+    if ( send_msg( cl, 64 + 41 ) == 0 && recv_msg( cl ) == 0 &&
+         cl->last_status == ST_SUCCESS && cl->recvlen >= 64 + 8 ) {
+        b = cl->recvbuf + 64;
+        outoff = (int)get16( b + 2 );       /* from the SMB2 header start */
+        outlen = (int)get32( b + 4 );
+        if ( outoff >= 64 + 8 && outlen >= 24 && outoff <= cl->recvlen &&
+             outlen <= cl->recvlen - outoff ) {
+            b = cl->recvbuf + outoff;
+            fs->total_lo = get32( b + 0 );
+            fs->total_hi = get32( b + 4 );
+            fs->free_lo  = get32( b + 8 );
+            fs->free_hi  = get32( b + 12 );
+            fs->sec_per_unit = get32( b + 16 );
+            fs->bytes_per_sec = get32( b + 20 );
+            rc = 0;
+        }
+    }
+    if ( smb2_close_file( cl, &fh ) != 0 ) rc = -1;
+    return rc;
+}
+
 /* RENAME: open the source for DELETE, then SET_INFO with
    FileRenameInformation (the new name, UTF-16, relative to the share root
    with no leading separator), then close.  Only ever reached for an SMB2/3
@@ -829,7 +888,7 @@ int smb2_list_dir( smb2_client *cl, const char *dir, const char *pattern,
 {
     unsigned char file_id[16];
     unsigned char *msg, *b;
-    unsigned char wide[16];
+    unsigned char wide[520];                /* a whole name as the pattern */
     smb2_fh dirfh;
     int widelen, patoff, msglen, restart = 1, rc = 0;
 
@@ -849,7 +908,7 @@ int smb2_list_dir( smb2_client *cl, const char *dir, const char *pattern,
         b = msg + 64;
         memset( b, 0, 32 );
         put16( b + 0, 33 );                 /* StructureSize */
-        b[2] = 0x01;                        /* FileDirectoryInformation */
+        b[2] = 0x03;                        /* FileBothDirectoryInformation */
         b[3] = (unsigned char)( restart ? 0x01 : 0x00 );   /* RESTART_SCANS */
         put32( b + 4, 0 );                  /* FileIndex */
         memcpy( b + 8, file_id, 16 );
@@ -875,13 +934,16 @@ int smb2_list_dir( smb2_client *cl, const char *dir, const char *pattern,
         if ( outoff < 0 || outlen < 0 || outoff > cl->recvlen || outlen > cl->recvlen - outoff ) { rc = -1; break; }
         if ( outlen > 0 && outoff < 64 + 8 ) { rc = -1; break; }
 
-        /* every read below is kept inside [outoff, outoff+outlen) */
+        /* every read below is kept inside [outoff, outoff+outlen).  An
+           entry is FILE_BOTH_DIR_INFORMATION: 94 fixed bytes - the short
+           name's length at 68 and its 24 bytes at 70 - then the name */
         pos = outoff;
-        while ( pos + 64 <= outoff + outlen ) {
+        while ( pos + 94 <= outoff + outlen ) {
             const unsigned char *e = cl->recvbuf + pos;
             unsigned long nextoff = get32( e + 0 );
             unsigned long namelen = get32( e + 60 );
-            unsigned long avail   = (unsigned long)( outoff + outlen - pos - 64 );
+            unsigned long avail   = (unsigned long)( outoff + outlen - pos - 94 );
+            unsigned int  shortlen = e[68];
             smb2_dirent ent;
             unsigned int i, j = 0;
 
@@ -892,8 +954,12 @@ int smb2_list_dir( smb2_client *cl, const char *dir, const char *pattern,
             ent.attr     = get32( e + 56 );             /* FileAttributes */
             if ( namelen > avail ) namelen = avail;     /* clamp the name to the buffer */
             for ( i = 0; i + 1 < namelen && j + 1 < sizeof( ent.name ); i += 2 )
-                ent.name[j++] = (char)e[64 + i];        /* UTF-16LE -> ASCII (test names are ASCII) */
+                ent.name[j++] = (char)e[94 + i];        /* UTF-16LE -> ASCII (test names are ASCII) */
             ent.name[j] = 0;
+            if ( shortlen > 24 ) shortlen = 24;
+            for ( i = 0, j = 0; i + 1 < shortlen && j + 1 < sizeof( ent.short_name ); i += 2 )
+                ent.short_name[j++] = (char)e[70 + i];
+            ent.short_name[j] = 0;
             emit( user, &ent );
 
             if ( nextoff == 0 || nextoff > (unsigned long)outlen ) break;   /* last, or out of range */
@@ -952,7 +1018,15 @@ int smb2_connect( smb2_client *cl, smb_send_fn send, smb_recv_fn recv, void *ioc
     return 0;
 }
 
-void smb2_disconnect( smb2_client *cl )
+int smb2_tree_connect( smb2_client *cl, const char *server, const char *share )
+{
+    cl->tree_id = 0;
+    if ( do_tree_connect( cl, server, share ) != 0 ) return -1;
+    cl->stage = "connected";
+    return 0;
+}
+
+void smb2_tree_disconnect( smb2_client *cl )
 {
     unsigned char *msg, *b;
 
@@ -963,6 +1037,13 @@ void smb2_disconnect( smb2_client *cl )
         if ( send_msg( cl, 64 + 4 ) == 0 ) recv_msg( cl );
         cl->tree_id = 0;
     }
+}
+
+void smb2_disconnect( smb2_client *cl )
+{
+    unsigned char *msg, *b;
+
+    smb2_tree_disconnect( cl );
     if ( cl->session_id[0] || cl->session_id[1] || cl->session_id[2] || cl->session_id[3] ) {
         msg = build_header( cl, CMD_LOGOFF );
         b = msg + 64;

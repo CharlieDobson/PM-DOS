@@ -1724,7 +1724,7 @@ ENDIF
         mov     word ptr es:[36h],ax
 
         ; THE VERSION 30h WILL TELL IT: SETVER's entry for the file the
-        ; caller's DS:DX names, its "*" entry, or the real version - see
+        ; caller's DS:DX names, its "*" entry, or 6.22 - see
         ; sv_ver below.
         push    ds
         mov     si,[bp+F_DX]
@@ -2088,8 +2088,8 @@ psp_unstamp:
 
 ;--- sv_ver - DS:SI -> a program's path.  AX = the version SETVER's ---
 ;--- table gives its file name (major in AL), or what its "*" entry
-;--- gives every name it does not list, or the real version.  An empty
-;--- path gets the "*" entry or the real one.  Everything else is
+;--- gives every name it does not list, or 6.22 (COMPAT_*).  An empty
+;--- path gets the "*" entry or 6.22.  Everything else is
 ;--- preserved.
 ;
 ; The kernel's sv_find (VDM.INC) in 16 bits, over the same table:
@@ -2111,7 +2111,7 @@ sv_ver:
         push    di
         push    bp
         push    es
-        mov     bp,DOSVER_MINOR * 256 + DOSVER_MAJOR   ; until a "*"
+        mov     bp,COMPAT_MINOR * 256 + COMPAT_MAJOR   ; until a "*"
         mov     bx,si                   ; the name starts after the last
 svv_scan:                               ; \, / or :
         lodsb

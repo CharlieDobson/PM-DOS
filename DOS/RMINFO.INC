@@ -755,19 +755,17 @@ fn35:
         jmp     i21_ok
 
 ;=====================================================================
-; 30h - the version: PM-DOS's own, as the kernel says it (PMDOS.INC
-;       has the why).  BH is the OEM; FFh is "not one of the ones with
-;       a name", which is the truthful answer.
-;
-;       Except to a program SETVER names, or covers with its "*"
-;       entry: it is told what its PSP says at 40h, which EXEC stamped
-;       from SETVER's table (sv_ver, RMMEM.INC) or PM-DOS did before
-;       the handover.  Zero there is a PSP nobody stamped, and gets the
-;       real version.
+; 30h - the version a DOS program is told: what its PSP says at 40h,
+;       which EXEC stamped from SETVER's table (sv_ver, RMMEM.INC) or
+;       PM-DOS did before the handover - 6.22 for a program the table
+;       does not name.  Zero there is a PSP nobody stamped, and gets
+;       6.22 too (COMPAT_*, PMDOS.INC has the why); 3306h says what
+;       PM-DOS really is.  BH is the OEM; FFh is "not one of the ones
+;       with a name", which is the truthful answer.
 ;=====================================================================
 fn30:
         mov     al,byte ptr [bp+F_AX]
-        mov     dx,DOSVER_MINOR * 256 + DOSVER_MAJOR
+        mov     dx,COMPAT_MINOR * 256 + COMPAT_MAJOR
         mov     cx,[rd_psp]
         jcxz    f30_ver
         push    es

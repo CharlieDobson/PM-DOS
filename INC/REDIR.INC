@@ -24,6 +24,19 @@ REDIR_DELETE    EQU     10
 REDIR_MKDIR     EQU     11
 REDIR_RMDIR     EQU     12
 REDIR_RENAME    EQU     13              ; rename/move: NR_PATH -> NR_SHARE
+REDIR_ISDIR     EQU     14              ; NR_PATH a directory?  0 or ERR_NOPATH
+REDIR_GETATTR   EQU     15              ; NR_PATH's attribute byte -> NR_ATTR
+REDIR_CHDIR     EQU     16              ; NR_PATH the drive's cwd; NR_SPARE 1 = LFN off
+REDIR_GETCWD    EQU     17              ; cwd -> NR_PATH; NR_SPARE 1 = the 8.3 form
+REDIR_CANON     EQU     18              ; truename -> NR_PATH; NR_SPARE 1 = long form
+REDIR_PWL       EQU     19              ; the password list: NR_BUFPTR -> a pwl_req
+                                        ; of NR_COUNT bytes, its status inside it
+; The driver keeps each drive's current directory and applies it to a
+; path that does not start with "\" (REDIR.H).  FINDFIRST with NR_SPARE
+; 1 is 714Eh's: long names matched, and each one back in NR_PATH.
+; REDIR_INFO answers in the server's units (REDIR.H): NR_SIZELO/HI = the
+; units in all, NR_POSLO/HI = the units free, NR_COUNT = sectors per unit,
+; NR_RESULT = bytes per sector
 
 ; The WfW bridge (PMDOS.386) ORs REDIR_RESUME into the op and polls the
 ; driver, which runs the op on a worker fibre that yields when a socket
@@ -68,8 +81,13 @@ NET_PATH_MAX    EQU     260             ; NR_PATH capacity, with the NUL
 NETUSE_MAP      EQU     0
 NETUSE_UNMAP    EQU     1
 NETUSE_QUERY    EQU     2
+NETUSE_PWL      EQU     3               ; EDI -> a pwl_req of PWLR_SIZE bytes
 NUF_INUSE       EQU     01h
 NUF_SMB1        EQU     02h
+NUF_SAVED       EQU     04h             ; MAP: the password from the unlocked list
+
+; the pwl_req (REDIR.H): the kernel only checks it and hands it over
+PWLR_SIZE       EQU     12944
 
 NU_DRIVE        EQU     0
 NU_STATUS       EQU     4

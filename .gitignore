@@ -8,4 +8,5 @@ IMAGES/
 *.img
 *.png
 *.err
+*.res
 BASELINE/

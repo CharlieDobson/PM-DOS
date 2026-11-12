@@ -317,8 +317,8 @@ vp_noenv:
 ; sv_find - ESI -> a program's path, flat ASCIIZ, or 0 for none.  AX =
 ;           the version SETVER's table gives that file name, as 30h
 ;           answers it (major in AL, minor in AH); or, for a name the
-;           table does not list, what its "*" entry gives; or DOSVER_*
-;           when there is no table or neither entry.  Every other
+;           table does not list, what its "*" entry gives; or COMPAT_*
+;           (6.22) when there is no table or neither entry.  Every other
 ;           register is preserved.
 ;
 ; THE TABLE IS SETVER.EXE'S, in conventional memory where its INIT left
@@ -330,8 +330,8 @@ vp_noenv:
 ; upper-cased, which is how SETVER stores it.  RMDOS.SYS has the same
 ; walk in 16 bits (sv_ver, RMMEM.INC) for what runs under Windows.
 ;
-; "*" IS PM-DOS'S OWN, because the real version is 0.x and a program
-; reads that as DOS 1 (PMDOS.INC).  No file can be called "*", so the
+; "*" IS PM-DOS'S OWN: the version for every name the table does not
+; list, in place of 6.22 (PMDOS.INC).  No file can be called "*", so the
 ; entry can only ever be the default, and a name entry wins over it
 ; wherever the two are in the table.  MS-DOS's SETVER lists the entry
 ; and never matches it.
@@ -347,7 +347,7 @@ sv_find:
         push    esi
         push    edi
         push    ebp
-        mov     ebp,DOSVER_MINOR * 256 + DOSVER_MAJOR   ; until a "*"
+        mov     ebp,COMPAT_MINOR * 256 + COMPAT_MAJOR   ; until a "*"
         xor     ecx,ecx                         ; no name, until one is found
         mov     edx,esi                         ; where the name starts:
         or      esi,esi                         ; after the last \, / or :
@@ -437,12 +437,12 @@ svf_out:
 ; A DOS PROGRAM IS TOLD WHAT ITS PSP SAYS, which vdm_psp wrote there
 ; when it loaded it - MS-DOS 5's PSP+40h, so a program that moves 50h
 ; to another PSP is told that one's.  A zero word is a PSP nothing
-; stamped, and gets the real version.  A driver is told what
-; [sv_initver] says while its INIT runs, which is when SETVER's entries
-; for .SYS files apply (dl_load); outside INIT it has no PSP of its
-; own.  PM-DOS's own programs and the kernel itself always get the
-; real version: SETVER is for programs that were written for some
-; other DOS.
+; stamped, and gets 6.22 (COMPAT_*), as a DPMI client with no PSP does.
+; A driver is told what [sv_initver] says while its INIT runs, which is
+; when SETVER's entries for .SYS files apply (dl_load); outside INIT it
+; has no PSP of its own.  PM-DOS's own programs and the kernel itself
+; always get the real version: SETVER and 6.22 are for programs that
+; were written for some other DOS.
 ;
 ; Who is calling is read off the frame exactly as i21_return reads it:
 ; SEL_PROG_CS a native program, another selector a DPMI client, and
@@ -457,7 +457,8 @@ sv_caller:
         cmp     dword ptr [ebp+F_EIP],1
         jne     svc_out
 svc_dos:
-        cmp     word ptr ds:[sv_initver],0
+        mov     dx,COMPAT_MINOR * 256 + COMPAT_MAJOR    ; a DOS program's, if
+        cmp     word ptr ds:[sv_initver],0              ; nothing says otherwise
         je      svc_psp
         mov     dx,word ptr ds:[sv_initver]
         ret

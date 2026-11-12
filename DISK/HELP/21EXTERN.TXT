@@ -685,14 +685,18 @@ To rename a directory:
     move oldname newname
 #topic NET|Net
 Connects a drive letter to a shared directory on another computer, or
-disconnects the drive letter.
+disconnects the drive letter.  NET LOGON opens a password list that
+keeps the passwords NET USE needs.
 
 {b}Syntax{p}
 
     NET USE drive: \\server\share [password] [/USER:[domain\]name]
-            [/SMB1]
+            [/SMB1] [/PERSISTENT:YES|NO] [/SAVEPW:NO] [/YES | /NO]
     NET USE drive: /DELETE
     NET USE
+    NET LOGON [name [password]] [/YES]
+    NET LOGOFF [/YES]
+    NET PASSWORD [name | /LIST | /DELETE:name]
 
 NET USE on its own lists the drive letters that are connected.
 
@@ -708,6 +712,11 @@ drive:
 
 password
     The password for the share, or for the user named with /USER:.
+    With NET LOGON, the password list's own password.
+
+name
+    With NET LOGON and NET PASSWORD, the user the password list belongs
+    to.  NET LOGON asks for the name when none is given.
 
 {b}Switches{p}
 
@@ -721,6 +730,25 @@ password
 
 /DELETE
     Disconnects the drive letter.  /D is the short form.
+
+/PERSISTENT:YES|NO
+    YES has NET LOGON connect the drive again every time.  NO stops
+    that.  Needs NET LOGON first.  /P: is the short form.
+
+/SAVEPW:NO
+    Does not offer to save the password in the password list.
+
+/YES, /NO
+    Answer the question NET would ask, for a batch file.
+
+/LIST
+    With NET PASSWORD, lists the domains and servers that have a
+    password saved, and the drives NET LOGON connects.  The passwords
+    themselves are never shown.
+
+/DELETE:name
+    With NET PASSWORD, removes the password saved for a domain or
+    server.
 
 {b}Related Commands{p}
 
@@ -736,8 +764,30 @@ is found and what a network drive can do.
 {b}How long a connection lasts{p}
 
 A drive stays connected until NET USE /DELETE or until the computer is
-restarted.  To connect the drive at every start, put the NET USE line
-in AUTOEXEC.BAT.
+restarted.  If the server ends the connection, as a Windows server does
+when a drive has not been used for a while, it is made again the next
+time the drive is used.  Drives on the same server share one
+connection.  To connect the drive at every start, put the NET USE line
+in AUTOEXEC.BAT, or connect the drive with /PERSISTENT:YES and put NET
+LOGON in AUTOEXEC.BAT.
+
+{b}The password list{p}
+
+NET LOGON opens a user's password list, NAME.PWL in the same directory
+as NET.EXE, with the list's own password.  The first NET LOGON for a
+name makes the list.  While the list is open, NET USE without a
+password uses the one saved for the domain, or for the server when
+/USER: names no domain.  If no password is saved, NET USE asks for one
+and then offers to save the password.  NET LOGON also connects the
+drives that were connected with /PERSISTENT:YES.
+
+NET LOGOFF disconnects the network drives and closes the list.
+Restarting the computer closes the list too.  NET PASSWORD changes the
+list's password.
+
+The list is encrypted and is no use without its password.  While the
+list is open, anyone at the computer can connect drives with the saved
+passwords, so log off before leaving the computer.
 #examples
 To connect K: to the FILES share on SERVER:
 
@@ -758,6 +808,24 @@ To see which drives are connected:
 To disconnect K:
 
     net use k: /delete
+
+To open the password list for JSMITH, and connect the drives the list
+remembers:
+
+    net logon jsmith
+
+To connect K: with the saved password, and have NET LOGON connect K:
+every time:
+
+    net use k: \\server\files /user:office\jsmith /persistent:yes
+
+To see what the password list holds:
+
+    net password /list
+
+To close the list and disconnect the network drives:
+
+    net logoff
 #topic NETBEUI.SYS|Netbeui.sys
 Loads the NetBEUI network protocol, which older Windows networks use
 without TCP/IP.
@@ -1274,23 +1342,20 @@ The version table is used only when CONFIG.SYS loads it with
 #notes
 {b}Why SETVER is needed{p}
 
-PM-DOS reports its own version number, the one VER shows.  Most DOS
-programs read a version below 2 as MS-DOS 1 and will not run.  Some
-older programs and drivers refuse to run on any version other than
-the one they were written for.  SETVER's table lists those programs
-and the version number each one is given.  As supplied, the table
-gives version 6.22 to the parts of Windows 3.1 that check the
-version, and Windows programs are given 6.22 as well.  Every other
-DOS program is told PM-DOS's own version, unless a * entry is added.
-The * entry is the version given to every DOS program not in the
-table.
+DOS programs are told PM-DOS is MS-DOS 6.22.  Some older programs and
+drivers refuse to run on any version other than the one they were
+written for.  SETVER's table lists those programs and the version
+number each one is given.  As supplied, the table also gives version
+6.22 to the parts of Windows 3.1 that check the version.  A * entry
+is the version given to every DOS program not in the table, in place
+of 6.22.
 
 {b}Loading the table{p}
 
 Add DEVICE=C:\SETVER.EXE to CONFIG.SYS to load the table.  Put the
 line above any driver listed in the table.  The table uses less than
 1K of memory.  The CONFIG.SYS that Setup writes already has this
-line.  Windows 3.1 will not start without it.
+line.
 
 {b}Changes{p}
 
@@ -1302,8 +1367,9 @@ changed entry moves to the end of the table.
 
 Programs listed in the table, and all others when there is a *
 entry, get their version number from INT 21h function 30h, in DOS
-sessions and under Windows.  Function 3306h always reports PM-DOS's
-own version.  PM-DOS's own 32-bit programs are not affected.
+sessions and under Windows.  Other DOS programs are told 6.22.
+Function 3306h always reports PM-DOS's own version, the one
+VER shows.  PM-DOS's own 32-bit programs are not affected.
 
 {b}Errorlevels{p}
 
@@ -1325,7 +1391,7 @@ own version.  PM-DOS's own 32-bit programs are not affected.
 #examples
     setver
     setver edlin.exe 5.00
-    setver * 6.22
+    setver * 5.00
     setver edlin.exe /delete
     setver c:\old netx.exe 5.00
 #topic SHUTDOWN|Shutdown
@@ -1390,10 +1456,13 @@ letters with no dot.
 
 {b}What a network drive can do{p}
 
-Files can be read, written, copied, renamed and deleted, and
-directories made and removed.  Long names are cut to eight characters
-and a three-character extension.  Up to 16 files can be open on each
-drive, and a directory shows at most 256 entries.
+Files can be read, written, copied, renamed, deleted and run, and
+directories made, removed and changed to.  Long names work as on any
+drive.  With LFN=OFF, a long name is shown as the server's short name
+for it, such as PROGRA~1; with a server that keeps no short names, long
+names are cut to eight characters and a three-character extension.
+Attributes can be shown but not changed.  Up to 16 files can be open on
+each drive, and a directory shows at most 1,024 entries.
 #examples
 To use network drives over TCP/IP:
 
@@ -2117,8 +2186,8 @@ To load the emulator:
 
     device=c:\dos\x87emu.sys
 #topic XARC|Xarc|XArchive
-Lists, tests and extracts archives, and makes zip and 7z archives, on
-a screen of its own or from the command line.
+Lists, tests and extracts archives, deletes files from them, and makes
+zip and 7z archives, on a screen of its own or from the command line.
 
 {b}Syntax{p}
 
@@ -2127,6 +2196,7 @@ a screen of its own or from the command line.
     XARC T archive [/Ppassword]
     XARC X archive [directory] [/Ppassword] [/NOPATHS]
     XARC A archive name [name...] [/R] [/Xnames] [/NOPATHS] [/Y] [/AC]
+    XARC D archive name [name...] [/Ppassword] [/Y]
     XARC MEM
 
 {b}Parameters{p}
@@ -2150,6 +2220,10 @@ A
     Makes a new archive of the files and directories named.  .7Z makes
     a 7-Zip archive, anything else a zip, and a name with no extension
     gets .ZIP.  A directory goes in with everything under it.
+
+D
+    Deletes the files and directories named from the archive.  * and ?
+    match within one directory; a directory goes with everything in it.
 
 MEM
     Shows how much memory XARC can have, which decides how big an
@@ -2180,7 +2254,8 @@ MEM
     /X@file reads the names from a file, one to a line.
 
 /Y
-    With A, replaces an archive of the same name without asking.
+    With A, replaces an archive of the same name without asking.  With
+    D, deletes without asking.
 
 /AC
     With A, clears the Archive attribute of each file stored.
@@ -2194,6 +2269,7 @@ To copy directories without packing them, see [[XCOPY]].
 An archive is listed like a directory.  ENTER opens a folder, or an
 archive inside the archive, and BACKSPACE goes back.  SPACE marks a
 file, F5 extracts what is marked, F3 shows a text file and F7 tests the
+archive.  DEL deletes the marked files, or the highlighted one, from the
 archive.  Go back past the top of the archive and the disk is listed:
 mark files there and F8 packs them.  F1 lists every key, and the mouse
 works the menus, the list and the scroll bar.

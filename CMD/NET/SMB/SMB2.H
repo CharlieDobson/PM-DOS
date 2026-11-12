@@ -51,6 +51,8 @@ typedef struct {
     unsigned long  last_status;         /* NTSTATUS of the last response */
     const char    *stage;               /* where we are, for error reports */
     int            smb1_only;           /* the opening was answered in SMB1 */
+    int            broken;              /* the connection failed under a call:
+                                           a send or a receive came to nothing */
 } smb2_client;
 
 /* Connect TCP must already be done; these drive the SMB2 conversation over
@@ -73,6 +75,8 @@ int  smb2_list( smb2_client *cl, const char *pattern,
    times are Windows FILETIME (100ns since 1601). */
 typedef struct {
     char          name[260];
+    char          short_name[14];       /* the server's 8.3 name for it, ""
+                                           when it has none (or name is 8.3) */
     unsigned long attr;
     unsigned long size_lo, size_hi;
     unsigned long wtime_lo, wtime_hi;    /* LastWriteTime */
@@ -122,6 +126,28 @@ int  smb2_delete( smb2_client *cl, const char *path );
 int  smb2_mkdir( smb2_client *cl, const char *path );
 int  smb2_rmdir( smb2_client *cl, const char *path );
 int  smb2_rename( smb2_client *cl, const char *oldpath, const char *newpath );
+
+/* 0 when 'path' (share-relative, "" = the root) is a directory, <0 when it
+   is a file or is not there. */
+int  smb2_isdir( smb2_client *cl, const char *path );
+
+/* The share's size, in the server's own allocation units: 64-bit counts,
+   since a share is routinely larger than 32 bits of bytes. */
+typedef struct {
+    unsigned long total_lo, total_hi;   /* allocation units in all */
+    unsigned long free_lo, free_hi;     /* units the user may still fill */
+    unsigned long sec_per_unit;         /* sectors per allocation unit */
+    unsigned long bytes_per_sec;
+} smb_fs_size;
+
+/* Fill 'fs' from the server.  0, or <0 when it would not say. */
+int  smb2_fs_size( smb2_client *cl, smb_fs_size *fs );
+
+/* Connect one more share on the session smb2_connect made: the new TreeId
+   is left in cl->tree_id.  0, or <0.  smb2_tree_disconnect ends that tree
+   alone; smb2_disconnect ends cl->tree_id's and logs the session off. */
+int  smb2_tree_connect( smb2_client *cl, const char *server, const char *share );
+void smb2_tree_disconnect( smb2_client *cl );
 
 void smb2_disconnect( smb2_client *cl );
 

@@ -80,7 +80,7 @@ void cli_usage( void )
     printf( "XARC mem\n\n" );
     printf( "Options:\n" );
     printf( "  a <archive> <dir>    Add to archive.\n" );
-    printf( "  d <archive> <filespec> Delete files from archive.\n" );
+    printf( "  d <archive> <files>  Delete files from archive.\n" );
     printf( "  l <archive>          List archive contents.\n" );
     printf( "  t <archive>          Test archive integrity.\n" );
     printf( "  x <archive> [dir]    Extract files from archive.\n" );
@@ -92,7 +92,7 @@ void cli_usage( void )
     printf( "                       NOTE: visible in the command line.\n" );
     printf( "  /r                   Recursive file search.\n" );
     printf( "  /x<filespec|@file>   Excludes named files or specifies list file.\n" );
-    printf( "  /y                   Do not prompt to replace existing archive.\n" );
+    printf( "  /y                   Do not prompt to replace archive or delete files.\n" );
     printf( "  /ac                  Clear archive attribute after compression.\n" );
 }
 

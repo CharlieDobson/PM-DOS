@@ -1165,6 +1165,8 @@ fm_start:
         jne     fm_notnet
         mov     byte ptr [vol_fs],FS_NET
         mov     byte ptr [fat_drive],NET_DRV_TYPE
+        mov     dword ptr [cwd_cnt],0           ; the root: the share's own
+        mov     dword ptr [cwd_clus],0          ; is the driver's (REDIR_CHDIR)
         mov     byte ptr [fat_ok],1
         popad
         clc

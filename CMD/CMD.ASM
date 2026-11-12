@@ -2231,9 +2231,20 @@ dir_fspath:
         mov     ax,7303h
         int     21h
         jc      dir_fs36
+        ; IN 64 BITS: a network share is routinely more than 4GB free,
+        ; and so is a large FAT32 disk, and 32 bits of bytes wrapped
+        ; round to a small number.
         mov     eax,dword ptr [dir_fsrec+F73_FREECL]
-        imul    eax,dword ptr [dir_fsrec+F73_SPC]
-        imul    eax,dword ptr [dir_fsrec+F73_BPS]
+        mul     dword ptr [dir_fsrec+F73_SPC]   ; EDX:EAX = free sectors
+        mov     ecx,edx
+        mul     dword ptr [dir_fsrec+F73_BPS]   ; the low half's bytes
+        push    eax
+        push    edx
+        mov     eax,ecx
+        mul     dword ptr [dir_fsrec+F73_BPS]   ; the high half's
+        pop     edx
+        add     edx,eax                         ; EDX:EAX = free bytes
+        pop     eax
         jmp     short dir_fsout
 dir_fs36:
         mov     dl,[dir_drv]            ; AX=spc BX=free CX=bps DX=total
@@ -2245,7 +2256,7 @@ dir_fs36:
         movzx   ebx,bx
         movzx   ecx,cx
         imul    eax,ebx
-        imul    eax,ecx
+        mul     ecx                     ; EDX:EAX = free bytes
 dir_fsout:
         ; UNDER THE BYTES, NOT UNDER THE FILE COUNT.  Both totals are
         ; printed right-justified in ten columns, so the free figure on
@@ -2255,9 +2266,11 @@ dir_fsout:
         ; which pgrp14 put in columns 20 to 33 because " file(s)  " is
         ; ten characters wide.  So the line is indented by exactly that
         ; much and the two columns of bytes sit under one another.
+        push    edx
         mov     edx,OFFSET msg_freepad
         call    print
-        call    pgrp14
+        pop     edx
+        call    pgrp14w
         mov     edx,OFFSET msg_free
         call    print
 dir_done:
@@ -6867,8 +6880,15 @@ pd_out:
 ; three digits - the country's (dec_sep, asked of 38h at start-up) or
 ; the comma - right-justified in 14 or 10 columns.  DIR's sizes and
 ; totals: a 32-bit size is 13 characters with its separators, which
-; is why the size column is 14 wide, as MS-DOS 6.22's is.
+; is why the size column is 14 wide, as MS-DOS 6.22's is.  pgrp14w is
+; pgrp14 for EDX:EAX, the free-space figure: 26 characters at the most,
+; so it runs past the 14 columns rather than being cut.
 ;---------------------------------------------------------------------
+pgrp14w:
+        push    ecx
+        mov     ecx,14
+        mov     [pg_hi],edx
+        jmp     short pgrpW
 pgrp14:
         push    ecx
         mov     ecx,14
@@ -6877,15 +6897,22 @@ pgrp10:
         push    ecx
         mov     ecx,10
 pgrpN:
+        mov     dword ptr [pg_hi],0
+pgrpW:
         pushad
-        mov     edi,OFFSET dec_buf + 19
+        mov     edi,OFFSET dec_bufend - 1
         mov     byte ptr [edi],'$'
         mov     ebx,10
         mov     esi,ecx                 ; the width
         xor     ecx,ecx                 ; characters so far
         xor     ebp,ebp                 ; digits since a separator
 pg_div:
+        push    eax                     ; EDX:EAX / 10 as two 32-bit
+        mov     eax,[pg_hi]             ; divisions: the high half,
         xor     edx,edx
+        div     ebx
+        mov     [pg_hi],eax
+        pop     eax                     ; then its remainder and the low
         div     ebx
         dec     edi
         add     dl,'0'
@@ -6893,7 +6920,10 @@ pg_div:
         inc     ecx
         inc     ebp
         or      eax,eax
-        jz      pg_pad
+        jnz     pg_more
+        cmp     dword ptr [pg_hi],0
+        je      pg_pad
+pg_more:
         cmp     ebp,3
         jb      pg_div
         xor     ebp,ebp
@@ -7562,7 +7592,9 @@ ext_lit     db  0                       ; 1: the verb has its own extension
             db  0,0,0
 path_buf    db  PATHDIR_MAX + QVERB_MAX + 8 dup(0)      ; dir + verb + ext
 tail_buf    db  130 dup(0)
-dec_buf     db  20 dup(0)               ; 13 characters, padding, '$'
+dec_buf     db  28 dup(0)               ; 26 characters of a 64-bit figure, '$'
+dec_bufend  label byte
+pg_hi       dd  0                       ; pgrp14w: the figure's high half
 date_sep    db  '-'                     ; what goes between a date's numbers,
 time_sep    db  ':'                     ; and between hours and minutes
 date_ord    db  0                       ; 0 mm-dd-yyyy, 1 dd-mm-yyyy, 2

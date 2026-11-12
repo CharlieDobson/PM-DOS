@@ -686,6 +686,12 @@ ENDIF
         jc      vf_badstk
 
         mov     eax,[ebp+FR_VEC]
+        cmp     eax,14                  ; a store into the kernel's low
+        jne     vf_not14                ; pages, which is dropped as a
+        call    vf_romw                 ; store into ROM would be
+        jnc     v86_resume
+        mov     eax,[ebp+FR_VEC]
+vf_not14:
         cmp     eax,13
         je      vf_isgp                 ; only #GP means "emulate me"
         cmp     eax,16                  ; the coprocessor's error, which a
@@ -1882,6 +1888,234 @@ v86_pop32:
 ;---------------------------------------------------------------------
 ; v86_resume - back into the guest, exactly where it left off
 ;---------------------------------------------------------------------
+;=====================================================================
+; vf_romw - a page fault in a box: is it a STORE INTO THE KERNEL'S LOW
+;           PAGES, and can the instruction be stepped over?
+;
+;   EBP -> the fault frame.  CF clear: the store was dropped and the
+;   guest's IP moved past the instruction - the caller resumes it.
+;   CF set: something else, and the box ends as it always has.
+;   EAX, EBX, ECX, EDX and ESI are trashed (the guest's own are in the
+;   frame, which v86_resume puts back).
+;
+; 1000h-3FFFh is PMIO's stub, the GDT, the globals and XFER, and it is
+; read-only to ring 3, the boxes included (pg_protect).  On MS-DOS the
+; same addresses are DOS's own low data, which a stray store through a
+; segment that is still zero lands in without anybody knowing.
+; Wolfenstein 3-D does exactly that as a level ends: a segment variable
+; of 0 and XOR [BX+5],AL with AL = 0 - a store that changes nothing on
+; a real machine, and here ended the game with the screen left black
+; (2026-11-10).  The page stays read-only and the store is dropped, as
+; a store into ROM is: the program goes on, the kernel's pages are as
+; they were.
+;
+; ONLY STORES THROUGH A MOD R/M OPERAND are stepped over, because those
+; are the ones whose length the operand says and whose effect is the
+; store and the flags - and the flags are left as they were, which for
+; a stray store into memory that is not the program's is nothing it
+; can be relying on.  XCHG, CMPXCHG and XADD write a register too, and
+; a string instruction (and REP), a PUSH, POP or CALL onto that memory
+; or anything this does not know moves registers of its own: those
+; are left to end the box, since stepping over one would change what
+; the program goes on with.
+;
+; Below 110000h is everything a box can reach - the megabyte and, with
+; A20 on, the HMA - and the only pages there it may not write are the
+; kernel's (or their A20 alias), so the address needs no finer test.
+;=====================================================================
+vf_romw:
+        mov     eax,[ebp+FR_ERR]
+        and     eax,3                   ; present, and a write
+        cmp     eax,3
+        jne     vrw_no
+        mov     eax,cr2
+        cmp     eax,110000h
+        jae     vrw_no
+
+        mov     esi,[ebp+FR_CS]
+        shl     esi,4
+        movzx   eax,word ptr [ebp+FR_EIP]
+        add     esi,eax
+        xor     ecx,ecx                 ; the length so far
+        xor     edx,edx                 ; DL = operand size 32, DH = address
+vrw_pfx:
+        cmp     ecx,8
+        jae     vrw_no
+        mov     al,[esi+ecx]
+        inc     ecx
+        cmp     al,66h
+        je      vrw_o32
+        cmp     al,67h
+        je      vrw_a32
+        cmp     al,26h                  ; segment overrides and LOCK
+        je      vrw_pfx
+        cmp     al,2Eh
+        je      vrw_pfx
+        cmp     al,36h
+        je      vrw_pfx
+        cmp     al,3Eh
+        je      vrw_pfx
+        cmp     al,64h
+        je      vrw_pfx
+        cmp     al,65h
+        je      vrw_pfx
+        cmp     al,0F0h
+        je      vrw_pfx
+        jmp     short vrw_op
+vrw_o32:
+        mov     dl,1
+        jmp     short vrw_pfx
+vrw_a32:
+        mov     dh,1
+        jmp     short vrw_pfx
+
+        ; AL = the opcode.  EBX = the immediate's bytes after the operand.
+vrw_op:
+        xor     ebx,ebx
+        cmp     al,0Fh
+        je      vrw_0f
+        cmp     al,38h                  ; 00-37: ADD OR ADC SBB AND SUB XOR,
+        jae     vrw_hi                  ; r/m first only (the opcode's low
+        mov     ah,al                   ; three bits 0 or 1)
+        and     ah,7
+        cmp     ah,2
+        jae     vrw_no
+        jmp     vrw_modrm
+vrw_hi:
+        cmp     al,80h                  ; group 1, an imm8
+        je      vrw_imm8
+        cmp     al,82h
+        je      vrw_imm8
+        cmp     al,83h
+        je      vrw_imm8
+        cmp     al,81h                  ; group 1, a word or dword
+        je      vrw_immw
+        cmp     al,88h                  ; MOV r/m,reg
+        jb      vrw_no
+        cmp     al,89h
+        jbe     vrw_modrm
+        cmp     al,8Ch                  ; MOV r/m,sreg
+        je      vrw_modrm
+        cmp     al,0C0h                 ; shifts by an imm8
+        je      vrw_imm8
+        cmp     al,0C1h
+        je      vrw_imm8
+        cmp     al,0C6h                 ; MOV r/m,imm
+        je      vrw_imm8
+        cmp     al,0C7h
+        je      vrw_immw
+        cmp     al,0D0h                 ; shifts by 1 and by CL
+        jb      vrw_no
+        cmp     al,0D3h
+        jbe     vrw_modrm
+        mov     ah,[esi+ecx]            ; the rest are groups: the reg
+        shr     ah,3                    ; field says which
+        and     ah,7
+        cmp     al,0F6h
+        je      vrw_grp3
+        cmp     al,0F7h
+        je      vrw_grp3
+        cmp     al,0FEh                 ; INC and DEC
+        je      vrw_incdec
+        cmp     al,0FFh
+        je      vrw_incdec
+        jmp     vrw_no
+vrw_grp3:
+        cmp     ah,2                    ; NOT and NEG store
+        je      vrw_modrm
+        cmp     ah,3
+        je      vrw_modrm
+        jmp     vrw_no                  ; TEST, MUL and DIV do not
+vrw_incdec:
+        cmp     ah,1
+        jbe     vrw_modrm
+        jmp     vrw_no
+vrw_0f:
+        mov     al,[esi+ecx]
+        inc     ecx
+        cmp     al,90h                  ; SETcc
+        jb      vrw_no
+        cmp     al,9Fh
+        jbe     vrw_modrm
+        cmp     al,0A4h                 ; SHLD, SHRD by an imm8
+        je      vrw_imm8
+        cmp     al,0ACh
+        je      vrw_imm8
+        cmp     al,0BAh                 ; BTS, BTR, BTC by an imm8
+        je      vrw_imm8
+        cmp     al,0A5h                 ; SHLD, SHRD by CL
+        je      vrw_modrm
+        cmp     al,0ADh
+        je      vrw_modrm
+        cmp     al,0ABh                 ; BTS, BTR, BTC
+        je      vrw_modrm
+        cmp     al,0B3h
+        je      vrw_modrm
+        cmp     al,0BBh
+        je      vrw_modrm
+        jmp     vrw_no
+vrw_imm8:
+        mov     ebx,1
+        jmp     short vrw_modrm
+vrw_immw:
+        mov     ebx,2
+        or      dl,dl
+        jz      vrw_modrm
+        mov     ebx,4
+
+        ; The operand: a mod r/m byte, a SIB byte for some 32-bit forms,
+        ; and a displacement.  Mod 3 is a register, which cannot have
+        ; faulted on memory.
+vrw_modrm:
+        cmp     ecx,8
+        jae     vrw_no
+        mov     al,[esi+ecx]
+        inc     ecx
+        mov     ah,al
+        shr     ah,6                    ; AH = mod
+        and     al,7                    ; AL = r/m
+        cmp     ah,3
+        je      vrw_no
+        or      dh,dh
+        jnz     vrw_m32
+        cmp     ah,1
+        je      vrw_d8
+        cmp     ah,2
+        je      vrw_d16
+        cmp     al,6                    ; mod 0, r/m 6: a bare disp16
+        jne     vrw_len
+vrw_d16:
+        add     ecx,2
+        jmp     short vrw_len
+vrw_m32:
+        cmp     al,4
+        jne     vrw_nosib
+        mov     al,[esi+ecx]            ; the SIB byte, whose base 5 with
+        inc     ecx                     ; mod 0 is a bare disp32
+        and     al,7
+vrw_nosib:
+        cmp     ah,1
+        je      vrw_d8
+        cmp     ah,2
+        je      vrw_d32
+        cmp     al,5
+        jne     vrw_len
+vrw_d32:
+        add     ecx,4
+        jmp     short vrw_len
+vrw_d8:
+        inc     ecx
+vrw_len:
+        add     ecx,ebx
+        cmp     ecx,15                  ; the processor's own limit
+        ja      vrw_no
+        add     word ptr [ebp+FR_EIP],cx
+        clc
+        ret
+vrw_no:
+        stc
+        ret
+
 v86_resume:
         call    v86_ckkbd               ; EBP still points at the frame, and
                                         ; this is the only door back into the

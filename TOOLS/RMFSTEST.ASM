@@ -26,6 +26,9 @@
 ;                  a file closed after 69h is still in its directory
 ;   the truncate   3Ch of a file that is there empties it, and leaves
 ;                  the volume readable
+;   read-only      a read-only file opens for reading only, and 3Ch
+;                  will not empty it (both DOSes said yes until
+;                  2026-11-04)
 ;
 ; What it cannot see - that the OTHER entries in a directory sector
 ; survived, and that no cluster was lost - has to be checked from
@@ -412,6 +415,58 @@ q3c_vz:
         mov     ah,41h
         int     21h
 
+        ; A READ-ONLY FILE opens for reading and for nothing else, and a
+        ; 3Ch does not empty it (DOS's open.asm and mknode.asm).  Both
+        ; DOSes opened one for writing until 2026-11-04.
+        mov     dx,OFFSET t_ro
+        call    puts
+        mov     dx,OFFSET f_ro
+        xor     cx,cx
+        mov     ah,3Ch
+        int     21h
+        jc      qro_made
+        mov     bx,ax
+        mov     ah,3Eh
+        int     21h
+        mov     dx,OFFSET f_ro
+        mov     cx,1
+        mov     ax,4301h
+        int     21h
+qro_made:
+        mov     dx,OFFSET t_roset
+        call    expect_ok
+        mov     ax,3D00h
+        call    ro_open
+        mov     dx,OFFSET t_ro0
+        call    expect_ok
+        mov     ax,3D01h
+        call    ro_open
+        mov     bx,5
+        mov     dx,OFFSET t_ro1
+        call    expect_err
+        mov     ax,3D02h
+        call    ro_open
+        mov     bx,5
+        mov     dx,OFFSET t_ro2
+        call    expect_err
+        xor     cx,cx
+        mov     ah,3Ch
+        call    ro_open
+        mov     bx,5
+        mov     dx,OFFSET t_ro3c
+        call    expect_err
+        mov     dx,OFFSET f_ro
+        xor     cx,cx
+        mov     ax,4301h
+        int     21h
+        mov     ax,3D02h
+        call    ro_open
+        mov     dx,OFFSET t_rorw
+        call    expect_ok
+        mov     dx,OFFSET f_ro
+        mov     ah,41h
+        int     21h
+
 ;=====================================================================
         mov     dx,OFFSET m_fails
         call    puts
@@ -520,6 +575,19 @@ of_failw:
         mov     dx,[fname]
         mov     ah,41h
         int     21h
+        ret
+
+; ro_open - AX (and CX for a 3Ch) = the call, on f_ro.  A handle it
+; gets is closed again.  CF and AX = the error.
+ro_open:
+        mov     dx,OFFSET f_ro
+        int     21h
+        jc      roo_out
+        mov     bx,ax
+        mov     ah,3Eh
+        int     21h
+        clc
+roo_out:
         ret
 
 ; wr - [hnd], DS:DX, CX.  CF and AX = the error; a short write is FFFFh.
@@ -729,11 +797,19 @@ t_69        db  '  6900h C: - info level 0, FAT16$'
 t_69dir     db  '    and a file closed after it is still in the directory$'
 t_trunc     db  '  3Ch of a file that is there empties it$'
 t_after     db  '    and 69h still reads the volume afterwards$'
+t_ro        db  '  C:\RMFSRO.TMP',13,10,'$'
+t_roset     db  '    3Ch made it and 4301h made it read-only$'
+t_ro0       db  '    3Dh for reading opens it$'
+t_ro1       db  '    3Dh for writing says 5$'
+t_ro2       db  '    3Dh for reading and writing says 5$'
+t_ro3c      db  '    3Ch says 5$'
+t_rorw      db  '    and once 4301h clears the bit, 3Dh for both opens it$'
 
 d_top       db  'C:\RMFSDIR',0
 f_sub       db  'C:\RMFSDIR\~WOA100F.TMP',0
 f_root      db  'C:\RMFSTEST.TMP',0
 f_69        db  'C:\RMFS69.TMP',0
+f_ro        db  'C:\RMFSRO.TMP',0
 s_cwd       db  'RMFSDIR',0
 n_rel       db  'x.txt',0
 s_rel       db  'C:\RMFSDIR\X.TXT',0

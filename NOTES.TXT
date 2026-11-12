@@ -31200,13 +31200,15 @@ cli_run).  A nested archive is refused.
 SIZE: XARC.EXE 337,332 (from 308,268); image + BSS + the 128K stack
 476,596 of the 524,288-byte slot.
 
-A KERNEL DEFECT FOUND, NOT FIXED: 716Ch with access 2 opens a READ-ONLY
-file for writing; real DOS refuses 3D02h on one.  XARC no longer relies on
-the open failing (it reads the R bit with a directory search), but any
-program that does will overwrite a read-only file.
+A KERNEL DEFECT FOUND (fixed the same evening - next entry): 716Ch with
+access 2 opens a READ-ONLY file for writing; real DOS refuses 3D02h on
+one.  XARC no longer relies on the open failing (it reads the R bit with
+a directory search), but any program that does will overwrite a
+read-only file.
 
-DISK\HELP\21EXTERN.TXT is untouched - Charlie's wording.  Built and tested
-from scratchpad 69fd8e59 (pmx\mkxarc.cmd, pmrun.ps1).
+Built and tested from scratchpad 69fd8e59 (pmx\mkxarc.cmd, pmrun.ps1).
+The help lines for D went into 21EXTERN.TXT later, at Charlie's word
+(next entry).
 
 DELIVERED the same day from a mirror build (scratchpad 69fd8e59 rel\):
 only XARC.EXE differed in BIN (337,460, the tested image plus the D32
@@ -31216,3 +31218,676 @@ the four Setup images (MKSETUP moved HELP and RTL8139 to DISK1, LRGDISK
 and TREEVIEW to DISK2), HD32 (MKHD), HD16 by FATREPL on S: and in the
 VM (C:\DOS\XARC.EXE there), the floppies unchanged.  pmrun.ps1's CLI
 cases passed again on the delivered file.
+
+
+
+A READ-ONLY FILE OPENS FOR READING ONLY (2026-11-04)
+---------------------------------------------------------------------
+
+Charlie, on the defect XARC's Delete turned up: fix it, and put the
+XARC D help in.
+
+THE DEFECT.  Neither DOS looked at the read-only bit when opening or
+truncating a file.  3Dh, 6Ch and 716Ch with write or read/write access
+handed out a handle that could write a read-only file, and 3Ch (and
+716Ch with "truncate") emptied one.  DOS 6 refuses all of these with
+error 5 (open.asm, "check write on read only"; mknode.asm, "Cannot
+create on read only files").  A program that asks the open whether it
+may write - XARC's Delete did, until it was changed to read the bit
+itself - was told yes and went on to replace the file.  The same held
+for every file on a CD, whose entries carry the bit; ISO9660.INC's
+comment already said the bit was "what stops a program opening a file
+on it for writing", which was not so until now.
+
+THE FIX.
+  - PMDOS.SYS, open_core: a read-only entry with an access mode other
+    than read is ERR_ACCESS (f3D_ro).  An FCB open is let by, as DOS
+    lets it by - DOS cannot tell at the open whether the program will
+    write, so it opens for reading and fails the write.  fcb_openx sets
+    oc_fcb round its calls.  LEFT AS IT IS: PM-DOS's FCB write does not
+    look at the bit, so an FCB can still write a read-only file.
+  - PMDOS.SYS, create_core: an existing read-only file is not truncated
+    (ERR_ACCESS), after 5Bh's "file exists" as in mknode.asm.  This also
+    covers 16h, the FCB create, which DOS refuses the same way.
+  - RMDOS.SYS, sub_open and sub_create: the same two checks.  RMDOS's
+    6Ch is still "invalid function".
+Nothing PM-DOS ships writes over a read-only file without clearing the
+bit first: SYS clears it (4301h) before its 3Ch, Setup's copies clear
+R, H and S, and the uninstall disk is formatted before IO.SYS goes on.
+
+TESTED.  RMFSTEST has a read-only section (3Dh read ok; 3Dh write and
+read/write, and 3Ch, say 5; once 4301h clears the bit, 3Dh read/write
+opens it), so it asks both DOSes - from the prompt and through PARKTEST.
+A one-off ROTEST.COM (scratchpad 69fd8e59 ro\, with run.ps1) asked 716Ch
+(read ok; read/write, write-truncate, truncate-or-create all 5), 6Ch
+(5), 5Bh (80), an FCB open (still opens) and that the file kept its 4
+bytes.  On the old kernel ROTEST failed 5 checks and RMFSTEST 3 on each
+DOS; on the new one all passed, again on the delivered BIN.  RUNTESTS
+101 x 7; re-recorded RMFSTEST (the new section), RMTEST (one cluster
+fewer free: RMFSTEST grew 385 bytes) and SFTSCAN (RMDOS's layout moved
+21h, the 33 bytes RMDOS grew) on every row.
+
+ALSO IN THIS BUILD.  21EXTERN.TXT's XARC topic: D in the syntax and the
+parameters, /Y "With D, deletes without asking", DEL on the screen,
+and "deletes files from them" in the opening line; HELP.HLP regenerated
+(a scratch regeneration first differed from the shipped file only in
+those lines).  XARC's usage: "d <archive> <files>" lined up with the
+others, and "/y Do not prompt to replace archive or delete files."
+
+SIZES.  PMDOS.SYS 189,860 (from 189,791), RMDOS.SYS 43,311 (from
+43,278), XARC.EXE 337,464, TESTS\RMFSTEST.COM 12,532.
+
+DELIVERED from the scratch mirror (scratchpad 69fd8e59 rel\, backups
+rel\bakro): S:\BIN x 4, BASELINE x 21, PMDOS.IMG, PMDOS2.IMG, TESTS.IMG,
+HD32 (MKHD), the four Setup images, HD16 by FATREPL on S: and in the VM.
+
+
+A NETWORK DRIVE CHANGES DIRECTORY, SAYS ITS SIZE AND RUNS PROGRAMS
+(2026-11-06)
+---------------------------------------------------------------------
+
+Charlie, from the 5x86 against his Server 2003 and Server 2019 shares
+(LFN=OFF): NET USE connects and DIR lists, but CD does not work, the
+free space is a 16-bit figure (2GB at most), and he was not sure that
+programs run.
+
+WHAT WAS WRONG.
+  - 3Bh had no net branch: CD on a share went down the FAT path, on a
+    volume with no FAT.  And a net drive's current directory was always
+    its root, so a relative path went to the driver as from the root.
+  - 36h and 7303h answered a made-up shape (65,535 clusters of 32K, all
+    free) because REDIR_INFO was never written.  CMD's DIR also worked
+    the free bytes out in 32 bits, and COMMAND.COM's capped them at
+    4,294,967,295, so a real figure would not have shown either.
+  - exec_load read a native program by clusters (fat_search, fat_readclus):
+    no native program could start from a share.  16-bit ones load by
+    handle (vdm_load) and did start.
+  - 43h, and path_render (7160h CL=2, 7147h), walked the FAT of a share.
+    7160h is what ATTRIB (LFN on) and DIR's "Directory of" line use.
+  - With LFN off, a long name was cut by to83 ("LONG FOL"), which is not
+    a name the server knows, so such a directory could never be entered.
+  - "> NUL" and "> PRN" with a share as the current drive created files
+    called NUL and PRN on the server: the net branch of 3Ch/3Dh/716Ch
+    came before the device check.
+
+THE FIX.
+  - CD: NETFS.INC net_chdir - resolve_core (cwd-seeded, "." and ".."
+    folded, 8.3), then REDIR_ISDIR (new, 14) asks the server, then
+    cwd_install.  A share's current directory is the volume's own
+    cwd_names, like a disk's, so 47h, 60h and the prompt need nothing.
+    net_putpath puts it in front of every relative path (open, create,
+    find, delete, MD, RD, both names of a rename).  The net mount arm
+    starts at the root; the unpark remount puts a share's directory back
+    without a FAT walk (PARK.INC pr_netcwd).  The driver: SMB2 a CREATE
+    with FILE_DIRECTORY_FILE (smb2_isdir), SMB1 CHECK_DIRECTORY 0x10.
+    RMDOS's 1105h asks REDIR_ISDIR too; it answered yes to anything.
+  - FREE SPACE: REDIR_INFO answers the server's own units (REDIR.H):
+    SMB2 QUERY_INFO FileFsSizeInformation (smb2_fs_size); SMB1 TRANS2
+    QUERY_FS_INFORMATION level 0x103, else the core QUERY_INFORMATION_
+    DISK (smb1_fs_size).  net_size makes them 64-bit counts of 512-byte
+    sectors.  7303h (net_f73): one sector a cluster, so clusters x
+    sectors x bytes is the server's figure to the byte, with 512-byte
+    sectors doubled until the count fits 32 bits (a share over 2TB).
+    36h (net_info) and RMDOS's 110Ch: 32K clusters, 16-bit, so 2GB at
+    most, as MS-DOS 7.  A server that will not say keeps the old shape.
+    CMD.EXE's DIR multiplies in 64 bits and prints with pgrp14w;
+    COMMAND.COM's put_numw likewise (fmt_numw).
+  - PROGRAMS: exec_load's xl_net - 3Dh, d32_find, the header into
+    clus_buf for the existing checks, then the whole image in one 3Fh;
+    the handle is closed on every way out (xl_netclose).
+  - 43h: net_attr, REDIR_GETATTR (new, 15) lists the directory with the
+    name as the pattern and matches the long or the short name.  Setting
+    attributes is refused (ERR_ACCESS): the driver has no SET_INFO yet.
+  - path_render on FS_NET renders rp_names as 8.3 (prd_net), within
+    prd_lim.
+  - SHORT NAMES: SMB2 lists with FileBothDirectoryInformation (class 3,
+    94-byte entries) and SMB1 with level 0x104 (back to 0x101 if the
+    server refuses it); smb2_dirent has short_name; SMBFS shows a long
+    name as the server's short one.  A server with no short names
+    (8dot3 off - Server 2019's data volumes by default) still gets the
+    cut name, which cannot be opened.  The LFN find (714Eh) on a share
+    still gives the 8.3 name as the long one too.
+  - DEVICES: net_drive_file, net_drive_num plus dev_find, at 3Ch/3Dh/
+    716Ch, so a device name takes the local open, which tests devices
+    first.
+
+REVIEW (defect > effect > fix).
+  - SMB2 list's pattern buffer was 16 bytes > a whole name as the
+    pattern (GETATTR) would be cut to 7 characters and match nothing
+    > wide[520].
+  - do_getattr cut the path where the leaf began > a name with no
+    directory was emptied before it was looked for > the leaf is copied
+    first.
+  - net_putpath writes "\" + cwd + "\" before the path > at most 65
+    bytes into a field of 80 or 260 > the copy gets the room left, and
+    net_copyz always terminates.  net_chdir checks names_len <= 63
+    before names_string writes into NR_PATH.
+  - fs-size answers: every offset and length is checked against what
+    was received before it is read; both list loops need the whole
+    94-byte entry before reading the short name, which is capped at 24
+    bytes in and 12 characters out.
+  Nothing new is allocated.
+
+TESTED.  QEMU (RTL8139, TCPIP.SYS, SMBFS.SYS) against the scratch rig's
+smb1peer.pl, which now answers CHECK_DIRECTORY, QUERY_INFORMATION_DISK,
+QUERY_FS_INFORMATION 0x103 (8,192,000,000,000 bytes, 5,056,790,077,440
+free: more than 32 bits of sectors), FIND level 0x104 with short names,
+and short names in paths (scratchpad smbt\runcd.ps1, cmds_cd.txt): CD
+to SUB, DEEP, .., \, LONGFO~1 and back; "Invalid directory" for no such
+name and for a file; CD K:\SUB from C: and K:-relative TYPE, DIR and
+COPY; TYPE INNERF~1.TXT; NETMEM (MEM.EXE, native) and NARGS.COM (16-bit)
+run from K:; ATTRIB on K:\ and K:\SUB\DEEP; DIR's free line exact in
+CMD.EXE and COMMAND.COM; "> NUL" and "> PRN" with K: current go to the
+devices.  LFN=OFF and LFN on; the peer refusing QUERY_FS (the 2GB
+shape) and the core fallback (1,310,720,000); the peer refusing level
+0x104 (0x101, names cut).  RUNTESTS 101 x 7, RMTEST, SFTSCAN (RMDOS
+grew 143 bytes) and CACHETST re-recorded.
+NOT RUN: an SMB2/3 server (the host's test share is gone and making one
+needs an elevated prompt), so smb2_isdir, smb2_fs_size and the class-3
+listing are proved only by reading against MS-SMB2; RMDOS's 1105h and
+110Ch under Windows; real hardware.
+
+
+LONG NAMES ON A NETWORK DRIVE (2026-11-06, the same evening)
+---------------------------------------------------------------------
+
+Charlie: make LFN work on shares too.  THIS REPLACES THREE PARTS OF THE
+ENTRY ABOVE: the share's current directory is no longer the kernel's
+cwd_names, net_putpath no longer puts it in front of a path, and
+path_render's prd_net and PARK.INC's pr_netcwd are gone again.
+
+WHY THE DIRECTORY MOVED.  The kernel keeps a current directory as 8.3
+components (cwd_names), which is what lets 47h keep its 64-byte promise
+on a disk - walk_to swaps each long name for its alias.  A share's long
+names have no alias the kernel can see, so "CD Long Folder Name" had
+nowhere to be kept.  SMBFS keeps it now, per drive, in two forms: cwd,
+the server's own spelling, and cwd83, each component's short name (the
+server's, an 8.3 name upper-cased, or a long name the server keeps no
+short name for, as it is).
+
+THE DRIVER (REDIR.H).
+  - fullpath: a path that does not start with "\" is taken from cwd -
+    every op, both names of a rename, and the find's directory.
+  - walk/lookup: a path is walked a component at a time, each looked up
+    in its directory by long or short name (the listing gets the name as
+    its pattern; the match is made in the driver too, for a LAN Manager
+    server that answers with everything).  Its scratch is in the session,
+    not on the 14K ring-0 stack.
+  - REDIR_CHDIR (16): every component a directory that is there; with
+    NR_SPARE 1 (LFN=OFF) the 8.3 form must fit 63 characters.  REDIR_
+    GETCWD (17): cwd or cwd83, no server traffic.  REDIR_CANON (18):
+    truename, long or 8.3; a component that is not there, or holds
+    wildcards, goes as typed with all after it.
+  - FINDFIRST with NR_SPARE 1 is 714Eh's: the pattern is matched against
+    the long name (wild_match, Windows' rules, "*.*" is everything) or
+    the 8.3 one, and the long name comes back in NR_PATH.  The listing
+    keeps the long names in a 48K pool beside the entries (one past it
+    keeps only its 8.3 name), and holds 1,024 entries, not 256: a
+    session is about 130K of the arena, 41K of it the SMB1 engine's
+    buffers as before.
+THE KERNEL (NETFS.INC).
+  - net_chdir: REDIR_CHDIR; with LFN=OFF resolve_core still refuses a
+    long component first, as on any drive.  net_getcwd: 47h the 8.3
+    form into 64 bytes (ERR_NOPATH when it does not fit), 7147h the long
+    one into 260.  net_canon: 60h the 8.3 form, 7160h CL=2 the long one.
+  - net_lfn_fill: NR_PATH as the long name, up to the record's 260.
+
+REVIEW (defect > effect > fix).
+  - fullpath joins cwd (255) and a raw path (259) > 515 bytes into a
+    518-byte buffer, and a raw path longer than the room would have been
+    cut silently > the copy stops at the buffer and a path that did not
+    fit is ERR_NOPATH, never a shorter path.
+  - walk's buffers were first written as five 260-byte locals > with
+    the listing's and CREATE's own, about 3.6K of a 14K ring-0 stack
+    that nested EXECs share > the session holds them (one op at a time).
+  - path_add adds a component whole or not at all, so a too-deep path
+    is refused rather than truncated into another directory's name.
+  - The long-name pool: a name is stored only when all of it and its NUL
+    fit; the pool is reset with the entry count at every FINDFIRST.
+  - An SMB1 listing's request holds a directory and a pattern of up to
+    259 characters each: about 540 bytes of an 8K send buffer.  SMB2's
+    pattern buffer is 520 bytes, its CREATE name buffer 600.
+  Nothing new is allocated: the session grew instead.
+
+TESTED.  QEMU against smb1peer.pl as above, LFN on, through a .CMD -
+AUTOEXEC.BAT is strict and quotes are ordinary characters there, so a
+quoted name in a .BAT reaches the kernel with its quotes, as designed
+(scratchpad smbt\LFNTEST.CMD, cmds_lfn.txt): CD "Long Folder Name"; DIR
+there ("Directory of K:\Long Folder Name", the long names in the last
+column); TYPE "Inner File.txt" and INNERF~1.TXT; DIR "Long Folder Name\
+*.txt"; MD, CD into, COPY to "A Long Copy.txt" and REN it; COPY from a
+long path; ATTRIB with long names and with *.*; from C:, CD "K:\Long
+Folder Name" and TYPE "K:Inner File.txt"; CD to a missing name and to a
+file refused.  CD prints the 8.3 form, K:\LONGFO~1, as for a long
+directory on a disk.  The 8.3 runs above again, LFN off and on, and
+COMMAND.COM's.
+
+
+A THIRD DRIVE ON ONE SERVER TOOK THE FIRST ONE WITH IT (2026-11-09)
+---------------------------------------------------------------------
+
+Charlie, on the 5x86: I: P: and S: mapped to three shares on trolla-
+storage (Server 2003), a DIR on each as it was mapped; back on I:, "No
+files found", while P: and S: listed.  Then T: on eternia-storage, and
+P: had gone too.  "Some mechanism only holds up to two mappings."
+
+THE DEFECT.  SMBFS made a TCP connection and a logon of its own for each
+drive letter, and every logon's SESSION_SETUP said VcNumber 0.  VcNumber
+0 tells a Windows server the client has just started, and Server 2003
+ends every other connection from that client when it sees one (Samba's
+"reset on zero vc" copies that).  So mapping a share ended the drives
+mapped before it on that server; the driver saw nothing until the next
+request found the socket closed, and the listing failed as "No files
+found".  Nothing on the client limits drives to two - four drives on
+four servers, and four on one server that does not reset, all work.  P:
+going after T: was mapped on another server is not explained by this;
+the likeliest cause is the server's idle disconnect (Windows ends a
+connection unused for 15 minutes), which the driver did not recover
+from either.
+
+THE FIX (DRV\SMBFS\SMBFS.C, CMD\NET\SMB).
+  - ONE CONNECTION PER SERVER LOGON: netconn holds the socket, the
+    engine and the credentials; every drive mapped to that server with
+    the same user, domain and password shares it, each with a tree of
+    its own (session.tid), as a DOS or Windows client does.  sess_tree
+    points the engine at the drive's tree before each request.  A
+    second logon to the same server - another user - says VcNumber 1
+    (smb1_vc_number, worked out at every connect, also a reconnect, from
+    whether another logon to that server is up).  NET USE /DELETE ends
+    the drive's tree, and the connection with the last drive on it.
+  - A CONNECTION THE SERVER ENDED IS MADE AGAIN.  The engines mark one
+    broken when a send or a receive comes to nothing, or a length puts
+    them out of step; NETWORK_SESSION_EXPIRED, USER_SESSION_DELETED,
+    NETWORK_NAME_DELETED and SMB1's ERRbaduid / ERRinvnid count as lost
+    too (conn_lost).  redir_dispatch: sess_ready makes a broken one again
+    before a request (conn_revive, with the kept credentials and the
+    address the mount found), and a drive whose tree is from before
+    connects it again (tgen); when the connection breaks under the
+    request it is made again and the request run once more from a copy.
+    An open file is opened again by name, for reading or writing as it
+    was (file_ready); a handle from the old connection is not closed on
+    the new one.  smb1_tree_connect, smb2_tree_connect and
+    smb2_tree_disconnect are new in the engines.
+  - NET USE /DELETE cleared the letter's mount (fat_ok) only when it was
+    the current volume, so DIR of a letter unmapped from another drive
+    still said "Volume in drive P" and walked the share as FAT; it now
+    swaps to that letter's state and clears it whichever is current.
+
+REVIEW (defect > effect > fix).
+  - conn_open first took VcNumber from the mount alone > a reconnect of
+    the first logon said 0 and ended the other user's connection > it
+    is worked out at every connect.
+  - A request rerun after a reconnect started from the request block as
+    the first run left it > a READ's or FINDFIRST's outputs and a
+    changed path would have been its inputs > the block is copied before
+    the first run and put back for the second.
+  - A drive revived inside the mount's search for a shared connection
+    then connected its share again > two trees for one drive > a
+    revived connection is taken as it is.
+  - The credentials are kept in the driver's memory for the life of the
+    mapping, as the kernel already passes them; nothing writes them out.
+  Every netconn and session is freed by drop_session (the last drive on
+  a connection frees it) and by nd_park's way back.
+
+TESTED.  QEMU, smb1peer.pl with two new switches (rig\smb1peer.pl):
+PEER_FORK, a process for each connection on the host's 127.0.0.1:139 -
+the guest reaches it as 10.0.2.2, any number of connections, where a
+guestfwd carries one - and PEER_VCRESET, Windows Server 2003's reset.
+scratchpad smbt\runsame.ps1 / cmds_same.txt.  Before the fix, with the
+reset: I: P: S: T: mapped in turn, and each mapping left the drives
+before it "No files found" - Charlie's report, reproduced.  After it:
+I: P: S: one connection, T: (another user) a second with VcNumber 1,
+no connection ended; every DIR right; a 300,000-byte file copied off I:
+and back onto P:, FC /B equal both times; P: deleted and "Invalid drive
+specification" after.  PEER_DROPAFTER=12, each connection ended after
+twelve requests: 29 dropped and made again in one run, the same results,
+the copies equal.  The earlier share runs (LFN off and on, the long-name
+.CMD, COMMAND.COM) again.  RUNTESTS 101 x 7.  NOT RUN: an SMB2 server
+(tree connect and disconnect on one session there are proved only by
+reading), and Server 2003 itself.
+
+
+SETVER BEFORE TCPIP.SYS HUNG; CAUSEWAY AND WOLFENSTEIN'S INSTALLER
+WOULD NOT RUN; 30h SAYS 6.22 (2026-11-10)
+---------------------------------------------------------------------
+
+Charlie, three reports: DEVICE=SETVER.EXE above DEVICE=TCPIP.SYS locks
+the machine (Ctrl-Alt-Del dead, a hard reset), below it all is well;
+the Open Watcom 1.9 DOS installer stops with a CauseWay error about a
+corrupt executable, and runs on MS-DOS; Wolfenstein 3-D's installer
+"just quits after the progress bars".  "Is this because we changed the
+reported DOS version?"  Two of the three are; there were two more
+defects behind them.
+
+1. THE INTERRUPT FLAG AFTER A 16-BIT DRIVER (DEVLOAD.INC, dl_excur).
+   Defect: v86_run comes back through the gate the guest left by, with
+   interrupts off, and dl_excur returned that way.  Effect: after any
+   16-bit DEVICE= line the rest of CONFIG.SYS ran with the clock
+   stopped, and TCPIP.SYS's INIT waits five seconds of ticks for a
+   DHCP lease - for ever, with nothing to let Ctrl-Alt-Del in.  ANSI.SYS
+   above TCPIP.SYS did it too; /IP= (no DHCP wait) did not.  Fix:
+   dl_excur saves the caller's flags and puts them back.
+
+2. A DPMI CLIENT'S 42h (DPMI.INC, dpmi_xlat/dpmi_unxlat).  Defect: the
+   host handed a client's seek to the kernel's 42h as it came, and the
+   kernel's takes the whole offset in ECX and answers in EAX.  Effect:
+   every seek went to CX - 0 for a file under 64K - and DX came back as
+   the offset asked for.  CauseWay reads its own .EXE through the host
+   and stopped with "error 11: DOS reported an error or corrupt file
+   found" (found with QEMU -d int: seek to 18h answered AX=0000
+   DX=0018).  A DOS box was right all along (vdm_seek).  Fix: CX:DX
+   made one offset on the way in, DX:AX made of the answer on the way
+   out, the upper halves and CX the client's; a failure's code in AX.
+
+3. THE VERSION.  Since 0.68, 30h has said 0.70 to a DOS program SETVER
+   does not name, and a program reads 0.x as DOS 1.  CauseWay: "error
+   04: DOS 3.1 or better required".  Wolfenstein's DEICE then runs
+   WOLF.EXE, a PKSFX 2.04g, which finds itself through the name behind
+   the environment - only on DOS 3 and later - and quits without a word.
+   Charlie chose: 6.22 by default.  COMPAT_MAJOR/MINOR (PMDOS.INC,
+   RMDOS.INC) is what sv_find, sv_caller, RMDOS's fn30 and sv_ver fall
+   back to; a SETVER entry, "*" among them, still wins; 3306h and
+   PM-DOS's own native programs still get 0.70, so VER still says 0.70
+   in CMD.EXE and COMMAND.COM.  The SETVER help says so.
+
+REVIEW (defect > effect > fix).  dl_excur: PUSHFD before PUSHAD, POPFD
+after POPAD, one exit - nothing addresses the stack by a fixed offset.
+42h: the state is single globals, as dpmi_odx and the rest are; a seek
+makes no call out and no INT 24h, so no client 21h can nest inside it;
+dpmi_xlat clears the flag on every call and dpmi_unxlat clears it when
+used, so no stale answer reaches the next call.  No buffer, no memory.
+
+TESTS.  QEMU: SETVER (and ANSI.SYS) above TCPIP.SYS boots, takes a
+DHCP address, pings.  CauseWay (a Watcom -l=causeway test program, and
+the 84 MB installer from a D: in DOSBox-X): old kernel error 11, new
+kernel runs; no SETVER loaded, it is told 6.22; with "* 5.00", 5.00.
+Wolfenstein 3-D 1.4 shareware (dosgames.com's 1WOLF14.ZIP): DEICE and
+PKSFX inflate all eleven files with no SETVER.  RUNTESTS on all seven
+rows: only HELLO and RMTEST change, the 30h line ("6.16" is HELLO's hex
+minor); those two lines were edited in BASELINE, nothing re-recorded.
+
+THREE THINGS THAT ARE QEMU'S, NOT PM-DOS'S.  (a) CauseWay's INT 31h
+handler, mov ds,cs:[0Ch] with a 66h prefix, read DS:0Ch (the IVT, FF53h)
+in QEMU 11.1 and faulted, GP(FF50); DOSBox-X runs it.  (b) Wolfenstein
+itself shows a black screen in QEMU on MS-DOS 5 as on PM-DOS: QEMU's
+"dumb" VGA flips 3DAh bits 0 and 3 together, and the game waits for one
+without the other.  (c) The rig itself: Defender took TOOLS\MKDISK.EXE
+(Bearfoos.B!ml, both copies), so RUNTESTS's disks were an emptied FAT16
+image filled by FATREPL.PL and FATPUT.PL (scratch copy of RUNTESTS,
+RT_BLANK), which leaves CACHETST, LFNAPI, RMFIND, RMTEST and two MODE
+lines different on both the old and the new kernel - the layout, not
+the code; the old and new outputs were compared directly as well.
+
+NOT DONE / NOT RUN.  The Setup images are not rebuilt (MKDISK); the
+floppies and HD32 had the two kernels and HELP.HLP put over their own
+clusters (same cluster counts).  Windows 3.1 on RMDOS not run (the WfW
+rig's scripts are gone).  Real Server 2003 shares, the 5x86, the game
+past its first screen.
+
+Later the same day: Charlie allowed MKDISK.EXE again and asked for
+SETVER's caution on an add (msg_warn, "A program told a version it was
+not written for can misbehave...") to go; it has, and an add says only
+that the table is updated.  S:'s TOOLS\MKDISK.EXE was found 0 bytes and
+was put back from the scratch build of the same MKDISK.C.  A full
+build made the Setup images (DISK1, DISK2, SETUPUSB, PMDOSCD.ISO) with
+today's kernels; HD32 is MKHD's and the build does not make it, so it
+had SETVER.EXE put over its own clusters instead.
+
+
+WOLFENSTEIN STOPPED AT THE END OF A LEVEL; THE OPEN WATCOM INSTALLER
+TOOK THE SHELL DOWN (2026-11-10, evening)
+---------------------------------------------------------------------
+
+Charlie, on the 5x86: Wolfenstein 3-D "locked up after the first
+level" - the switch at the end of floor 1, and floor 2 never came; the
+Open Watcom 1.9 installer got to about 2% and stopped with "*** Program
+fault: exception 0E at 00002338 err 07 addr FFCD0A53", then "exception
+0C at 00002AF2 err 00", then nothing; and 16-bit programs seem slower
+than under MS-DOS 6.22.  Two defects, one each.
+
+1. A STORE INTO THE KERNEL'S LOW PAGES ENDED THE BOX (IO\VM86.INC,
+   vf_romw).  Defect: 1000h-3FFFh (PMIO's stub, the GDT, the globals,
+   XFER) is read-only to ring 3, boxes included (pg_protect), and a
+   box's page fault there ended the box.  As a level ends, Wolfenstein
+   loads DS from a segment variable that is still 0 and does XOR
+   [BX+5],AL with BX = 11B8h and AL = 0 - a store to 0:11BD that
+   changes nothing, and on MS-DOS lands in DOS's own low data unseen.
+   Effect: vdm_abend at 27CA:0300, CR2 11BD; the box was gone with the
+   screen still in mode 13h (black), the fault report written to a text
+   screen nobody could see, and the game's timer handler left in the
+   vector table, still being called by the kernel's interrupt
+   excursions (IRQX.INC) into memory that had been freed.  Fix: a box's
+   write fault below 110000h - which can only be those pages or their
+   A20 alias - is a store into ROM: the monitor measures the
+   instruction (prefixes, mod r/m, SIB, displacement, immediate) and
+   steps over it, flags as they were.  Only the forms whose effect is
+   the store and the flags (the ALU group, MOV, NOT, NEG, INC, DEC,
+   shifts, SETcc, BTS/BTR/BTC, SHLD/SHRD); XCHG, CMPXCHG, XADD, string
+   instructions, PUSH/POP to memory and anything unknown still end the
+   box.
+
+2. THE SHELL'S INT 24h RAN ON THE BIOS DATA AREA (RING3.INC, DPMI.INC,
+   INT21.INC).  Defect: while a DPMI client runs, GDT entry 8 -
+   SEL_PROG_DS - is lent to it as selector 0040h, base 400h
+   (dpmi_switch, for Rise of the Triad), "because no native program
+   runs while a client does".  The parent's handlers do: a disk error
+   under the client is answered by CMD.EXE's int24_hand, whose first
+   instruction, MOV [ce_flags],AH, went to 400h + 2653h.  Effect: page
+   fault at 2338 (int24_hand + 1) on a read-only kernel page - exactly
+   the 5x86's line - then the shell's state was lost, a second fault,
+   and a reload or a hang.  Found with a CauseWay program opening A:
+   with a blank floppy in: old kernel, the same "0E at 00002338 err
+   07" and AUTOEXEC.BAT run twice.  The installer on the 5x86 had a
+   read error at 2% (its source or the disk); in DOSBox-X, with none,
+   it installs.  Fix: r3_lent says entry 8 is on loan; r3_thunk points
+   it at the slot again for the handler and records that (RC_LENT,
+   RC_LEN 24 -> 28), r3_ret and rt_unwind lend it back; a native
+   program a client starts keeps the state by depth (r3_lentx) and 4Ch
+   or a failed 4Bh lends it back (r3_lendback).  r3_setdesc clears the
+   flag; r3_lend40 is the one place the descriptor is lent.
+
+REVIEW (defect > effect > fix).  vf_romw first stepped over XCHG,
+CMPXCHG and XADD as well; they write a register, so skipping them
+changes what the program goes on with - now left to end the box.  It
+reads at most 15 instruction bytes from CS:IP below 110000h, which is
+always mapped; the length is checked against the processor's limit of
+15; IP wraps at 16 bits as the processor's does.  r3_lentx is indexed
+by the child's depth, which 4Bh has already held to EXEC_MAX (the
+array is EXEC_MAX + 1); the record field is written for every handler
+call and read only by that call's return or unwind.  No buffer, no
+allocation.
+
+TESTS (DOSBox-X, 486, Setup's CONFIG.SYS: CMD.EXE shell, SETVER,
+X87EMU, EMS=AUTO, NULLTRAP=ON).  A test TSR (KEYINJ, scratchpad) types
+scan codes through 21h/F123h from the timer; the shareware's debug
+keys (Apogee's 1.4 blanked "goobers"; the TSR puts it back in memory)
+end floor 1 with Tab+E, which is what the elevator switch does.  Old
+PMIO: black screen, box ended.  New: "Floor 1 completed", the tally,
+floor 2 plays, with and without a Sound Blaster.  CWCRIT (CauseWay,
+press F, open A:\X.TXT with a blank floppy, read 0040:006C before and
+after): old kernel faults at 2338 and reloads the shell; new kernel
+asks "Invalid media type reading drive A", takes the F, open returns
+-1, and 0040h still reads the tick count.  Open Watcom 1.9 installed
+unattended (-s) to C:\WATCOM, the same files as on the old kernel.
+RUNTESTS on all seven rows: everything else the same; RMTEST's free
+clusters 6A21 -> 6A20 on every row, because PMIO.SYS grew past an 85th
+1K cluster on the test disk - re-recorded; CACHETST's "a write is owed"
+5 -> 4 on six rows is the lazy-write flip seen before - not recorded.
+PMIO.SYS 86,984 -> 87,460, PMDOS.SYS 191,305 -> 191,476.  HD32 no
+longer took PMIO over its own clusters (512-byte clusters, one more
+needed), so MKHD made it in the scratch tree.  Delivered with
+delivernet13.ps1 (backups scratchpad baknet13): BIN 2, BASELINE 7,
+DISK1, SETUPUSB, PMDOSCD.ISO, the floppies, HD32, both HD16s.
+
+NOT DONE.  A box ended by the kernel still leaves its hooked hardware
+vectors (Wolfenstein's INT 08h) pointing into the freed program, and
+its fault report is written while the screen may be in a graphics
+mode; neither is changed here.  Speed: a box runs at IOPL 0, so every
+CLI, STI, PUSHF, POPF, INT and IRET is a #GP the monitor emulates
+(v86_fault: the stack check, the decode, then v86_ckkbd's four
+"anything owed?" calls), and the PICs, 60h/64h and the PIT are trapped
+ports; ordinary I/O, VGA's included, goes straight to the hardware and
+there is no switch to real mode.  Nothing changed for speed yet.
+
+
+NET LOGON: A PASSWORD LIST, SO NET USE STOPS ASKING (2026-11-11)
+---------------------------------------------------------------------
+
+Charlie: typing the password at every NET USE - his drives are on two
+domains - "seems unnecessary"; an encrypted file of passwords would
+let anyone at the console use them on a single-user system.  The
+answer is WfW's: a list locked by a password of its own, typed once.
+
+    NET LOGON [name [password | *]] [/YES]
+    NET LOGOFF [/YES]
+    NET PASSWORD [name | /LIST | /DELETE:domain-or-server]
+    NET USE ... [/PERSISTENT:YES|NO] [/SAVEPW:NO] [/YES | /NO]
+
+NET LOGON opens NAME.PWL, beside NET.EXE (C:\DOS on an installed
+system), or offers to make one, and connects again the drives the list
+remembers.  While it is open, NET USE with no password signs in with
+the one saved for the domain - or the server, when /USER: names no
+domain; if none is saved it asks, and once the drive is connected
+offers to save it (/YES saves, /NO and /SAVEPW:NO do not).
+/PERSISTENT:YES remembers the connection - server, share, user,
+domain, never the password - and /DELETE of the letter forgets it, as
+NT does.  NET LOGOFF disconnects every network drive and has the
+driver forget the list.  NET PASSWORD changes the list's password,
+/LIST names what is saved (never a password), /DELETE: forgets one.
+
+WHERE THE SECRETS ARE.  All of the crypto and the unlocked list live in
+SMBFS.SYS (DRV\SMBFS\PWL.C).  NET.EXE reads and writes the file and asks
+for passwords; the kernel relays one block, 21h/F1h AL=27h NETUSE_PWL
+-> REDIR_PWL, checking the block (PWLR_SIZE, 12,944 bytes, file
+included) and passing its flat address.  No call returns a saved
+password or the key; every change comes back as the whole file,
+encrypted.  The mount takes the password from the list itself
+(NUF_SAVED = NR_SPARE bit 1, pwl_fill) and clears the kernel's request
+block of it afterwards.  The list keeps the PASSWORDS, not NT hashes:
+SMB1 needs the LM hash and, for share-level and plaintext servers, the
+password.  Honest limit, in the help too: ring 3 can READ kernel pages
+(they are write-protected, not hidden), so an open list is as safe as a
+machine left logged on - which is why NET LOGOFF also disconnects.
+
+THE FILE (PWL.C has the layout).  64-byte header - "PMDOSPWL", version,
+rounds, a 16-byte salt, a write count, the nonce, the length - which is
+GCM's associated data; then the entries (owner, up to 24 passwords and
+26 connections) in AES-256-GCM, then the tag.  Key: PBKDF2-HMAC-SHA256,
+8,192 rounds (in the file, 1,000 to 1,000,000 accepted).  The nonce is
+8 random bytes and the write count, so it cannot repeat under one key;
+a new list password brings a new salt.  Random numbers: a SHA-256 pool
+in the driver, fed by NET.EXE's count of loop turns between keys of
+each password (a 486 has no RDTSC - TLS's rng_init would not do) and
+the tick count.  The file is written to NAME.$$$ and renamed over the
+old one.
+
+REVIEW (defect > effect > fix).  file_open first called list_wipe after
+a good decrypt, which cleared the plain buffer holding the entries just
+decrypted: every list opened empty (the host test's 14 failures) -
+list_clear now spares that buffer.  NET LOGON /YES still asked "Create
+one (Y/N)?" at a keyboard, and so waited headless - /YES now answers.
+NET.EXE relied on the driver to wipe the passwords in its request; with
+no driver they stayed in the program's memory - call_pwl clears them
+itself.  Checked: every string field is cut to its size on arrival; the
+file's length, plain length, counts and round count are bounded before
+any work; GETCRED/GETMAP indexes and ADDMAP's drive are bounded; the
+pwl_req size is checked at compile time against PWLR_SIZE.
+
+TESTS.  Host (scratchpad pwl\pwltest.c, PWL.C built for NT): the RFC
+7914 PBKDF2-HMAC-SHA256 vectors (1 and 4,096 rounds); create, add,
+lock, unlock; wrong password, wrong owner, a changed byte in the header
+and in the entries, a short file and a round count of 4,000,000,000
+refused; 24 passwords and 26 connections with every field full fit and
+open again, the 25th and the 27th refused; delete; change password; a
+new nonce every write - 38 checks.  DOSBox-X: NET LOGON makes
+C:\DOS\CHARLIE.PWL beside NET.EXE, refuses a second user, wrong
+password, case of the name, LOGOFF, PASSWORD change through redirected
+input, a second user's own file.  QEMU with the SMB1 test peer (which
+now logs each sign-in's NT response; its challenge is fixed, so equal
+bytes mean the same password): N: and O: on two domains with typed
+passwords saved, J: with a wrong one; LOGOFF disconnected all three;
+LOGON connected N: again with the saved password (the same response as
+typed), TYPE N:\HELLO.TXT; M: and P: with no password signed in with
+WG's and WG2's saved passwords; nothing saved -> "No password is saved
+for WG"; a * password saved with /YES and used; /DELETE:WG.  RUNTESTS
+on all seven rows.  Not run: SMB2/3 (Server 2019) - the mount code
+fills the password before the protocol is chosen, so it is the same
+path; a real 486's time for NET LOGON.
+
+Also: TOOLS\MKSETUP.EXE would not start at the end of BUILD.CMD,
+"Access is denied" - Windows' installer detection, which takes a
+32-bit program with no manifest and "setup" in its name for an
+installer that needs elevation.  It now carries a manifest asking for
+nothing (TOOLS\MKSETUP.MAN through MKSETUP.RC, added by wrc after the
+link); NT 3.51 ignores the resource.  Charlie chose the manifest over
+a new name.
+
+
+v0.70 - THE NETWORK, AND A REAL 5x86 (2026-11-11)
+---------------------------------------------------------------------
+
+Charlie: add the password list, "then we'll tag this as 0.70 and
+commit to GitHub", with the two Setup disks (zipped together) and the
+CD-ROM image as the release's downloads - the first release to have
+them.  INC\PMVER.INC has said 70 since 2026-11-01.  This release is
+everything since the v0.69 tag; the entries above have the detail and
+this is the list.
+
+NETWORKING, NATIVE
+  - TCPIP.SYS: DHCP or a fixed address at boot, the lease kept;
+    IPCONFIG; NetBIOS names over TCP/IP (\\NAME without DNS, /NAME=,
+    /WINS=); PING to the millisecond; the computer's name put in DNS;
+    TCPIP.INI; a failed connection says why.
+  - NETBEUI.SYS: NetBIOS over NetBEUI, beside TCP/IP or alone.
+  - TLS 1.3 and ECDSA with P-256 and P-384 in the TLS core; WGET's 4K
+    record limit; TCP window updates and the peer's close fixed (in
+    QEMU a download went from 0.57 KB/s to about 1 MB/s, and a 1 MB
+    HTTPS fetch from 21 s to 2.5 s).
+  - Card drivers: EL3C515.SYS for the 3Com 3C515 (with its MII PHY);
+    EL3C509 timing and diagnostics.
+  - SMB: Windows for Workgroups' LAN Manager dialects, both ways;
+    SMB1-only servers (Windows Server 2003) found by the opening
+    Windows itself sends; DIR on them; one connection per server shared
+    by its drives, made again when the server ends it; a network drive
+    changes directory, says its size, runs programs, gives short and
+    long names.
+  - NET USE: the step that failed and the server's status;
+    /USER:domain\name; * for the password; NET LOGON, NET LOGOFF and
+    NET PASSWORD with an encrypted password list (NAME.PWL), saved
+    passwords and remembered drives (/PERSISTENT:YES).
+
+THE 5x86 AND OTHER REAL MACHINES
+  - Drive letters to Z:, LASTDRIVE= deciding (P: without the line).
+  - Floppy changes seen; CD-ROM drives on the secondary channel found
+    alone; the serial mouse kept alive; FDISK's whole-disk partitions
+    end where the BIOS can reach, with a FAT16/FAT32 choice; FORMAT
+    follows the type byte.
+  - Room in PMIO.SYS and PMDOS.SYS (a 192K window); X87EMU.SYS, the
+    coprocessor emulator as a driver; the shell's slot grows.
+  - RMDOS's cache and file tables leave its image; FILES= sizes the
+    file table.
+  - DOSSHELL's 2-minute exit was the kernel writing a whole cluster per
+    small write - only the sectors touched are written now.
+  - MOVE's double echo; DOSSHELL.INI writes buffered.
+
+DOS PROGRAMS
+  - 21h/30h says 6.22 to DOS programs (SETVER entries still win);
+    3306h and native programs get 0.70.  SETVER names the Windows files
+    instead of "*".
+  - A 16-bit driver above TCPIP.SYS no longer stops the clock (SETVER
+    before TCPIP hung); a DPMI client's 42h seeks where it asks
+    (CauseWay, the Open Watcom 1.9 installer).
+  - A DOS program's store into the kernel's low pages is dropped as a
+    store into ROM (Wolfenstein 3-D's end of a level); the shell's
+    INT 24h answers a DPMI client's disk error without faulting.
+  - A read-only file opens for reading only, in both kernels.
+
+PROGRAMS
+  - XARC deletes files from an archive or a disk image.
+  - CHOICE /T; CONFIG.TXT and AUTOEXEC.TXT leave the disks.
+  - Setup: upgrade or reinstall by the kernel's version stamp, nothing
+    kept for UNDELETE, CMD.EXE in C:\ as well, no Zip image.
+
+NOT IN IT.  Speed of 16-bit programs (IOPL 0: every CLI, STI, PUSHF,
+POPF, INT and IRET traps) - analysed, not changed.  A box the kernel
+ends still leaves its hardware vectors hooked.

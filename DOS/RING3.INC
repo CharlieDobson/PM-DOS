@@ -57,7 +57,9 @@ RC_VEC          EQU     8               ; dd - which vector this was
 RC_DEPTH        EQU     12              ; dd - and the slot that was current
 RC_LASTESP      EQU     16              ; dd - and where its program's stack was
 RC_LDTR         EQU     20              ; dd - and the LDT that was loaded
-RC_LEN          EQU     24
+RC_LENT         EQU     24              ; dd - and GDT entry 8 was a DPMI
+                                        ;      client's 0040h (r3_lend40)
+RC_LEN          EQU     28
 R3_CALLMAX      EQU     4               ; nested handler calls
 
 ; Where PUSHAD leaves EAX, counted from the bottom of the eight.
@@ -450,7 +452,60 @@ rsd_bytes:
         mov     edi,GDT_BASE + GDT_IDX_PROGDS * 8
         mov     dl,DACC_DATA
         call    r3_wrdesc
+        mov     byte ptr [r3_lent],0            ; entry 8 is the slot's again
         popad
+        ret
+
+;---------------------------------------------------------------------
+; r3_lend40 - GDT entry 8, SEL_PROG_DS, becomes a DPMI client's
+;             selector 0040h: the BIOS data area.  Everything preserved.
+;
+; Windows' host gives every client that selector, extenders count on
+; it, and DOS/4GW Professional reads the clock as PUSH 40h / POP ES /
+; ES:[6Eh] - which here is GDT entry 8, a native program's slot: Rise
+; of the Triad page-faulted reading one.  So dpmi_switch lends the
+; entry out for as long as a client runs, and dpmi_drop gives it back
+; (r3_setdesc).
+;
+; BUT A NATIVE PROGRAM'S CODE DOES RUN WHILE A CLIENT DOES: its parent's
+; handlers.  The shell's INT 24h answers for the client's disk, and it
+; ran with its data segment on the BIOS data area - its first store
+; went to 400h + its own offset, onto a kernel page, and the shell was
+; finished with a page fault (the Open Watcom 1.9 installer from a disk
+; that failed a read, 2026-11-10).  r3_lent says the entry is out on
+; loan, so r3_thunk can take it back for the handler and r3_ret, and
+; 4Ch for a native program a client started, can lend it out again.
+;---------------------------------------------------------------------
+r3_lend40:
+        pushad
+        mov     edi,GDT_BASE + GDT_IDX_PROGDS * 8
+        mov     ebx,400h
+        mov     ecx,0FFFFh
+        mov     dl,DACC_DATA
+        xor     dh,dh
+        call    r3_wrdesc
+        mov     byte ptr [r3_lent],1
+        popad
+        ret
+
+;---------------------------------------------------------------------
+; r3_lendback - the native program at [exec_depth] + 1 has ended, or
+;               never started, and r3_useslot has given its parent's
+;               slot back.  If a DPMI client started it, entry 8 goes
+;               back to being that client's 0040h.  Everything preserved.
+;---------------------------------------------------------------------
+r3_lendback:
+        push    eax
+        mov     eax,[exec_depth]
+        inc     eax
+        cmp     byte ptr [r3_lentx+eax],0
+        je      rlb_out
+        mov     byte ptr [r3_lentx+eax],0
+        cmp     dword ptr ds:[dpmi_active],0
+        je      rlb_out
+        call    r3_lend40
+rlb_out:
+        pop     eax
         ret
 
 ; EDI -> the descriptor, EBX = base, ECX = limit, DL = access byte,
@@ -1230,6 +1285,8 @@ r3_thunk:
         sldt    cx
         movzx   ecx,cx
         mov     [edi+RC_LDTR],ecx
+        movzx   ecx,byte ptr [r3_lent]
+        mov     [edi+RC_LENT],ecx
 
         ; WHOSE HANDLER IS IT?  An offset is an offset into a slot, and
         ; the slot that is loaded is not always the slot the handler
@@ -1240,7 +1297,7 @@ r3_thunk:
         ; Three cases, and the third is the interesting one.
         mov     edx,[r3vdep+ebx*4]
         cmp     edx,[r3_depth]
-        je      rt_here                         ; ours: run it where we are
+        je      rt_mine                         ; ours: run it where we are
         or      edx,edx
         jnz     rt_parked
 
@@ -1270,6 +1327,19 @@ r3_thunk:
         mov     eax,[r3vec+ebx*4]               ; (r3_useslot left EAX alone,
                                                 ; but say it rather than rely
                                                 ; on it)
+        jmp     short rt_here
+
+        ; The slot's own descriptors, if a DPMI client has entry 8 as its
+        ; 0040h (r3_lend40): the slot itself has not moved, so pointing
+        ; them at it again is all the handler needs.  r3_ret lends the
+        ; entry back out.
+rt_mine:
+        cmp     byte ptr [r3_lent],0
+        je      rt_here
+        push    eax
+        mov     eax,[r3_depth]
+        call    r3_useslot
+        pop     eax
 rt_here:
         ; Where the handler's stack starts: below the program's own
         ; ESP as of its last entry to the kernel.  Three dwords are the
@@ -1336,6 +1406,10 @@ rt_here:
 rt_unwind:
         mov     eax,[edi+RC_DEPTH]
         call    r3_useslot
+        cmp     dword ptr [edi+RC_LENT],0       ; and a client's 0040h, if
+        je      rtu_nolend                      ; it had it
+        call    r3_lend40
+rtu_nolend:
         mov     eax,[edi+RC_LASTESP]
         mov     [r3_lastesp],eax
 
@@ -1399,6 +1473,12 @@ r3_ret:
         mov     [r3_lastesp],eax
         mov     eax,[edi+RC_DEPTH]
         call    r3_useslot
+        cmp     dword ptr [edi+RC_LENT],0       ; and entry 8 lent out again
+        je      r3r_nolend                      ; to the client it was lent
+        cmp     dword ptr ds:[dpmi_active],0    ; to, while it is there
+        je      r3r_nolend
+        call    r3_lend40
+r3r_nolend:
         mov     eax,[edi+RC_LDTR]               ; and the LDT, while the
         cmp     dword ptr ds:[dpmi_active],0    ; client it belongs to is
         jne     r3r_ldt                         ; still there
@@ -1977,6 +2057,11 @@ r3_active       dd  0                   ; a native program has been started
 r3_lastesp      dd  0                   ; its ESP when it last called in
 r3_esp0         dd  R3_KSTACK           ; the ring-0 stack it will use
 r3_calldep      dd  0                   ; handler calls in flight
+r3_lent         db  0                   ; 1: GDT entry 8 is a DPMI client's
+                                        ; 0040h (r3_lend40), not the slot's
+r3_lentx        db  EXEC_MAX + 1 dup(0) ; ...and was when a client started
+                                        ; the native program at that depth
+                                        ; (4Bh), so 4Ch lends it out again
 r3_eip          dd  0                   ; where r3_enter is going
 r3_esp          dd  0                   ; and on what stack
 

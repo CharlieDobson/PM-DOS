@@ -53,7 +53,7 @@ static int send_all( smb1_client *cl, const unsigned char *buf, int len )
     int off = 0, n;
     while ( off < len ) {
         n = cl->send( cl->ioctx, buf + off, len - off );
-        if ( n <= 0 ) return -1;
+        if ( n <= 0 ) { cl->broken = 1; return -1; }
         off += n;
     }
     return 0;
@@ -64,7 +64,7 @@ static int read_n( smb1_client *cl, unsigned char *buf, int n )
     int off = 0, got;
     while ( off < n ) {
         got = cl->recv( cl->ioctx, buf + off, n - off );
-        if ( got <= 0 ) return -1;
+        if ( got <= 0 ) { cl->broken = 1; return -1; }
         off += got;
     }
     return 0;
@@ -81,7 +81,7 @@ static int nbt_recv( smb1_client *cl, unsigned char *out, int cap )
         len = ( ( hdr[1] & 1 ) << 16 ) | ( hdr[2] << 8 ) | hdr[3];
         if ( hdr[0] == 0x85 ) continue;                 /* session keep-alive */
         if ( len == 0 ) return 0;
-        if ( len > cap ) return -1;
+        if ( len > cap ) { cl->broken = 1; return -1; }    /* out of step */
         if ( read_n( cl, out, len ) < 0 ) return -1;
         return len;
     }
@@ -172,6 +172,11 @@ static void nb_encode( const char *name, unsigned char type, unsigned char *out 
 }
 
 char smb1_calling[16] = "PMDOS";
+
+/* SESSION_SETUP's VcNumber.  0 says "this client has just started", and
+   Windows Server 2003 then ends every other connection from it, so a
+   second logon to a server that already has one says 1 (SMBFS sets it). */
+unsigned int smb1_vc_number = 0;
 
 static int nbt_session_request( smb1_client *cl, const char *server )
 {
@@ -303,7 +308,7 @@ static int do_session_setup( smb1_client *cl, const char *user,
     put16( w + 2, 0 );                          /* AndXOffset */
     put16( w + 4, (unsigned int)sizeof( cl->recvbuf ) - 256 ); /* MaxBufferSize */
     put16( w + 6, 1 );                          /* MaxMpxCount */
-    put16( w + 8, 0 );                          /* VcNumber */
+    put16( w + 8, smb1_vc_number );             /* VcNumber */
     put32( w + 10, cl->sesskey );               /* SessionKey: the server's, given back */
     put16( w + 14, 24 );                        /* OEM (LM) password length */
     put16( w + 16, 24 );                        /* Unicode (NT) password length */
@@ -341,7 +346,7 @@ static int do_session_setup_lm( smb1_client *cl, const char *user,
     put16( w + 2, 0 );                          /* AndXOffset */
     put16( w + 4, (unsigned int)sizeof( cl->recvbuf ) - 256 ); /* MaxBufferSize */
     put16( w + 6, 1 );                          /* MaxMpxCount */
-    put16( w + 8, 0 );                          /* VcNumber */
+    put16( w + 8, smb1_vc_number );             /* VcNumber */
     put32( w + 10, cl->sesskey );               /* SessionKey: the server's, given back */
     put32( w + 16, 0 );                         /* Reserved */
 
@@ -394,6 +399,15 @@ static int do_tree_connect( smb1_client *cl, const char *server, const char *sha
     if ( smb1_txrx( cl, q ) < 0 ) return -1;
     if ( cl->last_status != 0 ) return -1;
     cl->tree_id = get16( cl->recvbuf + 24 );    /* the server's TID */
+    return 0;
+}
+
+int smb1_tree_connect( smb1_client *cl, const char *server, const char *share,
+                       const char *password )
+{
+    cl->tree_id = 0;
+    if ( do_tree_connect( cl, server, share, password ) < 0 ) return -1;
+    cl->stage = "connected";
     return 0;
 }
 
@@ -624,18 +638,22 @@ static int write_core( smb1_client *cl, const smb2_fh *fh, unsigned long off,
 /* TRANS2 FIND_FIRST2 / FIND_NEXT2, info level 0x101                       */
 /* ====================================================================== */
 
-#define FIND_INFO_LEVEL  0x0101U    /* SMB_FIND_FILE_DIRECTORY_INFO */
+#define FIND_BOTH_LEVEL  0x0104U    /* SMB_FIND_FILE_BOTH_DIRECTORY_INFO */
+#define FIND_DIR_LEVEL   0x0101U    /* SMB_FIND_FILE_DIRECTORY_INFO */
 
 /* walk one FIND response's data block, calling emit for each entry.
-   returns the count, and sets *eos / *last_name (the resume name). */
-static int find_walk( const unsigned char *data, int dcount, int want_resume,
+   returns the count, and sets *eos / *last_name (the resume name).
+   'fixed' is the entry's size before its name: 94 at level 0x104,
+   which has the short name's length at 68 and its 24 bytes at 70
+   (Unicode whatever the session's strings are, on Windows and Samba
+   alike), 64 at level 0x101, which has none. */
+static int find_walk( const unsigned char *data, int dcount, int fixed,
                       char *last_name,
                       void ( *emit )( void *user, const smb2_dirent *entry ),
                       void *user )
 {
     int off = 0, count = 0;
-    (void)want_resume;
-    while ( off + 64 <= dcount ) {
+    while ( off + fixed <= dcount ) {
         const unsigned char *e = data + off;
         unsigned long next = get32( e + 0 );
         unsigned long namelen = get32( e + 60 );
@@ -650,10 +668,22 @@ static int find_walk( const unsigned char *data, int dcount, int want_resume,
 
         cap = (int)namelen;
         if ( cap > (int)sizeof( de.name ) - 1 ) cap = (int)sizeof( de.name ) - 1;
-        if ( off + 64 + cap > dcount ) cap = dcount - off - 64;
+        if ( off + fixed + cap > dcount ) cap = dcount - off - fixed;
         if ( cap < 0 ) cap = 0;
-        for ( i = 0; i < cap; i++ ) de.name[i] = (char)e[64 + i];
+        for ( i = 0; i < cap; i++ ) de.name[i] = (char)e[fixed + i];
         de.name[cap] = 0;
+
+        de.short_name[0] = 0;
+        if ( fixed == 94 ) {
+            int slen83 = e[68], j = 0;
+            if ( slen83 > 24 ) slen83 = 24;
+            if ( slen83 >= 2 && e[71] == 0 ) {           /* UTF-16LE */
+                for ( i = 0; i + 1 < slen83 && j < 12; i += 2 ) de.short_name[j++] = (char)e[70 + i];
+            } else {                                     /* an OEM server's */
+                for ( i = 0; i < slen83 && j < 12 && e[70 + i]; i++ ) de.short_name[j++] = (char)e[70 + i];
+            }
+            de.short_name[j] = 0;
+        }
         if ( last_name ) { for ( i = 0; i <= cap; i++ ) last_name[i] = de.name[i]; }
 
         emit( user, &de );
@@ -670,7 +700,7 @@ int smb1_list_dir( smb1_client *cl, const char *dir, const char *pattern,
                    void ( *emit )( void *user, const smb2_dirent *entry ),
                    void *user )
 {
-    unsigned int  sid = 0;
+    unsigned int  sid = 0, level = FIND_BOTH_LEVEL;
     int           eos = 0, total = 0, first = 1;
     char          last_name[260];
 
@@ -712,13 +742,13 @@ int smb1_list_dir( smb1_client *cl, const char *dir, const char *pattern,
             put16( parm + 0, 0x0016 );               /* SearchAttributes: H|S|D */
             put16( parm + 2, 256 );                  /* SearchCount */
             put16( parm + 4, 0x0006 );               /* Flags: resume keys + close@EOS */
-            put16( parm + 6, FIND_INFO_LEVEL );
+            put16( parm + 6, level );
             put32( parm + 8, 0 );                    /* SearchStorageType */
             plen = 12 + build_path( parm + 12, dir, pattern ? pattern : "*" ) + 1;
         } else {
             put16( parm + 0, sid );                  /* SID */
             put16( parm + 2, 256 );                  /* SearchCount */
-            put16( parm + 4, FIND_INFO_LEVEL );
+            put16( parm + 4, level );
             put32( parm + 6, 0 );                    /* ResumeKey */
             put16( parm + 10, 0x000C );              /* Flags: continue + close@EOS */
             plen = 12 + put_strz( parm + 12, last_name, 0 );
@@ -735,6 +765,15 @@ int smb1_list_dir( smb1_client *cl, const char *dir, const char *pattern,
         cl->stage = first ? "find first" : "find next";
         if ( smb1_txrx( cl, parm + plen ) < 0 ) return -1;
         if ( cl->last_status != 0 ) {
+            /* a server without the short names' level: the plain one */
+            if ( first && level == FIND_BOTH_LEVEL &&
+                 ( cl->last_status == 0xC0000003UL ||          /* INVALID_INFO_CLASS */
+                   cl->last_status == 0xC0000002UL ||          /* NOT_IMPLEMENTED */
+                   cl->last_status == 0xC000000DUL ||          /* INVALID_PARAMETER */
+                   cl->last_status == 0x00010002UL ) ) {       /* ERRSRV/ERRerror */
+                level = FIND_DIR_LEVEL;
+                continue;
+            }
             if ( first ) return -1;                  /* FINDFIRST failed */
             break;                                   /* NEXT: no more (ok) */
         }
@@ -761,7 +800,7 @@ int smb1_list_dir( smb1_client *cl, const char *dir, const char *pattern,
             }
         }
 
-        got = find_walk( rdata, dcount, 1, last_name, emit, user );
+        got = find_walk( rdata, dcount, ( level == FIND_BOTH_LEVEL ) ? 94 : 64, last_name, emit, user );
         total += got;
         if ( got == 0 ) break;                       /* nothing more came */
     }
@@ -944,6 +983,90 @@ static int path_cmd( smb1_client *cl, int command, int is_delete, const char *pa
 int smb1_delete( smb1_client *cl, const char *path ) { return path_cmd( cl, 0x06, 1, path ); }  /* DELETE */
 int smb1_mkdir ( smb1_client *cl, const char *path ) { return path_cmd( cl, 0x00, 0, path ); }  /* CREATE_DIRECTORY */
 int smb1_rmdir ( smb1_client *cl, const char *path ) { return path_cmd( cl, 0x01, 0, path ); }  /* DELETE_DIRECTORY */
+int smb1_isdir ( smb1_client *cl, const char *path ) { return path_cmd( cl, 0x10, 0, path ); }  /* CHECK_DIRECTORY */
+
+/* ====================================================================== */
+/* the share's size                                                        */
+/* ====================================================================== */
+
+#define FS_SIZE_LEVEL  0x0103U      /* SMB_QUERY_FS_SIZE_INFO */
+
+/* TRANS2 QUERY_FS_INFORMATION (Setup 3), one parameter word: the level.
+   The answer is data only - TotalAllocationUnits (8),
+   TotalFreeAllocationUnits (8), SectorsPerAllocationUnit (4),
+   BytesPerSector (4). */
+static int fs_size_trans2( smb1_client *cl, smb_fs_size *fs )
+{
+    unsigned char *p = smb1_begin( cl, 0x32 );       /* TRANSACTION2 */
+    unsigned char *w = p + 1, *bc, *parm;
+    const unsigned char *rp, *d;
+    int parmoff, rdataoff, dcount;
+
+    p[0] = 15;                                       /* WordCount */
+    memset( w, 0, 30 );
+    put16( w + 0, 2 );                               /* TotalParameterCount */
+    put16( w + 4, 0 );                               /* MaxParameterCount */
+    put16( w + 6, 64 );                              /* MaxDataCount */
+    w[26] = 1;                                       /* SetupCount */
+    put16( w + 28, 3 );                              /* Setup[0]: QUERY_FS_INFORMATION */
+    bc = w + 30;
+    parm = bc + 2;
+    *parm++ = 0;                                     /* the TRANS2 name: a NUL */
+    while ( ( (int)( parm - ( cl->sendbuf + 4 ) ) ) & 3 ) *parm++ = 0;
+    parmoff = (int)( parm - ( cl->sendbuf + 4 ) );
+    put16( parm, FS_SIZE_LEVEL );
+    put16( w + 18, 2 );                              /* ParameterCount */
+    put16( w + 20, (unsigned int)parmoff );          /* ParameterOffset */
+    put16( w + 24, (unsigned int)( parmoff + 2 ) );  /* DataOffset (no data) */
+    put16( bc, (unsigned int)( ( parm + 2 ) - ( bc + 2 ) ) );
+
+    cl->stage = "fs-size";
+    if ( smb1_txrx( cl, parm + 2 ) < 0 ) return -1;
+    if ( cl->last_status != 0 || r_wordcount( cl ) < 10 ) return -1;
+    rp = r_words( cl );
+    dcount = (int)get16( rp + 12 );
+    rdataoff = (int)get16( rp + 14 );
+    if ( dcount < 24 || rdataoff < 33 || rdataoff > cl->recvlen || dcount > cl->recvlen - rdataoff )
+        return -1;
+    d = cl->recvbuf + rdataoff;
+    fs->total_lo = get32( d + 0 );
+    fs->total_hi = get32( d + 4 );
+    fs->free_lo  = get32( d + 8 );
+    fs->free_hi  = get32( d + 12 );
+    fs->sec_per_unit  = get32( d + 16 );
+    fs->bytes_per_sec = get32( d + 20 );
+    return 0;
+}
+
+/* QUERY_INFORMATION_DISK (0x80), the core command: TotalUnits,
+   BlocksPerUnit, BlockSize, FreeUnits - 16 bits each, so a big disk is
+   reported smaller than it is (the server picks the shape). */
+static int fs_size_core( smb1_client *cl, smb_fs_size *fs )
+{
+    unsigned char *p = smb1_begin( cl, 0x80 );
+    const unsigned char *rw;
+
+    p[0] = 0;                                        /* WordCount */
+    put16( p + 1, 0 );                               /* ByteCount */
+    cl->stage = "fs-size";
+    if ( smb1_txrx( cl, p + 3 ) < 0 ) return -1;
+    if ( cl->last_status != 0 || r_wordcount( cl ) < 4 ) return -1;
+    rw = r_words( cl );
+    fs->total_lo = get16( rw + 0 );
+    fs->sec_per_unit = get16( rw + 2 );
+    fs->bytes_per_sec = get16( rw + 4 );
+    fs->free_lo = get16( rw + 6 );
+    fs->total_hi = fs->free_hi = 0;
+    return 0;
+}
+
+int smb1_fs_size( smb1_client *cl, smb_fs_size *fs )
+{
+    memset( fs, 0, sizeof( *fs ) );
+    if ( !cl->lm && fs_size_trans2( cl, fs ) == 0 ) return 0;
+    memset( fs, 0, sizeof( *fs ) );
+    return fs_size_core( cl, fs );
+}
 
 /* RENAME (0x07): WordCount 1 = SearchAttributes, then two ASCII paths in
    the byte block, each 0x04-tagged and NUL-terminated.  The search

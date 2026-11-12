@@ -1436,6 +1436,7 @@ fcb_openx:
         mov     [fq_opath],esi
         mov     [fq_omode],eax
         mov     dword ptr [open_share],OM_COMPAT OR OM_RDWR   ; as SHARE judged
+        mov     byte ptr [oc_fcb],1                            ; see open_core
         call    open_core                                      ; every FCB open
         jnc     fcb_oxout
         cmp     ax,ERR_NOHANDLES
@@ -1447,8 +1448,10 @@ fcb_openx:
         mov     dword ptr [open_share],OM_COMPAT OR OM_RDWR
         call    open_core
 fcb_oxout:
+        mov     byte ptr [oc_fcb],0     ; MOV keeps open_core's CF
         ret
 fcb_oxfull:
+        mov     byte ptr [oc_fcb],0
         mov     ax,ERR_NOHANDLES
         stc
         ret

@@ -24,6 +24,7 @@
 #include "smb2.h"
 #include "smb1.h"
 #include "drvsock.h"
+#include "pwl.h"
 
 void *memcpy( void *to, const void *from, unsigned len );
 void *memset( void *to, int value, unsigned len );
@@ -37,7 +38,9 @@ void __cdecl fib_yield( void );
 /* ---- limits ---- */
 #define NET_DRIVES     26          /* = LASTDRIVE, A: to Z: */
 #define NET_OPEN_MAX   16          /* open files per mounted share */
-#define NET_FIND_MAX   256         /* directory entries cached per find */
+#define NET_FIND_MAX   1024        /* directory entries cached per find */
+#define NET_POOL       49152       /* their long names, NUL-terminated */
+#define NET_CWD_MAX    256         /* a current directory, with its NUL */
 
 /* the DOS attribute bits (PMDOS.INC's ATTR_*) */
 #define ATTR_READONLY 0x01
@@ -62,32 +65,73 @@ typedef struct {
     unsigned char attr;            /* DOS attribute byte */
     u32           size;
     u32           td;              /* (date << 16) | time, DOS format */
+    u32           lname;           /* the long name's offset in lpool, or
+                                      NO_LNAME when the pool was full */
 } ncent;
+#define NO_LNAME 0xFFFFFFFFUL
 
+/* a connection and logon to a server: shared by every drive mapped to it
+   with the same credentials (see "connections" below) */
 typedef struct {
+    int           refs;            /* the drives on it */
+    u32           gen;             /* made again this many times, plus one */
+    u32           ip;              /* the server's address; 0 = NetBEUI */
+    int           want;            /* 1 SMB1 (NET USE /SMB1), 2 SMB2 first */
+    unsigned int  vc;              /* the logon's VcNumber (SMB1) */
     int           sock;            /* the TCP socket */
     int           proto;           /* 1 = SMB1 (NBT/139), 2 = SMB2/3 (445) */
     u32           nbh;             /* or a NetBEUI session (SMB1 then) */
     unsigned char nb_pend[4];      /* NetBIOS-over-TCP header bytes still to give */
     int           nb_pendn, nb_pendoff;
     u32           nb_msgleft;      /* bytes of the message under it still to give */
-    union {                        /* one protocol engine, per the mount */
+    char          server[64];      /* kept to make it again: the server drops */
+    char          user[64];        /* an idle connection, and restarts */
+    char          pass[64];
+    char          domain[64];
+    union {                        /* one protocol engine, per the logon */
         smb2_client c2;
         smb1_client c1;
     } u;
+} netconn;
+
+typedef struct {
+    netconn      *nc;              /* the drive's connection */
+    u32           tid;             /* its tree on it */
+    u32           tgen;            /* ...connected when nc->gen was this */
+    char          share[80];
     struct {
         int       used;
+        int       write;           /* opened for writing */
+        u32       gen;             /* fh is from when nc->gen was this */
         smb2_fh   fh;
+        char      path[260];       /* to open it again after a reconnect */
     } open[NET_OPEN_MAX];
     /* the last directory listing, for FINDFIRST/FINDNEXT */
     u32           gen;
     int           count;
     unsigned char fpat[11];        /* the find pattern, FCB form */
     unsigned char fsrch;           /* the search attributes */
+    int           flong;           /* a long-name (714Eh) find: lpat too */
+    char          lpat[260];       /* the find pattern as typed */
     ncent         ent[NET_FIND_MAX];
+    u32           lpool_used;
+    char          lpool[NET_POOL];
+    /* the drive's current directory, share-relative with no leading
+       backslash ("" = the root): the server's own spelling, and the
+       same path in 8.3 names, as 47h gives it */
+    char          cwd[NET_CWD_MAX];
+    char          cwd83[NET_CWD_MAX];
+    /* walk()'s scratch, here and not on the stack: the kernel's ring-0
+       stack is 14K and nested EXECs share it.  One op runs at a time. */
+    char          wdir[260], wcomp[260];
+    char          wlong[NET_CWD_MAX], wshort[NET_CWD_MAX];
+    const char   *fwant;               /* name_emit: the name looked for */
+    int           ffound;
+    smb2_dirent   fent;                /* ...and what matched it */
 } session;
 
 static session *g_sess[NET_DRIVES];
+static netconn *g_conn[NET_DRIVES];        /* at most one per drive */
 static u32      g_gen = 1;
 
 /* =================================================================== */
@@ -219,9 +263,9 @@ static int canon( const char *src, char *dst, int dmax )
     return 0;
 }
 
-/* split a find path (drive already stripped) into its directory and its
-   last component (the wildcard).  'dir' (260 bytes) comes back canonical
-   and share-relative; 'pat' is the raw last component. */
+/* split a find path (canonical, share-relative) into its directory and
+   its last component (the wildcard).  'dir' and 'pat' hold 260 bytes
+   each; 'pat' is the last component as typed. */
 static void split_find( const char *path, char *dir, char *pat )
 {
     int len = slen( path ), cut = -1, i;
@@ -229,15 +273,66 @@ static void split_find( const char *path, char *dir, char *pat )
         if ( path[i] == '\\' || path[i] == '/' ) cut = i;
     if ( cut < 0 ) {
         dir[0] = 0;
-        scopy( pat, path, 16 );
+        scopy( pat, path, 260 );
     } else {
-        char tmp[260];
-        for ( i = 0; i < cut && i < 259; i++ ) tmp[i] = path[i];
-        tmp[i] = 0;
-        canon( tmp, dir, 260 );                            /* tmp is shorter: it fits */
-        scopy( pat, path + cut + 1, 16 );
+        for ( i = 0; i < cut && i < 259; i++ ) dir[i] = path[i];
+        dir[i] = 0;
+        scopy( pat, path + cut + 1, 260 );
     }
     if ( pat[0] == 0 ) { pat[0] = '*'; pat[1] = 0; }       /* "DIR\" -> "*" */
+}
+
+/* 'raw' (the drive already stripped) as a canonical path from the share's
+   root: a relative path is taken from the drive's current directory.
+   -1 when it does not fit 'dmax'. */
+static int fullpath( const session *s, const char *raw, char *dst, int dmax )
+{
+    char tmp[NET_CWD_MAX + 262];
+    int n = 0, i;
+
+    if ( raw[0] == '\\' || raw[0] == '/' || s->cwd[0] == 0 ) return canon( raw, dst, dmax );
+    for ( i = 0; s->cwd[i] && n < NET_CWD_MAX - 1; i++ ) tmp[n++] = s->cwd[i];
+    tmp[n++] = '\\';
+    for ( i = 0; raw[i] && n < (int)sizeof( tmp ) - 1; i++ ) tmp[n++] = raw[i];
+    if ( raw[i] ) { dst[0] = 0; return -1; }
+    tmp[n] = 0;
+    return canon( tmp, dst, dmax );
+}
+
+/* a long name against a wildcard pattern, as Windows matches one: case
+   does not matter, '*' is any run of characters and '?' any one, and
+   "*.*" is everything (a name need not have a dot) */
+static int wild_match( const char *pat, const char *name )
+{
+    const char *star = (const char *)0, *back = (const char *)0;
+
+    if ( pat[0] == '*' && pat[1] == '.' && pat[2] == '*' && pat[3] == 0 ) return 1;
+    while ( *name ) {
+        if ( *pat == '*' ) { star = ++pat; back = name; continue; }
+        if ( *pat && ( *pat == '?' || upper( *pat ) == upper( *name ) ) ) { pat++; name++; continue; }
+        if ( star ) { pat = star; name = ++back; continue; }
+        return 0;
+    }
+    while ( *pat == '*' ) pat++;
+    if ( pat[0] == '.' && pat[1] == '*' && pat[2] == 0 ) return 1;   /* "NAME.*" takes "NAME" */
+    return *pat == 0;
+}
+
+/* is 'name' already an 8.3 name, in either case?  (then it is its own
+   short name, upper-cased - the server does not mind which) */
+static int is83( const char *name )
+{
+    int i, base = 0, ext = -1;
+    if ( name[0] == '.' ) return name[1] == 0 || ( name[1] == '.' && name[2] == 0 );
+    for ( i = 0; name[i]; i++ ) {
+        char ch = name[i];
+        if ( ch == '.' ) { if ( ext >= 0 ) return 0; ext = 0; continue; }
+        if ( ch == ' ' || ch == '+' || ch == ',' || ch == ';' || ch == '=' ||
+             ch == '[' || ch == ']' ) return 0;
+        if ( ext >= 0 ) { if ( ++ext > 3 ) return 0; }
+        else if ( ++base > 8 ) return 0;
+    }
+    return base > 0 && ext != 0;
 }
 
 /* an ASCIIZ name -> its 8.3 display form and its 11-byte FCB form */
@@ -350,7 +445,7 @@ static int drv_smb_recv( void *ctx, unsigned char *buf, int len )
    answered here with the positive response it would have had. */
 static int nb_smb_send( void *ctx, const unsigned char *buf, int len )
 {
-    session *s = (session *)ctx;
+    netconn *s = (netconn *)ctx;
     u32 plen;
 
     if ( len < 4 ) return -1;
@@ -368,7 +463,7 @@ static int nb_smb_send( void *ctx, const unsigned char *buf, int len )
 }
 static int nb_smb_recv( void *ctx, unsigned char *buf, int len )
 {
-    session *s = (session *)ctx;
+    netconn *s = (netconn *)ctx;
     u32 n;
 
     if ( len <= 0 ) return 0;
@@ -397,65 +492,63 @@ static int nb_smb_recv( void *ctx, unsigned char *buf, int len )
 }
 
 /* =================================================================== */
-/* sessions - one code path over the two engines, chosen by s->proto    */
+/* connections - ONE PER SERVER LOGON, shared by every drive on it      */
+/*                                                                      */
+/* Each drive used to make its own TCP connection and its own logon.   */
+/* A logon says VcNumber 0, which Windows Server 2003 takes to mean the */
+/* client has restarted, and it ends the client's other connections:   */
+/* the third drive mapped to a server took the first one with it.  So   */
+/* drives on one server with the same credentials share a connection,  */
+/* each with a tree of its own, as a DOS or Windows client does; a      */
+/* second logon (other credentials) says VcNumber 1.  And a connection  */
+/* the server has dropped - its idle disconnect, a restart - is made    */
+/* again with the credentials kept here, and the request run again      */
+/* (conn_revive, redir_dispatch).                                       */
 /* =================================================================== */
 
-static int sess_list_dir( session *s, const char *dir, const char *pat,
-                          void ( *emit )( void *, const smb2_dirent * ), void *user )
+static int same_text( const char *a, const char *b )
 {
-    if ( s->proto == 1 ) return smb1_list_dir( &s->u.c1, dir, pat, emit, user );
-    return smb2_list_dir( &s->u.c2, dir, pat, emit, user );
-}
-static int sess_open_disp( session *s, const char *path, int write, unsigned long disp, smb2_fh *fh )
-{
-    if ( s->proto == 1 ) return smb1_open_disp( &s->u.c1, path, write, disp, fh );
-    return smb2_open_disp( &s->u.c2, path, write, disp, fh );
-}
-static int sess_read( session *s, const smb2_fh *fh, u32 lo, u32 hi, unsigned char *buf, int len )
-{
-    if ( s->proto == 1 ) return smb1_read( &s->u.c1, fh, lo, hi, buf, len );
-    return smb2_read( &s->u.c2, fh, lo, hi, buf, len );
-}
-static int sess_write( session *s, const smb2_fh *fh, u32 lo, u32 hi, const unsigned char *buf, int len )
-{
-    if ( s->proto == 1 ) return smb1_write( &s->u.c1, fh, lo, hi, buf, len );
-    return smb2_write( &s->u.c2, fh, lo, hi, buf, len );
-}
-static void sess_close( session *s, const smb2_fh *fh )
-{
-    if ( s->proto == 1 ) smb1_close_file( &s->u.c1, fh );
-    else                 smb2_close_file( &s->u.c2, fh );
-}
-static int sess_delete( session *s, const char *path )
-{ return ( s->proto == 1 ) ? smb1_delete( &s->u.c1, path ) : smb2_delete( &s->u.c2, path ); }
-static int sess_mkdir( session *s, const char *path )
-{ return ( s->proto == 1 ) ? smb1_mkdir( &s->u.c1, path ) : smb2_mkdir( &s->u.c2, path ); }
-static int sess_rmdir( session *s, const char *path )
-{ return ( s->proto == 1 ) ? smb1_rmdir( &s->u.c1, path ) : smb2_rmdir( &s->u.c2, path ); }
-static int sess_rename( session *s, const char *oldp, const char *newp )
-{ return ( s->proto == 1 ) ? smb1_rename( &s->u.c1, oldp, newp ) : smb2_rename( &s->u.c2, oldp, newp ); }
-static void sess_disconnect( session *s )
-{ if ( s->proto == 1 ) smb1_disconnect( &s->u.c1 ); else smb2_disconnect( &s->u.c2 ); }
-
-static void drop_session( int drive )
-{
-    session *s = g_sess[drive];
-    if ( s == (session *)0 ) return;
-    sess_disconnect( s );
-    if ( s->sock ) dsock_close( s->sock );
-    if ( s->nbh ) dnb_hangup( s->nbh );
-    nds_free( s );
-    g_sess[drive] = (session *)0;
+    while ( *a && upper( *a ) == upper( *b ) ) { a++; b++; }
+    return *a == 0 && *b == 0;
 }
 
-/* a failed mount: the DOS error, and for NET USE the step (MNT_*) and
-   the server's status at it */
-static int mount_fail( redir_req *r, u32 err, u32 step, u32 srvstatus )
+static int conn_broken( const netconn *c )
 {
-    r->status = err;
-    r->count = step;
-    r->result = srvstatus;
-    return 0;
+    return ( c->proto == 1 ) ? c->u.c1.broken : c->u.c2.broken;
+}
+
+static u32 conn_status( const netconn *c )
+{
+    return ( c->proto == 1 ) ? c->u.c1.last_status : smb2_status( &c->u.c2 );
+}
+
+/* the connection, or its logon or tree, is gone: the server ended it, or
+   said so in the last answer */
+static int conn_lost( const netconn *c )
+{
+    u32 st;
+    if ( conn_broken( c ) ) return 1;
+    st = conn_status( c );
+    return st == 0xC000035CUL ||        /* STATUS_NETWORK_SESSION_EXPIRED */
+           st == 0xC0000203UL ||        /* STATUS_USER_SESSION_DELETED */
+           st == 0xC00000C9UL ||        /* STATUS_NETWORK_NAME_DELETED */
+           st == 0x005B0002UL ||        /* SMB1 ERRSRV/ERRbaduid */
+           st == 0x00050002UL;          /* SMB1 ERRSRV/ERRinvnid */
+}
+
+/* every request this drive makes is on its own tree */
+static void sess_tree( session *s )
+{
+    if ( s->nc->proto == 1 ) s->nc->u.c1.tree_id = s->tid;
+    else                     s->nc->u.c2.tree_id = s->tid;
+}
+
+static void conn_hangup( netconn *c )
+{
+    if ( c->sock ) dsock_close( c->sock );
+    if ( c->nbh ) dnb_hangup( c->nbh );
+    c->sock = 0;
+    c->nbh = 0;
 }
 
 static int starts( const char *text, const char *head )
@@ -475,105 +568,346 @@ static u32 mount_step( const char *stage )
     return MNT_DIALECT;
 }
 
-/* the server is not found over TCP/IP (or there is none): NetBEUI, if
-   NETBEUI.SYS is loaded, with SMB1 - the only SMB that runs over it */
-static int mount_netbeui( redir_req *r, int drive )
+/* make c's connection and logon, and connect 'share' on it: TCP to c->ip
+   (445 with SMB2 when c->want is 2, else 139), or NetBEUI when c->ip is 0.
+   c->proto says which engine answered.  0, or a MNT_* step with *srvstatus
+   the server's answer at it. */
+static u32 conn_open( netconn *c, const char *share, u32 *srvstatus )
 {
-    session *s;
-    int i, rc;
     u32 seed;
+    int rc = -1, i;
 
-    for ( i = 0; r->server[i]; i++ ) if ( r->server[i] == '.' || i >= 15 ) break;
-    if ( r->server[i] || i == 0 || !dnb_here( smb1_calling ) )      /* our NetBEUI name calls */
-        return mount_fail( r, E_NOFILE, MNT_NONAME, 0 );
-    s = (session *)nds_alloc( sizeof( session ) );
-    if ( s == (session *)0 ) return mount_fail( r, E_GENERAL, MNT_MEMORY, 0 );
-    memset( s, 0, sizeof( *s ) );
-    s->proto = 1;
-    s->nbh = dnb_call( r->server, 0x20, 8000 );         /* the server service */
-    if ( s->nbh == 0 ) { nds_free( s ); return mount_fail( r, E_NOFILE, MNT_NONAME, 0 ); }
-    seed = nds_ticks() * 2654435761UL + (u32)drive;
-    rc = smb1_connect( &s->u.c1, nb_smb_send, nb_smb_recv, (void *)s, seed,
-                       r->server, r->share, r->user, r->pass, r->domain );
-    if ( rc != 0 ) {
-        u32 step = mount_step( smb1_stage( &s->u.c1 ) ), srvstatus = s->u.c1.last_status;
-        dnb_hangup( s->nbh );
-        nds_free( s );
-        return mount_fail( r, E_ACCESS, step, srvstatus );     /* auth or share refused */
+    /* VcNumber 1 while another logon to this server is up, at a reconnect
+       as at a mount: 0 would end that one (Windows Server 2003) */
+    c->vc = 0;
+    for ( i = 0; i < NET_DRIVES; i++ ) {
+        netconn *k = g_conn[i];
+        if ( k == (netconn *)0 || k == c || k->ip != c->ip ) continue;
+        if ( c->ip == 0 && !same_text( k->server, c->server ) ) continue;
+        if ( !conn_broken( k ) ) c->vc = 1;
     }
-    g_sess[drive] = s;
-    r->status = 0;
+    seed = nds_ticks() * 2654435761UL + (u32)c->vc;
+    *srvstatus = 0;
+    c->nb_pendn = c->nb_pendoff = 0;
+    c->nb_msgleft = 0;
+    if ( c->ip == 0 ) {
+        /* NetBEUI, with SMB1 - the only SMB that runs over it */
+        c->proto = 1;
+        c->nbh = dnb_call( c->server, 0x20, 8000 );     /* the server service */
+        if ( c->nbh == 0 ) return MNT_NONAME;
+        smb1_vc_number = c->vc;
+        rc = smb1_connect( &c->u.c1, nb_smb_send, nb_smb_recv, (void *)c, seed,
+                           c->server, share, c->user, c->pass, c->domain );
+    } else {
+        c->proto = c->want;
+        c->sock = dsock_open( SOCK_STREAM );
+        if ( c->sock == 0 ) return MNT_MEMORY;
+        if ( !dsock_connect( c->sock, c->ip, (u16)( ( c->proto == 1 ) ? 139 : 445 ), 5000 ) ) {
+            /* nothing on 445: a server that speaks only SMB1 (Windows for
+               Workgroups, NT 3.x, SMBSRV) is tried on 139, as with /SMB1 */
+            conn_hangup( c );
+            if ( c->proto == 2 ) {
+                c->proto = 1;
+                c->sock = dsock_open( SOCK_STREAM );
+                if ( c->sock && !dsock_connect( c->sock, c->ip, 139, 5000 ) ) conn_hangup( c );
+            }
+            if ( c->sock == 0 ) return MNT_CONNECT;
+        }
+        if ( c->proto == 2 ) {
+            rc = smb2_connect( &c->u.c2, drv_smb_send, drv_smb_recv, (void *)c->sock, seed,
+                               c->server, share, c->user, c->pass, c->domain );
+            if ( rc != 0 && smb2_smb1_only( &c->u.c2 ) ) {
+                /* the server answered in SMB1 (Windows Server 2003, an
+                   older NAS): SMB1 on 139, as with /SMB1 */
+                conn_hangup( c );
+                c->proto = 1;
+                c->sock = dsock_open( SOCK_STREAM );
+                if ( c->sock && !dsock_connect( c->sock, c->ip, 139, 5000 ) ) conn_hangup( c );
+                if ( c->sock == 0 ) return MNT_CONNECT;
+            }
+        }
+        if ( c->proto == 1 ) {
+            dsock_nbname( smb1_calling );       /* introduce ourselves by /NAME= */
+            smb1_vc_number = c->vc;
+            rc = smb1_connect( &c->u.c1, drv_smb_send, drv_smb_recv, (void *)c->sock, seed,
+                               c->server, share, c->user, c->pass, c->domain );
+        }
+    }
+    if ( rc != 0 ) {
+        u32 step;
+        if ( c->proto == 1 ) {
+            step = mount_step( smb1_stage( &c->u.c1 ) );
+            *srvstatus = c->u.c1.last_status;
+        } else {
+            step = mount_step( smb2_stage( &c->u.c2 ) );
+            *srvstatus = smb2_status( &c->u.c2 );
+        }
+        conn_hangup( c );
+        return step;
+    }
     return 0;
 }
 
+/* the drive's tree on its connection: connect the share again when the
+   connection was made afresh since (another drive revived it).  0, or -1. */
+static int tree_again( session *s )
+{
+    netconn *c = s->nc;
+    int rc;
+
+    if ( c->proto == 1 ) {
+        rc = smb1_tree_connect( &c->u.c1, c->server, s->share, c->pass );
+        s->tid = c->u.c1.tree_id;
+    } else {
+        rc = smb2_tree_connect( &c->u.c2, c->server, s->share );
+        s->tid = c->u.c2.tree_id;
+    }
+    if ( rc != 0 ) return -1;
+    s->tgen = c->gen;
+    return 0;
+}
+
+/* make the drive's connection again: the server ended it.  Every drive on
+   it reconnects its tree when it is next used (tgen); open files are
+   opened again by name (file_ready).  0, or -1 when the server is still
+   not there or will not have us. */
+static int conn_revive( session *s )
+{
+    netconn *c = s->nc;
+    u32 srvstatus;
+
+    conn_hangup( c );
+    if ( conn_open( c, s->share, &srvstatus ) != 0 ) return -1;
+    c->gen++;
+    s->tid = ( c->proto == 1 ) ? c->u.c1.tree_id : c->u.c2.tree_id;
+    s->tgen = c->gen;
+    return 0;
+}
+
+/* before a request: the connection there, the drive's tree on it, and the
+   engine pointed at that tree.  0, or -1 (the request then fails as the
+   server's answer says) */
+static int sess_ready( session *s )
+{
+    netconn *c = s->nc;
+    if ( conn_broken( c ) && conn_revive( s ) != 0 ) return -1;
+    if ( s->tgen != c->gen && tree_again( s ) != 0 ) {
+        if ( !conn_lost( c ) || conn_revive( s ) != 0 ) return -1;
+    }
+    sess_tree( s );
+    return 0;
+}
+
+/* =================================================================== */
+/* sessions - one code path over the two engines, chosen by the conn    */
+/* =================================================================== */
+
+static int sess_list_dir( session *s, const char *dir, const char *pat,
+                          void ( *emit )( void *, const smb2_dirent * ), void *user )
+{
+    sess_tree( s );
+    if ( s->nc->proto == 1 ) return smb1_list_dir( &s->nc->u.c1, dir, pat, emit, user );
+    return smb2_list_dir( &s->nc->u.c2, dir, pat, emit, user );
+}
+static int sess_open_disp( session *s, const char *path, int write, unsigned long disp, smb2_fh *fh )
+{
+    sess_tree( s );
+    if ( s->nc->proto == 1 ) return smb1_open_disp( &s->nc->u.c1, path, write, disp, fh );
+    return smb2_open_disp( &s->nc->u.c2, path, write, disp, fh );
+}
+static int sess_read( session *s, const smb2_fh *fh, u32 lo, u32 hi, unsigned char *buf, int len )
+{
+    sess_tree( s );
+    if ( s->nc->proto == 1 ) return smb1_read( &s->nc->u.c1, fh, lo, hi, buf, len );
+    return smb2_read( &s->nc->u.c2, fh, lo, hi, buf, len );
+}
+static int sess_write( session *s, const smb2_fh *fh, u32 lo, u32 hi, const unsigned char *buf, int len )
+{
+    sess_tree( s );
+    if ( s->nc->proto == 1 ) return smb1_write( &s->nc->u.c1, fh, lo, hi, buf, len );
+    return smb2_write( &s->nc->u.c2, fh, lo, hi, buf, len );
+}
+static void sess_close( session *s, const smb2_fh *fh )
+{
+    sess_tree( s );
+    if ( s->nc->proto == 1 ) smb1_close_file( &s->nc->u.c1, fh );
+    else                     smb2_close_file( &s->nc->u.c2, fh );
+}
+static int sess_delete( session *s, const char *path )
+{
+    sess_tree( s );
+    return ( s->nc->proto == 1 ) ? smb1_delete( &s->nc->u.c1, path ) : smb2_delete( &s->nc->u.c2, path );
+}
+static int sess_mkdir( session *s, const char *path )
+{
+    sess_tree( s );
+    return ( s->nc->proto == 1 ) ? smb1_mkdir( &s->nc->u.c1, path ) : smb2_mkdir( &s->nc->u.c2, path );
+}
+static int sess_rmdir( session *s, const char *path )
+{
+    sess_tree( s );
+    return ( s->nc->proto == 1 ) ? smb1_rmdir( &s->nc->u.c1, path ) : smb2_rmdir( &s->nc->u.c2, path );
+}
+static int sess_rename( session *s, const char *oldp, const char *newp )
+{
+    sess_tree( s );
+    return ( s->nc->proto == 1 ) ? smb1_rename( &s->nc->u.c1, oldp, newp ) : smb2_rename( &s->nc->u.c2, oldp, newp );
+}
+static int sess_isdir( session *s, const char *path )
+{
+    sess_tree( s );
+    return ( s->nc->proto == 1 ) ? smb1_isdir( &s->nc->u.c1, path ) : smb2_isdir( &s->nc->u.c2, path );
+}
+static int sess_fs_size( session *s, smb_fs_size *fs )
+{
+    sess_tree( s );
+    return ( s->nc->proto == 1 ) ? smb1_fs_size( &s->nc->u.c1, fs ) : smb2_fs_size( &s->nc->u.c2, fs );
+}
+
+/* the connection's slot in g_conn, or -1 */
+static int conn_slot( const netconn *c )
+{
+    int i;
+    for ( i = 0; i < NET_DRIVES; i++ ) if ( g_conn[i] == c ) return i;
+    return -1;
+}
+
+/* the drive goes: its tree is disconnected, and its connection with it
+   when it was the last drive on it */
+static void drop_session( int drive )
+{
+    session *s = g_sess[drive];
+    netconn *c;
+    int i;
+
+    if ( s == (session *)0 ) return;
+    c = s->nc;
+    if ( !conn_broken( c ) && s->tgen == c->gen ) {
+        sess_tree( s );
+        if ( c->proto == 1 ) smb1_disconnect( &c->u.c1 );    /* the tree alone */
+        else                 smb2_tree_disconnect( &c->u.c2 );
+    }
+    if ( --c->refs == 0 ) {
+        if ( c->proto == 2 && !conn_broken( c ) ) smb2_disconnect( &c->u.c2 );   /* the logoff */
+        conn_hangup( c );
+        i = conn_slot( c );
+        if ( i >= 0 ) g_conn[i] = (netconn *)0;
+        nds_free( c );
+    }
+    nds_free( s );
+    g_sess[drive] = (session *)0;
+}
+
+/* a failed mount: the DOS error, and for NET USE the step (MNT_*) and
+   the server's status at it */
+static int mount_fail( redir_req *r, u32 err, u32 step, u32 srvstatus )
+{
+    r->status = err;
+    r->count = step;
+    r->result = srvstatus;
+    return 0;
+}
+
+static int same_bytes( const char *a, const char *b )
+{
+    while ( *a && *a == *b ) { a++; b++; }
+    return *a == 0 && *b == 0;
+}
+
+static int do_mount_as( redir_req *r );
+
+/* A mount from the password list leaves no copy of the password in the
+   kernel's request block, which nobody would clear before the next call:
+   the connection keeps the one it needs to reconnect. */
 static int do_mount( redir_req *r )
 {
-    int drive = (int)r->drive;
+    int rc = do_mount_as( r );
+    if ( r->spare & 2 ) memset( r->pass, 0, sizeof( r->pass ) );
+    return rc;
+}
+
+static int do_mount_as( redir_req *r )
+{
+    int drive = (int)r->drive, i, want;
     session *s;
-    u32 ip;
+    netconn *c = (netconn *)0;
+    u32 ip, step, srvstatus;
 
     if ( drive < 0 || drive >= NET_DRIVES ) return mount_fail( r, E_BADDRIVE, 0, 0 );
     if ( g_sess[drive] ) drop_session( drive );
 
     /* TCP/IP first, when it is loaded and has an address: the name by
-       NetBIOS (WINS, broadcast), then DNS */
+       NetBIOS (WINS, broadcast), then DNS.  None: NetBEUI, whose names are
+       up to 15 letters with no dot, called by our own NetBEUI name. */
     ip = 0;
     if ( dsock_up( 3000 ) ) ip = dsock_resolve( r->server, 8000 );
-    if ( ip == 0 ) return mount_netbeui( r, drive );
+    if ( ip == 0 ) {
+        for ( i = 0; r->server[i]; i++ ) if ( r->server[i] == '.' || i >= 15 ) break;
+        if ( r->server[i] || i == 0 || !dnb_here( smb1_calling ) )
+            return mount_fail( r, E_NOFILE, MNT_NONAME, 0 );
+    }
+    want = ( r->spare & 1 ) ? 1 : 2;            /* NR_SPARE bit 0: NET USE /SMB1 */
+
+    /* NR_SPARE bit 1: the password from the unlocked password list (PWL.C),
+       and the user name too when the command gave none */
+    if ( ( r->spare & 2 ) && !pwl_fill( r->server, r->domain, r->user, (int)sizeof( r->user ),
+                                        r->pass, (int)sizeof( r->pass ) ) )
+        return mount_fail( r, E_ACCESS, MNT_NOSAVED, 0 );
 
     s = (session *)nds_alloc( sizeof( session ) );
     if ( s == (session *)0 ) return mount_fail( r, E_GENERAL, MNT_MEMORY, 0 );
     memset( s, 0, sizeof( *s ) );
-    s->proto = ( r->spare == 1 ) ? 1 : 2;       /* NR_SPARE from NET USE /SMB1 */
+    scopy( s->share, r->share, (int)sizeof( s->share ) );
 
-    s->sock = dsock_open( SOCK_STREAM );
-    if ( s->sock == 0 ) { nds_free( s ); return mount_fail( r, E_GENERAL, MNT_MEMORY, 0 ); }
-    if ( !dsock_connect( s->sock, ip, (u16)( ( s->proto == 1 ) ? 139 : 445 ), 5000 ) ) {
-        /* nothing on 445: a server that speaks only SMB1 (Windows for
-           Workgroups, NT 3.x, SMBSRV) is tried on 139, as with /SMB1 */
-        dsock_close( s->sock );
-        s->sock = 0;
-        if ( s->proto == 2 ) {
-            s->proto = 1;
-            s->sock = dsock_open( SOCK_STREAM );
-            if ( s->sock && !dsock_connect( s->sock, ip, 139, 5000 ) ) { dsock_close( s->sock ); s->sock = 0; }
+    /* a connection to this server with these credentials already: the
+       share is one more tree on it */
+    for ( i = 0; i < NET_DRIVES; i++ ) {
+        netconn *k = g_conn[i];
+        if ( k == (netconn *)0 || k->ip != ip || k->want != want ) continue;
+        if ( ip == 0 && !same_text( k->server, r->server ) ) continue;
+        if ( !same_text( k->user, r->user ) || !same_text( k->domain, r->domain ) ||
+             !same_bytes( k->pass, r->pass ) ) continue;
+        s->nc = k;
+        if ( conn_broken( k ) ) {               /* made again, with this share */
+            if ( conn_revive( s ) == 0 ) { c = k; break; }
+            s->nc = (netconn *)0;
+            continue;
         }
-        if ( s->sock == 0 ) { nds_free( s ); return mount_fail( r, E_GENERAL, MNT_CONNECT, 0 ); }
+        if ( tree_again( s ) == 0 ) { c = k; break; }
+        if ( !conn_lost( k ) ) {                 /* the server refused the share */
+            srvstatus = conn_status( k );
+            nds_free( s );
+            return mount_fail( r, E_ACCESS, MNT_SHARE, srvstatus );
+        }
+        if ( conn_revive( s ) == 0 ) { c = k; break; }
+        s->nc = (netconn *)0;
     }
-    {
-        u32 seed = nds_ticks() * 2654435761UL + (u32)drive;
-        u32 step, srvstatus;
-        int rc = -1;
-        if ( s->proto == 2 ) {
-            rc = smb2_connect( &s->u.c2, drv_smb_send, drv_smb_recv, (void *)s->sock, seed,
-                               r->server, r->share, r->user, r->pass, r->domain );
-            if ( rc != 0 && smb2_smb1_only( &s->u.c2 ) ) {
-                /* the server answered in SMB1 (Windows Server 2003, an
-                   older NAS): SMB1 on 139, as with /SMB1 */
-                dsock_close( s->sock );
-                s->proto = 1;
-                s->sock = dsock_open( SOCK_STREAM );
-                if ( s->sock && !dsock_connect( s->sock, ip, 139, 5000 ) ) { dsock_close( s->sock ); s->sock = 0; }
-                if ( s->sock == 0 ) { nds_free( s ); return mount_fail( r, E_GENERAL, MNT_CONNECT, 0 ); }
-            }
+
+    if ( c == (netconn *)0 ) {
+        c = (netconn *)nds_alloc( sizeof( netconn ) );
+        if ( c == (netconn *)0 ) { nds_free( s ); return mount_fail( r, E_GENERAL, MNT_MEMORY, 0 ); }
+        memset( c, 0, sizeof( *c ) );
+        c->ip = ip;
+        c->want = want;
+        scopy( c->server, r->server, (int)sizeof( c->server ) );
+        scopy( c->user, r->user, (int)sizeof( c->user ) );
+        scopy( c->pass, r->pass, (int)sizeof( c->pass ) );
+        scopy( c->domain, r->domain, (int)sizeof( c->domain ) );
+        step = conn_open( c, r->share, &srvstatus );
+        if ( step != 0 ) {
+            nds_free( c );
+            nds_free( s );
+            return mount_fail( r, ( step == MNT_MEMORY || step == MNT_CONNECT ) ? E_GENERAL :
+                                  ( step == MNT_NONAME ) ? E_NOFILE : E_ACCESS,   /* auth or share refused */
+                               step, srvstatus );
         }
-        if ( s->proto == 1 ) {
-            dsock_nbname( smb1_calling );       /* introduce ourselves by /NAME= */
-            rc = smb1_connect( &s->u.c1, drv_smb_send, drv_smb_recv, (void *)s->sock, seed,
-                               r->server, r->share, r->user, r->pass, r->domain );
-        }
-        if ( rc != 0 ) {
-            if ( s->proto == 1 ) {
-                step = mount_step( smb1_stage( &s->u.c1 ) );
-                srvstatus = s->u.c1.last_status;
-            } else {
-                step = mount_step( smb2_stage( &s->u.c2 ) );
-                srvstatus = smb2_status( &s->u.c2 );
-            }
-            dsock_close( s->sock ); nds_free( s );
-            return mount_fail( r, E_ACCESS, step, srvstatus );     /* auth or share refused */
-        }
+        c->gen = 1;
+        for ( i = 0; i < NET_DRIVES; i++ ) if ( g_conn[i] == (netconn *)0 ) { g_conn[i] = c; break; }
+        s->nc = c;
+        s->tid = ( c->proto == 1 ) ? c->u.c1.tree_id : c->u.c2.tree_id;
+        s->tgen = c->gen;
     }
+    c->refs++;
     g_sess[drive] = s;
     r->status = 0;
     return 0;
@@ -597,12 +931,30 @@ static void collect( void *user, const smb2_dirent *e )
     ncent *c;
     if ( s->count >= NET_FIND_MAX ) return;
     c = &s->ent[s->count];
-    to83( e->name, c->disp, c->fcb );
+    /* DOS sees the server's own 8.3 name for a long one: that name is
+       a path the server knows, which a cut-down long name is not */
+    to83( e->short_name[0] ? e->short_name : e->name, c->disp, c->fcb );
     c->attr = (unsigned char)( e->attr & 0x37 );           /* RO|HID|SYS|DIR|ARC */
     if ( c->attr == 0 ) c->attr = ATTR_ARCHIVE;            /* a plain file */
     c->size = e->size_lo;
     c->td = filetime_to_dos( e->wtime_lo, e->wtime_hi );
+    /* and the long name, for a 714Eh find, while the pool has room */
+    c->lname = NO_LNAME;
+    {
+        u32 len = (u32)slen( e->name ) + 1;
+        if ( len <= NET_POOL - s->lpool_used ) {
+            memcpy( s->lpool + s->lpool_used, e->name, len );
+            c->lname = s->lpool_used;
+            s->lpool_used += len;
+        }
+    }
     s->count++;
+}
+
+/* an entry's long name: its own, or its 8.3 one when the pool was full */
+static const char *ent_long( const session *s, const ncent *c )
+{
+    return ( c->lname == NO_LNAME ) ? c->disp : s->lpool + c->lname;
 }
 
 static int find_from( redir_req *r, session *s, int start )
@@ -610,9 +962,13 @@ static int find_from( redir_req *r, session *s, int start )
     int i;
     for ( i = start; i < s->count; i++ ) {
         ncent *c = &s->ent[i];
-        if ( !fcb_match( s->fpat, c->fcb ) ) continue;
+        if ( s->flong ) {
+            /* a long-name find matches either name, as Windows does */
+            if ( !wild_match( s->lpat, ent_long( s, c ) ) && !fcb_match( s->fpat, c->fcb ) ) continue;
+        } else if ( !fcb_match( s->fpat, c->fcb ) ) continue;
         if ( !attr_match( c->attr, s->fsrch ) ) continue;
         scopy( r->name, c->disp, 16 );
+        if ( s->flong ) scopy( r->path, ent_long( s, c ), (int)sizeof( r->path ) );
         r->attr = c->attr;
         r->size_lo = c->size;
         r->size_hi = 0;
@@ -630,21 +986,25 @@ static int do_findfirst( redir_req *r )
 {
     int drive = (int)r->drive;
     session *s;
-    char dir[260], pat[16];
+    char full[260], dir[260], pat[260];
 
     if ( drive < 0 || drive >= NET_DRIVES || g_sess[drive] == (session *)0 ) {
         r->status = E_BADDRIVE; return 0;
     }
     s = g_sess[drive];
-    split_find( r->path, dir, pat );
+    if ( fullpath( s, r->path, full, (int)sizeof( full ) ) != 0 ) { r->status = E_NOPATH; return 0; }
+    split_find( full, dir, pat );
 
     s->count = 0;
+    s->lpool_used = 0;
     if ( sess_list_dir( s, dir, "*", collect, s ) != 0 && s->count == 0 ) {
         r->status = E_NOPATH;                  /* the directory is not there */
         return 0;
     }
     s->gen = ++g_gen;
     pat83( pat, s->fpat );
+    scopy( s->lpat, pat, (int)sizeof( s->lpat ) );
+    s->flong = ( r->spare == 1 );              /* NR_SPARE 1: 714Eh's find */
     s->fsrch = (unsigned char)r->attr;
     return find_from( r, s, 0 );
 }
@@ -679,7 +1039,7 @@ static int do_open( redir_req *r )
         r->status = E_GENERAL; return 0;
     }
     s = g_sess[drive];
-    if ( canon( r->path, path, (int)sizeof( path ) ) != 0 ) { r->status = E_NOPATH; return 0; }
+    if ( fullpath( s, r->path, path, (int)sizeof( path ) ) != 0 ) { r->status = E_NOPATH; return 0; }
     write = ( r->count == 1 || r->count == 2 );            /* access 1 write, 2 both */
 
     for ( slot = 0; slot < NET_OPEN_MAX; slot++ )
@@ -697,11 +1057,27 @@ static int do_open( redir_req *r )
     }
     s->open[slot].used = 1;
     s->open[slot].fh = fh;
+    s->open[slot].write = write;
+    s->open[slot].gen = s->nc->gen;
+    scopy( s->open[slot].path, path, (int)sizeof( s->open[slot].path ) );
     r->handle = (u32)( slot + 1 );
     r->size_lo = fh.size_lo;
     r->size_hi = fh.size_hi;
     r->attr = (unsigned char)( fh.attr & 0x37 );
     r->status = 0;
+    return 0;
+}
+
+/* an open file's handle on the connection as it is now: one from before
+   a reconnect is opened again by its name, for reading or writing as it
+   was.  0, or -1. */
+static int file_ready( session *s, int slot )
+{
+    smb2_fh fh;
+    if ( s->open[slot].gen == s->nc->gen ) return 0;
+    if ( sess_open_disp( s, s->open[slot].path, s->open[slot].write, 0x1UL, &fh ) != 0 ) return -1;
+    s->open[slot].fh = fh;
+    s->open[slot].gen = s->nc->gen;
     return 0;
 }
 
@@ -716,6 +1092,7 @@ static int do_read( redir_req *r )
     if ( drive < 0 || drive >= NET_DRIVES || g_sess[drive] == (session *)0 ) { r->status = E_ACCESS; return 0; }
     s = g_sess[drive];
     if ( slot < 0 || slot >= NET_OPEN_MAX || !s->open[slot].used ) { r->status = E_NOHANDLE; return 0; }
+    if ( file_ready( s, slot ) != 0 ) { r->status = E_ACCESS; return 0; }
     fh = &s->open[slot].fh;
 
     while ( done < want ) {
@@ -747,6 +1124,7 @@ static int do_write( redir_req *r )
     if ( drive < 0 || drive >= NET_DRIVES || g_sess[drive] == (session *)0 ) { r->status = E_ACCESS; return 0; }
     s = g_sess[drive];
     if ( slot < 0 || slot >= NET_OPEN_MAX || !s->open[slot].used ) { r->status = E_NOHANDLE; return 0; }
+    if ( file_ready( s, slot ) != 0 ) { r->status = E_ACCESS; return 0; }
     fh = &s->open[slot].fh;
 
     if ( want == 0 ) { r->result = 0; r->status = 0; return 0; }   /* truncate: not yet */
@@ -780,7 +1158,7 @@ static int do_pathop( redir_req *r, int op )
         r->status = E_GENERAL; return 0;
     }
     s = g_sess[drive];
-    if ( canon( r->path, path, (int)sizeof( path ) ) != 0 ) { r->status = E_NOPATH; return 0; }
+    if ( fullpath( s, r->path, path, (int)sizeof( path ) ) != 0 ) { r->status = E_NOPATH; return 0; }
     switch ( op ) {
     case REDIR_DELETE: rc = sess_delete( s, path ); break;
     case REDIR_MKDIR:  rc = sess_mkdir( s, path );  break;
@@ -804,10 +1182,245 @@ static int do_rename( redir_req *r )
         r->status = E_GENERAL; return 0;
     }
     s = g_sess[drive];
-    if ( canon( r->path, oldp, (int)sizeof( oldp ) ) != 0 ||
-         canon( r->share, newp, (int)sizeof( newp ) ) != 0 ) { r->status = E_NOPATH; return 0; }
+    if ( fullpath( s, r->path, oldp, (int)sizeof( oldp ) ) != 0 ||
+         fullpath( s, r->share, newp, (int)sizeof( newp ) ) != 0 ) { r->status = E_NOPATH; return 0; }
     rc = sess_rename( s, oldp, newp );
     r->status = ( rc == 0 ) ? 0 : E_ACCESS;
+    return 0;
+}
+
+/* ISDIR: is the path a directory?  CD asks before the kernel makes it the
+   drive's current directory.  The share root always is. */
+static int do_isdir( redir_req *r )
+{
+    int drive = (int)r->drive, i;
+    session *s;
+    char path[260];
+
+    if ( drive < 0 || drive >= NET_DRIVES || g_sess[drive] == (session *)0 ) {
+        r->status = E_GENERAL; return 0;
+    }
+    s = g_sess[drive];
+    if ( fullpath( s, r->path, path, (int)sizeof( path ) ) != 0 ) { r->status = E_NOPATH; return 0; }
+    for ( i = 0; path[i]; i++ )
+        if ( path[i] == '*' || path[i] == '?' ) { r->status = E_NOPATH; return 0; }
+    if ( path[0] == 0 ) { r->status = 0; return 0; }
+    r->status = ( sess_isdir( s, path ) == 0 ) ? 0 : E_NOPATH;
+    return 0;
+}
+
+/* =================================================================== */
+/* names on the server: one entry by name, and a path walked by them   */
+/* =================================================================== */
+
+static int same_name( const char *a, const char *b )
+{
+    while ( *a && upper( *a ) == upper( *b ) ) { a++; b++; }
+    return *a == 0 && *b == 0;
+}
+
+static int has_wild( const char *name )
+{
+    for ( ; *name; name++ ) if ( *name == '*' || *name == '?' ) return 1;
+    return 0;
+}
+
+static void name_emit( void *user, const smb2_dirent *e )
+{
+    session *s = (session *)user;
+    if ( s->ffound ) return;
+    if ( !same_name( s->fwant, e->name ) &&
+         !( e->short_name[0] && same_name( s->fwant, e->short_name ) ) ) return;
+    memcpy( &s->fent, e, sizeof( s->fent ) );
+    s->ffound = 1;
+}
+
+/* the entry called 'name' (its long or its short name) in 'dir', into
+   s->fent.  The directory is listed with the name as the server's
+   pattern; the match is made here as well, because a LAN Manager server
+   answers with the whole directory.  1 found, 0 not, -1 no such dir. */
+static int lookup( session *s, const char *dir, const char *name )
+{
+    int rc;
+    s->fwant = name;
+    s->ffound = 0;
+    rc = sess_list_dir( s, dir, name, name_emit, s );
+    if ( s->ffound ) return 1;
+    return ( rc != 0 ) ? -1 : 0;
+}
+
+/* add a component to a path being built: a backslash between, and the
+   whole of it or nothing.  'up' upper-cases it.  0, or -1 if no room. */
+static int path_add( char *buf, int *len, const char *comp, int max, int up )
+{
+    int n = *len, i;
+    if ( n > 0 ) { if ( n + 1 >= max ) return -1; buf[n++] = '\\'; }
+    for ( i = 0; comp[i]; i++ ) {
+        if ( n + 1 >= max ) return -1;
+        buf[n++] = up ? upper( comp[i] ) : comp[i];
+    }
+    buf[n] = 0;
+    *len = n;
+    return 0;
+}
+
+/* walk a canonical path from the share's root, a component at a time,
+   into s->wlong (the server's own spelling) and s->wshort (each
+   component's 8.3 name: the server's short one, an 8.3 name upper-
+   cased, or a long name the server keeps no short name for, as it is).
+   'dirs': every component must be a directory that is there (CD).
+   Otherwise a component that is not there, or holds wildcards, and all
+   after it go as typed (truename).  0, or E_NOPATH. */
+static int walk( session *s, const char *path, int dirs )
+{
+    const char *p = path;
+    int ln = 0, sn = 0, dn = 0, gone = 0;
+
+    s->wlong[0] = s->wshort[0] = s->wdir[0] = 0;
+    while ( *p ) {
+        int cn = 0;
+        const char *lname, *sname;
+        int up;
+
+        while ( *p && *p != '\\' ) {
+            if ( cn >= (int)sizeof( s->wcomp ) - 1 ) return E_NOPATH;
+            s->wcomp[cn++] = *p++;
+        }
+        s->wcomp[cn] = 0;
+        if ( *p == '\\' ) p++;
+        if ( cn == 0 ) continue;
+
+        if ( !gone && !has_wild( s->wcomp ) && lookup( s, s->wdir, s->wcomp ) == 1 ) {
+            if ( dirs && !( s->fent.attr & ATTR_DIR ) ) return E_NOPATH;
+            lname = s->fent.name;
+            if ( s->fent.short_name[0] ) { sname = s->fent.short_name; up = 0; }
+            else { sname = s->fent.name; up = is83( s->fent.name ); }
+        } else {
+            if ( dirs ) return E_NOPATH;
+            gone = 1;                                       /* the rest as typed */
+            lname = s->wcomp;
+            sname = s->wcomp;
+            up = is83( s->wcomp ) || has_wild( s->wcomp );
+        }
+        if ( path_add( s->wlong, &ln, lname, (int)sizeof( s->wlong ), 0 ) != 0 ||
+             path_add( s->wshort, &sn, sname, (int)sizeof( s->wshort ), up ) != 0 )
+            return E_NOPATH;
+        /* the next listing is of this directory, by its own name */
+        if ( !gone && path_add( s->wdir, &dn, lname, (int)sizeof( s->wdir ), 0 ) != 0 )
+            gone = 1;
+    }
+    return 0;
+}
+
+/* GETATTR: one entry's attribute byte, by its name (long or short). */
+static int do_getattr( redir_req *r )
+{
+    int drive = (int)r->drive, i, cut = -1, rc;
+    session *s;
+    char path[260];
+
+    if ( drive < 0 || drive >= NET_DRIVES || g_sess[drive] == (session *)0 ) {
+        r->status = E_GENERAL; return 0;
+    }
+    s = g_sess[drive];
+    if ( fullpath( s, r->path, path, (int)sizeof( path ) ) != 0 ) { r->status = E_NOPATH; return 0; }
+    if ( has_wild( path ) ) { r->status = E_NOFILE; return 0; }
+    for ( i = 0; path[i]; i++ ) if ( path[i] == '\\' ) cut = i;
+    if ( path[0] == 0 ) { r->status = E_NOFILE; return 0; }     /* the root has none */
+    scopy( s->wcomp, path + cut + 1, (int)sizeof( s->wcomp ) );
+    if ( cut >= 0 ) path[cut] = 0;                             /* path: the directory */
+    else            path[0] = 0;
+    rc = lookup( s, path, s->wcomp );
+    if ( rc < 0 ) { r->status = E_NOPATH; return 0; }
+    if ( rc == 0 ) { r->status = E_NOFILE; return 0; }
+    r->attr = (unsigned char)( s->fent.attr & 0x37 );
+    if ( r->attr == 0 ) r->attr = ATTR_ARCHIVE;
+    r->status = 0;
+    return 0;
+}
+
+/* CHDIR: the drive's new current directory, every component of it a
+   directory on the server.  NR_SPARE 1 (LFN=OFF): its 8.3 form must fit
+   47h's 64 bytes, as on any DOS drive. */
+static int do_chdir( redir_req *r )
+{
+    int drive = (int)r->drive, rc;
+    session *s;
+    char path[260];
+
+    if ( drive < 0 || drive >= NET_DRIVES || g_sess[drive] == (session *)0 ) {
+        r->status = E_GENERAL; return 0;
+    }
+    s = g_sess[drive];
+    if ( fullpath( s, r->path, path, (int)sizeof( path ) ) != 0 || has_wild( path ) ) {
+        r->status = E_NOPATH; return 0;
+    }
+    rc = walk( s, path, 1 );
+    if ( rc != 0 ) { r->status = (u32)rc; return 0; }
+    if ( r->spare == 1 && slen( s->wshort ) > 63 ) { r->status = E_NOPATH; return 0; }
+    scopy( s->cwd, s->wlong, (int)sizeof( s->cwd ) );
+    scopy( s->cwd83, s->wshort, (int)sizeof( s->cwd83 ) );
+    r->status = 0;
+    return 0;
+}
+
+/* GETCWD: the current directory into path - the long form, or with
+   NR_SPARE 1 the 8.3 one.  No server traffic: CD worked both out. */
+static int do_getcwd( redir_req *r )
+{
+    int drive = (int)r->drive;
+    session *s;
+
+    if ( drive < 0 || drive >= NET_DRIVES || g_sess[drive] == (session *)0 ) {
+        r->status = E_GENERAL; return 0;
+    }
+    s = g_sess[drive];
+    scopy( r->path, ( r->spare == 1 ) ? s->cwd83 : s->cwd, (int)sizeof( r->path ) );
+    r->status = 0;
+    return 0;
+}
+
+/* CANON: a path as truename gives it, from the share's root and with no
+   leading backslash: NR_SPARE 1 the long form, 0 the 8.3 one. */
+static int do_canon( redir_req *r )
+{
+    int drive = (int)r->drive, rc;
+    session *s;
+    char path[260];
+
+    if ( drive < 0 || drive >= NET_DRIVES || g_sess[drive] == (session *)0 ) {
+        r->status = E_GENERAL; return 0;
+    }
+    s = g_sess[drive];
+    if ( fullpath( s, r->path, path, (int)sizeof( path ) ) != 0 ) { r->status = E_NOPATH; return 0; }
+    rc = walk( s, path, 0 );
+    if ( rc != 0 ) { r->status = (u32)rc; return 0; }
+    scopy( r->path, ( r->spare == 1 ) ? s->wlong : s->wshort, (int)sizeof( r->path ) );
+    r->status = 0;
+    return 0;
+}
+
+/* INFO: the share's size, in the server's own units (REDIR.H) */
+static int do_info( redir_req *r )
+{
+    int drive = (int)r->drive;
+    session *s;
+    smb_fs_size fs;
+
+    if ( drive < 0 || drive >= NET_DRIVES || g_sess[drive] == (session *)0 ) {
+        r->status = E_GENERAL; return 0;
+    }
+    s = g_sess[drive];
+    if ( sess_fs_size( s, &fs ) != 0 || fs.sec_per_unit == 0 || fs.bytes_per_sec == 0 ) {
+        r->status = E_GENERAL; return 0;
+    }
+    r->size_lo = fs.total_lo;
+    r->size_hi = fs.total_hi;
+    r->pos_lo  = fs.free_lo;
+    r->pos_hi  = fs.free_hi;
+    r->count   = fs.sec_per_unit;
+    r->result  = fs.bytes_per_sec;
+    r->status  = 0;
     return 0;
 }
 
@@ -819,7 +1432,9 @@ static int do_close( redir_req *r )
     if ( drive < 0 || drive >= NET_DRIVES || g_sess[drive] == (session *)0 ) { r->status = 0; return 0; }
     s = g_sess[drive];
     if ( slot >= 0 && slot < NET_OPEN_MAX && s->open[slot].used ) {
-        sess_close( s, &s->open[slot].fh );
+        /* a handle from before a reconnect went with the old connection */
+        if ( s->open[slot].gen == s->nc->gen && !conn_broken( s->nc ) )
+            sess_close( s, &s->open[slot].fh );
         s->open[slot].used = 0;
     }
     r->status = 0;
@@ -843,12 +1458,13 @@ void __cdecl nd_park( int back )
 {
     /* The stack and the sockets are real mode's while parked; a mapped
        share's session cannot survive it yet.  On the way back, drop the
-       sessions so the next use re-mounts.  (Reconnect-in-place is the
-       next step - the credentials would have to be kept to do it.) */
+       sessions and their connections so the next use re-mounts. */
     int i;
     if ( back ) {
-        for ( i = 0; i < NET_DRIVES; i++ )
+        for ( i = 0; i < NET_DRIVES; i++ ) {
             if ( g_sess[i] ) { nds_free( g_sess[i] ); g_sess[i] = (session *)0; }
+            if ( g_conn[i] ) { nds_free( g_conn[i] ); g_conn[i] = (netconn *)0; }
+        }
     }
 }
 
@@ -866,7 +1482,35 @@ void __cdecl nd_tick( void )
 {
 }
 
+static int redir_run( u32 op, redir_req *r );
+
+/* A REQUEST ON A DRIVE WHOSE CONNECTION HAS GONE is run on a new one.
+   sess_ready makes it again before the request when an earlier one found
+   it broken; when it breaks under this request - the server ended it
+   while the drive sat idle, which Windows does after 15 minutes - it is
+   made again and the request run once more from a copy of how it came. */
+static redir_req g_rreq;                   /* the request as it came, for the rerun */
+
 static int redir_dispatch( u32 op, redir_req *r )
+{
+    session *s = (session *)0;
+    int rc;
+
+    if ( op != REDIR_MOUNT && op != REDIR_UMOUNT && op != REDIR_PWL && r->drive < NET_DRIVES )
+        s = g_sess[r->drive];
+    if ( s == (session *)0 ) return redir_run( op, r );
+    if ( sess_ready( s ) != 0 ) return redir_run( op, r );     /* the server is not
+                                              there: the answer says so, once */
+    memcpy( &g_rreq, r, sizeof( g_rreq ) );
+    rc = redir_run( op, r );
+    if ( g_sess[r->drive] == s && conn_lost( s->nc ) && conn_revive( s ) == 0 ) {
+        memcpy( r, &g_rreq, sizeof( *r ) );
+        rc = redir_run( op, r );
+    }
+    return rc;
+}
+
+static int redir_run( u32 op, redir_req *r )
 {
     /* every string the caller filled ends inside its field */
     r->path[sizeof( r->path ) - 1] = 0;
@@ -890,6 +1534,19 @@ static int redir_dispatch( u32 op, redir_req *r )
     case REDIR_MKDIR:
     case REDIR_RMDIR:     return do_pathop( r, (int)op );
     case REDIR_RENAME:    return do_rename( r );
+    case REDIR_INFO:      return do_info( r );
+    case REDIR_ISDIR:     return do_isdir( r );
+    case REDIR_GETATTR:   return do_getattr( r );
+    case REDIR_CHDIR:     return do_chdir( r );
+    case REDIR_GETCWD:    return do_getcwd( r );
+    case REDIR_CANON:     return do_canon( r );
+    case REDIR_PWL:
+        /* the block is the program's, checked by the kernel to be its own
+           and this long; the answer goes in it */
+        if ( r->count < sizeof( pwl_req ) || r->bufptr == 0 ) return ERR_BADLEN;
+        pwl_call( (pwl_req *)r->bufptr );
+        r->status = 0;
+        return 0;
     default:              return ERR_FUNC;
     }
 }

@@ -2731,6 +2731,13 @@ so_notdev:
         mov     bx,[rd_deoff]
         test    byte ptr [rd_dirbuf + bx + DE_ATTR],ATTR_DIR
         jnz     so_nofile
+        ; a read-only file opens for reading or not at all (DOS's
+        ; open.asm); until 2026-11-04 the attribute was not looked at
+        test    byte ptr [rd_dirbuf + bx + DE_ATTR],ATTR_READONLY
+        jz      so_rwok
+        test    byte ptr [rd_opmode],3  ; AL's access bits
+        jnz     so_ro
+so_rwok:
         call    sub_fromdir
         jc      so_nohandles
 so_good:
@@ -2749,6 +2756,9 @@ IFDEF DBG_LPT
         call    rdbg_jfail              ; whose table was it, and how full
 ENDIF
         mov     ax,ERR_NOHANDLES
+        jmp     short so_out
+so_ro:
+        mov     ax,ERR_ACCESS
         jmp     short so_out
 so_bad:
         mov     ax,ERR_NOPATH
@@ -2877,6 +2887,8 @@ sub_create:
         mov     bx,[rd_deoff]
         test    byte ptr [rd_dirbuf + bx + DE_ATTR],ATTR_DIR
         jnz     sc2_exists
+        test    byte ptr [rd_dirbuf + bx + DE_ATTR],ATTR_READONLY
+        jnz     sc2_ro                  ; nor is one truncated (mknode.asm)
         mov     word ptr [rd_opmode],2
         call    sub_fromdir
         jc      sc2_nohandles
@@ -2948,6 +2960,9 @@ sc2_ok:
         ret
 sc2_exists:
         mov     ax,ERR_EXISTS
+        jmp     short sc2_out
+sc2_ro:
+        mov     ax,ERR_ACCESS
         jmp     short sc2_out
 sc2_full:
         mov     ax,ERR_NOHANDLES

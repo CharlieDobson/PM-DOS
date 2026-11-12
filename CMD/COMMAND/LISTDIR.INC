@@ -677,13 +677,13 @@ dir_freeline:
         jc      dfr_36
         cmp     word ptr [fs_buf],0
         je      dfr_36
+        ; IN 64 BITS: a network share or a large disk is more than 4GB
+        ; free, which 32 bits of bytes could only say as 4GB
         mov     eax,dword ptr [fs_buf+04h]      ; sectors per cluster
         mul     dword ptr [fs_buf+08h]          ; bytes per sector
         or      edx,edx
         jnz     dfr_sat
-        mul     dword ptr [fs_buf+0Ch]          ; clusters free
-        or      edx,edx
-        jnz     dfr_sat
+        mul     dword ptr [fs_buf+0Ch]          ; x clusters free: EDX:EAX
         jmp     short dfr_say
 dfr_36:
         mov     dl,[dir_drv]
@@ -695,14 +695,14 @@ dfr_36:
         movzx   ebx,bx
         movzx   ecx,cx
         mul     ebx
-        mul     ecx
-        or      edx,edx
-        jz      dfr_say
+        mul     ecx                             ; EDX:EAX
+        jmp     short dfr_say
 dfr_sat:
+        xor     edx,edx                         ; a cluster over 4GB: not a disk
         mov     eax,0FFFFFFFFh
 dfr_say:
         mov     bx,32
-        call    put_num
+        call    put_numw
         mov     si,OFFSET msg_free
         call    puts
         call    dir_endline

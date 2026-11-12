@@ -1,0 +1,3 @@
+/* MKSETUP.RC - the manifest that says MKSETUP.EXE needs no elevation
+   (MKSETUP.MAN).  Resource type 24 is RT_MANIFEST, id 1 a program's. */
+1 24 "MKSETUP.MAN"
