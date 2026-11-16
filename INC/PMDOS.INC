@@ -180,6 +180,19 @@ PG_MAXLIN       EQU     PG_MAXTAB * 00400000h
 PG_DEVTAB       EQU     8                       ; 8 * 4MB of device memory
 PG_DEVTABS      EQU     PG_TABS + PG_MAXTAB * 1000h
 PG_TOP          EQU     PG_DEVTABS + PG_DEVTAB * 1000h
+; THE FIRST MEGABYTE AS THE BUS HAS IT, at the top of the 4GB.  Upper
+; memory that a UMB or the EMS frame has been put over is RAM at its own
+; address from then on, and a card's memory decoded there - a shared-
+; memory network card's window, switched on by its driver long after
+; the UMB probe found the address empty - can no longer be reached
+; there.  pg_mapphys hands such a driver PG_LOWALIAS + the address
+; instead: the last directory entry, made once from the pool, maps the
+; first megabyte uncached and nothing else.  It costs the top 4MB, which
+; is the BIOS flash's and nothing PM-DOS maps.
+PG_ALIASDIR     EQU     1023                    ; the directory entry
+PG_LOWALIAS     EQU     PG_ALIASDIR * 00400000h ; FFC00000h
+PG_ALIASPDE     EQU     PG_DIR + PG_ALIASDIR * 4 ; where its entry is
+PG_NOCACHE      EQU     18h                     ; PCD and PWT: the 486 on
 ; Present, writable, and USER.  The user bit is not optional and its
 ; absence is not a security setting: V86 code runs at CPL 3, so a
 ; supervisor-only page is a page a DOS box cannot execute from, and
@@ -3411,10 +3424,13 @@ BUS_PARAS       EQU     4                       ; the INT 4Bh stub below 1MB,
 VT_STUB         EQU     10h                     ; ...at this offset (VTIMER.INC)
 
 ; IOS_BUS and 21h/F1h AL=12h: the function is in AH.
-BUS_PCIHERE     EQU     00h     ; -> EAX = 1 if there is a PCI bus, EBX =
-                                ;    the last bus number, ECX = functions
-                                ;    found, EDX = the edge/level register
-                                ;    (a bit a line, set = level)
+BUS_PCIHERE     EQU     00h     ; -> EAX bit 0 set if there is a PCI bus,
+                                ;    bit 1 if it is reached through
+                                ;    configuration mechanism 2 (devices
+                                ;    0-15 only); EBX = the last bus
+                                ;    number, ECX = functions found, EDX =
+                                ;    the edge/level register (a bit a
+                                ;    line, set = level)
 BUS_PCIENUM     EQU     01h     ; SI = n -> EBX = the nth function's
                                 ;    address, EAX = device:vendor, ECX =
                                 ;    class, subclass, prog-if, revision

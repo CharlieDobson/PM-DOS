@@ -7621,8 +7621,18 @@ xl_stkok:
         mov     [exec_stack],eax
         add     ebx,eax
         jc      xl_nomem
+        ; A SLOT STARTS AT PROG_SIZE AND A PROGRAM MAY BE BIGGER.  Its
+        ; heap could always grow past that (slot_grow); its image could
+        ; not, and a program of more than about 500K was refused here
+        ; with ERR_NOMEM on a machine with megabytes free - which the
+        ; shell reports as a command it cannot find.  PMWRITE was the
+        ; first to be that big.  slot_fit stretches the slot in place
+        ; before anything is read into it.
         cmp     ebx,[r3_size]
-        ja      xl_nomem
+        jbe     xl_fits
+        call    slot_fit
+        jc      xl_nomem
+xl_fits:
         cmp     dword ptr [exec_nh],-1
         jne     xl_netblit
 

@@ -48,8 +48,13 @@ rem                  text files
 rem     PMDOS2.IMG   the help disk: HELP.EXE and HELP.HLP, which do not
 rem                  fit on the boot disk, and LRGDISK.386 and
 rem                  LRGSTAT.EXE, which stopped fitting on 2026-10-24,
-rem                  and what came after it: MODE, ACROREAD, DEBUG,
-rem                  QBASIC with QBASIC.HLP, QBRUN, and TREEVIEW
+rem                  and what came after it: MODE, DEBUG, QBASIC with
+rem                  QBASIC.HLP and QBRUN
+rem     PMDOS3.IMG   the applications disk: PMWRITE.EXE, which is over
+rem                  half a megabyte and fits on neither of the others,
+rem                  XARC.EXE, which was on no diskette until this one
+rem                  had the room, TREEVIEW.EXE, and MPLAY.EXE with
+rem                  SBLASTER.SYS and ES1371.SYS
 rem     TESTS.IMG    the test disk: every test program, batch file and
 rem                  key file, in \TESTS, and the long-named fixtures
 rem                  in its root.  Not a system disk.  The tests left
@@ -377,13 +382,13 @@ rem each one has to be named here too: a directory missing from this
 rem list is one whose failed assembly links yesterday's object.  (A
 rem failed COMPILE does not need it - wcc386, unlike wasm, returns an
 rem error - but CHKDSK's and LABEL's startup is assembled like the rest.)
-for %%D in (ACROREAD ANSI ATTRIB CACHE CDEX CHKDSK CHOICE DEBUG DEFRAG DELTREE DISKCOMP DISKCOPY DRIVES EDIT FC FDISK FIND FORMAT HELP ISAPNP KEYB LABEL LFNAPI LRGDISK MEM MODE MORE MOUNT MOVE PMD QBASIC SCANDISK SETUP SHUTDOWN SORT SYS TREE TREEVIEW UNDELETE USB XARC XCOPY NET SNTP WGET FTP TELNET IPCONFIG PING) do if exist CMD\%%D\*.obj del /q CMD\%%D\*.obj
+for %%D in (PMWRITE MPLAY ANSI ATTRIB CACHE CDEX CHKDSK CHOICE DEBUG DEFRAG DELTREE DISKCOMP DISKCOPY DRIVES EDIT FC FDISK FIND FORMAT HELP ISAPNP KEYB LABEL LFNAPI LRGDISK MEM MODE MORE MOUNT MOVE PMD QBASIC SCANDISK SETUP SHUTDOWN SORT SYS TREE TREEVIEW UNDELETE USB XARC XCOPY NET SNTP WGET FTP TELNET IPCONFIG PING) do if exist CMD\%%D\*.obj del /q CMD\%%D\*.obj
 if exist CMD\NET\TLS\*.obj del /q CMD\NET\TLS\*.obj
 if exist NLS\*.obj del /q NLS\*.obj
 rem ...and the 32-bit drivers under DRV\, the shared base and a
 rem directory each.
 if exist DRV\*.obj del /q DRV\*.obj
-for %%D in (NE2000 RTL8139 PCNET TULIP EEPRO100 E1000 WD80X3 EL3C501 EL3C509 EL3C515 EL3C90X TCPIP NETBEUI RAMDISK X87EMU) do if exist DRV\%%D\*.obj del /q DRV\%%D\*.obj
+for %%D in (NE2000 RTL8139 PCNET TULIP EEPRO100 E1000 WD80X3 EL3C501 EL3C509 EL3C515 EL3C90X IGB RTL8169 IXGBE EXP16 VIRTIO VMXNET3 TCPIP NETBEUI RAMDISK X87EMU SBLASTER ES1371) do if exist DRV\%%D\*.obj del /q DRV\%%D\*.obj
 
 rem FSIZE asserts the sizes the checks below used to test with FOR's
 rem "~z" size modifier.  That modifier is a cmd.exe command EXTENSION:
@@ -1120,55 +1125,69 @@ wlink form raw bin option offset=0x2000 name ..\..\BIN\DOSSHELL.EXE ^
     file dosint.obj,main.obj,scr.obj,gfx.obj,icons.obj,ui.obj,tree.obj,files.obj,ops.obj,view.obj,progs.obj,dlgs.obj,help.obj,rt.obj,sys_d32.obj ^
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
 cd ..\..
-rem ACROREAD is C: a PDF reader.  A page is drawn into memory and put
-rem on a graphics screen through 21h/F1h AL=1Fh - 640x480 in colour
-rem through a VBE 2.0 linear frame buffer, or in sixteen greys in the
-rem VGA's own mode 12h - or shown as its text through 21h/F0h.  There
-rem is no floating point in it, so it runs on a 386 with no coprocessor.
-rem JMP.ASM is its way out of a page that cannot be finished, and it is
-rem assembled like DOSINT.ASM: after the header, which stays first.
-rem Its test mode is keys from a redirected file (VIEW.C says how they
-rem are written), and TOOLS\MKPDF.PL writes a document for each way a
-rem PDF file can be put together.  MKHOST.CMD in its directory builds
-rem the same sources as a Windows console program, for looking at a
-rem page without booting anything; nothing here needs it.
-cd CMD\ACROREAD
+rem PMWRITE is C: a word processor with the look of Word, in place of
+rem ACROREAD, whose PDF code it took whole (PDF\ - the same pages, drawn
+rem by the same code).  It runs on the text screen and on graphics
+rem screens of 640x480, 800x600, 1024x768 and 1280x1024 - sixteen
+rem colours through the VGA's own planes where there is no VBE 2.0
+rem frame buffer, which gets as far as 800x600 - and changes between
+rem them while it runs.  Every format is one F_*.C file with one FORMAT
+rem in it (FMT.H): text, RTF, Word (.docx), OpenDocument, Word 97-2003
+rem and 6.0/95 (.doc), Word for Windows 1 and 2 (read only), Word for
+rem DOS, Windows Write, WordStar, WordPerfect, Ami Pro, Lotus Word Pro
+rem (read only) and PDF.  F_STUBS.C stands in for a format whose file
+rem is left out, and PWDEFS says which ones are in: all of them.
+rem There is no floating point in it and no C library.  It is the first
+rem program bigger than the 512K slot EXEC starts a program with, which
+rem is what slot_fit in DOS\RING3.INC is for.  Its test mode is keys
+rem from a redirected file, written by MKPWKEYS.PL in its directory;
+rem MKPW.CMD there builds it alone into any folder, and MKHOST.CMD,
+rem MKETEST.CMD, MKLTEST.CMD and MKPTEST.CMD build its parts as Windows
+rem console programs for testing.  Nothing here needs those.
+cd CMD\PMWRITE
+set PWDEFS=-dHAVE_PDF -dHAVE_DOCX -dHAVE_ODT -dHAVE_DOC -dHAVE_RTF -dHAVE_WINWORD -dHAVE_WORDDOS -dHAVE_WRITE -dHAVE_WORDSTAR -dHAVE_WORDPERFECT -dHAVE_AMIPRO -dHAVE_WORDPRO
 wasm -q -i=..\..\INC dosint.asm                 || goto :fail
 wasm -q jmp.asm                                 || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 main.c    || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 view.c    || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 video.c   || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 text.c    || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 interp.c  || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 image.c   || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 shade.c   || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 font.c    || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 glyph.c   || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 sfont.c   || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 ttf.c     || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 cff.c     || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 type1.c   || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 names.c   || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 color.c   || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 path.c    || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 raster.c  || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 doc.c     || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 xref.c    || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 lex.c     || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 stream.c  || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 filter.c  || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 inflate.c || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 dct.c     || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 ccitt.c   || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 crypt.c   || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 fx.c      || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 rt.c      || goto :fail
-wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 sys_d32.c || goto :fail
-wlink form raw bin option offset=0x2000 name ..\..\BIN\ACROREAD.EXE ^
-    file dosint.obj,jmp.obj,main.obj,view.obj,video.obj,text.obj,interp.obj,image.obj,shade.obj,font.obj,glyph.obj,sfont.obj,ttf.obj,cff.obj,type1.obj,names.obj,color.obj,path.obj,raster.obj,doc.obj,xref.obj,lex.obj,stream.obj,filter.obj,inflate.obj,dct.obj,ccitt.obj,crypt.obj,fx.obj,rt.obj,sys_d32.obj ^
+for %%M in (main view bars cmds dlgs files icons scr gfx ui fbox sys_d32 rt wdoc out cp cptab fmttab wedit lay edit pdfw img flate crc zip xml cfb tf pdfview ^
+  f_txt f_rtf f_docx f_odt f_doc f_ww2 f_wdos f_ws f_wp f_sam f_lwp f_pdf f_stubs) do wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=PDF %PWDEFS% %%M.c || goto :fail
+for %%M in (fx stream lex doc xref filter inflate crypt ccitt dct color raster path names font ttf cff type1 sfont glyph image shade interp text) do wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=. -i=PDF -fo=%%M.obj PDF\%%M.c || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\BIN\PMWRITE.EXE ^
+    file dosint.obj,jmp.obj,main.obj,view.obj,bars.obj,cmds.obj,dlgs.obj,files.obj,icons.obj,scr.obj,gfx.obj,ui.obj,fbox.obj,sys_d32.obj,rt.obj,wdoc.obj,out.obj,cp.obj,cptab.obj,fmttab.obj,wedit.obj,lay.obj,edit.obj,pdfw.obj,img.obj,flate.obj,crc.obj,zip.obj,xml.obj,cfb.obj,tf.obj,pdfview.obj ^
+    file f_txt.obj,f_rtf.obj,f_docx.obj,f_odt.obj,f_doc.obj,f_ww2.obj,f_wdos.obj,f_ws.obj,f_wp.obj,f_sam.obj,f_lwp.obj,f_pdf.obj,f_stubs.obj ^
+    file fx.obj,stream.obj,lex.obj,doc.obj,xref.obj,filter.obj,inflate.obj,crypt.obj,ccitt.obj,dct.obj,color.obj,raster.obj,path.obj,names.obj,font.obj,ttf.obj,cff.obj,type1.obj,sfont.obj,glyph.obj,image.obj,shade.obj,interp.obj,text.obj ^
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
 cd ..\..
-
+rem MPLAY is C: a media player - wave, VOC, MIDI, MP3 and Ogg Vorbis -
+rem with a playlist, a ten-band equalizer and a spectrum
+rem analyzer, on the text screen and on graphics screens up to
+rem 1280x1024 (PMWRITE's SCR, GFX, UI and FBOX, copied).  It plays
+rem through a sound card driver (SBLASTER.SYS, ES1371.SYS: INC\AUDIO.H)
+rem and is silent without one.  Every codec is one CODEC in DEC.H, in
+rem fixed point with no floating point and no C library; MPDEFS says
+rem which are in, and a codec left out of it and its sources left out
+rem of the link is simply not offered.  PLAYER.C is the engine: it
+rem decodes ahead into the driver's ring, resamples, and on a slow
+rem processor asks the codec for half or a quarter of the rate or one
+rem channel (the costs it uses were measured on a 486 DX4-100).  Its
+rem test mode is MPTEST naming a log and keys from a redirected file,
+rem written by MKPWKEYS.PL; MKMP.CMD builds it alone into any folder,
+rem and MKHOST.CMD builds the codecs as a Windows console program that
+rem decodes to a wave file.  Nothing here needs those.  WMA is left out:
+rem its decoder (WMA.C, ASF.C) needs WMATAB.C, tables from FFmpeg under
+rem the LGPL, which is not shipped; without HAVE_WMA, DECTAB.C turns a
+rem Windows Media file down by name.
+cd CMD\MPLAY
+set MPDEFS=-dHAVE_VOC -dHAVE_MIDI -dHAVE_MP3 -dHAVE_OGG
+wasm -q -i=..\..\INC dosint.asm                 || goto :fail
+wasm -q jmp.asm                                 || goto :fail
+for %%M in (main view plist dlgs player eqtd fft trig scr gfx ui fbox sys_d32 rt src eq tag dectab wav voc ^
+  midi mdopl mdsyn mdbank mp3 mp3l12 mp3l3 mp3syn mp3tab ogg vbdec vbmdct vbtab) do wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=. -i=..\..\INC %MPDEFS% %%M.c || goto :fail
+wlink form raw bin option offset=0x2000 name ..\..\BIN\MPLAY.EXE ^
+    file dosint.obj,jmp.obj,main.obj,view.obj,plist.obj,dlgs.obj,player.obj,eqtd.obj,fft.obj,trig.obj,scr.obj,gfx.obj,ui.obj,fbox.obj,sys_d32.obj ^
+    file rt.obj,src.obj,eq.obj,tag.obj,dectab.obj,wav.obj,voc.obj,midi.obj,mdopl.obj,mdsyn.obj,mdbank.obj ^
+    file mp3.obj,mp3l12.obj,mp3l3.obj,mp3syn.obj,mp3tab.obj,ogg.obj,vbdec.obj,vbmdct.obj,vbtab.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
 rem XARC is C: XArchive's DOS program made native - zip, 7z, RAR, CAB,
 rem SZDD and disk images listed, tested and extracted, zip and 7z made,
 rem on its own screen (or /G graphics) or from the command line.  ARC\
@@ -1318,7 +1337,7 @@ rem version of its own names that .EXE to D32BIND in place of the stub.
 for %%F in (CMD.EXE CHOICE.COM MORE.COM SORT.COM SYS.COM FORMAT.COM MEM.EXE FDISK.EXE MOUNT.EXE ^
   CACHE.EXE UNDELETE.EXE CDEX.EXE SHUTDOWN.EXE FIND.EXE DISKCOPY.COM DISKCOMP.COM MOVE.EXE DELTREE.EXE TREE.EXE MODE.EXE ^
   ATTRIB.EXE CHKDSK.EXE LABEL.EXE XCOPY.EXE EDIT.EXE FC.EXE ISAPNP.EXE PMD.EXE DOSSHELL.EXE ^
-  ACROREAD.EXE SCANDISK.EXE DEFRAG.EXE XARC.EXE TREEVIEW.EXE KEYB.COM HELP.EXE USB.EXE DEBUG.EXE QBASIC.EXE QBRUN.EXE ^
+  PMWRITE.EXE MPLAY.EXE SCANDISK.EXE DEFRAG.EXE XARC.EXE TREEVIEW.EXE KEYB.COM HELP.EXE USB.EXE DEBUG.EXE QBASIC.EXE QBRUN.EXE ^
   SNTP.EXE WGET.EXE FTP.EXE TELNET.EXE NET.EXE SMBSRV.EXE IPCONFIG.EXE PING.EXE) do TOOLS\D32BIND.EXE BIN\%%F TOOLS\D32STUB.EXE || goto :fail
 rem SETUP is the one with a 16-bit version of its own: the MS-DOS half
 rem upgrades the DOS it runs on, the PM-DOS half installs from a Setup
@@ -2133,7 +2152,7 @@ wlink form raw bin option offset=0x10000000 name el3c515_1.bin file ..\ndstart.o
 cd ..\..
 TOOLS\D32DRV.EXE BIN\EL3C515.SYS TOOLS\DRVSTUB.BIN DRV\EL3C515\el3c515_0.bin DRV\EL3C515\el3c515_1.bin || goto :fail
 
-echo === WD80X3.SYS (WD/SMC shared-memory 8390, ISA; written) ===
+echo === WD80X3.SYS (WD/SMC shared-memory 8390, ISA: WD8003, WD8013) ===
 cd DRV\WD80X3
 wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=.. wd80x3.c || goto :fail
 wlink form raw bin option offset=0x0 name wd80x3_0.bin file ..\ndstart.obj,..\netcore.obj,wd80x3.obj ^
@@ -2143,7 +2162,7 @@ wlink form raw bin option offset=0x10000000 name wd80x3_1.bin file ..\ndstart.ob
 cd ..\..
 TOOLS\D32DRV.EXE BIN\WD80X3.SYS TOOLS\DRVSTUB.BIN DRV\WD80X3\wd80x3_0.bin DRV\WD80X3\wd80x3_1.bin || goto :fail
 
-echo === EL3C90X.SYS (3Com 3C90x Boomerang, PCI; written, Charlie's card) ===
+echo === EL3C90X.SYS (3Com 3C90x EtherLink XL, PCI; written, Charlie's card) ===
 cd DRV\EL3C90X
 wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=.. el3c90x.c || goto :fail
 wlink form raw bin option offset=0x0 name el3c90x_0.bin file ..\ndstart.obj,..\netcore.obj,el3c90x.obj ^
@@ -2152,6 +2171,66 @@ wlink form raw bin option offset=0x10000000 name el3c90x_1.bin file ..\ndstart.o
     order clname CODE clname DATA clname BSS clname D32END || goto :fail
 cd ..\..
 TOOLS\D32DRV.EXE BIN\EL3C90X.SYS TOOLS\DRVSTUB.BIN DRV\EL3C90X\el3c90x_0.bin DRV\EL3C90X\el3c90x_1.bin || goto :fail
+
+echo === IGB.SYS (Intel 82575/82576/82580/I350/I210/I211 and I225/I226 2.5G, PCIe) ===
+cd DRV\IGB
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=.. igb.c || goto :fail
+wlink form raw bin option offset=0x0 name igb_0.bin file ..\ndstart.obj,..\netcore.obj,igb.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+wlink form raw bin option offset=0x10000000 name igb_1.bin file ..\ndstart.obj,..\netcore.obj,igb.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+TOOLS\D32DRV.EXE BIN\IGB.SYS TOOLS\DRVSTUB.BIN DRV\IGB\igb_0.bin DRV\IGB\igb_1.bin || goto :fail
+
+echo === RTL8169.SYS (Realtek RTL8169/8110/8111/8168/810x and RTL8125 2.5G; written) ===
+cd DRV\RTL8169
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=.. rtl8169.c || goto :fail
+wlink form raw bin option offset=0x0 name rtl8169_0.bin file ..\ndstart.obj,..\netcore.obj,rtl8169.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+wlink form raw bin option offset=0x10000000 name rtl8169_1.bin file ..\ndstart.obj,..\netcore.obj,rtl8169.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+TOOLS\D32DRV.EXE BIN\RTL8169.SYS TOOLS\DRVSTUB.BIN DRV\RTL8169\rtl8169_0.bin DRV\RTL8169\rtl8169_1.bin || goto :fail
+
+echo === IXGBE.SYS (Intel 82598/82599/X540/X550 10 gigabit, PCIe; written) ===
+cd DRV\IXGBE
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=.. ixgbe.c || goto :fail
+wlink form raw bin option offset=0x0 name ixgbe_0.bin file ..\ndstart.obj,..\netcore.obj,ixgbe.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+wlink form raw bin option offset=0x10000000 name ixgbe_1.bin file ..\ndstart.obj,..\netcore.obj,ixgbe.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+TOOLS\D32DRV.EXE BIN\IXGBE.SYS TOOLS\DRVSTUB.BIN DRV\IXGBE\ixgbe_0.bin DRV\IXGBE\ixgbe_1.bin || goto :fail
+
+echo === EXP16.SYS (Intel EtherExpress 16, ISA, i82586; written, Charlie's card) ===
+cd DRV\EXP16
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=.. exp16.c || goto :fail
+wlink form raw bin option offset=0x0 name exp16_0.bin file ..\ndstart.obj,..\netcore.obj,exp16.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+wlink form raw bin option offset=0x10000000 name exp16_1.bin file ..\ndstart.obj,..\netcore.obj,exp16.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+TOOLS\D32DRV.EXE BIN\EXP16.SYS TOOLS\DRVSTUB.BIN DRV\EXP16\exp16_0.bin DRV\EXP16\exp16_1.bin || goto :fail
+
+echo === VIRTIO.SYS (the virtio network device of QEMU, KVM and VirtualBox, legacy and modern) ===
+cd DRV\VIRTIO
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=.. virtio.c || goto :fail
+wlink form raw bin option offset=0x0 name virtio_0.bin file ..\ndstart.obj,..\netcore.obj,virtio.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+wlink form raw bin option offset=0x10000000 name virtio_1.bin file ..\ndstart.obj,..\netcore.obj,virtio.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+TOOLS\D32DRV.EXE BIN\VIRTIO.SYS TOOLS\DRVSTUB.BIN DRV\VIRTIO\virtio_0.bin DRV\VIRTIO\virtio_1.bin || goto :fail
+
+echo === VMXNET3.SYS (VMware's vmxnet3: Workstation, Player, Fusion, ESXi; QEMU) ===
+cd DRV\VMXNET3
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=.. vmxnet3.c || goto :fail
+wlink form raw bin option offset=0x0 name vmxnet3_0.bin file ..\ndstart.obj,..\netcore.obj,vmxnet3.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+wlink form raw bin option offset=0x10000000 name vmxnet3_1.bin file ..\ndstart.obj,..\netcore.obj,vmxnet3.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+TOOLS\D32DRV.EXE BIN\VMXNET3.SYS TOOLS\DRVSTUB.BIN DRV\VMXNET3\vmxnet3_0.bin DRV\VMXNET3\vmxnet3_1.bin || goto :fail
 
 echo === TCPIP.SYS (the TCP/IP stack: ARP, IP, ICMP, UDP, DHCP, DNS, TCP) ===
 rem The stack rides on a loaded card driver (NDS_NICCALL) and answers
@@ -2247,6 +2326,41 @@ wlink form raw bin option offset=0x0 name ramdisk0.bin file ramdisk.obj || goto 
 wlink form raw bin option offset=0x10000000 name ramdisk1.bin file ramdisk.obj || goto :fail
 cd ..\..
 TOOLS\D32DRV.EXE BIN\RAMDISK.SYS TOOLS\DRVSTUB.BIN DRV\RAMDISK\RAMDISK0.BIN DRV\RAMDISK\RAMDISK1.BIN || goto :fail
+
+echo === the shared base for the sound card drivers (DRV\AUDCORE.C) ===
+rem A program cannot hook an interrupt or know a physical address, so
+rem sound goes through a 32-bit driver that answers INC\AUDIO.H on
+rem 21h/F1h AL=25h (NDTF_AUDIO).  AUDCORE.C is the part every card
+rem shares - the ring the program writes into, the blocks the card
+rem plays from, the timed FM and MIDI events, the counts - and the
+rem card's own file (DRV\AUDDRV.H says what it supplies) is the rest.
+rem Linked behind NDSTART.ASM, twice + D32DRV, like the network cards.
+cd DRV
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\INC audcore.c || goto :fail
+cd ..
+
+echo === SBLASTER.SYS (Sound Blaster 1.0 to 16, AWE32/64, and the cards like them) ===
+cd DRV\SBLASTER
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=.. sblaster.c || goto :fail
+wlink form raw bin option offset=0x0 name sblaster_0.bin file ..\ndstart.obj,..\audcore.obj,sblaster.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+wlink form raw bin option offset=0x10000000 name sblaster_1.bin file ..\ndstart.obj,..\audcore.obj,sblaster.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+TOOLS\D32DRV.EXE BIN\SBLASTER.SYS TOOLS\DRVSTUB.BIN DRV\SBLASTER\sblaster_0.bin DRV\SBLASTER\sblaster_1.bin || goto :fail
+
+echo === ES1371.SYS (Ensoniq AudioPCI ES1370/1371/1373, Creative CT5880, PCI) ===
+rem It reads the PCI configuration space itself when the kernel has no
+rem PCI bus: the kernel uses mechanism 1 only, and some 486 and early
+rem Pentium boards have mechanism 2 only.
+cd DRV\ES1371
+wcc386 -q -bt=dos -mf -3r -s -zl -zld -ox -w4 -we -zp4 -i=..\..\INC -i=.. es1371.c || goto :fail
+wlink form raw bin option offset=0x0 name es1371_0.bin file ..\ndstart.obj,..\audcore.obj,es1371.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+wlink form raw bin option offset=0x10000000 name es1371_1.bin file ..\ndstart.obj,..\audcore.obj,es1371.obj ^
+    order clname CODE clname DATA clname BSS clname D32END || goto :fail
+cd ..\..
+TOOLS\D32DRV.EXE BIN\ES1371.SYS TOOLS\DRVSTUB.BIN DRV\ES1371\es1371_0.bin DRV\ES1371\es1371_1.bin || goto :fail
 
 echo === NICTEST.EXE (a card driver, from the wire: DHCP, ARP, a ping) ===
 rem C, with CSTART.ASM as its startup - the first test in TOOLS\ that
@@ -2583,11 +2697,31 @@ rem a third disk, as MS-DOS's did.  MKHD.CMD puts both on the hard
 rem disks, where HELP is found along the PATH.  The two Windows files
 rem joined them here when the boot disk filled (see PMDOS.IMG above),
 rem MODE.EXE, which was written after it had, and ACROREAD.EXE, which
-rem was moved off it to give the kernel room.  QBASIC.EXE and its
+rem was moved off it to give the kernel room - and left this one on
+rem 2026-11-13, when PMWRITE took its place.  QBASIC.EXE and its
 rem QBASIC.HLP (half a megabyte between them) came after, then
 rem TREEVIEW.EXE, and QBRUN.EXE (Make EXE File's runtime) last.
+rem TREEVIEW.EXE went on to the applications disk on 2026-11-14, so
+rem that this one has room for the help to grow: 360K free then.
 echo === PMDOS2.IMG (the help disk) ===
-TOOLS\MKDISK.EXE IMAGES\PMDOS2.IMG BIN\BOOT.BIN -label "PM-DOS HELP" -nolfn BIN\HELP.EXE DISK\HELP.HLP BIN\LRGDISK.386 BIN\LRGSTAT.EXE BIN\MODE.EXE BIN\ACROREAD.EXE BIN\DEBUG.EXE BIN\QBASIC.EXE DISK\QBASIC.HLP BIN\TREEVIEW.EXE BIN\QBRUN.EXE || goto :fail
+TOOLS\MKDISK.EXE IMAGES\PMDOS2.IMG BIN\BOOT.BIN -label "PM-DOS HELP" -nolfn BIN\HELP.EXE DISK\HELP.HLP BIN\LRGDISK.386 BIN\LRGSTAT.EXE BIN\MODE.EXE BIN\DEBUG.EXE BIN\QBASIC.EXE DISK\QBASIC.HLP BIN\QBRUN.EXE || goto :fail
+
+rem === PMDOS3.IMG - the applications disk ===
+rem The full-screen programs that are not needed to start or mend a
+rem machine.  The help disk had 300K free when ACROREAD left it and
+rem PMWRITE is more than twice that, so the word processor began this
+rem disk.  XARC.EXE, a third of a megabyte, had never been on a diskette
+rem at all - Setup and the hard disks were the only way to it - and
+rem TREEVIEW.EXE came across from the help disk.  The boot disk keeps
+rem what it had: DOSSHELL, PMD, SCANDISK and DEFRAG are on it with 200K
+rem to spare, and that room is the kernel's to grow into.  What is on
+rem no diskette still is the network (the drivers, NET, WGET and the
+rem rest: 740K), which fits beside nothing here.  MKHD.CMD puts all of
+rem it on the hard disks and SETUP.LST on the Setup disks.  MPLAY.EXE
+rem and the two sound card drivers came on 2026-11-15, into the 390K
+rem that was left.
+echo === PMDOS3.IMG (the applications disk) ===
+TOOLS\MKDISK.EXE IMAGES\PMDOS3.IMG BIN\BOOT.BIN -label "PM-DOS APPS" -nolfn BIN\PMWRITE.EXE BIN\XARC.EXE BIN\TREEVIEW.EXE BIN\MPLAY.EXE BIN\SBLASTER.SYS BIN\ES1371.SYS || goto :fail
 
 rem === TESTS.IMG - the test disk ===
 rem Everything written to prove one thing about the kernel: BIN\TESTS\

@@ -683,6 +683,90 @@ To move a file to another drive under a new name:
 To rename a directory:
 
     move oldname newname
+#topic MPLAY|Mplay
+Plays sound and music files: wave files, Creative Voice files, MIDI,
+MP3 and Ogg Vorbis.  It has a playlist, a graphic equalizer and a
+spectrum analyzer.
+
+{b}Syntax{p}
+
+    MPLAY [[drive:][path]filename ...] [/T | /G[:width]]
+
+{b}Parameters{p}
+
+[drive:][path]filename
+    The files to play, one after another.  A name can be a pattern
+    such as *.MP3, a directory, or a playlist (.M3U or .PLS).
+
+{b}Switches{p}
+
+/T
+    Starts on the text screen.
+
+/G[:width]
+    Starts on a graphics screen: 640 pixels wide, or 800, 1024 or
+    1280 if a width is given.
+
+{b}Related Commands{p}
+
+The sound card needs its driver, loaded with [[DEVICE=]]: see
+[[SBLASTER.SYS]] and [[ES1371.SYS]].
+#notes
+{b}What it plays{p}
+
+Wave files (.WAV): PCM of 8 to 32 bits, floating point, A-law, mu-law,
+and IMA and Microsoft ADPCM.  Creative Voice files (.VOC), except
+2.6-bit ADPCM.  MIDI files (.MID, .RMI, .KAR).  MPEG audio layers 1, 2
+and 3 (.MP3, .MP2, .MP1) at every rate.  Ogg Vorbis (.OGG).  Windows
+Media Audio files (.WMA) are not played.
+
+{b}Keys{p}
+
+SPACEBAR plays and pauses, S stops, N and P go to the next and the
+previous file, and LEFT and RIGHT go back and forward 5 seconds.  + and
+- set the volume.  TAB moves between the playlist and the equalizer.
+F1 lists the rest.  The mouse works the buttons, the sliders, the seek
+bar and the playlist.
+
+{b}MIDI music{p}
+
+On a Sound Blaster, MIDI music is played on the card's FM synthesizer.
+On a card with no FM synthesizer, such as the Ensoniq AudioPCI, MPLAY
+plays it with its own synthesizer.  Sound on the Options menu can send
+it to the card's MIDI port instead, for a MIDI synthesizer plugged into
+the game port.
+
+{b}Slow computers{p}
+
+MP3 and Ogg Vorbis files take a lot of work to play.  On a 386 or a 486
+MPLAY plays them at half or a quarter of their rate, or in mono,
+whichever the processor can keep up with.  Half rate loses only the top
+octave.  On a 486 DX4-100 an MP3 file plays at half rate and an Ogg
+Vorbis file at full rate; a Pentium plays both at full rate.
+Quality on the Options menu sets this by hand.
+
+{b}The equalizer{p}
+
+Ten sliders from 31 Hz to 16 kHz and a preamp, each up to 12 dB up or
+down.  E switches the equalizer on and off, and the Equalizer menu has
+presets.  The equalizer costs almost nothing on MP3 and Ogg Vorbis
+files.  On wave, VOC and MIDI files it takes more work; Sound on the
+Options menu turns the equalizer off for those files.
+
+{b}Screens and settings{p}
+
+Screen on the View menu changes between the text screen and graphics
+screens of 640 by 480 up to 1280 by 1024.  The two largest need a video
+BIOS with VBE 2.0 or later.  The screen, the volume, the equalizer and
+the other settings are kept in MPLAY.INI, beside MPLAY.EXE.
+#examples
+To play every MP3 file in a directory:
+
+    mplay c:\music\*.mp3
+
+To play a playlist on a 1024 by 768 screen:
+
+    mplay /g:1024 c:\music\party.m3u
 #topic NET|Net
 Connects a drive letter to a shared directory on another computer, or
 disconnects the drive letter.  NET LOGON opens a password list that
@@ -873,8 +957,7 @@ name.  If one is, it says so and does not load.
 
 {b}Network cards{p}
 
-For now only NE2000.SYS can carry NetBEUI.  With another card driver,
-NETBEUI.SYS says the card cannot be shared and does not load.
+Every card driver listed under [[TCPIP.SYS]] can carry NetBEUI.
 #examples
 To use NetBEUI alone:
 
@@ -990,6 +1073,105 @@ To look round the machine:
 To write the full report to a file for someone else to read:
 
     pmd /p c:\report.txt
+#topic PMWRITE|Pmwrite
+A word processor with menus, a toolbar, a ruler and a status bar.  It
+opens and saves documents of many kinds, and shows PDF documents a
+page at a time.
+
+{b}Syntax{p}
+
+    PMWRITE [[drive:][path]filename ...] [/T | /G[:width]] [/P:n] [/X]
+
+{b}Parameters{p}
+
+[drive:][path]filename
+    The documents to open.  With none, PMWRITE starts with a new
+    document.
+
+{b}Switches{p}
+
+/T
+    Starts on the text screen.
+
+/G[:width]
+    Starts on a graphics screen: 640 pixels wide, or 800, 1024 or
+    1280 if a width is given.
+
+/P:n
+    Starts a PDF at page n.
+
+/X
+    Writes the text of each file to standard output and does not show
+    a screen at all.
+
+{b}Related Commands{p}
+
+To edit a plain text file, see [[EDIT]].
+#notes
+{b}The screens{p}
+
+PMWRITE runs on the text screen and on graphics screens of 640 by 480,
+800 by 600, 1024 by 768 and 1280 by 1024.  Display on the View menu
+changes from one to another while the program runs, and the choice is
+remembered in PMWRITE.INI, beside PMWRITE.EXE.  The two largest sizes
+need a video BIOS with VBE 2.0 or later; without one, 640 by 480 and
+800 by 600 are shown in sixteen colors.  The View menu also shows or
+hides the toolbar, the ruler and the status bar.
+
+{b}What it opens and saves{p}
+
+Word documents (.DOCX), Word 97-2003 and Word 6.0/95 documents (.DOC),
+Rich Text Format, OpenDocument Text (.ODT), Word for DOS, Windows
+Write, WordStar, WordPerfect, Ami Pro, PDF and plain text.  Word for
+Windows 1.x and 2.x and Lotus Word Pro documents are opened but not
+saved in their own formats: Save As offers the others.  A Word 6.0/95
+document is saved as Word 97-2003.
+
+When a file has something PMWRITE does not keep, such as a drawing
+or a text box, a box says so after the file is opened.
+
+{b}PDF documents{p}
+
+A PDF is shown a page at a time, as a picture on a graphics screen
+and as its text on the text screen.  PAGE DOWN and PAGE UP turn the
+pages, and + and - make the page larger and smaller.  Edit PDF as
+Text on the File menu makes a document of the PDF's words.  Save As
+saves any document as a PDF, of version 1.0 to 2.0.
+
+{b}Tables{p}
+
+Insert Table on the Table menu puts a table in at the caret.  TAB goes
+to the next cell, and in the last cell starts a new row.  The Table
+menu also puts a row in above or below the caret, puts a column in to
+the left or right, takes a row or a column out, and sets how wide a
+column is.
+
+{b}Fonts{p}
+
+PMWRITE has one typeface of its own, spaced as Times New Roman, Arial
+and Courier New are, with the Latin, Greek and Cyrillic alphabets.  It
+also uses TrueType fonts (.TTF files) when it finds any: in a FONTS
+directory beside PMWRITE.EXE, in \WINDOWS\SYSTEM and \WINDOWS\FONTS,
+and in the directories a Fonts= line in PMWRITE.INI names, with a
+semicolon between one directory and the next.  A font that is found is
+in the Font list, and goes into a PDF saved with it.  Fonts are shown
+on the graphics screens; the text screen has one size of letter.
+
+{b}Keys{p}
+
+F1 lists the keys.  F10 or ALT opens the menus.
+#examples
+To start a new document:
+
+    pmwrite
+
+To open a document on a graphics screen 800 pixels wide:
+
+    pmwrite letter.doc /g:800
+
+To print the words of a document:
+
+    pmwrite manual.pdf /x > prn
 #topic QBASIC|Qbasic|QBasic
 Starts QBasic, for writing and running programs in BASIC.
 
@@ -1134,6 +1316,89 @@ To make a 4 MB RAM disk:
 To make a 1 MB RAM disk whose root directory holds 128 files:
 
     device=c:\dos\ramdisk.sys 1024 512 128
+#topic SBLASTER.SYS|Sblaster.sys
+Loads the driver for a Sound Blaster, or a card that works like one,
+so that PM-DOS programs such as MPLAY can play sound.
+
+{b}Syntax{p}
+
+    DEVICE=[drive:][path]SBLASTER.SYS [Aport] [Iirq] [Ddma] [Hdma] [Pport]
+           [/NOPNP] [/NOFM] [/NOMIDI]
+
+{b}Parameters{p}
+
+[drive:][path]
+    Location of the SBLASTER.SYS file.
+
+Aport
+    The card's I/O port in hex, such as A220.
+
+Iirq
+    The card's interrupt line, such as I5.
+
+Ddma
+    The card's 8-bit DMA channel, 0 to 3.
+
+Hdma
+    The card's 16-bit DMA channel, 5 to 7, on a Sound Blaster 16.
+
+Pport
+    The port of the card's MIDI interface in hex, such as P330.
+
+These are written the way the BLASTER environment variable has them,
+so the values from a SET BLASTER= line can be copied as they are.
+/A:220, /I:5 and so on also work.
+
+{b}Switches{p}
+
+/NOPNP
+    Leaves a Plug and Play card that is switched off alone.
+
+/NOFM
+    Does not use the card's FM synthesizer.
+
+/NOMIDI
+    Does not use the card's MIDI interface.
+
+{b}Related Commands{p}
+
+[[MPLAY]] plays sound and music on the card.  For an Ensoniq AudioPCI
+or a Sound Blaster PCI, see [[ES1371.SYS]].
+#notes
+{b}Cards{p}
+
+The Sound Blaster 1.0, 1.5 and 2.0, the Sound Blaster Pro, the Sound
+Blaster 16, AWE32 and AWE64, and cards that work like them.  A Sound
+Blaster 16 plays 16-bit stereo at up to 44.1 kHz, a Sound Blaster Pro
+8-bit stereo at up to 22 kHz, and the older cards 8-bit mono.
+
+{b}Finding the card{p}
+
+Without A, the driver looks for the card at ports 220 to 280.  A Sound
+Blaster 16 tells the driver its interrupt line and DMA channels.  On
+the older cards the driver finds the line by trying the card, and uses
+DMA channel 1 unless D gives another.  A Plug and Play card that is
+switched off is switched on at port 220, MIDI port 330, a free line
+from 5, 7, 10, 9 and 11, and DMA channels 1 and 5.
+
+{b}DOS programs{p}
+
+The driver uses the card only while a PM-DOS program plays sound.  The
+rest of the time DOS programs and games use the card as before.
+
+{b}Memory{p}
+
+The driver takes about 80K, most of it a buffer below 16MB for the
+card.  While a program plays, the driver takes more memory for the
+sound waiting to be played: MPLAY asks for one second of sound.
+#examples
+To let the driver find the card:
+
+    device=c:\dos\sblaster.sys
+
+To give the card's settings, as SET BLASTER= has them:
+
+    device=c:\dos\sblaster.sys a220 i5 d1 h5 p330
 #topic SCANDISK|Scandisk|ScanDisk
 Checks a disk for errors and repairs them, and can test the surface.
 
@@ -1722,6 +1987,39 @@ Load the network card's driver on a [[DEVICE=]] line above this one.  To
 see the address, see [[IPCONFIG]].  To see whether another computer
 answers, see [[PING]].
 #notes
+{b}Network card drivers{p}
+
+Load the driver for your card on the line above TCPIP.SYS.  A driver
+that does not find its card says so and does not load.
+
+    NE2000.SYS    NE1000, NE2000 and their clones, RTL8019, RTL8029
+    WD80X3.SYS    Western Digital and SMC WD8003, WD8013
+    EL3C509.SYS   3Com EtherLink III (3C509)
+    EL3C515.SYS   3Com Fast EtherLink ISA (3C515)
+    EXP16.SYS     Intel EtherExpress 16
+    EL3C90X.SYS   3Com EtherLink XL (3C900, 3C905, 3C905B, 3C905C)
+    EEPRO100.SYS  Intel PRO/100, and the PRO/100 VE built into Intel
+                  chipsets
+    PCNET.SYS     AMD PCnet
+    RTL8139.SYS   Realtek RTL8139
+    TULIP.SYS     DEC 21x4x (Tulip) and its clones
+    RTL8169.SYS   Realtek RTL8169, RTL8111, RTL8168, RTL810x and the
+                  2.5 gigabit RTL8125
+    E1000.SYS     Intel PRO/1000, and the gigabit built into Intel
+                  chipsets up to the I219
+    IGB.SYS       Intel 82575, 82576, 82580, I350, I210, I211, and the
+                  2.5 gigabit I225 and I226
+    IXGBE.SYS     Intel 10 gigabit: 82598, 82599 (X520), X540, X550
+    VIRTIO.SYS    The virtio network of QEMU, KVM and VirtualBox
+    VMXNET3.SYS   VMware's vmxnet3 (Workstation, Player, Fusion, ESXi)
+
+Every card driver takes /POLL, which runs the card from the timer
+without its interrupt line.  The drivers for ISA cards also take
+/P:port in hex and /I:irq.  WD80X3.SYS also takes /M:segment, where
+the card's memory is, such as /M:D000; without it the driver uses the
+address the card is set to.  Any of the drivers can also carry
+[[NETBEUI.SYS]].
+
 {b}Getting an address{p}
 
 Without /IP=, TCPIP.SYS asks a DHCP server for an address and waits up

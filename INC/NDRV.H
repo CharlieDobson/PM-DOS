@@ -43,6 +43,7 @@ typedef struct {
 #define NDTF_REDIR   0x0004              /* CALL answers INC\REDIR.H */
 #define NDTF_DISK    0x0010              /* units are drive letters */
 #define NDTF_NETBIOS 0x0020              /* CALL answers INC\NETBIOS.H */
+#define NDTF_AUDIO   0x0040              /* CALL answers INC\AUDIO.H */
 #define NDT_DISKVER  2                   /* the version a disk driver's
                                             table carries */
 #define NDUF_MEMORY  0x01                /* a unit that is memory */

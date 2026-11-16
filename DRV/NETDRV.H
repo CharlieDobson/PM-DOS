@@ -4,8 +4,8 @@
  * NE2000.SYS was written out whole, by hand, as the first card driver
  * and the proof of the contract (INC\NIC.INC).  Every card after it is
  * written on this base instead: the parts that are the same for every
- * card - the receive queue, the counts, the four NIC_ functions, the
- * DEVICE= line, finding a card on the PCI bus, the port and memory
+ * card - the receive queue, the counts, the NIC_ functions (with the
+ * bindings NETBEUI.SYS rides on: NIC_BIND, NIC_RECVB), the DEVICE= line, finding a card on the PCI bus, the port and memory
  * instructions - are here and in NETCORE.C, and a card's own source
  * provides only what is particular to its chip.
  *
@@ -89,6 +89,7 @@ extern char net_name[32];
 extern u32  net_opt_port;       /* /P: in hex, 0 = none */
 extern u32  net_opt_mem;        /* /M: in hex, 0 = none */
 extern u8   net_opt_irq;        /* /I:, NIC_NOIRQ = none */
+extern u8   net_opt_poll;       /* /POLL */
 extern const char *net_line;    /* the whole DEVICE= line, for a card's own
                                    switches: set while card_find and the
                                    first card_setup run, 0 after */
@@ -110,27 +111,32 @@ void *net_alloc( u32 bytes );           /* the kernel's, never reclaimed */
 void  net_free( void *block );
 void  net_print( const char *text );
 u32   net_ticks( void );
+void  net_delay_us( u32 usec );         /* at least that long, by the PIT */
 
 /* the PCI bus, for a card that lives on it.  net_pci_find takes a list
    of (vendor, device) pairs ended by {0,0} and returns the first
    function that is one of them, with net_pciaddr set, or 0 */
 typedef struct { u16 vendor, device; } PCI_ID;
 u32  net_pci_find( const PCI_ID *ids, const PCI_ID **which );
-u32  net_pci_bar( u32 addr, int bar, int *is_io );   /* a base, 0 if none */
+u32  net_pci_bar( u32 addr, int bar, int *is_io );   /* a base, 0 if none or above 4GB */
 u32  net_pci_map( u32 phys, u32 bytes );             /* device memory, reachable; 0 if not */
 int  net_pci_irqline( u32 addr );                    /* a line, or NIC_NOIRQ */
 void net_pci_enable( u32 addr );                     /* I/O, memory, bus master on */
 u32  net_pci_cfg_read( u32 addr, int reg, int bytes );
 void net_pci_cfg_write( u32 addr, int reg, int bytes, u32 value );
 
-/* for an ISA card that finds its line by making the card interrupt:
-   hook every line it could be on, the caller makes it interrupt, and
-   the one the handler was called on is kept.  net_irq_probe_begin
-   returns the count hooked; the card sets net_probe_hit from its ISR
-   (net_probing is nonzero meanwhile); net_irq_probe_end keeps the hit
-   line hooked and drops the others.  Lines are the usual NE2000 set */
+/* for an ISA card that finds its line by making the card interrupt, in
+   card_find while net_line is set (interrupts are on then, and only
+   then): set net_probe_isr to a function that answers 1 - and quiets
+   the card - when the card is interrupting, call net_irq_probe_begin
+   (every line it could be on is hooked), make the card interrupt, wait
+   a few ticks for net_probe_hit, and call net_irq_probe_end, which
+   keeps the line that was hit hooked, drops the others and sets
+   net_irq.  NETCORE then runs the card on that line, unless /I: or
+   /POLL says otherwise.  Lines are the usual NE2000 set */
 extern volatile u8 net_probing;
 extern volatile u8 net_probe_hit;
+extern int ( *net_probe_isr )( void );
 void net_irq_probe_begin( void );
 void net_irq_probe_end( void );
 

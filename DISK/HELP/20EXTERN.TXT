@@ -1,65 +1,5 @@
-#! 20EXTERN.TXT - the external commands, ACROREAD to FTP.  Each
+#! 20EXTERN.TXT - the external commands, ANSI.SYS to FTP.  Each
 #! topic's switches are the ones the program's own /? lists.
-#topic ACROREAD|Acroread
-Shows a PDF document on the screen, a page at a time, as a picture or
-as its text.
-
-{b}Syntax{p}
-
-    ACROREAD [drive:][path]filename [/T | /G] [/P:n] [/X]
-
-{b}Parameters{p}
-
-[drive:][path]filename
-    The document.  .PDF is added to a name that has no extension.
-
-{b}Switches{p}
-
-/T
-    Starts with the text of the page, on the text screen, instead of
-    the page drawn.
-
-/G
-    Draws the pages in sixteen greys on the standard VGA screen,
-    without asking the video BIOS for a better mode.
-
-/P:n
-    Starts at page n.
-
-/X
-    Writes the document's text to standard output, a form feed between
-    pages, and does not show a screen at all.
-
-{b}Related Commands{p}
-
-To read a plain text file, see [[EDIT]] or [[TYPE]].
-#notes
-{b}The screens{p}
-
-A page is drawn 640 by 480: in colour when the video BIOS has VBE 2.0
-or later, in sixteen greys on a plain VGA.  The menu bar has File,
-View, Page, Search and Help; F1 lists the keys.  PAGE DOWN and PAGE UP
-turn the pages, the arrow keys move around a page, and the mouse drags
-it or works the scroll bars.
-
-{b}What it reads{p}
-
-Any PDF from version 1.0 to 2.0, including files saved many times
-over, files with damaged cross-reference tables, and files encrypted
-with the standard handler.  Pictures and fonts are drawn as far as
-the program knows how; what it leaves out is left blank.
-#examples
-To read a manual:
-
-    acroread manual.pdf
-
-To start at page 12 with the text view:
-
-    acroread manual /t /p:12
-
-To print the words of a document:
-
-    acroread manual /x > prn
 #topic ANSI.SYS|Ansi.sys
 Lets programs move the cursor, clear the screen, change colours and
 give keys new meanings, by writing escape sequences to the screen.
@@ -1025,6 +965,105 @@ To let Plug and Play choose the port and line:
 To use a card set to port 280 and line 3:
 
     device=c:\dos\el3c515.sys /p:280 /i:3
+#topic ES1371.SYS|Es1371.sys
+Loads the driver for an Ensoniq AudioPCI or a Creative Sound Blaster
+PCI card, so that PM-DOS programs such as MPLAY can play sound.
+
+{b}Syntax{p}
+
+    DEVICE=[drive:][path]ES1371.SYS
+
+{b}Parameters{p}
+
+[drive:][path]
+    Location of the ES1371.SYS file.
+
+{b}Related Commands{p}
+
+[[MPLAY]] plays sound and music on the card.  For an ISA Sound Blaster,
+see [[SBLASTER.SYS]].
+#notes
+{b}Cards{p}
+
+The Ensoniq ES1370 (AudioPCI), ES1371 and ES1373, the Creative Sound
+Blaster PCI64 and PCI128, and the Creative CT5880 and EV1938.  The
+driver finds the card on the PCI bus by itself; the card has no
+settings.  The card plays 16-bit stereo at any rate up to 48 kHz.
+
+{b}MIDI music{p}
+
+These cards have no FM synthesizer, so MPLAY plays MIDI music with its
+own synthesizer, or sends the music to the card's MIDI interface when
+Sound on the Options menu says so.
+
+{b}Memory{p}
+
+The driver takes about 80K.  While a program plays, the driver takes
+more memory for the sound waiting to be played.
+#examples
+    device=c:\dos\es1371.sys
+#topic EXP16.SYS|Exp16.sys
+Loads the driver for an Intel EtherExpress 16 network card.
+
+{b}Syntax{p}
+
+    DEVICE=[drive:][path]EXP16.SYS [/P:port] [/I:irq] [/POLL]
+           [/TP | /BNC | /AUI] [/8]
+
+{b}Parameters{p}
+
+[drive:][path]
+    Location of the EXP16.SYS file.
+
+{b}Switches{p}
+
+/P:port
+    The card's I/O port in hex, such as /P:300.  Without /P:, the
+    driver looks for the card at 200h to 270h and 300h to 370h.
+
+/I:irq
+    The card's interrupt line: 3, 4, 5, 9, 10 or 11.  Without /I:, the
+    driver uses the line the card's setup names.
+
+/POLL
+    Runs the card without an interrupt line, checking it on the timer.
+
+/TP
+    Uses the twisted-pair connector.
+
+/BNC
+    Uses the BNC (thin coax) connector.
+
+/AUI
+    Uses the AUI connector.
+
+/8
+    Runs the card 8 bits at a time, as in an 8-bit slot.
+
+{b}Related Commands{p}
+
+Load [[TCPIP.SYS]] on a [[DEVICE=]] line below this one.
+#notes
+{b}Choosing the connector{p}
+
+Without /TP, /BNC or /AUI, the driver uses the connector the card's
+setup names.  The card's setup is changed with Intel's SOFTSET
+program.
+
+{b}Other ISA cards{p}
+
+Looking for the card reads one port at each place it could be.  On a
+machine with another ISA network card, give /P: so that the driver
+looks only where the EtherExpress is.
+#examples
+To let the driver find the card:
+
+    device=c:\dos\exp16.sys
+    device=c:\dos\tcpip.sys
+
+To use a card at port 300, line 10, on its BNC connector:
+
+    device=c:\dos\exp16.sys /p:300 /i:10 /bnc
 #topic FC|Fc
 Compares two files, or two sets of files, and shows where they differ.
 

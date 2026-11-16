@@ -54,6 +54,72 @@ irq&n:
 ;=====================================================================
 exc_common:
         cli
+
+        ; A FAULT THAT WAS ASKED FOR.  The monitor runs RDMSR, WRMSR and
+        ; a read of a test register for a box (VM86.INC, vsr_emul), and
+        ; whether this processor has the instruction, or the register,
+        ; is something only the processor says - by faulting, here, in
+        ; ring 0.  exc_guard is where to go when it does, with ESP as
+        ; exc_gesp kept it and EAX = the vector.  One instruction is ever
+        ; run under it, with interrupts off, and only the two answers
+        ; that instruction can give are taken: anything else is the
+        ; fault it looks like.
+        ;
+        ; This is before the segment registers are kept, below, because
+        ; a DPMI client's are still in those four words when its
+        ; instruction is the one being run for it (pm3_done).
+        cmp     dword ptr ss:[exc_guard],0
+        je      short exc_notguard
+        test    byte ptr [esp+0Ch],3
+        jnz     short exc_notguard
+        test    dword ptr [esp+10h],EFL_VM
+        jnz     short exc_notguard
+        cmp     dword ptr [esp],13
+        je      short exc_guarded
+        cmp     dword ptr [esp],6
+        jne     short exc_notguard
+exc_guarded:
+        mov     eax,[esp]
+        mov     esp,dword ptr ss:[exc_gesp]
+        push    dword ptr ss:[exc_guard]
+        mov     dword ptr ss:[exc_guard],0
+        ret
+exc_notguard:
+
+        ; A BOX'S BREAKPOINT, GONE OFF UNDER THE MONITOR.  While a box
+        ; runs the debug registers are its own (vbp_load), and a data
+        ; breakpoint does not care who makes the access: the monitor
+        ; writes the box's stack at every INT it reflects, and the
+        ; keyboard interrupt writes its BIOS data.  That is a debug
+        ; exception in ring 0, and a trap - the access is done - so it
+        ; is noted for the box, which is given its INT 1 on the way back
+        ; in (v86_ckkbd), and the kernel goes on.  A single step is not
+        ; this, and neither is anything while the registers are the
+        ; kernel's own.
+        cmp     dword ptr [esp],1
+        jne     short exc_notbox1
+        cmp     byte ptr ss:[vbp_in],0
+        je      short exc_notbox1
+        test    byte ptr [esp+0Ch],3
+        jnz     short exc_notbox1
+        test    dword ptr [esp+10h],EFL_VM
+        jnz     short exc_notbox1
+        push    eax
+        mov     eax,dr6
+        test    al,0Fh
+        jz      short exc_notbox0
+        and     eax,0Fh
+        or      dword ptr ss:[vbp_6],eax
+        mov     eax,dr6
+        and     al,0F0h
+        mov     dr6,eax
+        mov     byte ptr ss:[vbp_owed],1
+        pop     eax
+        add     esp,8                   ; the vector and the error code
+        iretd
+exc_notbox0:
+        pop     eax
+exc_notbox1:
 IFDEF HANG_E9
         ; EVERY EXCEPTION BUT THE TWO A BOX TAKES ALL DAY, said on E9h
         ; before anything below can take a second one: registers, the
@@ -314,6 +380,9 @@ exc_nodb:
                                         ; going round again would only do
                                         ; it faster
         mov     dword ptr ds:[exc_nested],1
+        call    vbp_out                 ; whatever a box had in the debug
+        call    vfp_out                 ; registers and in CR0 does not
+        call    fpu_reclaim             ; outlive it (VM86.INC, FPU.INC)
         mov     esi,OFFSET msgRecover
         call    con_str
         call    dword ptr ds:[exc_hook] ; does not return
@@ -344,6 +413,9 @@ exc_clearnest:
 
 exc_hook        dd      0
 exc_nested      dd      0
+exc_guard       dd      0               ; where a fault that was asked for
+                                        ; goes; 0 when none is
+exc_gesp        dd      0               ; ...and the ESP it goes there with
 
 IFDEF V86_WATCH
 V86_WATCHDATA   EQU     1

@@ -153,6 +153,9 @@ NDTF_NETBIOS    EQU     0020h           ; NetBIOS over NetBEUI (DRV\NETBEUI):
                                         ; CALL answers the NB_* functions in
                                         ; INC\NETBIOS.H.  A redirector reaches
                                         ; it through NDS_FLAGCALL
+NDTF_AUDIO      EQU     0040h           ; a sound card (DRV\SBLASTER, DRV\ES1371):
+                                        ; CALL answers the AUD_* functions in
+                                        ; INC\AUDIO.H
 
 ;---------------------------------------------------------------------
 ; ONE UNIT of a disk driver - one drive letter - as INIT describes it.

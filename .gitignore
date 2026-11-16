@@ -10,3 +10,9 @@ IMAGES/
 *.err
 *.res
 BASELINE/
+# FFmpeg's WMA tables (LGPL): kept out of the MIT tree, not built for 0.71
+CMD/MPLAY/wmatab.c
+# MPLAY's WMA decoder, written from FFmpeg's account of the format: not committed for 0.71
+CMD/MPLAY/wma.c
+CMD/MPLAY/wma.h
+CMD/MPLAY/asf.c

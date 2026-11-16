@@ -61,8 +61,14 @@ ENDIF
         stc
         ret
 
+;--- EAX bit 0 is "there is a bus", as it always was, and bit 1 is
+;--- "reached through mechanism 2": 1 or 3
 bsv_here:
-        movzx   eax,byte ptr [pci_ok]
+        movzx   eax,byte ptr [pci_ok]   ; 0, 1 or 2
+        cmp     al,2
+        jne     bsh_out
+        mov     al,3
+bsh_out:
         mov     ebx,dword ptr [pci_lastbus]
         mov     ecx,dword ptr [pci_count]
         mov     edx,dword ptr [irq_elcr]

@@ -42,7 +42,7 @@ Key features:
 {o} USB keyboards, mice and flash drives.
 {o} Integrated ISA Plug and Play configuration manager.
 {o} Delete protection support.
-{o} Native SCANDISK, DEFRAG, DOSSHELL, EDIT, ACROREAD and HELP.
+{o} Native SCANDISK, DEFRAG, DOSSHELL, EDIT, PMWRITE and HELP.
 {o} ACPI-aware SHUTDOWN.EXE, which flushes the cache and turns off the machine.
 {o} The PM-DOS shell, CMD.EXE, with DOSKEY features built in.
 

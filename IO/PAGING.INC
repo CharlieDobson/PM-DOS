@@ -11,7 +11,9 @@
 ; Except for sixteen entries.  THE POINT OF THIS FILE IS THE A20 GATE.
 ; (And, since v0.38, for whatever upper memory has been backed with:
 ; see pg_map at the foot of this file.  Both exceptions are below 1MB
-; and neither is ever put on the bus.)
+; and neither is ever put on the bus.  The top 4MB is a third, made
+; only when a driver asks for upper memory that has been covered: the
+; first megabyte again, as the bus has it - see pg_mapphys.)
 ;
 ; Where everything goes is the identity; WHO MAY WRITE is not.  The
 ; kernel's own pages are read-only to ring 3 - see pg_protect - and
@@ -613,6 +615,16 @@ pgu_tno:
 ; succeeds without changing anything.  Nothing is ever unmapped: an
 ; address that was reachable a moment ago going absent is a fault in
 ; whoever else was using it, and there is no count of who is.
+;
+; EXCEPT UPPER MEMORY THAT HAS BEEN COVERED.  A page of C0000h-EFFFFh
+; that a UMB or the EMS frame has been put over is RAM at that address
+; now, and the device memory that may also be there - a WD8013's
+; window, which its driver switches on only after the UMB probe found
+; the address empty - is answered with PG_LOWALIAS + the address, the
+; same physical page reached from the top of the 4GB (pgd_alias).  The
+; identity is still the answer for a page nothing has covered.  The
+; top directory entry is then the alias's, and a request reaching into
+; it is refused rather than given the first megabyte.
 ;=====================================================================
 pg_mapphys:
         push    ebx
@@ -624,10 +636,26 @@ pg_mapphys:
         lea     edi,[ebx+ecx-1]                 ; the last byte of it
         cmp     edi,ebx
         jb      pgd_no                          ; ...which is past 4GB
+        cmp     ebx,UMB_SCAN_LO                 ; upper memory, all of it?
+        jb      pgd_high
+        cmp     edi,UMB_SCAN_HI
+        jae     pgd_high
+        call    pgd_covered
+        jnc     pgd_done                        ; nothing over it: itself
+        call    pgd_alias
+        jc      pgd_no
+        lea     eax,[ebx + PG_LOWALIAS]
+        jmp     short pgd_out
+pgd_high:
         mov     esi,ebx
         shr     esi,22
         shr     edi,22
 pgd_one:
+        cmp     esi,PG_ALIASDIR
+        jne     pgd_test
+        cmp     byte ptr ds:[pg_aliased],0
+        jne     pgd_no                          ; the alias's, not itself
+pgd_test:
         test    dword ptr [PG_DIR + esi*4],1
         jnz     pgd_next
         call    pgd_add
@@ -640,6 +668,7 @@ pgd_next:
         mov     cr3,eax
 pgd_done:
         mov     eax,ebx
+pgd_out:
         pop     edi
         pop     esi
         pop     ecx
@@ -706,6 +735,88 @@ pgd_none:
         ret
 
 ;---------------------------------------------------------------------
+; pgd_covered - EBX = the first byte, EDI = the last, both in the first
+;               4MB.  CF if a page of them points somewhere other than
+;               at itself: a UMB or the EMS frame is over it.
+;---------------------------------------------------------------------
+pgd_covered:
+        push    eax
+        push    edx
+        mov     edx,ebx
+        and     edx,NOT 0FFFh
+pgv_page:
+        mov     eax,edx
+        shr     eax,12
+        mov     eax,dword ptr [PG_TABS + eax*4]
+        and     eax,NOT 0FFFh
+        cmp     eax,edx
+        jne     pgv_yes
+        add     edx,1000h
+        cmp     edx,edi
+        jbe     pgv_page
+        pop     edx
+        pop     eax
+        clc
+        ret
+pgv_yes:
+        pop     edx
+        pop     eax
+        stc
+        ret
+
+;---------------------------------------------------------------------
+; pgd_alias - make PG_LOWALIAS, once: a table from the pool whose first
+;             256 entries are the first megabyte, uncached, and the
+;             rest absent, in the last directory entry.  CF if that
+;             entry is mapped as itself already or the pool is empty.
+;---------------------------------------------------------------------
+pgd_alias:
+        cmp     byte ptr ds:[pg_aliased],0
+        jne     pgl_ok
+        test    dword ptr ds:[PG_ALIASPDE],1
+        jnz     pgl_fail
+        push    eax
+        mov     eax,dword ptr ds:[pg_devused]
+        cmp     eax,PG_DEVTAB
+        jae     pgl_none
+        inc     dword ptr ds:[pg_devused]
+        shl     eax,12
+        add     eax,PG_DEVTABS
+        push    ecx
+        push    edi
+        pushfd
+        cld
+        mov     edi,eax
+        push    eax
+        mov     eax,PG_PRESENT OR PG_NOCACHE    ; physical 0
+        mov     ecx,256
+pgl_fill:
+        stosd
+        add     eax,1000h
+        loop    pgl_fill
+        xor     eax,eax
+        mov     ecx,1024 - 256
+        rep     stosd
+        pop     eax                             ; the table
+        or      eax,PG_PRESENT
+        mov     dword ptr ds:[PG_ALIASPDE],eax
+        mov     eax,cr3
+        mov     cr3,eax
+        popfd
+        pop     edi
+        pop     ecx
+        pop     eax
+        mov     byte ptr ds:[pg_aliased],1
+pgl_ok:
+        clc
+        ret
+pgl_none:
+        pop     eax
+pgl_fail:
+        stc
+        ret
+
+;---------------------------------------------------------------------
 ; pg_pseinit - has this processor 4MB pages?  Called from pg_init.
 ;
 ; CPUID says, and whether there is a CPUID is said by bit 21 of the
@@ -761,5 +872,6 @@ pgc_out:
         ret
 
 pg_pse          db      0                       ; 4MB pages are there to use
-                db      0,0,0
+pg_aliased      db      0                       ; PG_LOWALIAS is made
+                db      0,0
 pg_devused      dd      0                       ; tables taken from the pool

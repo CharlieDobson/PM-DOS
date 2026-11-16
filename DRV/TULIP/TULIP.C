@@ -244,10 +244,14 @@ int card_setup( void )
         for ( n = 0; n < SPIN_TX; n++ ) {
             if ( !( txr[0 * 4 + 0] & D_OWN ) ) break;
         }
-        /* leave descriptor 0 free and the ring ready for real frames */
+        /* leave descriptor 0 free, and go on from descriptor 1: the chip
+           took 0 for the setup frame and looks at 1 next.  Going back
+           to 0 put the driver one behind the chip - the first frame sat
+           in 0 until the chip came round the ring and then went out late,
+           which was QEMU's "two pings of three" (2026-11-14) */
         txr[0 * 4 + 0] = 0;
         txr[0 * 4 + 1] = ( txr[0 * 4 + 1] & D_TER );
-        tx_cur = 0;
+        tx_cur = 1;
     }
     return 0;
 }

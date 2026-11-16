@@ -1,6 +1,6 @@
 PM-DOS - Protected Mode DOS, a 32-bit DOS kernel
 ================================================
-Started 2026-08-06.  Version 0.69.
+Started 2026-08-06.  Version 0.71.
 
 The VDM - running 16-bit DOS programs
 -------------------------------------
@@ -31891,3 +31891,1176 @@ PROGRAMS
 NOT IN IT.  Speed of 16-bit programs (IOPL 0: every CLI, STI, PUSHF,
 POPF, INT and IRET traps) - analysed, not changed.  A box the kernel
 ends still leaves its hardware vectors hooked.
+
+
+CHKCPU WAS ENDED AT ITS FIRST LOOK AT CR0 (2026-11-13)
+---------------------------------------------------------------------
+
+Charlie: "Running a DOS utility called CHKCPU crashes when run under
+PM-DOS."  CHKCPU 1.27.1 (Jan Steunebrink), in QEMU, after its banner:
+
+    VDM: the guest faulted, vector 0D at 0719:14B6 cr2 00000000
+      code 0F 20 C0 66 A9 00
+
+1. A BOX COULD NOT READ A CONTROL REGISTER (IO\VM86.INC, vsr_emul).
+   Defect: MOV EAX,CR0 is privileged, so in a box and in a DPMI client
+   it is a #GP, and the monitor answered INT, IRET, CLI, STI, PUSHF,
+   POPF, HLT and port I/O and nothing that begins 0Fh.  EMM386, QEMM
+   and Windows answer it, so DOS programs do not ask first: CHKCPU
+   looks at SMSW before its MSR and test-register work, then reads CR0
+   for CD and NW unguarded - as a 16-bit DPMI client when it finds a
+   host, in the box with /R.  Effect: the program ended on every
+   machine, in both modes.  Fix: both fault paths (vf_op, pm3_op) hand
+   a 0Fh opcode to vsr_emul.
+     - MOV r32,CRn: CR0, CR2 and CR3 as they are, and CR4 where CPUID
+       names a feature that CR4 switches.  With X87EMU.SYS loaded a
+       box is shown the BIOS's EM, not the emulator's.
+     - MOV CR0,r32: CD, NW and ET are the guest's to change; every
+       other bit stays as it is, with no error.  NW with CD clear (a
+       #GP on Intel, a cache mode on Cyrix) is left alone unless it is
+       in force already.
+     - MOV CR4,r32: taken, nothing changed.  MOV CR2,r32 and MOV
+       CR3,r32: still the fault that ends the program.
+     - CR1, CR5 to CR7, and CR4 where there is none: exception 6 to
+       the guest, as in real mode.
+     - CLTS: nothing to do.  WBINVD: run.  INVD: run as WBINVD.  On a
+       386 the last two are exception 6.
+
+REVIEW (defect > effect > fix).  Nothing found to fix.  vsr_emul reads
+at most two bytes after the 0Fh, which the processor had fetched in
+order to raise the fault.  The general register is found by its number
+in the PUSHAD block below the frame, and ESP in the frame itself; the
+box's frame and ring 3's have ESP at the same offset.  CR0 is written
+as it stands with at most three bits changed, the way fpu_lend writes
+it.  WBINVD and MOV EAX,CR4 are executed only where the processor has
+them (FPC_486, fpu_feat).  No buffer, no allocation.
+
+TESTS.  CHKCPU /V and CHKCPU /R /V run to the end, and CRTEST.COM (a
+scratch test: a line for each rule above, and CRTEST 3 for the CR3
+fault) says ok to each, on QEMU as a Pentium II and a 486; DOSBox-X as
+a 386, 486old, 486 and Pentium; 86Box's VLI-486SV2G with a Cyrix 5x86
+("Cyrix 5x86 ... Enabled in Write-Back mode"); and DOSBox-X with BUILD
+x87emu's PMIO (CR0 reads 80000011, EM clear, X87EMU in MEM /D).  Old
+PMIO on the same disks: the fault above.  RUNTESTS on all seven rows,
+old PMIO and new on the same disk: all 707 answers the same.  Against
+the baselines CACHETST's "a write is owed" reads 4 for 5 on six rows
+with both - the flip seen before, not recorded.  PMIO.SYS 87,460 ->
+87,852.
+
+DELIVERED: BIN\PMIO.SYS, IMAGES\HD16.IMG and the VM's HD16.IMG
+(FATREPL, every other file read back unchanged; backups scratchpad
+3b999c1a bak).  NOT DELIVERED: HD32, the floppies and the Setup
+images, which want a build - PMIO.SYS needs one more 512-byte cluster
+on them.
+
+NOT DONE.  RDMSR, WRMSR, LMSW and the debug and test registers still
+end a box.  CRTEST is not in BIN\TESTS: a file added there moves RMFIND
+and RMTEST on every row.
+
+
+PMWRITE IN PLACE OF ACROREAD (2026-11-13)
+
+Charlie asked for ACROREAD to go and a word processor to take its
+place: text mode and graphics at 640x480, 800x600, 1024x768 and
+1280x1024, switched while it runs; the look of Word; every PDF
+version, every Word format from Word for DOS on, WordStar,
+WordPerfect, Ami Pro, Lotus Word Pro and OpenDocument, read and
+written; a version in Help > About, starting at 1.0.
+
+WHAT IT IS.  CMD\PMWRITE, 604,688 bytes, C with no library and no
+floating point.
+  - WDOC.C is the document: stories (body, header, footer, notes) of
+    paragraphs, text as UTF-16 with a number for each character's
+    look, lengths in twips, tables as cell-end and row-end marks on
+    paragraphs.  WEDIT.C changes it through six undoable steps
+    (insert, delete, split, join, looks, paragraph properties), 200
+    actions deep.  LAY.C lays it out ONCE for every use: the text
+    screen (a cell is 144 by 240 twips), type on a graphics screen,
+    the PDF writer and printing.  EDIT.C is the caret, the selection
+    and the commands.
+  - Every format is one F_*.C with one FORMAT in it (FMT.H): detect,
+    load a whole file from memory, save to an OUT.  FMTTAB.C lists
+    them; a file is given to the format surest of it.
+  - DISP.H / UI.H (SCR.C, GFX.C, UI.C, FBOX.C) are the screen: the
+    same cells on a text screen and a graphics one, pixel panes for
+    the page, the toolbar and the ruler, menus and dialogs from
+    tables.  Graphics are an 8-bit picture put out through VBE 2.0
+    (8, 15, 16, 24 or 32 bits) or the VGA's planes (12h, 6Ah).
+  - PDF\ is ACROREAD's code, made able to open one file after another
+    (PDFVIEW.C).  TF.C draws type with its stroke face and the
+    standard fonts' widths.  PDFW.C writes PDF 1.0 to 2.0.
+  - Formats: text, RTF, .docx, .odt, .doc of Word 6.0/95 and 97-2003
+    (written as 97-2003), Word for DOS, Windows Write, WordStar (4.0
+    and 7.0 written), WordPerfect 4.2/5.x/6.x (5.1 written), Ami Pro,
+    PDF.  READ ONLY: Word for Windows 1.x/2.x and Lotus Word Pro 97
+    and Millennium - nothing documents enough of either to write a
+    file that could be shown to open.  Word Pro 96 files are not read.
+
+THE KERNEL HAD A LIMIT.  EXEC gives a program a slot of PROG_SIZE
+(512K) and exec_load answered ERR_NOMEM when image + BSS + stack was
+more - which the shell shows as "Bad command or file name".  The heap
+could always grow (slot_grow); the image could not.  slot_fit
+(RING3.INC) stretches the slot in place, to what the header asks and
+64K of heap, before the image is read; exec_load calls it (xl_fits).
+PMDOS.SYS 191,582 -> 191,675.
+
+REVIEW (defect > effect > fix), the lead's own files; each format's
+is in its builder's notes.
+  - FILES.C: a save under the name PMWRITE.$$$ deleted the file just
+    written > refused.  A failed rename said nothing of where the
+    text was > a second box names the file.  The printing's row was
+    written at a column below zero for text left of the paper >
+    skipped.
+  - OUT.C: out_fmt wrote a line over 511 bytes cut short, silently >
+    made again in a heap block, or the output fails.
+  - F_TXT.C: MS-DOS text was read in the country's code page and
+    written in 437 > written as read.
+  - WEDIT.C: undoing a delete across a table cell's end left the
+    cell's end out > the end is taken off by a recorded step first.
+  - EDIT.C: a selection over cell ends joined the cells > the cells
+    are emptied and kept.  Replace All could loop when a change had
+    no memory > it stops.
+  - LAY.C: the page list was read at index -1 after a failed first
+    page > guarded.  A second layout of the same story (PDF export,
+    printing) left the screen's without lines > every taking is
+    counted and a layout made at another count lays out again.
+  - VIEW.C: a tall line half scrolled off was drawn a row above the
+    document, over the menu > skipped.  A click left of the text went
+    to the line's end > negative lengths handled.
+  - MAIN.C: after a document closed the PDF code could show another
+    file's pages under the next document's name > it forgets which
+    it has open at every close.
+  - DLGS.C: the Tabs box held 14 of 40 stops > room for all.  Summary
+    Info rewrote untouched fields through the code page > only
+    changed fields are written.
+  - WDOC.C: a file's page size and margins were taken as they came >
+    kept only when a page of 1 to 22 inches with an inch for text.
+  - slot_fit: nothing found.  It changes the arena block, the slot's
+    size and the descriptors, before anything is in the slot; the
+    base does not move.
+
+TESTS.  On PM-DOS in DOSBox-X by key files (MKPWKEYS.PL): the text
+screen and all four graphics sizes changed in one run; every format
+opened, and saved where it has a writer; a 16 by 200 table; a line
+of 20,000 characters with no space; 4,001 replacements undone in one
+step; a 611-page Word file on 8 MB ("There is not enough memory to
+open it.", and the program goes on).  On 86Box with a CL-GD5436 (VBE
+1.2): text, 640x480 and 800x600 in sixteen colors, by its real
+screen.  Word 16, by COM, opens the .docx, .odt, .doc, .rtf and
+WordPerfect files PMWRITE wrote on PM-DOS, with the same text and
+counts.  Host tests in CMD\PMWRITE (MKETEST, MKLTEST, MKPTEST): all
+pass, heap 0 at the end.  The kernel: MEM, MEM /D, CHKDSK, ATTRIB,
+TREE, FIND, CMD /C MEM /C and COMMAND /C VER give the same bytes
+under the old PMDOS.SYS and the new.  RUNTESTS was not run.
+
+DELIVERED: BIN\PMWRITE.EXE, BIN\PMDOS.SYS, DISK\HELP.HLP (a PMWRITE
+topic for the ACROREAD one), IMAGES\HD16.IMG and the VM's HD16.IMG
+(FATREPL: kernel, PMWRITE.EXE, HELP.HLP; ACROREAD.EXE deleted; each
+read back or booted).  BUILD.CMD builds PMWRITE where it built
+ACROREAD, takes ACROREAD.EXE off PMDOS2.IMG and makes PMDOS3.IMG for
+PMWRITE.EXE alone, which fits on neither floppy; MKHD.CMD and
+SETUP.LST name PMWRITE.EXE.  CMD\ACROREAD and BIN\ACROREAD.EXE are
+gone.  NOT DELIVERED: the floppies, HD32, MULTI and the Setup images,
+which want a build.
+
+NOT DONE.  Fonts from TrueType files; Greek, Cyrillic and Latin
+Extended-A in the built-in face (boxes on a graphics screen); table
+rows deleted or columns changed; printing other than as text;
+floating pictures and text boxes of Word files (their text is lost
+from .doc and .rtf, kept from .docx); a writer for Word for Windows
+2 and for Word Pro.
+
+
+PMWRITE: FONTS, THREE ALPHABETS, TABLE ROWS AND COLUMNS (2026-11-14)
+
+Charlie, of what the entry above lists as not done: "Can we address
+the other limits? (i.e. TrueType fonts, Greek, Cyrillic, and Latin
+Extended A)  Can we fix table rows cannot be deleted and columns
+cannot be changed?  I don't really care about printing."  And of the
+diskettes: "PMDOS3.IMG is fine.  Please make sure to optimize diskette
+space by moving around applications if necessary."  The version stays
+1.0: the program has not been released.
+
+THE BUILT-IN FACE (PDF\SFONT.C, TF.C).  A hundred and one more
+drawings and eight more accents, in a list of their own so that no
+number ACROREAD's pages depend on moves: Latin Extended-A (and S and T
+with a comma below), Greek with its accented letters, Cyrillic 0400h
+to 045Fh and the two Ghe with upturn.  Most of the three alphabets is
+not drawn at all - an A is an A in each - and three tables say, for
+each character, which drawing it is and which accent goes on it.  An
+accent over a small i takes the dot's place.  A width is the width of
+the Latin letter the drawing is nearest to, in whichever of Times,
+Helvetica and Courier the face is spaced as.  The Symbol face draws
+its Greek now; they were boxes of the right width.
+
+IN A PDF (PDFW.C).  The thirteen fonts every reader has are Latin
+ones.  A character outside Windows' code page 1252 that the face
+draws goes into the file as its drawing: a Type 3 font of the pen's
+paths, stroked, 255 characters to a font, with a ToUnicode map so
+that the text is still found and copied.  Windows' own PDF engine
+(Windows.Data.Pdf, from PowerShell, no window) draws them, and
+PMWRITE's /X reads the text back.
+
+TRUETYPE FILES (TF.C, PDF\TTF.C, PDFW.C, MAIN.C).  *.TTF files are
+looked for once: in FONTS beside PMWRITE.EXE, in the directories of a
+"Fonts=dir;dir" line in PMWRITE.INI, and in \WINDOWS\SYSTEM and
+\WINDOWS\FONTS on C: and the program's drive; 256 files at most.  A
+document font whose name is a file's family is drawn and measured
+from the file - widths from hmtx, line heights as Windows spaces them
+- and a font with no file is the built-in face as before.  A style
+the family has no file for is made: sloped, or drawn twice for bold.
+A character the file has not got is the built-in face's.  A file is
+read whole when its face is first wanted and given back when memory
+is short.  On a sixteen-color screen the thin strokes of small type
+are kept (tf_screen), since the outlines are not hinted.  Save As PDF
+1.3 and later puts the file in as a subset (Type 0, Identity-H,
+FontFile2 with the glyphs used) unless its maker forbids it (OS/2
+fsType); earlier versions name the standard fonts as before.  No
+.TTC, no OpenType with CFF outlines, no kerning, no hinting.  No font
+ships with PM-DOS: the tests used Windows 3.1's and today's Arial,
+Times New Roman and Courier New, which went on scratch disks only.
+
+TABLES (WEDIT.C, EDIT.C, CMDS.C, DLGS.C, LAY.C).  The Table menu has
+Insert Row Above and Below, Insert Column Left and Right, Delete Row,
+Delete Column and Column Width.  A table is paragraphs with marks, so
+each of these is made of the six recorded changes everything else is
+and Undo takes one back whole.  A new column is as wide as the
+caret's, and every column is narrowed when the table would pass the
+text's width; a row of 32 cells takes no more, and a box says so.
+The commands leave alone a table whose rows are not as they expect
+(a file's may have more cell ends than edges).  LAY.C: a column too
+narrow for a line of text is as wide as the narrowest line and the
+columns after it start further right; until now the text of a narrow
+column was laid over the next one.
+
+THE DISKETTES (BUILD.CMD).  PMDOS3.IMG is the applications disk:
+PMWRITE.EXE, XARC.EXE - which was on no diskette before - and
+TREEVIEW.EXE, which left the help disk.  The boot disk is as it was,
+with about 200K free for the kernel.  The network (740K) is still on
+no diskette.
+
+REVIEW (defect > effect > fix; all fixed):
+  - SFONT.C: the string that gives each new drawing its width had one
+    letter too many, and C lets a string fill its array exactly > every
+    Greek and Cyrillic letter from tau on was as wide as its
+    neighbour's Latin letter > counted against the names by script.
+  - ETEST.C: two results were kept past the end of an array of eight
+    > the test wrote on its own stack > ten.
+  - PDFW.C: a file font's table was read before testing that the text
+    was in a file's font > a NULL read on every built-in run > tested
+    first.
+  - TF.C: memory was asked for after a font file was read, and asking
+    can give the file back > its bytes read after they were freed >
+    memory first; while text is drawn or a subset is made the files
+    are held.
+  - TTF.C: a subset's size was summed from a file's own offsets >
+    overlapping entries could add up past 32 bits: a short block,
+    written past > the sum is held to what the glyphs can be, each
+    copy to the room left.
+  - PDFW.C: a file changed between two readings can give a glyph
+    number past the first count > a write past the font's table >
+    such a number is dropped.
+  - TF.C: one file more than 256 was looked at in each directory >
+    a longer list than promised > the count is tested first.
+  - MAIN.C: PMWRITE.INI was written back without its Fonts= line >
+    the user's line lost at the first exit > kept.
+
+TESTS.  ETEST: 39 more checks of rows and columns with Undo and Redo,
+heap 0.  On PM-DOS in DOSBox-X: the Table menu's seven commands and
+their Undo; a 16 by 200 table taken to 32 columns, the box, a column
+and a row out, all undone; the three alphabets on a 640x480 screen
+and in a PDF; Arial, Times New Roman and Courier New from Windows
+3.1's files on the text screen, in sixteen colors and in 256, saved
+as .docx and PDF.  Word 16 opens the table's .docx with the rows,
+columns and widths PMWRITE gave it.  Host: 338 font files at once
+(256 taken, 604 faces, 89 MB, 0 after tf_done); 63,421 characters in
+a 13 MB font (31 pages, 7.7 MB PDF); a restricted font not embedded.
+
+BUILT AND DELIVERED.  BUILD.CMD and MKHD.CMD ran whole, twice (the
+first time with the program as the entry above left it): BIN, the
+three diskettes, TESTS.IMG, HD16, HD32, MULTI and IMAGES\SETUP are
+this build's.  PMWRITE.EXE is 631,164 bytes.  The VM has copies of
+PMDOS.IMG, PMDOS2.IMG, PMDOS3.IMG, HD32.IMG and TESTS.IMG, and its own
+HD16.IMG has PMIO.SYS, PMDOS.SYS, DOS\PMWRITE.EXE and DOS\HELP.HLP put
+in place (FATREPL; every file it replaced backed up beside it as
+.bak-20261114); a copy of that disk started in DOSBox-X and ran
+PMWRITE from C:\DOS.
+
+RUNTESTS.  After the first build, all seven rows: 98 of 101 as the
+baseline.  RMFIND names the third file of the root, which was
+ACROREAD.EXE and is ATTRIB.EXE; RMTEST prints the free space of the
+test disk; CACHETST's "a write is owed" is 0004 for 0005 on six rows,
+which the entry on control registers above already found with the
+old kernel.  After the second build only the 386-4 row ran: Windows
+Defender took TOOLS\MKDISK.EXE again (Bearfoos.B!ml, 11:38) while the
+second row's disk was being made, and after Charlie allowed the file
+took the test disk's CONFIG.SYS from under it instead (11:50).  With
+the tree excluded in Defender (Charlie, 12:28) all seven rows ran on
+the second build: 386-4 101 of 101, the other six 98 of 101 with the
+same three answers moved.  RMFIND.OUT and RMTEST.OUT are re-recorded
+in all seven rows; CACHETST.OUT is left as it was, not being this
+work's.
+
+NOT DONE.  Fonts in .TTC and OpenType-CFF files; kerning and hinting;
+PMWRITE's own PDF reader shows a bold that was made (no bold file) at
+regular weight; FONTS beside the program and the \WINDOWS directories
+were not run on PM-DOS (the INI line was); low memory with font files
+on PM-DOS itself; merging and splitting cells; a row's height;
+printing other than as text; a writer for Word for Windows 2 and for
+Word Pro; text boxes of .doc and .rtf files.
+
+
+CACHETST'S COUNT GOES BY WHERE THE FILES LIE, AND IS RECORDED
+(2026-11-14)
+---------------------------------------------------------------------
+
+"A write is owed 0004" where the baseline said 0005, on the six rows
+that have a cache, has come up since 2026-11-10 and was put down each
+time as a flip of the lazy writer and not recorded, which left
+RUNTESTS -All failing on six rows.  It is not chance: old PMIO and new
+gave 0004 on one disk on 2026-11-13, a disk with two files fewer gave
+0005, and both of repos-2f's full runs gave 0004.
+
+The line counts the 4K cache elements that are dirty after CACHETST
+creates, writes and closes a 512-byte file.  Read from the test, not
+traced: that is the file's sector, its directory's and one in each
+FAT, and the sector of CACHETST.OUT as well, since RUNTESTS redirects
+the output and the line's own text has just gone into it.  The two
+files' clusters are next to each other, and whether they fall in one
+element or two depends on where the first free cluster of the test
+disk is.  So the number moves when the files on the disk change, as
+RMTEST's free space does, and is recorded the same way.
+
+CACHETST.OUT is re-recorded on the six rows from repos-2f's full run
+of 2026-11-14 12:30; all 707 baselines equal that run.  The old six
+are in scratchpad 3b999c1a bak\BASELINE.
+
+
+RDMSR, WRMSR, LMSW AND THE DEBUG AND TEST REGISTERS IN A BOX
+(2026-11-14)
+---------------------------------------------------------------------
+
+Charlie, of the list the control-register entry above ended on:
+"Let's do the RDMSR, WRMSR, LMSW and the debug and test registers."
+All five ended a box, or a DPMI client, with a general protection
+fault.  IO\VM86.INC (vsr_emul, now for every 0Fh instruction answered)
+and IO\EXCEPT.INC; PMIO.SYS only.
+
+1. RDMSR AND WRMSR ARE RUN FOR THE GUEST, with its own ECX and
+   EDX:EAX.  The registers are the machine's, as the cache bits are.
+   Whether the processor has the instruction (a 386 and a 5x86 have
+   not) or that register is something only the processor says, by
+   faulting in ring 0 - so the one instruction runs under a guard
+   (EXCEPT.INC, exc_guard: where to go, and the ESP to go there with,
+   taken for vectors 6 and 13 out of ring 0 and nothing else), and what
+   it raises is what the guest gets: INT 06h, or INT 0Dh through its
+   own vector, as in real mode.  Until now a ring-0 fault had one
+   meaning.
+
+2. LMSW, AND MP, EM AND TS, ARE A BOX'S OWN.  They are how a program
+   with its own coprocessor emulator has the instructions sent to it
+   (EM, then INT 7 - which the monitor already reflected).  The kernel
+   keeps states with FXSAVE and native programs use the real part, so
+   a box's three bits are kept apart (vfp_bits), put into CR0 when a
+   box is entered (v86_run) and taken out when it is left (v86_leave).
+   One set for every box, as CR0 is one register: a resident
+   emulator's EM is there for the next DOS program.  A box that has
+   asked for nothing runs as before, and loading back the bits it
+   already has asks for nothing.  LMSW takes a register or memory
+   (the 8086's addressing, with segment prefixes; a 32-bit address is
+   measured, taken, and changes nothing).  A move to CR0 does the
+   same for those three bits, which the entry above had left the
+   kernel's; CLTS clears a box's TS.  From a DPMI client all of it is
+   taken and changes nothing.
+     With X87EMU.SYS loaded the coprocessor is now lent to a box when
+   it is entered, not at its first coprocessor instruction: SMSW
+   cannot be answered for the processor, and showed the emulator's EM
+   until then - so a program that read SMSW, set a bit and loaded it
+   back with LMSW would have asked for EM without meaning to.
+
+3. THE DEBUG REGISTERS ARE A BOX'S OWN, AND ITS BREAKPOINTS ARE REAL.
+   The null guard (NULLTRAP.INC) has DR0 to DR3 and is already taken
+   off for as long as a box runs; the box's four addresses and its DR7
+   go in in their place (vbp_load) and come out in v86_leave
+   (vbp_out).  A breakpoint at or above 110000h is not enabled, GD is
+   never set, DR4 and DR5 are DR6 and DR7.  The box's INT 1 is the
+   monitor's ordinary reflection.  Two things had to change for it:
+     - A data breakpoint goes off for whoever makes the access, and
+       the monitor writes a box's stack at every INT.  That is a debug
+       exception in ring 0: exc_common notes it (vbp_owed) and goes
+       on, and the box gets its INT 1 on the way back in (v86_ckkbd),
+       after the instruction, where the processor would have put it.
+     - vf_exc ends a box whose handler returns to the same fault 32
+       times.  A single step and a data breakpoint are traps, not
+       faults - a watchpoint on a loop counter comes round at one
+       address as often as the loop does - so vector 1 is counted only
+       when it is an instruction breakpoint (vbp_fault).
+   From a DPMI client the registers hold what is put in them and
+   nothing is watched in protected mode.  A breakpoint does not see
+   what the DOS side writes for a box (the data of a read): the box
+   has been left by then.
+
+4. THE TEST REGISTERS CAN BE READ AND NOT WRITTEN.  A write to TR6
+   puts an entry into the translation buffer and one through TR5 a
+   line into the cache: tests with paging off, the kernel's memory
+   with it on.  A read runs under the guard (a Pentium has none, and
+   says so); a write is taken and does nothing.  A 486 cache or TLB
+   test in a box will therefore say the part failed.
+
+REVIEW (defect > effect > fix).
+  - Defect: with X87EMU.SYS loaded SMSW showed EM set and a move from
+    CR0 showed it clear until the first coprocessor instruction.
+    Effect: SMSW, OR, LMSW made EM the box's own, and every later
+    coprocessor instruction in a box went to INT 7 instead of being
+    lent the hardware.  Fix: the lend is made on entry (vfp_in);
+    SRTEST found it on BUILD x87emu's PMIO.
+  - Defect: the first labels collided with VDMA.INC's and VDS.INC's
+    (vdo_out, vrl_out, vdr_*), which wasm would have taken for the
+    same symbols.  Fix: prefixes nothing in IOPM uses (vbp_, vfp_,
+    vrn_, vmw_).
+  - Checked and left: the guard is armed over one instruction with
+    interrupts off and is cleared by the code after it or by
+    exc_common; it is tested before the segment registers are kept,
+    because a DPMI client's are still in exc_sds when its instruction
+    is the one being run.  vsr_emul reads the bytes of an instruction
+    the processor had fetched, and LMSW's operand from below 110000h.
+    A box's registers come out in v86_leave and before the recovery
+    hook, so neither they nor a box's EM reach native code.  No
+    buffer, no allocation.
+
+TESTS.  SRTEST.COM and CRTEST.COM (scratch tests: a line for each rule;
+handlers on INT 1, 6, 7 and 0Dh), CHKCPU both ways, on the scratch
+build:
+  - QEMU, Pentium II: RDMSR and WRMSR run and WRMSR is seen to change
+    register 174h; FNOP under EM and FWAIT under MP and TS are INT 7
+    once each; LMSW from AX, [address], [BX+SI] and DS:[BP+5]; a data
+    breakpoint is INT 1 with B0, forty running from one instruction
+    are forty; the flags an INT pushes, watched, are INT 1 with B2 -
+    the monitor's own write; the test registers are INT 06h; the DPMI
+    client's lines.  The same on BUILD x87emu's PMIO with X87EMU.SYS
+    loaded (SMSW 0001, CR0 80000011).
+  - DOSBox-X as 386, 486old, 486 and Pentium: RDMSR is INT 06h (the
+    guard), TR6 reads and TR3 is INT 06h; it has no breakpoints and no
+    FWAIT trap.
+  - 86Box, Cyrix 5x86: RDMSR is INT 06h, TR3 and TR6 read.  86Box,
+    Pentium: RDMSR of a register that is not there is INT 0Dh.
+  NOT RUN ANYWHERE: an instruction breakpoint.  QEMU 11 itself stops
+  (0xC0000005) when one is enabled, and DOSBox-X and 86Box 6 have no
+  breakpoints.  It wants the 5x86.
+
+RUNTESTS -All in the tree (Defender takes the staged CONFIG.SYS from
+under MKDISK anywhere else): 100 of 101 on every row.  RMTEST's free
+space is 684A for 684C, PMIO.SYS being two 1K clusters longer on the
+test disk, and is re-recorded on the seven rows; all 707 baselines
+equal the run.  PMIO.SYS 87,852 -> 89,500.
+
+DELIVERED by a full BUILD.CMD and MKHD.CMD in the tree (86 seconds;
+PMIO.SYS came out the tested file and no other file of BIN changed):
+BIN, the three diskettes, TESTS.IMG, HD16, HD32, MULTI and
+IMAGES\SETUP.  The floppy, HD16 and HD32 each started in QEMU.  The
+VM has PMDOS.IMG and HD32.IMG copied in (its PMDOS2, PMDOS3 and TESTS
+were already the build's) and PMIO.SYS put into its own HD16.IMG by
+FATREPL, every other file read back unchanged; a copy of that disk
+started and ran SRTEST and CHKCPU.  Backups: scratchpad 3b999c1a
+bak2.  Not committed.
+
+NOT DONE.  An instruction breakpoint has not been seen to work (above).
+INVLPG, LGDT, LIDT, LLDT and LTR still end a box, and are meant to.
+EM set by a DPMI client is not the client's.  SRTEST and CRTEST are
+not in BIN\TESTS: a file added there moves RMFIND and RMTEST on every
+row.
+
+NETWORK CARDS FROM THE 386 TO NOW: GIGABIT, 2.5 AND 10 GIGABIT (2026-11-14)
+---------------------------------------------------------------------------
+
+Charlie asked whether PM-DOS needed more card drivers, then for all of
+it: "compatible with 386 up to anything modern (at least through the
+last 32bit only CPUs)".  Five pieces: EL3C90X put right for his
+3C905s, EEPRO100 made to work, a driver for his EtherExpress 16, E1000
+tried on every Intel model QEMU has, and virtio-net and the Realtek
+gigabit family; with gigabit, 2.5 and 10 gigabit on top.
+
+THE RIG.  The old netrun.ps1 went with its scratchpad.  Its successor
+is scratchpad 348acd98 rig\: netq.ps1 boots a copy of IMAGES\HD16.IMG
+in QEMU with one card (-Nic, a QEMU -device model, romfile= always),
+writes CONFIG.SYS and an AUTOEXEC.BAT that runs each -Cmds line into
+C:\OUTn.TXT and ends with SHUTDOWN (ACPI: QEMU exits), and reads the
+files back with FATGET.  -Machine q35 gives a PCI Express machine (the
+disk on AHCI - PM-DOS boots it).  -Pcap writes the wire; pcapls.pl
+lists it.  batch.ps1 runs several at once; fatbin.pl is FATGET for
+binary files; nb.cmd builds one card driver exactly as BUILD.CMD does
+(checked: RTL8139.SYS came out byte for byte BIN's).  The tests on
+every card: NICTEST (frames: DHCP, ARP, ping), SOCKTEST with TCPIP.SYS
+(the stack, and an HTTP GET over TCP), WGET of hello-2.12.tar.gz from
+ftp.gnu.org (1,017,723 bytes, its SHA-256 checked against the host's
+copy), and NICTEST, PARKTEST, NICTEST (the handover to RMDOS and back,
+so card_find and card_setup run a second time).
+
+THE SHARED BASE (NETCORE.C, NETDRV.H).  net_delay_us(), EL3C509's
+PIT-timed wait made common: an empty loop is no measure of time, and
+the first EL3C90X read its EEPROM after one.  net_pci_bar() refuses a
+64-bit BAR the BIOS put above 4GB and says to turn off "Above 4G
+Decoding" - the kernel's map is 32-bit.
+
+THE LESSON EVERY DRIVER GOT WRONG IN THE SAME PLACE: interrupts during
+setup.  nd_irq does not answer for a card while card_setup runs; a
+level-triggered PCI line asserted then is shut by the kernel after 256
+unclaimed interrupts in a second, and from then on every frame comes
+in on the clock tick.  NICTEST shows it as "interrupts 0".  EEPRO100
+had it (writing 0 to the SCB command's high byte UNMASKS - bit 8 is
+the mask - and its comment said the opposite), and so did PCNET.SYS,
+since 2026-10-15: INIT leaves IDON set, and STRT|IENA was written
+without clearing it.  Both are fixed; a card is masked through setup,
+what it raised is cleared, and only then is it let interrupt.
+
+EEPRO100.SYS WORKS (QEMU i82557b, i82559er, i82550, i82801 = ICH2).
+Three more faults besides the mask: QEMU 11's 82557 sends an EMPTY
+frame for a transmit block that carries its frame inline (simplified
+mode) - the block was right, the capture showed zero-length frames -
+so transmit is flexible now, one buffer entry, as Linux's e100;
+receive took 4 bytes off for a CRC that configure byte 18 says is not
+stored; and it wanted the EOF bit, which QEMU does not set (the OK
+status bit is the test now).  Configure byte 7 is 02h, not 03h: QEMU
+counts a 60-byte frame as short and dropped every ARP reply.  The
+receive ring ends at an EL descriptor that moves as each is given
+back, and the unit is started again when it runs out; transmit waits
+for the command unit to be idle.  The ICH2..ICH7 PRO/100 VE IDs are
+in.
+
+E1000.SYS, THE WHOLE PRO/1000 LINE, in four groups by how much may be
+reset: 8254x (reset; QEMU e1000, e1000-82544gc - not found before, its
+ID was missing - and e1000-82545em), 8257x/82583/80003 (reset, and
+CTRL_EXT.DRV_LOAD for the management firmware; QEMU e1000e on pc and
+q35), the ICH8..ICH10 and PCH networks (NOT reset: Linux follows a
+reset of those with dozens of PHY workarounds; the network is stopped
+and given new rings as the BIOS left it), and I217/I218/I219, which
+first get their PHY out of ULP through the Management Engine (H2ME,
+FWSM.ULP_CFG_DONE).  A debug build that took QEMU's 82574L for an I219
+passed every check, so the no-reset path runs; no real ICH or I21x has
+been tried.  The 82542 and 82543 are not taken.  The link is waited
+for at the load only and its speed goes in the name.
+
+IGB.SYS, NEW: the 82575/82576/82580, DH89xxCC, I350/I354, I210/I211,
+and the 2.5 gigabit I225/I226 (Intel's "igc"), one driver: the same
+registers, the queue blocks and the interrupt cause in two places (a
+table).  Advanced one-buffer descriptors both ways - the I225 has no
+legacy ones and QEMU's 82576 takes none for receive.  QEMU's 82576
+keeps its link down after a reset until negotiation is restarted
+through the PHY, which Intel's drivers always do: MDIC, the PHY
+claimed from the firmware first (SWSM, SW_FW_SYNC).  Proved on QEMU
+igb, pc and q35.  Not run: everything but the 82576.
+
+VIRTIO.SYS, NEW: virtio-net through the legacy interface (1AF4:1000,
+QEMU's default and every transitional device), two virtqueues, every
+buffer a header descriptor and a frame descriptor.  Proved on QEMU,
+pc and q35.  A modern-only device (1AF4:1041) is not taken.
+
+EL3C90X.SYS, REWRITTEN for Charlie's 3C905s, from Linux's 3c59x.c.
+Reading it against Linux found six things that would have stopped it
+on a real card: the EEPROM read after an empty loop; no transceiver
+chosen (the 3C905 reaches 100BASE-TX through an MII PHY, the B and C
+through their own NWAY one - the 3C515 lesson); upload-complete (bit
+10) never acknowledged, so the level line would never have dropped;
+no status bits enabled when polled; a transmit indication asked for
+every frame and the status stack never popped; and the card not masked
+while it was set up.  Now: Linux's chip table (3C900 to 3C982, 3C555),
+the transceiver chosen before the resets, the PHY found at 24 first,
+one frame at a time on the download list, the upload ring drained on
+every service.  Not run: no emulator has one.  With no card it says
+not found and the boot goes on.
+
+TULIP.SYS: "two pings of three" was the driver, not QEMU.  The setup
+frame goes out through descriptor 0, the chip goes on to 1, and the
+driver went back to 0: one behind the chip from then on, so the first
+frame sat until the chip came round the ring and went out late and
+stale (the capture showed an old DHCP frame where the first ping
+belonged).  It goes on from 1 now; 3 of 3, and the download is right.
+Hyper-V's legacy adapter is a DEC 21140, so this matters there too.
+
+THREE DRIVERS WRITTEN BLIND, for cards no emulator here has.  Each was
+written from FreeBSD's, Linux's and (EXP16) NetBSD's drivers by a
+worker of this session (rig\COMMON.md was its brief), read back here,
+and booted in QEMU on a machine without its card: each says what it
+did not find and the boot goes on, and an RTL8139 loaded after all
+four still passes.  Nothing more of them has run.
+  EXP16.SYS     Intel EtherExpress 16, 16C, 16TP and Combo (ISA, the
+                82586 in 16 to 64K of the card's own RAM, reached
+                through its pointer and data ports - no DMA).  Found by
+                the BABAh signature at 200h-270h and 300h-370h, /P:
+                for one port; the line, the connector and the bus
+                width from the EEPROM; /I:, /TP, /BNC, /AUI, /8.  The
+                receive lists end at an EL mark that moves, as BSD
+                does, and are laid out again when the unit runs out;
+                two transmit blocks.  The 82586 has no "all multicast":
+                an MC-SETUP list of 113 addresses fills every hash
+                bucket.  Its worker tested it against a model of the
+                card and the 82586 written from the same sources -
+                which shows the driver agrees with that reading, not
+                that the card does.  The scan reads base+0Fh at each
+                port: with an NE2000 at 300h that is its reset port
+                (31Fh); QEMU's NE2000 kept working, a real one may not,
+                so the help says to give /P: beside another ISA card.
+  RTL8169.SYS   Realtek RTL8169/8110 (PCI), RTL8111/8168 B to H and
+                later, RTL8101/2/3/5/6/7 and 8401/2 (the 10/100 parts
+                of the netbooks), RTL8125 (2.5 gigabit, Killer E3000)
+                and RTL8126 (5 gigabit), named from TxConfig's version
+                bits by Linux's table; an unknown version is refused
+                with its bits.  No PHY tables and no firmware, as
+                FreeBSD's re runs the 8168s; the 8125 follows Linux's
+                rtl_hw_start_8125 without them, which no open driver
+                is known to do - the highest risk.  /IO uses the ports.
+                The first line it says gives the PCI ID, the version
+                bits, the name and the registers used.
+  IXGBE.SYS     Intel 10 gigabit: 82598, 82599 (X520), X540, X550 -
+                not the X552/X553.  One queue each way, advanced
+                descriptors, the interrupt through IVAR (both layouts).
+                SFP+ modules are read over I2C and set up from the
+                EEPROM's words for that module; the 10GBASE-T PHYs are
+                started over MDIO under the firmware's semaphore.  /N:2
+                takes the second port of a two-port card.  It says the
+                module and the speed, or "no link (LINKS xxxxxxxx)".
+
+THE SHARED BASE, ONE MORE (NETCORE.C nd_park).  card_find runs again
+when a park comes back, and every driver sets net_irq and net_flags in
+it, as at the load: a card loaded with /POLL, or given a line with
+/I:, came back with its own line and its interrupt on, on a line
+nobody had hooked.  nd_park now keeps the line and the flags nd_init
+settled on across that card_find.  Proved on the eight cards QEMU has,
+each loaded /POLL: NICTEST, PARKTEST, NICTEST, polled and passing both
+times.  E1000 and IGB also keep their name (with the speed) after a
+park instead of renaming the card before its link is back.
+
+TESTED (QEMU, scratchpad 348acd98 rig\): RTL8139, PCNET, TULIP, E1000
+(82540EM, 82544GC, 82545EM, 82574L on pc and q35), IGB (82576, pc and
+q35), EEPRO100 (i82557b, i82559er, i82550, i82801), VIRTIO (pc, q35):
+NICTEST, SOCKTEST with TCPIP.SYS, the 1MB download (all SHA-256 equal
+to the host's), and the park both with the line and /POLL.  BUILD.CMD's
+card stanzas, run in a mirror, make all fourteen card drivers byte for
+byte as nb.cmd does.  RUNTESTS was not run: its disk takes only BIN's
+.EXE and .COM files and NE2000.SYS (which has no NETCORE), so nothing
+it covers moved.
+
+HELP: TCPIP.SYS's notes list which driver goes with which card; an
+EXP16.SYS topic beside EL3C515.SYS's (Charlie's wording to come - this
+is mine).  HELP.HLP made again with MKHELP.PL: against the old one,
+only the contents page (one topic more) and the two additions.
+BUILD.CMD has the five new stanzas and their directories in the list
+of objects to delete; MKHD.CMD and SETUP.LST name the five new files.
+
+DELIVERED by a full BUILD.CMD (91 seconds) and MKHD.CMD in the tree:
+BIN (the fourteen card drivers, each the tested file; nothing else in
+BIN changed), HELP.HLP, PMDOS2.IMG, HD16, HD32, the four Setup images
+(DISK2 still has room).  The delivered HD16 booted in QEMU and ran
+SOCKTEST with IGB, VIRTIO and EEPRO100 taken from it.  The VM: its own
+HD16 patched by name (fifteen files into C:\DOS, the other 291 read
+back unchanged; a copy booted and ran SOCKTEST from C:\DOS), HD32 and
+PMDOS2 copied in.  Backups: scratchpad 348acd98 bak (BIN, HELP.HLP,
+IMAGES) and bakvm.  Not committed.
+
+NOT DONE.  Nothing of EL3C90X, EXP16, RTL8169 or IXGBE has run, nor
+the ICH, PCH and I21x groups of E1000, nor any IGB chip but the 82576:
+they wait for real cards.  WD80X3 still finds its card and moves no
+frame (86Box has a WD8013; the 86Box network rig went with its
+scratchpad).  NetBEUI still rides NE2000.SYS only.  vmxnet3 (VMware's
+paravirtual card, which QEMU has) and a modern-only virtio device are
+not taken.
+
+WHAT WAS LEFT: NETBEUI ON EVERY CARD, VMXNET3, THE MODERN VIRTIO, AND
+WD80X3 MOVES FRAMES (2026-11-14, evening)
+
+Charlie: "Let's fix all those things not done" - the list the entry
+above ends with.
+
+NETBEUI ON EVERY CARD (NETCORE.C).  NIC_BIND and NIC_RECVB, as
+NE2000.SYS has had them since 10-29, are in the shared base: a frame
+whose Ethernet type or 802.2 DSAP a binding claims goes to that
+binding's queue (eight frames, made at the bind) and not to
+NIC_RECV's, even when NIC_RECV's queue is full.  Every card driver
+on NETCORE can carry NETBEUI.SYS now.  Proved with two PM-DOS
+machines in QEMU on one wire (rig pair.ps1, a socket netdev): an
+NE2000 sharing C:\ with SMBSRV and each of the eight QEMU cards
+(RTL8139, PCNET, TULIP, E1000 82540 and 82574L, EEPRO100, IGB, VIRTIO,
+VMXNET3) as the client, then each as the server with the NE2000 the
+client: NET USE over NetBEUI, TYPE, a 300,000-byte file copied
+(SHA-256 equal), a file written to the share and read back.  TCPIP.SYS
+and NETBEUI.SYS together on one E1000: PING, the NetBEUI drive, PING.
+
+SMBSRV'S DIRECTORY LISTINGS (found proving the above).  Defect: the
+TRANS2 FIND answered every info level but 1 in level 0x101's layout.
+Effect: SMBFS.SYS asks for 0x104 (it carries the short name), so DIR
+on a share SMBSRV served read the short name 6 bytes into the long
+one and the long name past it - "~1.TXT" for LONGFI~1.TXT, garbage
+after it, and one file's size under another's name; any NT-family
+client asking 0x104 or 0x102 got the same.  Fix: 0x101, 0x102 and
+0x104 each laid out as they are (64, 68, 94 bytes before the name;
+0x104's short name empty, as NTFS leaves it for a name that is 8.3
+already, which every name SMBSRV's DOS back end has is), any other
+level refused with STATUS_INVALID_LEVEL - which SMB1.C now also takes
+as "use 0x101".  Tested at the limit: a directory of 700 files lists
+in three replies, 700 names, none twice.
+
+VIRTIO.SYS TAKES THE MODERN-ONLY DEVICE (1AF4:1041 - QEMU's with
+disable-legacy=on).  It has no I/O ports: the vendor capabilities in
+its PCI configuration say where in its memory BARs the common
+configuration, the notify area, the interrupt status and the device's
+own configuration are.  VERSION_1 is offered and FEATURES_OK checked,
+each queue's three addresses are given and the queue enabled, and the
+header is 12 bytes.  The transitional device (1AF4:1000) is run as
+before.
+
+VMXNET3.SYS (new): VMware's paravirtual card (Workstation, Player,
+Fusion, ESXi; QEMU has it too), written from QEMU's model, iPXE's
+driver (the same one-queue shape, run on real VMware) and Linux's and
+FreeBSD's headers.  Revision 1, one queue each way, 32 descriptors in
+every ring and the generation bits, INTx with its cause register as
+the acknowledge, a queue error answered by setting the card up again.
+
+WD80X3.SYS MOVES FRAMES.  Proved in 86Box on its WD8013EBT, WD8003E and
+WD8003EB, with a rig of this session's (rig\b86.ps1: one boot of a
+disk copy, 86Box hidden and off-screen, no input, shots by
+PrintWindow, closed by WM_CLOSE).  Four defects:
+  Defect: the receive pointer the driver kept began at the first ring
+  page while the chip's CURR began one page later.  Effect: every
+  header read was the wrong page and the ring was started again for
+  every frame - "no offer", errors counted.  Fix: the next frame is at
+  BNRY+1, the chip's own pointer, as NE2000.SYS reads it.
+  Defect: a board was 16-bit when bit 0 of its ID byte was set - the
+  "Ethernet" bit, on every board.  Effect: a WD8003 was run with a
+  16K ring in 8K of RAM.  Fix: Linux's test - an old board's registers
+  0-5 repeat its address; otherwise the slot bit in register 1 stays
+  set when written clear on a 16-bit board only.  The window, without
+  /M:, is now where the board decodes (register 0, and 5 on a 16-bit
+  board), D000 when it says nothing.
+  Defect: the driver never had a line without /I:, and NETCORE's line
+  probe could not be used - nd_irq returned at once while probing, so
+  nobody learned which line fired, and nd_init had settled on polled
+  before card_setup ran.  Effect: every WD board was polled.  Fix: the
+  probe runs in card_find with a net_probe_isr the card provides;
+  nd_init keeps the line it left hooked (or lets it go for /I:, /POLL
+  or a card not found).  WD80X3 tries Linux's remote read of nothing
+  first, then a frame to itself in internal loopback: 86Box raises and
+  drops the line in the same instant for the first, which an 8259 does
+  not take.  86Box's IRQ 3, 5 and 10 were each found.
+  Defect, in the kernel: the UMB probe runs before any DEVICE= line
+  (cfg_upper, between the two walks), while a shared-memory card's
+  window is still switched off, so D000 measured empty and got a UMB
+  - or the EMS frame - over it.  Effect: with DOS=HIGH,UMB the driver
+  read and wrote the kernel's RAM, never the card's; nothing came back.
+  Fix: pg_mapphys (BUS_MAPPHYS), asked for upper memory that a UMB or
+  the frame covers, answers PG_LOWALIAS + the address: the last page
+  directory entry (FFC00000h), made once from the device-table pool,
+  maps the first megabyte as the bus has it, uncached.  The UMBs stay
+  where they are (320K before and after); a request reaching into that
+  top 4MB is refused once the alias is there.  PMIO.SYS 89,500 ->
+  89,712.  Proved: the same driver with UMBs fails on the old kernel
+  and passes on the new one; EMS=D000 with UMBs passes too.
+WD80X3 then passed NICTEST (the line found), PARKTEST and NICTEST again,
+SOCKTEST and the 1MB download (SHA-256 equal) on the WD8013EBT (16-bit)
+and the WD8003E (8-bit), and NICTEST with a park on the WD8003EB.
+
+FOUND IN THE READ-BACK: VMXNET3's card_setup said "no link" from the
+interrupt when card_service set the card up again after a queue error;
+it says so at the load only now.  WD80X3 said "not found" when its
+window could not be mapped; it says the window cannot be reached.
+
+TESTED (QEMU, the new PMIO.SYS): RTL8139, PCNET, TULIP, E1000 (82540,
+82574L), EEPRO100, IGB, VIRTIO (transitional and modern-only), VMXNET3
+- NICTEST, PARKTEST, NICTEST with the line and again with /POLL (all
+polled still after the park), SOCKTEST and the 1MB download on pc and
+q35 (every SHA-256 the host's).  Fourteen drivers whose cards are not
+there, then RTL8139: the boot goes on and NICTEST passes.  PARKTEST
+hangs on q35 for every card, transitional virtio included: SeaBIOS's
+AHCI after a park, as before.  The delivered HD16 booted in QEMU:
+VMXNET3.SYS from it (NICTEST, PARKTEST, SOCKTEST, the download), NetBEUI
+with its NE2000 and VMXNET3, and in 86Box the WD8013 with UMBs.
+
+RUNTESTS -All after the build, on the new PMIO.SYS and BIN: all seven
+rows matched, 101 of 101 each.  No baseline moved.
+
+DELIVERED by a full BUILD.CMD (95 seconds) and MKHD.CMD in the tree.
+BIN: PMIO.SYS, the fourteen card drivers, VMXNET3.SYS (new), SMBFS.SYS
+and SMBSRV.EXE, each byte for byte the file tested; nothing else in BIN
+changed.  HELP.HLP (NETBEUI.SYS's "only NE2000" note gone, VMXNET3 in
+TCPIP.SYS's table, WD80X3's /M:; against the old one only those).
+IMAGES: PMDOS, PMDOS2, HD16, HD32 and the four Setup images.  The VM:
+its own HD16 patched by name (PMIO.SYS in the root, eighteen files into
+C:\DOS, the other 288 read back unchanged; a copy booted and ran
+SOCKTEST on VMXNET3 from C:\DOS), HD32, PMDOS and PMDOS2 copied in.
+Backups: scratchpad 348acd98 bak2 and bakvm2.  Not committed.
+
+NOT DONE.  The cards no emulator has still wait for real ones: EL3C90X
+(his 3C905s), EXP16 (his EtherExpress 16), RTL8169/8111/8125, IXGBE, the
+ICH, PCH and I21x groups of E1000, IGB chips other than the 82576.
+NetBEUI on WD80X3 has not crossed a wire (86Box here has one machine
+to a network); the binding is NETCORE's, the same code the eight QEMU
+cards proved.  IXGBE still does not take the X552/X553.
+
+MPLAY.EXE, A MEDIA PLAYER, AND SOUND CARD DRIVERS (2026-11-14..15)
+---------------------------------------------------------------------------
+
+Charlie: a media player, MPLAY.EXE, with PMWRITE's text and graphics
+screens up to 1280x1024; wave, MIDI, MP3 (all variants), VOC, WMA and
+Ogg Vorbis; "a cool looking graphic equalizer that is adjustable";
+features dropped on slow machines, and wave, MIDI and MP3 made fast
+on a 386 or 486.
+
+SOUND NEEDS A DRIVER.  A native program cannot hook an interrupt or
+learn a physical address, and its port I/O traps.  So a card is a
+32-bit DEVICE= driver like the network cards: DRV\NDSTART.ASM, then
+DRV\AUDCORE.C (what every card shares), then the card's own file,
+linked twice and put through D32DRV.  INC\AUDIO.H is the contract:
+AUD_INFO, OPEN, WRITE, STATUS, START, PAUSE, STOP, CLOSE, VOLUME,
+EVENTS, SENDNOW, DROPEV on 21h/F1h AL=25h, for a driver whose table
+carries the new NDTF_AUDIO (0040h, in NDRV.H and NDRV.INC; MEM /D
+calls it a sound card).
+  The program writes samples into a ring in the driver's memory (made
+  at AUD_OPEN; MPLAY asks for a second).  The card plays from a DMA
+  buffer of 2-32 blocks; as each block finishes (by the card's DMA
+  position, read at the interrupt and at the 18.2 Hz tick) it is made
+  silent and the blocks ahead are filled from the ring.  "Played" is
+  counted in frames, so a program knows where the card is to the
+  sample, and pause and stop are exact.
+  FM and MIDI are EVENTS: a register write or a MIDI byte stamped with
+  the frame it is due at, sent by the driver from the card's interrupt.
+  The timing is the sample clock's, so a program redrawing a big screen
+  does not make the music stumble.
+  Between AUD_CLOSE and the next AUD_OPEN the driver claims none of the
+  card's interrupts and leaves the ports alone: DOS games still have
+  the card.  A WATCHDOG covers a program that ends without AUD_CLOSE:
+  ten seconds with no call and the card is stopped, the mixer and the
+  MIDI port put back, the FM chip quieted and the interrupts passed on
+  (memory can be freed only at CALL time, so that waits).  A program
+  that was only slow gets the card back at its next call, paused where
+  it was or playing again.
+
+SBLASTER.SYS: Sound Blaster 1.x (single-cycle 14h, re-armed from the
+interrupt), 1.5, 2.0 (high speed to 44 kHz), Pro (stereo through mixer
+0Eh) and 16 (41h + B6h/C6h); AWE32/64 and clones.  BLASTER-style
+switches (A220 I5 D1 H5 P330) or /A: style, /NOPNP /NOFM /NOMIDI.  It
+switches on a Creative Plug and Play card that nobody has, finds the
+interrupt line on cards that do not report it (DSP F2h), and drives the
+OPL2/OPL3 and the MPU-401 in UART mode.  Proved in DOSBox-X on every
+generation (sb1, sb2, sbpro1, sb16, 250 interrupts in 5 s each) with
+the sound captured and compared, and in 86Box on a 486 VLB SB16.
+  Defect found on the way: the 8237's address was read low byte, high
+  byte, and could pair a low byte from before a carry with a high byte
+  from after.  Effect: the position jumped 255 bytes ahead and a block
+  was blanked early.  Fix: high, low, high, and the low and second high
+  used when the two highs agree.
+
+ES1371.SYS: Ensoniq AudioPCI ES1370 (AK4531 mixer) and ES1371/ES1373,
+Creative CT5880 and EV1938 (sample-rate converter, AC'97).  No FM chip:
+MPLAY plays MIDI with its own synthesizer, or sends it to the card's
+MIDI UART.  Proved on 86Box's es1373 in Charlie's VM board, 50
+interrupts a second.
+  FOUND: Charlie's VM board (pb520r) has only PCI configuration
+  mechanism 2, and IO\PCI.INC does mechanism 1 only, so the kernel sees
+  no PCI bus at all there.  ES1371.SYS reads configuration space itself
+  when the kernel finds no card (mechanism 1, then 2 only if 1 does not
+  answer) and says so at boot.  The kernel is unchanged; mechanism 2 in
+  IO\PCI.INC would help every PCI driver on such boards.
+
+MPLAY.EXE (CMD\MPLAY).  PMWRITE's SCR, GFX, UI and FBOX, copied, with
+an idle hook in the key wait so sound plays while menus and dialogs
+are open.  Info lines with a seven-segment clock, a spectrum analyzer
+(bars, bars and peaks, oscilloscope: a 512-point FFT, log-spaced bars
+from 40 Hz), seek bar, transport buttons and volume slider, a ten-band
+equalizer with preamp, a response curve and eleven presets, and the
+playlist (M3U and PLS read, M3U saved, repeat, shuffle).  Mouse on all
+of it.  Settings in MPLAY.INI.  Test mode as PMWRITE's: MPTEST names a
+log, keys come from a redirected file (MKPWKEYS.PL, plus {WAIT n}).
+  Every codec is one CODEC in DEC.H, fixed point, no C library:
+  WAV.C (PCM 8-32, float, A-law, mu-law, IMA and MS ADPCM, extensible)
+  and VOC.C (types 1-9, 4- and 2-bit ADPCM; 2.6-bit ADPCM is refused by
+  name - no model decoded the FATE sample consistently) by me; MP3.C
+  and MP3L*.C (MPEG-1, 2 and 2.5, layers 1-3, free format; FATE
+  conformance 80-108 dB, largest difference 1), OGG.C and VB*.C (Vorbis
+  I, FATE 14 of 20 at 70 dB or better, the rest within one step),
+  MIDI.C and MD*.C (SMF 0/1/2, RMID, KAR; OPL2/OPL3 with its own GM
+  bank, MPU, and a software synthesizer), WMA.C and ASF.C (versions 1
+  and 2: 79-84 dB against Windows' own decoder; Pro, Lossless, Voice
+  and protected files refused by name) by four builders.
+  WMATAB.C holds tables taken from FFmpeg (LGPL 2.1+ data, its header
+  says which), so WMA is not in 0.71: see LEFT OUT OF 0.71 below.
+
+SLOW MACHINES.  The equalizer is free inside MP3, Vorbis and WMA (it
+scales the spectrum); wave, VOC and MIDI get time-domain biquads only
+when wanted.  Each codec can give half or a quarter of the rate, and
+one channel.  A benchmark (IMULs a millisecond: DX2-66 774, DX4-100
+1156, Pentium 60 1803) and a table of what each mode costs, measured
+with MPTEST /X on emulated 486s, pick the best mode the machine plays
+at 1.3 times real time; a governor steps down after two seconds above
+90 per cent.  Measured on 86Box's DX4-100, times real time, 44.1 kHz
+stereo: MP3 0.99 full, 1.78 half, 3.54 quarter, 1.91 mono; WMA 128
+kbps 1.46, half 2.55; Vorbis 1.56, half 2.89.  So the DX4-100 plays
+MP3 at half rate and WMA and Vorbis at full; a Pentium plays all at
+full.  86Box charges a 32-bit IMUL its worst case every time; a real
+486 finishes early on small operands and should be 20-25 per cent
+faster in the MP3 decoder (not proved).  The analyzer's frame rate is
+paced by what a frame costs and skipped when under a quarter second of
+sound is queued.
+
+REVIEWED, code reading, two reviewers who were given the code and not
+my conclusions; each finding fixed and the paths retested.
+  Defect: pl_stop set STOPPED after a reopen that failed.  Effect: the
+  next Play called a codec through NULL.  Fix: STOPPED only when the
+  file opened; pl_pump does nothing without a codec.
+  Defect: Repeat One retried a file that would not play, recursing
+  once a try.  Effect: up to 2000 nested opens.  Fix: a loop, and a
+  failure under Repeat One stops.
+  Defect: a codec seek that failed left the card stopped and the
+  counts as they were.  Effect: silence until Stop.  Fix: the file is
+  opened again at that place.
+  Defect: seek and kbps arithmetic in WAV.C and VOC.C could overflow a
+  64/32 DIV.  Effect: a divide fault on Go To far past a short file's
+  end.  Fix: the time limited first; large sizes divided first.
+  Defect: RateLimit= in MPLAY.INI took 1-7999.  Effect: a divide fault
+  when a file opened.  Fix: 0 or 8000-48000.
+  Defect: the analyzer's tables were kept when only some could be
+  allocated, and never freed.  Effect: a leak each frame when memory
+  was short.  Fix: all or none, and fft_done at exit.
+  Defect: the resampler's room was sized from the exact ratio while
+  its step was rounded down.  Effect: clicks converting a very low
+  rate up.  Fix: room from the step.
+  Also: the codec's rate and channels checked before use; a refused
+  card format reported as such, not as memory; an odd fmt chunk's pad
+  byte; the MS ADPCM delta's limit; long joined paths skipped, not cut.
+  Defect: close_card freed the ring with the card still live to the
+  tick and the interrupt.  Effect: a moment of reads from freed memory
+  and FM writes after the chip was silenced.  Fix: stopped and let go
+  with interrupts off first; slow work and freeing after.
+  Defect: nd_halt freed memory and unhooked.  Effect: against NDRV.H
+  (HALT may have interrupts off).  Fix: HALT only gives the card back.
+  Defect: a park while the card held a pause stopped it for good.  Fix:
+  the position kept and the card started again on the way back; on the
+  ES1371 the open card's rate, mix and UART put back after chip_init.
+  Defect: AC'97 PCM Out 0 and the AK4531's voice 0 are +12 dB, not 0.
+  Effect: full volume clipped.  Fix: 0 dB at 8 and 6.
+  Defect: an OPL3 reached at base+8 had its second bank at base+0Ah,
+  the DSP's read port.  Fix: base+2 there.
+  Also: the mixer and SENDNOW's writes with interrupts off; an SB 1.x
+  with no line refused (it cannot go on past one block); the ES1371
+  SRC read exposes its state bit; a failed BAR read refused; a PnP
+  card whose port did not take is not reset at port 0.
+  Leaks: the heap at exit is the same after a session that played every
+  format, sought, stopped and deleted from the playlist as after one
+  that did nothing; MPTEST's heap is the same after every codec.
+
+TESTED: every format plays in MPLAY on DOSBox-X's SB16 with the sound
+captured; the watchdog cycle (Stop, 14 s, Play) on the SB16 and on
+86Box's ES1373; screens at text, 640x480 in 256 and 16 colors, 1024
+and 1280; mouse by the key file.  RUNTESTS -All:
+100 of 101 on all seven rows at first - RMTEST's free space down 315
+clusters, MPLAY.EXE's own size on that disk - so RMTEST was
+re-recorded on the seven, and a second run matched 101 of 101 on each.
+
+DELIVERED by a full BUILD.CMD and MKHD.CMD: BIN MPLAY.EXE (321,600),
+SBLASTER.SYS (17,456), ES1371.SYS (14,268), MEM.EXE (3,371); nothing
+else in BIN changed.  HELP.HLP: topics MPLAY, SBLASTER.SYS and
+ES1371.SYS.  PMDOS3.IMG carries the three (58K left), MKHD.CMD and
+SETUP.LST them too.  The VM: its own HD16
+patched by name (CONFIG.SYS gains DEVICE=C:\DOS\ES1371.SYS for its
+ES1373; MPLAY.EXE, SBLASTER.SYS, ES1371.SYS, MEM.EXE and HELP.HLP into
+C:\DOS; a copy of it booted and played from C:\DOS), HD32, PMDOS,
+PMDOS2 and PMDOS3 copied in, backups beside them (.bak-20261115-1153
+and -1156).  Not committed.
+
+NOT DONE.  Never on real hardware: Charlie's 486 and its Creative PnP
+card are the test.  Untested: GUS, PC speaker, AC'97 and HD Audio
+controllers (no drivers); the Sound Blaster Pro's stereo start byte;
+WMA's audio-spread, index seeking, version 1 with the bit reservoir;
+Vorbis with 3-8 channels, block sizes 64 and 8192, residue type 1;
+MP3's pro1.mp3 still differs in two granules.  VOC 2.6-bit ADPCM is
+refused.  Setup does not offer the sound drivers; the DEVICE= line is
+added by hand.  Version stays 1.0 until it is released.
+
+LEFT OUT OF 0.71 (2026-11-15): WMA.  Charlie's decision.  The tables
+in WMATAB.C are LGPL data from FFmpeg and PM-DOS is MIT, so WMATAB.C
+does not ship and is not committed (.gitignore).  WMA.C, WMA.H and
+ASF.C are MPLAY's own code and stay in CMD\MPLAY, unbuilt; they are
+not committed either (Charlie, at the 0.71 commit), because the
+decoder was written from FFmpeg's account of the format, the only
+public one.
+  BUILD.CMD builds MPLAY without HAVE_WMA and without WMA.C, ASF.C and
+  WMATAB.C; MKMP.CMD leaves WMA out unless MPHAVE names it.  Without
+  HAVE_WMA, DECTAB.C has a stand-in codec that knows a Windows Media
+  file by its header object's GUID and turns it down as "Windows Media
+  Audio is not supported", not as an unknown or damaged file.  The
+  Open dialog's types, the extensions a directory is searched for, the
+  cost table, the Quality and About dialogs, the usage text and the
+  help topic leave WMA out.  Built with HAVE_WMA and WMATAB.C back,
+  MPLAY is as it was.
+  Defect found on the way: plist_add asked DOS for the attributes of
+  "C:\", which a root does not have.  Effect: MPLAY C:\ (or a drive
+  letter alone) gave an empty playlist.  Fix: a root or a bare drive
+  is taken as a directory.
+  TESTED in a scratch tree with BUILD.CMD's own MPLAY lines and no
+  WMATAB.C (MPLAY.EXE 321,600 -> 269,784), in DOSBox-X with the SB16:
+  a WMA file alone shows "W128.WMA: Windows Media Audio is not
+  supported" and is marked "will not play"; with a VOC file after it
+  the VOC file plays; MP3, Ogg Vorbis, MIDI, VOC and wave files play
+  with no dropouts; MPLAY C:\ and MPLAY C:\MUS list every media file
+  but the WMA one; the Open dialog offers no .WMA; the Quality and
+  About dialogs and MPLAY /? say MP3 and Ogg Vorbis.  The heap at exit
+  is the same after each of these as after a session that played
+  nothing.  HELP.HLP regenerated: the old sources gave the old file
+  byte for byte, the new one differs in the MPLAY topic only.  Not
+  delivered from here: the 0.71 release build does that.
+
+PCI CONFIGURATION MECHANISM 2 (2026-11-15)
+---------------------------------------------------------------------------
+
+Charlie: add PCI mechanism 2.  The MPLAY work (the entry above) found
+that his VM's board, 86Box's pb520r, has only mechanism 2, so the
+kernel saw no PCI bus there and ES1371.SYS reached its card by itself.
+
+IO\PCI.INC.  pci_init asks mechanism 1 as before; if it does not
+answer, pci_try2 asks mechanism 2, and pci_ok says which (1 or 2).
+  The test is safe on a 386 or 486 with no PCI.  The enable register
+  (CF8h) and the bus register (CFAh) are written with zeros and read
+  back, then the bus register with 5Ah, and only then is the window
+  opened: on an ISA machine the ports from C000h up can be anything
+  that decodes ten bits of address, and C008h can be the DMA
+  controller's status register, which a read clears.  Then bus 0 must
+  have a host bridge, a VGA card or an Intel or Compaq device on it
+  (Linux's check).
+  pci_read and pci_write go through the window when pci_ok is 2, and
+  pcx_wr writes the register's own port at its own width.  pm2_open
+  and pm2_close put both registers back as they were found, as
+  pci_read always did with CF8h: a DOS box, or the BIOS's PCI call in
+  one, may be halfway through an access of its own.  The window has
+  room for devices 0-15 only; a device number of 16 or more reads as
+  all ones and is never written, so pci_scan, pci_find and the BUS_*
+  calls need no change.
+  A chipset that can do both, with a selector at CFBh, is left as the
+  BIOS set it, because the BIOS's own PCI calls use that mechanism.
+BUS_PCIHERE (21h/F1h AL=12h): EAX bit 0 is still "there is a bus";
+bit 1 is new, "reached through mechanism 2", so EAX is 1 or 3.
+ISAPNP tests bit 0, the SDK's pm_pci_present the low byte and PCITEST
+non-zero, so none of them changes.  PMIO.SYS 89,712 -> 90,090.
+
+ES1371.SYS no longer reaches configuration space itself: its own
+mechanism 1 and 2 scan and port access are gone, along with its boot
+line about the mechanism, and it asks the kernel like every other
+driver.  14,268 -> 13,272 bytes.
+
+TOOLS\PCITEST.ASM reads the bus through the window when the kernel
+says mechanism 2, and adds "mechanism 2" to its first line.  Check 7
+writes a card's interrupt line register.  86Box's CMD640 keeps its
+line register as it was (it reads 20), so a card that keeps the old
+value is passed over for the next one; the check fails if no card
+takes the byte.
+
+WHAT THE PB520R SHOWS NOW: 82434LX host bridge, CMD640 IDE (device
+1), 82378 ISA bridge, Cirrus GD5436, ES1373 (device 14).  Its
+edge/level register says lines 10 and 11 are level, and IRQ.INC now
+believes that there.  The CMD640 is now ATA.INC's to reach:
+ata_cmd640 switches its second channel on if the BIOS left it off and
+nothing answers at 170h (this BIOS had it on).
+
+TESTED on 86Box pb520r (his VM's board, Pentium 60, ES1373):
+BUS_PCIHERE 3 with five functions; PCITEST all eleven checks; the
+write check run on every card (the Cirrus at device 6 and the ES1373
+at device 14 take the byte, keep the bytes beside it and go back; the
+CMD640 keeps its line); ES1371.SYS finds the card through the kernel
+and MPTEST plays 5 s of 44.1 kHz stereo with 251 interrupts and no
+underruns, as before; the machine boots and runs from its disk on the
+CMD640 as before.  RUNTESTS -All matched
+101 of 101 on all seven machines, baselines unchanged.
+
+NOT TESTED: a real mechanism 2 board; a bridge under mechanism 2.
+86Box's p3bf and vs440fx would not boot past the BIOS in the sound
+rig (the old kernel neither), so mechanism 1 rests on RUNTESTS'
+DOSBox-X machines.
+
+DELIVERED by a full BUILD.CMD and MKHD.CMD: in BIN only PMIO.SYS,
+ES1371.SYS and TESTS\PCITEST.EXE changed.  The VM: its HD16 patched by
+name (PMIO.SYS, DOS\ES1371.SYS, TESTS\PCITEST.EXE) and a copy of it
+booted with its own CONFIG.SYS and passed the same tests; HD32,
+PMDOS, PMDOS3 and TESTS copied in; backups beside them
+(.bak-20261115-1402).  Not committed.
+
+
+v0.71 - A WORD PROCESSOR, A MEDIA PLAYER, SOUND CARDS AND GIGABIT
+NETWORK CARDS (2026-11-15)
+---------------------------------------------------------------------
+
+Charlie: "Let's tag this version as 0.71."  INC\PMVER.INC says 71.
+This release is everything since the v0.70 tag; the entries above have
+the detail and this is the list.  The commit and the tag are local.
+
+PROGRAMS
+  - PMWRITE.EXE 1.0 takes ACROREAD's place: a word processor with
+    Word's menus, toolbar, ruler and status bar, on the text screen
+    or in graphics from 640x480 to 1280x1024, switched while it runs.
+    It reads and writes PDF, Word for DOS, Windows Write, Word 6 to
+    2003 (.doc), .docx, RTF, WordStar, WordPerfect, Ami Pro and
+    OpenDocument, and reads Word for Windows 1 and 2 and Word Pro.
+    TrueType fonts from .TTF files, Greek, Cyrillic and Latin
+    Extended-A, and table rows and columns put in and taken out.
+  - MPLAY.EXE 1.0, a media player on the same screens: wave, VOC,
+    MIDI (its own synthesizer, the OPL chip or an MPU-401), MP3 and Ogg
+    Vorbis; a ten-band equalizer, a spectrum analyzer and a playlist;
+    it picks the quality the machine can keep up with.  WMA is not in
+    this release: its tables are known only from FFmpeg, which is
+    LGPL, and the decoder and its tables are kept out of git.
+  - A third diskette, PMDOS3.IMG (PM-DOS APPS): PMWRITE, MPLAY, XARC
+    and TREEVIEW.  Setup takes three disks.
+
+SOUND
+  - SBLASTER.SYS: the Sound Blaster from 1.0 to 16 and the AWE32/64,
+    Plug and Play cards switched on, the OPL2/OPL3 and the MPU-401.
+  - ES1371.SYS: the Ensoniq AudioPCI ES1370, ES1371 and ES1373, the
+    Creative CT5880 and EV1938.
+  - Both are 32-bit DEVICE= drivers of a new class; MEM /D says "sound
+    card".  Setup does not add the DEVICE= line.
+
+NETWORK CARDS
+  - New drivers: IGB.SYS (Intel 82575 to I225), VIRTIO.SYS (legacy and
+    modern-only virtio-net), VMXNET3.SYS (VMware), and, for cards no
+    emulator has, RTL8169.SYS (Realtek gigabit), IXGBE.SYS (Intel 10
+    gigabit) and EXP16.SYS (Intel EtherExpress 16).
+  - E1000.SYS takes the whole PRO/1000 line; EEPRO100.SYS works;
+    EL3C90X.SYS rewritten for the 3C905s; TULIP.SYS sends the first
+    frame on time; WD80X3.SYS moves frames, its window reachable with
+    UMBs on.  Every card is masked while it is set up.
+  - NETBEUI.SYS runs on every card driver, not only NE2000.SYS.
+  - SMBSRV: DIR on a share it serves shows the right names and sizes
+    (TRANS2 FIND's info levels).
+
+THE KERNEL
+  - A DOS program or DPMI client may read and write the control
+    registers, RDMSR and WRMSR, LMSW, the debug registers (with real
+    breakpoints) and read the test registers: CHKCPU runs.
+  - PCI configuration mechanism 2 (86Box's pb520r has only that).
+  - A native program larger than the 512K slot loads (PMWRITE).
+
+TESTS
+  - CACHETST's count is recorded like RMTEST's free space: it moves
+    with where the files lie on the test disk.
+
+NOT IN IT.  Real hardware for the sound drivers and for most of the
+new network drivers (EL3C90X, EXP16, RTL8169, IXGBE, E1000's ICH, PCH
+and I21x groups, IGB but the 82576).  WMA.
+
+THE RELEASE.  One BUILD.CMD and MKHD.CMD in the tree.  Against BIN
+before it: the version byte (46h to 47h) in PMDOS.SYS (five places),
+RMDOS.SYS, CMD.EXE and COMMAND.COM, and MPLAY.EXE without WMA
+(269,792 bytes); nothing else.  RUNTESTS -All: 99 of 101 on every
+row - PMD's version line, and RMTEST's free space 51 clusters up
+(MPLAY.EXE's own) - and those two re-recorded on the seven rows.
+NLSTESTS: all nine rows.  repos-ae ran its MPLAY checks on this
+MPLAY.EXE: WMA refused by name, the five other formats played, no
+leak.  Setup ran from the three new disks in QEMU onto a blank 504MB
+disk: 93 files, VER says 0.71.  That disk booted in 86Box to C:\> and
+is the 86Box download.  The CD image starts to its menu in QEMU.
+
+DOWNLOADS (IMAGES\RELEASE): PMDOS-0.71-SETUP-DISKS.zip (DISK1 to
+DISK3), PMDOS-0.71-CD.iso and PMDOS-0.71-86BOX.zip, whose README
+says how to add SBLASTER.SYS.
+
+DELIVERED: BIN and IMAGES by the build.  The VM: its own HD16 patched
+by name (PMDOS.SYS, RMDOS.SYS and CMD.EXE in the root; CMD.EXE,
+COMMAND.COM, MPLAY.EXE and HELP.HLP in DOS) and read back; PMDOS,
+PMDOS2, PMDOS3 and HD32 copied in; backups beside them
+(.bak-20261115-1841).

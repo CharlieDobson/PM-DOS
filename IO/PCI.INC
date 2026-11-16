@@ -1,5 +1,5 @@
 ;=====================================================================
-; PCI.INC - configuration space, mechanism 1
+; PCI.INC - configuration space, mechanisms 1 and 2
 ;
 ; The smallest thing that deserves to be called PCI support: find a
 ; device by what it IS, read and write its configuration registers,
@@ -17,12 +17,25 @@
 ; things that want it (ATAPI, and anything on the network side) will
 ; want exactly this and nothing more.
 ;
-; MECHANISM 1 ONLY.  There were two ways of reaching configuration
-; space in the early days and the other one - mechanism 2, a window
-; at C000h-CFFFh - was gone from new chipsets by 1994 and deprecated
-; by the specification itself.  A machine that has only mechanism 2
-; gets the same answer here as a machine with no PCI at all, which is
-; "no bus master", which is PIO, which is what it was doing anyway.
+; BOTH MECHANISMS.  There were two ways of reaching configuration space
+; in the early days.  Mechanism 1 is an address at CF8h and the data at
+; CFCh, and is what every board since about 1995 has.  Mechanism 2 is
+; a window: CF8h names a function and opens the window, CFAh names the
+; bus, and the window at C000h-CFFFh is 256 ports for each of sixteen
+; devices.  The specification gave mechanism 2 up, but many 1993-94
+; Pentium and PCI 486 boards use nothing else, the owner's VM's board
+; (86Box's pb520r) among them.  This file used to see no PCI at all on
+; such a board.
+;
+; Mechanism 1 is asked first and used if it answers.  Some chipsets
+; can do both, with a register at CFBh choosing between them; the
+; choice is left as the BIOS made it, because the BIOS's own PCI calls,
+; which DOS programs and Windows make, use that mechanism and no other.
+;
+; A DEVICE IS CARRIED THE SAME WAY FOR BOTH (pci_read, below), so
+; nothing outside this file knows which mechanism is in use.  Under
+; mechanism 2 there is no device 16 to 31: one reads as an empty socket
+; and is never written.
 ;
 ; BUS 0 ONLY - FOR pci_find, and that is a decision rather than an
 ; omission: PM-DOS probes exactly two ATA channels, at the two legacy
@@ -47,6 +60,13 @@
 
 PCI_CFG_ADDR    EQU     0CF8h
 PCI_CFG_DATA    EQU     0CFCh
+PCI_CSE         EQU     0CF8h                   ; mechanism 2: the enable
+                                                ; register, a byte - key in
+                                                ; 7:4, function in 3:1
+PCI_FORWARD     EQU     0CFAh                   ; mechanism 2: the bus
+PCI_WINDOW      EQU     0C000h                  ; mechanism 2: a device to
+                                                ; each 256 ports
+PCI_M2KEY       EQU     0F0h                    ; any key but 0 opens it
 
 PCI_MAXFN       EQU     64                      ; functions pci_scan keeps
 PCT_ADDR        EQU     0                       ; dd - bus, device, function
@@ -75,13 +95,13 @@ PCIC_BUSMASTER  EQU     0004h           ; ...and may drive the bus itself
 PCI_MULTIFN     EQU     00800000h       ; header type bit 7, in the dword
 
 ;=====================================================================
-; pci_init - is there a mechanism 1 at all?
+; pci_init - is there a mechanism 1, or failing that a mechanism 2?
 ;
-; The test the specification gives: write the enable bit to the
-; address port and read it back.  A machine with no PCI has nothing
-; decoding CF8h, so the read comes back as a floating bus or as
-; whatever some other port left there, and either way it is not what
-; was written.  The pair has to be written and read without an
+; Mechanism 1 by the test the specification gives: write the enable
+; bit to the address port and read it back.  A machine with no PCI has
+; nothing decoding CF8h, so the read comes back as a floating bus or
+; as whatever some other port left there, and either way it is not
+; what was written.  The pair has to be written and read without an
 ; interrupt in between, because anything else that touched CF8h in
 ; the gap would be the thing answered.
 ;=====================================================================
@@ -96,11 +116,89 @@ pci_init:
         in      eax,dx
         popfd
         cmp     eax,80000000h
-        jne     pini_none
+        jne     pini_two
         mov     byte ptr [pci_ok],1
-pini_none:
+        jmp     short pini_scan
+pini_two:
+        call    pci_try2
+pini_scan:
         call    pci_scan
         popad
+        ret
+
+;=====================================================================
+; pci_try2 - is there a mechanism 2?  Asked only when mechanism 1 did
+;            not answer, so on every 386 and 486 without PCI as well.
+;            -> pci_ok = 2 if there is.
+;
+; ITS TWO REGISTERS ARE ASKED FIRST, AND THE WINDOW ONLY AFTER.  The
+; enable register (CF8h) and the bus register (CFAh) are bytes that
+; keep what is written to them.  Both are written with zeros and read
+; back, then the bus register with a pattern - harmless, with the
+; enable register at zero nothing is open.  A machine without PCI
+; reads back a floating bus and stops there.  That order matters
+; because on a plain ISA machine the window's ports need not be empty:
+; anything that decodes only ten bits of address answers C008h as
+; 008h, and on an AT that can be the DMA controller's status register,
+; which a read clears.
+;
+; Then the window is opened and bus 0 looked at.  The answer is yes
+; only if something there is plainly part of a PCI machine: a host
+; bridge, a VGA card, or a device made by Intel or Compaq.  Linux asks
+; the same before it uses either mechanism.
+;=====================================================================
+pci_try2:
+        pushfd
+        cli
+        xor     al,al
+        mov     dx,PCI_CSE
+        out     dx,al
+        mov     dx,PCI_FORWARD
+        out     dx,al
+        mov     dx,PCI_CSE
+        in      al,dx
+        mov     ah,al
+        mov     dx,PCI_FORWARD
+        in      al,dx
+        or      al,ah
+        jnz     pt2_none                ; DX = PCI_FORWARD, from here
+        mov     al,5Ah
+        out     dx,al
+        in      al,dx
+        mov     ah,al
+        xor     al,al
+        out     dx,al
+        cmp     ah,5Ah
+        jne     pt2_none
+        popfd
+
+        mov     byte ptr [pci_ok],2     ; so that pci_read uses the window
+        xor     ebx,ebx                 ; bus 0, device 0, function 0
+pt2_dev:
+        mov     al,PCIR_VENDOR
+        call    pci_read
+        cmp     ax,0FFFFh
+        je      pt2_next
+        cmp     ax,8086h                ; Intel
+        je      pt2_yes
+        cmp     ax,0E11h                ; Compaq
+        je      pt2_yes
+        mov     al,PCIR_CLASS
+        call    pci_read
+        shr     eax,16                  ; AX = class:subclass
+        cmp     ax,0600h                ; a host bridge
+        je      pt2_yes
+        cmp     ax,0300h                ; a VGA card
+        je      pt2_yes
+pt2_next:
+        add     ebx,1 SHL 11            ; the next device, function 0
+        cmp     ebx,16 SHL 11
+        jb      pt2_dev
+        mov     byte ptr [pci_ok],0
+pt2_yes:
+        ret
+pt2_none:
+        popfd
         ret
 
 ;=====================================================================
@@ -115,9 +213,12 @@ pini_none:
 ; configuration space through the same two ports, in two instructions,
 ; and an interrupt can arrive between them; so can a call from one.
 ; Whatever ran in the gap used to leave its own address behind, and
-; the box's read then answered for a device it had not named.
+; the box's read then answered for a device it had not named.  Under
+; mechanism 2 the same goes for both of its registers (pm2_open).
 ;=====================================================================
 pci_read:
+        cmp     byte ptr [pci_ok],2
+        je      pci_read2
         push    ecx
         push    edx
         movzx   ecx,al
@@ -143,10 +244,34 @@ pci_read:
         pop     ecx
         ret
 
+;--- the same through mechanism 2's window
+pci_read2:
+        push    ecx
+        push    edx
+        pushfd
+        cli
+        call    pm2_open
+        jc      prd2_none
+        and     dl,0FCh                 ; the whole dword
+        in      eax,dx
+        call    pm2_close
+        popfd
+        pop     edx
+        pop     ecx
+        ret
+prd2_none:
+        or      eax,-1                  ; what an empty socket reads as
+        popfd
+        pop     edx
+        pop     ecx
+        ret
+
 ;=====================================================================
 ; pci_write - EBX = device, AL = register offset, ECX = the dword.
 ;=====================================================================
 pci_write:
+        cmp     byte ptr [pci_ok],2
+        je      pci_write2
         push    eax
         push    ecx
         push    edx
@@ -172,6 +297,92 @@ pci_write:
         pop     esi
         pop     edx
         pop     ecx
+        pop     eax
+        ret
+
+;--- the same through mechanism 2's window
+pci_write2:
+        push    ecx
+        push    edx
+        push    esi
+        mov     esi,ecx                 ; ESI = what to write
+        pushfd
+        cli
+        call    pm2_open
+        jc      pwr2_none
+        and     dl,0FCh
+        xchg    eax,esi
+        out     dx,eax
+        xchg    eax,esi
+        call    pm2_close
+pwr2_none:
+        popfd
+        pop     esi
+        pop     edx
+        pop     ecx
+        ret
+
+;---------------------------------------------------------------------
+; pm2_open - mechanism 2, interrupts off.  EBX = device, AL = register.
+;            -> DX = that register's port in the window, CH and CL =
+;            the enable and bus registers as they were found, for
+;            pm2_close.  CF, and nothing touched, if the device is one
+;            the window has no room for.
+;
+; THE WINDOW HAS SIXTEEN DEVICES.  Four bits of the port name the
+; device, so device 16 would land on device 0.  A device number of 16
+; or more reads as an empty socket and is never written.
+;
+; BOTH REGISTERS ARE PUT BACK AS THEY WERE FOUND (pm2_close), for the
+; reason pci_read gives: a DOS box, or the BIOS's PCI call inside one,
+; may be between opening the window and using it.
+;---------------------------------------------------------------------
+pm2_open:
+        test    ebx,8000h               ; bit 4 of the device
+        jnz     pm2_none
+        push    eax
+        movzx   edx,al                  ; the register, to the byte
+        mov     eax,ebx
+        shr     eax,3                   ; the device, from 15:11 to 11:8
+        and     eax,0F00h
+        or      edx,eax
+        or      edx,PCI_WINDOW
+        push    edx
+        mov     dx,PCI_CSE
+        in      al,dx
+        mov     ch,al
+        mov     dx,PCI_FORWARD
+        in      al,dx
+        mov     cl,al
+        mov     eax,ebx
+        shr     eax,7                   ; the function, from 10:8 to 3:1
+        and     al,0Eh
+        or      al,PCI_M2KEY
+        mov     dx,PCI_CSE
+        out     dx,al
+        mov     eax,ebx
+        shr     eax,16                  ; the bus
+        mov     dx,PCI_FORWARD
+        out     dx,al
+        pop     edx
+        pop     eax
+        clc
+        ret
+pm2_none:
+        stc
+        ret
+
+;--- pm2_close - CH and CL as pm2_open gave them
+pm2_close:
+        push    eax
+        push    edx
+        mov     al,cl
+        mov     dx,PCI_FORWARD
+        out     dx,al
+        mov     al,ch
+        mov     dx,PCI_CSE
+        out     dx,al
+        pop     edx
         pop     eax
         ret
 
@@ -217,7 +428,9 @@ pxr_no:
 ; like it, clear a bit when a ONE is written to it, so writing back
 ; what was read wipes every flag that happened to be set.  The data
 ; port is four ports, one a byte of the register, and a write of the
-; right width to the right one of them touches nothing else.
+; right width to the right one of them touches nothing else.  The
+; window of mechanism 2 is a port for every byte of every register, so
+; there the register's own port is written.
 ;=====================================================================
 pcx_wr:
         push    eax
@@ -225,6 +438,8 @@ pcx_wr:
         push    esi
         call    pcx_fits
         jc      pxw_no
+        cmp     byte ptr [pci_ok],2
+        je      pxw_two
         movzx   esi,dl
         and     esi,0FCh
         or      esi,ebx
@@ -265,6 +480,39 @@ pxw_done:
         out     dx,eax
         pop     edx
         popfd
+        pop     esi
+        pop     edx
+        pop     eax
+        clc
+        ret
+pxw_two:
+        push    ecx
+        mov     esi,ecx                 ; ESI = what to write
+        mov     al,dl                   ; AL = the register,
+        mov     ah,dh                   ; AH = the width
+        pushfd
+        cli
+        call    pm2_open                ; -> DX = the register's own port
+        jc      pxw2_none
+        cmp     ah,4
+        je      pxw2_dword
+        cmp     ah,2
+        je      pxw2_word
+        mov     eax,esi
+        out     dx,al
+        jmp     short pxw2_done
+pxw2_word:
+        mov     eax,esi
+        out     dx,ax
+        jmp     short pxw2_done
+pxw2_dword:
+        mov     eax,esi
+        out     dx,eax
+pxw2_done:
+        call    pm2_close
+pxw2_none:
+        popfd
+        pop     ecx
         pop     esi
         pop     edx
         pop     eax
@@ -665,7 +913,8 @@ pf_none:
 ;=====================================================================
 ; State
 ;=====================================================================
-pci_ok      db  0                       ; mechanism 1 answered
+pci_ok      db  0                       ; the mechanism that answered,
+                                        ; 1 or 2; 0 if neither did
             db  0
             db  0,0
 pci_count   dd  0                       ; functions in pci_table

@@ -157,7 +157,12 @@ int card_setup( void )
         if ( csr_read( 0 ) & C0_IDON ) break;
     }
     if ( n == SPIN_INIT ) return 1;
-    csr_write( 0, (u16)( C0_STRT | ( net_flags & NICF_POLLED ? 0 : C0_IENA ) ) );
+    /* IDON is cleared (it is written back) in the same write that lets
+       the chip interrupt: left set, it asserted the line the moment IENA
+       went on, while the driver was not yet answering, and the kernel
+       shut the line after 256 of them - every frame came in on the
+       clock instead (QEMU showed "interrupts 0", 2026-11-14) */
+    csr_write( 0, (u16)( C0_IDON | C0_STRT | ( net_flags & NICF_POLLED ? 0 : C0_IENA ) ) );
     return 0;
 }
 

@@ -4,7 +4,8 @@
  * The four entries the kernel calls (nd_init, nd_park, nd_halt,
  * nd_call, through NDSTART.ASM's ndv_ veneers), the receive queue the
  * NIC_RECV function reads and a card's interrupt handler fills, the
- * counts, the DEVICE= line, and the PCI bus - everything a card driver
+ * bindings (NIC_BIND, NIC_RECVB) that give NETBEUI.SYS its own queue,
+ * the counts, the DEVICE= line, and the PCI bus - everything a card driver
  * shares.  A card's own source (NE2000 is the exception: it was written
  * before this and stands alone) provides card_find, card_setup,
  * card_stop, card_send and card_service, and its own ND_TABLE.
@@ -33,6 +34,8 @@ NIC_STATBLOCK net_stats;
 
 volatile u8 net_probing;
 volatile u8 net_probe_hit = NIC_NOIRQ;
+int ( *net_probe_isr )( void );         /* the card's: was that its interrupt? */
+static u8 probe_kept = NIC_NOIRQ;       /* the line the probe left hooked */
 
 /* the receive queue: QN frames and a spare the newest goes in when the
    queue is full, so that a card's ISR always has somewhere to write */
@@ -42,6 +45,21 @@ volatile u8 net_probe_hit = NIC_NOIRQ;
 static u8  *queue;
 static u32  q_head, q_tail;
 static volatile u32 q_count;
+
+/* the bindings (NIC_BIND), as NE2000.SYS has them: a protocol driver
+   beside the default reader - NETBEUI.SYS beside TCPIP.SYS - claims an
+   Ethernet type or an 802.2 DSAP, and the frames that match go to a
+   queue of their own, read by NIC_RECVB, not to NIC_RECV's */
+#define BQN     8               /* frames a binding's queue holds */
+
+static struct {
+    u8   used;
+    u8   dsap;                  /* with type 0: an 802.3 frame's DSAP */
+    u16  type;                  /* an Ethernet type, or 0 */
+    u8  *q;                     /* BQN slots of QSLOT */
+    u32  head, tail;
+    volatile u32 count;
+} binds[NIC_BINDS];
 
 static u8   running;
 static u8   parked;
@@ -60,6 +78,47 @@ void *net_alloc( u32 bytes )  { return nds_alloc( bytes ); }
 void  net_free( void *block ) { nds_free( block ); }
 void  net_print( const char *text ) { nds_print( text ); }
 u32   net_ticks( void )       { return nds_ticks(); }
+
+/* ---------------------------------------------------------------- */
+/* time shorter than a tick                                          */
+/* ---------------------------------------------------------------- */
+
+/* the timer's channel 0, latched: it counts down at 1,193,182 a second
+   whatever the processor and the bus are */
+static u16 pit_count( void )
+{
+    u32 flags = int_off();
+    u16 low, high;
+
+    outb( 0x43, 0x00 );                 /* latch channel 0 */
+    low = inb( 0x40 );
+    high = inb( 0x40 );
+    int_back( flags );
+    return (u16)( ( high << 8 ) | low );
+}
+
+/* At least USEC microseconds (EL3C509.SYS's wait, shared).  In the
+   square-wave mode the BIOS leaves channel 0 in, the count goes down by
+   two a step, so five counts in two are taken as a microsecond - longer
+   than that in the other mode, never shorter.  A count that goes up has
+   been reloaded, and only what was left before the reload is counted.
+   The guard is for a timer that does not move: reading it is four bus
+   cycles, so the guard is never what ends the wait on a machine whose
+   timer runs.  An empty loop is no measure of time: on a Pentium 4 a
+   5,000-pass loop is gone in a couple of microseconds. */
+void net_delay_us( u32 usec )
+{
+    u32 want = usec * 5 / 2, got = 0, guard = usec * 8 + 64;
+    u16 last, now;
+
+    last = pit_count();
+    while ( got < want && guard ) {
+        now = pit_count();
+        got += ( now <= last ) ? (u32)( last - now ) : (u32)last;
+        last = now;
+        guard--;
+    }
+}
 
 /* ---------------------------------------------------------------- */
 /* what a library would have supplied                                */
@@ -102,10 +161,56 @@ u8 *net_rx_begin( void )
     return queue + ( q_count == QN ? QN : q_tail ) * QSLOT + 2;
 }
 
-void net_rx_commit( u32 len )
+/* which binding wants this frame, or -1 */
+static int bind_match( const u8 *frame, u32 len )
+{
+    u16 type;
+    int i;
+
+    if ( len < NIC_HDRLEN + 1 ) return -1;
+    type = (u16)( ( (u16)frame[12] << 8 ) | frame[13] );
+    for ( i = 0; i < NIC_BINDS; i++ ) {
+        if ( !binds[i].used ) continue;
+        if ( binds[i].type ? type == binds[i].type
+                           : ( type <= 1500 && frame[14] == binds[i].dsap ) ) return i;
+    }
+    return -1;
+}
+
+/* a frame copied into a binding's queue.  The card wrote it into a slot
+   of QSLOT, so it is never longer than a binding's slot holds */
+static void bind_put( int b, const u8 *frame, u32 len )
 {
     u8 *slot;
 
+    if ( binds[b].count == BQN ) {
+        net_stats.rxdropped++;
+        return;
+    }
+    if ( len > QSLOT - 2 ) len = QSLOT - 2;
+    slot = binds[b].q + binds[b].tail * QSLOT;
+    *(u16 *)slot = (u16)len;
+    net_memcpy( slot + 2, frame, len );
+    binds[b].tail = ( binds[b].tail + 1 ) % BQN;
+    binds[b].count++;
+    net_stats.rxframes++;
+    net_stats.rxbytes += len;
+}
+
+void net_rx_commit( u32 len )
+{
+    u8 *slot;
+    int b;
+
+    /* the frame is where net_rx_begin said: the tail, or the spare.  A
+       frame for a binding goes to the binding's queue, even when the
+       default queue is full */
+    slot = queue + ( q_count == QN ? QN : q_tail ) * QSLOT;
+    b = bind_match( slot + 2, len );
+    if ( b >= 0 ) {
+        bind_put( b, slot + 2, len );
+        return;
+    }
     if ( q_count == QN ) {
         net_stats.rxdropped++;
         return;
@@ -168,7 +273,9 @@ u32 net_pci_find( const PCI_ID *ids, const PCI_ID **which )
     return 0;
 }
 
-/* a base address register: its base, and whether it is in I/O space */
+/* a base address register: its base, and whether it is in I/O space.
+   A 64-bit memory BAR the BIOS put above 4GB is out of reach - the
+   kernel's map is 32-bit - and is refused, with the setting to change */
 u32 net_pci_bar( u32 addr, int bar, int *is_io )
 {
     REGS r;
@@ -178,6 +285,11 @@ u32 net_pci_bar( u32 addr, int bar, int *is_io )
     r.edx = bar;
     if ( !bus_call( BUS_PCIBAR, &r ) ) { if ( is_io ) *is_io = 0; return 0; }
     if ( is_io ) *is_io = ( r.edx & BARF_IO ) ? 1 : 0;
+    if ( !( r.edx & BARF_IO ) && r.edi != 0 ) {
+        net_print( "The card's registers are above 4GB, where PM-DOS cannot reach them.\r\n"
+                   "Turn off \"Above 4G Decoding\" in the BIOS setup.\r\n" );
+        return 0;
+    }
     return r.eax;
 }
 
@@ -244,6 +356,15 @@ void net_irq_probe_end( void )
         }
     }
     net_irq = net_probe_hit;
+    probe_kept = net_probe_hit;
+}
+
+/* a line the probe left hooked, let go: the card was not found after
+   all, or /I: or /POLL said otherwise */
+static void probe_drop( void )
+{
+    if ( probe_kept != NIC_NOIRQ ) nds_irqunhook( probe_kept );
+    probe_kept = NIC_NOIRQ;
 }
 
 /* ---------------------------------------------------------------- */
@@ -349,6 +470,7 @@ int __cdecl nd_init( const char *line )
     net_line = line;
     if ( card_find() ) {
         net_line = 0;
+        probe_drop();
         msg[0] = 0;
         add_str( msg, net_name[0] ? net_name : "This card" );
         add_str( msg, ": not found\r\n" );
@@ -357,18 +479,23 @@ int __cdecl nd_init( const char *line )
     }
     queue = net_alloc( ( QN + 1 ) * QSLOT );
     if ( queue == 0 ) {
+        net_line = 0;
+        probe_drop();
         net_print( "no memory for the receive queue\r\n" );
         return 1;
     }
-    /* the line a card already knows (PCI, or an ISA card that found it
-       in card_find) is hooked; one it does not, on ISA, is found by
-       making the card interrupt, which is card_setup's to do while
-       net_probing - a card that cannot is left polled */
+    /* the line a card already knows (PCI, or an ISA card that read it
+       off the card) is hooked here.  One that an ISA card found in
+       card_find by making itself interrupt (net_irq_probe_begin/end,
+       with net_probe_isr) is hooked already, and kept; a card that
+       found none is left polled */
     if ( net_opt_irq != NIC_NOIRQ ) net_irq = net_opt_irq;
     if ( net_opt_poll ) net_irq = NIC_NOIRQ;    /* /POLL: force the clock path */
-    if ( net_irq != NIC_NOIRQ && !net_probing ) {
+    if ( probe_kept != net_irq ) probe_drop();
+    if ( net_irq != NIC_NOIRQ && net_irq != probe_kept ) {
         if ( !nds_irqhook( net_irq ) ) net_irq = NIC_NOIRQ;
     }
+    probe_kept = NIC_NOIRQ;                     /* net_irq's now, unhooked as it is */
     polled = (u8)( net_irq == NIC_NOIRQ );
     if ( polled ) net_flags |= NICF_POLLED;
     nds_tickhook();
@@ -392,6 +519,7 @@ int __cdecl nd_init( const char *line )
 void __cdecl nd_park( int back )
 {
     u32 flags = int_off();
+    u8  keep_irq, keep_flags;
 
     if ( !back ) {
         parked = 1;
@@ -407,7 +535,18 @@ void __cdecl nd_park( int back )
             polled = (u8)( net_irq == NIC_NOIRQ );
             bridge_woke = 0;
         }
-        if ( !card_find() && !card_setup() ) running = 1;
+        /* card_find sets the line and the flags afresh, as at the load;
+           what nd_init settled on - /I:, /POLL, NICF_POLLED - is kept.
+           Without this a card loaded with /POLL came back from a park
+           with its interrupt on, on a line nobody had hooked (found
+           writing IXGBE.SYS, 2026-11-14) */
+        keep_irq = net_irq;
+        keep_flags = net_flags;
+        if ( !card_find() ) {
+            net_irq = keep_irq;
+            net_flags = keep_flags;
+            if ( !card_setup() ) running = 1;
+        }
     }
     int_back( flags );
 }
@@ -420,8 +559,14 @@ void __cdecl nd_halt( void )
 
 int __cdecl nd_irq( u32 line )
 {
-    if ( net_probing ) return 0;                /* a card that probes its
-                                                   line handles this itself */
+    if ( net_probing ) {                        /* the card making itself
+                                                   interrupt: which line? */
+        if ( net_probe_isr != 0 && net_probe_isr() ) {
+            net_probe_hit = (u8)line;
+            return 1;
+        }
+        return 0;
+    }
     if ( !running ) return 0;
     if ( card_service() ) { net_stats.irqs++; return 1; }
     return 0;
@@ -484,6 +629,50 @@ int __cdecl nd_call( u32 fn, void *buf, u32 len, u32 *answer )
         int_back( flags );
         *answer = got;
         return 0;
+
+    case NIC_BIND: {
+        const u8 *req = (const u8 *)buf;
+        u16 type;
+        int i;
+
+        if ( len < NICB_LEN ) return ERR_BADLEN;
+        type = *(const u16 *)req;
+        for ( i = 0; i < NIC_BINDS && binds[i].used; i++ ) ;
+        if ( i == NIC_BINDS ) return ERR_GENERAL;
+        if ( binds[i].q == 0 ) binds[i].q = net_alloc( BQN * QSLOT );
+        if ( binds[i].q == 0 ) return ERR_GENERAL;
+        binds[i].type = type;
+        binds[i].dsap = (u8)( type ? 0 : req[2] );
+        binds[i].head = binds[i].tail = 0;
+        binds[i].count = 0;
+        flags = int_off();
+        binds[i].used = 1;              /* the card's handler may use it from now */
+        int_back( flags );
+        *answer = (u32)( i + 1 );
+        return 0;
+    }
+
+    case NIC_RECVB: {
+        u32 b;
+
+        if ( len < 4 ) return ERR_BADLEN;
+        b = *(u32 *)buf;
+        if ( b < 1 || b > NIC_BINDS || !binds[b - 1].used ) return ERR_BADDATA;
+        b--;
+        if ( binds[b].count == 0 ) {
+            *answer = 0;
+            return 0;
+        }
+        slot = binds[b].q + binds[b].head * QSLOT;
+        got = *(u16 *)slot;
+        net_memcpy( (u8 *)buf + 4, slot + 2, got < len - 4 ? got : len - 4 );
+        flags = int_off();
+        binds[b].head = ( binds[b].head + 1 ) % BQN;
+        binds[b].count--;
+        int_back( flags );
+        *answer = got;
+        return 0;
+    }
 
     case NIC_STATS:
         if ( len < NICS_LEN ) return ERR_BADLEN;

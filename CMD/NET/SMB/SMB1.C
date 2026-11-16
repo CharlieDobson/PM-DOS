@@ -770,6 +770,7 @@ int smb1_list_dir( smb1_client *cl, const char *dir, const char *pattern,
                  ( cl->last_status == 0xC0000003UL ||          /* INVALID_INFO_CLASS */
                    cl->last_status == 0xC0000002UL ||          /* NOT_IMPLEMENTED */
                    cl->last_status == 0xC000000DUL ||          /* INVALID_PARAMETER */
+                   cl->last_status == 0xC0000148UL ||          /* INVALID_LEVEL */
                    cl->last_status == 0x00010002UL ) ) {       /* ERRSRV/ERRerror */
                 level = FIND_DIR_LEVEL;
                 continue;

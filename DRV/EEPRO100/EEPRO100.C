@@ -9,16 +9,26 @@
  * chip fills.  There is one small control register, the SCB, through
  * which the lists are started and the chip's state is read.
  *
- * SIMPLIFIED MODE.  The chip can gather a frame from scattered buffers;
- * this driver does not need that and uses the simpler form, where a
- * transmit command block carries its frame inline and a receive
- * descriptor is followed by the frame it caught.  The chip is told at
- * the start who it is (an individual-address command) and how to behave
- * (a configure command, whose 22 bytes are the family's long-standing
+ * A receive descriptor is followed by the frame it caught ("simplified"
+ * receive).  A transmit command block points at a one-entry buffer
+ * list ("flexible" transmit), as Linux's e100 does: QEMU's 82557 sends
+ * an EMPTY frame for a block that carries its frame inline, and every
+ * chip of the family takes the flexible form.  The chip is told at the
+ * start who it is (an individual-address command) and how to behave (a
+ * configure command, whose 22 bytes are the family's long-standing
  * defaults).
  *
- * On the shared base (DRV\NETDRV.H, NETCORE.C).  86Box has no card of
- * this family; this is proved on QEMU.
+ * THE RECEIVE RING ENDS AT AN "EL" DESCRIPTOR, the one before the next
+ * to be read, and the mark moves on as each one is given back.  The
+ * chip does not look at a descriptor's done bit before it writes into
+ * it: without an end it would run round the ring over frames not yet
+ * read.  When it reaches the end it stops (no resources) and is started
+ * again at the first free descriptor once the ring is drained.
+ *
+ * Covers the PCI cards (82557/8/9, 82550/1) and the PRO/100 VE/VM
+ * networks built into Intel's ICH2 to ICH7 chipsets.  On the shared base
+ * (DRV\NETDRV.H, NETCORE.C).  86Box has no card of this family; this is
+ * proved on QEMU's i82557b, i82559er and i82801.
  */
 #include "netdrv.h"
 
@@ -28,6 +38,7 @@
 #define SCB_PTR     0x04        /* dword: the block a command acts on */
 #define SCB_PORT    0x08        /* dword: reset and the like */
 #define SCB_EEPROM  0x0E        /* word: the serial EEPROM */
+#define SCB_MASK    0x0100      /* SCB_CMD: M, every interrupt masked */
 
 /* SCB command-byte values */
 #define RUC_START   0x01
@@ -49,10 +60,17 @@
 #define CB_IASETUP  1
 #define CB_CONFIG   2
 #define CB_TX       4
+#define CB_SF       0x0008      /* transmit: flexible (a buffer list) */
 #define CB_EL       0x8000      /* end of list */
 #define CB_S        0x4000      /* suspend after this one */
 #define CB_I        0x2000      /* interrupt after this one */
 #define CB_C        0x8000      /* status: this one completed */
+#define CB_OK       0x2000      /* status: ...and without an error */
+
+/* the SCB status word's unit states */
+#define CUS_MASK    0x00C0      /* command unit: 0 = idle */
+#define RUS_MASK    0x003C      /* receive unit... */
+#define RUS_READY   0x0010      /* ...4 = ready */
 
 /* EEPROM (93C46) bits in SCB_EEPROM */
 #define EE_SK       0x01
@@ -60,32 +78,55 @@
 #define EE_DI       0x04
 #define EE_DO       0x08
 
-#define RFDN        8
+#define RFDN        16
 #define TXN         4
 #define RFDSZ       ( 16 + 1536 )       /* the header and a frame */
-#define TXCBSZ      ( 16 + 1536 )
+#define TXCBSZ      ( 16 + 8 + 1536 )   /* the block, its one buffer entry, the frame */
+#define RFD_SIZE    1520                /* what a descriptor may be given */
 
 #define SPIN        400000L
 
 static u8  *rfd[RFDN];                  /* receive frame descriptors */
 static u8  *txcb[TXN];                  /* transmit command blocks */
 static u8  *cmdcb;                      /* for IA setup and configure */
+static u8  *tx_last;                    /* the block sent last, or 0 */
 static int  rx_cur, tx_cur;
 
+/* the PCI cards, then the networks inside Intel's ICH2..ICH7 */
 static const PCI_ID eepro_ids[] = {
     { 0x8086, 0x1229 },         /* 82557/8/9 - QEMU's i8255x */
-    { 0x8086, 0x1209 },
-    { 0x8086, 0x1029 },
-    { 0x8086, 0x2449 },
+    { 0x8086, 0x1209 },         /* 82559ER, 82551IT */
+    { 0x8086, 0x1029 },         /* 82559 */
+    { 0x8086, 0x1030 },         /* 82559 InBusiness */
+    { 0x8086, 0x1059 },         /* 82551QM */
+    { 0x8086, 0x2449 },         /* ICH2 - QEMU's i82801 */
+    { 0x8086, 0x2459 }, { 0x8086, 0x245D },
+    { 0x8086, 0x1031 }, { 0x8086, 0x1032 }, { 0x8086, 0x1033 },
+    { 0x8086, 0x1034 }, { 0x8086, 0x1038 },                     /* ICH3 */
+    { 0x8086, 0x1039 }, { 0x8086, 0x103A }, { 0x8086, 0x103B },
+    { 0x8086, 0x103C }, { 0x8086, 0x103D }, { 0x8086, 0x103E }, /* ICH4 */
+    { 0x8086, 0x1050 }, { 0x8086, 0x1051 }, { 0x8086, 0x1052 },
+    { 0x8086, 0x1053 }, { 0x8086, 0x1054 }, { 0x8086, 0x1055 },
+    { 0x8086, 0x1056 }, { 0x8086, 0x1057 },                     /* ICH5 */
+    { 0x8086, 0x1064 }, { 0x8086, 0x1065 }, { 0x8086, 0x1066 },
+    { 0x8086, 0x1067 }, { 0x8086, 0x1068 }, { 0x8086, 0x1069 },
+    { 0x8086, 0x106A }, { 0x8086, 0x106B },                     /* ICH6 */
+    { 0x8086, 0x1091 }, { 0x8086, 0x1092 }, { 0x8086, 0x1093 },
+    { 0x8086, 0x1094 }, { 0x8086, 0x1095 }, { 0x8086, 0x10FE },
+    { 0x8086, 0x27DC },                                         /* ICH7 */
     { 0, 0 }
 };
 
-/* Intel's long-standing default configure block, 22 bytes */
-/* byte 21 has the Multicast-All bit (0x08): take every multicast address.
-   NetBEUI's functional address 03-00-00-00-00-01 is a multicast, so a card
-   that is to carry NetBEUI must accept multicast, not only broadcast. */
+/* Intel's long-standing default configure block, 22 bytes, but for two:
+   byte 7 is 02h, not 03h - short frames are kept, not dropped, since
+   QEMU counts a 60-byte frame with no CRC as short and threw away every
+   ARP reply (on a real chip a runt also fails its CRC, and bad frames
+   are not saved: byte 6 bit 7 is clear).  Byte 21 has the Multicast-All
+   bit (08h): NetBEUI's functional address 03-00-00-00-00-01 is a
+   multicast, so a card that is to carry NetBEUI must take them.  Byte
+   18 bit 2 is clear: the CRC is not stored behind a frame. */
 static const u8 config_default[22] = {
-    22, 0x08, 0, 0, 0, 0, 0x32, 0x03, 1, 0,
+    22, 0x08, 0, 0, 0, 0, 0x32, 0x02, 1, 0,
     0x2E, 0, 0x60, 0, 0xF2, 0x48, 0, 0x40, 0xF2, 0x80, 0x3F, 0x0D
 };
 
@@ -193,7 +234,7 @@ int card_find( void )
 
     outl( net_port + SCB_PORT, 0 );             /* software reset */
     for ( i = 0; i < 10000; i++ ) eedelay();
-    outw( net_port + SCB_CMD, 0 );              /* mask off interrupts */
+    outw( net_port + SCB_CMD, SCB_MASK );       /* interrupts masked (M, bit 8) */
 
     abits = ee_abits();
     for ( i = 0; i < 3; i++ ) {
@@ -235,7 +276,7 @@ int card_setup( void )
 
     outl( net_port + SCB_PORT, 0 );             /* reset */
     for ( i = 0; i < 10000; i++ ) eedelay();
-    outw( net_port + SCB_CMD, 0 );
+    outw( net_port + SCB_CMD, SCB_MASK );       /* masked while it is set up */
 
     /* both unit bases absolute (zero) so the links below are addresses */
     scb_cmd( RUC_LOADBASE, 0 );
@@ -254,31 +295,38 @@ int card_setup( void )
     if ( !run_cb( cb ) ) return 1;
 
     /* the receive descriptors, linked in a ring, each able to hold a
-       whole frame right behind its 16-byte header (simplified) */
+       whole frame right behind its 16-byte header (simplified), the
+       last one the end of the ring (EL) */
     for ( i = 0; i < RFDN; i++ ) {
         u8 *r = rfd[i];
         net_memzero( r, 16 );
+        *(u16 *)( r + 2 ) = (u16)( i == RFDN - 1 ? CB_EL : 0 );
         *(u32 *)( r + 4 ) = (u32)rfd[( i + 1 ) % RFDN];   /* link */
         *(u32 *)( r + 8 ) = 0xFFFFFFFFL;                  /* no buffer descriptor */
-        *(u16 *)( r + 14 ) = 1518;                        /* size */
+        *(u16 *)( r + 14 ) = RFD_SIZE;
     }
     for ( i = 0; i < TXN; i++ ) {
         u8 *t = txcb[i];
-        net_memzero( t, 16 );
+        net_memzero( t, 24 );
         *(u16 *)( t + 0 ) = CB_C;                         /* free */
     }
     rx_cur = tx_cur = 0;
+    tx_last = 0;
 
     if ( !scb_cmd( RUC_START, (u32)rfd[0] ) ) return 1;
 
-    outw( net_port + SCB_CMD, (u16)( net_flags & NICF_POLLED ? 0x0100 : 0x0000 ) );  /* mask, or let it interrupt */
+    /* what setting up raised (the CU going idle) is cleared before the
+       mask comes off: a level line asserted with nobody to answer it
+       is shut by the kernel after 256 in a second */
+    outw( net_port + SCB_STATUS, ACK_ALL );
+    outw( net_port + SCB_CMD, (u16)( net_flags & NICF_POLLED ? SCB_MASK : 0 ) );  /* masked, or let it interrupt */
     return 0;
 }
 
 void card_stop( void )
 {
     outl( net_port + SCB_PORT, 0 );             /* reset: CU and RU idle */
-    outw( net_port + SCB_CMD, 0x0100 );         /* interrupts masked */
+    outw( net_port + SCB_CMD, SCB_MASK );       /* interrupts masked */
 }
 
 int card_send( const u8 *frame, u32 len )
@@ -287,44 +335,57 @@ int card_send( const u8 *frame, u32 len )
     u8 *t = txcb[entry];
     u32 n;
 
-    if ( !( *(volatile u16 *)t & CB_C ) ) {
+    /* one block at a time: the one before it done and the command unit
+       idle, since a start while the unit is still active is not taken */
+    if ( tx_last ) {
         for ( n = 0; n < SPIN; n++ ) {
-            if ( *(volatile u16 *)t & CB_C ) break;
+            if ( ( *(volatile u16 *)tx_last & CB_C ) && !( scb_status() & CUS_MASK ) ) break;
         }
-        if ( !( *(volatile u16 *)t & CB_C ) ) { net_stats.txerrors++; return 0; }
+        if ( n == SPIN ) { net_stats.txerrors++; return 0; }
     }
     *(u16 *)( t + 0 ) = 0;                       /* status */
-    *(u16 *)( t + 2 ) = CB_TX | CB_EL;
+    *(u16 *)( t + 2 ) = CB_TX | CB_SF | CB_EL;
     *(u32 *)( t + 4 ) = 0;                       /* link (end of list) */
-    *(u32 *)( t + 8 ) = 0xFFFFFFFFL;             /* simplified: frame inline */
-    *(u16 *)( t + 12 ) = (u16)( len | 0x8000 );  /* byte count, EOF */
+    *(u32 *)( t + 8 ) = (u32)( t + 16 );         /* the buffer list */
+    *(u16 *)( t + 12 ) = 0;                      /* no bytes in the block itself */
     t[14] = 0xE0;                                /* transmit threshold */
-    t[15] = 0;                                   /* no buffer descriptors */
-    net_memcpy( t + 16, frame, len );
+    t[15] = 1;                                   /* one buffer */
+    *(u32 *)( t + 16 ) = (u32)( t + 24 );        /* the buffer: address, */
+    *(u16 *)( t + 20 ) = (u16)len;               /* ...length, */
+    *(u16 *)( t + 22 ) = 1;                      /* ...and the last one */
+    net_memcpy( t + 24, frame, len );
     if ( !scb_cmd( CUC_START, (u32)t ) ) { net_stats.txerrors++; return 0; }
+    tx_last = t;
     tx_cur = ( entry + 1 ) % TXN;
     return 1;
 }
 
 static void rx_drain( void )
 {
-    u32 count, len, n;
+    u32 len, n;
+    u16 st;
     u8 *r, *slot;
 
-    for ( n = 0; n < RFDN * 2; n++ ) {
+    for ( n = 0; n < RFDN; n++ ) {
         r = rfd[rx_cur];
-        if ( !( *(volatile u16 *)r & CB_C ) ) break;    /* not filled yet */
-        count = *(volatile u16 *)( r + 12 );
-        len = count & 0x3FFF;                            /* includes the CRC */
-        if ( ( count & 0x8000 ) && len >= NIC_HDRLEN + 4 && len <= NIC_MAXFRAME + 4 ) {
+        st = *(volatile u16 *)r;
+        if ( !( st & CB_C ) ) break;                     /* not filled yet */
+        /* the count's top bits are EOF and F, which QEMU does not set;
+           there is no CRC behind the frame (configure byte 18) */
+        len = *(volatile u16 *)( r + 12 ) & 0x3FFF;
+        if ( ( st & CB_OK ) && len >= NIC_HDRLEN && len <= NIC_MAXFRAME ) {
             slot = net_rx_begin();
-            net_memcpy( slot, r + 16, len - 4 );
-            net_rx_commit( len - 4 );
+            net_memcpy( slot, r + 16, len );
+            net_rx_commit( len );
         } else {
             net_stats.rxerrors++;
         }
-        *(u16 *)( r + 0 ) = 0;                           /* give it back */
-        *(u16 *)( r + 12 ) = 0;
+        /* give it back as the new end of the ring, then take the end
+           off the one before it */
+        *(volatile u16 *)( r + 0 ) = 0;
+        *(volatile u16 *)( r + 12 ) = 0;
+        *(volatile u16 *)( r + 2 ) = CB_EL;
+        *(volatile u16 *)( rfd[( rx_cur + RFDN - 1 ) % RFDN] + 2 ) = 0;
         rx_cur = ( rx_cur + 1 ) % RFDN;
     }
 }
@@ -341,7 +402,12 @@ int card_service( void )
         mine = 1;
         outw( net_port + SCB_STATUS, (u16)( st & ACK_ALL ) );   /* ack */
         if ( st & ( ACK_FR | ACK_RNR ) ) rx_drain();
-        if ( st & ACK_RNR ) scb_cmd( RUC_RESUME, 0 );           /* the RU stalled */
+    }
+    /* the receive unit stopped at the end of the ring: drained, it is
+       started again at the first free descriptor */
+    if ( ( scb_status() & RUS_MASK ) != RUS_READY ) {
+        rx_drain();
+        scb_cmd( RUC_START, (u32)rfd[rx_cur] );
     }
     return mine;
 }

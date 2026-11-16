@@ -1,5 +1,5 @@
 #!/usr/bin/perl
-# mkpdf.pl OUTDIR [JPEG] [G4 W H]  - test documents for ACROREAD, one for
+# mkpdf.pl OUTDIR [JPEG] [G4 W H]  - test documents for PMWRITE's PDF code, one for
 # each way a PDF file can be put together.  Written by hand so that
 # what each one tests is known:
 #

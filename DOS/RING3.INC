@@ -262,6 +262,53 @@ slg_no:
         stc
         ret
 
+;---------------------------------------------------------------------
+; slot_fit - EBX = what a program being loaded needs from offset zero
+;            of its slot: its image, its BSS and its stack.  Make the
+;            slot r3_useslot last chose at least that big and 64K more,
+;            in place.  CF if the arena will not stretch that far.
+;            Everything preserved.
+;
+; slot_grow IS FOR A PROGRAM THAT IS RUNNING: it hands the new memory
+; to the heap and moves the PSP's memory top.  This is for one that is
+; not loaded yet, called by exec_load before the first byte of the
+; image is read: there is no heap and no PSP to tell, only the block,
+; the size and the descriptors.  The 64K is a heap to start with -
+; r3h_init lays it out between the BSS and the stack - and slot_grow
+; takes over from there.  The base does not move, so exec_load's flat
+; cursor is still right.
+;---------------------------------------------------------------------
+slot_fit:
+        pushad
+        mov     esi,[r3_depth]
+        cmp     dword ptr [r3_slblk + esi*4],0
+        je      sft_no                          ; no slot at all
+        add     ebx,10000h + 0FFFh
+        jc      sft_no
+        and     ebx,NOT 0FFFh                   ; whole pages, as a slot is
+        mov     edi,ebx
+        sub     edi,[r3_slsize + esi*4]         ; EDI = what to grow by
+        jbe     sft_ok                          ; big enough as it is
+        call    slg_try
+        jnc     sft_got
+        mov     ebx,edi                         ; once more, with whatever the
+        call    cache_reclaim                   ; cache can give back
+        jc      sft_no
+        call    slg_try
+        jc      sft_no
+sft_got:
+        add     [r3_slsize + esi*4],edi
+        mov     eax,esi                         ; its descriptors, and r3_size
+        call    r3_useslot
+sft_ok:
+        popad
+        clc
+        ret
+sft_no:
+        popad
+        stc
+        ret
+
 ; slg_try - ESI = the depth, EDI = bytes to grow by.  CF if the arena
 ; block will not stretch that far.
 slg_try:

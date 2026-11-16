@@ -198,6 +198,13 @@ vr_stkok:
         call    nt_arm
         pop     eax
 
+        ; ...AND WHAT THE BOX HAS PUT THERE ITSELF GOES ON, with the MP,
+        ; EM and TS it asked for.  Both come out again in v86_leave;
+        ; neither does anything for a box that has asked for nothing.
+        ; See vsr_emul.
+        call    vbp_load
+        call    vfp_in
+
         ; Faults out of the guest land on the stack we are standing on,
         ; just below this frame.  Nothing else is down there, and it
         ; means the monitor unwinds to exactly here on the way out.
@@ -349,10 +356,13 @@ vl_noif:
         mov     [edi+V86C_FLAGS],eax
 
         mov     esp,dword ptr ds:[v86_kesp]
+        call    vbp_out                 ; the box's breakpoints come out of
+                                        ; the processor first (vsr_emul)
         push    eax                     ; the guest has stopped: guard our own
         mov     al,1                    ; code again
         call    nt_arm
         pop     eax
+        call    vfp_out                 ; ...its MP, EM and TS with them
         call    fpu_reclaim             ; ...and send a native program's
                                         ; coprocessor instructions to the
                                         ; emulator again (FPU.INC)
@@ -698,7 +708,10 @@ vf_not14:
         je      vf_exc                  ; DOS program knows as an interrupt
         cmp     eax,7                   ; a coprocessor instruction with EM
         jne     vf_not7                 ; set: the box's own, or lent the
-        call    fpu_boxnm               ; bare hardware and run again
+        cmp     byte ptr ds:[vfp_set],0 ; bare hardware and run again.  Under
+        jne     vf_exc                  ; EM or TS the box set itself it is
+                                        ; its own, always (vfp_put)
+        call    fpu_boxnm
         jnc     v86_resume
         jmp     vf_exc
 vf_not7:
@@ -786,6 +799,8 @@ vf_op:
         je      vf_outb_d
         cmp     al,0EFh                 ; OUT DX,AX
         je      vf_outw_d
+        cmp     al,0Fh                  ; the control registers and the
+        je      vf_0f                   ; cache: vsr_emul, below
 
 vf_bad:
         mov     eax,V86R_FAULT
@@ -803,6 +818,858 @@ vf_hlt:
         mov     eax,V86R_HLT
         xor     ebx,ebx
         jmp     v86_leave
+
+;=====================================================================
+; THE SYSTEM REGISTERS - CONTROL, DEBUG, TEST AND MODEL-SPECIFIC - AND
+; THE CACHE.
+;
+; A move to or from CR0 is privileged, so in a box - and in a DPMI
+; client, which is ring 3 as well - it is a general protection fault,
+; and until 2026-11-13 that fault ended the program.  It should not.
+; EMM386, QEMM and Windows all answer these instructions, so a program
+; written for DOS reads CR0 under a memory manager without asking
+; first.  CHKCPU looks at SMSW before it touches an MSR or a test
+; register, then reads CR0 for the cache bits with no check at all,
+; and was ended there.  The rest of the privileged 0Fh instructions a
+; DOS program has a use for followed on 2026-11-14.
+;
+; WHAT A GUEST IS SHOWN OF THE CONTROL REGISTERS is the register: CR0,
+; CR2, CR3, and CR4 where the processor has one, as they are - except
+; MP, EM and TS, which are the ones it runs under (vfp_view).
+;
+; WHAT A GUEST MAY CHANGE IN CR0 is CD, NW and ET for the machine and
+; MP, EM and TS for itself.  CD and NW are the cache: a program that
+; slows a 486 down by switching the cache off is a DOS program like any
+; other.  ET is a bit only a 386 lets anybody change.  PE, PG, WP and
+; NE are the kernel's.  A write leaves those as they are and is not an
+; error, because a program that reads CR0, sets one bit and writes all
+; of it back has written every one of them.  A write to CR4 changes
+; nothing, for the same reason: the bit a DOS program sets there for
+; itself (OSFXSR) the host has set already, and the rest are not a
+; box's to have.  Loading CR2 or CR3 is still the fault it was.  A
+; program doing that is on its way into protected mode by itself, and
+; it cannot be let go on; LGDT and LIDT end it for the same reason.
+;
+; NW SET WITH CD CLEAR is a general protection fault on an Intel
+; processor, here in ring 0, and a working cache mode on a Cyrix one.
+; Nothing here can tell which it would be, so a write that asks for the
+; pair leaves both bits as they are - unless the pair is in force
+; already, and then the write is the read-modify-write above and goes
+; through.  What that costs is a box on a Cyrix processor switching
+; INTO that mode, which it cannot do.
+;
+; MP, EM AND TS ARE A BOX'S OWN, by LMSW or by a move to CR0, and CLTS
+; clears its TS.  They are how a program that brings a coprocessor
+; emulator has the instructions sent to it: EM set, and each one is
+; exception 7, which the monitor has always handed to the box's INT 7.
+; But the kernel keeps coprocessor states with FXSAVE and a native
+; program computes with the real part, and neither can run under a
+; box's EM.  So the three bits a box asks for are kept (vfp_bits), put
+; into CR0 when a box is entered (v86_run) and taken out when it is
+; left (v86_leave).  They are one set for every box, as CR0 is one
+; register: an emulator that stays resident has its EM for the next
+; DOS program too.  A box that never asks runs as it always did, and a
+; write of the bits it already has asks for nothing (vfp_put).  A DPMI
+; client's protected-mode code runs under the kernel's bits; from
+; there the write is taken and changes nothing.
+;
+; THE DEBUG REGISTERS ARE A BOX'S OWN AS WELL, and its breakpoints are
+; real.  The kernel has a use for DR0 to DR3 itself - the null-pointer
+; guard (NULLTRAP.INC) - which it drops for exactly as long as a box
+; runs; the box's four addresses and its DR7 go in in their place
+; (vbp_load, from v86_run) and come out again (vbp_out, from
+; v86_leave).  Three things keep that safe.  A breakpoint at or above
+; BOX_TOP, where no box reaches and the kernel lives, is not enabled.
+; GD is never set.  And a DATA breakpoint can go off under the monitor
+; itself, which writes a box's stack for it at every INT: that is a
+; debug exception in ring 0, exc_common takes it as the box's
+; (vbp_owed), and the box is given its INT 1 on the way back in - after
+; the instruction, which is where the processor would have put it.
+; DR4 and DR5 are DR6 and DR7.  From ring 3 the registers hold what is
+; put in them, and nothing is watched while a client's protected-mode
+; code runs.  Nor does a breakpoint see what the DOS side writes for a
+; box - the data of a read, say - because by then the box has been
+; left and the registers are the kernel's again.
+;
+; AN INSTRUCTION BREAKPOINT IS A FAULT AND THE REST ARE TRAPS, which
+; matters to vf_exc: it ends a box whose handler returns to the same
+; fault thirty-two times, and a watchpoint that goes off at one
+; instruction in a loop is not that (vbp_fault).
+;
+; THE MODEL-SPECIFIC REGISTERS ARE THE MACHINE'S, and RDMSR and WRMSR
+; are run for the guest as they stand.  Whether the processor has the
+; instruction at all, and whether it has that register, only the
+; processor says - by faulting - so the one instruction is run under
+; exc_guard (EXCEPT.INC) and what it raises is what the guest is given:
+; invalid opcode, or general protection through its own vector 0Dh, as
+; in real mode.
+;
+; THE TEST REGISTERS CAN BE READ AND NOT WRITTEN.  A write to TR6 puts
+; an entry of the program's choosing into the translation buffer, and
+; a write through TR5 a line into the cache; with paging off those are
+; tests, and with it on they are the kernel's memory somewhere else.
+; So a read is run for the guest, under the same guard - a Pentium has
+; no test registers, and says so - and a write is taken and does
+; nothing.
+;
+; A REGISTER THE PROCESSOR HAS NOT GOT - CR1, CR5 to CR7, CR4 on
+; anything before the last 486s - is an invalid opcode in real mode,
+; and the guest is given the same: exception 6, through its own vector.
+;
+; INVD AND WBINVD go with them.  WBINVD is run for the guest, since a
+; program that changes CD goes on to flush the cache.  INVD is run as
+; WBINVD: what it throws away is whatever the cache had not yet
+; written, and with a write-back cache that is the kernel's memory as
+; much as the program's.
+;
+; The same routine answers a DPMI client (pm3_0f).
+;=====================================================================
+CR0_ET          EQU     00000010h
+CR0_NW          EQU     20000000h
+CR0_CD          EQU     40000000h
+CR0_BOX         EQU     CR0_ET OR CR0_NW OR CR0_CD      ; a guest's to change
+VFP_MASK        EQU     0Eh             ; MP, EM and TS
+VFP_TS          EQU     08h
+
+CPUF_INCR4      EQU     010020DEh       ; CPUID's EDX: VME, DE, PSE, TSC,
+                                        ; PAE, MCE, PGE and FXSR, each of
+                                        ; which is switched by a bit of CR4
+
+DR6_FIXED       EQU     0FFFF0FF0h      ; the bits of DR6 that read as 1
+DR6_LIVE        EQU     0000E00Fh       ; B0-B3, BD, BS, BT: the processor's
+DR7_FIXED       EQU     00000400h       ; ...and the one of DR7
+DR7_GD          EQU     00002000h
+DR7_OFF         EQU     00000400h       ; nothing enabled (NT_DR7OFF)
+BOX_TOP         EQU     00110000h       ; a box reaches nothing from here up
+
+VSR_A32         EQU     01h             ; vsr_mode: 32-bit addressing
+VSR_BOX         EQU     02h             ; ...and from a box, not ring 3
+VSR_GPF         EQU     010Dh           ; vsr_emul: general protection, and
+                                        ; the guest's own
+
+;---------------------------------------------------------------------
+; vf_0f - a 0Fh opcode in a box.  ESI -> the instruction, ECX = its
+;         length up to and including the 0Fh.  The prefixes are read
+;         again for the two that matter to an operand in memory.
+;---------------------------------------------------------------------
+vf_0f:
+        mov     byte ptr ds:[vsr_mode],VSR_BOX
+        mov     byte ptr ds:[vsr_seg],0
+        xor     edx,edx
+vf_0fpfx:
+        inc     edx
+        cmp     edx,ecx
+        jae     short vf_0fgo           ; the last of them is the 0Fh
+        mov     al,[esi+edx-1]
+        cmp     al,67h
+        jne     short vf_0fseg
+        or      byte ptr ds:[vsr_mode],VSR_A32
+        jmp     short vf_0fpfx
+vf_0fseg:
+        mov     ah,FR_ES
+        cmp     al,26h
+        je      short vf_0fset
+        mov     ah,FR_CS
+        cmp     al,2Eh
+        je      short vf_0fset
+        mov     ah,FR_SS
+        cmp     al,36h
+        je      short vf_0fset
+        mov     ah,FR_DS
+        cmp     al,3Eh
+        je      short vf_0fset
+        mov     ah,FR_FS
+        cmp     al,64h
+        je      short vf_0fset
+        mov     ah,FR_GS
+        cmp     al,65h
+        jne     short vf_0fpfx
+vf_0fset:
+        mov     byte ptr ds:[vsr_seg],ah
+        jmp     short vf_0fpfx
+vf_0fgo:
+        lea     ebx,[esi+ecx]           ; ECX has counted the 0Fh
+        call    vsr_emul
+        jc      short vf_0fno
+        add     ecx,edx
+        call    v86_skip
+        jmp     v86_resume
+vf_0fno:
+        cmp     eax,13
+        je      vf_bad
+        movzx   eax,al                  ; 6 or 13, and the guest's own: its
+        mov     [ebp+FR_VEC],eax        ; INT 06h or INT 0Dh, if it has one
+        jmp     vf_exc
+
+;---------------------------------------------------------------------
+; vsr_emul - a 0Fh instruction that faulted in a box or in ring 3.
+;
+;   EBX -> the byte after the 0Fh.  EBP -> the fault frame, with the
+;   guest's registers below it as PUSHAD left them (v86_fault and
+;   pm3_fault both).  vsr_mode and vsr_seg say what the caller knows.
+;   CF clear: done, and EDX = how many bytes of it follow the 0Fh.
+;   CF set: EAX = 13, not an instruction answered here; 6, one this
+;   processor has not got; or VSR_GPF, one it refused.  The last two
+;   are the guest's to be told.
+;   EAX and EDX are used; nothing else is changed.
+;---------------------------------------------------------------------
+vsr_emul:
+        mov     al,[ebx]
+        cmp     al,20h                  ; MOV r32,CRn
+        je      vsr_get
+        cmp     al,22h                  ; MOV CRn,r32
+        je      vsr_set
+        cmp     al,21h                  ; MOV r32,DRn
+        je      vsr_drget
+        cmp     al,23h                  ; MOV DRn,r32
+        je      vsr_drset
+        cmp     al,24h                  ; MOV r32,TRn
+        je      vsr_trget
+        cmp     al,26h                  ; MOV TRn,r32
+        je      vsr_trset
+        cmp     al,32h                  ; RDMSR
+        je      vsr_rdmsr
+        cmp     al,30h                  ; WRMSR
+        je      vsr_wrmsr
+        cmp     al,01h                  ; the group LMSW is in
+        je      vsr_lmsw
+        cmp     al,06h                  ; CLTS
+        je      short vsr_clts
+        cmp     al,08h                  ; INVD
+        je      short vsr_flush
+        cmp     al,09h                  ; WBINVD
+        je      short vsr_flush
+vsr_no:
+        mov     eax,13
+        stc
+        ret
+vsr_ud:
+        mov     eax,6
+        stc
+        ret
+vsr_raised:                             ; EAX = what a guarded one raised
+        cmp     eax,6
+        je      vsr_ud
+        mov     eax,VSR_GPF
+        stc
+        ret
+
+vsr_flush:
+        test    byte ptr ds:[fpu_cpu],FPC_486   ; a 386 has no cache of its
+        jz      vsr_ud                          ; own and neither instruction
+        db      0Fh,09h                         ; WBINVD
+vsr_one:
+        mov     edx,1
+        clc
+        ret
+
+vsr_clts:
+        test    byte ptr ds:[vsr_mode],VSR_BOX
+        jz      vsr_one
+        cmp     byte ptr ds:[vfp_set],0 ; TS is clear, and has never been
+        je      vsr_one                 ; anything else
+        and     byte ptr ds:[vfp_bits],NOT VFP_TS
+        call    vfp_in
+        jmp     vsr_one
+
+;--- MOV r32,CRn: the mod r/m byte names the control register in bits
+;--- 3 to 5 and the general one in bits 0 to 2
+vsr_get:
+        movzx   edx,byte ptr [ebx+1]
+        shr     edx,3
+        and     edx,7
+        jz      short vsg_cr0
+        cmp     edx,2
+        je      short vsg_cr2
+        cmp     edx,3
+        je      short vsg_cr3
+        cmp     edx,4
+        jne     vsr_ud
+        test    dword ptr ds:[fpu_feat],CPUF_INCR4
+        jz      vsr_ud
+        db      0Fh,20h,0E0h            ; MOV EAX,CR4
+        jmp     short vsg_put
+vsg_cr0:
+        mov     eax,cr0
+        and     eax,NOT VFP_MASK
+        push    eax
+        call    vfp_view
+        pop     edx
+        or      eax,edx
+        jmp     short vsg_put
+vsg_cr2:
+        mov     eax,cr2
+        jmp     short vsg_put
+vsg_cr3:
+        mov     eax,cr3
+vsg_put:
+        push    eax
+        mov     al,[ebx+1]
+        call    vsr_regp
+        pop     eax
+        mov     [edx],eax
+        mov     edx,2
+        clc
+        ret
+
+;--- MOV CRn,r32
+vsr_set:
+        movzx   edx,byte ptr [ebx+1]
+        shr     edx,3
+        and     edx,7
+        jz      short vss_cr0
+        cmp     edx,2                   ; CR2 and CR3: the fault it was
+        je      vsr_no
+        cmp     edx,3
+        je      vsr_no
+        cmp     edx,4
+        jne     vsr_ud
+        test    dword ptr ds:[fpu_feat],CPUF_INCR4
+        jz      vsr_ud
+        mov     edx,2                   ; CR4: taken, and nothing changed
+        clc
+        ret
+vss_cr0:
+        push    ecx
+        mov     al,[ebx+1]
+        call    vsr_regp
+        mov     edx,[edx]               ; what the guest wants CR0 to be
+        push    edx
+        mov     eax,cr0
+        xor     edx,eax                 ; of the bits that are its to
+        and     edx,CR0_BOX             ; change, the ones that differ -
+        xor     edx,eax                 ; EDX = CR0 with those changed
+        mov     ecx,edx
+        and     ecx,CR0_CD OR CR0_NW
+        cmp     ecx,CR0_NW              ; NW without CD is asked for...
+        jne     short vss_load
+        mov     ecx,eax
+        and     ecx,CR0_CD OR CR0_NW
+        cmp     ecx,CR0_NW              ; ...which is no change, or else
+        je      short vss_load          ; the two stay as they are
+        and     edx,NOT (CR0_CD OR CR0_NW)
+        or      edx,ecx
+vss_load:
+        mov     cr0,edx
+        pop     eax                     ; ...and its MP, EM and TS
+        call    vfp_put
+        pop     ecx
+        mov     edx,2
+        clc
+        ret
+
+;--- LMSW r/m16: PE cannot be cleared by it and is never the guest's,
+;--- so what it carries is MP, EM and TS
+vsr_lmsw:
+        mov     al,[ebx+1]
+        mov     ah,al
+        and     ah,38h
+        cmp     ah,30h                  ; /6.  LGDT, LIDT and INVLPG are the
+        jne     vsr_no                  ; fault they were
+        call    vsr_rmlen
+        push    edx
+        test    byte ptr ds:[vsr_mode],VSR_BOX
+        jz      short vsl_done          ; ring 3: taken, nothing changed
+        call    vsr_rmword
+        jc      short vsl_done          ; ...and an operand not read here
+        call    vfp_put
+vsl_done:
+        pop     edx
+        add     edx,2
+        clc
+        ret
+
+;--- RDMSR and WRMSR, run for the guest with its own ECX and EDX:EAX
+vsr_rdmsr:
+        push    ecx
+        mov     ecx,[ebp+PA_ECX]
+        mov     dword ptr ds:[exc_gesp],esp
+        mov     dword ptr ds:[exc_guard],OFFSET vsr_msrno
+        db      0Fh,32h                 ; RDMSR
+        mov     dword ptr ds:[exc_guard],0
+        mov     [ebp+PA_EAX],eax
+        mov     [ebp+PA_EDX],edx
+        pop     ecx
+        jmp     vsr_one
+vsr_wrmsr:
+        push    ecx
+        mov     ecx,[ebp+PA_ECX]
+        mov     eax,[ebp+PA_EAX]
+        mov     edx,[ebp+PA_EDX]
+        mov     dword ptr ds:[exc_gesp],esp
+        mov     dword ptr ds:[exc_guard],OFFSET vsr_msrno
+        db      0Fh,30h                 ; WRMSR
+        mov     dword ptr ds:[exc_guard],0
+        pop     ecx
+        jmp     vsr_one
+vsr_msrno:                              ; from exc_common: ESP as it was
+        pop     ecx
+        jmp     vsr_raised
+
+;--- MOV r32,DRn.  DR4 and DR5 are other names for DR6 and DR7.
+vsr_drget:
+        movzx   edx,byte ptr [ebx+1]
+        shr     edx,3
+        and     edx,7
+        cmp     edx,4
+        jb      short vdg_addr
+        test    dl,1
+        jnz     short vdg_7
+        mov     eax,dr6                 ; what the processor has seen, and
+        and     eax,DR6_LIVE            ; what the guest last left there
+        or      eax,dword ptr ds:[vbp_6]
+        jmp     vsg_put
+vdg_7:
+        mov     eax,dword ptr ds:[vbp_7]
+        jmp     vsg_put
+vdg_addr:
+        mov     eax,dword ptr ds:[vbp_reg+edx*4]
+        jmp     vsg_put
+
+;--- MOV DRn,r32
+vsr_drset:
+        mov     al,[ebx+1]
+        call    vsr_regp
+        mov     eax,[edx]
+        movzx   edx,byte ptr [ebx+1]
+        shr     edx,3
+        and     edx,7
+        cmp     edx,4
+        jb      short vbs_addr
+        test    dl,1
+        jnz     short vbs_7
+        or      eax,DR6_FIXED
+        mov     dword ptr ds:[vbp_6],eax
+        xor     eax,eax                 ; the processor's sticky bits are
+        mov     dr6,eax                 ; cleared by writing it, so they are
+        jmp     short vbs_done
+vbs_7:
+        and     eax,NOT DR7_GD
+        or      eax,DR7_FIXED
+        mov     dword ptr ds:[vbp_7],eax
+        or      al,al                   ; L0 to G3: is anything enabled
+        setnz   byte ptr ds:[vbp_live]
+        jmp     short vbs_load
+vbs_addr:
+        mov     dword ptr ds:[vbp_reg+edx*4],eax
+vbs_load:
+        test    byte ptr ds:[vsr_mode],VSR_BOX
+        jz      short vbs_done          ; ring 3: kept, and nothing watched
+        call    vbp_out
+        call    vbp_load
+vbs_done:
+        mov     edx,2
+        clc
+        ret
+
+;--- MOV r32,TRn and MOV TRn,r32
+vsr_trget:
+        call    vsr_trread
+        jc      vsr_raised
+        jmp     vsg_put
+vsr_trset:
+        call    vsr_trread              ; is there one?  Then it is taken,
+        jc      vsr_raised              ; and nothing is written
+        mov     edx,2
+        clc
+        ret
+
+;---------------------------------------------------------------------
+; vsr_trread - the test register the mod r/m at [EBX+1] names, read.
+;              CF clear and EAX = it; or CF set and EAX = the vector
+;              the processor raised.  EDX is used.
+;---------------------------------------------------------------------
+vsr_trread:
+        movzx   edx,byte ptr [ebx+1]
+        shr     edx,3
+        and     edx,7
+        lea     edx,[vsr_trtab+edx*4]
+        mov     dword ptr ds:[exc_gesp],esp
+        mov     dword ptr ds:[exc_guard],OFFSET vtr_none
+        call    edx
+        mov     dword ptr ds:[exc_guard],0
+        clc
+        ret
+vtr_none:                               ; from exc_common: ESP as it was
+        stc
+        ret
+
+vsr_trtab       db      0Fh,24h,0C0h,0C3h       ; MOV EAX,TR0 and RET
+                db      0Fh,24h,0C8h,0C3h       ; ...TR1, and so on
+                db      0Fh,24h,0D0h,0C3h
+                db      0Fh,24h,0D8h,0C3h
+                db      0Fh,24h,0E0h,0C3h
+                db      0Fh,24h,0E8h,0C3h
+                db      0Fh,24h,0F0h,0C3h
+                db      0Fh,24h,0F8h,0C3h
+
+;---------------------------------------------------------------------
+; vsr_regp - AL = a mod r/m byte.  -> EDX = where the guest's copy of
+;            the general register in its low three bits is kept.
+;---------------------------------------------------------------------
+vsr_regp:
+        movzx   edx,al
+        and     edx,7
+        cmp     edx,4
+        je      short vrp_sp
+        inc     edx                     ; EAX is the dword below EBP, ECX
+        shl     edx,2                   ; the one below that, and so on in
+        neg     edx                     ; the order PUSHAD stores them
+        add     edx,ebp
+        ret
+vrp_sp:
+        lea     edx,[ebp+FR_ESP]        ; ...but ESP is the one the
+        ret                             ; processor stacked
+
+;---------------------------------------------------------------------
+; vsr_rmlen - AL = the mod r/m at [EBX+1].  -> EDX = how many bytes of
+;             the instruction follow it: a SIB, a displacement.
+;---------------------------------------------------------------------
+vsr_rmlen:
+        push    eax
+        xor     edx,edx
+        cmp     al,0C0h
+        jae     short vrn_out           ; a register
+        test    byte ptr ds:[vsr_mode],VSR_A32
+        jnz     short vrn_32
+        mov     ah,al
+        and     ah,0C7h
+        cmp     ah,06h                  ; mod 00, r/m 110: an address alone
+        je      short vrn_two
+        shr     al,6                    ; ...or mod is the count: 0, 1 or 2
+        movzx   edx,al
+        jmp     short vrn_out
+vrn_two:
+        mov     edx,2
+        jmp     short vrn_out
+vrn_32:
+        mov     ah,al
+        and     ah,7
+        cmp     ah,4
+        jne     short vrn_nosib
+        inc     edx                     ; a SIB, whose base 101 with mod 00
+        cmp     al,40h                  ; is an address alone
+        jae     short vrn_mod
+        mov     ah,[ebx+2]
+        and     ah,7
+        jmp     short vrn_alone
+vrn_nosib:
+        cmp     al,40h
+        jae     short vrn_mod
+vrn_alone:
+        cmp     ah,5                    ; mod 00, r/m (or base) 101
+        jne     short vrn_out
+        add     edx,4
+        jmp     short vrn_out
+vrn_mod:
+        inc     edx                     ; mod 01: one byte
+        cmp     al,80h
+        jb      short vrn_out
+        add     edx,3                   ; mod 10: four
+vrn_out:
+        pop     eax
+        ret
+
+;---------------------------------------------------------------------
+; vsr_rmword - the 16-bit operand the mod r/m at [EBX+1] names, for a
+;              box.  CF clear and AX = it.  CF set: an operand in
+;              memory with 32-bit addressing, which is not worked out
+;              here - the instruction is then taken and changes nothing.
+;
+; The address is the 8086's: two registers of BX, BP, SI and DI or
+; one, a displacement, and SS where BP is in it unless a prefix names
+; another (vsr_seg).  It wraps at 64K, and is the box's own memory.
+;---------------------------------------------------------------------
+vsr_rmword:
+        mov     al,[ebx+1]
+        cmp     al,0C0h
+        jb      short vmw_mem
+        push    edx
+        call    vsr_regp
+        mov     ax,[edx]
+        pop     edx
+        clc
+        ret
+vmw_mem:
+        test    byte ptr ds:[vsr_mode],VSR_A32
+        jnz     short vmw_not
+        push    ecx
+        push    edx
+        push    esi
+        movzx   ecx,al
+        and     ecx,7
+        lea     esi,[vsr_ea16+ecx*4]
+        xor     edx,edx                 ; DX = the offset
+        mov     ah,al
+        and     ah,0C7h
+        cmp     ah,06h                  ; an address alone, in DS
+        jne     short vmw_regs
+        mov     dx,[ebx+2]
+        mov     cl,FR_DS
+        jmp     short vmw_seg
+vmw_regs:
+        movsx   ecx,byte ptr [esi]
+        mov     dx,[ebp+ecx]
+        movsx   ecx,byte ptr [esi+1]
+        jecxz   short vmw_disp
+        add     dx,[ebp+ecx]
+vmw_disp:
+        cmp     al,40h
+        jb      short vmw_which
+        cmp     al,80h
+        jae     short vmw_d16
+        movsx   cx,byte ptr [ebx+2]
+        add     dx,cx
+        jmp     short vmw_which
+vmw_d16:
+        add     dx,[ebx+2]
+vmw_which:
+        mov     cl,FR_DS
+        cmp     byte ptr [esi+2],0
+        je      short vmw_seg
+        mov     cl,FR_SS
+vmw_seg:
+        cmp     byte ptr ds:[vsr_seg],0
+        je      short vmw_read
+        mov     cl,byte ptr ds:[vsr_seg]
+vmw_read:
+        movzx   ecx,cl
+        movzx   ecx,word ptr [ebp+ecx]  ; the segment, a paragraph
+        shl     ecx,4
+        movzx   edx,dx
+        mov     ax,[ecx+edx]
+        pop     esi
+        pop     edx
+        pop     ecx
+        clc
+        ret
+vmw_not:
+        stc
+        ret
+
+; The eight r/m forms: where below EBP the first register is kept, the
+; second or 0 for none, and whether the segment is SS.  BX is the dword
+; at -16, BP at -24, SI at -28 and DI at -32 (PUSHAD).
+vsr_ea16        db      -16,-28,0,0             ; BX+SI
+                db      -16,-32,0,0             ; BX+DI
+                db      -24,-28,1,0             ; BP+SI
+                db      -24,-32,1,0             ; BP+DI
+                db      -28,0,0,0               ; SI
+                db      -32,0,0,0               ; DI
+                db      -24,0,1,0               ; BP
+                db      -16,0,0,0               ; BX
+
+;=====================================================================
+; A BOX'S MP, EM AND TS.
+;
+; vfp_view - EAX = the three bits the caller runs under.  For a box
+;            that is what CR0 holds, its own or not (vfp_in).  For a
+;            DPMI client it is too, except that with X87EMU.SYS loaded
+;            EM is set for native programs and cleared at the client's
+;            first coprocessor instruction (fpu_lend), so the EM shown
+;            is the BIOS's.
+; vfp_put  - AL = a machine status word a box has loaded.  Its MP, EM
+;            and TS become the box's if they are not what it already
+;            runs under.  From ring 3 nothing is done.
+; vfp_in   - into CR0, on the way into a box.  A box that has asked
+;            for nothing has the coprocessor lent to it here and not
+;            at its first instruction, so that SMSW, which nothing
+;            can answer for the processor, says what a move from CR0
+;            does: a program that reads the one and loads the other
+;            back has then asked for nothing.
+; vfp_out  - and the kernel's back, on the way out.
+; Everything preserved by the last three; vfp_view changes EAX only.
+;=====================================================================
+vfp_view:
+        mov     eax,cr0
+        test    byte ptr ds:[vsr_mode],VSR_BOX
+        jnz     short vfv_out
+        test    byte ptr ds:[fpu_flags],FPUF_EMU
+        jz      short vfv_out
+        and     eax,NOT CR0_EM
+        push    edx
+        mov     edx,dword ptr ds:[fpu_cr0boot]
+        and     edx,CR0_EM
+        or      eax,edx
+        pop     edx
+vfv_out:
+        and     eax,VFP_MASK
+        ret
+
+vfp_put:
+        test    byte ptr ds:[vsr_mode],VSR_BOX
+        jz      short vfp_ret
+        push    eax
+        push    edx
+        mov     dl,al
+        and     dl,VFP_MASK
+        call    vfp_view
+        cmp     al,dl
+        je      short vfp_same
+        mov     byte ptr ds:[vfp_bits],dl
+        mov     byte ptr ds:[vfp_set],1
+        call    vfp_in
+vfp_same:
+        pop     edx
+        pop     eax
+vfp_ret:
+        ret
+
+vfp_in:
+        cmp     byte ptr ds:[vfp_set],0
+        jne     short vfp_own
+        test    byte ptr ds:[fpu_flags],FPUF_EMU
+        jz      short vfo_in
+        test    byte ptr ds:[fpu_cr0boot],CR0_EM
+        jnz     short vfo_in            ; the BIOS's EM: the box's INT 7
+        call    fpu_lend
+        ret
+vfp_own:
+        push    eax
+        mov     eax,cr0
+        and     eax,NOT VFP_MASK
+        or      al,byte ptr ds:[vfp_bits]
+        mov     cr0,eax
+        pop     eax
+vfo_in:
+        ret
+
+vfp_out:
+        cmp     byte ptr ds:[vfp_set],0
+        je      short vfo_out
+        push    eax
+        push    edx
+        mov     eax,cr0
+        and     eax,NOT VFP_MASK
+        mov     edx,dword ptr ds:[fpu_cr0run]
+        and     edx,VFP_MASK
+        or      eax,edx
+        mov     cr0,eax
+        mov     byte ptr ds:[fpu_lent],0        ; EM is FPU.INC's own again
+        pop     edx
+        pop     eax
+vfo_out:
+        ret
+
+;=====================================================================
+; A BOX'S DEBUG REGISTERS.
+;
+; vbp_load  - the box's four addresses and its DR7 into the processor,
+;             if its DR7 enables anything.  The null guard is off by
+;             now (v86_run), so DR7 holds nothing while they change.
+; vbp_out   - and the kernel's four addresses back, with DR7 holding
+;             nothing: nt_arm puts the guard on after it.  What the
+;             processor saw go off is kept for the box's DR6.
+; vbp_fault - CF set if the debug exception in hand is one of the
+;             box's instruction breakpoints, which is a fault and
+;             comes back to the same place; CF clear for the rest,
+;             which are traps.
+; Everything preserved.
+;=====================================================================
+vbp_load:
+        cmp     byte ptr ds:[vbp_live],0
+        je      short vbl_out
+        push    eax
+        push    ecx
+        push    edx
+        mov     edx,dword ptr ds:[vbp_7]
+        mov     ecx,3
+vbl_one:
+        cmp     dword ptr ds:[vbp_reg+ecx*4],BOX_TOP
+        jb      short vbl_next
+        mov     eax,3                   ; not where a box reaches: its L and
+        shl     eax,cl                  ; G bits come off.  They are two
+        shl     eax,cl                  ; apiece, hence the shift twice
+        not     eax
+        and     edx,eax
+vbl_next:
+        dec     ecx
+        jns     short vbl_one
+        mov     eax,dword ptr ds:[vbp_reg]
+        mov     dr0,eax
+        mov     eax,dword ptr ds:[vbp_reg+4]
+        mov     dr1,eax
+        mov     eax,dword ptr ds:[vbp_reg+8]
+        mov     dr2,eax
+        mov     eax,dword ptr ds:[vbp_reg+12]
+        mov     dr3,eax
+        mov     dr7,edx
+        mov     byte ptr ds:[vbp_in],1
+        pop     edx
+        pop     ecx
+        pop     eax
+vbl_out:
+        ret
+
+vbp_out:
+        cmp     byte ptr ds:[vbp_in],0
+        je      short vbo_out
+        push    eax
+        mov     eax,DR7_OFF
+        mov     dr7,eax
+        mov     eax,dr6
+        push    eax
+        and     eax,0Fh
+        or      dword ptr ds:[vbp_6],eax
+        pop     eax
+        and     al,0F0h
+        mov     dr6,eax
+        xor     eax,eax                 ; the guard's addresses (nt_init)
+        mov     dr0,eax
+        mov     al,4
+        mov     dr1,eax
+        mov     al,8
+        mov     dr2,eax
+        mov     al,12
+        mov     dr3,eax
+        mov     byte ptr ds:[vbp_in],0
+        pop     eax
+vbo_out:
+        ret
+
+vbp_fault:
+        cmp     byte ptr ds:[vbp_in],0
+        je      short vbg_trap
+        push    eax
+        push    ecx
+        push    edx
+        mov     eax,dr6
+        mov     edx,dword ptr ds:[vbp_7]
+        shr     edx,16                  ; RW and LEN, four bits a breakpoint
+        mov     ecx,4
+vbg_one:
+        shr     eax,1                   ; B0, then B1...
+        jnc     short vbg_next
+        test    dl,3                    ; RW 00: on execution
+        jz      short vbg_is
+vbg_next:
+        shr     edx,4
+        loop    vbg_one
+        pop     edx
+        pop     ecx
+        pop     eax
+vbg_trap:
+        clc
+        ret
+vbg_is:
+        pop     edx
+        pop     ecx
+        pop     eax
+        stc
+        ret
+
+vsr_mode        db      0               ; VSR_*, for the instruction in hand
+vsr_seg         db      0               ; ...its segment prefix: FR_ES and so
+                                        ; on, 0 for none
+vfp_set         db      0               ; a box has MP, EM and TS of its own
+vfp_bits        db      0               ; ...and these are they
+vbp_live        db      0               ; a box's DR7 enables a breakpoint
+vbp_in          db      0               ; the processor's are the box's now
+vbp_owed        db      0               ; one went off under the monitor
+                db      0
+vbp_reg         dd      4 dup(0)        ; a box's DR0 to DR3
+vbp_6           dd      DR6_FIXED       ; ...its DR6
+vbp_7           dd      DR7_FIXED       ; ...and its DR7, as it wrote it
 
 ;=====================================================================
 ; IN and OUT.
@@ -1407,6 +2274,17 @@ V86_EXCREFL     EQU     0FBh            ; 0,1,3,4,5,6,7 - every vector
 V86_FLTMAX      EQU     32
 
 vf_exc:
+        ; A DEBUG EXCEPTION IS COUNTED ONLY IF IT IS A FAULT.  A single
+        ; step and a data breakpoint are traps: the instruction is done,
+        ; and one that comes round again in a loop - a watchpoint on a
+        ; counter - is the program getting somewhere.  An instruction
+        ; breakpoint whose handler returns without taking it off comes
+        ; back to the same place for ever, and is counted like the rest.
+        cmp     dword ptr [ebp+FR_VEC],1
+        jne     vfe_count
+        call    vbp_fault
+        jnc     vfe_ivt
+vfe_count:
         mov     eax,[ebp+FR_EIP]
         cmp     eax,dword ptr ds:[v86_flteip]
         jne     vfe_moved
@@ -1618,6 +2496,19 @@ vbk_no:
 ;---------------------------------------------------------------------
 v86_ckkbd:
         pushad
+        ; A BREAKPOINT OF THE BOX'S THAT WENT OFF UNDER THE MONITOR comes
+        ; first, and whatever the box's interrupt flag says: it is a
+        ; trap, and the processor would have taken it before anything
+        ; else (exc_common, vsr_emul).
+        cmp     byte ptr ds:[vbp_owed],0
+        je      vck_nodb
+        mov     byte ptr ds:[vbp_owed],0
+        cmp     dword ptr ds:[1 * 4],0
+        je      vck_nodb
+        mov     eax,1
+        call    v86_deliver
+        jmp     vck_out
+vck_nodb:
         cmp     byte ptr ds:[v86_irqx],0        ; not into an excursion's
         jne     vck_no                          ; guest: see v86_run
         call    v86_kbwant
@@ -2288,6 +3179,8 @@ pm3_op:
         je      pm3_outb_d
         cmp     al,0EFh
         je      pm3_outw_d
+        cmp     al,0Fh                  ; the control registers and the
+        je      pm3_0f                  ; cache, as in a box: vsr_emul
 
 ;--- not ours: the client has really faulted -------------------------
 pm3_real:
@@ -2320,6 +3213,44 @@ pm3_dead:
 pm3_stop:
         hlt
         jmp     pm3_stop
+
+;--- the 0Fh ones: ESI -> the 0Fh, ECX = the prefixes before it -------
+; The addressing is the code segment's - its D bit - turned round by a
+; 67h among the prefixes; vsr_emul needs it to measure an operand in
+; memory.
+pm3_0f:
+        mov     byte ptr ds:[vsr_mode],0
+        mov     byte ptr ds:[vsr_seg],0
+        movzx   eax,word ptr [ebp+P3_CS]
+        lar     eax,eax
+        jnz     short pm3_0fpfx
+        test    eax,00400000h
+        jz      short pm3_0fpfx
+        mov     byte ptr ds:[vsr_mode],VSR_A32
+pm3_0fpfx:
+        mov     eax,ecx
+pm3_0fone:
+        or      eax,eax
+        jz      short pm3_0fgo
+        mov     edx,esi
+        sub     edx,eax
+        cmp     byte ptr [edx],67h
+        jne     short pm3_0fnext
+        xor     byte ptr ds:[vsr_mode],VSR_A32
+        jmp     short pm3_0fgo
+pm3_0fnext:
+        dec     eax
+        jmp     short pm3_0fone
+pm3_0fgo:
+        lea     ebx,[esi+1]
+        call    vsr_emul
+        jc      short pm3_0fno
+        lea     ecx,[ecx+edx+1]         ; the prefixes, the 0Fh, the rest
+        jmp     pm3_done
+pm3_0fno:
+        movzx   eax,al                  ; 13 as it was, or 6, or the 13 the
+        mov     [ebp+P3_VEC],eax        ; processor answered with: the
+        jmp     pm3_real                ; client's own fault each way
 
 ;--- the six that are emulated ---------------------------------------
 pm3_cli:

@@ -7,7 +7,8 @@
 ; address register decodes, which interrupt line a card was given and
 ; whether that line is level-triggered.  Every answer it gives about
 ; configuration space can be checked, because configuration space is
-; two ports and neither of them is one the monitor keeps: this program
+; reached through ports the monitor does not keep - CF8h and CFCh, or
+; under mechanism 2 CF8h, CFAh and the window at C000h: this program
 ; asks the kernel and then asks the bus, and the two have to agree.
 ;
 ; It lists what it finds, which is the other half of its use - it is
@@ -50,6 +51,9 @@ _PT     SEGMENT USE32 PUBLIC 'CODE'
 
 CFG_ADDR        EQU     0CF8h
 CFG_DATA        EQU     0CFCh
+CFG_CSE         EQU     0CF8h           ; mechanism 2: the enable register,
+CFG_FORWARD     EQU     0CFAh           ; the bus,
+CFG_WINDOW      EQU     0C000h          ; and the window
 MAXLIST         EQU     64
 NOWHERE         EQU     3FC00000h       ; the last 4MB of the first
                                         ; gigabyte, on a machine whose
@@ -105,6 +109,11 @@ t1_bus:
         call    puts
         mov     eax,[elcr]
         call    phex4
+        test    byte ptr [hasbus],2
+        jz      t1_mech1
+        mov     edx,OFFSET msg_mech2
+        call    puts
+t1_mech1:
         mov     edx,OFFSET msg_crlf
         call    puts
 
@@ -262,6 +271,11 @@ t6_bad:
 ; BIOS leaves a note in and no hardware reads, so changing it for a
 ; moment changes nothing.  The three bytes beside it in the same dword
 ; - the pin and two timers - are read-only, and must not move.
+;
+; A card that keeps its line register as it was is passed over for the
+; next one: 86Box's CMD640 IDE controller does, on the owner's VM's
+; board.  If every card with a pin does that, the check fails - the
+; write is not reaching the bus.
 ;=====================================================================
 t7:
         mov     edx,OFFSET msg_t7
@@ -279,12 +293,15 @@ t7_next:
         inc     esi
         jmp     short t7_find
 t7_none:
+        cmp     byte ptr [t7_kept],0    ; cards tried, and none took it
+        jne     t7_bad
         mov     dl,'-'
         call    tally
         mov     edx,OFFSET msg_skip
         call    puts
         jmp     t8
 t7_have:
+        mov     [t7_at],esi
         mov     ebx,[dev_addr + esi*4]
         mov     [wdev],ebx
         mov     dl,3Ch
@@ -324,7 +341,15 @@ t7_have:
         mov     eax,[wseen]
         and     eax,0FFh
         cmp     eax,[wnew]
+        je      t7_good
+        mov     ecx,[wold]
+        and     ecx,0FFh
+        cmp     eax,ecx                 ; kept as it was: the next card
         jne     t7_bad
+        mov     byte ptr [t7_kept],1
+        mov     esi,[t7_at]
+        jmp     t7_next
+t7_good:
         call    good
         jmp     t8
 t7_bad:
@@ -556,9 +581,13 @@ fin_pass:
 ;=====================================================================
 ; direct - EBX = a device, DL = a register -> EDI = the dword the BUS
 ;          gives.  The address port is put back as it was found, the
-;          way the kernel does it and for the same reason.
+;          way the kernel does it and for the same reason.  Through
+;          mechanism 2's window when the kernel says that is the way
+;          in, with both of its registers put back.
 ;=====================================================================
 direct:
+        test    byte ptr [hasbus],2
+        jnz     direct2
         push    eax
         push    ecx
         push    edx
@@ -580,6 +609,51 @@ direct:
         pop     edx
         pop     ecx
         pop     eax
+        ret
+
+direct2:
+        or      edi,-1                  ; device 16 and up: no such port
+        test    ebx,8000h
+        jnz     dr2_out
+        push    eax
+        push    ecx
+        push    edx
+        movzx   ecx,dl
+        and     ecx,0FCh
+        mov     eax,ebx
+        shr     eax,3                   ; the device, to bits 11:8
+        and     eax,0F00h
+        or      ecx,eax
+        or      ecx,CFG_WINDOW          ; ECX = the port
+        mov     dx,CFG_CSE
+        in      al,dx
+        mov     ah,al
+        mov     dx,CFG_FORWARD
+        in      al,dx
+        push    eax                     ; AH = the enable, AL = the bus
+        mov     eax,ebx
+        shr     eax,7                   ; the function, to bits 3:1
+        and     al,0Eh
+        or      al,0F0h
+        mov     dx,CFG_CSE
+        out     dx,al
+        mov     eax,ebx
+        shr     eax,16
+        mov     dx,CFG_FORWARD
+        out     dx,al
+        mov     edx,ecx
+        in      eax,dx
+        mov     edi,eax
+        pop     eax
+        mov     dx,CFG_FORWARD
+        out     dx,al
+        mov     al,ah
+        mov     dx,CFG_CSE
+        out     dx,al
+        pop     edx
+        pop     ecx
+        pop     eax
+dr2_out:
         ret
 
 ;--- listed - ESI = an index.  "Below" if it is one of the functions
@@ -931,6 +1005,7 @@ msg_nobus   db  13,10,'  This machine has no PCI bus.',13,10,13,10,'$'
 msg_buses   db  '    buses: ','$'
 msg_fns     db  ', functions: ','$'
 msg_level   db  ', level-triggered lines: ','$'
+msg_mech2   db  ', mechanism 2','$'
 msg_sp      db  '    ','$'
 msg_sp2     db  '  ','$'
 msg_class   db  '  class ','$'
@@ -967,6 +1042,9 @@ flagnames   db  ' kernel$'
             db  ' DEAD  $'
 
 hasbus      dd  0
+t7_at       dd  0                       ; check 7: the card being tried,
+t7_kept     db  0                       ; and whether one kept its line
+            db  0,0,0
 lastbus     dd  0
 nfuncs      dd  0
 elcr        dd  0

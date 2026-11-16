@@ -490,16 +490,31 @@ static void send_trans2( srv_conn *c, unsigned int tid, unsigned int uid, unsign
     reply( c, 0x32, 0, tid, uid, pid, mid, w, 20, bp, blen );
 }
 
+/* the size of an entry before its name, at the info levels a listing
+   answers: 0x101 (DIRECTORY), 0x102 (FULL_DIRECTORY: EaSize at 64) and
+   0x104 (BOTH_DIRECTORY: EaSize, then the short name's length at 68 and
+   its 24 bytes at 70).  0 for a level not answered.  Level 1 is laid out
+   apart.  Every level once got 0x101's layout, so a client that asked
+   for 0x104 - SMBFS.SYS does - read the short name 6 bytes into the long
+   one and the long name past it */
+static int level_fixed( int level )
+{
+    if ( level == 0x101 ) return 64;
+    if ( level == 0x102 ) return 68;
+    if ( level == 0x104 ) return 94;
+    return 0;
+}
+
 /* list the search's directory into 'data' from its c->ssent'th match on:
    at most 'maxcount' entries and 'cap' bytes, at info level 1 (with the
-   resume key when 'keys') or 0x101.  Returns the byte length; *cnt is the
-   count (-1 when the directory is not there), *eos 1 when the directory
-   ran out, *lastname the last entry's name offset. */
+   resume key when 'keys'), 0x101, 0x102 or 0x104.  Returns the byte
+   length; *cnt is the count (-1 when the directory is not there), *eos 1
+   when the directory ran out, *lastname the last entry's name offset. */
 static int build_listing( srv_conn *c, int level, int keys, unsigned char *data, int cap,
                           int maxcount, int *cnt, int *eos, int *lastname )
 {
     void *it = c->fs->vfindopen( c->fsctx, c->sdir );
-    int off = 0, count = 0, last = -1, skip = c->ssent;
+    int off = 0, count = 0, last = -1, skip = c->ssent, fixed = level_fixed( level );
     srv_dirent de;
 
     *eos = 1; *lastname = 0;
@@ -516,7 +531,7 @@ static int build_listing( srv_conn *c, int level, int keys, unsigned char *data,
         if ( level == 1 ) {
             entry = ( keys ? 27 : 23 ) + namelen + 1;
         } else {
-            entry = 64 + namelen + 1;
+            entry = fixed + namelen + 1;
             pad = ( -entry ) & 3;
         }
         if ( off + entry + pad > cap ) { *eos = 0; break; }
@@ -534,7 +549,10 @@ static int build_listing( srv_conn *c, int level, int keys, unsigned char *data,
             memcpy( e + 23, de.name, (unsigned)( namelen + 1 ) );        /* the name and its NUL */
             *lastname = (int)( ( e + 23 ) - data );
         } else {
-            memset( data + off, 0, 64 );
+            /* EaSize 0; at 0x104 a short name length of 0 - the back end's
+               names are the on-disk ones, which are short already, as NTFS
+               leaves it for a name that is 8.3 */
+            memset( data + off, 0, (unsigned)fixed );
             put32( data + off + 8,  de.ft_lo ); put32( data + off + 12, de.ft_hi );  /* Creation */
             put32( data + off + 16, de.ft_lo ); put32( data + off + 20, de.ft_hi );  /* Access */
             put32( data + off + 24, de.ft_lo ); put32( data + off + 28, de.ft_hi );  /* Write */
@@ -543,10 +561,10 @@ static int build_listing( srv_conn *c, int level, int keys, unsigned char *data,
             put32( data + off + 48, ( de.size + 511 ) & ~511UL ); put32( data + off + 52, 0 );
             put32( data + off + 56, de.attr );                                       /* ExtFileAttributes */
             put32( data + off + 60, (unsigned long)namelen );                        /* FileNameLength */
-            memcpy( data + off + 64, de.name, (unsigned)( namelen + 1 ) );
-            memset( data + off + 64 + namelen + 1, 0, (unsigned)pad );
+            memcpy( data + off + fixed, de.name, (unsigned)( namelen + 1 ) );
+            memset( data + off + fixed + namelen + 1, 0, (unsigned)pad );
             put32( data + off, (unsigned long)( entry + pad ) );                     /* NextEntryOffset */
-            *lastname = off + 64;
+            *lastname = off + fixed;
         }
         last = at;
         off += entry + pad;
@@ -593,6 +611,10 @@ static void do_trans2( srv_conn *c, const unsigned char *words, int wc, const un
         for ( i = 0; spec[i]; i++ ) if ( spec[i] == '\\' || spec[i] == '/' ) cut = i;
         if ( cut <= 0 ) { c->sdir[0] = '\\'; c->sdir[1] = 0; }
         else { for ( i = 0; i < cut; i++ ) c->sdir[i] = spec[i]; c->sdir[i] = 0; }
+        if ( level != 1 && level_fixed( level ) == 0 ) {   /* STATUS_INVALID_LEVEL */
+            reply0( c, 0x32, 0xC0000148UL, tid, uid, pid, mid );
+            return;
+        }
         c->sall = pat_fcb( spec + cut + 1, c->spat );
         c->sattr = get16( parm + 0 );
         c->ssent = 0;
@@ -612,6 +634,10 @@ static void do_trans2( srv_conn *c, const unsigned char *words, int wc, const un
         unsigned long key = get32( parm + 6 );
         unsigned char rparm[8];
         if ( c->sdir[0] == 0 ) { reply0( c, 0x32, 0x80000006UL, tid, uid, pid, mid ); return; }
+        if ( level != 1 && level_fixed( level ) == 0 ) {
+            reply0( c, 0x32, 0xC0000148UL, tid, uid, pid, mid );
+            return;
+        }
         if ( !( flags & 0x08 ) && key != 0 && key < 0x8000UL ) c->ssent = (int)key;   /* resume after it */
         if ( want <= 0 ) want = 1;
         dlen = build_listing( c, level, flags & 0x04, data, cap, want, &cnt, &eos, &lastname );

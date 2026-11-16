@@ -748,6 +748,9 @@ lv_type:
         mov     edx,OFFSET msg_knic
         test    eax,NDTF_NIC
         jnz     lvt_out
+        mov     edx,OFFSET msg_ksound
+        test    eax,NDTF_AUDIO
+        jnz     lvt_out
         mov     edx,OFFSET msg_kother
 lvt_out:
         ret
@@ -982,6 +985,7 @@ msg_kdisk   db  'disk','$'
 msg_kredir  db  'redirector','$'
 msg_kstack  db  'TCP/IP stack','$'
 msg_knic    db  'network card','$'
+msg_ksound  db  'sound card','$'
 msg_kother  db  'other','$'
 msg_aconv   db  'conventional','$'
 msg_aupper  db  'upper       ','$'
